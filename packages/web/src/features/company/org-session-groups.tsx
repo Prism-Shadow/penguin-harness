@@ -484,7 +484,7 @@ export function OrgSessionGroups({
             <button
               type="button"
               onClick={() => dismissAllTempSessions(user?.userId ?? null, projectId, orgId)}
-              className="shrink-0 rounded px-1.5 py-1 text-xs font-medium text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+              className="shrink-0 whitespace-nowrap rounded px-1.5 py-1 text-xs font-medium text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
             >
               {S.company.sessionList.closeAllTemporary}
             </button>

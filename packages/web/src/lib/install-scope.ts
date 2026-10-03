@@ -223,6 +223,18 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.modelsGroupsFolded",
+    scope: "browser",
+    why: "Whether the models page's collapsible groups are folded; one flag, names nothing on the server.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelsPinnedGroups",
+    scope: "browser",
+    why: "Which model groups stay out of the fold, as differences from the built-in default set; a view preference, and a pinned user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
     key: "penguin.steerMode",
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",

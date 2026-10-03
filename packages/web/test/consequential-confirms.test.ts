@@ -25,7 +25,7 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/workflows/workflow-tabs.tsx", "rollback"],
   ["features/settings/plugins-section.tsx", "runAction"],
   ["features/company/org-dialogs.tsx", "dropDraft"],
-  ["features/models/models-page.tsx", "syncPresets"],
+  ["features/models/preset-sync.tsx", "runPresetSync"],
 ];
 
 const isOnConfirm = (node: ts.Node): node is ts.JsxAttribute =>
@@ -72,6 +72,7 @@ function references(file: string, action: string): { unguarded: string[]; confir
     const notReference =
       p !== undefined &&
       ((ts.isVariableDeclaration(p) && p.name === node) ||
+        (ts.isFunctionDeclaration(p) && p.name === node) ||
         (ts.isPropertyAccessExpression(p) && p.name === node) ||
         (ts.isPropertyAssignment(p) && p.name === node));
     if (ts.isIdentifier(node) && node.text === action && !notReference) {

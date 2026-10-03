@@ -383,17 +383,30 @@ export function FinancePage() {
     }
   };
 
+  // On a phone the switch takes a full-width row of its own under the title, and each option
+  // shows its month alone: "Previous period 2026-09" beside its twin does not fit there at a
+  // large text size. The full wording stays each option's accessible name.
   const periodSwitch =
     previous !== null ? (
-      <Segmented
-        options={[
-          { value: previous, label: `${S.company.finance.prevPeriod} ${previous}` },
-          { value: currentPeriod, label: `${S.company.finance.thisPeriod} ${currentPeriod}` },
-        ]}
-        value={target === previous ? previous : currentPeriod}
-        onChange={setPeriod}
-        cols={2}
-      />
+      <div className="w-full sm:w-auto">
+        <Segmented
+          options={[
+            {
+              value: previous,
+              label: `${S.company.finance.prevPeriod} ${previous}`,
+              shortLabel: previous,
+            },
+            {
+              value: currentPeriod,
+              label: `${S.company.finance.thisPeriod} ${currentPeriod}`,
+              shortLabel: currentPeriod,
+            },
+          ]}
+          value={target === previous ? previous : currentPeriod}
+          onChange={setPeriod}
+          cols={2}
+        />
+      </div>
     ) : undefined;
 
   if (data === null) {

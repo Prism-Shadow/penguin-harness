@@ -69,6 +69,22 @@ describe("utilityCompletionConfig", () => {
     ).toThrow(/has no API key/);
   });
 
+  it("runs a keyless entry on its group's connection, and a value of the entry's own over it", () => {
+    const group = {
+      base_url: "https://lab.example/v1",
+      client_type: "openai-chat",
+      api_key: "sk-group",
+    };
+    expect(utilityCompletionConfig("m-bench", { provider: "my-lab" }, group)).toMatchObject({
+      apiKey: "sk-group",
+      baseUrl: "https://lab.example/v1",
+      clientType: "openai-chat",
+    });
+    expect(
+      utilityCompletionConfig("m-bench", { provider: "my-lab", api_key: "sk-own" }, group),
+    ).toMatchObject({ apiKey: "sk-own", baseUrl: "https://lab.example/v1" });
+  });
+
   it("never tightens to an uncapped entry's -1", () => {
     expect(utilityCompletionConfig("m-bench", { api_key: "sk-1", max_tokens: -1 }).maxTokens).toBe(
       300,

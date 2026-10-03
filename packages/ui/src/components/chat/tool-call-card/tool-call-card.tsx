@@ -71,7 +71,7 @@ export interface ToolCallCardProps {
   output?: string;
   /** The output is still arriving: a caret follows it. */
   outputStreaming?: boolean;
-  /** Images the call returned, shown as thumbnails that zoom when pressed. */
+  /** Images the call returned, shown as thumbnails that zoom when pressed (fetched lazily, as they near the viewport). */
   images?: { srcs: readonly string[]; alt: string };
   /** Always shown below the details, whatever the collapsed state (a subagent's row). */
   footer?: ReactNode;
@@ -186,6 +186,7 @@ export function ToolCallCard({
                 key={i}
                 src={src}
                 alt={images.alt}
+                lazy
                 className="max-h-40 max-w-full rounded-md border border-line"
               />
             ))}

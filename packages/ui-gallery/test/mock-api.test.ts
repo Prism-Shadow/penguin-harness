@@ -118,6 +118,26 @@ describe("the mocked API", () => {
     expect(notes.counts?.active).toBe(notes.sessions.length);
   });
 
+  it("pages the list by last activity with a cursor, as the sidebar asks for it", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    const opts = { limit: 3, order: "activity" as const, category: "active" as const };
+    const first = await api.listSessions(project, agent, opts);
+    const rest = await api.listSessions(project, agent, {
+      ...opts,
+      limit: 100,
+      before: first.sessions.at(-1)!,
+    });
+    const all = await api.listSessions(project, agent, { ...opts, limit: 100 });
+    // The two pages are the whole list, in one order and with no row twice.
+    expect([...first.sessions, ...rest.sessions].map((s) => s.sessionId)).toEqual(
+      all.sessions.map((s) => s.sessionId),
+    );
+    const stamps = all.sessions.map((s) => s.lastActiveAt);
+    expect(stamps).toEqual([...stamps].sort().reverse());
+  });
+
   it("serves a running Session's history with its live tail, and a finished one without", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const running = store.f.sessions.find((s) => s.status === "running")!;
@@ -181,6 +201,28 @@ describe("the mocked API", () => {
     });
     expect(models.defaultModel).toEqual({ provider: "anthropic", modelId: "claude-sonnet-5" });
     expect(store.f.models.models.find((m) => m.isDefault)?.modelId).toBe("claude-sonnet-5");
+  });
+
+  it("serves the group tables a new Project writes, and takes a protocol or a cleared key on any group", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const models = await api.getModels(project);
+    // A gateway row stores nothing of its own and follows its group's table.
+    expect(models.providers.openrouter?.baseUrl).toMatch(/^https:\/\//);
+    const gateway = models.models.find((m) => m.provider === "openrouter")!;
+    expect(gateway.credential?.baseUrl).toBeUndefined();
+    expect(gateway.effective.baseUrlSource).toBe("provider");
+    // Atria stores its own endpoint in custom, which has no table.
+    const atria = models.models.find((m) => m.modelId === "Atria-Dawn-Preview")!;
+    expect(atria.effective.baseUrlSource).toBe("model");
+    // Every group takes a protocol, Penguin Go included.
+    const go = await api.putProviderConnection(project, "penguin-go", {
+      clientType: "openai-chat",
+    });
+    expect(go.providers["penguin-go"]?.clientType).toBe("openai-chat");
+    // Disconnect clears the group key and leaves the group without one.
+    const cleared = await api.putProviderConnection(project, "deepseek", { clearApiKey: true });
+    expect(cleared.providers.deepseek?.apiKeyMasked).toBeUndefined();
   });
 
   it("serves a Workspace file with its version marker through the fetch path", async () => {

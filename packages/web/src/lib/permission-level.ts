@@ -28,9 +28,14 @@ export function permissionLevel(approval: ApprovalMode, sandbox: SessionSandbox)
   return "partial";
 }
 
-/** The tone each level reads in: the more the Agent may do unasked, the louder. */
+/**
+ * The tone each level reads in. Anything that may write unasked is amber — `all` and `partial`
+ * share `attention` and are told apart by their glyphs, as two states on one tone must be;
+ * read-only is green, off recedes. Full access is the user's own choice, not a fault, so it is
+ * not `danger` (user decision, 2026-10-02: the red read as an alarm).
+ */
 export const PERMISSION_LEVEL_TONE: Record<PermissionLevel, Tone> = {
-  all: "danger",
+  all: "attention",
   partial: "attention",
   "read-only": "success",
   off: "muted",

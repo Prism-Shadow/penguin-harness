@@ -22,6 +22,7 @@ import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { formatMessageTime } from "../../lib/format";
 import { splitAttachments } from "../../lib/attachments";
+import { routedUrl } from "../../lib/session-machines";
 import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
@@ -268,7 +269,9 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         images: steerImages,
         files: steerFiles,
       } = splitAttachments(item.text);
-      const shown = [...steerImages, ...(item.images ?? [])];
+      // A steer's own images can be a history page's Trace references: routed to the
+      // Session's machine like the user_image below.
+      const shown = [...steerImages, ...(item.images ?? []).map(routedUrl)];
       return (
         <MessageRow spacing="steer">
           <MessageBubble
@@ -292,10 +295,13 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       );
     }
     case "user_image":
+      // Inline bytes live, or a windowed history page's reference to the Trace record
+      // (`/api/sessions/<id>/trace-image?…`), which the browser must fetch from the machine
+      // the Session lives on.
       return (
         <MessageRow>
           <MessageBubble variant="image">
-            <MessageImage src={item.imageUrl} alt={S.chat.imageAlt} />
+            <MessageImage src={routedUrl(item.imageUrl)} alt={S.chat.imageAlt} />
           </MessageBubble>
           <SentMessageMeta atMs={item.atMs} />
         </MessageRow>

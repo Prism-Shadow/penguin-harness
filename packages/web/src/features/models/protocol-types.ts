@@ -7,10 +7,11 @@
  * only decide what the dialog shows and what is worth sending there.
  */
 import {
+  effectiveConnection,
   modelEnvPreviewKey,
-  providerClientType,
   providerInfo,
 } from "@prismshadow/penguin-core/model-catalog";
+import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-catalog";
 
 /**
  * MMSP's generic protocol client types (three of its compatible clients), in detection order
@@ -96,75 +97,90 @@ export function isCustomLikeGroup(provider: string): boolean {
 }
 
 /**
- * The `client_type` actually persisted for a row.
- *
- * A custom-like entry must never reach the config with an empty protocol: MMSP's
- * AutoLLMClient routes an entry with no client type by the vendor family its id begins
- * with, and THROWS for an id of no known family (`No client for model "<id>": its family is
- * not known`) rather than falling back — so a custom entry saved with no protocol is a
- * model that cannot start, or, when its id happens to begin with a vendor family, one sent
- * to that vendor's official client instead of speaking the endpoint's protocol.
- * The dialog's save path detects the protocol before submitting; this is the last-resort
- * net for the paths that do not (set-default, set-vision-proxy, remove), where probing
- * the endpoint would be the wrong thing to do.
- *
- * A group that pins a protocol answers the same question one step earlier, and for a
- * stronger reason: the pin is not a fallback but the group's own semantics, so an entry
- * that reaches here without one takes it rather than the compatible-client default.
- *
- * Preset and vendor-group entries are returned untouched: their model ids ARE routable,
- * so an empty value there correctly means "let MMSP route by the id's vendor family", and
- * the empty default must not leak into them as a bogus pin.
+ * The protocol a row would be used with if it stored none of its own: its group's
+ * `[providers.<id>]` protocol, or none (MMSP then routes by the id's vendor family). Callers pass
+ * what core's effectiveConnection resolves for the group; omitted, the group sets none.
  */
-export function protocolForPersist(provider: string, clientType: string): string {
-  const t = clientType.trim();
-  if (t !== "") return t;
-  const pinned = providerClientType(provider);
-  if (pinned !== undefined) return pinned;
-  if (!isCustomLikeGroup(provider)) return t;
-  return DEFAULT_CUSTOM_CLIENT_TYPE;
+export interface InheritedProtocol {
+  clientType?: string | undefined;
 }
 
 /**
- * Whether committing this dialog action must detect the protocol before it may proceed:
- * the user pressed save/add on a custom-like entry that still has no protocol. Detection
- * is preferred over guessing here because the endpoint is the authority, and because a
- * wrong guess surfaces much later as a failing session rather than a failing save.
+ * The `client_type` actually persisted for a row: its own protocol, or nothing — a row with no
+ * protocol of its own follows its group (`inherited`), which is what lets a protocol set once on
+ * the group reach every model in it.
  *
- * Deliberately NOT the other actions (set-default / set-vision-proxy / remove): those are
- * not the user declaring the model ready, and probing an endpoint as a side effect of
- * "make this the default" would be surprising. Those paths stay safe through
- * protocolForPersist instead.
+ * One case must still write a value: a custom-like entry that would otherwise resolve to no
+ * protocol at all. MMSP's AutoLLMClient routes an entry with no client type by the vendor family
+ * its id begins with, and THROWS for an id of no known family (`No client for model "<id>": its
+ * family is not known`) rather than falling back — so such an entry saved with nothing is a
+ * model that cannot start, or, when its id happens to begin with a vendor family, one sent to
+ * that vendor's official client instead of speaking the endpoint's protocol. The dialog's save
+ * path detects the protocol before submitting; this is the last-resort net for the paths that
+ * do not (set-default, set-vision-proxy, remove), where probing the endpoint would be the wrong
+ * thing to do.
  *
- * A group that pins a protocol never reaches here either — it is not custom-like, and there
- * is nothing to probe for when the group has already decided the answer.
+ * Every other group's entries with nothing inherited stay empty: an empty value there means "let
+ * MMSP route by the id's vendor family", which is how a first-party vendor's ids are placed.
+ */
+export function protocolForPersist(
+  provider: string,
+  clientType: string,
+  inherited: InheritedProtocol = {},
+): string {
+  const t = clientType.trim();
+  if (t !== "") return t;
+  if (inherited.clientType?.trim()) return "";
+  return isCustomLikeGroup(provider) ? DEFAULT_CUSTOM_CLIENT_TYPE : "";
+}
+
+/**
+ * Whether committing this dialog action must detect the protocol before it may proceed: the
+ * user pressed save on a custom-like entry that has no protocol of its own and inherits none.
+ * Detection is preferred over guessing there because the endpoint is the authority, and because
+ * a wrong guess surfaces much later as a failing session rather than a failing save.
+ *
+ * Detection is optional everywhere else: a protocol picked by hand, one inherited from the
+ * group, and every group that is not custom-like never trigger it — there is
+ * nothing to probe for when the answer is already decided. Nor do the other actions
+ * (set-default / set-vision-proxy / remove): those are not the user declaring the model ready,
+ * and probing an endpoint as a side effect of "make this the default" would be surprising.
+ * Those paths stay safe through protocolForPersist instead.
  */
 export function needsProtocolDetectOnSave(
   action: string,
   provider: string,
   clientType: string,
+  inherited: InheritedProtocol = {},
 ): boolean {
-  return action === "save" && isCustomLikeGroup(provider) && clientType.trim() === "";
+  return (
+    action === "save" &&
+    isCustomLikeGroup(provider) &&
+    clientType.trim() === "" &&
+    !inherited.clientType?.trim()
+  );
 }
 
 /**
- * The client type the dialog's API-key env hint should resolve against.
+ * The client type the dialog's API-key env hint should resolve against: the protocol the entry
+ * will actually be used with (its own, else its group's — effectiveConnection), and for a
+ * custom-like entry that resolves to none, the compatible client it will be saved on.
  *
- * `resolveModelEnv` normally falls back to routing by model id when no client type is
- * given — right for a vendor group, wrong for a custom one: typing `claude-sonnet-5` into
- * a custom group would then claim the entry reads ANTHROPIC_API_KEY, when nothing about
- * that group routes by id and the entry will in fact be saved on the compatible client.
- * Returning the default for custom-like groups keeps the hint honest; undefined elsewhere
- * preserves the id-based routing those groups genuinely use. A group that pins a protocol
- * is the same argument again: nothing there routes by id, so the pin is what the entry will
- * be saved on and what the hint has to resolve against.
+ * `resolveModelEnv` falls back to routing by model id when no client type is given — right for
+ * a vendor group, wrong for a custom one: typing `claude-sonnet-5` into a custom group would then
+ * claim the entry reads ANTHROPIC_API_KEY, when nothing about that group routes by id. A group
+ * that pins a protocol is the same argument again: nothing there routes by id, so the pin is
+ * what the hint has to resolve against.
  */
-export function envHintClientType(provider: string, clientType: string): string | undefined {
-  const t = clientType.trim();
-  if (t !== "") return t;
+export function envHintClientType(
+  provider: string,
+  clientType: string,
+  modelId = "",
+  group?: ProviderConnectionShape,
+): string | undefined {
+  const effective = effectiveConnection({ provider, modelId: modelId.trim(), clientType }, group);
   return (
-    providerClientType(provider) ??
-    (isCustomLikeGroup(provider) ? DEFAULT_CUSTOM_CLIENT_TYPE : undefined)
+    effective.clientType ?? (isCustomLikeGroup(provider) ? DEFAULT_CUSTOM_CLIENT_TYPE : undefined)
   );
 }
 
@@ -172,24 +188,29 @@ export function envHintClientType(provider: string, clientType: string): string 
  * The variable the dialog's API-key field may promise for the entry as drafted, or undefined
  * when nothing should be promised: core's modelEnvPreviewKey — the same function the server's
  * GET /models preview reads, so the hint and the card's "read from environment variable" can
- * never disagree — over the form's group, id, protocol (resolved as envHintClientType does)
- * and base URL. A gateway row carries its preset endpoint, so it resolves to nothing — the
- * hint that used to read "leave empty to use OPENAI_API_KEY" on a TokenDance or OpenRouter row
- * was promising the user's OpenAI key to a third party; a vLLM preset or a custom row with no
- * base URL resolves to nothing either, so the field never suggests running a self-hosted id
- * against api.openai.com.
+ * never disagree — over the EFFECTIVE shape: the form's own protocol and base URL where it has
+ * them, its group's where it does not. A gateway row follows its group's endpoint, so it resolves
+ * to nothing — a hint reading "leave empty to use OPENAI_API_KEY" on a TokenDance or OpenRouter
+ * row would promise the user's OpenAI key to a third party; a group pointed at a proxy resolves
+ * to nothing either, and so does a vLLM or custom row with no base URL anywhere, so the field
+ * never suggests running a self-hosted id against api.openai.com.
  */
 export function envHintKeyFor(
   provider: string,
   modelId: string,
   clientType: string,
   baseUrl: string,
+  group?: ProviderConnectionShape,
 ): string | undefined {
+  const effective = effectiveConnection(
+    { provider, modelId: modelId.trim(), clientType, baseUrl },
+    group,
+  );
   return modelEnvPreviewKey({
     provider,
     modelId: modelId.trim(),
-    clientType: envHintClientType(provider, clientType),
-    baseUrl,
+    clientType: envHintClientType(provider, clientType, modelId, group),
+    baseUrl: effective.baseUrl ?? "",
   });
 }
 

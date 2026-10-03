@@ -7,7 +7,8 @@
  *
  * `.project_config.toml` is the Project's **single config file**: a hidden file (not shown by
  * default `ls`), written to disk with mode 0600; credentials (api_key / base_url) are **inlined
- * on the model entry** rather than split into a supplementary area and a separate secrets file.
+ * in it** — once per group in `[providers.<id>]`, and on a model entry where that one model
+ * overrides its group — rather than split into a supplementary area and a separate secrets file.
  * It can only be read/written via the system interfaces (CLI / Web) — never hand-edited by the
  * model or the user; the system Prompt is forbidden from reading this file, `loadProjectConfig`
  * returns plaintext, and masking is applied at the interface layer (when shown by server / cli).
@@ -34,7 +35,14 @@ import type {
 } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
-import { canonicalClientType, presetModelEntries } from "./model-catalog.js";
+import {
+  canonicalClientType,
+  groupKeyReaches,
+  presetModelEntries,
+  presetProviderTable,
+  sameClientType,
+  sameEndpoint,
+} from "./model-catalog.js";
 import { projectConfigPath } from "./paths.js";
 
 /** Model reference: a `(provider, model_id)` pair (never string-concatenated anywhere). */
@@ -76,14 +84,17 @@ export interface ModelEntry {
   context_window?: number;
   /**
    * MMSP client type (`openai-responses` / `ant-messages` / `openai-chat` /
-   * `google-genai` / `anthropic-official` / …); when absent, MMSP routes the
-   * request id (`model_id`) by the vendor family it begins with (`gpt-`, `claude-`,
-   * `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`). Third-party endpoints use one of
-   * the generic protocol clients: `openai-responses` (OpenAI Responses API), `ant-messages`
-   * (Anthropic Messages API), or `openai-chat` (OpenAI Chat Completions; the bare `openai`
-   * spelling from configs saved before the client was renamed (MMSP 0.4.2) is normalized
-   * to it on read — see canonicalClientType). The Web models page can detect which one a
-   * custom base URL serves.
+   * `google-genai` / `anthropic-official` / …) of this model alone, overriding its group's:
+   * when absent the row follows its group's `[providers.<id>]` table (effectiveConnection),
+   * and with neither MMSP routes the request id (`model_id`) by the vendor family it begins
+   * with (`gpt-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`) — the
+   * catalog is never consulted. A new Project stores one here only where the catalog's row
+   * differs from its group's (Penguin Go's and OpenCode Go's rows, custom's Atria).
+   * Third-party endpoints use one of the generic protocol clients: `openai-responses` (OpenAI
+   * Responses API), `ant-messages` (Anthropic Messages API), or `openai-chat` (OpenAI Chat
+   * Completions; the bare `openai` spelling from configs saved before the client was renamed
+   * (MMSP 0.4.2) is normalized to it on read — see canonicalClientType). The Web models page
+   * can detect which one a custom base URL serves.
    */
   client_type?: string;
   /**
@@ -121,9 +132,19 @@ export interface ModelEntry {
   fast_mode?: boolean;
   /** Pricing info; absent means this Model's cost isn't counted. */
   pricing?: ModelPricing;
-  /** API key (inlined credential); left empty falls back to the vendor's environment variable. */
+  /**
+   * API key for this model alone, overriding the group's `[providers.<id>].api_key`; with
+   * neither, the vendor's environment variable where modelEnvFallback allows it.
+   */
   api_key?: string;
-  /** Custom base URL (inlined credential); preset for gateway models. */
+  /**
+   * Base URL for this model alone, overriding the group's (effectiveConnection); with
+   * neither, the routed client's default endpoint. A custom or user-defined row stores its
+   * endpoint here when its group names none, and a preset whose endpoint differs from its
+   * group's carries it from creation (OpenCode Go's Messages rows, custom's Atria). The
+   * group's key reaches this row only while this is absent or on the group's origin
+   * (groupKeyReaches).
+   */
   base_url?: string;
   /** api_key's write timestamp (ISO 8601; a display field maintained by the interface layer). */
   created_at?: string;
@@ -164,6 +185,25 @@ export interface ProjectChatDefaults {
   approval_mode?: ChatApprovalMode;
   thinking_level?: DefaultChatThinkingLevel;
 }
+
+/**
+ * `[providers.<id>]`: the connection a group's rows follow unless a row overrides a field
+ * (effectiveConnection reads it through providerConnectionShape). Keyed by provider id,
+ * built-in or user-defined. Every field optional; an absent or blank one is unset, and a row
+ * with no value of its own then gets the client's default — never a catalog value. A new
+ * Project writes the catalog's endpoint and protocol here for every built-in group that has
+ * them (presetProviderTable); from then on the table is the user's.
+ */
+export interface ProviderConnection {
+  base_url?: string;
+  api_key?: string;
+  client_type?: string;
+  /** api_key's write time (ISO 8601); a display field maintained by the interface layer, as on rows. */
+  created_at?: string;
+}
+
+/** Every group's connection defaults, keyed by provider id. */
+export type ProviderTable = Record<string, ProviderConnection>;
 
 /**
  * Project-level config.
@@ -214,14 +254,23 @@ export interface ProjectConfig {
    * Project asks for is in the tree, and what it contributes is visible to all of them.
    */
   plugins?: PluginTables;
+  /**
+   * Per-group connection defaults (`[providers.<id>]`); absent = no group sets anything, and
+   * each row runs on its own values and the client's defaults. Loaded tolerantly
+   * (parseProviderTable).
+   */
+  providers?: ProviderTable;
   models: ModelEntry[];
 }
 
 /**
  * Returns the Project's default config: every entry from the preset builtin model catalog
- * (including context_window / pricing / vision tags and the preset base_url for gateway models,
- * with no keys included) — the user only needs to fill in an API key as needed (left empty falls
- * back to the vendor's environment variable).
+ * (context_window / pricing / vision tags, and a protocol or endpoint only where a row's
+ * differs from its group's) and, beside them, each built-in group's endpoint and protocol in
+ * `[providers.<id>]` (presetProviderTable) — so the file alone says where every request goes,
+ * and the catalog is not read again when one is built. No keys are included: the user only
+ * needs to fill in an API key as needed (left empty falls back to the vendor's environment
+ * variable where modelEnvFallback allows it).
  */
 export function defaultProjectConfig(): ProjectConfig {
   return {
@@ -238,6 +287,7 @@ export function defaultProjectConfig(): ProjectConfig {
     // new project's config and owned by it from then on — later factory changes never
     // rewrite an existing file. Spread to keep the module-level constant frozen.
     command_policy: { rules: DEFAULT_COMMAND_POLICY_RULES.map((r) => ({ ...r })) },
+    providers: presetProviderTable(),
     models: presetModelEntries(),
   };
 }
@@ -316,7 +366,9 @@ const LEGACY_CLIENT_TYPES: readonly (readonly [RegExp, string])[] = [
  * from an older install) is repaired at its next read. Nothing is written when nothing
  * matched. Entries the catalog has since unpinned (`deepseek/deepseek-flash`,
  * `minimax/MiniMax-M3`) come out pinned to their vendor's official client, which routes; the
- * Models page's preset sync clears the pin like any other catalog difference.
+ * Models page's "Restore defaults" puts the row and its group's table back to the catalog's,
+ * which pins none. It runs first in migrateProjectConfigTable, so hoistProviderConnections
+ * compares MMSP's names.
  *
  * Removal: at the 0.3.0 release preparation, by whoever prepares it, once its release notes
  * say a Project last opened before the release that shipped this migration must be opened once
@@ -338,6 +390,199 @@ export function migrateLegacyClientTypes(table: Record<string, unknown>): boolea
     }
   }
   return changed;
+}
+
+/** A TOML table: a plain object, not an array (smol-toml's dates are objects too, but never tables here). */
+function isTable(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** A non-blank string, or undefined: blank counts as absent everywhere a connection field is read. */
+function presentString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+/** The latest of some ISO 8601 timestamps (unparseable ones lose), or undefined when there are none. */
+function latestTimestamp(values: readonly unknown[]): string | undefined {
+  let latest: string | undefined;
+  for (const v of values) {
+    if (typeof v !== "string" || v.trim() === "") continue;
+    if (latest === undefined) {
+      latest = v;
+      continue;
+    }
+    const [t, l] = [Date.parse(v), Date.parse(latest)];
+    if (Number.isNaN(l) || (!Number.isNaN(t) && t > l)) latest = v;
+  }
+  return latest;
+}
+
+/**
+ * The value a field holds on every one of `rows`, by `same`, or undefined when a row lacks it
+ * (absent or blank), two differ, or there are no rows.
+ */
+function unanimousField(
+  rows: readonly Record<string, unknown>[],
+  field: string,
+  same: (a: string, b: string) => boolean,
+): string | undefined {
+  const values = rows.map((row) => presentString(row[field]));
+  const first = values[0];
+  if (first === undefined) return undefined;
+  return values.every((v) => v !== undefined && same(v, first)) ? first : undefined;
+}
+
+/**
+ * The value most of `rows` hold in a field, by `same`, when every row holds one: undefined
+ * when a row lacks it (absent or blank), when two values tie for the most rows, or when there
+ * are no rows. The first spelling met stands for its value.
+ */
+function pluralityField(
+  rows: readonly Record<string, unknown>[],
+  field: string,
+  same: (a: string, b: string) => boolean,
+): string | undefined {
+  const tally: { value: string; count: number }[] = [];
+  for (const row of rows) {
+    const value = presentString(row[field]);
+    if (value === undefined) return undefined;
+    const seen = tally.find((t) => same(t.value, value));
+    if (seen !== undefined) seen.count += 1;
+    else tally.push({ value, count: 1 });
+  }
+  const [top, next] = [...tally].sort((a, b) => b.count - a.count);
+  return top !== undefined && (next === undefined || next.count < top.count)
+    ? top.value
+    : undefined;
+}
+
+/**
+ * One-time migration of a parsed `.project_config.toml` table to group-level connections.
+ * Before `[providers.<id>]` existed, every preset row carried its own copy of the catalog's
+ * protocol and endpoint, and every group write (Connect, Enter key, the Penguin Go and
+ * ModelScope flows) copied one key onto each row of the group. Read as they are, the copies
+ * would all be overrides: a group key written after the upgrade would never reach a row still
+ * holding the old one. So, in place, per group the rows name — built-in or user-defined —
+ * except `custom`, whose rows each reach their own endpoint and keep all three fields:
+ *
+ * - Base URL: when EVERY row of the group has one, the value most of them hold (strict
+ *   plurality, by sameEndpoint; a tie moves nothing) becomes `[providers.<g>].base_url` and
+ *   leaves the rows that held it; a row with another value keeps its own. A row with none
+ *   blocks the move: it runs on the client's default endpoint, and following a group value
+ *   would change that. (OpenCode Go: the Chat Completions base moves, the Messages rows keep
+ *   theirs.)
+ * - Protocol: only when every row has one and all are the same (sameClientType, in MMSP's
+ *   names — migrateLegacyClientTypes runs first) does it move to the group, leaving every row.
+ * - Key: when every row of the group that holds a key holds the same one, AND the group key
+ *   would reach each of those rows once the base URL has moved (groupKeyReaches), it becomes
+ *   `[providers.<g>].api_key` with `created_at` = the latest of those rows', and leaves them
+ *   (with their `created_at`). Otherwise every row keeps its key: a key the group could not
+ *   lend back would leave a row without one.
+ *
+ * The catalog is never read: a field no row had stays absent (old files always carried the
+ * catalog's copies, so nothing is lost; a row that was already bare ran on the client's
+ * defaults and still does). Every model keeps the base URL, protocol and key it ran on, except
+ * that a keyless row the hoisted group key reaches now has it.
+ *
+ * Runs only on a table with no `providers` key at all — a file this release has never
+ * written, since renderProjectConfigToml writes the key into every file — so it happens once
+ * per file: a value the user later sets on one model is never mistaken for an old copy, and a
+ * group key cleared while models keep their own is never hoisted back. Returns whether
+ * anything changed; nothing is written for a table with nothing to move, and a second run on
+ * the result finds nothing.
+ *
+ * Removal: at the 0.3.0 release preparation, by whoever prepares it, together with
+ * migrateLegacyClientTypes — once its release notes say a Project last opened before the
+ * release that shipped this migration must be opened once on a 0.2.x release first. Takes out
+ * this function with unanimousField and pluralityField, its call in migrateProjectConfigTable
+ * (and that wrapper with the other migration), the `providers` marker in
+ * renderProjectConfigToml, and their tests (core `state.test.ts`, server `models.test.ts`); see
+ * changelog/unreleased/2026-10-02-backward-compatibility.md.
+ */
+export function hoistProviderConnections(table: Record<string, unknown>): boolean {
+  if (table.providers !== undefined) return false;
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const row of (Array.isArray(table.models) ? table.models : []).filter(isTable)) {
+    if (typeof row.provider !== "string" || row.provider === "custom") continue;
+    groups.set(row.provider, [...(groups.get(row.provider) ?? []), row]);
+  }
+  const hoisted: Record<string, ProviderConnection> = {};
+  for (const [provider, rows] of groups) {
+    const connection: ProviderConnection = {};
+    const baseUrl = pluralityField(rows, "base_url", sameEndpoint);
+    if (baseUrl !== undefined) {
+      connection.base_url = baseUrl;
+      for (const row of rows) {
+        if (sameEndpoint(row.base_url as string, baseUrl)) delete row.base_url;
+      }
+    }
+    const clientType = unanimousField(rows, "client_type", sameClientType);
+    if (clientType !== undefined) {
+      connection.client_type = canonicalClientType(clientType)!;
+      for (const row of rows) delete row.client_type;
+    }
+    const keyed = rows.filter((row) => presentString(row.api_key) !== undefined);
+    const key = keyed[0]?.api_key;
+    if (
+      typeof key === "string" &&
+      keyed.every(
+        (row) =>
+          row.api_key === key && groupKeyReaches(presentString(row.base_url), connection.base_url),
+      )
+    ) {
+      connection.api_key = key;
+      const createdAt = latestTimestamp(keyed.map((row) => row.created_at));
+      if (createdAt !== undefined) connection.created_at = createdAt;
+      for (const row of keyed) {
+        delete row.api_key;
+        delete row.created_at;
+      }
+    }
+    if (Object.keys(connection).length > 0) hoisted[provider] = connection;
+  }
+  if (Object.keys(hoisted).length === 0) return false;
+  table.providers = hoisted;
+  return true;
+}
+
+/**
+ * Every one-time migration a parsed `.project_config.toml` table goes through, in order —
+ * MMSP's client-type names first (migrateLegacyClientTypes), then the group-level connection
+ * hoist (hoistProviderConnections), which compares the rows' protocols with each other in
+ * MMSP's names. Both loaders — `loadProjectConfig` here and the server's
+ * `ProjectConfigService.readTable` — call this and write the raw table back once when it
+ * returns true. Removed with the two migrations at the 0.3.0 release preparation.
+ */
+export function migrateProjectConfigTable(table: Record<string, unknown>): boolean {
+  const legacy = migrateLegacyClientTypes(table);
+  const hoisted = hoistProviderConnections(table);
+  return legacy || hoisted;
+}
+
+/**
+ * Leniently parses the `[providers]` table: a value that is not a table reads as absent; a
+ * member that is not a table is dropped, and so is one left with no field; each field is kept
+ * only when a non-blank string, and `client_type` is normalized through canonicalClientType.
+ * Undefined when no member remains — absent and empty mean the same: no group sets anything.
+ * Exported for the server, which narrows its cached parse the same way.
+ */
+export function parseProviderTable(value: unknown): ProviderTable | undefined {
+  if (!isTable(value)) return undefined;
+  const out: ProviderTable = {};
+  for (const [id, member] of Object.entries(value)) {
+    if (id.trim() === "" || !isTable(member)) continue;
+    const connection: ProviderConnection = {};
+    const baseUrl = presentString(member.base_url);
+    if (baseUrl !== undefined) connection.base_url = baseUrl;
+    const apiKey = presentString(member.api_key);
+    if (apiKey !== undefined) connection.api_key = apiKey;
+    const clientType = presentString(member.client_type);
+    if (clientType !== undefined) connection.client_type = canonicalClientType(clientType)!;
+    const createdAt = presentString(member.created_at);
+    if (createdAt !== undefined) connection.created_at = createdAt;
+    if (Object.keys(connection).length > 0) out[id] = connection;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /**
@@ -547,6 +792,7 @@ export function projectConfigFromTable(
   const defaultChat = parseDefaultChat(parsed.default_chat);
   const commandPolicy = parseCommandPolicy(parsed.command_policy);
   const plugins = parsePluginTables(parsed.plugins);
+  const providers = parseProviderTable(parsed.providers);
   return {
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
@@ -554,6 +800,7 @@ export function projectConfigFromTable(
     ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
     ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),
     ...(plugins !== undefined ? { plugins } : {}),
+    ...(providers !== undefined ? { providers } : {}),
     models: ((parsed.models as unknown[] | undefined) ?? []).map((m) => assertModelEntry(file, m)),
   };
 }
@@ -577,7 +824,7 @@ export async function loadProjectConfig(root: string, projectId: string): Promis
   const table = (parseToml(raw) ?? {}) as Record<string, unknown>;
   // The raw table is written back, not the typed config, so every key the file carries
   // survives the rewrite (this loader keeps known keys only).
-  if (migrateLegacyClientTypes(table)) {
+  if (migrateProjectConfigTable(table)) {
     await atomicWriteFile(file, renderProjectConfigToml(table), {
       mode: 0o600,
       followSymlinks: true,
@@ -614,12 +861,21 @@ function isModelRefShape(v: unknown): v is ModelRef {
  * that table — so entries whose serialization opens with a header are collected separately
  * and emitted after all top-level `key = value` lines (and still before `[[models]]`),
  * regardless of the object's key insertion order.
+ *
+ * `providers` is always written, as an empty `[providers]` table when no group sets
+ * anything: its presence is how hoistProviderConnections knows the file was written by a
+ * release that stores group keys there, and so never moves a model's own key onto its group.
+ * Removed with that migration at the 0.3.0 release preparation.
  */
 export function renderProjectConfigToml(data: Record<string, unknown>): string {
   const head: string[] = [];
   const tables: string[] = [];
+  const providers = data.providers;
+  const noProviders =
+    providers === undefined || (isTable(providers) && Object.keys(providers).length === 0);
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined || key === "models") continue;
+    if (key === "providers" && noProviders) continue;
     if (isModelRefShape(value)) {
       head.push(`${key} = ${tomlInlineRef(value)}`);
       continue;
@@ -629,8 +885,12 @@ export function renderProjectConfigToml(data: Record<string, unknown>): string {
     // every top-level key = value line; plain lines (scalars, inline arrays) stay in place.
     (rendered.startsWith("[") ? tables : head).push(rendered);
   }
-  const models = Array.isArray(data.models) ? data.models : [];
-  return [...head, ...tables, stringifyToml({ models })].join("\n");
+  if (noProviders) tables.push("[providers]");
+  const models = stringifyToml({ models: Array.isArray(data.models) ? data.models : [] });
+  // An empty list renders as a `models = []` line, which below a table header would be read
+  // back as that table's member: it goes with the top-level lines instead.
+  if (!models.trimStart().startsWith("[")) return [...head, models.trim(), ...tables].join("\n");
+  return [...head, ...tables, models].join("\n");
 }
 
 /**
@@ -648,10 +908,19 @@ export async function saveProjectConfig(
   await fs.mkdir(path.dirname(file), { recursive: true });
   const { plugins, ...rest } = cfg;
   const table = plugins === undefined ? rest : { ...rest, plugins: pluginTablesToToml(plugins) };
+  // `providers` is already TOML-shaped (ProviderTable is the file's own spelling).
   await atomicWriteFile(file, renderProjectConfigToml(table), {
     mode: 0o600,
     followSymlinks: true,
   });
+}
+
+/** One of addModel's connection fields: omitted keeps the row's value, `null` or blank clears it. */
+function ownField(
+  value: string | null | undefined,
+  existing: string | undefined,
+): string | undefined {
+  return value === undefined ? existing : presentString(value);
 }
 
 /**
@@ -661,7 +930,11 @@ export async function saveProjectConfig(
  *   gateway reselling a vendor model keeps the vendor's upstream id, so a bare id names no
  *   single group, and guessing wrong files the caller's api_key under a vendor they never
  *   picked); a model outside every known group is added under `"custom"` explicitly;
- * - If `api_key`/`base_url` are provided, they're written inline into the entry;
+ * - The row's own connection (`client_type` / `api_key` / `base_url`), per field: a value sets
+ *   it, `null` or a blank string clears it (the row then follows its group's
+ *   `[providers.<id>]` table, or with none the client's default), omitted keeps it; clearing
+ *   `api_key` drops its `created_at` with it. Nothing is filled in from the catalog: a new
+ *   row stores exactly what the caller gave;
  * - Set as the default Model (a paired reference) when `opts.setDefault` is true.
  * Reads the existing config (or the default), saves after the change, and returns the updated
  * config.
@@ -675,7 +948,8 @@ export async function addModel(
     /** Upstream model id (sent to MMSP unchanged). */
     model_id: string;
     context_window?: number;
-    client_type?: string;
+    /** The row's own protocol; `null` or blank clears it, omitted keeps it. */
+    client_type?: string | null;
     /** Whether image input is supported (vision/multimodal); keeps the existing value by default (treated as supported if never set). */
     vision?: boolean;
     /** Per-model max output tokens (wins over the Agent config); keeps the existing value by default (unset = inherit the Agent value). */
@@ -684,8 +958,10 @@ export async function addModel(
     fast_mode?: boolean;
     /** Price input may cover only some buckets; merged and written as a complete `ModelPricing`. */
     pricing?: Partial<ModelPricing>;
-    api_key?: string;
-    base_url?: string;
+    /** The row's own key; `null` or blank clears it (with its `created_at`), omitted keeps it. */
+    api_key?: string | null;
+    /** The row's own endpoint; `null` or blank clears it, omitted keeps it. */
+    base_url?: string | null;
   },
   opts?: { setDefault?: boolean },
 ): Promise<ProjectConfig> {
@@ -707,7 +983,7 @@ export async function addModel(
   }
   // Normalized on write as well as on read (canonicalClientType), so a caller passing the
   // pre-0.4.2 "openai" spelling still persists the canonical "openai-chat".
-  const clientType = canonicalClientType(entry.client_type ?? existing?.client_type);
+  const clientType = canonicalClientType(ownField(entry.client_type, existing?.client_type));
   if (clientType !== undefined) {
     modelEntry.client_type = clientType;
   }
@@ -748,16 +1024,18 @@ export async function addModel(
       output: mergedPricing.output ?? 0,
     };
   }
-  // Inline credential entry: fields not provided keep their existing value.
-  const apiKey = entry.api_key ?? existing?.api_key;
+  // Inline credential entry: fields not provided keep their existing value, cleared ones go.
+  const apiKey = ownField(entry.api_key, existing?.api_key);
   if (apiKey !== undefined) {
     modelEntry.api_key = apiKey;
   }
-  const baseUrl = entry.base_url ?? existing?.base_url;
+  const baseUrl = ownField(entry.base_url, existing?.base_url);
   if (baseUrl !== undefined) {
     modelEntry.base_url = baseUrl;
   }
-  if (existing?.created_at !== undefined) {
+  // The key's write time goes with a key the caller cleared, and stays otherwise.
+  const keyCleared = entry.api_key !== undefined && apiKey === undefined;
+  if (existing?.created_at !== undefined && !keyCleared) {
     modelEntry.created_at = existing.created_at;
   }
   if (idx >= 0) {
@@ -770,6 +1048,64 @@ export async function addModel(
     cfg.default_model = { provider, model_id: entry.model_id };
   }
 
+  await saveProjectConfig(root, projectId, cfg);
+  return cfg;
+}
+
+/**
+ * A change to one group's `[providers.<id>]` table. Per field: a non-blank string sets it,
+ * `null` or a blank string clears it, absent keeps it. Setting `api_key` stamps `created_at`
+ * with the write time; clearing it removes `created_at` with it.
+ */
+export interface ProviderConnectionPatch {
+  base_url?: string | null;
+  client_type?: string | null;
+  api_key?: string | null;
+}
+
+/**
+ * Applies a patch to one group's connection defaults and saves (load -> patch -> save; the
+ * CLI's `config model add --provider <group>` without `--model-id`). A table left with no
+ * field is dropped. Any group takes any field — Penguin Go's and OpenCode Go's included: a
+ * row's own protocol always wins over its group's (effectiveConnection), so a group protocol
+ * reaches only the rows that store none. Row overrides are never touched: a model with its
+ * own value keeps it. Returns the saved config.
+ */
+export async function setProviderConnection(
+  root: string,
+  projectId: string,
+  provider: string,
+  patch: ProviderConnectionPatch,
+): Promise<ProjectConfig> {
+  const id = provider.trim();
+  if (id === "") throw new Error("A provider id is required.");
+  const cfg = await loadProjectConfig(root, projectId);
+  const next: ProviderConnection = { ...cfg.providers?.[id] };
+  if (patch.base_url !== undefined) {
+    const value = presentString(patch.base_url);
+    if (value === undefined) delete next.base_url;
+    else next.base_url = value.trim();
+  }
+  if (patch.client_type !== undefined) {
+    const value = presentString(patch.client_type);
+    if (value === undefined) delete next.client_type;
+    else next.client_type = canonicalClientType(value.trim())!;
+  }
+  if (patch.api_key !== undefined) {
+    const value = presentString(patch.api_key);
+    if (value === undefined) {
+      delete next.api_key;
+      delete next.created_at;
+    } else {
+      next.api_key = value.trim();
+      next.created_at = new Date().toISOString();
+    }
+  }
+  const providers: ProviderTable = { ...cfg.providers };
+  if (Object.keys(next).length > 0) providers[id] = next;
+  else delete providers[id];
+  if (Object.keys(providers).length > 0) cfg.providers = providers;
+  else delete cfg.providers;
   await saveProjectConfig(root, projectId, cfg);
   return cfg;
 }

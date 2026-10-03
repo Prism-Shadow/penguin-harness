@@ -374,7 +374,7 @@ export function ErrorsPanel({
               type="button"
               disabled={clearing}
               onClick={() => setConfirmingClear(true)}
-              className="rounded-md border border-gray-200 px-2 py-0.5 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:bg-transparent disabled:hover:text-gray-500 dark:border-gray-800 dark:hover:border-red-900 dark:hover:bg-red-950/50 dark:hover:text-red-400 dark:disabled:hover:border-gray-800 dark:disabled:hover:bg-transparent dark:disabled:hover:text-gray-400"
+              className="whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:bg-transparent disabled:hover:text-gray-500 dark:border-gray-800 dark:hover:border-red-900 dark:hover:bg-red-950/50 dark:hover:text-red-400 dark:disabled:hover:border-gray-800 dark:disabled:hover:bg-transparent dark:disabled:hover:text-gray-400"
             >
               {S.usage.errorsClear}
             </button>

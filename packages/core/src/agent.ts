@@ -34,7 +34,8 @@ import {
   listInstalledHooks,
   projectDir,
   resolveSessionMemory,
-  resolveModelCredential,
+  providerConnectionShape,
+  resolveEntryCredential,
   resolveModelRef,
   sameModelRef,
   sessionScratchpadDir,
@@ -386,23 +387,25 @@ function resolveCompaction(
 }
 
 /**
- * The credential a Session's (or a describer's) client is built with for a model entry: the
- * explicit override, else the entry's inline fields, else — only where resolveModelCredential
- * allows it — nothing, so the routed client reads its own environment variable. A keyless
- * entry whose endpoint is not the vendor's own throws its ModelCredentialError here, which
- * hosts file with the SDKs' missing-credential errors (the server's `isMissingCredential`).
+ * The credential and protocol a Session's (or a describer's) client is built with for a model
+ * entry: the explicit override, else the entry's own fields, else its group's
+ * `[providers.<id>]` table — the file's values only, never the catalog's
+ * (resolveEntryCredential) — and for the key, only where the rule allows it, nothing, so the
+ * routed client reads its own environment variable.
+ * A keyless entry whose effective endpoint is not the vendor's own throws its
+ * ModelCredentialError here, which hosts file with the SDKs' missing-credential errors (the
+ * server's `isMissingCredential`).
  */
 function entryCredential(
   entry: ModelEntry,
+  config: ProjectConfig,
   opts: { apiKey?: string | undefined; baseUrl?: string | undefined },
-): { apiKey?: string; baseUrl?: string } {
-  return resolveModelCredential({
-    provider: entry.provider,
-    modelId: entry.model_id,
-    clientType: entry.client_type,
-    baseUrl: opts.baseUrl ?? entry.base_url,
-    apiKey: opts.apiKey ?? entry.api_key,
-  });
+): { apiKey?: string; baseUrl?: string; clientType?: string } {
+  return resolveEntryCredential(
+    entry,
+    providerConnectionShape(config.providers?.[entry.provider]),
+    opts,
+  );
 }
 
 /** The message for a model reference that names no entry in the Project config. */
@@ -698,7 +701,7 @@ export class Agent {
     // row pointed elsewhere is refused here, before any client exists. Called for that
     // refusal alone: each context's clients resolve the credential of the entry the context
     // runs on (see buildRuntime's `credentialsFor`).
-    entryCredential(modelEntry, opts);
+    entryCredential(modelEntry, this.projectConfig, opts);
 
     // An explicit Workspace must already exist as a directory: if it
     // doesn't, throw rather than auto-create (to avoid a typo silently working in
@@ -814,7 +817,7 @@ export class Agent {
     }
     // Same credential rule as createSession (see entryCredential): a key deleted since the
     // Session was created surfaces here, at resume.
-    entryCredential(modelEntry, opts);
+    entryCredential(modelEntry, this.projectConfig, opts);
 
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
     // and contexts opened without a pin read the Agent config's chain (the same chain
@@ -1046,15 +1049,17 @@ export class Agent {
               }),
           }
         : {};
-    // The credentials a context's LLM objects run on: the caller's explicit override for the
-    // entry it was given for (the creation model), every other entry's own configured pair —
-    // under the one credential rule (see entryCredential), so a keyless entry pointed away
-    // from its vendor is refused here too — plus the host's resolver for that entry.
+    // The credentials and protocol a context's LLM objects run on: the caller's explicit
+    // override for the entry it was given for (the creation model), every other entry's own
+    // configured connection, else its group's table — the file's, never the catalog's — under
+    // the one credential rule (see entryCredential), so a keyless entry pointed away from its
+    // vendor is refused here too — plus the host's resolver for that entry.
     const credentialsFor = (
       entry: ModelEntry,
-    ): Pick<GenerativeModelConfig, "apiKey" | "baseUrl" | "resolveApiKey"> => ({
+    ): Pick<GenerativeModelConfig, "apiKey" | "baseUrl" | "clientType" | "resolveApiKey"> => ({
       ...entryCredential(
         entry,
+        this.projectConfig,
         sameModelRef(entry, spec.creationRef) ? spec.credentialOverride : {},
       ),
       ...apiKeyResolverFor(entry),
@@ -1262,11 +1267,8 @@ export class Agent {
         createLLM: () =>
           new GenerativeModel({
             modelId: visionEntry.model_id,
-            ...entryCredential(visionEntry, {}),
+            ...entryCredential(visionEntry, this.projectConfig, {}),
             ...apiKeyResolverFor(visionEntry),
-            ...(visionEntry.client_type !== undefined
-              ? { clientType: visionEntry.client_type }
-              : {}),
             tools: [],
             thinkingLevel: "none",
             // The describing budget, tightened by the vision entry's own pinned cap when smaller.
@@ -1339,7 +1341,8 @@ export class Agent {
     const toolCallIds = new ToolCallIdAllocator();
     // The LLM object of one context: the context's model entry and its credentials, plus the
     // context's prompt, toolset and model defaults. The model id sent to MMSP is always
-    // the entry's upstream `model_id` (client_type routing/passing follows it);
+    // the entry's upstream `model_id` (routed by the effective client type — the row's, else
+    // its group's, else MMSP's routing by id; see credentialsFor);
     // session_meta, Trace, usage, pricing, and catalog matching all use the (provider,
     // model_id) pair as the primary key.
     const buildLLM = (context: AssembledContext, tools: ToolDefinition[]): GenerativeModel => {
@@ -1348,7 +1351,6 @@ export class Agent {
         modelId: entry.model_id,
         toolCallIds,
         ...credentialsFor(entry),
-        ...(entry.client_type !== undefined ? { clientType: entry.client_type } : {}),
         tools,
         systemPrompt: context.systemPrompt,
         ...(entry.context_window !== undefined ? { contextWindow: entry.context_window } : {}),
@@ -1455,7 +1457,6 @@ export class Agent {
       new GenerativeModel({
         modelId: entry.model_id,
         ...credentialsFor(entry),
-        ...(entry.client_type !== undefined ? { clientType: entry.client_type } : {}),
         tools: [],
         thinkingLevel: "none",
         // The meta budget, tightened by the entry's pinned per-model cap when smaller.

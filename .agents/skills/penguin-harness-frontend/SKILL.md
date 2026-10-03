@@ -64,6 +64,11 @@ Two kinds of prose, and the split decides *whether* it is disclosed.
 A string that mixes both is a string that should be split, not a judgement call. When you cannot
 split it, keep it visible — a visible sentence is never a bug, a hidden format rule is.
 
+One exception: a rule the control already enforces or already shows goes behind the "?". The
+Profile nickname's "1–32 characters, blank clears" is the case. `maxLength` stops the 33rd
+character, and the placeholder says what blank means, so a visible line would only repeat them
+(user decision, 2026-10-03).
+
 Already-disclosed text does not move: `title=` tooltips, `OptionMenu` row descriptions, confirm
 dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
 
@@ -204,6 +209,43 @@ for `sm`, and on a font size spelled in a control module outside the two records
 a parser sees without types: a footer handed over as a component or built in a variable, and a
 dialog body outside those declared modules, follow the same rule but are on you. Adding a module to
 `DIALOG_BODY_MODULES` is how a new settings page joins the check.
+
+## A button keeps its label on one line
+
+A button's label never wraps and is never truncated. A squeezed button breaks a CJK label between
+any two characters, down to one character a line, which reads as broken rather than as tight.
+`Button`, `buttonClass` and `Segmented`'s options carry `whitespace-nowrap` in their base, and
+`Segmented`'s columns are a bare `1fr` (`minmax(auto, 1fr)`; Tailwind's `grid-cols-N` is
+`minmax(0, 1fr)`, which lets a column squeeze its label). A hand-rolled `<button>` with a text
+label carries `whitespace-nowrap` itself.
+
+Nowrap moves the pressure to the row: a button that cannot shrink pushes against its neighbours.
+The layout around it makes the room, chosen per site:
+
+- **the row wraps** — `flex-wrap` with a gap: the `Modal` foot, `ConfirmModal`, `CreateButtons`
+  and `SettingsSection`'s action row do, and so does a settings row's control group that can run out
+  of room at phone width (a wrapped line keeps `justify-end`);
+- **the text beside it shrinks** — `min-w-0` + `truncate` on a name or a status sentence, or prose
+  that wraps;
+- **the button is `shrink-0`** where its neighbour can give;
+- **the column widens** — fewer columns once the column itself is too narrow: a container query
+  (`@container` around the grid, `@xl:grid-cols-4` on it) or
+  `repeat(auto-fit, minmax(min(100%, 12rem), 1fr))`. Measure the column, not the viewport: the
+  sidebar and the reader's text size both take from it.
+
+Never let a button overflow its container or scroll the page sideways, and never truncate the
+label instead. A width passed to `Input` or `Select` through `className` loses to the control's own
+`w-full` (the built sheet emits `.w-full` after `.w-44`), and a full-width field beside a button is
+what squeezes it: put the width on a box around the field.
+
+The trap is a `Segmented` with long labels in a `PrefRow`: the row's control column is
+`minmax(0, max-content)` and its slot is `justify-end`, so a control that no longer fits overflows
+leftward over the row's label instead of wrapping. Keep such labels short, or give the options a
+`shortLabel` for phone width (the full label stays the option's name), as the finance page's
+period switch does.
+
+Check a change at 390 and 1024 px with the XL text size (`penguin.textSize` = `xl`), in both
+languages — that is where a row runs out of room first.
 
 ## Every user-facing string is bilingual
 

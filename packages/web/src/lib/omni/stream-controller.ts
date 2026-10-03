@@ -83,16 +83,16 @@ export type MessagesPageQuery =
 
 /**
  * Initial (tail) window size, in message-bearing units — one unit = one Task, opened by
- * a user prompt (the server's cut rule; see MessagesPageInfo). 50 is what a reader
- * actually looks at when a conversation opens: the rest of a long Session streams in on
- * scroll (see loadOlder). Anything much larger stops being a window at all — at 200 the
- * tail covered nearly every real Session, so every open still read, shipped and rendered
- * the whole transcript, tool output included.
+ * a user prompt (the server's cut rule; see MessagesPageInfo). A conversation opens on its
+ * newest 20 Q&A pairs, the user's call: the rest of a long Session streams in on scroll
+ * (see loadOlder). The count bounds what the page renders, not what it weighs — one Task
+ * can run hundreds of tool calls — so the server also cuts a page at its byte budget, and
+ * a page may then hold fewer units than asked for while still carrying `before`.
  */
-export const TAIL_UNITS = 50;
+export const TAIL_UNITS = 20;
 
-/** Scroll-up backfill window size: one more tail's worth per prepend, so each stays snappy. */
-export const OLDER_UNITS = 50;
+/** Scroll-up backfill window size: each scroll to the top adds 20 more Q&A pairs. */
+export const OLDER_UNITS = 20;
 
 /**
  * Item-id space reserved per prepended window. The live model numbers its items upward

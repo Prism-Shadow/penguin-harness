@@ -20,7 +20,10 @@ import type {
   ModelVisionDetectResponse,
   ModelsResponse,
   ModelsUpdateRequest,
+  PresetSyncMode,
+  PresetSyncResponse,
   ProjectRole,
+  ProviderConnectionUpdate,
   ProjectSummary,
   ServerEvent,
 } from "../api/types.js";
@@ -160,6 +163,15 @@ export abstract class ProjectConfigStore {
   ): Promise<EndpointModelListResponse>;
   abstract getModels(projectId: string): Promise<ModelsResponse>;
   abstract updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse>;
+  /** One group's `[providers.<id>]` connection, merged per field; rows are never touched. */
+  abstract setProviderConnection(
+    projectId: string,
+    provider: string,
+    patch: ProviderConnectionUpdate,
+  ): Promise<ModelsResponse>;
+  /** "Add new models" (`add`) or "Restore defaults" (`restore`) against the built-in catalog. */
+  abstract syncPresets(projectId: string, mode: PresetSyncMode): Promise<PresetSyncResponse>;
+  /** Writes the group key; resolves to how many of the group's rows use it (none of their own). */
   abstract setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number>;
   abstract setGroupApiKeyWithProviderAuthToken(
     projectId: string,
@@ -168,11 +180,19 @@ export abstract class ProjectConfigStore {
     token: Omit<ModelProviderAuthToken, "provider" | "updatedAt">,
     options?: { expectedRefreshToken?: string },
   ): Promise<number>;
+  /** The group key (`[providers.<id>].api_key`), never a row's own. Server-side only. */
   abstract getGroupApiKey(projectId: string, provider: string): Promise<string | undefined>;
+  /** One row's own key (its override of the group's), or undefined. Server-side only. */
+  abstract getModelApiKey(
+    projectId: string,
+    provider: string,
+    modelId: string,
+  ): Promise<string | undefined>;
   /**
-   * The key a group's account balance is read with: the stored group key, or else the
-   * environment key a Session on one of the group's rows would use, when that variable's
-   * official endpoint is the balance endpoint's own host. Server-side only.
+   * The key a group's account balance is read with: the group key (never a row's own), or
+   * else the environment key a Session on one of the group's rows would use on its effective
+   * endpoint, when that variable's official endpoint is the balance endpoint's own host.
+   * Server-side only.
    */
   abstract getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined>;
   abstract setModelApiKeyResolver(

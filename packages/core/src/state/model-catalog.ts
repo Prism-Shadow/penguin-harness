@@ -45,11 +45,16 @@
  * auto-routed by MMSP and leave client_type unset; seven gateway groups (OpenRouter,
  * Fireworks AI, SiliconFlow, TokenDance, OpenCode Go, Qwen Pay-As-You-Go and Qwen Token Plan)
  * can't be auto-routed, so every gateway row **always pins an explicit client_type** and
- * inlines its preset base URL. ModelScope's rows pin one protocol too (see below).
- * Two groups pin at GROUP level as well (ModelProviderInfo.clientType, read
+ * names its preset base URL. ModelScope's rows pin one protocol too (see below).
+ * These are reference values, never runtime fallbacks: a new Project's file receives them
+ * once — a group's shared endpoint and protocol in its `[providers.<id>]` table
+ * (presetProviderTable), a row's own only where it differs from its group's
+ * (catalogModelEntry) — as do "Add new models" and "Restore defaults"; from then on the file
+ * alone says where a request goes (effectiveConnection reads no catalog).
+ * Four groups pin at GROUP level as well (ModelProviderInfo.clientType, read
  * through providerClientType), so that a model the user adds there speaks the same protocol
  * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
- * OpenRouter, whose do — see each group's own block comment.
+ * OpenRouter, TokenDance and SiliconFlow, whose do — see each group's own block comment.
  * That pin is load-bearing, not decoration: MMSP's AutoLLMClient routes an unpinned id by
  * the family its spelling begins with and never looks at base_url (see routedClientType), so
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
@@ -78,7 +83,12 @@
  * This file imports no Node built-ins (type-only imports only), so it can be bundled directly
  * for the browser.
  */
-import type { ModelEntry, ModelPricing } from "./project-config.js";
+import type {
+  ModelEntry,
+  ModelPricing,
+  ProviderConnection,
+  ProviderTable,
+} from "./project-config.js";
 
 /** Model provider info (used for web grouping/logo and the "API key blank falls back to env var" hint). */
 /**
@@ -151,9 +161,11 @@ export interface ModelProviderInfo {
   /** Vendor's model list / docs page URL (frontend's "add model" dialog links this as "get model id"); none for custom. */
   modelsUrl?: string;
   /**
-   * Gateway's OpenAI-compatible endpoint (openrouter / siliconflow / qwen-token-plan): used by
-   * the frontend's "add model" dialog to prefill base URL by group; left blank for direct
-   * vendors and custom.
+   * Gateway's OpenAI-compatible endpoint (openrouter / siliconflow / qwen-token-plan / …): what
+   * a new Project writes as the group's `[providers.<id>]` base URL (catalogGroupConnection),
+   * so every row of the group — a model added by hand included — follows it without storing
+   * the address itself. A reference value: nothing reads it when a request is built. Left
+   * blank for direct vendors and custom.
    */
   gatewayBaseUrl?: string;
   /**
@@ -175,25 +187,27 @@ export interface ModelProviderInfo {
   balance?: ModelProviderBalance;
   /**
    * The group takes models the user adds by hand: `custom` and vLLM, whose rows point at an
-   * endpoint the catalog cannot know. Every other built-in group carries its catalog presets
-   * and the rows it already stores, and nothing else. Read it through isAddableGroup, which
-   * also answers for user-defined groups.
+   * endpoint the catalog cannot know, and the three gateways whose catalogs list a fraction of
+   * what they serve — OpenRouter, TokenDance and SiliconFlow — where an added model follows
+   * the group's connection (its endpoint, key and protocol) exactly as the presets do. Every
+   * other built-in group carries its catalog presets and the rows it already stores, and
+   * nothing else. Read it through isAddableGroup, which also answers for user-defined groups.
    */
   addable?: boolean;
   /**
    * The MMSP protocol EVERY entry in this group speaks, models the user adds included.
    *
-   * Set it only where the group itself decides the answer and no other property already
-   * implies it: the other gateways derive `openai-chat` from carrying a `gatewayBaseUrl`, and
-   * `custom` / user-defined groups deliberately declare nothing — their whole point is that
-   * the protocol is detected from the endpoint or picked by hand, and a pin here would
-   * take that choice away.
+   * Set it where the group itself decides the answer for a row the catalog does not list:
+   * every group that takes hand-added models and speaks one protocol (vLLM, OpenRouter,
+   * TokenDance, SiliconFlow). The other gateways hold catalog rows only, each carrying its own
+   * pin, and `custom` / user-defined groups deliberately declare nothing — their whole point
+   * is that the protocol is detected from the endpoint or picked by hand, and a pin here
+   * would take that choice away.
    *
-   * Where it IS set, it outranks every group-shape guess in the app: the add-model dialog
-   * preselects it, moving an entry into the group rewrites the entry to it, the API-key env
-   * hint resolves against it, and protocol detection is skipped because the group already
-   * knows. Read it through providerClientType rather than reaching for the field, so those
-   * call sites keep answering as one.
+   * Where it IS set, a new Project writes it as the group's `[providers.<id>]` protocol
+   * (catalogGroupConnection), and the rows — models added by hand included — follow that
+   * table. A reference value like gatewayBaseUrl: what the app reads at runtime is the file's
+   * table. Read it through providerClientType rather than reaching for the field.
    */
   clientType?: string;
   /**
@@ -238,7 +252,11 @@ export interface ModelCatalogEntry {
   supportsVision: boolean;
   /** MMSP client type: required when an id cannot be auto-routed or a shared protocol must be pinned. */
   clientType?: string;
-  /** Preset base URL: inlined into gateway entries so only an API key is required. */
+  /**
+   * Preset base URL, so only an API key is required. A new Project stores it once: on the
+   * group's `[providers.<id>]` table when it is the group's endpoint (catalogGroupConnection),
+   * else on the row itself (catalogModelEntry). Never read when a request is built.
+   */
   baseUrl?: string;
   /**
    * The seller no longer offers this row, but Projects created while it did still carry it: a
@@ -324,6 +342,11 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://tokendance.space/keys",
     modelsUrl: "https://tokendance.space/models",
     gatewayBaseUrl: TOKENDANCE_BASE_URL,
+    // Every preset speaks Chat Completions, and the group takes models added by hand
+    // (`addable`), which follow the group: a new Project's `[providers.tokendance]` carries
+    // this pin, so such a row resolves to it.
+    clientType: "openai-chat",
+    addable: true,
     recommended: true,
     // https://tokendance.space/docs/api-key-oauth
     oauth: {
@@ -340,8 +363,10 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
     id: PENGUIN_GO_PROVIDER_ID,
     label: "Penguin Go",
-    // The authorization flow writes one inlined relay key across the group. Keep the env
-    // names private to this relay so the UI never suggests using a vendor credential here.
+    // The authorization flow writes the relay key once, on the group's `[providers.penguin-go]`
+    // table. Keep the env names private to this relay so the UI never suggests using a vendor
+    // credential here. Every row names the relay, so a new Project writes that endpoint on the
+    // group; its rows sit on two protocols, so each row stores its own.
     envKey: "PENGUIN_GO_API_KEY",
     envBaseUrlKey: "PENGUIN_GO_BASE_URL",
     apiKeyUrl: "https://token.penguin.ooo/",
@@ -350,10 +375,11 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   },
   {
     // One key serves the whole group, but its models sit on three protocols (see the group's
-    // block comment in MODEL_CATALOG), so no group-level pin. The env pair records what its
-    // Chat Completions majority's client reads, and a model added here by hand gets the preset
-    // base URL below with openai-chat. Like every gateway's, a keyless row is refused that
-    // fallback (modelEnvFallback): the key goes on the rows.
+    // block comment in MODEL_CATALOG), so no group-level pin: a new Project writes each row's
+    // protocol on the row, and the Messages base on the seven rows that use it. The env pair
+    // records what its Chat Completions majority's client reads. Like every gateway's, a
+    // keyless row is refused that fallback (modelEnvFallback): the key goes on the group or
+    // the row.
     id: "opencode-go",
     label: "OpenCode Go",
     envKey: "OPENAI_API_KEY",
@@ -383,6 +409,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // The whole group speaks the Responses API, which OpenRouter serves at the preset base
     // URL below for every upstream — presets and user-added entries alike.
     clientType: "openai-responses",
+    // The catalog lists a fraction of what OpenRouter serves, so the group takes more.
+    addable: true,
   },
   {
     id: "fireworks",
@@ -425,6 +453,9 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://cloud.siliconflow.cn/me/account/ak",
     modelsUrl: "https://cloud.siliconflow.cn/models",
     gatewayBaseUrl: SILICONFLOW_BASE_URL,
+    // As TokenDance: Chat Completions throughout, and models added by hand follow the group.
+    clientType: "openai-chat",
+    addable: true,
   },
   {
     id: "zhipu",
@@ -482,8 +513,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // because its OAuth requires a client secret the desktop App cannot keep locally, not
     // because inference requests are routed through that bridge.
     //
-    // The endpoint host is still inlined on every preset row; the row's own `client_type` tells
-    // the frontend which MMSP protocol that upstream model uses, as with Penguin Go.
+    // Every preset row names the endpoint and one protocol in the catalog, so a new Project
+    // writes both on the group's `[providers.modelscope]` table and the rows follow it.
     id: MODELSCOPE_PROVIDER_ID,
     label: "ModelScope",
     envKey: "OPENAI_API_KEY",
@@ -735,8 +766,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   //
   // Protocol: every row pins `openai-responses`. OpenRouter serves the Responses API at
   // {base}/responses for every upstream, at the same https://openrouter.ai/api/v1 base URL
-  // the rows already carry, and the group pins the same protocol so an entry added to it by
-  // hand inherits it. The generic Responses client sends a text-only tool result as a plain
+  // the rows already carry, and the group pins the same protocol, which a new Project writes on
+  // `[providers.openrouter]`, so an entry added to it by hand follows it. The generic Responses client sends a text-only tool result as a plain
   // string and replays reasoning items only where the upstream returned them.
   //
   // Price buckets: cache_read stores the published input_cache_read
@@ -2891,15 +2922,14 @@ export function providerInfo(providerId: string): ModelProviderInfo | undefined 
  * The protocol a group pins on every one of its entries (ModelProviderInfo.clientType), or
  * undefined when the group pins none — an unknown id (a user-defined group) included.
  *
- * Two groups pin: vLLM, whose models are served by the user's own vLLM adapter, and
+ * Four groups pin: vLLM, whose models are served by the user's own vLLM adapter,
  * OpenRouter, whose models all speak the Responses API OpenRouter serves at its preset base
- * URL.
+ * URL, and TokenDance and SiliconFlow, whose models all speak Chat Completions.
  *
- * The single entry point for the pin, so the places that decide a saved model's client_type
- * cannot drift apart: the web add-model dialog's default, moving an entry between groups,
- * the last-resort protocol on the save paths that do not probe, the env-var hint, and the
- * CLI's `config model add`. A group without a pin keeps whatever those call sites already
- * derive from its shape.
+ * A reference value, read when a file is written from the catalog (catalogGroupConnection:
+ * a new Project, "Add new models" for a group new to the file, "Restore defaults") and by
+ * nothing that builds or judges a request: at runtime a group's protocol is its
+ * `[providers.<id>]` table's.
  */
 export function providerClientType(providerId: string): string | undefined {
   return providerInfo(providerId)?.clientType;
@@ -2922,8 +2952,9 @@ export function providerClientType(providerId: string): string | undefined {
  * all is a separate, wider rule: isAddableGroup.
  *
  * Every other group answers the protocol question by itself and therefore routes any id the
- * endpoint serves: `custom` and user-defined groups detect or pick it, a gateway inherits its
- * preset's, and a group-level pin (OpenRouter, vLLM) hands it to every entry.
+ * endpoint serves: `custom` and user-defined groups detect or pick it, and a gateway's or
+ * vLLM's rows speak the protocol their group's `[providers.<id>]` table or the row itself
+ * stores (a new Project writes it there).
  */
 export function isVendorGroup(providerId: string): boolean {
   const info = providerInfo(providerId);
@@ -2955,11 +2986,12 @@ export function unroutableVendorModel(
 }
 
 /**
- * Whether models may be added to this group by hand: `custom`, vLLM (ModelProviderInfo.addable)
- * and every user-defined group, i.e. an id this catalog does not know. Every other built-in
- * group — the first-party vendors and the gateways — carries its catalog presets and the rows
- * it already stores: the models page offers no add-model entry point there, and the models PUT
- * and the CLI's `config model add` refuse a new row that is not a preset (unaddableModel).
+ * Whether models may be added to this group by hand: `custom`, vLLM, OpenRouter, TokenDance,
+ * SiliconFlow (ModelProviderInfo.addable) and every user-defined group, i.e. an id this
+ * catalog does not know. Every other built-in group — the first-party vendors and the other
+ * gateways — carries its catalog presets and the rows it already stores: the models page
+ * offers no add-model entry point there, and the models PUT and the CLI's `config model add`
+ * refuse a new row that is not a preset (unaddableModel).
  */
 export function isAddableGroup(providerId: string): boolean {
   const info = providerInfo(providerId);
@@ -3122,6 +3154,12 @@ export function sameEndpoint(a: string, b: string): boolean {
   return na !== undefined && na === norm(b);
 }
 
+/** Client-type equality as routing sees it: canonical spelling (canonicalClientType), case and surrounding space ignored. */
+export function sameClientType(a: string, b: string): boolean {
+  const norm = (value: string): string => canonicalClientType(value.trim())!.toLowerCase();
+  return norm(a) === norm(b);
+}
+
 /** What the credential rule reads off a model entry: the paired reference, the pinned protocol and the endpoint. */
 export interface ModelCredentialShape {
   provider: string;
@@ -3193,22 +3231,35 @@ export function modelEnvFallback(entry: ModelCredentialShape): ModelEnvFallback 
 }
 
 /**
- * The variable a keyless entry added to this group with the group's defaults falls back to,
- * or `undefined` when such an entry gets none: gateways (a preset base URL), the pinned
- * self-hosted group (vLLM), custom and user-defined groups all point away from the vendors'
- * own endpoints. The group-level key dialog's hint and the group header read this.
+ * The variable a keyless row that follows this group's connection falls back to, or
+ * `undefined` when such a row gets none — the group-level key dialog's hint. Judged on the
+ * group's `[providers.<id>]` values as the file stores them (`group`), never on the catalog's:
+ *
+ * - only a first-party vendor group (isVendorGroup) has one at all: gateways, vLLM, custom and
+ *   user-defined groups exist to point away from the vendors' own endpoints;
+ * - a vendor variable while the group leaves its rows on the vendor's own endpoint (no base
+ *   URL, or one of VENDOR_ENDPOINTS') and on a client that reads that variable (no protocol,
+ *   or one whose pair it is) — the same destination rule modelEnvFallback applies per row;
+ * - a provider-scoped variable (the Penguin Go relay's) while the group names an endpoint:
+ *   the relay key never travels to a vendor's default endpoint.
  */
-export function providerEnvFallbackKey(providerId: string): string | undefined {
-  const info = providerInfo(providerId);
-  if (
-    info === undefined ||
-    info.id === "custom" ||
-    info.gatewayBaseUrl !== undefined ||
-    info.clientType !== undefined
-  ) {
+export function providerEnvFallbackKey(
+  providerId: string,
+  group: ProviderConnectionShape | undefined,
+): string | undefined {
+  if (!isVendorGroup(providerId)) return undefined;
+  const envKey = providerInfo(providerId)!.envKey;
+  const baseUrl = group?.baseUrl?.trim() || undefined;
+  const official = VENDOR_ENDPOINTS[envKey];
+  if (official === undefined) return baseUrl !== undefined ? envKey : undefined;
+  const clientType = canonicalClientType(group?.clientType?.trim() || undefined)?.toLowerCase();
+  if (clientType !== undefined && `${MMSP_CLIENTS[clientType]?.env}_API_KEY` !== envKey) {
     return undefined;
   }
-  return info.envKey;
+  if (baseUrl !== undefined && !official.some((own) => sameEndpoint(own, baseUrl))) {
+    return undefined;
+  }
+  return envKey;
 }
 
 /**
@@ -3312,18 +3363,201 @@ export function endpointEnvApiKey(
  * defaults point away from the vendor (the vLLM presets, a custom row saved without an
  * endpoint) does fall back to OPENAI_API_KEY under the rule, but presenting that as "key
  * configured" would encourage exactly the misconfiguration that sends the OpenAI key and a
- * self-hosted model id to api.openai.com. The preview therefore needs the row to name a vendor
- * endpoint itself, or to sit in a group whose defaults are the vendor's (providerEnvFallbackKey).
- * The server's `GET /models` preview and the web dialog's hint both read this, so the two
- * cannot disagree.
+ * self-hosted model id to api.openai.com.
+ *
+ * `entry` is the row's EFFECTIVE shape (effectiveConnection: the file's values, row then
+ * group), and the preview needs one of:
+ *
+ * - an effective base URL — the fallback rule already guarantees it is the vendor's own (or,
+ *   for the Penguin Go relay, that the relay variable goes with it);
+ * - no base URL, in a built-in group other than `custom`, on the client the id's family names
+ *   anyway (no protocol, or that very client — what a DeepSeek row pinned to
+ *   `deepseek-official` speaks): the request goes to the vendor's own endpoint with the
+ *   vendor's key. A generic or self-hosted protocol with no endpoint (the vLLM presets, a
+ *   custom row) is the misconfiguration above, and a relay variable with no relay endpoint is
+ *   refused by resolveModelCredential.
+ *
+ * The server's `GET /models` preview, the web dialog's hint and the CLI's list read this, so
+ * they cannot disagree.
  */
 export function modelEnvPreviewKey(entry: ModelCredentialShape): string | undefined {
   const fallback = modelEnvFallback(entry);
   if (fallback === undefined) return undefined;
-  if (entry.baseUrl?.trim() || providerEnvFallbackKey(entry.provider) !== undefined) {
-    return fallback.envKey;
+  if (entry.baseUrl?.trim()) return fallback.envKey;
+  if (!fallback.readByClient) return undefined;
+  const info = providerInfo(entry.provider);
+  if (info === undefined || info.id === "custom") return undefined;
+  const pinned = entry.clientType?.trim();
+  return !pinned || routedClientType(entry.modelId, pinned) === routedClientType(entry.modelId)
+    ? fallback.envKey
+    : undefined;
+}
+
+/** Where an effective connection value came from: the row, its group's table, or nowhere. */
+export type ConnectionSource = "model" | "provider" | "none";
+
+/** A group's `[providers.<id>]` connection as the resolver reads it (providerConnectionShape). */
+export interface ProviderConnectionShape {
+  baseUrl?: string | undefined;
+  clientType?: string | undefined;
+  apiKey?: string | undefined;
+}
+
+/** The connection a request for one row is built with, and where each value came from. */
+export interface EffectiveConnection {
+  baseUrl?: string;
+  baseUrlSource: ConnectionSource;
+  clientType?: string;
+  clientTypeSource: ConnectionSource;
+  apiKey?: string;
+  /** No "env" here: whether the environment lends a key is modelEnvFallback's call, made on this shape afterwards. */
+  apiKeySource: ConnectionSource;
+}
+
+/** `[providers.<id>]` -> the resolver's shape (snake -> camel); undefined in, undefined out. */
+export function providerConnectionShape(
+  p: ProviderConnection | undefined,
+): ProviderConnectionShape | undefined {
+  if (p === undefined) return undefined;
+  return { baseUrl: p.base_url, clientType: p.client_type, apiKey: p.api_key };
+}
+
+/** The first candidate holding a non-blank value, with its source; blank and absent are the same. */
+function firstPresent<S extends string>(
+  candidates: ReadonlyArray<readonly [string | undefined, S]>,
+): { value?: string; source: S | "none" } {
+  for (const [value, source] of candidates) {
+    if (value !== undefined && value.trim() !== "") return { value, source };
   }
-  return undefined;
+  return { source: "none" };
+}
+
+/** `scheme://host[:port]` of a URL (the port only when not the scheme's default), or undefined when it does not parse. */
+function endpointOrigin(value: string): string | undefined {
+  try {
+    const u = new URL(value.trim());
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether a group's key reaches a row: a key belongs to the endpoint it was issued for (the
+ * principle PRN-021 applies to environment keys). It reaches the row when the row has no base
+ * URL of its own — the row goes where the group's clients go — or when the row's own base URL
+ * has the same origin (scheme, host, port) as the group's: OpenCode Go's Messages rows sit on
+ * another path of the host the group's base URL names, and one key serves both. A row with its
+ * own base URL in a group that has none, or on another origin (a preset carrying its own host,
+ * like custom's Atria; one model re-pointed at a proxy), goes somewhere the group's key was
+ * not issued for, and gets none: it needs a key of its own.
+ *
+ * Blank counts as absent on both sides; a base URL that does not parse matches nothing.
+ * effectiveConnection applies it, and the counts that ask "how many rows use the group key"
+ * (the server's, the models page's) ask here.
+ */
+export function groupKeyReaches(
+  rowBaseUrl: string | undefined,
+  groupBaseUrl: string | undefined,
+): boolean {
+  const own = rowBaseUrl?.trim();
+  if (!own) return true;
+  const group = groupBaseUrl?.trim();
+  if (!group) return false;
+  const origin = endpointOrigin(own);
+  return origin !== undefined && origin === endpointOrigin(group);
+}
+
+/**
+ * The connection a row is actually used with — the file's values and nothing else: per field,
+ * the first non-blank value of
+ *
+ *   base_url:    row -> provider -> none
+ *   client_type: row -> provider -> none
+ *   api_key:     row -> provider (only where groupKeyReaches) -> none
+ *
+ * where "provider" is the group's `[providers.<id>]` table (providerConnectionShape) and
+ * "none" means the client library's own default: no base URL = the routed client's default
+ * endpoint (or its `*_BASE_URL` variable), no client type = MMSP routes by the id's family,
+ * no key = the environment, where modelEnvFallback allows it on the EFFECTIVE shape.
+ * client_type passes canonicalClientType.
+ *
+ * The catalog is not a layer here: it is a reference written into a file once (a new Project,
+ * "Add new models", "Restore defaults"), and a value the file does not hold is the client's
+ * default, whatever the catalog says. A row's own value always wins over its group's, so a
+ * group protocol never overrides the protocol a row stores (Penguin Go's and OpenCode Go's
+ * rows each store theirs). Pure and browser-safe: the server's `GET /models`, the models page
+ * and the CLI read the same answer.
+ */
+export function effectiveConnection(
+  entry: ModelCredentialShape & { apiKey?: string | undefined },
+  group: ProviderConnectionShape | undefined,
+): EffectiveConnection {
+  const baseUrl = firstPresent([
+    [entry.baseUrl, "model"],
+    [group?.baseUrl, "provider"],
+  ]);
+  const clientType = firstPresent([
+    [entry.clientType, "model"],
+    [group?.clientType, "provider"],
+  ]);
+  const apiKey = firstPresent([
+    [entry.apiKey, "model"],
+    [groupKeyReaches(entry.baseUrl, group?.baseUrl) ? group?.apiKey : undefined, "provider"],
+  ]);
+  return {
+    ...(baseUrl.value !== undefined ? { baseUrl: baseUrl.value } : {}),
+    baseUrlSource: baseUrl.source,
+    ...(clientType.value !== undefined
+      ? { clientType: canonicalClientType(clientType.value)! }
+      : {}),
+    clientTypeSource: clientType.source,
+    ...(apiKey.value !== undefined ? { apiKey: apiKey.value } : {}),
+    apiKeySource: apiKey.source,
+  };
+}
+
+/**
+ * The credential and protocol a client is built with for a config row: effectiveConnection,
+ * then resolveModelCredential on the EFFECTIVE shape — so PRN-021's destination rule judges
+ * the endpoint the request really goes to (a group pointed at a proxy gets no vendor key from
+ * the environment) — with the effective clientType returned beside it.
+ *
+ * `override` is the caller's explicit pair (Session creation's apiKey / baseUrl) and sits above
+ * the row's own values; blank counts as absent there too. An override base URL is the row's
+ * own for groupKeyReaches. Throws ModelCredentialError exactly where resolveModelCredential
+ * does.
+ */
+export function resolveEntryCredential(
+  entry: Pick<ModelEntry, "provider" | "model_id" | "client_type" | "base_url" | "api_key">,
+  provider: ProviderConnectionShape | undefined,
+  override: { apiKey?: string | undefined; baseUrl?: string | undefined } = {},
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): { apiKey?: string; baseUrl?: string; clientType?: string } {
+  const effective = effectiveConnection(
+    {
+      provider: entry.provider,
+      modelId: entry.model_id,
+      clientType: entry.client_type,
+      baseUrl: override.baseUrl?.trim() ? override.baseUrl : entry.base_url,
+      apiKey: override.apiKey?.trim() ? override.apiKey : entry.api_key,
+    },
+    provider,
+  );
+  const credential = resolveModelCredential(
+    {
+      provider: entry.provider,
+      modelId: entry.model_id,
+      clientType: effective.clientType,
+      baseUrl: effective.baseUrl,
+      apiKey: effective.apiKey,
+    },
+    env,
+  );
+  return {
+    ...credential,
+    ...(effective.clientType !== undefined ? { clientType: effective.clientType } : {}),
+  };
 }
 
 /**
@@ -3374,13 +3608,81 @@ export function fastModeProtocol(
 }
 
 /**
+ * The value every one of `values` holds, by `same`, or undefined when one lacks it, two
+ * differ, or there are none.
+ */
+function sharedValue(
+  values: readonly (string | undefined)[],
+  same: (a: string, b: string) => boolean,
+): string | undefined {
+  const first = values[0];
+  if (first === undefined) return undefined;
+  return values.every((v) => v !== undefined && same(v, first)) ? first : undefined;
+}
+
+/**
+ * The connection the catalog gives a built-in group when a file is written from it — a new
+ * Project, "Add new models" for a group new to the file, "Restore defaults": its gateway
+ * endpoint (`gatewayBaseUrl`, else the one base URL every catalog row of the group carries)
+ * and its one protocol (the group's pin, providerClientType, else the one pin every catalog
+ * row of the group carries; canonical spelling). Retired rows count: "Restore defaults"
+ * writes them too, so they must store their difference from the same table.
+ *
+ * Undefined for `custom` (it holds the user's own endpoints), for an id the catalog does not
+ * know, and for a group with neither — the first-party vendors, whose rows go to the
+ * client's defaults. A reference value: nothing reads it when a request is built.
+ */
+export function catalogGroupConnection(
+  providerId: string,
+): { base_url?: string; client_type?: string } | undefined {
+  const info = providerInfo(providerId);
+  if (info === undefined || info.id === "custom") return undefined;
+  const rows = MODEL_CATALOG.filter((m) => m.provider === providerId);
+  const baseUrl =
+    info.gatewayBaseUrl ??
+    sharedValue(
+      rows.map((m) => m.baseUrl),
+      sameEndpoint,
+    );
+  const clientType = canonicalClientType(
+    providerClientType(providerId) ??
+      sharedValue(
+        rows.map((m) => m.clientType),
+        sameClientType,
+      ),
+  );
+  if (baseUrl === undefined && clientType === undefined) return undefined;
+  return {
+    ...(baseUrl !== undefined ? { base_url: baseUrl } : {}),
+    ...(clientType !== undefined ? { client_type: clientType } : {}),
+  };
+}
+
+/**
+ * `[providers.<id>]` for every built-in group with a catalogGroupConnection, in the catalog's
+ * group order — what a new Project's file stores beside presetModelEntries' rows. A fresh
+ * object on every call, so a caller may change it.
+ */
+export function presetProviderTable(): ProviderTable {
+  const table: ProviderTable = {};
+  for (const p of MODEL_PROVIDERS) {
+    const connection = catalogGroupConnection(p.id);
+    if (connection !== undefined) table[p.id] = connection;
+  }
+  return table;
+}
+
+/**
  * Catalog -> preset ModelEntry list (shared by defaultProjectConfig and the server's initial
  * config, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
- * separate fields (`model_id` is the plain upstream id); models whose upstream id can be
- * auto-routed by MMSP leave client_type unset; gateway models (OpenRouter / SiliconFlow)
- * always pin a client_type — openai-responses for the OpenRouter rows, each OpenCode Go row's
- * own endpoint protocol, openai-chat for the rest — and inline a preset base_url. No secrets
- * are included, so only an API key is needed.
+ * separate fields (`model_id` is the plain upstream id). The facts a row stores are the
+ * context window, the price and `vision = false`, plus the row's protocol and endpoint where
+ * they differ from its group's table in `groups` (catalogModelEntry): beside those tables, the
+ * file alone says where every request goes, and nothing is left for a resolver to fill from
+ * the catalog. `groups` is the `[providers]` table the rows will sit beside — a new Project's
+ * (presetProviderTable, the default), or the file's own when "Add new models" adds rows to an
+ * existing Project, so each added row resolves to its catalog connection whatever the user
+ * has set on its group. No secrets are included, so only an API key is needed.
  *
  * Pricing is written as the LIST price the catalog records (a scheduled row's PEAK price),
  * never a discounted number. What is on disk then stays true whatever promotion is live and
@@ -3388,34 +3690,65 @@ export function fastModeProtocol(
  * file as a per-Project fraction (presetPromotions), and both it and an off-peak tier are
  * applied when the price is read, by the models page and by the cost center alike.
  */
-export function presetModelEntries(): ModelEntry[] {
+export function presetModelEntries(groups: ProviderTable = presetProviderTable()): ModelEntry[] {
+  const catalog = presetProviderTable();
   // A retired row stays in the catalog for the Projects that still carry it, and only for them.
-  return MODEL_CATALOG.filter((m) => m.retired !== true).map(catalogModelEntry);
+  return MODEL_CATALOG.filter((m) => m.retired !== true).map((m) =>
+    catalogModelEntry(m, catalog, groups),
+  );
 }
 
 /**
  * Every catalog row as a ModelEntry, retired rows included, in the shape presetModelEntries
- * writes. This is the list "Sync presets" compares a Project's table against: the sync never adds
- * a retired row, but it updates one the Project already carries like any preset, so a price an
- * older release stored returns to the catalog's (see ModelCatalogEntry.retired).
+ * writes. This is the list "Restore defaults" puts a Project's built-in rows back to: a sync
+ * never adds a retired row, but a restore resets one the Project already carries like any
+ * preset, so a price an older release stored returns to the catalog's (see
+ * ModelCatalogEntry.retired). `groups` as in presetModelEntries.
  */
-export function catalogModelEntries(): ModelEntry[] {
-  return MODEL_CATALOG.map(catalogModelEntry);
+export function catalogModelEntries(groups: ProviderTable = presetProviderTable()): ModelEntry[] {
+  const catalog = presetProviderTable();
+  return MODEL_CATALOG.map((m) => catalogModelEntry(m, catalog, groups));
 }
 
-/** One catalog row as the ModelEntry a Project stores (see presetModelEntries). */
-function catalogModelEntry(m: ModelCatalogEntry): ModelEntry {
+/**
+ * One catalog row as the ModelEntry a Project stores (see presetModelEntries): its facts, and
+ * `client_type` / `base_url` exactly where the row's catalog connection — per field, the
+ * row's own catalog value, else its group's (`catalog`, presetProviderTable) — differs from
+ * the table it will sit beside (`groups`): canonical client types compared, endpoints by
+ * sameEndpoint, a blank table field counting as absent. A row whose group's table carries the
+ * same value stores none and follows the table; a row whose group has no table (custom's
+ * Atria) stores its own.
+ */
+function catalogModelEntry(
+  m: ModelCatalogEntry,
+  catalog: ProviderTable,
+  groups: ProviderTable,
+): ModelEntry {
+  const group = groups[m.provider];
+  const clientType = canonicalClientType(m.clientType ?? catalog[m.provider]?.client_type);
+  const groupClientType = group?.client_type?.trim() || undefined;
+  const ownClientType =
+    clientType !== undefined &&
+    (groupClientType === undefined || !sameClientType(clientType, groupClientType))
+      ? clientType
+      : undefined;
+  const baseUrl = m.baseUrl ?? catalog[m.provider]?.base_url;
+  const groupBaseUrl = group?.base_url?.trim() || undefined;
+  const ownBaseUrl =
+    baseUrl !== undefined && (groupBaseUrl === undefined || !sameEndpoint(baseUrl, groupBaseUrl))
+      ? baseUrl
+      : undefined;
   return {
     provider: m.provider,
     model_id: m.modelId,
     ...(m.contextWindow !== undefined ? { context_window: m.contextWindow } : {}),
-    ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
+    ...(ownClientType !== undefined ? { client_type: ownClientType } : {}),
     ...(m.pricing ? { pricing: { ...m.pricing } } : {}),
     // ModelEntry.vision defaults to supported: only models that don't support images
     // explicitly persist false (drives read_file's hand-off of images to the vision model and input
     // image hand-off, see project-config.ts).
     ...(m.supportsVision ? {} : { vision: false }),
-    ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
+    ...(ownBaseUrl !== undefined ? { base_url: ownBaseUrl } : {}),
   };
 }
 
