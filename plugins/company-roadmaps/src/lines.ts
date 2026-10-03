@@ -110,7 +110,7 @@ export function cloneBrief(args: {
 }
 
 /**
- * The line an employee's desk gets when a person puts it in a roadmap's room: where it is, who
+ * The line an employee's desk gets when a roadmap's opener puts it in its room: where it is, who
  * moderates, and that the room session — not this desk — takes part.
  */
 export function roomJoinedLine(args: {

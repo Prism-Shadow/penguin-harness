@@ -1,7 +1,7 @@
 /**
  * The roadmap state machine, the room relay and the desk deliveries.
  *
- * A roadmap is opened by a person over an existing organization channel (its room) with one
+ * A roadmap is opened by a person or an employee over an organization channel (its room) with one
  * or more employees, the first of whom moderates. For every employee in the room the relay
  * opens a room session — the employee's desk cloned for this discussion — through the
  * organization gateway, and puts every later room message into those sessions through the
@@ -483,7 +483,12 @@ export class RoadmapService {
   // Writes
   // -------------------------------------------------------------------------
 
-  /** A person opens a roadmap over an existing room; a `parent` makes it a roadmap derived to continue a discussion elsewhere. */
+  /**
+   * A person or an employee opens a roadmap over an existing room, or one it opens for itself; a
+   * `parent` makes it a roadmap derived to continue a discussion elsewhere. An employee opening
+   * one — typically because a person asked it to — is recorded as its opener and the room's
+   * creator, and is in the room only when it names itself among the employees.
+   */
   async create(
     projectId: string,
     orgId: string,
@@ -492,13 +497,6 @@ export class RoadmapService {
   ): Promise<WriteResult> {
     const result = await this.withLock(projectId, orgId, async () => {
       const { org, caller, ledger } = await this.open(projectId, orgId, actor);
-      if (caller.agentId !== null) {
-        throw new RoadmapError(
-          403,
-          "people_only",
-          "A roadmap is opened by a person; an employee drafts one as an item of the discussion it is in.",
-        );
-      }
       const name = text(req.name, "name", 120);
       const given = req.channelId === undefined ? null : text(req.channelId, "channelId", 64);
       const employees = this.employeeList(req.employees, org, "employees");
@@ -506,7 +504,7 @@ export class RoadmapService {
       if (given !== null) await this.requireRoom(projectId, orgId, given, employees);
       const number = ledger.nextNumber();
       // The room: the channel named, or one this roadmap opens for itself — unlisted, reached
-      // from the roadmap, with the person who opened it and the employees in it.
+      // from the roadmap, with the employees in it (and the opener, when that is a person).
       const channelId =
         given ??
         (await this.openRoomFor(
