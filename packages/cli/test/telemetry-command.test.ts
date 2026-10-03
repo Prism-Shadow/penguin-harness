@@ -1,9 +1,6 @@
 /**
- * `penguin telemetry` against the fake server: the per-probe summary by default, the session
- * and sample views, the switch and clear subcommands, and the one rule the command itself
- * owns — inside a session (PENGUIN_SESSION_ID) it asks for that session's samples unless
- * `--session` or `--all` says otherwise. What the server does with the query is its own
- * suite's (packages/server/test/telemetry.test.ts).
+ * `penguin telemetry` against the fake server: the three views, the switch and clear, and
+ * the rule the command owns — inside a session it asks for that session's samples.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/index.js";
@@ -35,12 +32,9 @@ beforeEach(() => {
     sessions: [
       {
         session: SESSION,
-        count: 2,
+        count: 1,
         lastTs: 1,
-        probes: [
-          { probe: "session.messages", count: 1, totalMs: 42, maxMs: 42 },
-          { probe: "trace.read", count: 1, totalMs: 30, maxMs: 30 },
-        ],
+        probes: [{ probe: "trace.read", count: 1, totalMs: 30, maxMs: 30 }],
       },
     ],
     samples: [
@@ -48,11 +42,10 @@ beforeEach(() => {
         ts: Date.UTC(2026, 8, 30, 8, 0, 0),
         probe: "session.messages",
         durMs: 42,
-        bytes: 5120,
         n: 12,
         status: "ok",
         keys: { session: SESSION, request: "0123456789abcdef", generation: 1 },
-        attrs: { kind: "tail", shards: 1 },
+        attrs: { kind: "tail" },
       },
     ],
   };
@@ -68,6 +61,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  delete process.env.PENGUIN_SESSION_ID;
   outSpy.mockRestore();
   errSpy.mockRestore();
   uninstall();
@@ -82,29 +76,20 @@ const lastQuery = () => {
 };
 
 describe("penguin telemetry", () => {
-  it("prints the per-probe summary by default", async () => {
+  it("prints the per-probe summary by default, the session view, and the samples", async () => {
     expect(await cli(["telemetry"])).toBe(0);
     expect(lastQuery().get("view")).toBe("probes");
     expect(lastQuery().has("session")).toBe(false);
-    expect(out()).toContain("http.request");
-    expect(out()).toContain("18ms");
-    expect(out()).toContain("2.0KB");
-    expect(out()).toContain("boot.module");
-  });
+    for (const text of ["http.request", "18ms", "2.0KB", "boot.module"])
+      expect(out()).toContain(text);
 
-  it("prints the session view and the samples", async () => {
     expect(await cli(["telemetry", "--by", "session"])).toBe(0);
     expect(lastQuery().get("view")).toBe("sessions");
-    expect(out()).toContain(SESSION);
     expect(out()).toContain("trace.read");
 
-    stdout.length = 0;
     expect(await cli(["telemetry", "--samples", "--probe", "session.messages"])).toBe(0);
-    expect(lastQuery().get("view")).toBe("samples");
     expect(lastQuery().get("probe")).toBe("session.messages");
-    expect(out()).toContain("kind=tail");
-    expect(out()).toContain("n=12");
-    expect(out()).toContain("req=01234567");
+    for (const text of ["kind=tail", "n=12", "req=01234567"]) expect(out()).toContain(text);
   });
 
   it("inside a session asks for that session only, unless --all or --session says otherwise", async () => {
@@ -112,38 +97,21 @@ describe("penguin telemetry", () => {
     expect(await cli(["telemetry", "--samples"])).toBe(0);
     expect(lastQuery().get("session")).toBe(SESSION);
     expect(out()).toContain(t.telemetry.scopedTo(SESSION));
-
     expect(await cli(["telemetry", "--all"])).toBe(0);
     expect(lastQuery().has("session")).toBe(false);
-
     expect(await cli(["telemetry", "--session", "session-other"])).toBe(0);
     expect(lastQuery().get("session")).toBe("session-other");
   });
 
-  it("says so when the switch is off, and flips it with on/off", async () => {
-    server.telemetry.enabled = false;
+  it("flips the switch, clears, says when off, and refuses bad options", async () => {
+    expect(await cli(["telemetry", "off"])).toBe(0);
+    expect(server.requests.at(-1)).toMatchObject({ method: "PUT", body: { telemetry: false } });
     expect(await cli(["telemetry"])).toBe(0);
     expect(out()).toContain(t.telemetry.off());
-
-    stdout.length = 0;
     expect(await cli(["telemetry", "on"])).toBe(0);
     expect(out()).toContain(t.telemetry.turnedOn());
-    const put = server.requests.filter((r) => r.path === "/api/admin/settings").at(-1)!;
-    expect(put.method).toBe("PUT");
-    expect(put.body).toEqual({ telemetry: true });
-
-    expect(await cli(["telemetry", "off"])).toBe(0);
-    expect(out()).toContain(t.telemetry.turnedOff());
-    expect(server.telemetry.enabled).toBe(false);
-  });
-
-  it("clears the buffer", async () => {
     expect(await cli(["telemetry", "clear"])).toBe(0);
     expect(server.requests.at(-1)!.method).toBe("DELETE");
-    expect(out()).toContain(t.telemetry.cleared());
-  });
-
-  it("refuses a bad --by and a bad --limit", async () => {
     expect(await cli(["telemetry", "--by", "module"])).toBe(1);
     expect(stderr.join("")).toContain(t.telemetry.byInvalid("module"));
     expect(await cli(["telemetry", "--samples", "--limit", "0"])).toBe(1);

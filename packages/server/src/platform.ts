@@ -229,7 +229,6 @@ export class Startup {
     await this.orgScheduler.start();
     // Startup adoption sweep: fold Trace-only Sessions into the index. Fire-and-forget —
     // a broken trace shard must not block the boot.
-    const startedAt = performance.now();
     const adoption = this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "trace_adoption_failed" });
     });
@@ -243,14 +242,8 @@ export class Startup {
     const machines = this.machines.start().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "machines_reconnect_failed" });
     });
-    // "Quiet": both sweeps have settled. Telemetry's boot.quiet, measured from here (the
-    // awaited half of this setup is the Startup node's own boot.module sample).
-    if (this.telemetry?.on() === true) {
-      const telemetry = this.telemetry;
-      void Promise.all([adoption, machines]).then(() => {
-        telemetry.record({ probe: "boot.quiet", durMs: performance.now() - startedAt });
-      });
-    }
+    // Telemetry's boot.quiet: until both sweeps have settled (each already catches its own).
+    void this.telemetry?.span("boot.quiet", {}, () => Promise.all([adoption, machines]));
   }
 }
 

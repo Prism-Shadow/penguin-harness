@@ -88,8 +88,7 @@ import { migrate } from "../db/migrations/index.js";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
 import type { Telemetry } from "../mechanisms/telemetry.js";
-import type { TelemetrySampleInput } from "../api/types.js";
-import { TELEMETRY_GENERATION_RESOURCE_ID } from "../telemetry/service.js";
+import { BootTimings } from "../telemetry/boot.js";
 
 /**
  * This server's hot host: the mechanism (@prismshadow/penguin-hmr) with the api ITS platforms
@@ -356,23 +355,8 @@ async function createInner(
     );
   }
   const caps = claim.kind === "claimed" ? claim.caps : null;
-  // Telemetry's boot timings (PRFC-0008): this App's generation number — how many creates this
-  // process has run, counted in the runtime's registry so it survives the swap — and the
-  // phases below, measured unconditionally (a handful of clock reads per boot) and handed to
-  // the Telemetry node once the tree is up, which keeps them only while its switch is on.
-  const createdAt = performance.now();
-  const generation =
-    (ctx.resources.claim<{ n: number }>(TELEMETRY_GENERATION_RESOURCE_ID)?.n ?? 0) + 1;
-  ctx.resources.register(TELEMETRY_GENERATION_RESOURCE_ID, { n: generation });
-  const bootTimings: TelemetrySampleInput[] = [];
-  const timed = <T>(probe: string, run: () => T): T => {
-    const start = performance.now();
-    try {
-      return run();
-    } finally {
-      bootTimings.push({ probe, durMs: performance.now() - start });
-    }
-  };
+  // Telemetry's boot timings and this App's generation number (telemetry/boot.ts).
+  const boot = new BootTimings(ctx.resources);
   // A pushed platform carries its own migrations, which is the only way the tables its
   // business needs can reach a runtime older than they are — that runtime will never grow
   // them by restarting, because it does not have them. swapPath: this boot can be rolled
@@ -380,7 +364,7 @@ async function createInner(
   // applied here; the boot never fails on them. Before any node is created: every repo below
   // prepares its statements against this schema.
   if (caps !== null) {
-    const { deferred } = timed("boot.migrate", () => migrate(caps.db, { swapPath: true }));
+    const { deferred } = boot.time("boot.migrate", () => migrate(caps.db, { swapPath: true }));
     if (deferred.length > 0) {
       console.log(`[platform] left for the runtime's next restart: ${deferred.join(", ")}`);
     }
@@ -478,7 +462,7 @@ async function createInner(
           // server's own id says which of those tables are its own.
           new MachinesRepo(caps.db).ownId(),
         ).catch(restoreGeneration);
-  bootTimings.push({ probe: "boot.plugins", durMs: performance.now() - pluginsAt });
+  boot.since("boot.plugins", pluginsAt);
   // Plus whatever a test stood up in process, which no closure could name (see the id).
   const injected = ctx.resources.claim<PluginHost | null>(HMR_TEST_PLUGINS_RESOURCE_ID);
   if (injected != null && typeof injected.entries === "function") {
@@ -531,11 +515,11 @@ async function createInner(
           resources: ctx.resources,
           parked: parkedModules(context),
           onCreated: (module, ms) =>
-            bootTimings.push({ probe: "boot.module", durMs: ms, attrs: { module } }),
+            boot.add({ probe: "boot.module", durMs: ms, attrs: { module } }),
         },
       ),
     ).catch(restoreGeneration));
-    bootTimings.push({ probe: "boot.modules", durMs: performance.now() - modulesAt });
+    boot.since("boot.modules", modulesAt);
     business = tree;
     terminals = tree.api<TerminalManager>("TerminalModule", "terminals");
   }
@@ -643,10 +627,7 @@ async function createInner(
   const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
   const logNode = business?.api<Log>("RuntimeModule", "Log") ?? null;
   const telemetry = business?.api<Telemetry>("TelemetryModule", "Telemetry") ?? null;
-  if (telemetry?.on() === true) {
-    for (const sample of bootTimings) telemetry.record(sample);
-    telemetry.record({ probe: "boot.create", durMs: performance.now() - createdAt });
-  }
+  boot.flush(telemetry);
 
   return {
     log: (line) => (logNode !== null ? logNode.line(line) : console.log(line)),

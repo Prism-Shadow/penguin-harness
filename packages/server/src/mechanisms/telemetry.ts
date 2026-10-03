@@ -28,6 +28,18 @@ export abstract class Telemetry extends Interface<{
   record(sample: TelemetrySampleInput): TelemetrySample | null;
   /** Runs `run` with `keys` added to the scope every sample recorded inside it inherits; while off, just runs it. */
   within(keys: TelemetryKeys, run: () => Promise<unknown>): Promise<unknown>;
+  /**
+   * Times `run` as one `probe` sample — `ok`, or `error` when it throws — with `keys` in the
+   * scope of every sample recorded inside it, and `describe` adding what the result says (a
+   * count, a size, attributes). While off, just runs it: this is the one call a measured
+   * module makes, so the module itself holds no clock, no scope and no sample.
+   */
+  span<T>(
+    probe: string,
+    keys: TelemetryKeys,
+    run: () => Promise<T>,
+    describe?: (result: T) => Pick<TelemetrySampleInput, "n" | "bytes" | "attrs">,
+  ): Promise<T>;
   /** The buffered samples matching the query, oldest first. */
   samples(query: TelemetryQuery): TelemetrySample[];
   /** Empties the buffer. */

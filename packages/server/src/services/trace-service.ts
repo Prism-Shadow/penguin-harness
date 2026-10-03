@@ -12,8 +12,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
-import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import {
   attachedFileLine,
   attachedImageLine,
@@ -84,13 +83,6 @@ import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { Telemetry } from "../mechanisms/telemetry.js";
-
-/** What one windowed read touched on disk, summed into its session.messages sample. */
-interface ShardTally {
-  session: string;
-  shards: number;
-  bytes: number;
-}
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -299,8 +291,6 @@ export class TraceService implements Traces {
   @Use() private readonly projectConfig?: ProjectConfigStore;
   /** Telemetry's session.messages and trace.read (PRFC-0008); narrow tests omit it. */
   @Use() private readonly telemetry?: Telemetry;
-  /** The windowed read in progress, while telemetry is on: readShard adds to it. */
-  readonly #tally = new AsyncLocalStorage<ShardTally>();
   /**
    * The Project's current price for a paired reference — the same lookup the cost center
    * prices `usage_records` with, so the analysis' per-turn cost and the toolbar's figure come
@@ -351,30 +341,10 @@ export class TraceService implements Traces {
   /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
   private async readShard(path: string): Promise<OmniMessage[]> {
     this.observeShardRead?.(path);
-    const telemetry = this.telemetry;
-    if (telemetry === undefined || !telemetry.on()) return readTraceTolerant(path);
-    const start = performance.now();
-    const messages = await readTraceTolerant(path);
-    const durMs = performance.now() - start;
-    const bytes = await fs.stat(path).then(
-      (st) => st.size,
-      () => undefined,
-    );
-    const tally = this.#tally.getStore();
-    if (tally !== undefined) {
-      tally.shards += 1;
-      tally.bytes += bytes ?? 0;
-    }
-    telemetry.record({
-      probe: "trace.read",
-      durMs,
-      n: messages.length,
-      ...(bytes !== undefined ? { bytes } : {}),
-      ...(tally !== undefined ? { keys: { session: tally.session } } : {}),
-      // The shard's path is content (a project and an agent name): only its hash is kept.
-      attrs: { shard: createHash("sha256").update(path).digest("hex").slice(0, 12) },
-    });
-    return messages;
+    const read = () => readTraceTolerant(path);
+    return this.telemetry
+      ? this.telemetry.span("trace.read", {}, read, (m) => ({ n: m.length }))
+      : read();
   }
 
   /** Deletes all of this Session's Trace files (called when the Session is deleted); the index rows go with them. */
@@ -609,37 +579,13 @@ export class TraceService implements Traces {
     sessionId: string,
     req: MessagesPageRequest,
   ): Promise<MessagesPageResult> {
-    const telemetry = this.telemetry;
-    if (telemetry === undefined || !telemetry.on()) {
-      return this.messagesPage(projectId, agentId, sessionId, req);
-    }
-    // Telemetry's session.messages: the whole windowed read, with what it read from disk.
-    const tally: ShardTally = { session: sessionId, shards: 0, bytes: 0 };
-    const start = performance.now();
-    const record = (status: string, result?: MessagesPageResult) =>
-      telemetry.record({
-        probe: "session.messages",
-        durMs: performance.now() - start,
-        bytes: tally.bytes,
-        ...(result !== undefined ? { n: result.messages.length } : {}),
-        status,
-        keys: { session: sessionId },
-        attrs: {
-          kind: req.kind,
-          shards: tally.shards,
-          ...(result !== undefined ? { reachesEnd: result.reachesEnd } : {}),
-        },
-      });
-    try {
-      const result = await this.#tally.run(tally, () =>
-        this.messagesPage(projectId, agentId, sessionId, req),
-      );
-      record("ok", result);
-      return result;
-    } catch (err) {
-      record("error");
-      throw err;
-    }
+    const read = () => this.messagesPage(projectId, agentId, sessionId, req);
+    if (!this.telemetry) return read();
+    // The Trace files it reads are this sample's trace.read samples, keyed by the same session.
+    return this.telemetry.span("session.messages", { session: sessionId }, read, (r) => ({
+      n: r.messages.length,
+      attrs: { kind: req.kind, reachesEnd: r.reachesEnd },
+    }));
   }
 
   private async messagesPage(
