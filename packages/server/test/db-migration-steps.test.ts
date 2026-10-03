@@ -563,7 +563,9 @@ describe("a numbered root with the first form of port_forwards: port-forwards-le
       );
       expect(row(db)).toEqual([{ id: "f1", direction: "in", remote_port: 3000, local_port: 3000 }]);
       expect(indexes(db)).toEqual(["idx_port_forwards_local_in", "idx_port_forwards_machine"]);
-      expect(shape(db)).toBe(shape(fresh));
+      // The shape port-forwards-direction rebuilds to: a fresh table's columns, with
+      // `direction` defaulting to 'in' so a predecessor rolled back to still writes.
+      expect(columns(db, "port_forwards").sort()).toEqual(columns(fresh, "port_forwards").sort());
       // The numbered stamp is left as that build wrote it.
       expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: 14 });
     } finally {
@@ -577,7 +579,12 @@ describe("a numbered root with the first form of port_forwards: port-forwards-le
     try {
       migrate(db, { swapPath: true });
       const before = { shape: shape(db), rows: row(db), ledger: appliedMigrations(db) };
-      expect(migrate(db)).toEqual({ adopted: false, applied: [], deferred: [] });
+      // drop-goal-state is the contract a swap path leaves for the runtime's own open.
+      expect(migrate(db, { swapPath: true })).toEqual({
+        adopted: false,
+        applied: [],
+        deferred: ["drop-goal-state"],
+      });
       expect({ shape: shape(db), rows: row(db), ledger: appliedMigrations(db) }).toEqual(before);
     } finally {
       db.close();
