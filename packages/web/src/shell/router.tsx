@@ -40,8 +40,6 @@ import { SessionsProvider } from "../state/sessions";
 import { CompanyProvider } from "../state/company";
 import { AppLayout } from "../components/layout/app-layout";
 import { LoginPage } from "../pages/login";
-import { MachinePortsPage } from "../features/ports/machine-ports-page";
-import { DashboardPage } from "../features/dashboard/dashboard-page";
 import { PAGES, type PageEntry } from "./page-table";
 import type { WebAppPage } from "./page-table";
 import { webAppDeps } from "./deps";
@@ -50,10 +48,7 @@ import { webAppDeps } from "./deps";
  * The renderers the manifest may name. A page is a module.json entry plus one line here;
  * a server-contributed page renders only when its `builtin` is in this registry.
  */
-const BUILTIN_PAGES: Record<string, React.ComponentType> = {
-  MachinePortsPage,
-  DashboardPage,
-};
+const BUILTIN_PAGES: Record<string, React.ComponentType> = {};
 
 function renderPage(page: PageEntry): React.ReactNode {
   if ("iframe" in page.renderer) {

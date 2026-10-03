@@ -4,29 +4,6 @@
     "web": "WebShell"
   },
   "contributes": {
-    "web.pages": [
-      {
-        "id": "web.machine-ports",
-        "key": "machine-ports",
-        "path": "/machines/:machineId/ports",
-        "nav": "none",
-        "admin": true,
-        "released": true,
-        "renderer": {
-          "builtin": "MachinePortsPage"
-        }
-      },
-      {
-        "id": "web.dashboard",
-        "key": "dashboard",
-        "path": "/dashboard",
-        "nav": "none",
-        "admin": false,
-        "released": true,
-        "renderer": {
-          "builtin": "DashboardPage"
-        }
-      }
-    ]
+    "web.pages": []
   }
 }

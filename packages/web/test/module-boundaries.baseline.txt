@@ -264,5 +264,3 @@ state/sessions.tsx -> features/builtin-browser/browser-events.ts
 state/sessions.tsx -> features/schedules/schedule-store.ts
 web-app/router.tsx -> features/chat/use-runtime-languages.ts
 web-app/router.tsx -> features/company/company-nav.ts
-web-app/router.tsx -> features/dashboard/dashboard-page.tsx
-web-app/router.tsx -> features/ports/machine-ports-page.tsx
