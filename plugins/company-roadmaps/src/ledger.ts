@@ -68,7 +68,7 @@ export interface Approval {
   at: string;
 }
 
-/** The two approvals a proposal item needs before its proposal may be created. */
+/** The two approvals a proposal item needs; the second creates its proposal. */
 export type ApprovalRole = "person" | "moderator";
 
 /**
