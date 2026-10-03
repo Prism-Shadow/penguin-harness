@@ -64,8 +64,12 @@ given these and `example-benchmark` once each, so a deleted one stays deleted.
   repository's helper named the host a no-network task allows. The score was the reward × 100,
   the cost the trial's `agent_result.cost_usd`, the duration the agent phase, and the Session id
   `harbor:<trial>`; the trial's files stayed under the Benchmark's `.jobs/`. There was no Vault
-  step. `benchmark-design` left Harbor Benchmarks alone, and `agent-optimization` used them like
-  any published Benchmark without reading the tasks' tests or the verifier's output.
+  step. A caller ran at most four cells at a time. Terminal-Bench and Terminal-Bench-Science
+  trials joined one shared Docker network, `penguin-bench`, through the repository's
+  `tools/docker/shared-network.yaml`, and DeepSWE's never did. A cell whose trial Docker could
+  give no network was run once more at lower concurrency and never counted as a 0.
+  `benchmark-design` left Harbor Benchmarks alone, and `agent-optimization` used them like any
+  published Benchmark without reading the tasks' tests or the verifier's output.
 - **Docs.** The Evaluation Center page gained a "Built-in Harbor Benchmarks" section, and both
   it and the Self-Improvement page described the once-per-Project rule and the model an
   evaluation from the Evaluate tab runs on.
