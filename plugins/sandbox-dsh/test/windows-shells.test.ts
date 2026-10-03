@@ -27,16 +27,28 @@ describe("assertAclRunnerCanStart", () => {
     "C:\\Program Files\\Git\\usr\\bin\\BASH.EXE",
     "C:\\Users\\u\\AppData\\Local\\penguin\\git\\usr\\bin\\sh.exe",
     "C:\\Windows\\System32\\bash.exe",
+    // Other shells on the same MSYS runtime abort the same way.
+    "zsh",
+    "dash.exe",
+    "C:\\Program Files\\Git\\git-bash.exe",
+    "C:\\msys64\\usr\\bin\\fish.exe",
+    // Any program in an MSYS usr\bin links that runtime, whatever its name.
+    "C:\\msys64\\usr\\bin\\tcsh.exe",
+    "C:/Program Files/Git/usr/bin/env.exe",
   ])("refuses %s on Windows, naming the setting that fixes it", (program) => {
     expect(() => assertAclRunnerCanStart([program, "-lc", "echo hi"], "win32")).toThrow(REFUSED);
   });
 
-  it.each(["pwsh", "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "cmd"])(
-    "lets %s through on Windows",
-    (program) => {
-      expect(() => assertAclRunnerCanStart([program, "-Command", "'hi'"], "win32")).not.toThrow();
-    },
-  );
+  it.each([
+    "pwsh",
+    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "cmd",
+    // Git for Windows' own git is a native MinGW build, not an MSYS one.
+    "C:\\Program Files\\Git\\mingw64\\bin\\git.exe",
+    "C:\\Program Files\\nodejs\\node.exe",
+  ])("lets %s through on Windows", (program) => {
+    expect(() => assertAclRunnerCanStart([program, "-Command", "'hi'"], "win32")).not.toThrow();
+  });
 
   it("is Windows-only: bash is the shell every other rung runs", () => {
     expect(() => assertAclRunnerCanStart(["bash", "-lc", "echo hi"], "linux")).not.toThrow();
@@ -54,7 +66,9 @@ describe("assertAclRunnerCanStart", () => {
       } catch (err) {
         message = (err as Error).message;
       }
-      expect(message).toMatch(/cannot confine .* its ACL runner does not start bash or sh/);
+      expect(message).toMatch(
+        /cannot confine .* its ACL runner does not start bash, sh or any other MSYS-runtime program/,
+      );
       expect(message).not.toContain("PENGUIN_SHELL");
     },
   );
@@ -71,8 +85,10 @@ describe("the session shell check", () => {
   it.each([
     "bash",
     "sh",
+    "zsh",
     "C:\\Program Files\\Git\\bin\\bash.exe",
     "C:\\Users\\u\\AppData\\Local\\penguin\\git\\usr\\bin\\sh.exe",
+    "C:\\msys64\\usr\\bin\\dash.exe",
   ])(
     "fails the backend's load on Windows under %s, naming the setting that fixes it",
     async (command) => {
@@ -137,38 +153,27 @@ afterAll(() => {
 });
 
 describe.skipIf(!usable)("the real ACL runner (Windows, host-gated)", () => {
-  it("the harness's default Windows shell is refused before the runner, with the fix named", async () => {
-    const shell = await hostSessionShell();
-    const bashLike = /^(bash|sh)(\.exe)?$/i.test(path.win32.basename(shell?.command ?? ""));
+  it("a bash session shell is refused before the runner, with the fix named", async () => {
     // The backend's load names the fix — the Session view's reason for the unavailable tier.
-    if (bashLike) await expect(loadDshAdaptor()).rejects.toThrow(REFUSED);
-    else await expect(loadDshAdaptor()).resolves.not.toBeNull();
-    // And a command through the product path is refused before the runner.
-    const seen: string[] = [];
+    await expect(loadDshAdaptor({ sessionShell: { command: "bash" } })).rejects.toThrow(REFUSED);
+    // And per command, on this host's real platform, before the runner is involved.
+    expect(() =>
+      provider!.confine(["bash", "-lc", "echo hi"], { mode: "workspace-write", workspaceRoot: ws }),
+    ).toThrow(REFUSED);
+  });
+
+  it("the harness's default shell is refused through the product path", async (ctx) => {
+    const shell = await hostSessionShell();
+    // A host whose PENGUIN_SHELL already names a PowerShell has nothing to refuse.
+    if (!/^(bash|sh)(\.exe)?$/i.test(path.win32.basename(shell?.command ?? ""))) ctx.skip();
+    await expect(loadDshAdaptor()).rejects.toThrow(REFUSED);
     const mgr = new CommandSessionManager({
-      confineSpawn: () => (argv, opts) => {
-        seen.push(argv[0] ?? "");
-        return provider!.confine(argv, {
-          mode: "workspace-write",
-          workspaceRoot: opts.workspaceDir,
-        });
-      },
+      confineSpawn: () => (argv, opts) =>
+        provider!.confine(argv, { mode: "workspace-write", workspaceRoot: opts.workspaceDir }),
       workspaceDir: ws,
     });
     try {
-      let refusal: unknown = null;
-      try {
-        mgr.spawn({ cmd: "echo hi", cwd: ws }).kill();
-      } catch (err) {
-        refusal = err;
-      }
-      const name = path.win32.basename(seen[0] ?? "");
-      // A host that already set PENGUIN_SHELL to a PowerShell has nothing to refuse.
-      if (/^(bash|sh)(\.exe)?$/i.test(name)) {
-        expect(String(refusal)).toMatch(REFUSED);
-      } else {
-        expect(refusal).toBeNull();
-      }
+      expect(() => mgr.spawn({ cmd: "echo hi", cwd: ws }).kill()).toThrow(REFUSED);
     } finally {
       mgr.dispose();
     }
@@ -178,11 +183,11 @@ describe.skipIf(!usable)("the real ACL runner (Windows, host-gated)", () => {
   // lands, a write outside it is denied. Windows PowerShell 5.1 ships with Windows; pwsh is
   // an install, so its leg skips where it is absent.
   const pwshInstalled = win32 && spawnSync("where", ["pwsh"], { windowsHide: true }).status === 0;
-  it.each([
+  it.for([
     ["powershell", true],
     ["pwsh", pwshInstalled],
-  ] as const)("%s runs confined", (shell, present) => {
-    if (!present) return;
+  ] as const)("%s runs confined", ([shell, present], ctx) => {
+    if (!present) ctx.skip();
     const outside = path.join(homedir(), `penguin-dsh-shells-${shell}-${process.pid}.txt`);
     const inside = `${shell}-inside.txt`;
     try {

@@ -21,6 +21,9 @@ internal rather than the setting that fixes it.
   is involved. When the program is the session shell, the error names the same fix; when it is
   not (a stdio MCP Server launched through bash), the error says the runner cannot start bash
   or sh and does not mention `PENGUIN_SHELL`.
+- The failure is the MSYS runtime's, not bash's, so both checks cover every program on it: the
+  other POSIX shells Git for Windows and MSYS2 ship (zsh, dash, `git-bash.exe`, …) and any
+  program in their `usr\bin`.
 - The backend's README states what runs under the runner on Windows. PowerShell 7 and Windows
   PowerShell 5.1 run confined; bash and sh do not start.
 - The harness's default shell is unchanged on every platform, and so is the backend on Linux
