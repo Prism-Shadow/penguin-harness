@@ -25,4 +25,4 @@
 
 ## 何时可以移除
 
-两处兜底都在 `packages/server/src/sandbox/settings-policy.ts`（`sandboxEnabledOf`、`sandboxStartOf`）。保存只写入改动过的字段，文档在开关被改动之前一直没有 `enabled`，在某次保存写入一行之前（有行对得上时即下一次保存，否则要等管理员选定）一直没有 `defaultPreset`，所以兜底不会自行失效。旧起点的读取还包括同一文件中的 `prePresetStartOf` 与卡片提示（`prePresetNotice`），以及 `settings-store.ts` 中用到它们的 derive 与 saving 钩子。维护者选定以下之一后即可移除：一次性迁移，把 `enabled` 与 `defaultPreset` 写入这类文档；或明确宣布不兼容，按开关关闭与出厂默认预设读取它们。在此之前，每次读取只多几次比较。
+两处兜底都在 `packages/server/src/sandbox/settings-policy.ts`（`sandboxEnabledOf`、`sandboxStartOf`）。保存只写入改动过的字段，文档在开关被改动之前一直没有 `enabled`，在某次保存写入一行之前（有行对得上时即下一次保存，否则要等管理员选定）一直没有 `defaultPreset`，所以兜底不会自行失效。旧起点的读取还包括同一文件中的 `prePresetStartOf` 与卡片提示（`prePresetNotice`），以及 `settings-status.ts` 中用到它们的 derive、saving 与 status 钩子。维护者选定以下之一后即可移除：一次性迁移，把 `enabled` 与 `defaultPreset` 写入这类文档；或明确宣布不兼容，按开关关闭与出厂默认预设读取它们。在此之前，每次读取只多几次比较。

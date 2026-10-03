@@ -19,7 +19,7 @@ named file mode, network level and approval mode, and one pick saves all three o
   "Advanced settings in effect".
 - **The Sandbox card has a presets table.** More… opens the Sandbox card on the Settings
   dialog's Plugins page. At the top of the card is a table with one row per preset: the name,
-  its file mode, network level and approval mode, and an "Action" group of icons — a pin for
+  its file mode, network level and ask mode (the approval mode), and an "Action" group of icons — a pin for
   whether the menu lists it, a drag handle, and a "…" menu with Set as default and, on presets
   an administrator added, Delete. The default row reads "(Default)" after its name. Each name
   has a "?" saying what the row is for: a sentence per built-in preset (Workspace Write: for
@@ -29,10 +29,12 @@ named file mode, network level and approval mode, and one pick saves all three o
   arrow keys move a focused handle's row. That order is the composer's menu order. "Add preset"
   adds a row (Workspace write only, Full access, Ask every time, not pinned); only added rows
   can be deleted, and not while they are the default. Renaming keeps a row's mapping; Full
-  Access can only be renamed, unpinned or made the default. Names wrap by words, and below the
+  Access can only be renamed, unpinned or made the default; a value stored for one of its
+  locked cells by hand is ignored. Names wrap by words, and below the
   table's minimum width the table scrolls instead of crushing them.
 - **Explanations sit behind a "?" beside their title** on every settings card; the "?" opens on
-  hover and keyboard focus, and a click or tap still toggles it: the card's
+  hover and keyboard focus (a pointer leaving does not close it while the "?" has keyboard
+  focus), and a click or tap still toggles it: the card's
   description, each field's and the table's. A format rule (masked paths: one absolute path
   per line) stays on screen under its field.
 - **New Sessions start from the default preset.** One row is the default, Workspace Write until
@@ -47,7 +49,8 @@ named file mode, network level and approval mode, and one pick saves all three o
 - **The Sandbox card has an Enable switch at the top.** It decides whether new Sessions start
   confined; a Session that exists keeps its own policy. Off, a new Session has full file and
   network access and is held only by its approval mode, and the composer's permission menu
-  lists the four approval modes instead of the presets. The presets and the default are kept
+  lists the four approval modes instead of the presets; a pick there changes only the
+  Session's (or the draft's) approval mode, never its sandbox policy. The presets and the default are kept
   while it is off and apply again when it is turned on. A fresh install starts off. Settings
   saved before the switch existed read it as on when they confined anything (a mode other than
   Off, a network that is not open, or masked paths); see
@@ -90,8 +93,8 @@ named file mode, network level and approval mode, and one pick saves all three o
 - The Session's `sandbox` object in the API gains three response-only fields: `presets` (the
   table, disabled rows included), `advanced`, and `switchOn` (the Sandbox switch). The chat
   defaults carry them too, plus `defaultApprovalMode`: the default preset's approval mode
-  while the switch is on. A Session created without an approval mode takes it; an
-  organization's Session keeps `allow-all`. Each preset row carries `aboveCeiling: true` when
+  while the switch is on. A Session created without an approval mode takes it; the Sessions
+  nobody watches keep `allow-all`: an organization's, a scheduled run's and a workflow's. Each preset row carries `aboveCeiling: true` when
   it is wider than the server's settings, by the same comparison that refuses a non-admin's
   pick with `403 sandbox_forbidden`.
 - `PATCH /api/sessions/:sessionId` checks every field, the sandbox's ceiling and
