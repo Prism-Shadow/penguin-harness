@@ -3814,6 +3814,10 @@ Scenarios:
     optimize: "Optimize",
     view: "View",
     copyPath: "Copy directory path",
+    /** A Harbor Benchmark's tag beside its title. */
+    harborTag: "Harbor",
+    /** Label before the link to a Harbor Benchmark's task repository, on its page. */
+    harborRepo: "Task files",
     deleteBenchmark: "Delete Benchmark",
     deleteConfirm: (title: string): string =>
       `Delete "${title}"? All of its cases and evaluation records will be removed; this cannot be undone.`,
@@ -3844,6 +3848,8 @@ Scenarios:
     colCase: "Case",
     colRun: "Run",
     colSession: "Session",
+    /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
+    copyTrialName: "Copy Harbor trial name",
     askAi: "Ask AI",
     evaluationDetailTitle: (time: string): string => `Evaluation · ${time}`,
     askEvaluationTitle: "Ask AI about this evaluation",
@@ -4043,6 +4049,9 @@ Scenarios:
     testedAgent: "Tested agent",
     evaluateDescription:
       "AI puts the tested agent on this Benchmark for the full Case × runs matrix and appends the result to the scoreboard as one labelled evaluation.",
+    /** The Evaluate tab's line for a Harbor Benchmark: what the machine and the model need. */
+    harborEvaluateHint:
+      "This Benchmark runs in Docker through the Harbor framework: the machine the evaluator agent runs on needs Docker and uv, and the tested agent's model needs its API key saved on the Models page.",
     evaluateTestedAgentHint:
       "Evaluated as its Agent State stands right now; the score is recorded under it, labelled with its version, model and thinking level",
     evaluatorAgent: "Evaluator agent",

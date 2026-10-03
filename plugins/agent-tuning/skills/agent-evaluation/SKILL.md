@@ -34,7 +34,7 @@ One request represents one Test Agent execution. The `run` value identifies that
 
 Return a **scored result** when the Test Agent ran and the Rubric could be applied. Wrong, malformed, or missing Test Agent output is still a scored result. Return an **evaluation failure** when the request, Benchmark, launch, version check, Trace binding, or scoring process prevents a valid score.
 
-Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent and Benchmark. Never read a Project configuration file, credential, or vault.
+Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent and Benchmark. Never read a Project configuration file, credential, or vault. The one exception is a Harbor-backed Case's model API host, which the benchmark repository's helper prints for you (`reference/harbor.md` §B.3); no other part of the configuration reaches you. Never use `penguin config model list` for it either: that listing masks each key but still shows its last 4 characters.
 
 ## Prepare
 
@@ -52,6 +52,12 @@ Reject path traversal, symlink escape, or any resolved path outside the requeste
 Require `agent_state/system_config.yaml`, `benchmark_config.toml`, `<case_id>/statement/README.md`, and `<case_id>/rubric/README.md`. Return `benchmark_invalid` when `benchmark_config.toml` says `status = "failed"`: a Benchmark whose calibration failed is not evaluated. Treat `run` only as the caller-owned label for this evaluation and return it unchanged; do not read or validate the total Run count. The top-level Agent State `version`, defaulting to 1, must equal `expected_version`; otherwise return `version_changed`. Read and snapshot `model.thinking_level` from this Target Agent config, using the normal Agent-config default `medium` only when the field is absent. This configured value is the evaluation `thinking_level`; do not require or read thinking metadata from a Trace.
 
 Before launch, snapshot every file under the Case's `statement/` and `rubric/` directories. Require a usable Rubric whose scoring items total exactly 100 points. Create a unique Workspace under `<test_agent_dir>/workspaces/`, resolve it to an absolute canonical path, and verify that the resolved path remains under that directory. Copy only `statement/` into it. The Test Agent may see the Statement and its own State, but never the Rubric, Gold answers, scoring rules, or Evaluator reasoning.
+
+## Harbor-backed Cases
+
+If `benchmark_config.toml` contains `kind = "harbor"`, the Case is a Harbor task kept in a repository: follow `reference/harbor.md` for the Prepare, Run and Score steps. One Harbor trial in Docker replaces the Workspace launch, and the task verifier's reward replaces the Rubric judgement. The Contract, the visibility rules, the failure codes and the Return format are unchanged. `thinking_level` is still the Test Agent's configured value, and `provider` / `model_id` are still the request's. The Harbor adapter, not you, copies the requested model's saved entry into the task container; the one thing you look up is that model's API host, through the repository's helper, as the reference says.
+
+A caller that fans out cells of a Harbor-backed Benchmark performs the shared setup in `reference/harbor.md` §A once, before its first `run_subagent`.
 
 ## Run and verify
 

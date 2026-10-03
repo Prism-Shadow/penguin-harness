@@ -4,12 +4,14 @@
  * excluded — empty AGENTS.md, cannot be deleted).
  * Specialized capabilities are now carried by Skills — agent_creator / agent_optimizer
  * are no longer built-in Agents: neither provisioned nor deletion-protected.
+ * default_agent also seeds the Project's Benchmarks — the example and the built-in Harbor ones
+ * — which the Benchmark API reads back as core wrote them.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { libraryPlugin, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
-import type { BenchmarksResponse } from "../src/api/types.js";
+import type { BenchmarkCasesResponse, BenchmarksResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser, type TestApp } from "./helpers.js";
 
 interface AgentsResponse {
@@ -132,6 +134,37 @@ describe("built-in Agent provisioning", () => {
     // The sample data tells an optimization story: scores increase across evaluation rounds (the evaluation center shows a rising curve out of the box).
     const scores = bench.evaluations.map((e) => e.score);
     expect(scores).toEqual([...scores].sort((a, b) => a - b));
+  });
+
+  it("default_agent seeds the built-in Harbor Benchmarks, which GET /benchmarks lists with their repository", async () => {
+    const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
+    const projectId = projects.projects[0]!.projectId;
+    const body = (await (
+      await owner.get(`/api/projects/${projectId}/benchmarks`)
+    ).json()) as BenchmarksResponse;
+    const harbor = body.benchmarks.filter((b) => b.kind === "harbor");
+    expect(harbor.map((b) => b.id)).toEqual([
+      "automation-bench",
+      "deep-swe",
+      "rag-bench-essential",
+      "terminal-bench",
+      "terminal-bench-science",
+    ]);
+    for (const bench of harbor) {
+      // Ready to evaluate, and never evaluated: no baseline ships with them.
+      expect(bench.status).toBe("published");
+      expect(bench.runs).toBe(1);
+      expect(bench.evaluations).toEqual([]);
+      expect(bench.caseCount).toBeGreaterThan(0);
+      expect(bench.harbor?.repo).toMatch(/^https:\/\//);
+      expect(bench.harbor?.path).toBe(`benchmarks/${bench.id}/tasks`);
+      // Each case is listed under the title its statement opens with.
+      const cases = (await (
+        await owner.get(`/api/projects/${projectId}/benchmarks/${bench.id}/cases`)
+      ).json()) as BenchmarkCasesResponse;
+      expect(cases.cases).toHaveLength(bench.caseCount);
+      for (const c of cases.cases) expect(c.title).not.toBe(c.id);
+    }
   });
 
   it("default_agent cannot be deleted (409)", async () => {

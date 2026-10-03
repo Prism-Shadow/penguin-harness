@@ -27,6 +27,7 @@ import { useProject } from "../../state/project";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { fetchBenchmarks } from "./benchmark-sources";
+import { HarborRepoLink, HarborTag } from "./harbor";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 
 /**
@@ -146,36 +147,43 @@ export function BenchmarkDetailPage() {
   return (
     <PageFrame width="md">
       {/* The Benchmark's name, the directory its files live in under it, and the Use entry
-          point at the end of the title row. The case counts and the description are the
-          detail's own, one block below. A Benchmark tests whichever Agents its scoreboard
-          names, so no single Agent is named up here. A Benchmark that is not published, reached
-          by its address, keeps the path but drops Use, and shows the building or
-          creation-failed notice in place of the detail. A Benchmark that no longer resolves has
-          no directory to name and nothing to use: the title and the way back are all the header
-          keeps. */}
+          point at the end of the title row; a Harbor Benchmark adds its tag to the name and,
+          after the directory, the repository its task files live in. The case counts and the
+          description are the detail's own, one block below. A Benchmark tests whichever Agents
+          its scoreboard names, so no single Agent is named up here. A Benchmark that is not
+          published, reached by its address, keeps the path but drops Use, and shows the
+          building or creation-failed notice in place of the detail. A Benchmark that no longer
+          resolves has no directory to name and nothing to use: the title and the way back are
+          all the header keeps. */}
       <PageHeader
         back={{ label: S.benchmark.backToList, onClick: () => navigate("/benchmark") }}
         title={
-          <span className="min-w-0 truncate">
-            {benchmark === null
-              ? benchmarkId
-              : onlyMachine !== null
-                ? nameOnMachine(benchmark.title, onlyMachine)
-                : benchmark.title}
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate">
+              {benchmark === null
+                ? benchmarkId
+                : onlyMachine !== null
+                  ? nameOnMachine(benchmark.title, onlyMachine)
+                  : benchmark.title}
+            </span>
+            {benchmark !== null && <HarborTag benchmark={benchmark} />}
           </span>
         }
         description={
           benchmark ? (
-            <span className="flex min-w-0 items-center gap-1">
-              <span className="min-w-0 truncate font-mono text-xs text-gray-400 dark:text-gray-500">
-                {benchmarkPath(benchmark.id)}
+            <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="flex min-w-0 items-center gap-1">
+                <span className="min-w-0 truncate font-mono text-xs text-gray-400 dark:text-gray-500">
+                  {benchmarkPath(benchmark.id)}
+                </span>
+                <CopyButton
+                  text={benchmarkPath(benchmark.id)}
+                  label={S.benchmark.copyPath}
+                  size="sm"
+                  className="shrink-0"
+                />
               </span>
-              <CopyButton
-                text={benchmarkPath(benchmark.id)}
-                label={S.benchmark.copyPath}
-                size="sm"
-                className="shrink-0"
-              />
+              {benchmark.harbor && <HarborRepoLink harbor={benchmark.harbor} />}
             </span>
           ) : undefined
         }

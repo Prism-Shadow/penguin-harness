@@ -9,6 +9,8 @@ Build a multi-Case Benchmark for one Test Agent, calibrate its difficulty with o
 
 This Skill changes the Benchmark, never the Test Agent. It does not run or score the Test Agent. Delegate every evaluation with `run_subagent`, and tell each worker to use `agent-evaluation`. Stop after the Baseline; do not begin optimization.
 
+A Harbor-backed Benchmark (`kind = "harbor"` in `benchmark_config.toml`) is a frozen upstream task set that ships with PenguinHarness: never create, refine, recalibrate or re-baseline one.
+
 ## Before you start
 
 If the request does not identify a Test Agent, target capability, desired baseline score, and Pilot iteration limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them. Treat the current Agent as the **Builder**. A user-specified evaluation `(provider, model_id)` takes priority; otherwise inherit the current Builder Session's complete `Provider` and `Model ID` from the Environment. Never use a Project default as an implicit evaluation runtime.
