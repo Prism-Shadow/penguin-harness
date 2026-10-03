@@ -7,15 +7,22 @@
  * own context menu (Copy / Add to conversation; open the link or copy its address — see
  * stream-selection-menu.tsx).
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
-import { EmptyState, GlyphIcon, ICONS, Spinner } from "@prismshadow/penguin-ui";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
+import {
+  A2uiActionsProvider,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  Spinner,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
+import { interactiveReplyIndex } from "./a2ui-reply";
 import { WorkspaceLinksProvider } from "./workspace-links";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
@@ -23,6 +30,15 @@ import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
 import { useStreamSelectionMenu } from "./stream-selection-menu";
 import type { ComposerReference } from "../../lib/workspace-tree";
+
+/**
+ * What a reply's rich blocks (```a2ui choices and forms) read from context: whether they take
+ * input, where a pick goes, and the language of its text.
+ */
+export type A2uiActions = ComponentProps<typeof A2uiActionsProvider>["value"];
+
+/** The fill of every reply whose blocks do not take input, where picking is disabled anyway. */
+const NO_FILL = (): void => {};
 
 /** Context passed down to nested rendering (pending approvals + approval submit callback + current origin chain). */
 export interface StreamRenderContext {
@@ -76,6 +92,16 @@ export interface StreamRenderContext {
   statFiles?: (paths: string[]) => Promise<ReadonlySet<string>>;
   /** Creates a new root Session through the selected completed assistant turn. */
   onFork?: (target: ForkTarget) => Promise<void>;
+  /**
+   * The actions of the reply whose blocks take input: `interactive` set, `fill` putting the
+   * picked text in this conversation's composer, `focus` sending focus there for an answer in
+   * the user's own words, `lang` the interface language. Honored for the main conversation
+   * only, and there for the latest reply with nothing said after it (see a2ui-reply.ts); every
+   * other reply gets the same language with input off. Must keep its identity while its inputs
+   * do: the blocks read it through context, past the memoized Markdown, so a fresh object per
+   * render would re-render every block on every stream frame.
+   */
+  a2uiActions?: A2uiActions;
 }
 
 /** Pure list rendering (reused recursively inside subagent cards): consecutive thinking + tool-call items are aggregated into one "Reasoning & Tools" group. */
@@ -101,6 +127,18 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
   }
   flushRun();
 
+  // A reply's choice or form takes input only as the main conversation's open question
+  // (a2ui-reply.ts; the subagent panel spreads this ctx under its own origin). Every other
+  // reply gets the same language with input off, derived once per actions object so both
+  // values keep their identity across stream frames.
+  const live = ctx.a2uiActions;
+  const liveReply =
+    live !== undefined ? items[interactiveReplyIndex(items, ctx.origin)] : undefined;
+  const still = useMemo<A2uiActions | undefined>(
+    () => (live === undefined ? undefined : { interactive: false, fill: NO_FILL, lang: live.lang }),
+    [live],
+  );
+
   const renderSeg = (seg: Seg, i: number): ReactNode =>
     seg.type === "group" ? (
       <SessionWorkGroup
@@ -109,6 +147,14 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
         ctx={ctx}
         isLast={i === segs.length - 1}
       />
+    ) : seg.item.kind === "assistant_text" && live !== undefined && still !== undefined ? (
+      // Every reply gets a provider and only its value moves between the two: when the user
+      // answers, the question's reply changes a context value rather than its place in the
+      // tree, so it is not remounted (no Markdown re-parse, no diagram re-render), and only
+      // the blocks of a reply whose value changed re-render.
+      <A2uiActionsProvider key={seg.item.id} value={seg.item === liveReply ? live : still}>
+        <MessageItem item={seg.item} ctx={ctx} />
+      </A2uiActionsProvider>
     ) : (
       <MessageItem key={seg.item.id} item={seg.item} ctx={ctx} />
     );

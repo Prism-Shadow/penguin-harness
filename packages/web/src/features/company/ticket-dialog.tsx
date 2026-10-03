@@ -596,6 +596,7 @@ function TicketDialog({
                         label={S.company.tickets.notify}
                         value={summaryDraft.notify}
                         hint={S.company.tickets.notifyHint}
+                        info={S.company.tickets.notifyInfo}
                         className="font-mono"
                         onChange={(e) =>
                           setSummaryDraft({ ...summaryDraft, notify: e.target.value })
@@ -1013,7 +1014,7 @@ function TicketDialog({
             label={S.company.tickets.blockedReason}
             required
             value={blockReason}
-            hint={S.company.tickets.blockReasonHint}
+            info={S.company.tickets.blockReasonHint}
             autoFocus
             onChange={(e) => setBlockReason(e.target.value)}
           />
@@ -1021,7 +1022,7 @@ function TicketDialog({
             size="sm"
             label={S.company.tickets.blockedBy}
             value={blockBy}
-            hint={S.company.tickets.blockByHint}
+            info={S.company.tickets.blockByHint}
             className="font-mono"
             onChange={(e) => setBlockBy(e.target.value)}
           />
@@ -1086,7 +1087,7 @@ export function MoveTicketConfirm({
             label={S.company.tickets.rejectReason}
             required
             value={reason}
-            hint={S.company.tickets.rejectReasonHint}
+            info={S.company.tickets.rejectReasonHint}
             autoFocus
             onChange={(e) => setReason(e.target.value)}
           />

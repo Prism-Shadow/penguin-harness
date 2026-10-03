@@ -41,6 +41,10 @@
       "types": "./dist/state/model-catalog.d.ts",
       "import": "./dist/state/model-catalog.js"
     },
+    "./a2ui": {
+      "types": "./dist/a2ui/index.d.ts",
+      "import": "./dist/a2ui/index.js"
+    },
     "./kernel": {
       "types": "./dist/kernel/index.d.ts",
       "import": "./dist/kernel/index.js",
@@ -57,6 +61,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
+    "@penguinharness/a2ui": "workspace:*",
     "@penguinharness/agent-company": "workspace:*",
     "@penguinharness/agent-development": "workspace:*",
     "@penguinharness/agent-tuning": "workspace:*",

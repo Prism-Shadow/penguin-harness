@@ -31,6 +31,7 @@ import {
   ChevronDown,
   ConfirmModal,
   Dropdown,
+  Fold,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -793,8 +794,12 @@ function LocalCard({
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.link}`} aria-hidden="true" />
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
-      <div id={id} hidden={!open}>
-        <Record machine={machine} locale={locale} />
+      {/* The box the chevron's `aria-controls` names stays in the DOM, empty while folded, so the
+          reference resolves in every state; the details inside it fold through `Fold`. */}
+      <div id={id}>
+        <Fold open={open}>
+          <Record machine={machine} locale={locale} />
+        </Fold>
       </div>
     </li>
   );
@@ -876,42 +881,47 @@ function MachineCard({
         />
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
-      <div id={id} hidden={!open} onClick={(event) => event.stopPropagation()}>
-        <Record machine={machine} locale={locale} />
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {reading.kind === "failed" && reading.canReplaceProgram && (
+      {/* The box the chevron's `aria-controls` names stays in the DOM, empty while folded, so the
+          reference resolves in every state; the details inside it fold through `Fold`. A click
+          in the details must not select the card, so the box swallows it. */}
+      <div id={id} onClick={(event) => event.stopPropagation()}>
+        <Fold open={open}>
+          <Record machine={machine} locale={locale} />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {reading.kind === "failed" && reading.canReplaceProgram && (
+              <Verb
+                label={S.machines.replaceProgram}
+                title={S.machines.replaceProgramWhy}
+                d={PLUG_PATH}
+                variant="danger"
+                disabled={busy}
+                onClick={() => onUse(true)}
+              />
+            )}
+            {wantsUse(reading) && (
+              <Verb
+                label={S.machines.use}
+                d={PLUG_PATH}
+                disabled={busy}
+                onClick={() => onUse(false)}
+              />
+            )}
             <Verb
-              label={S.machines.replaceProgram}
-              title={S.machines.replaceProgramWhy}
-              d={PLUG_PATH}
-              variant="danger"
+              label={S.machines.stopUsing}
+              d={UNPLUG_PATH}
               disabled={busy}
-              onClick={() => onUse(true)}
+              onClick={onStopUsing}
             />
-          )}
-          {wantsUse(reading) && (
             <Verb
-              label={S.machines.use}
-              d={PLUG_PATH}
+              label={S.machines.host.configureVerb}
+              title={S.machines.host.configure}
+              d={ICONS.gear}
               disabled={busy}
-              onClick={() => onUse(false)}
+              onClick={onConfigure}
             />
-          )}
-          <Verb
-            label={S.machines.stopUsing}
-            d={UNPLUG_PATH}
-            disabled={busy}
-            onClick={onStopUsing}
-          />
-          <Verb
-            label={S.machines.host.configureVerb}
-            title={S.machines.host.configure}
-            d={ICONS.gear}
-            disabled={busy}
-            onClick={onConfigure}
-          />
-        </div>
-        <Output job={job} />
+          </div>
+          <Output job={job} />
+        </Fold>
       </div>
     </li>
   );

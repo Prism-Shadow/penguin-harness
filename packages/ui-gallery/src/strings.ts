@@ -17,9 +17,16 @@ import type {
   ToneName,
 } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
+import type { A2uiSpec } from "@prismshadow/penguin-core/a2ui";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
 import type { ChartToken } from "./library/chart-tokens";
 import type { TopicGroupId, TopicId } from "./library/topics";
+
+/** A block of the A2UI sample reply: the sentence that introduces it, and the block itself. */
+export interface A2uiSample {
+  lead: string;
+  spec: A2uiSpec;
+}
 
 /** What a surface page says: its title, one line on what the frame shows, and how the app reaches it. */
 export interface SurfaceCopy {
@@ -330,7 +337,7 @@ export const zh = {
     presence: "进出",
     presenceNote: "菜单自上方、对话框自中心、通知自下方进出，各按当前主题的进出令牌。",
     reveal: "显现",
-    revealNote: "流式文本逐块显现，每一块只在出现时按显现令牌动一次。",
+    revealNote: "新的行出现在已稳定的列表里，每一行只在出现时按显现令牌动一次。",
     layout: "布局",
     layoutNote: "侧栏在展开与图标栏之间的宽度变化，按布局令牌。",
     replay: "重放",
@@ -341,6 +348,13 @@ export const zh = {
       toast: "通知",
       trigger: "更多",
       sidebarRows: ["新对话", "智能体", "模型库"] as readonly string[],
+      revealRows: [
+        { name: "read_file", detail: "package.json" },
+        { name: "grep", detail: "useStreamReveal" },
+        { name: "exec_command", detail: "运行测试" },
+        { name: "apply_patch", detail: "src/app.ts" },
+        { name: "exec_command", detail: "检查格式" },
+      ] as readonly { name: string; detail: string }[],
     },
     hookJobs: {
       "ui-glass": "磨砂面：盖在内容之上的临时层，白领的插件与技能图块",
@@ -357,7 +371,7 @@ export const zh = {
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
-      "ui-stream": "正在流式输出的回答：各主题决定新文字如何出现",
+      "ui-stream": "正在流式输出的文字（回答、思考、压缩摘要、工具输出）：各主题决定新文字如何出现",
       "ui-glyph":
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
     } as Record<HookName, string>,
@@ -468,7 +482,8 @@ export const zh = {
       },
       content: {
         title: "内容",
-        description: "标题与文字角色、行内代码、Markdown 正文、代码块与代码面，以及差异视图。",
+        description:
+          "标题与文字角色、行内代码、Markdown 正文、代码块与代码面、差异视图，以及 A2UI 组件。",
       },
       layout: {
         title: "布局",
@@ -770,6 +785,7 @@ export const zh = {
     },
     streaming: {
       reply: "助手回答",
+      output: "工具输出",
       receiving: "正在接收…",
       received: "已全部到达",
       modes: {
@@ -957,6 +973,92 @@ export const zh = {
       patch: "读取补丁",
       diffLabel: "src/config.ts 的改动",
       patchLabel: "src/limits.ts 的改动",
+      a2ui: "A2UI 组件",
+      a2uiHint:
+        "模型写进回复的组件：选择、表单、步骤、提示框和 Mermaid 图。在这里点选或提交，要填入输入框的文字会以提示消息显示。",
+      a2uiReply: [
+        {
+          lead: "先定下数据库。",
+          spec: {
+            type: "choice",
+            question: "服务用哪种数据库？",
+            options: [
+              { label: "PostgreSQL", description: "关系型，团队已经在运维", recommended: true },
+              { label: "SQLite", description: "单个文件，放在服务旁边" },
+              { label: "MongoDB", description: "文档型，表结构随时可改" },
+            ],
+            allowOther: true,
+          },
+        },
+        {
+          lead: "部署信息一次填完：",
+          spec: {
+            type: "form",
+            title: "部署信息",
+            fields: [
+              {
+                id: "region",
+                label: "区域",
+                kind: "single",
+                options: [{ label: "华东" }, { label: "华北" }],
+                required: true,
+              },
+              {
+                id: "addons",
+                label: "附加功能",
+                kind: "multiple",
+                options: [{ label: "CDN" }, { label: "WAF" }],
+              },
+              {
+                id: "replicas",
+                label: "副本数",
+                kind: "number",
+                min: 1,
+                max: 10,
+                step: 1,
+                unit: "个",
+              },
+              { id: "notes", label: "备注", kind: "text", placeholder: "其他要求" },
+            ],
+            submitLabel: "填入回答",
+          },
+        },
+        {
+          lead: "按三步轮换密钥：",
+          spec: {
+            type: "steps",
+            title: "轮换 API 密钥",
+            steps: [
+              { text: "打开「设置 › 密钥」。" },
+              { text: "新建一个密钥并复制。", note: "新密钥立即生效。" },
+              {
+                text: "删除旧密钥。",
+                warning: "删除后无法恢复。",
+                caution: "仍在使用旧密钥的任务会失败，重启后恢复。",
+                code: "curl -X DELETE https://api.example.com/keys/old",
+                lang: "bash",
+              },
+            ],
+          },
+        },
+        {
+          lead: "最后一点：",
+          spec: { type: "callout", tone: "tip", text: "推送前先运行 `pnpm test`。" },
+        },
+        {
+          lead: "开始之前：",
+          spec: {
+            type: "callout",
+            tone: "warning",
+            title: "止损点",
+            text: "两天内拿不到第一组数据就换方案，不要硬撑。这一步决定后面的投入值不值得，宁可早停也不要拖到最后才放弃。",
+          },
+        },
+      ] as A2uiSample[],
+      a2uiDiagramLead: "请求先查缓存：",
+      a2uiDiagram:
+        "flowchart LR\n  A[请求] --> B{命中缓存}\n  B -->|是| C[直接返回]\n  B -->|否| D[回源读取]\n  D --> C",
+      a2uiInvalidLead: "无法显示的块给出原因和源码：",
     },
     layout: {
       page: "页面与页头",

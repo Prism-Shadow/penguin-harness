@@ -1,11 +1,11 @@
 /**
  * Organization dialogs, invoked from the sidebar's organization switcher (and the empty
  * landing): create an organization — display name, the id (still required, generated from
- * that name by the field's own button), a one-sentence mission with three examples under it,
- * the Project it belongs to when the user has several, the model its sessions run on (the
- * Project default unless chosen), the company workspace (the organization's own directory
- * unless one is picked) and the CEO's monthly budget, which is the whole company's and is
- * typed in the currency the reader reads money in but stored in USD — and an organization's
+ * that name by the field's own button), a one-sentence mission, the Project it belongs to
+ * when the user has several, the model its sessions run on (the Project default unless
+ * chosen), the company workspace (the organization's own directory unless one is picked) and
+ * the CEO's monthly budget, which is the whole company's and is typed in the currency the
+ * reader reads money in but stored in USD — and an organization's
  * settings: name, mission, model, workspace, timezone, working language, approval mode, and
  * pause / resume — the one lifecycle control there is, since an organization is never deleted
  * through the App. Pause / resume writes its own PATCH the moment it is clicked; everything
@@ -42,8 +42,6 @@ import {
   Button,
   ConfirmModal,
   FieldError,
-  FieldHint,
-  FieldLabel,
   ICON_GAP,
   InfoPopover,
   Input,
@@ -65,10 +63,9 @@ import { useTheme } from "../../state/theme";
 import { ModelCatalogSelect, modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
-import { ErrorLine, MoneyPerMonthInput, OrgStatusPill } from "./shared";
+import { ErrorLine, InfoFieldLabel, MoneyPerMonthInput, OrgStatusPill } from "./shared";
 import { orgCreatedTarget } from "./company-nav";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
-import { ORG_EXAMPLES } from "./org-examples";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import {
   EMPTY_ORG_DRAFT,
@@ -129,10 +126,10 @@ function useProjectModels(projectId: string, open: boolean) {
  * searchable, grouped, key-configured-first dialog the chat composer and the Project's
  * default-model setting open), with this field's two extra states around it.
  *
- * Empty is a choice here, not a gap: it means "follow the Project's default", named after
- * that default when the list says which model it is. The panel offers models only, so the
- * way back to empty is the field's own control, which stands where the hint that describes
- * it otherwise stands. A stored model that is no longer configured is kept rather than
+ * Empty is a choice here, not a gap: it means "follow the Project's default", and the trigger
+ * says so itself, naming that default when the list says which model it is. The panel offers
+ * models only, so the way back to empty is the field's own control under the trigger once a
+ * model is picked. A stored model that is no longer configured is kept rather than
  * silently replaced — the trigger names the id as stored, with a line underneath saying the
  * Project no longer lists it.
  */
@@ -164,11 +161,7 @@ function ModelField({
   const loading = models === null && loadError === null;
   return (
     <div>
-      {/* The "?" sits beside the field's own title (the picker carries no info slot). */}
-      <span className="mb-1 flex items-center gap-1">
-        <FieldLabel block={false}>{S.company.modelField}</FieldLabel>
-        <InfoPopover label={S.company.modelField}>{S.company.modelInfo}</InfoPopover>
-      </span>
+      <InfoFieldLabel label={S.company.modelField} info={S.company.modelInfo} />
       <ModelCatalogSelect
         models={list}
         value={value}
@@ -180,14 +173,12 @@ function ModelField({
       />
       {loadError !== null ? (
         <FieldError>{S.company.modelsLoadFailed}</FieldError>
-      ) : value === null ? (
-        <FieldHint>{S.company.modelHint}</FieldHint>
-      ) : (
+      ) : value === null ? null : (
         <span className="mt-1 flex flex-wrap items-baseline gap-x-2">
           {stale && (
             <span className="text-xs text-gray-500 dark:text-gray-500">{S.company.modelStale}</span>
           )}
-          {/* The hint's instruction, as the action that carries it out. */}
+          {/* The way back to the Project default, as the action that carries it out. */}
           <button
             type="button"
             disabled={disabled}
@@ -214,10 +205,7 @@ function WorkspaceField({
 }) {
   return (
     <div>
-      <span className="mb-1 flex items-center gap-1">
-        <FieldLabel block={false}>{S.company.workspaceField}</FieldLabel>
-        <InfoPopover label={S.company.workspaceField}>{S.company.workspaceInfo}</InfoPopover>
-      </span>
+      <InfoFieldLabel label={S.company.workspaceField} info={S.company.workspaceInfo} />
       <WorkspaceSelect
         projectId={projectId}
         workspace={value}
@@ -227,47 +215,6 @@ function WorkspaceField({
         emptyLabel={S.company.workspaceEmpty}
         clearLabel={S.company.workspaceClear}
       />
-    </div>
-  );
-}
-
-/**
- * The three example missions under the mission field. A click takes the mission whole (the
- * click asks for THIS mission) and the display name only while the name is still empty, so
- * an example never overwrites what someone typed; the id is left to the generate button
- * beside it. One line each — the mission is long enough that a card of it would push the
- * rest of the form off the dialog, so the row carries the names and the tooltips carry what
- * each one actually says.
- *
- * The row is rendered inside the mission field and sits against it, not a field's distance
- * below: it fills that field in, and an unlabelled row a whole gap away reads as a field of
- * its own with its title missing.
- */
-function MissionExamples({
-  disabled,
-  onPick,
-}: {
-  disabled: boolean;
-  onPick: (example: { name: string; mission: string }) => void;
-}) {
-  return (
-    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-      {ORG_EXAMPLES.map((example) => {
-        const copy = S.company.missionExamples[example.id];
-        return (
-          <button
-            key={example.id}
-            type="button"
-            data-tooltip={`${copy.mission}\n${S.company.missionExampleHint}`}
-            data-tooltip-content="text"
-            disabled={disabled}
-            onClick={() => onPick(copy)}
-            className="min-w-0 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-xs text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-          >
-            {copy.name}
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -495,6 +442,7 @@ export function CreateOrganizationDialog({
           <Select
             size="sm"
             label={S.project.switcher}
+            required
             value={projectId}
             disabled={busy}
             onChange={(e) => setProjectId(e.target.value)}
@@ -512,7 +460,7 @@ export function CreateOrganizationDialog({
           label={S.company.displayName}
           size="sm"
           value={name}
-          hint={S.company.displayNameHint}
+          info={S.company.displayNameHint}
           autoFocus
           disabled={busy}
           onChange={(e) => setName(e.target.value)}
@@ -522,6 +470,7 @@ export function CreateOrganizationDialog({
           kind="org"
           label={S.company.orgId}
           hint={S.company.orgIdHint}
+          info={S.company.orgIdInfo}
           value={orgId}
           source={name.trim() || mission}
           error={idError}
@@ -531,31 +480,21 @@ export function CreateOrganizationDialog({
             setIdError(undefined);
           }}
         />
-        <div>
-          <Textarea
-            label={S.company.mission}
-            required
-            size="sm"
-            rows={3}
-            value={mission}
-            error={missionError}
-            hint={S.company.missionHint}
-            placeholder={S.company.missionPlaceholder}
-            disabled={busy}
-            onChange={(e) => {
-              setMission(e.target.value);
-              setMissionError(undefined);
-            }}
-          />
-          <MissionExamples
-            disabled={busy}
-            onPick={(example) => {
-              setMission(example.mission);
-              setMissionError(undefined);
-              if (name.trim() === "") setName(example.name);
-            }}
-          />
-        </div>
+        <Textarea
+          label={S.company.mission}
+          required
+          size="sm"
+          rows={3}
+          value={mission}
+          error={missionError}
+          info={S.company.missionHint}
+          placeholder={S.company.missionPlaceholder}
+          disabled={busy}
+          onChange={(e) => {
+            setMission(e.target.value);
+            setMissionError(undefined);
+          }}
+        />
         <ModelField
           models={models}
           loadError={modelsError}
@@ -568,7 +507,7 @@ export function CreateOrganizationDialog({
           label={S.company.ceoBudget}
           currency={currency}
           value={ceoBudget}
-          hint={S.company.ceoBudgetHint}
+          info={S.company.ceoBudgetHint}
           {...(budgetError !== undefined ? { error: budgetError } : {})}
           disabled={busy}
           onChange={(text) => {
@@ -773,7 +712,7 @@ export function OrganizationSettingsDialog({
           rows={3}
           value={mission}
           disabled={!hydrated || busy}
-          hint={S.company.missionHint}
+          info={S.company.missionHint}
           onChange={(e) => setMission(e.target.value)}
         />
         <ModelField
@@ -790,15 +729,12 @@ export function OrganizationSettingsDialog({
           value={timezone}
           disabled={!hydrated || busy}
           hint={S.company.timezoneHint}
+          info={S.company.timezoneInfo}
           className="font-mono"
           onChange={(e) => setTimezone(e.target.value)}
         />
         <div>
-          {/* The "?" sits beside the field's own title (Select carries no info slot). */}
-          <span className="mb-1 flex items-center gap-1">
-            <FieldLabel block={false}>{S.company.language}</FieldLabel>
-            <InfoPopover label={S.company.language}>{S.company.languageInfo}</InfoPopover>
-          </span>
+          <InfoFieldLabel label={S.company.language} info={S.company.languageInfo} />
           <Select
             size="sm"
             aria-label={S.company.language}
@@ -814,11 +750,7 @@ export function OrganizationSettingsDialog({
           </Select>
         </div>
         <div>
-          {/* The "?" sits beside the field's own title (Select carries no info slot). */}
-          <span className="mb-1 flex items-center gap-1">
-            <FieldLabel block={false}>{S.company.approvalMode}</FieldLabel>
-            <InfoPopover label={S.company.approvalMode}>{S.company.approvalModeInfo}</InfoPopover>
-          </span>
+          <InfoFieldLabel label={S.company.approvalMode} info={S.company.approvalModeInfo} />
           <Select
             size="sm"
             aria-label={S.company.approvalMode}
@@ -836,11 +768,11 @@ export function OrganizationSettingsDialog({
         {/* Deleting is its own decision, below everything Save writes: immediate, confirmed by
               typing the id, and refused by the server for anyone but the Project's owner. */}
         <div className="flex items-center justify-between gap-3 border-t border-gray-200 pt-3 dark:border-gray-800">
-          <span className="min-w-0">
-            <span className="block text-xs font-semibold text-gray-600 dark:text-gray-400">
-              {S.company.deleteOrg}
-            </span>
-            <FieldHint>{S.company.deleteOrgDesc}</FieldHint>
+          <span
+            className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs font-semibold text-gray-600 dark:text-gray-400`}
+          >
+            {S.company.deleteOrg}
+            <InfoPopover label={S.company.deleteOrg}>{S.company.deleteOrgDesc}</InfoPopover>
           </span>
           <Button
             size="sm"

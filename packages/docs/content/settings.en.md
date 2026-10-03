@@ -43,7 +43,7 @@ The Server pages are admin-only and server-global. A non-admin sees neither thos
 
 In the desktop app the **Users** page is absent, because the server runs single-user. The desktop app's own window also has no **Account** page: it signs in through the shell's token and holds no password to change. A browser signed into the same server with a password keeps the page.
 
-A "?" beside a row's title opens that row's explanation. A "?" beside a page heading explains the whole page.
+Rest the pointer on the "?" beside a row's title to see that row's explanation; a "?" beside a page heading explains the whole page. Select the "?" to keep the explanation open, or tap it on a touch screen.
 
 Checking for updates is not a page here. See [Updates](/updates).
 

@@ -40,14 +40,9 @@ import { useTrayLocale } from "../../state/use-tray-locale";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
-import { ChannelRailRows } from "../../features/company/channel-sidebar";
+import { ChannelRailRows, DefaultChannelRailRow } from "../../features/company/channel-sidebar";
 import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
-import {
-  COMPANY_NAV_KEYS,
-  isOrgRoute,
-  orgPagePath,
-  parseOrgKey,
-} from "../../features/company/company-nav";
+import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../features/company/company-nav";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
@@ -77,6 +72,12 @@ function pinnedSidebarOnScreen(): boolean {
  * Evaluation Center; the user avatar at the bottom, opening the same account menu the pinned
  * sidebar's avatar does. No logo.
  *
+ * In company mode the top slot is the organization's all-hands channel, the slot after it stays
+ * empty, the organization's pages replace the development ones, and its other channels, desks
+ * and Temporary entries follow. The rail carries no work-mode toggle in either mode: the mode is
+ * switched from the pinned sidebar's Development | Company switch, so a folded sidebar keeps
+ * only entries that lead somewhere.
+ *
  * Every entry is an icon with no visible label, so each carries a localized name and the same
  * words in a styled tooltip (the package's `RailItem`). The entries' names come from the same
  * strings as the pinned nav's, so the rail follows the UI language with it.
@@ -95,22 +96,12 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const badges = useUpdateBadges();
   const company = useCompany();
   const location = useLocation();
-  /** Company mode: the organization's pages replace the development ones, and its channels follow them as rows. */
+  /**
+   * Company mode: the all-hands channel takes the top slot, the organization's pages replace
+   * the development ones, and its other channels follow them as rows.
+   */
   const inCompany = company.workMode === "company";
   const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
-  /** Same two moves as the pinned sidebar's switch: company mode enters at /org; development mode only leaves an organization page. */
-  const toggleMode = () => {
-    const next = inCompany ? "dev" : "company";
-    company.setWorkMode(next);
-    if (next === "company") navigate("/org");
-    else if (isOrgRoute(location.pathname)) navigate("/chat");
-  };
-  // The move INTO company mode says the mode is a beta: the rail has no room for the pill the
-  // expanded sidebar carries, and the suffix belongs on the label that offers the mode, not on
-  // the one that leaves it.
-  const companyToggleLabel = inCompany
-    ? S.company.switchToDev
-    : `${S.company.switchToCompany} · ${S.company.beta}`;
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
@@ -128,7 +119,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** Mirrors the pinned sidebar's "New chat" (use-new-chat.ts): parks any typed-but-unsent draft text first, then opens a draft that names nothing, so it starts on the Project's new-chat defaults. */
   const newChat = useNewChat();
 
-  /** Page entries (after last conversation and new chat): the pinned nav's manifest, routes
+  /** Page entries (after the top slot and new chat): the pinned nav's manifest, routes
       and labels, in its order, and all of them whether pinned or collapsible there — the
       rail has no fold. Traces is not among them: reading a Trace happens in the chat
       toolbar's panel switcher, which is the only place it happens. */
@@ -200,27 +191,13 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   return (
     <Rail
       head={
-        <>
-          <RailItem
-            label={S.nav.expandSidebar}
-            tooltip={expandTitle}
-            glyph={ICONS.chevronRightPipe}
-            onClick={onExpand}
-            className="shrink-0"
-          />
-          {/* The work-mode toggle, the rail's compact form of the sidebar's 开发 | 公司 switch:
-              one building glyph, pressed while in company mode, the tooltip naming the move a
-              click makes. Same availability rule as the switch. */}
-          {company.available && (
-            <RailItem
-              label={companyToggleLabel}
-              glyph={ICONS.building}
-              pressed={inCompany}
-              onClick={toggleMode}
-              className="shrink-0"
-            />
-          )}
-        </>
+        <RailItem
+          label={S.nav.expandSidebar}
+          tooltip={expandTitle}
+          glyph={ICONS.chevronRightPipe}
+          onClick={onExpand}
+          className="shrink-0"
+        />
       }
       foot={
         /* The account menu opens here, on the rail, instead of the avatar expanding the sidebar
@@ -263,14 +240,21 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
       {/* 1. Last conversation: a history mark (a clock read backwards) — the entry goes BACK to
           where the user was. Lit on any non-draft conversation. Dimmed/disabled (tooltip kept)
           only once the list has settled with no non-archived Session — while it is still
-          loading the entry keeps its normal look (no flash) and a click is a graceful no-op. */}
-      <RailItem
-        label={S.nav.lastConversation}
-        glyph={ICONS.history}
-        active={onConversation}
-        disabled={!lastSession && !loading}
-        onClick={openLastSession}
-      />
+          loading the entry keeps its normal look (no flash) and a click is a graceful no-op.
+          Company mode gives the slot to the organization's all-hands channel instead: an
+          organization's conversations are its channels, and the one everyone is in is where a
+          person goes back to. */}
+      {inCompany ? (
+        <DefaultChannelRailRow org={navOrg} />
+      ) : (
+        <RailItem
+          label={S.nav.lastConversation}
+          glyph={ICONS.history}
+          active={onConversation}
+          disabled={!lastSession && !loading}
+          onClick={openLastSession}
+        />
+      )}
       {/* 2. New chat: lit while on the draft page (pinned-sidebar convention). Company mode
           leaves this slot empty — a channel is made rarely, from the channel list's own header,
           and the rail carries no create control of its own. */}
@@ -301,13 +285,13 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
           />
         );
       })}
-      {/* The organization's channels, its desks and then its Temporary entries, under the pages
-          the way they sit under the nav in the pinned sidebar. A hairline says where each run
-          ends; a channel row carries its own unread count and a desk or an entry its running
-          dot, since a rail with no labels must still say how much is waiting. */}
+      {/* The organization's other channels, its desks and then its Temporary entries, under the
+          pages the way they sit under the nav in the pinned sidebar. A hairline says where each
+          run ends (the channels and the Temporary entries draw their own, and only when they
+          have rows); a channel row carries its own unread count and a desk or an entry its
+          running dot, since a rail with no labels must still say how much is waiting. */}
       {inCompany && navOrg !== null && (
         <>
-          <RailDivider />
           <ChannelRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
           <RailDivider />
           <DeskRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />

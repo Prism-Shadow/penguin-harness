@@ -38,7 +38,9 @@
  *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
  *   (`caret`), a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
  *   wherever a `data-part` is written, and a glyph's sets are the three (`line`, `octicons`,
- *   `pixel`), wherever a `data-set` is written.
+ *   `pixel`), wherever a `data-set` is written; and a fold's phase, which the foundation's layout
+ *   motion turns into a track, is one of the three it knows (`open`, `closing`, `settled`)
+ *   wherever a `data-fold` is written.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -152,9 +154,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
   // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
   "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],
-  // An assistant reply as it arrives (2026-09-30): the reply body the transcript renders and the
-  // gallery frames on its own.
-  "ui-stream": ["AssistantText"],
+  // Text as it arrives (2026-09-30): the one streaming body (2026-10-03) — the reply through
+  // AssistantText, a thinking row's text, a compaction's summary and a tool call's output.
+  "ui-stream": ["StreamText"],
   // An icon in every theme's style: the two icon renderers, a registry glyph's and a mark's.
   "ui-glyph": ["GlyphIcon", "GlyphMark"],
 };
@@ -181,6 +183,8 @@ const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "
 /** A glyph's one part (the duotone body under its line drawing), and its three sets. */
 const GLYPH_PARTS = new Set(["duo"]);
 const GLYPH_SETS = new Set(["line", "octicons", "pixel"]);
+/** A fold's phases, the three the foundation's `[data-layout-motion][data-fold]` rules read. */
+const FOLD_PHASES = new Set(["open", "closing", "settled"]);
 /** The icon renderers: a `decor` prop on one of these is the decorative-icon hook applied. */
 const ICON_RENDERERS = new Set(["GlyphIcon"]);
 /** A tree row's depth: the eight levels the recipes spell out, and the roots. */
@@ -409,6 +413,10 @@ describe("style hooks", () => {
         if (typeof set === "string" && !GLYPH_SETS.has(set)) {
           problems.push(`${at} data-set="${set}" is not line|octicons|pixel`);
         }
+        const fold = element.attributes.get("data-fold");
+        if (typeof fold === "string" && !FOLD_PHASES.has(fold)) {
+          problems.push(`${at} data-fold="${fold}" is not open|closing|settled`);
+        }
         // Tree rows are written by the host, wherever it renders them: every literal depth and
         // last mark in the package must be what the recipes select on.
         const depth = element.attributes.get("data-depth");
@@ -534,6 +542,28 @@ describe("the hook checks, on known shapes", () => {
     expect(rows[1]!.attributes.get("data-branch")).toBe(true);
     const field = analysis.elements.find((e) => e.classes.some((t) => t.utility === "ui-field"))!;
     expect(childSlots(field).map((s) => s.slot)).toEqual(["label", "control"]);
+  });
+
+  it("read a fold's phase as the foundation does: a literal is judged, an expression is not", () => {
+    const analysis = analyzeFile(
+      file(
+        "e.tsx",
+        [
+          "export function Folds({ phase }: { phase: string }) {",
+          "  return (",
+          "    <>",
+          '      <div data-layout-motion data-fold="closing" />',
+          '      <div data-layout-motion data-fold="shut" />',
+          "      <div data-layout-motion data-fold={phase} />",
+          "    </>",
+          "  );",
+          "}",
+        ].join("\n"),
+      ),
+    );
+    const phases = analysis.elements.map((e) => e.attributes.get("data-fold"));
+    expect(phases).toEqual(["closing", "shut", null]);
+    expect(phases.filter((p) => typeof p === "string" && !FOLD_PHASES.has(p))).toEqual(["shut"]);
   });
 
   it("read a stream's state and its caret as the recipes do", () => {

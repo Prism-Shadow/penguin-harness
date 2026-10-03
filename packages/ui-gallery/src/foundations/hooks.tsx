@@ -1,20 +1,20 @@
 /**
  * Foundations › Hooks: the ten style hooks (`packages/ui/src/hooks.ts`), each on the minimal
- * markup its recipes select on — `.ui-frame` children carry `data-slot`, `.ui-live` carries
- * `data-live`, `.ui-underline-nav` holds `[role=tab]` items, `.ui-display` sits on an `h1`,
- * `.ui-shell` holds a `nav` and a `main` slot, `.ui-icon-decor` sits on the icon with its
- * `data-role`, `.ui-tree` rows carry `data-depth` and `data-last` with a `data-branch` under a
- * parent, `.ui-field` children carry the `label` / `control` / `hint` slots — so a theme's hooks
- * can be reviewed before any component carries them. The specimens live here, in the gallery,
- * rather than in a package module: a package file applies a hook only inside the component that
- * hosts it.
+ * markup its recipes select on — `.ui-frame` children carry `data-slot`, `.ui-live` is the
+ * package's own live signals (the caret, a pulsing dot, the spinner), `.ui-underline-nav` holds
+ * `[role=tab]` items, `.ui-display` sits on an `h1`, `.ui-shell` holds a `nav` and a `main` slot,
+ * `.ui-icon-decor` sits on the icon with its `data-role`, `.ui-tree` rows carry `data-depth` and
+ * `data-last` with a `data-branch` under a parent, `.ui-field` children carry the `label` /
+ * `control` / `hint` slots — so a theme's hooks can be reviewed before any component carries them.
+ * The specimens live here, in the gallery, rather than in a package module: a package file
+ * applies a hook only inside the component that hosts it.
  *
  * The base look of each sample lives in `@layer components` (foundations.css): a hook's recipe sits
  * in `@layer ui-theme` and must win over it, exactly as it wins over a component's utilities. The
  * tree sample indents its rows the way a host does — by the inset and the indent tokens — so the
  * three themes' guides land on the same columns as in the modules.
  */
-import { HOOKS } from "@prismshadow/penguin-ui";
+import { Dot, HOOKS, Spinner, StreamingCaret } from "@prismshadow/penguin-ui";
 import type { CSSProperties, ReactNode } from "react";
 import { useGallery } from "../state";
 import { Glyph, NAV_GLYPHS, SAMPLE_GLYPHS, ShellSpecimen } from "./shared";
@@ -110,20 +110,20 @@ export function HooksBoard() {
         </h1>
       </Hook>
 
+      {/* The hook's three hosts as the app renders them, not drawings of them: the streaming
+          caret, a pulsing dot and the one spinner. */}
       <Hook name="ui-live">
         <div className="gh-row">
           <span>
             {t.streaming}
-            <span className="ui-live gh-caret" data-live="caret">
-              ▌
-            </span>
+            <StreamingCaret />
           </span>
           <span className="gh-live">
-            <span className="ui-live gh-dot" data-live="dot" />
+            <Dot tone="success" pulse />
             {S.foundations.toneWords.success}
           </span>
           <span className="gh-live">
-            <span className="ui-live gh-spinner" data-live="spinner" />
+            <Spinner size="sm" tone="success" label={S.foundations.loading} />
             {S.foundations.loading}
           </span>
         </div>

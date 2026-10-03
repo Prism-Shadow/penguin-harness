@@ -9,8 +9,7 @@
  *   vLLM, OpenRouter, TokenDance, SiliconFlow, user-defined); Delete group only on a user-defined
  *   group; then the speed test and the group settings on every group, the settings last. No
  *   group offers a separate "Enter key": the group key is set in the settings (or by Connect).
- * - A member keeps the two read-only parts and nothing that writes. A divider follows the balance
- *   wherever something comes after it.
+ * - A member keeps the two read-only parts and nothing that writes.
  * - "Connected" is the GROUP holding a key: a key set on one model is that model's alone.
  * - Not connected, the owner's status is one button: it shows "Not connected" and pressing it
  *   starts the connect flow (once per press; never while the page is busy). Connected, one
@@ -33,7 +32,6 @@ import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog"
 import {
   connectedMenuItems,
   connectionStatus,
-  dividerAfterBalance,
   groupHeaderActions,
   groupKeyFromEnv,
   groupKeyStored,
@@ -380,24 +378,6 @@ describe("the balance menu", () => {
     expect(offline.text).toBe("—");
     expect(offline.updated.startsWith(S.models.balanceFailed(""))).toBe(true);
     expect(offline.updated).toContain("Network error");
-  });
-});
-
-describe("the divider after the balance", () => {
-  it("stands between the balance and whatever follows it", () => {
-    expect(dividerAfterBalance(owner("tokendance", true))).toBe(true);
-    expect(dividerAfterBalance(owner("deepseek", true))).toBe(true);
-    // A member of TokenDance: the balance, then the connection status.
-    expect(dividerAfterBalance(member("tokendance", true))).toBe(true);
-  });
-
-  it("is left out where it would separate nothing", () => {
-    // A member of DeepSeek sees the balance alone.
-    expect(dividerAfterBalance(member("deepseek", true))).toBe(false);
-    // No balance to lead: no key stored, or a group without one.
-    expect(dividerAfterBalance(owner("tokendance", false))).toBe(false);
-    expect(dividerAfterBalance(owner("openai", true))).toBe(false);
-    expect(dividerAfterBalance([])).toBe(false);
   });
 });
 

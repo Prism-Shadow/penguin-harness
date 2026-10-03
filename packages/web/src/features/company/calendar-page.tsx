@@ -947,7 +947,7 @@ export function CalendarPage() {
                 size="sm"
                 label={S.company.calendar.name}
                 required
-                hint={S.company.calendar.nameHint}
+                info={S.company.calendar.nameHint}
                 {...(fieldErrors.name !== undefined ? { error: fieldErrors.name } : {})}
                 value={form.name}
                 disabled={form.editing !== null}
@@ -967,7 +967,7 @@ export function CalendarPage() {
               required
               size="sm"
               rows={4}
-              hint={S.company.calendar.promptHint}
+              info={S.company.calendar.promptHint}
               {...(fieldErrors.prompt !== undefined ? { error: fieldErrors.prompt } : {})}
               value={form.prompt}
               onChange={(e) => set({ prompt: e.target.value })}
@@ -978,7 +978,7 @@ export function CalendarPage() {
                 label={S.company.calendar.startAt}
                 required
                 type="datetime-local"
-                hint={S.company.calendar.staggerHint}
+                info={S.company.calendar.staggerHint}
                 {...(fieldErrors.startAt !== undefined ? { error: fieldErrors.startAt } : {})}
                 value={form.startAt}
                 onChange={(e) => set({ startAt: e.target.value })}

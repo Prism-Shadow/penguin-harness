@@ -3,7 +3,7 @@
  * sidebar nav's model (lib/nav-group-collapse.ts): every group is either PINNED, always shown,
  * or COLLAPSIBLE, inside the area one full-width chevron bar under the pinned groups folds away.
  * The main gateways and first-party vendors are pinned by default; the user moves a group across
- * with the lock on its header, or by dropping it on a header in the other area. Both areas keep
+ * with the star on its header, or by dropping it on a header in the other area. Both areas keep
  * the page's group order. While a search is active both areas show and the bar is hidden.
  *
  * Global storage keys, not per Project, like the nav's: which groups a user keeps in view is a
@@ -87,7 +87,7 @@ export function pinsAfterDrop(
 }
 
 /**
- * `pins` with one group pinned or unpinned — the write both the lock and a cross-area drop make.
+ * `pins` with one group pinned or unpinned — the write both the star and a cross-area drop make.
  * A choice that matches the default is removed rather than stored, so only deviations are kept;
  * a call that changes nothing returns `pins` itself, and callers skip the write on that identity.
  */

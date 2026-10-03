@@ -9,9 +9,10 @@
  * What lives here is theme-independent: the `dark` variant, the cascade layer order, the bridge
  * from the `--ui-*` token contract (tokens.ts) to Tailwind utilities, the base rules that read
  * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
- * `data-layout-motion` attributes, the activity marks' turn and squeeze, the depth ladder the
- * `ui-tree` recipes measure with, and which icon set a `ui-glyph` shows until a theme says. Token VALUES live only in `themes/*.css`, and so do the user's
- * accent presets: each theme lists its own, in `@layer ui-accent`, scoped to that theme (tokens.ts,
+ * `data-layout-motion` / `data-fold` attributes, the activity family's ink ease as a run
+ * settles, the activity marks' turn and squeeze, the depth ladder the `ui-tree` recipes measure
+ * with, and which icon set a `ui-glyph` shows until a theme says. Token VALUES live only in
+ * `themes/*.css`, and so do the user's accent presets: each theme lists its own, in `@layer ui-accent`, scoped to that theme (tokens.ts,
  * `ACCENT_PRESETS`).
  *
  * Attributes on <html>: `class="dark"` (mode), `data-theme` (absent = github), `data-accent`
@@ -253,11 +254,16 @@
    *   state stays mounted until `animationend`; with `animation-name: none` (reduced motion, or a
    *   theme that jumps) the owner unmounts at once.
    * - `data-backdrop="enter" | "exit"`: the dialog's scrim, opacity only.
-   * - `data-reveal`: content that just appeared inside a settled surface — a streamed chunk of
-   *   text, a new tool row — fades (and de-blurs) in once; put it on the appended element only.
+   * - `data-reveal`: content that just appeared inside a settled surface — a new tool row, a nav
+   *   entry moved to the other area, a regrouped session list, the glyph and the title a run
+   *   settles into — fades (and de-blurs) in once; put it on the appended or swapped-in element
+   *   only, never on what a page mounts with. Streaming text does not use it (`ui-stream` does).
    * - `data-layout-motion`: an element whose size changes between states, the sidebar's width or a
    *   disclosure's `grid-template-rows: 0fr ↔ 1fr` — or whose place does, a dock surface lifting
    *   off the page column to cover it (`top`, `left`); the theme sets the duration and the curve.
+   * - `data-fold="open" | "closing" | "settled"` beside it: a fold's body (`Fold`). The phase is
+   *   the track — `1fr` open or settled, `0fr` closing — and a body opened after mount starts at
+   *   `0fr` through `@starting-style`, so it enters the way it leaves. Never `auto`.
    *
    * The presence keyframes move the element through the individual `translate` and `scale`
    * properties, never `transform`, so a layer that positions itself with a `transform` keeps it
@@ -348,6 +354,25 @@
       top, left;
     transition-duration: var(--ui-dur-layout);
     transition-timing-function: var(--ui-ease-layout);
+  }
+  [data-layout-motion][data-fold] {
+    grid-template-rows: 1fr;
+  }
+  [data-layout-motion][data-fold="closing"] {
+    grid-template-rows: 0fr;
+  }
+  @starting-style {
+    [data-layout-motion][data-fold="open"] {
+      grid-template-rows: 0fr;
+    }
+  }
+
+  /* A run settling (`ui-activity`, running → done or error): the label, the mark and the details
+     ease into their settled ink rather than flipping, on the theme's base duration — a colour
+     change, not movement, so reduced motion keeps it as it keeps a hover's. The glyph and the
+     title that change outright arrive under `data-reveal` instead (StatusIcon, ActivityGroup). */
+  .ui-activity :is([data-slot="label"], [data-slot="mark"], [data-slot="detail"]) {
+    transition: color var(--ui-dur-base) var(--ui-ease-out);
   }
 
   /*

@@ -26,6 +26,7 @@
     "dev:landing": "node scripts/dev-prebuild.mjs --install-only && pnpm --filter @prismshadow/penguin-landing dev",
     "dev:gallery": "node scripts/dev-prebuild.mjs --install-only && pnpm --filter @prismshadow/penguin-ui-gallery dev",
     "build:site": "node scripts/build-site.mjs",
+    "build:a2ui-check": "node scripts/build-a2ui-check.mjs",
     "desktop": "pnpm -r build && node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data -- pnpm --dir packages/desktop start"
   },
   "devDependencies": {

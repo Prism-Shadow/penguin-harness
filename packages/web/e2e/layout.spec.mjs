@@ -289,7 +289,7 @@ test("models: group header actions collapse to icons instead of disappearing", a
     { name: "测速 TokenDance", label: null },
     { name: "设置 TokenDance", label: null },
   ];
-  // The header row: the collapse button sits in its left cluster, beside the group's lock.
+  // The header row: the collapse button sits in its left cluster, beside the group's star.
   const header = tokenDance.locator("xpath=../..");
   // The header's last action is the settings gear, on this group as on every other.
   const lastAction = await header.evaluate((header) =>

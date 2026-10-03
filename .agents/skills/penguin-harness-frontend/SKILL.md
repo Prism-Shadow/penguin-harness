@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-frontend
-description: Use when changing the PenguinHarness Web App (`packages/web`) — adding or restyling any UI, picking a status colour, adding an icon, laying out a row or a form field, writing user-facing copy, or building a popup. Covers the semantic tone tokens, the icon size/stroke/gap scale, the semantic-versus-formatting rule for explanatory text, the two-dictionary i18n contract, and the portal-panel pattern with its Esc and scroll caveats.
+description: Use when changing the PenguinHarness Web App (`packages/web`) or the shared UI package — adding or restyling any UI, picking a status colour, adding an icon, laying out a row or a form field, writing user-facing copy, building a popup or a hover-revealed panel, or making anything open, fold, resize or maximize. Covers the semantic tone tokens, the icon size/stroke/gap scale, the semantic-versus-formatting rule and the hover "?", the two-dictionary i18n contract, the portal-panel pattern, motion (every disclosure folds through `Fold`, sizes move through the theme's layout motion), and the recent owner decisions on favorites, maximized surfaces, the collapsed rail and example cards.
 ---
 
 # Web App frontend conventions
@@ -76,7 +76,8 @@ dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
 
 A hover hint shows only where its words are not on screen (`hintAllowedFor` in the UI package's
 tooltip.tsx): an icon-only control, a wordless mark, an input, or text that is cut off. Three
-glyphs are read without one — the circled "?" beside a title (`InfoPopover`), a close or clear ×
+glyphs are read without one — the circled "?" beside a title (`InfoPopover`, whose hover opens
+the explanation itself), a close or clear ×
 beside the thing it dismisses, and a fold chevron under the rows it folds — so they carry no
 `data-tooltip` unless the hint says something the glyph cannot: a shortcut ("Close (Esc)"), a
 consequence ("Kill this terminal"), the subject when it is not beside it. That is why `DockTabs`'
@@ -109,6 +110,18 @@ of an ancestor's overflow and to close it on outside click, Esc or scroll, and a
 those things. It follows the WAI-ARIA disclosure pattern instead: the panel stays in the DOM and
 is `hidden` while collapsed, so its `aria-controls` always resolves.
 
+**The "?" opens on hover** (owner, 2026-10-03: a help mark that needs a click to say anything is
+one click too many). `InfoPopover` takes its behaviour from the UI package's `useHoverDisclosure`:
+a mouse resting on the "?" opens the panel after the tooltip's own delay (`HOVER_OPEN_DELAY_MS`,
+one hover timing in the app), leaving it closes after a short grace unless the pointer moves into
+the panel, which stays open while hovered so its text can be selected and a link in it clicked. A
+click pins it open (a second click, an outside click, Esc or a scroll closes it), which is also the
+whole story on touch, where `pointerType` filters hover out. The keyboard toggles with Enter/Space;
+focus alone opens nothing, or tabbing through a form full of "?" would spray panels. Anything new
+that reveals a floating panel on hover uses the same hook rather than its own timers — and never a
+`data-tooltip` on the trigger, since the panel *is* the hover content. `HelpFold` stays a click:
+it is inline flow, and a fold that opened under a passing pointer would shove the page around.
+
 Both are collapsed by default, both are real `<button>`s with `aria-expanded` and `aria-controls`,
 and both fold the subject into the accessible name ("More info: Vault") rather than repeating it,
 so a "?" inside a heading does not make that heading announce its own title twice. The fold's
@@ -134,6 +147,13 @@ registry, `ICONS` (`packages/ui/src/components/icons/icons.ts`), keyed by the dr
 `alarmClock`), and the app's manifests say which drawing stands for what (`lib/nav-icons.ts`,
 `lib/stat-icons.ts`, `GROUP_MODE_ICONS`). A new glyph is a registry entry; `test/icon-registry.test.ts`
 holds the feature files' leftovers to a shrinking list.
+
+**A glyph says what the state means, not a metaphor that happens to fit.** "Keep this out of the
+fold" is a favorite: `ICONS.star`, outline when off, `filled` when on (nav entries and model groups,
+owner 2026-10-03, after a lock read as permission or secrecy). A pin is a Session pinned to the top
+of its list. A lock means access or secrecy and nothing else. A new glyph needs an entry in every
+theme's set — the line path, an Octicon, a 16×16 pixel grid and a duotone tint — and `filled`
+reads each set's filled table, so one key covers both states.
 
 Two marks deliberately live off that grid, because a two-stroke mark aliases when its grid and its
 render size disagree: `ChevronDown` (12×12, stroke 1.5) and `CloseIcon` (14×14, stroke 1.5). Charts,
@@ -247,6 +267,34 @@ period switch does.
 Check a change at 390 and 1024 px with the XL text size (`penguin.textSize` = `xl`), in both
 languages — that is where a row runs out of room first.
 
+## Motion: what opens folds, what resizes moves
+
+Components declare motion; the theme times it. Never write a duration, an easing or a keyframe in
+a component — put `data-presence` / `data-reveal` / `data-layout-motion` on the element and let
+`theme.css` and the theme's tokens decide (Frost long and soft, Primer short, Console in steps;
+reduced motion instant). Three rules the owner has had to repeat:
+
+- **Every disclosure body folds through `Fold`, the inner ones too.** A work group folding while the
+  tool call, thinking step or settings section inside it snaps open (`{open && <div>…}`) reads as
+  half a job (owner, 2026-10-03: "只有外层的有动画，里面还是没有"). `DisclosureRow`,
+  `CollapsibleSection`, nav and session groups all fold; a new collapsible uses `Fold` from day one.
+  A body that mounts open does not tween (a page load moves nothing), and content growing inside an
+  open fold is not a transition.
+- **A surface that changes size or place moves through the theme's layout motion**, with its content
+  laid out at the destination size from the first frame (the dock's `contentSize`, the fullscreen
+  box's anchored inner wrapper): text does not rewrap and xterm does not refit on every frame.
+- **Maximize is the end of the resize range, inside the surface's own region.** The dock's full
+  screen covers its row (or grows up to the toolbar), keeps the toolbar with the title and
+  statistics, leaves the navigation column alone (it folds itself), and is reached by its header
+  toggle or by dragging past the maximum; dragging back snaps out. No second, floating way out next
+  to an in-place toggle (owner, 2026-10-03, three rounds on #961).
+
+Check motion in motion. A resting screenshot proves nothing about a fold: slow every transition
+with CDP (`Animation.enable` + `Animation.setPlaybackRate` 0.1) or pause and seek
+`document.getAnimations()`, and look at the frames in between in all three themes — and walk the
+interaction states a resting shot never shows (drag previews, hover hand-offs between a badge and a
+toggle, nested radii, an edge painted over by a neighbour), zoomed 3–4×.
+
 ## Every user-facing string is bilingual
 
 Two dictionaries: `src/lib/strings.ts` is zh (and defines the `Strings` type), `src/lib/strings-en.ts`
@@ -297,8 +345,14 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
 - **Every scroll container is a containing block** (`styles.css`, `@layer base`). Do not undo it: an
   absolutely positioned descendant of a `static` scroller escapes to the initial containing block
   and gives the whole shell a second scrollbar. That bug shipped three times.
-- **Animations are `transform`-only where possible**, so the global `prefers-reduced-motion` rule
-  disables them into a correct resting state instead of hiding the element.
+- **Presence animations move `translate`/`scale`, never layout**, so reduced motion stills them into a
+  correct resting state; size and place changes go through `data-layout-motion` (see Motion).
+- **The collapsed rail carries navigation only.** No mode switch on it (the 开发 | 公司 switch lives
+  in the expanded sidebar), and in company mode its top slot is the all-hands channel, not the
+  development "last conversation" (owner, 2026-10-03).
+- **Example and template cards show a short summary**, one line saying what it is; the full text
+  (a mission, a prompt) lands in the field it fills, and examples live where the choice is made,
+  not again under that field (company landing, 2026-10-03).
 - **Comments explain constraints, not history**, and never cite a design doc — inline the constraint.
 
 ## Verify

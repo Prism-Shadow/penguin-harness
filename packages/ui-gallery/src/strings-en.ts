@@ -318,7 +318,7 @@ export const en: GalleryStrings = {
       "A menu from the top, a dialog from the centre, a toast from the bottom — each on the active theme's enter and exit tokens.",
     reveal: "Reveal",
     revealNote:
-      "Streamed text arrives chunk by chunk; each chunk moves once, on the reveal tokens, as it appears.",
+      "New rows appear inside a settled list; each moves once, on the reveal tokens, as it appears.",
     layout: "Layout",
     layoutNote: "The sidebar's width between expanded and rail, on the layout tokens.",
     replay: "Replay",
@@ -329,6 +329,13 @@ export const en: GalleryStrings = {
       toast: "Toast",
       trigger: "More",
       sidebarRows: ["New chat", "Agents", "Models"],
+      revealRows: [
+        { name: "read_file", detail: "package.json" },
+        { name: "grep", detail: "useStreamReveal" },
+        { name: "exec_command", detail: "Run the tests" },
+        { name: "apply_patch", detail: "src/app.ts" },
+        { name: "exec_command", detail: "Check formatting" },
+      ],
     },
     hookJobs: {
       "ui-glass":
@@ -348,7 +355,8 @@ export const en: GalleryStrings = {
         "a notice strip or toast, coloured by its tone: info, success, warning, danger or neutral",
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
-      "ui-stream": "a reply that is still streaming: each theme decides how new text appears",
+      "ui-stream":
+        "text that is still streaming (a reply, thinking, a summary, a tool's output): each theme decides how new text appears",
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
     },
@@ -477,7 +485,7 @@ export const en: GalleryStrings = {
       content: {
         title: "Content",
         description:
-          "Headings and text roles, inline code, Markdown prose, code blocks and surfaces, and the diff viewer.",
+          "Headings and text roles, inline code, Markdown prose, code blocks and surfaces, the diff viewer, and A2UI blocks.",
       },
       layout: {
         title: "Layout",
@@ -804,6 +812,7 @@ export const en: GalleryStrings = {
     },
     streaming: {
       reply: "Assistant reply",
+      output: "Tool output",
       receiving: "Receiving…",
       received: "All received",
       modes: {
@@ -999,6 +1008,96 @@ export const en: GalleryStrings = {
       patch: "From a patch",
       diffLabel: "Changes to src/config.ts",
       patchLabel: "Changes to src/limits.ts",
+      a2ui: "A2UI blocks",
+      a2uiHint:
+        "Components a model writes into its reply: a choice, a form, steps, a callout and a Mermaid diagram. A pick or a submit here shows, as a toast, the text the app would put in the composer.",
+      a2uiReply: [
+        {
+          lead: "Pick the database first.",
+          spec: {
+            type: "choice",
+            question: "Which database should the service use?",
+            options: [
+              {
+                label: "PostgreSQL",
+                description: "Relational; the team already runs it",
+                recommended: true,
+              },
+              { label: "SQLite", description: "One file beside the service" },
+              { label: "MongoDB", description: "Documents; the schema can change at any time" },
+            ],
+            allowOther: true,
+          },
+        },
+        {
+          lead: "Give the deployment details in one go:",
+          spec: {
+            type: "form",
+            title: "Deployment",
+            fields: [
+              {
+                id: "region",
+                label: "Region",
+                kind: "single",
+                options: [{ label: "eu-west" }, { label: "us-east" }],
+                required: true,
+              },
+              {
+                id: "addons",
+                label: "Add-ons",
+                kind: "multiple",
+                options: [{ label: "CDN" }, { label: "WAF" }],
+              },
+              {
+                id: "replicas",
+                label: "Replicas",
+                kind: "number",
+                min: 1,
+                max: 10,
+                step: 1,
+                unit: "pods",
+              },
+              { id: "notes", label: "Notes", kind: "text", placeholder: "Anything else" },
+            ],
+            submitLabel: "Fill in answers",
+          },
+        },
+        {
+          lead: "Rotate the key in three steps:",
+          spec: {
+            type: "steps",
+            title: "Rotate the API key",
+            steps: [
+              { text: "Open Settings › Keys." },
+              { text: "Create a new key and copy it.", note: "The new key works at once." },
+              {
+                text: "Delete the old key.",
+                warning: "A deleted key cannot be restored.",
+                caution: "Jobs that still use the old key fail until they restart.",
+                code: "curl -X DELETE https://api.example.com/keys/old",
+                lang: "bash",
+              },
+            ],
+          },
+        },
+        {
+          lead: "One more thing:",
+          spec: { type: "callout", tone: "tip", text: "Run `pnpm test` before you push." },
+        },
+        {
+          lead: "Before you start:",
+          spec: {
+            type: "callout",
+            tone: "warning",
+            title: "Stop point",
+            text: "If you have no first numbers within two days, change the plan. This step decides whether the rest is worth the time; stopping early costs less than giving up at the end.",
+          },
+        },
+      ],
+      a2uiDiagramLead: "A request checks the cache first:",
+      a2uiDiagram:
+        "flowchart LR\n  A[Request] --> B{Cached?}\n  B -->|yes| C[Serve it]\n  B -->|no| D[Fetch from origin]\n  D --> C",
+      a2uiInvalidLead: "A block that cannot be shown gives its reason and its source:",
     },
     layout: {
       page: "Page and header",

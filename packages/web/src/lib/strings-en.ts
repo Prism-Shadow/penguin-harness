@@ -31,9 +31,9 @@ export const en: Strings = {
     expandGroup: "Expand",
     pinGroup: "Pin group",
     unpinGroup: "Unpin group",
-    /** A nav entry's pin toggle: a pinned entry stays visible when the collapsible area folds. */
-    pinEntry: "Pin",
-    unpinEntry: "Unpin",
+    /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
+    pinEntry: "Add to favorites",
+    unpinEntry: "Remove from favorites",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "Overview",
@@ -1584,8 +1584,8 @@ export const en: Strings = {
      * needs first and is the element that truncates.
      */
     recommendedGroup: "Recommended",
-    pinGroup: "Pin",
-    unpinGroup: "Unpin",
+    pinGroup: "Add to favorites",
+    unpinGroup: "Remove from favorites",
     foldedGroups: (n: number): string => (n === 1 ? "1 more group" : `${n} more groups`),
     discountBadge: (pct: number): string => `${pct}% off`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
@@ -3137,6 +3137,19 @@ Scenarios:
     approvalWaiting: "awaiting approval",
     copyCode: "Copy code",
     copyReply: "Copy reply",
+    a2ui: {
+      fill: "Fill in",
+      other: "Other…",
+      recommended: "Recommended",
+      note: "Note",
+      tip: "Tip",
+      caution: "Caution",
+      warning: "Warning",
+      composing: "Composing…",
+      cannotShow: (reason: string) => `This component can't be shown: ${reason}`,
+      diagram: "Diagram",
+      showSource: "Show source",
+    },
     forkSession: "Fork chat from here",
     forkSessionConfirmBody:
       "This copies the conversation up to this reply into a new chat. The original chat stays unchanged.",
@@ -4153,12 +4166,9 @@ Scenarios:
     workMode: "Work mode",
     modeDev: "Development",
     modeCompany: "Company",
-    switchToCompany: "Switch to company mode",
-    switchToDev: "Switch to development mode",
     /**
      * Company mode is a beta, said in three shapes: the mini tag at the top-right of 「公司」 in
-     * the work-mode switch (and the suffix the collapsed rail's tooltip carries in its place),
-     * the tag's own tooltip, and the one sentence shown both under the admin's master switch
+     * the work-mode switch, the tag's own tooltip, and the one sentence shown both under the admin's master switch
      * and as the notice a person gets the first time they enter the mode.
      */
     beta: "Beta",
@@ -4187,8 +4197,9 @@ Scenarios:
     /** Create dialog. */
     createTitle: "New organization",
     orgId: "Organization id",
-    orgIdHint:
-      "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores; also the directory name, fixed once created",
+    orgIdHint: "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores",
+    orgIdInfo:
+      "The organization id is also its directory name and cannot change once created. Select Generate with AI to derive one from the display name or the mission.",
     displayName: "Display name",
     displayNameHint: "Leave empty to use the organization id",
     mission: "Mission",
@@ -4196,26 +4207,32 @@ Scenarios:
       "One sentence on why this organization exists; the CEO's first session starts from it",
     missionPlaceholder:
       "e.g. Maintain the PenguinHarness docs site and publish a weekly update digest",
-    /** The three examples under the mission field (org-examples.ts holds their order). */
-    missionExampleHint: "Click to fill the mission",
+    /**
+     * The example cards on the empty landing (org-examples.ts holds their order). A card shows
+     * the name and the one-line summary; the full mission is what a click fills the dialog with.
+     */
     missionExamples: {
       research: {
         name: "Research Paper Lab",
+        summary: "Runs experiments and writes papers for top-tier conferences",
         mission:
           "Set up a company that does research for me and produces papers fit for top-tier conferences. Experiments run autoresearch-style: fix the evaluation script and the metric first, edit one file only, give every experiment the same time budget, log each result as one line and keep only the changes that improve the metric. Before any experiment loop starts, the researcher asks me in the channel for resources — the machine and its GPU/CPU, concurrency, total hours, disk and data, paid APIs — then runs unattended inside what I approved and asks again before exceeding it. Papers go through adversarial review between two kinds of employee: reviewers reproduce the results, check baselines and ablations, hunt for test-set leakage and metric gaming, and return a score with required changes; authors revise or rebut point by point until the reviewer accepts.",
       },
       agentTuning: {
         name: "Agent Tuning Studio",
+        summary: "Improves your product agent's accuracy and user experience",
         mission:
           "Set up a company that optimizes my product Agent: raise its accuracy in real business use and improve the product experience.",
       },
       cloudReseller: {
         name: "Cloud Service Reseller",
+        summary: "Bundles low-priced cloud services and resells them at a markup",
         mission:
           "Set up a company that runs a cloud-service-style website for me: collect every low-priced service on the market, bundle and resell them at a markup to make money, and grow the site's SEO and visibility.",
       },
       mirror: {
         name: "Digital-twin company",
+        summary: "Gives each colleague a digital twin that answers and relays messages",
         mission:
           "Set up a company that mirrors our real company: I will give the CEO our real org chart and the CEO creates one digital twin per real employee; each twin's desk session is bound to that colleague's Feishu bot. A twin only receives its own colleague's messages by default, answers what it can on its own and relays the rest to the relevant colleague's twin, who passes it on to the real person. The CEO hires nobody on its own, schedules nothing and files no tickets; the company only relays and solves what it can.",
       },
@@ -4225,7 +4242,6 @@ Scenarios:
     modelField: "Model",
     modelInfo:
       "The model desk and ticket sessions run on by default; an employee given its own model in the org chart uses that instead. Takes effect from the next work round.",
-    modelHint: "Leave empty to use the Project's default model",
     modelClear: "Back to the Project default",
     modelStale: "This model is no longer in the Project's model list",
     modelProjectDefault: "Project default",
@@ -4250,8 +4266,8 @@ Scenarios:
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "Organization settings",
     timezone: "Timezone",
-    timezoneHint:
-      "An IANA timezone such as Asia/Shanghai; budget periods (calendar months) and channel day files follow it",
+    timezoneHint: "An IANA timezone such as Asia/Shanghai",
+    timezoneInfo: "Budget periods (calendar months) and channel day files follow this timezone",
     language: "Working language",
     languageInfo:
       "The language the organization works in: its handbook, the employee briefs, the CEO's initialization session and every desk's output are written in it; it is detected from the mission when the organization is created.",
@@ -4436,9 +4452,6 @@ Scenarios:
       workspace: "Workspace",
       workspaceHint:
         "A sub-directory of the shared workspace (`.` for all of it), or an absolute path that already exists",
-      /** Hiring: the same spec, with the default the server fills in when the field is left empty. */
-      hireWorkspaceHint:
-        "A sub-directory of the shared workspace, or an absolute path that already exists; left empty, a sub-directory named after the employee's Agent id",
       budget: "Monthly budget",
       budgetHint:
         "A monthly cap, leave empty for unbounded; counts the employee plus every subordinate",
@@ -4480,7 +4493,6 @@ Scenarios:
       hireAgentSection: "Agent",
       hirePositionSection: "Position",
       agentHint: "Only Agents of this Project not yet in the organization",
-      budgetPlaceholder: "e.g. 30",
       clearBudget: "Set unbounded",
       currentValue: (value: string): string => `Current: ${value}`,
       manager: "Manager",
@@ -4565,7 +4577,7 @@ Scenarios:
       loadFailed: (error: string): string => `Could not load the calendar: ${error}`,
       /** The "×" that puts the empty-calendar note away for good (the same sentence stays in the page's "?"). */
       dismissHint: "Got it",
-      /** Under the start time: why two employees should not share one minute. */
+      /** Behind the start time's "?": why two employees should not share one minute. */
       staggerHint:
         "Stagger the rota: give every employee its own minute; desks that fire together compete for the same budget and tickets.",
       /** Heads the advisory lines a calendar write answers with (the lines themselves come from the server, in English). */
@@ -4599,12 +4611,11 @@ Scenarios:
       owner: "Owner",
       noOwner: "Unassigned",
       ownerSelf: "Yourself",
-      ownerSelfHint: "Left empty, the owner is you",
       parent: "Parent ticket",
       noParent: "None",
       notify: "Notify",
-      notifyHint:
-        "Comma-separated principals, e.g. agent:ceo, user:alice; notified on status changes",
+      notifyHint: "Comma-separated principals, e.g. agent:ceo, user:alice",
+      notifyInfo: "These principals are notified when the ticket's status changes",
       priority: "Priority",
       due: "Due",
       noDue: "None",

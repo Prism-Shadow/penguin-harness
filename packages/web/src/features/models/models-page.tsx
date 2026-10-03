@@ -14,15 +14,15 @@
  * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
  * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
  * delete). The group header's right side holds the group's actions in a fixed order
- * (group-header.ts): its balance (one menu: pin, refresh, when it was read; a divider after
- * it), the connection ("Not connected", which connects, or one "Connected" menu: Sync models on
- * Penguin Go, Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
+ * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
+ * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
+ * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
  * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, user-defined),
  * the speed test, and the group settings (provider-settings-dialog.tsx) last on every group.
  *
- * The groups stand in two areas (model-group-pins.ts): the pinned ones, always shown, then the
- * rest under one full-width bar that folds them away (folded by default). A lock on each
- * header, shown on hover or focus, moves a group across; searching shows both areas, unfolded.
+ * The groups stand in two areas (model-group-pins.ts): the favourites, always shown, then the
+ * rest under one full-width bar that folds them away (folded by default). A star on each header,
+ * shown on hover or focus, moves a group across; searching shows both areas, unfolded.
  *
  * A group holds its connection once — base URL, key and protocol in `[providers.<id>]`,
  * written by Connect and the group settings — and a model stores only what it overrides: every
@@ -194,7 +194,6 @@ import {
   HEADER_BUTTON,
   HEADER_LABEL,
   HEADER_SQUARE,
-  dividerAfterBalance,
   groupHeaderActions,
   groupKeyFromEnv,
   groupKeyStored,
@@ -930,8 +929,8 @@ export function ModelsPage() {
   /** Whether the collapsible groups are folded away under their bar; folded by default, remembered per browser. */
   const [groupsFolded, setGroupsFolded] = useState(initialModelGroupsFolded);
   /**
-   * The group whose lock takes focus once its header re-mounts in the other area: moving a
-   * group moves its section to another container, and the lock that had focus goes with the
+   * The group whose star takes focus once its header re-mounts in the other area: moving a
+   * group moves its section to another container, and the star that had focus goes with the
    * old one — a keyboard user would be dropped onto <body>.
    */
   const lockFocusRef = useRef<string | null>(null);
@@ -1225,7 +1224,7 @@ export function ModelsPage() {
     saveExpandedProviders(projectId, next);
   };
 
-  /** Adopts new pin choices — the header's lock and a drop across the areas — unless nothing changed. */
+  /** Adopts new pin choices — the header's star and a drop across the areas — unless nothing changed. */
   const savePins = (next: ModelGroupPins) => {
     if (next === groupPins) return;
     storeModelGroupPins(next);
@@ -1458,8 +1457,8 @@ export function ModelsPage() {
 
   /**
    * One group: its header — the collapse button (logo, name, count, chevron, the recommended
-   * pill), the lock that moves it between the pinned and the collapsible area, and its actions —
-   * and its cards.
+   * pill), the star that moves it between the favourites and the collapsible area, and its
+   * actions — and its cards.
    */
   const renderGroup = (group: (typeof groups)[number]) => {
     const open = isGroupExpanded(expanded, group.provider.id, searching);
@@ -1501,13 +1500,13 @@ export function ModelsPage() {
               basis is its content, so a short name is never truncated to keep the
               actions beside it. Only a name wider than the whole row truncates, down to
               a floor, so it is never squeezed to nothing. The row is also the drag
-              handle for reordering the group (groupDragProps), and the `group` its lock
+              handle for reordering the group (groupDragProps), and the `group` its star
               shows on. */}
           <div
             {...drag.header}
             className={`group @container flex flex-wrap items-center gap-x-2 bg-gray-50 pr-1.5 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
           >
-            {/* The left cluster: the collapse button, sized to what it shows, the lock right
+            {/* The left cluster: the collapse button, sized to what it shows, the star right
                   after it, and the rest of the cluster, which folds the group on a click as the
                   button does (the button is the keyboard's way). */}
             <div className="flex min-w-[10rem] flex-auto items-center">
@@ -1553,11 +1552,12 @@ export function ModelsPage() {
                   </span>
                 )}
               </button>
-              {/* The lock: closed while the group is pinned (always shown), open while it is
-                  collapsible (under the fold bar). The sidebar nav's row toggle — flat, shown on
-                  the header's hover or its own focus, always where nothing hovers since it is
-                  then the only way to move a group — and it keeps its place at rest, so nothing
-                  shifts when it shows. A view preference, so members have it too. */}
+              {/* The favourite star: solid while the group is a favourite (always shown), an
+                  outline while it is collapsible (under the fold bar). The sidebar nav's row
+                  toggle — flat, shown on the header's hover or its own focus, always where
+                  nothing hovers since it is then the only way to move a group — and it keeps
+                  its place at rest, so nothing shifts when it shows. A view preference, so
+                  members have it too. */}
               <button
                 ref={(el) => {
                   if (el === null || lockFocusRef.current !== group.provider.id) return;
@@ -1583,7 +1583,7 @@ export function ModelsPage() {
                 }}
                 className={`${ROW_HOVER_BUTTON} hover:text-fg [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100`}
               >
-                <GlyphIcon d={pinned ? ICONS.lock : ICONS.lockOpen} size={ICON_SIZE.iconButton} />
+                <GlyphIcon d={ICONS.star} size={ICON_SIZE.iconButton} filled={pinned} />
               </button>
               <span
                 aria-hidden
@@ -1594,35 +1594,28 @@ export function ModelsPage() {
             {actions.length > 0 && (
               <div className="ml-auto flex shrink-0 items-center gap-2 py-1">
                 {actions.map((action) => (
-                  <Fragment key={action}>
-                    {renderGroupAction(group, action, keyStored)}
-                    {/* A rule between the account's figure and the group's status and
-                          actions, drawn only when something follows the balance. */}
-                    {action === "balance" && dividerAfterBalance(actions) && (
-                      <span
-                        aria-hidden
-                        className="h-7 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
-                      />
-                    )}
-                  </Fragment>
+                  <Fragment key={action}>{renderGroupAction(group, action, keyStored)}</Fragment>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Expand/collapse: grid-template-rows goes between 0fr and 1fr, with the
-              inner overflow-hidden handling clipping — no need to measure content height.
-              The grid carries the theme's layout motion, which decides how the fold moves
-              (and stills it under reduced motion). Content stays in the DOM while
-              collapsed (height is 0), so both directions animate. The section keeps its
-              own head rather than being a CollapsibleSection: the head is the group's
-              drag handle and a size container, and its chevron follows the group's name. */}
+          {/* Expand/collapse: grid-template-rows goes between 0fr and 1fr — no need to
+              measure content height. The grid carries the theme's layout motion, which
+              decides how the fold moves (and stills it under reduced motion). The clip is on
+              the grid's own box, not on the row inside it: between 0fr and 1fr the box gets f
+              of the content's height but the row only f² of it, so a body clipped at the row
+              vanished ahead of the space it left, a blank band under it (CollapsibleSection
+              has the same fix). Content stays in the DOM while collapsed (height is 0), so
+              both directions animate. The section keeps its own head rather than being a
+              CollapsibleSection: the head is the group's drag handle and a size container,
+              and its chevron follows the group's name. */}
           <div
             data-layout-motion
-            className={`grid ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+            className={`grid overflow-clip ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
           >
             {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
-            <div className="overflow-hidden" inert={!open}>
+            <div className="min-h-0" inert={!open}>
               <div
                 className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-3 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
               >
@@ -1791,15 +1784,16 @@ export function ModelsPage() {
                 {S.models.foldedGroups(layout.fold.groups.length)}
                 <ChevronFlip up={!layout.fold.folded} />
               </button>
-              {/* The fold: the nav's height tween, groups kept mounted but inert while folded.
-                  Its own bottom padding, not the list's gap, spaces it from what follows, so a
+              {/* The fold: the nav's height tween, groups kept mounted but inert while folded,
+                  clipped on the grid's box rather than its row (the blank-band fix above). Its
+                  own bottom padding, not the list's gap, spaces it from what follows, so a
                   folded area adds no second gap under the bar. */}
               <div
                 id="models-collapsible-groups"
                 data-layout-motion
-                className={`mb-0 grid ${layout.fold.folded ? "grid-rows-[0fr]" : "grid-rows-[1fr]"}`}
+                className={`mb-0 grid overflow-clip ${layout.fold.folded ? "grid-rows-[0fr]" : "grid-rows-[1fr]"}`}
               >
-                <div className="overflow-hidden" inert={layout.fold.folded}>
+                <div className="min-h-0" inert={layout.fold.folded}>
                   <div
                     className={`space-y-3 pb-3 transition-opacity duration-200 ${layout.fold.folded ? "opacity-0" : "opacity-100"}`}
                   >

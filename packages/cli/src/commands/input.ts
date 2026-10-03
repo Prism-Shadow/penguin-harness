@@ -29,6 +29,7 @@
  */
 import type { Command } from "commander";
 import { isModelMessage, type OmniMessage } from "@prismshadow/penguin-core";
+import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
 import { promptApproval } from "../approval.js";
@@ -116,7 +117,9 @@ export function registerInputCommand(program: Command, t: Messages): void {
         if (json) {
           out.write(`${JSON.stringify({ sessionId, status, text: text ?? "" })}\n`);
         } else {
-          if (text !== null) out.write(`${text}\n`);
+          // Printed as the terminal shows replies: a2ui blocks as their text fallback. --json
+          // keeps the stored text, which is what a program reading it expects.
+          if (text !== null) out.write(`${toFallbackMarkdown(text)}\n`);
           else out.write(`${dim(t.input.noReplyYet())}\n`);
           if (status === "running") {
             out.write(`${dim(t.client.stillRunning(shortSessionId(sessionId)))}\n`);

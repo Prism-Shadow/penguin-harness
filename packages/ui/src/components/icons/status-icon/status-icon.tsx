@@ -8,10 +8,15 @@
  * subtle ink, receding. A stop is settled and expected, so it recedes like "done" rather than
  * flagging danger; its square is what tells the two apart.
  *
+ * A state that changes on screen — a run settling, a wait decided — brings its glyph in under
+ * `data-reveal`, so the check (or the cross) arrives on the theme's reveal instead of popping in;
+ * an icon that mounts settled — a transcript loading — reveals nothing.
+ *
  * The icon carries no text of its own. With `label` it names itself (and shows the label as its
  * tooltip); without one it is decoration beside words that already say the state, and hidden
  * from assistive technology — an unnamed image would be announced as an anonymous one.
  */
+import { useArrived } from "../../../motion/use-arrived";
 import { GlyphIcon } from "../glyph-icon/glyph-icon";
 import { ICONS } from "../icons";
 import { Spinner } from "../spinner/spinner";
@@ -47,6 +52,7 @@ export function StatusIcon({
   /** Names the state for assistive technology and the tooltip; omit it beside a text label. */
   label?: string;
 }) {
+  const changedHere = useArrived(state);
   if (state === "running") {
     // The spinner always announces itself; beside words that already say "running" it is hidden
     // with its wrapper instead, which is the same silence the settled glyphs keep.
@@ -66,6 +72,7 @@ export function StatusIcon({
       {...(label === undefined
         ? { "aria-hidden": true }
         : { role: "img" as const, "aria-label": label, "data-tooltip": label })}
+      {...(changedHere ? { "data-reveal": true } : {})}
       className={`flex shrink-0 ${INK[state]}`}
     >
       <GlyphIcon d={GLYPH[state]} size={SIZES[size]} />
