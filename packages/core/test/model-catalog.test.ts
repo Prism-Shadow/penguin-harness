@@ -66,6 +66,7 @@ describe("model-catalog", () => {
       "openai",
       "anthropic",
       "siliconflow",
+      "atlascloud",
       "zhipu",
       "moonshot",
       "minimax",
@@ -725,6 +726,18 @@ describe("model-catalog", () => {
       expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://api.siliconflow.cn/v1");
     }
+    const ac = MODEL_CATALOG.filter((m) => m.provider === "atlascloud");
+    // Context windows and vision flags from the gateway's public catalog API; every row is
+    // text-only, so none carries vision.
+    expect(ac.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["deepseek-ai/DeepSeek-V3.1-Terminus", 131072, false],
+      ["deepseek-ai/DeepSeek-V3.1", 131072, false],
+      ["Qwen/Qwen3-235B-A22B-Instruct-2507", 131072, false],
+    ]);
+    for (const m of ac) {
+      expect(m.clientType).toBe("openai-chat");
+      expect(m.baseUrl).toBe("https://api.atlascloud.ai/v1");
+    }
     const qtp = MODEL_CATALOG.filter((m) => m.provider === "qwen-token-plan");
     expect(qtp.map((m) => m.modelId)).toEqual([
       "deepseek-v4.1-flash",
@@ -959,6 +972,7 @@ describe("model-catalog", () => {
       "openrouter",
       "fireworks",
       "siliconflow",
+      "atlascloud",
       "tokendance",
       "opencode-go",
       "qwen-token-plan",
@@ -980,6 +994,7 @@ describe("model-catalog", () => {
       "https://dashscope.aliyuncs.com/compatible-mode/v1",
     );
     expect(providerInfo("fireworks")!.gatewayBaseUrl).toBe("https://api.fireworks.ai/inference/v1");
+    expect(providerInfo("atlascloud")!.gatewayBaseUrl).toBe("https://api.atlascloud.ai/v1");
     expect(providerInfo("tokendance")!.gatewayBaseUrl).toBe("https://tokendance.space/gateway/v1");
     expect(providerInfo("modelscope")!.gatewayBaseUrl).toBe(
       "https://api-inference.modelscope.cn/v1",
@@ -988,6 +1003,7 @@ describe("model-catalog", () => {
       "openrouter",
       "fireworks",
       "siliconflow",
+      "atlascloud",
       "tokendance",
       "opencode-go",
       "qwen-token-plan",
@@ -999,7 +1015,7 @@ describe("model-catalog", () => {
         expect(p.gatewayBaseUrl, p.id).toBeUndefined();
       }
     }
-    const gateway = [...or, ...fw, ...sf, ...td, ...qtp, ...qpayg, ...ms];
+    const gateway = [...or, ...fw, ...sf, ...ac, ...td, ...qtp, ...qpayg, ...ms];
     // Pricing (USD, per the 2026-08-03 models-API re-read): MiMo v2.5 and Hy3 publish a real
     // cache-hit price and no per-token write premium, so cache_write carries the input price.
     const mimo = MODEL_CATALOG.find((m) => m.modelId === "xiaomi/mimo-v2.5")!.pricing!;

@@ -280,6 +280,7 @@ const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
 const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
+const ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
 export const PENGUIN_GO_BASE_URL = "https://token.penguin.ooo/api";
 /** OpenCode Go's OpenAI-protocol base: the clients append /chat/completions or /responses. */
 const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
@@ -425,6 +426,15 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://cloud.siliconflow.cn/me/account/ak",
     modelsUrl: "https://cloud.siliconflow.cn/models",
     gatewayBaseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
+    id: "atlascloud",
+    label: "Atlas Cloud",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://atlascloud.ai/docs/api-keys",
+    modelsUrl: "https://atlascloud.ai/models",
+    gatewayBaseUrl: ATLASCLOUD_BASE_URL,
   },
   {
     id: "zhipu",
@@ -1526,6 +1536,41 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
+  },
+  // -- Atlas Cloud (gateway: OpenAI-compatible protocol, preset base URL). Context windows and
+  // USD prices from the public catalog API (GET https://api.atlascloud.ai/v1/models, no
+  // credential required; read 2026-10-03). Atlas Cloud publishes one input price and a
+  // cheaper cache-hit price with no separate cache-write fee, so cache_write carries the
+  // input price, as with the TokenDance and Qwen gateways below.
+  {
+    modelId: "deepseek-ai/DeepSeek-V3.1-Terminus",
+    displayName: "DeepSeek V3.1 Terminus",
+    provider: "atlascloud",
+    contextWindow: 131072,
+    pricing: usd(0.13, 0.3, 0.95),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: ATLASCLOUD_BASE_URL,
+  },
+  {
+    modelId: "deepseek-ai/DeepSeek-V3.1",
+    displayName: "DeepSeek V3.1",
+    provider: "atlascloud",
+    contextWindow: 131072,
+    pricing: usd(0.13, 0.3, 0.95),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: ATLASCLOUD_BASE_URL,
+  },
+  {
+    modelId: "Qwen/Qwen3-235B-A22B-Instruct-2507",
+    displayName: "Qwen3-235B-A22B-Instruct-2507",
+    provider: "atlascloud",
+    contextWindow: 131072,
+    pricing: usd(0.2, 0.2, 0.88),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: ATLASCLOUD_BASE_URL,
   },
   // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Context windows,
   // vision flags and supported protocols from the public catalog API (GET
