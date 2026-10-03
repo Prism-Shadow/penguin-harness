@@ -2737,6 +2737,107 @@ describe("organization runtime", () => {
       expect(cache.orgIdsOfProject("other_project").size).toBe(0);
     });
 
+    it("calls an employee what the chart calls it, tells two of a name apart, and delivers @name", async () => {
+      await createOrg();
+      await service.hire(P, ORG, {
+        newAgent: { agentId: HR },
+        name: "小明",
+        title: "HR",
+        reportsTo: CEO,
+      });
+      const hr = () =>
+        service.chart(P, ORG).then((c) => c.employees.find((e) => e.agentId === HR)!);
+      expect(await hr()).toMatchObject({ name: "小明", givenName: "小明" });
+
+      // Two of a name: each is shown — and addressed — with its id noted.
+      await service.patchEmployee(P, ORG, CEO, { name: "小明" });
+      expect((await hr()).name).toBe(`小明 (${HR})`);
+      const ambiguous = await service.sendChannelMessage(P, ORG, "alice", "default_channel", {
+        text: `@小明 (${HR}) 请看一下，@小明 是谁？`,
+      });
+      expect(ambiguous.mentions).toEqual([`agent:${HR}`]);
+
+      // Cleared, the Agent's display name stands in again, and the other name is its own.
+      await service.patchEmployee(P, ORG, CEO, { name: null });
+      expect((await hr()).name).toBe("小明");
+      const byName = await service.sendChannelMessage(P, ORG, "alice", "default_channel", {
+        text: "@小明你好，也 @" + CEO,
+      });
+      expect(byName.mentions).toEqual([`agent:${HR}`, `agent:${CEO}`]);
+      await expect(service.patchEmployee(P, ORG, HR, { name: "a@b" })).rejects.toMatchObject({
+        status: 400,
+      });
+    });
+
+    it("refuses a bad name before it creates anything, and takes the Agent's name only when it can be one", async () => {
+      await createOrg();
+      const before = agentsCreated.length;
+      await expect(
+        service.hire(P, ORG, {
+          newAgent: { agentId: HR },
+          name: "R&D @ HQ",
+          title: "HR",
+          reportsTo: CEO,
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(agentsCreated).toHaveLength(before);
+      expect((await service.chart(P, ORG)).employees.map((e) => e.agentId)).toEqual([CEO]);
+      await expect(fs.stat(path.join(orgDir(), "workspace", HR))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+
+      // A display name the Agent may have but an employee may not: the hire goes through,
+      // and the employee simply has no given name.
+      const item = await service.hire(P, ORG, {
+        newAgent: { agentId: HR, name: "R&D @ HQ" },
+        title: "HR",
+        reportsTo: CEO,
+      });
+      expect(agentsCreated.map((a) => a.agentId)).toContain(HR);
+      expect(item.givenName).toBeUndefined();
+    });
+
+    it("keeps an employee's avatar as a file of the organization, and says when it changes", async () => {
+      await createOrg();
+      // A 1×1 png.
+      const png =
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+      const ceo = () =>
+        service.chart(P, ORG).then((c) => c.employees.find((e) => e.agentId === CEO)!);
+      expect((await ceo()).avatarRev).toBeUndefined();
+      await expect(service.employeeAvatar(P, ORG, CEO)).rejects.toMatchObject({ status: 404 });
+
+      const set = await service.setEmployeeAvatar(P, ORG, CEO, png);
+      expect(set.avatarRev).toMatch(/^[0-9a-f]{12}$/);
+      expect(await fs.readdir(path.join(orgDir(), "avatars"))).toEqual([`${CEO}.png`]);
+      expect(await service.employeeAvatar(P, ORG, CEO)).toMatchObject({
+        mime: "image/png",
+        rev: set.avatarRev,
+      });
+      // Not an image, or not one of the three formats: refused, and nothing is written.
+      await expect(
+        service.setEmployeeAvatar(P, ORG, CEO, "data:image/svg+xml;base64,PHN2Zy8+"),
+      ).rejects.toMatchObject({ status: 400 });
+      // Labelled as one of them, but the bytes are not that image: nothing, or another format.
+      for (const fake of [
+        "data:image/png;base64,====",
+        `data:image/jpeg;base64,${png.slice("data:image/png;base64,".length)}`,
+        `data:image/webp;base64,${Buffer.from("RIFF0000WEBX").toString("base64")}`,
+      ]) {
+        await expect(service.setEmployeeAvatar(P, ORG, CEO, fake)).rejects.toMatchObject({
+          status: 400,
+        });
+      }
+      await expect(service.setEmployeeAvatar(P, ORG, "nobody", png)).rejects.toMatchObject({
+        status: 404,
+      });
+      expect((await ceo()).avatarRev).toBe(set.avatarRev);
+
+      await service.setEmployeeAvatar(P, ORG, CEO, null);
+      expect((await ceo()).avatarRev).toBeUndefined();
+      expect(await fs.readdir(path.join(orgDir(), "avatars"))).toEqual([]);
+    });
+
     it("opens the new employee's desk as it is hired, and starts no run for it", async () => {
       await createOrg();
       const runsAfterCreation = started.length;
@@ -2750,7 +2851,9 @@ describe("organization runtime", () => {
       const deskSessionId = item.desk?.sessionId;
       expect(deskSessionId).toBeTruthy();
       expect(sessions.findById(deskSessionId!)).toMatchObject({ agentId: HR, client: "org" });
-      expect(sessions.findById(deskSessionId!)?.title).toBe(`Name of ${HR}'s desk`);
+      // Named after the employee — the name the hire gave it, which is the chart's now.
+      expect(item.name).toBe("HR");
+      expect(sessions.findById(deskSessionId!)?.title).toBe("HR's desk");
       expect(created.at(-1)).toMatchObject({
         agentId: HR,
         client: "org",

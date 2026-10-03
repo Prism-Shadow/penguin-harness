@@ -37,7 +37,6 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
 import {
-  AgentAvatar,
   Dot,
   Dropdown,
   GlyphIcon,
@@ -52,6 +51,7 @@ import { formatMoney, formatPercent } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
+import { EmployeeAvatar } from "./employee-avatar";
 import { budgetTone } from "./finance-tree";
 import { INVALID_ICON } from "./shared";
 import { CHART_NODE_H, CHART_NODE_W, workspaceTail } from "./org-chart-tree";
@@ -173,7 +173,7 @@ export function ChartCard({
         }`}
       >
         <span className="flex items-center gap-2 pr-6">
-          <AgentAvatar
+          <EmployeeAvatar
             id={employee.agentId}
             name={employee.name}
             size={28}

@@ -69,13 +69,19 @@ import {
 } from "./canvas-view";
 import type { CanvasSize, CanvasView } from "./canvas-view";
 import { ChartCard, ChartLegend } from "./chart-card";
-import { DeskRenewDialog, EmployeeEditDialog, HireDialog } from "./employee-dialogs";
+import {
+  DeskRenewDialog,
+  EmployeeEditDialog,
+  EmployeeProfileDialog,
+  HireDialog,
+} from "./employee-dialogs";
 import type { EmployeeEdit } from "./employee-dialogs";
 
 /** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
 const MENU_ICONS = {
   openDesk: DESK_ICON,
   hire: ICONS.userPlus,
+  profile: ICONS.user,
   budget: ICONS.dollarCircle,
   reportsTo: ICONS.letterMArrow,
   renewDesk: ICONS.rotateCw,
@@ -124,6 +130,7 @@ export function OrgChartPage() {
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hireFor, setHireFor] = useState<OrgEmployeeItem | null>(null);
+  const [profileFor, setProfileFor] = useState<OrgEmployeeItem | null>(null);
   const [editFor, setEditFor] = useState<{ employee: OrgEmployeeItem; edit: EmployeeEdit } | null>(
     null,
   );
@@ -383,6 +390,9 @@ export function OrgChartPage() {
       {menuRow(close, MENU_ICONS.openDesk, S.company.openDesk, () => void openDesk(employee))}
       <MenuSeparator />
       {menuRow(close, MENU_ICONS.hire, S.company.chart.hire, () => setHireFor(employee))}
+      {menuRow(close, MENU_ICONS.profile, S.company.chart.nameAndAvatar, () =>
+        setProfileFor(employee),
+      )}
       {menuRow(close, MENU_ICONS.budget, S.company.chart.setBudget, () =>
         setEditFor({ employee, edit: "budget" }),
       )}
@@ -554,6 +564,21 @@ export function OrgChartPage() {
             setHireFor(null);
             void load();
             void company.reloadOrganizations();
+          }}
+        />
+      )}
+      {profileFor !== null && (
+        <EmployeeProfileDialog
+          open
+          projectId={projectId}
+          orgId={orgId}
+          // The chart's own row, so the dialog shows the picture it just wrote.
+          employee={chart.employees.find((e) => e.agentId === profileFor.agentId) ?? profileFor}
+          onClose={() => setProfileFor(null)}
+          onChanged={() => {
+            void load();
+            void company.reloadOrgChart();
+            void company.reloadOrgSessions();
           }}
         />
       )}

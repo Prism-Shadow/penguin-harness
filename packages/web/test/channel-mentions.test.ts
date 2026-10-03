@@ -11,6 +11,8 @@ import {
   mentionInsertId,
   mentionIsMe,
   mentionLabel,
+  mentionNote,
+  mentionNameHandles,
   mentionQueryAt,
   mentionRuns,
   rankMentionCandidates,
@@ -132,12 +134,80 @@ describe("rankMentionCandidates", () => {
 });
 
 describe("mentionInsertId", () => {
-  it("types a bare id, and disambiguates a member who shares an employee's id", () => {
+  it("sends a bare id, and disambiguates a member who shares an employee's id", () => {
     const list = mentionCandidates([{ agentId: "alice", name: "Alice" }], ["alice", "bob"], "All");
+    // The draft shows the name (mention-draft.ts); the wire keeps the id.
     expect(mentionInsertId(list[0]!, list)).toBe("alice");
     expect(mentionInsertId(list[1]!, list)).toBe("user:alice");
     expect(mentionInsertId(list[2]!, list)).toBe("bob");
     expect(mentionInsertId(list[3]!, list)).toBe("all");
+  });
+});
+
+describe("mentions by name", () => {
+  const names = mentionNameHandles(
+    new Map([
+      ["acme_dev_a", "小明"],
+      ["acme_dev_b", "小明明"],
+      ["acme_ada", "Ada Lovelace"],
+      ["acme_qa", "acme_qa"],
+    ]),
+  );
+
+  it("keeps the panel open while a name in any script is being typed", () => {
+    expect(mentionQueryAt("请 @小", 4)).toEqual({ start: 2, query: "小" });
+    expect(mentionQueryAt("@Ada L", 6)).toBeNull();
+  });
+
+  it("finds a name without a space after it, takes the longest, and tokens it as the employee", () => {
+    expect(mentionRuns("@小明你好", names)).toEqual([
+      { text: "@小明", mention: "agent:acme_dev_a" },
+      { text: "你好", mention: null },
+    ]);
+    expect(mentionRuns("@小明明你好", names)[0]).toEqual({
+      text: "@小明明",
+      mention: "agent:acme_dev_b",
+    });
+    expect(mentionRuns("ping @Ada Lovelace please", names)[1]).toEqual({
+      text: "@Ada Lovelace",
+      mention: "agent:acme_ada",
+    });
+  });
+
+  it("ends a handle where the server does: not before a - or . that runs on into a word", () => {
+    const mentions = (text: string) =>
+      mentionRuns(text, names)
+        .filter((r) => r.mention)
+        .map((r) => [r.text, r.mention]);
+    // An id-shaped token takes the whole run, as the server reads it: `@all-hands` is not `all`.
+    expect(mentions("@all-hands and @all.hands")).toEqual([
+      ["@all-hands", "all-hands"],
+      ["@all.hands", "all.hands"],
+    ]);
+    // A name is not found in front of one either…
+    expect(mentions("ping @Ada Lovelace-x and @Ada Lovelace.y")).toEqual([
+      ["@Ada", "Ada"],
+      ["@Ada", "Ada"],
+    ]);
+    // …while a sentence's own punctuation after it is no part of it.
+    expect(mentions("thanks @Ada Lovelace. And @Ada Lovelace, @all.")).toEqual([
+      ["@Ada Lovelace", "agent:acme_ada"],
+      ["@Ada Lovelace", "agent:acme_ada"],
+      ["@all", "all"],
+    ]);
+    // A name in a script without word boundaries needs none.
+    expect(mentions("@小明-你好 @小明.ok")).toEqual([
+      ["@小明", "agent:acme_dev_a"],
+      ["@小明", "agent:acme_dev_a"],
+    ]);
+  });
+
+  it("still reads ids and the explicit forms, and offers no handle for a name that is just the id", () => {
+    expect(names.has("acme_qa")).toBe(false);
+    expect(mentionRuns("@acme_qa and @agent:acme_dev_a.", names).filter((r) => r.mention)).toEqual([
+      { text: "@acme_qa", mention: "acme_qa" },
+      { text: "@agent:acme_dev_a", mention: "agent:acme_dev_a" },
+    ]);
   });
 });
 
@@ -194,5 +264,24 @@ describe("channelMentionCandidates", () => {
 
   it("is `all` alone in a channel whose only member is the reader's own employee-free self", () => {
     expect(channelMentionCandidates(list, new Set()).map((c) => c.principal)).toEqual(["all"]);
+  });
+});
+
+describe("mentionNote", () => {
+  const titles = new Map([
+    ["ceo", "CEO"],
+    ["dev", "  "],
+  ]);
+
+  it("is the employee's title, for a prefixed or a bare id", () => {
+    expect(mentionNote("agent:ceo", titles)).toBe("CEO");
+    expect(mentionNote("ceo", titles)).toBe("CEO");
+  });
+
+  it("is empty for a member, for all, for an employee without a title and for an unknown id", () => {
+    expect(mentionNote("user:ceo", titles)).toBe("");
+    expect(mentionNote("all", titles)).toBe("");
+    expect(mentionNote("agent:dev", titles)).toBe("");
+    expect(mentionNote("nobody", titles)).toBe("");
   });
 });

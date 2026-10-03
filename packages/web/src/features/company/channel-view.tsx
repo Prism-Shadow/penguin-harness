@@ -62,6 +62,7 @@ import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
+import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
 import { orgKey } from "./company-nav";
@@ -76,6 +77,8 @@ import {
   mentionCandidates,
   mentionIsMe,
   mentionLabel,
+  mentionNameHandles,
+  mentionNote,
   mentionRuns,
 } from "./channel-mentions";
 import {
@@ -382,10 +385,15 @@ export function ChannelView() {
   };
 
   const names = useMemo(() => new Map(employees.map((e) => [e.agentId, e.name])), [employees]);
+  const titles = useMemo(() => new Map(employees.map((e) => [e.agentId, e.title])), [employees]);
+  const nameHandles = useMemo(() => mentionNameHandles(names), [names]);
   const employeeIds = useMemo(() => new Set(employees.map((e) => e.agentId)), [employees]);
   // Who the mention chips inside the rendered bodies are measured against. Memoized because it
   // is a context value: a fresh object per render would re-render every message body.
-  const reader = useMemo(() => ({ names, me, employeeIds }), [names, me, employeeIds]);
+  const reader = useMemo(
+    () => ({ names, titles, me, employeeIds }),
+    [names, titles, me, employeeIds],
+  );
   const memberPrincipals = useMemo(
     () => (detail === null ? null : new Set(detail.members.map((m) => m.principal))),
     [detail],
@@ -412,7 +420,7 @@ export function ChannelView() {
     document.getElementById(id)?.scrollIntoView({ block: "center" });
 
   const renderText = (m: OrgChannelMessage) =>
-    mentionRuns(m.text).map((run, i) =>
+    mentionRuns(m.text, nameHandles).map((run, i) =>
       run.mention === null ? (
         <span key={i}>{run.text}</span>
       ) : (
@@ -420,6 +428,7 @@ export function ChannelView() {
           key={i}
           raw={run.text}
           label={mentionLabel(run.mention, names, S.company.principalAll)}
+          note={mentionNote(run.mention, titles)}
           me={mentionIsMe(run.mention, me, employeeIds)}
         />
       ),
@@ -514,6 +523,7 @@ export function ChannelView() {
                   <MentionChip
                     raw={`@${principal}`}
                     label={mentionLabel(principal, names, S.company.principalAll)}
+                    note={mentionNote(principal, titles)}
                     me={mentionIsMe(principal, me, employeeIds)}
                   />
                 </span>
@@ -546,6 +556,16 @@ export function ChannelView() {
             <span data-tooltip={S.company.channels.hopInfo} className="text-fg-muted">
               {S.company.channels.hop(item.hop)}
             </span>
+          ) : undefined
+        }
+        avatar={
+          p.kind === "agent" ? (
+            <EmployeeAvatar
+              id={p.id}
+              name={sender.name}
+              size={FACE_PX.message}
+              className="shrink-0 rounded-lg"
+            />
           ) : undefined
         }
       >
