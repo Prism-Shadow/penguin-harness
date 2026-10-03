@@ -18,7 +18,7 @@
 - 沙盒条目的 `backend.recommended` 改为列表：Linux 上是 `@penguinharness/sandbox-bwrap` 与 `@penguinharness/sandbox-dsh`，macOS 与 Windows 各一个包。没有安装后端时打开开关，会提示安装整个列表，并依次安装。
 - 卡片的「Backends:」一行改为写明本机实施什么、由什么实施，例如 `本机实施：文件写入，由 Landlock (dsh-local) 实施。本机不实施：网络隔离、仅本机网络、屏蔽路径。`每个已安装但未启用的后端移到这一行下方折叠的**更多信息**里，附原因，并说明保存卡片会重新检查。设置提示为此可以带 `details` / `detailsZh`。
 - 有后端在用、但没有后端能隔离网络时，预设表里的「无网络」显示为灰色并写明在用的后端，保存时选择它会被拒绝，与「仅本机」一致。
-- 「已保存的策略无法实施」的警告也覆盖带屏蔽路径的完全访问。
+- 「已保存的策略无法实施」的警告也覆盖断开网络或带屏蔽路径的完全访问（在预设之前保存的设置）。
 - 沙盒后端可以声明 `mechanism`（core 的 `SandboxProvider`）：bubblewrap 声明 `bubblewrap`，DSH 适配器声明其链条选中的一级（`Landlock`、`bubblewrap`、`Seatbelt` 或 Windows ACL 运行器，部分实施时带 `(partial)`）。
 
 ## 后端

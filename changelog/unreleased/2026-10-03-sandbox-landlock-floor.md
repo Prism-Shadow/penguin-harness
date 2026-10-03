@@ -18,7 +18,7 @@ Turning the sandbox on in Linux offered `@penguinharness/sandbox-bwrap` alone, a
 - The sandbox entry's `backend.recommended` became a list: `@penguinharness/sandbox-bwrap` and `@penguinharness/sandbox-dsh` on Linux, one package on macOS and Windows. Turning the switch on with no backend installed offers the whole list and installs it in order.
 - The card's "Backends:" line was replaced by what the machine enforces and by what, for example `Enforced here: file writes, by Landlock (dsh-local). Not enforced here: network isolation, localhost-only network and masked paths.` Each installed backend that is not in use moved under that line into a collapsed **More info**, with its reason and the note that saving the card checks it again. A settings notice may carry `details` / `detailsZh` for this.
 - With a backend serving and none isolating the network, No network is greyed out in the presets table, naming the backend in use, and a save choosing it is refused, like Localhost only.
-- The warning that the saved policy cannot be enforced also covers full access with masked paths.
+- The warning that the saved policy cannot be enforced also covers full access that cuts the network or masks paths (a document saved before the presets).
 - A sandbox provider may declare `mechanism` (core's `SandboxProvider`): bubblewrap declares `bubblewrap`, and the DSH adaptor declares the rung its chain selected (`Landlock`, `bubblewrap`, `Seatbelt` or the Windows ACL runner, with `(partial)` for partial enforcement).
 
 ## Backends
