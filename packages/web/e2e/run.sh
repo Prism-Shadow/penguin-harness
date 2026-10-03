@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end verification (Playwright + mock LLM): build plugins/core/server/web and the
-# example plugin -> seed the temp data root -> start mock Anthropic SSE -> start server (temp data
-# root) -> run Playwright with the requested filters. SKIP_BUILD=1 skips the build.
+# example plugins -> seed the temp data root -> start mock Anthropic SSE -> start server (temp
+# data root) -> run Playwright with the requested filters. SKIP_BUILD=1 skips the build.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
@@ -21,7 +21,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
-  echo "== build core/server/web and the example plugin =="
+  echo "== build core/server/web and the example plugins =="
   (cd "$ROOT" \
     && pnpm --filter @prismshadow/penguin-core build \
     && pnpm --filter @prismshadow/penguin-server build \
@@ -30,19 +30,21 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
   # an installation ships them (`<program>/../plugins`): the catalogue's builtin rows come
   # from there, and a server run from dist/ has none otherwise. Cached by content. The example
   # plugins are staged too (PENGUIN_PLUGIN_EXAMPLES=1): a plugin loads only by its package
-  # name, from this prefix, and the specs enable plugins/example-hello-page below.
+  # name, from this prefix, and the specs enable plugins/example-hello-page and
+  # plugins/example-music below.
   echo "== stage builtin plugins =="
   (cd "$ROOT" && PENGUIN_PLUGIN_EXAMPLES=1 node scripts/build-plugins.mjs --out packages/server/plugins) \
     || { echo "PLUGIN BUILD FAILED"; exit 1; }
 fi
 
 echo "== seed the data root =="
-# The example plugin (plugins/example-hello-page, plugin-page.spec.mjs) is enabled for
-# default_project by its package name; the staged prefix above carries it. The server adopts
-# an existing default_project without rewriting its plugin table, and what one Project lists
-# is loaded for every user. Under SKIP_BUILD=1 it loads only if an earlier run staged it.
+# The example plugins (plugins/example-hello-page for plugin-page.spec.mjs, plugins/example-music
+# for music-file.spec.mjs) are enabled for default_project by their package names; the staged
+# prefix above carries them. The server adopts an existing default_project without rewriting its
+# plugin table, and what one Project lists is loaded for every user. Under SKIP_BUILD=1 they load
+# only if an earlier run staged them.
 mkdir -p "$DATA/default_project"
-printf '[plugins]\n"@penguinharness/example-hello-page" = "*"\n' \
+printf '[plugins]\n"@penguinharness/example-hello-page" = "*"\n"@penguinharness/example-music" = "*"\n' \
   >"$DATA/default_project/.project_config.toml"
 
 echo "== start mock LLM =="
