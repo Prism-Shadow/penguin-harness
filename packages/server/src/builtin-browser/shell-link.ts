@@ -27,6 +27,8 @@ import type {
   DesktopBrowserReplyMessage,
 } from "../api/types.js";
 import type { ShellPort } from "../services/desktop-update-port.js";
+import { BUILTIN_CAPABILITIES, BrowserLinkError } from "./link.js";
+import type { BrowserLink } from "./link.js";
 
 type MessageListener = (e: { data: unknown }) => void;
 
@@ -36,20 +38,8 @@ export interface BrowserShellPort extends ShellPort {
   removeListener?(event: "message", listener: MessageListener): void;
 }
 
-/**
- * Why a request did not produce a result: the shell refused it (`message` is the shell's own
- * error — a CDP error text, or `no_such_tab`), it did not answer in time, or the link was
- * disposed under it.
- */
-export class ShellLinkError extends Error {
-  constructor(
-    readonly kind: "refused" | "timeout" | "closed",
-    message: string,
-  ) {
-    super(message);
-    this.name = "ShellLinkError";
-  }
-}
+/** The link error under its first name (see link.ts); the shell's errors are the same kinds. */
+export { BrowserLinkError as ShellLinkError };
 
 export interface ShellLinkTiming {
   /** How long `hello` may take before the shell counts as one that cannot host the browser. */
@@ -170,6 +160,12 @@ export function parseBrowserEvent(data: unknown): DesktopBrowserEvent | null {
       if (tabs === null || !isAmount(event.totalKB)) return null;
       return { kind: "metrics", tabs, totalKB: event.totalKB };
     }
+    case "tab-released": {
+      if (typeof event.tabId !== "number" || !Number.isSafeInteger(event.tabId)) return null;
+      const reason =
+        event.reason === "user" || event.reason === "restricted" ? event.reason : "detached";
+      return { kind: "tab-released", tabId: event.tabId, reason };
+    }
     default:
       return null;
   }
@@ -190,11 +186,13 @@ export function parseBrowserReply(data: unknown): DesktopBrowserReplyMessage | n
 
 interface Pending {
   resolve(result: unknown): void;
-  reject(err: ShellLinkError): void;
+  reject(err: BrowserLinkError): void;
   timer: NodeJS.Timeout;
 }
 
-export class ShellLink {
+export class ShellLink implements BrowserLink {
+  readonly backend = "builtin" as const;
+  readonly capabilities = BUILTIN_CAPABILITIES;
   private readonly timing: ShellLinkTiming;
   private readonly pending = new Map<string, Pending>();
   private readonly eventListeners = new Set<(event: DesktopBrowserEvent) => void>();
@@ -227,14 +225,16 @@ export class ShellLink {
     command: DesktopBrowserCommand,
     timeoutMs = this.timing.defaultTimeoutMs,
   ): Promise<unknown> {
-    if (this.disposed) return Promise.reject(new ShellLinkError("closed", "The link is closed."));
+    if (this.disposed) {
+      return Promise.reject(new BrowserLinkError("closed", "The link is closed."));
+    }
     this.seq += 1;
     const id = `${this.prefix}-${this.seq}`;
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(
-          new ShellLinkError(
+          new BrowserLinkError(
             "timeout",
             `The desktop shell did not answer '${command.op}' within ${Math.round(timeoutMs / 1000)}s.`,
           ),
@@ -250,7 +250,7 @@ export class ShellLink {
       } catch (err) {
         clearTimeout(timer);
         this.pending.delete(id);
-        reject(new ShellLinkError("closed", err instanceof Error ? err.message : String(err)));
+        reject(new BrowserLinkError("closed", err instanceof Error ? err.message : String(err)));
       }
     });
   }
@@ -308,6 +308,11 @@ export class ShellLink {
     return () => this.connectListeners.delete(listener);
   }
 
+  /** The shell's port does not go away under a running server: nothing to hear. */
+  onDisconnect(_listener: () => void): () => void {
+    return () => {};
+  }
+
   /** Takes the listener off the port and fails whatever is still waiting. */
   dispose(): void {
     if (this.disposed) return;
@@ -316,7 +321,7 @@ export class ShellLink {
     else this.port.removeListener?.("message", this.onMessage);
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timer);
-      pending.reject(new ShellLinkError("closed", "The link is closed."));
+      pending.reject(new BrowserLinkError("closed", "The link is closed."));
       this.pending.delete(id);
     }
     this.eventListeners.clear();
@@ -358,7 +363,7 @@ export class ShellLink {
     if (reply.ok) pending.resolve(reply.result);
     else
       pending.reject(
-        new ShellLinkError("refused", reply.error ?? "The shell refused the command."),
+        new BrowserLinkError("refused", reply.error ?? "The shell refused the command."),
       );
   }
 }

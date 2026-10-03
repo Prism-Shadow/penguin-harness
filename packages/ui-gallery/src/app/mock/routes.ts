@@ -23,6 +23,9 @@ import type {
   AgentVaultConfigDto,
   AuthResponse,
   BenchmarkCasesResponse,
+  BrowserBackendResponse,
+  BrowserExtensionPairingResponse,
+  BrowserExtensionsResponse,
   BuiltinBrowserHistoryResponse,
   BuiltinBrowserImportSourcesResponse,
   BuiltinBrowserSettings,
@@ -1958,20 +1961,46 @@ router
   .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"));
 
 // ---------------------------------------------------------------------------------------------
-// The built-in browser: the desktop shell's, so it answers as a server with no shell does
+// The agent browser: the demo answers as a server with no desktop shell does, where the only
+// backend is the user's own Chrome, and this user has not paired one
 // ---------------------------------------------------------------------------------------------
 
 function browserUnavailable(): never {
-  return fail(503, "browser_unavailable", "The built-in browser needs the desktop app.");
+  return fail(
+    503,
+    "browser_unavailable",
+    "No Chrome is paired for this user; the demo has no extension to connect.",
+  );
 }
+
+/** A pairing code's shape: 43 base64url characters. */
+const DEMO_PAIRING_CODE = "demo-pairing-code-for-the-gallery-0123456789";
 
 router
   .get("/api/builtin-browser/status", (): BuiltinBrowserStatus => ({
     available: false,
-    reason: "not_desktop",
+    reason: "extension_not_paired",
+    backend: "chrome",
+    backends: [{ backend: "chrome", available: false, reason: "extension_not_paired" }],
     tabs: [],
     activeTabId: null,
   }))
+  .get("/api/builtin-browser/backend", (): BrowserBackendResponse => ({
+    backend: "chrome",
+    choices: ["chrome"],
+  }))
+  .put("/api/builtin-browser/backend", () => readOnly("switch the agent browser"))
+  .post("/api/builtin-browser/extension/pairings", (): BrowserExtensionPairingResponse => ({
+    code: DEMO_PAIRING_CODE.slice(0, 43),
+    expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    origin: null,
+  }))
+  .get("/api/builtin-browser/extension", (): BrowserExtensionsResponse => ({
+    paired: [],
+    enabled: true,
+  }))
+  .delete("/api/builtin-browser/extension/:id", () => notFound("Paired Chrome"))
+  .post("/api/builtin-browser/tabs/:tab/navigate", browserUnavailable)
   .post("/api/builtin-browser/tabs", browserUnavailable)
   .post("/api/builtin-browser/tabs/claim", browserUnavailable)
   .post("/api/builtin-browser/tabs/on-screen", browserUnavailable)

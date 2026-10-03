@@ -4,7 +4,8 @@
  * Each entry names a module and the function in it that does the consequential thing — removes
  * a member, restores the default command rules, imports a snapshot over an Agent State, lets
  * machines go, stops a running process, restores a workflow revision, runs a plugin's action,
- * clears an organization draft, syncs the model presets. Every reference to that function must
+ * clears an organization draft, syncs the model presets, revokes a paired Chrome, turns Chrome
+ * extension connections off server-wide. Every reference to that function must
  * sit inside a `ConfirmModal`'s `onConfirm`: directly, or in the body of a function that
  * `onConfirm` names. A button wired straight back to the action is one short line in a long
  * element and reads fine in review, so the JSX is parsed rather than remembered.
@@ -26,6 +27,8 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/settings/plugins-section.tsx", "runAction"],
   ["features/company/org-dialogs.tsx", "dropDraft"],
   ["features/models/models-page.tsx", "syncPresets"],
+  ["features/settings/browser-section.tsx", "revokeChrome"],
+  ["features/settings/chrome-extension-section.tsx", "switchOffExtensions"],
 ];
 
 const isOnConfirm = (node: ts.Node): node is ts.JsxAttribute =>

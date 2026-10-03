@@ -1,8 +1,10 @@
 /**
- * The built-in browser's driver: GenericAgent's TMWebDriver, over CDP instead of an extension's
- * WebSocket. Every call is a raw CDP command the shell relays to one guest's
- * `webContents.debugger`; what this adds is the JavaScript evaluation contract the actions are
- * written against, and the mapping from the ways a page can fail to the errors the routes speak.
+ * The agent browser's driver: GenericAgent's TMWebDriver, over raw per-tab CDP. Every call is a
+ * CDP command the link relays — the shell to one guest's `webContents.debugger`, the extension
+ * to one tab's `chrome.debugger` — and what this adds is the JavaScript evaluation contract the
+ * actions are written against, and the mapping from the ways a page can fail to the errors the
+ * routes speak. It never assumes the debugger stays attached: the extension detaches after a
+ * minute of quiet and re-attaches on the next command, which re-sends the `events` it relays.
  *
  * - A script is wrapped as `(async () => { <code> })()` and evaluated with the promise awaited
  *   and the value returned by value, as a user gesture (so a script may open a popup or write
@@ -11,9 +13,15 @@
  *   is not an error: the call reports `{ reloaded: true }`, as TMWebDriver's `closed` does.
  * - A script that throws is a PageScriptError carrying the page's own message.
  */
+import type { BrowserBackend } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { ShellLinkError } from "./shell-link.js";
-import type { ShellLink } from "./shell-link.js";
+import {
+  BrowserLinkError,
+  BrowserUnavailableError,
+  browserLabel,
+  tabReleasedError,
+} from "./link.js";
+import type { BrowserLink } from "./link.js";
 
 /** How long a raw CDP command may take when its caller names no timeout. */
 export const CDP_TIMEOUT_MS = 30_000;
@@ -73,12 +81,21 @@ export function tabCrashedError(tabId: number, reason?: string): HttpError {
 }
 
 /** What a failed link request means to the route that asked. */
-export function mapLinkError(err: unknown, tabId: number): Error {
-  if (!(err instanceof ShellLinkError)) return err instanceof Error ? err : new Error(String(err));
+export function mapLinkError(
+  err: unknown,
+  tabId: number,
+  backend: BrowserBackend = "builtin",
+): Error {
+  if (!(err instanceof BrowserLinkError)) {
+    return err instanceof Error ? err : new Error(String(err));
+  }
   switch (err.kind) {
     case "timeout":
       return new HttpError(504, "timeout", err.message);
     case "closed":
+      // Chrome's socket closed mid-request: the extension reconnects on its own, so the
+      // agent's answer is the same as for a call made while it is away.
+      if (backend === "chrome") return new BrowserUnavailableError("extension_disconnected");
       return new HttpError(
         503,
         "browser_unavailable",
@@ -89,10 +106,32 @@ export function mapLinkError(err: unknown, tabId: number): Error {
         return new HttpError(
           404,
           "no_such_tab",
-          `Tab ${tabId} is not open in the built-in browser.`,
+          `Tab ${tabId} is not open in ${browserLabel(backend)}.`,
         );
       }
       if (err.message === "tab_crashed") return tabCrashedError(tabId);
+      if (err.message === "tab_released") return tabReleasedError(tabId);
+      if (err.message === "cdp_refused") {
+        return new HttpError(
+          403,
+          "cdp_refused",
+          "Chrome's extension refused the command: it reaches outside the tabs the agent drives.",
+        );
+      }
+      if (err.message === "bad_url") {
+        return new HttpError(
+          400,
+          "invalid_url",
+          "Chrome's extension opens only web addresses (http, https) and about:blank.",
+        );
+      }
+      if (err.message === "extension_paused") {
+        return new HttpError(
+          503,
+          "browser_unavailable",
+          "The user paused the PenguinHarness Browser extension in Chrome; ask them to resume it.",
+        );
+      }
       return new HttpError(422, "cdp_error", err.message);
   }
 }
@@ -107,7 +146,7 @@ export class BrowserDriver {
   private readonly now: () => number;
 
   constructor(
-    private readonly link: ShellLink,
+    private readonly link: BrowserLink,
     opts: DriverOptions = {},
   ) {
     this.sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
@@ -137,11 +176,11 @@ export class BrowserDriver {
         timeoutMs,
       );
     } catch (err) {
-      throw mapLinkError(err, tabId);
+      throw mapLinkError(err, tabId, this.link.backend);
     }
   }
 
-  /** The CDP events the shell relays for one tab. Returns the unsubscribe. */
+  /** The CDP events the link relays for one tab. Returns the unsubscribe. */
   onCdpEvent(
     tabId: number,
     listener: (method: string, params: Record<string, unknown>) => void,
@@ -178,13 +217,13 @@ export class BrowserDriver {
       );
     } catch (err) {
       if (
-        err instanceof ShellLinkError &&
+        err instanceof BrowserLinkError &&
         err.kind === "refused" &&
         CONTEXT_LOST.test(err.message)
       ) {
         return { reloaded: true };
       }
-      throw mapLinkError(err, tabId);
+      throw mapLinkError(err, tabId, this.link.backend);
     }
     const res = (raw ?? {}) as { result?: RemoteObject; exceptionDetails?: ExceptionDetails };
     if (res.exceptionDetails !== undefined) {
@@ -218,9 +257,13 @@ export class BrowserDriver {
           return true;
         }
       } catch (err) {
-        // Gone or crashed: no amount of waiting loads it.
-        if (err instanceof HttpError && (err.code === "no_such_tab" || err.code === "tab_crashed"))
+        // Gone, crashed or taken back by the user: no amount of waiting loads it.
+        if (
+          err instanceof HttpError &&
+          (err.code === "no_such_tab" || err.code === "tab_crashed" || err.code === "tab_released")
+        ) {
           throw err;
+        }
       }
       await this.sleep(Math.max(0, Math.min(LOAD_POLL_MS, deadline - this.now())));
     }

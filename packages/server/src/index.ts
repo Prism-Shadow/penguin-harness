@@ -35,6 +35,8 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
+import { attachExtensionWebSocket } from "./builtin-browser/extension-ws.js";
+import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -229,10 +231,18 @@ class PenguinServer {
   buildApp(): void {
     this.app = createApp(this.deps);
     attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
+    attachExtensionWebSocket(
+      this.httpServer as unknown as HttpServer,
+      this.extensionWebSocketDeps(),
+    );
     if (this.ipv6Loopback !== null) {
       attachTerminalWebSocket(
         this.ipv6Loopback as unknown as HttpServer,
         this.terminalWebSocketDeps(),
+      );
+      attachExtensionWebSocket(
+        this.ipv6Loopback as unknown as HttpServer,
+        this.extensionWebSocketDeps(),
       );
     }
   }
@@ -457,7 +467,30 @@ class PenguinServer {
     // loopback opened after buildApp() (never in practice — binding is quick) gets it here.
     if (this.app !== undefined) {
       attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
+      attachExtensionWebSocket(loopback as unknown as HttpServer, this.extensionWebSocketDeps());
     }
+  }
+
+  /**
+   * The Chrome extension's WebSocket wiring, beside the terminal's on every listener: the
+   * upgrade is checked here, and the socket handed to the current generation's browser module.
+   */
+  private extensionWebSocketDeps() {
+    const hmr = this.deps.hmr;
+    return {
+      gate: async (): Promise<ExtensionGate | null> => {
+        const platform = await hmr.ensure();
+        const tree = typeof platform.api.business === "function" ? platform.api.business() : null;
+        if (tree === null || !tree.has("BuiltinBrowserModule")) return null;
+        try {
+          return tree.api<ExtensionGate>("BuiltinBrowserModule", "BrowserExtensionGate");
+        } catch {
+          // A pushed platform from before the extension: no gate, so the upgrade is a 503.
+          return null;
+        }
+      },
+      log: (line: string) => console.log(line),
+    };
   }
 
   /** Terminal WebSocket wiring, shared by every listener this process opens. */

@@ -36,10 +36,13 @@ const ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
 const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
 /** Key of the company-mode master switch; default off (see getCompanyMode). */
 const COMPANY_MODE_KEY = "companyMode";
+/** Key of the Chrome extension switch; default on (see getBrowserExtensionsEnabled). */
+export const BROWSER_EXTENSIONS_KEY = "browserExtensionsEnabled";
 
 @Component()
 export class ServerSettingsRepo implements Settings {
   @Use() private readonly db!: Db;
+  private readonly watchers = new Set<(key: string) => void>();
 
   /** Returns the raw JSON-encoded value; null if never set. */
   get(key: string): string | null {
@@ -54,6 +57,18 @@ export class ServerSettingsRepo implements Settings {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       )
       .run(key, value);
+    for (const watcher of [...this.watchers]) {
+      try {
+        watcher(key);
+      } catch {
+        // A watcher's failure is its own; the write stands.
+      }
+    }
+  }
+
+  watch(listener: (key: string) => void): () => void {
+    this.watchers.add(listener);
+    return () => this.watchers.delete(listener);
   }
 
   /** Shared switch read: this key if present, else the legacy single switch, else the default: on. */
@@ -166,5 +181,17 @@ export class ServerSettingsRepo implements Settings {
 
   setCompanyMode(value: boolean): void {
     this.set(COMPANY_MODE_KEY, JSON.stringify(value));
+  }
+
+  /**
+   * Whether users may drive their own Chrome through the extension (default ON): only a stored
+   * `false` turns it off, so an unreadable row leaves the feature as it ships.
+   */
+  getBrowserExtensionsEnabled(): boolean {
+    return this.get(BROWSER_EXTENSIONS_KEY) !== "false";
+  }
+
+  setBrowserExtensionsEnabled(value: boolean): void {
+    this.set(BROWSER_EXTENSIONS_KEY, JSON.stringify(value));
   }
 }

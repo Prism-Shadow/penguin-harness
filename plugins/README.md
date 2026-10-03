@@ -15,7 +15,7 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins
 
 `humanizer`, `use-claude-code`, `continual-learning` and `agent-company` carry `preinstall: false`, so `default_agent` does not get them at initialization — they are installed from the library on demand (`agent-company` by the organization itself, when it creates the CEO and hires employees, or by hand onto any Agent that should be able to create one). `goal` is the stop hook behind goal mode: its `start.mjs`, a `user_prompt` command marked `"trigger": "host"` so that it runs only when a goal starts, writes the Session's `GOAL.json` and composes round 1; its `stop.mjs` reads the Trace after every Task and injects the next round or ends the goal. `continual-learning` hands a long task's condensed excerpt to a background subagent that folds the findings into the agent's skills.
 
-`browser-automation` drives the desktop app's built-in browser through `penguin browser`: GenericAgent's scan → act → check loop over simplified HTML, trusted clicks and typing, and sign-ins imported from the system browser, with Amazon orders as the worked example.
+`browser-automation` drives the agent browser through `penguin browser` — the desktop app's built-in browser, or the user's own Chrome through the PenguinHarness Browser extension: GenericAgent's scan → act → check loop over simplified HTML, trusted clicks and typing, and the user's own sign-ins, with Amazon orders as the worked example.
 
 `agent-tuning` powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, optimize it to version N+1 with a snapshot before every round.
 

@@ -256,6 +256,13 @@ export interface ServerSettings {
    * reports it so clients hide the mode switch. Organizations on disk are untouched.
    */
   companyMode: boolean;
+  /**
+   * Whether users may drive their own Chrome through the PenguinHarness Browser extension
+   * (default on). Off closes every connected extension (close code 4009), refuses new
+   * connections, and makes the chrome backend unavailable (`extension_disabled`); pairings are
+   * kept, so turning it on again lets the extensions reconnect.
+   */
+  browserExtensionsEnabled: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -268,6 +275,8 @@ export interface ServerSettingsUpdateRequest {
   proxyForAgent?: boolean;
   /** Company mode master switch; see `ServerSettings.companyMode`. */
   companyMode?: boolean;
+  /** Chrome extension switch; see `ServerSettings.browserExtensionsEnabled`. */
+  browserExtensionsEnabled?: boolean;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -405,6 +414,12 @@ export interface UiPrefs {
   lastOrgKey?: string;
   /** The one group balance shown beside the user name (pinned on the models page); null when unpinned. */
   pinnedBalance?: PinnedBalance | null;
+  /**
+   * The browser this user's agents drive. Written only through PUT /api/builtin-browser/backend
+   * (PUT /api/me/prefs refuses it): absent means built-in for an admin on the desktop, chrome
+   * everywhere else.
+   */
+  browserBackend?: BrowserBackend;
   [key: string]: unknown;
 }
 
@@ -5356,11 +5371,35 @@ export interface InstalledPluginsResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Built-in Browser (desktop only): Electron <webview> guests in the persist:penguin-browser
-// partition, driven over CDP by the shell on the server's behalf. See builtin-browser/.
+// The agent browser, two backends behind one link (see builtin-browser/): the desktop's
+// built-in browser — Electron <webview> guests in the persist:penguin-browser partition,
+// driven over CDP by the shell on the server's behalf — and the user's own Chrome, driven
+// through the PenguinHarness Browser extension over a WebSocket the extension opens.
 // ---------------------------------------------------------------------------
 
-/** One guest page of the built-in browser; `id` is the guest's webContents id. */
+/** The browser an agent drives: the desktop's built-in one, or the user's own Chrome. */
+export type BrowserBackend = "builtin" | "chrome";
+
+/**
+ * What a backend's link can do. The shell cannot create tabs (the Web App's <webview> does) and
+ * throttles and measures its guests; the extension creates, closes and focuses tabs itself and
+ * has no cookie store the server may touch.
+ */
+export interface BrowserLinkCapabilities {
+  /** `open-tab`, `close-tab` and `activate-tab` are answered (chrome). */
+  createsTabs: boolean;
+  /** `throttle` and the `metrics` events (builtin). */
+  throttles: boolean;
+  /** `set-cookies` and `clear-data` (builtin). */
+  cookieStore: boolean;
+}
+
+/**
+ * One tab of the agent browser. Built-in: a guest page, `id` its webContents id. Chrome: a tab
+ * the extension drives (one it created in the Penguin tab group, or one the user added), `id`
+ * Chrome's tab id; `canGoBack`/`canGoForward` are always false there (the tabs API cannot read
+ * them).
+ */
 export interface BuiltinBrowserTab {
   id: number;
   url: string;
@@ -5377,18 +5416,123 @@ export interface BuiltinBrowserTab {
   crashed?: string;
 }
 
-/** Why the built-in browser cannot be driven: not under the desktop shell, a shell too old to host it, or no app window to host a new tab. */
-export type BuiltinBrowserUnavailableReason = "not_desktop" | "shell_unsupported" | "no_window";
+/**
+ * Why the agent browser cannot be driven. Built-in: not under the desktop shell, a shell too old
+ * to host it, or no app window to host a new tab. Chrome: this user has no paired extension, it
+ * is paired but not connected now, or an admin switched Chrome connections off server-wide.
+ */
+export type BuiltinBrowserUnavailableReason =
+  | "not_desktop"
+  | "shell_unsupported"
+  | "no_window"
+  | "extension_not_paired"
+  | "extension_disconnected"
+  | "extension_disabled";
 
-/** GET /api/builtin-browser/status. */
-export interface BuiltinBrowserStatus {
+/** One backend as GET /status lists it for the caller. */
+export interface BrowserBackendInfo {
+  backend: BrowserBackend;
   available: boolean;
   reason?: BuiltinBrowserUnavailableReason;
+  /** chrome: the caller's connected extension, else the one seen most recently; absent when none is paired. */
+  extension?: {
+    id: string;
+    name: string;
+    version: string;
+    connected: boolean;
+    lastSeenAt: string | null;
+  };
+}
+
+/**
+ * GET /api/builtin-browser/status: the caller's effective backend (`backend`) — whether it can
+ * be driven now, its tabs — and every backend this server offers the caller (`backends`).
+ */
+export interface BuiltinBrowserStatus {
+  /** Whether the effective backend can be driven now. */
+  available: boolean;
+  reason?: BuiltinBrowserUnavailableReason;
+  backend: BrowserBackend;
+  backends: BrowserBackendInfo[];
   tabs: BuiltinBrowserTab[];
   activeTabId: number | null;
-  /** The shell's latest measurement of the browser's load; absent before its first one. */
+  /** The shell's latest measurement of the built-in browser's load; absent before its first one, and on chrome. */
   metrics?: BuiltinBrowserMetrics;
 }
+
+/** GET / PUT /api/builtin-browser/backend: the caller's backend and the ones they may choose. */
+export interface BrowserBackendResponse {
+  backend: BrowserBackend;
+  choices: BrowserBackend[];
+}
+
+/** One Chrome paired to the caller's account (a row of `browser_extensions`). */
+export interface BrowserExtensionRecord {
+  id: string;
+  /** As the extension names itself, e.g. "Chrome 130 on macOS". */
+  name: string;
+  version: string;
+  createdAt: string;
+  lastSeenAt: string | null;
+  /** Whether this one holds the caller's connection now (one at a time per user). */
+  connected: boolean;
+}
+
+/** GET /api/builtin-browser/extension. */
+export interface BrowserExtensionsResponse {
+  paired: BrowserExtensionRecord[];
+  /** The id of the connected one, when one is. */
+  connected?: string;
+  /** The admin's server-wide switch (`ServerSettings.browserExtensionsEnabled`). */
+  enabled: boolean;
+}
+
+/**
+ * POST /api/builtin-browser/extension/pairings: a one-time code for the signed-in user, valid
+ * for ten minutes, used once; the dialog shows it beside the server address.
+ */
+export interface BrowserExtensionPairingResponse {
+  /** 43 base64url characters. */
+  code: string;
+  /** ISO time the code stops working. */
+  expiresAt: string;
+  /** The request's Origin, when it carried one: the address the browser reaches this server at. */
+  origin: string | null;
+}
+
+/** POST /api/builtin-browser/extension/pair (no cookie: the extension's own request). */
+export interface BrowserExtensionPairRequest {
+  code: string;
+  /** How the extension names this Chrome, e.g. "Chrome 130 on macOS" (1–80 characters). */
+  name: string;
+  /** The extension's own version (manifest.version). */
+  version: string;
+}
+
+/** What /extension/pair answers: the long-lived token, shown once and stored only hashed here. */
+export interface BrowserExtensionPairResponse {
+  extensionId: string;
+  /** Rides the WebSocket's subprotocol list as `token.<token>`; never a URL. */
+  token: string;
+  /** This server's install id (a stable name for the data root); null when it is unknown. */
+  installId: string | null;
+  user: { userId: string; displayName: string | null };
+  serverVersion: string;
+}
+
+/**
+ * The extension WebSocket's close codes (`/api/builtin-browser/extension/ws`). Besides these the
+ * server closes with 1012 when it restarts or hot-swaps (reconnect with the usual backoff).
+ *
+ * - 4001 replaced: another extension of the same user connected (last connected wins); do not
+ *   auto-retry.
+ * - 4003 revoked: the pairing was revoked (or the token was); forget this server.
+ * - 4005 protocol_mismatch: no `penguin-browser.1` subprotocol, or a hello the server does not
+ *   speak; the extension needs updating.
+ * - 4008 ping_timeout: two pings (or the hello) went unanswered.
+ * - 4009 disabled: an admin switched Chrome connections off; retry hourly.
+ */
+export type BrowserExtensionCloseCode = 4001 | 4003 | 4005 | 4008 | 4009;
 
 /** One tab's share of the built-in browser's load, as the shell last measured it. */
 export interface BuiltinBrowserTabMetrics {
@@ -5552,9 +5696,22 @@ export interface BuiltinBrowserSettings {
 export type BuiltinBrowserAction =
   "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
 
-/** User-channel events of the built-in browser (admins only). */
+/**
+ * User-channel events of the agent browser. The built-in backend's go to every admin; a chrome
+ * backend's go to the user whose Chrome it is, as do `builtin_browser_backend` and
+ * `builtin_browser_extension`.
+ */
 export type BuiltinBrowserServerEvent =
-  | { type: "builtin_browser_tabs"; tabs: BuiltinBrowserTab[]; activeTabId: number | null }
+  /**
+   * A backend's whole tab list. `backend` names whose: a desktop admin hears both the built-in
+   * browser's and their own Chrome's, and the two lists must not overwrite each other.
+   */
+  | {
+      type: "builtin_browser_tabs";
+      tabs: BuiltinBrowserTab[];
+      activeTabId: number | null;
+      backend: BrowserBackend;
+    }
   /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
   | {
       type: "builtin_browser_open";
@@ -5573,7 +5730,15 @@ export type BuiltinBrowserServerEvent =
       sessionId?: string;
     }
   /** The shell measured the browser's load (see BuiltinBrowserMetrics). */
-  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics };
+  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics }
+  /** The user switched backend (PUT /backend); every window of theirs follows. */
+  | { type: "builtin_browser_backend"; backend: BrowserBackend }
+  /** The user's Chrome connected, went away, was replaced by another Chrome of theirs, or was revoked. */
+  | {
+      type: "builtin_browser_extension";
+      state: "connected" | "disconnected" | "replaced" | "revoked";
+      extension?: BrowserExtensionRecord;
+    };
 
 /** A cookie as the shell writes it (Electron's CookiesSetDetails). */
 export interface DesktopBrowserCookie {
@@ -5589,9 +5754,13 @@ export interface DesktopBrowserCookie {
   sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
 }
 
-/** Server → shell: what the shell does with its guests. Mechanism only — the product logic stays on the server. */
+/**
+ * Server → browser link: what the shell (built-in) or the extension (chrome) does with its tabs.
+ * Mechanism only — the product logic stays on the server. The names are historical: the same
+ * envelopes travel the extension's WebSocket as JSON text frames.
+ */
 export type DesktopBrowserCommand =
-  /** Reply: `{ version: 1, partition: string }`. An older shell never answers. */
+  /** Reply: a BrowserHello. An older shell never answers. */
   | { op: "hello" }
   /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
   | { op: "tabs" }
@@ -5618,7 +5787,30 @@ export type DesktopBrowserCommand =
    * before. A tab is unthrottled until a command lists it, so a server that never sends one
    * changes nothing. A shell older than this command answers `unknown_op`.
    */
-  | { op: "throttle"; tabIds: number[] };
+  | { op: "throttle"; tabIds: number[] }
+  /**
+   * Chrome only (the shell answers `unknown_op`). Reply: `{ tab: BuiltinBrowserTab }`. A tab at
+   * `url` (http(s) or about:blank, checked by the server) in the extension's Penguin tab group;
+   * `activate` asks for it to be the selected tab of its window.
+   */
+  | { op: "open-tab"; url: string; activate: boolean }
+  /** Chrome only. Reply: `{}`. Closes a tab the extension drives. */
+  | { op: "close-tab"; tabId: number }
+  /** Chrome only. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
+  | { op: "activate-tab"; tabId: number }
+  /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
+  | { op: "ping" };
+
+/**
+ * The `hello` reply. Built-in: `{ version: 1, partition }` (an older shell sends no `backend`).
+ * Chrome: `{ version: 1, backend: "chrome", extension }`; any other version is closed 4005.
+ */
+export interface BrowserHello {
+  version: 1;
+  backend?: BrowserBackend;
+  partition?: string;
+  extension?: { version: string; chrome: string; name: string };
+}
 
 export interface DesktopBrowserCommandMessage {
   type: "desktop-browser-command";
@@ -5656,7 +5848,14 @@ export type DesktopBrowserEvent =
    * shortly after one closes, empty after the last): each tab's memory and CPU, and the pages'
    * memory together, a process shared by two tabs counted once.
    */
-  | { kind: "metrics"; tabs: BuiltinBrowserTabMetrics[]; totalKB: number };
+  | { kind: "metrics"; tabs: BuiltinBrowserTabMetrics[]; totalKB: number }
+  /**
+   * Chrome only: the tab still exists in Chrome but the agent may no longer drive it — the user
+   * pressed Cancel on Chrome's debugging bar (`user`), the debugger went away otherwise
+   * (`detached`), or the page is one Chrome lets no extension attach to (`restricted`). The
+   * extension fails that tab's pending commands with the error `tab_released`.
+   */
+  | { kind: "tab-released"; tabId: number; reason: "user" | "detached" | "restricted" };
 
 export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";

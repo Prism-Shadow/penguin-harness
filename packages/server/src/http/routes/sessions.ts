@@ -97,6 +97,8 @@ export interface SessionsRouteDeps {
   liveStreams: LiveStreams;
   /** Re-validates the session behind an open stream, once per heartbeat. */
   auth: Auth;
+  /** Who a run acts for: the person who started it (an agent's browser calls drive their Chrome). */
+  drivers?: SessionDrivers;
 }
 import {
   assertAttachmentBudget,
@@ -138,7 +140,12 @@ import type {
 } from "../../mechanisms/projects.js";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
-import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/sessions.js";
+import type {
+  Schedules,
+  SessionDrivers,
+  SessionIndex,
+  SessionOrigins,
+} from "../../mechanisms/sessions.js";
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
 import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
@@ -1018,6 +1025,9 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
+    // A person starting a run is who it acts for; the API token is an agent (or a tool) on
+    // somebody's behalf, and leaves the Session's driver as it was.
+    const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
     // Resolved per request from the admin settings, so a limit change applies to the very next
     // upload rather than at the next restart.
     const limits = toAttachmentLimits(deps.serverSettingsRepo.getAttachmentLimitsMb());
@@ -1043,11 +1053,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       // composes round 1, its stop hook drives every later round; the manager runs the
       // start under the session lock, so a goal is never started over a running one.
       const objective = stripLeadingMarkerBlocks(text).trim() || text;
+      if (driver !== null) deps.drivers?.note(row.sessionId, driver);
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
         messages,
         objective,
         budget: goal.budget,
       });
+      if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }
     const parsed = parseTaskInput(body, limits);
@@ -1072,6 +1084,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       row.sessionId,
     );
     try {
+      if (driver !== null) deps.drivers?.note(row.sessionId, driver);
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
       const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
         queueIfBusy,
@@ -1079,6 +1092,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         // (DELETE /follow-ups/:id) can hand it back; unused when the task starts directly.
         recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
       });
+      if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
       return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
     } catch (err) {
       // The Task never started, so nothing references these files and nothing will ever clean
@@ -1650,6 +1664,7 @@ export class SessionApiRoutes {
   @Use() private readonly usage!: UsageQueries;
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
+  @Use() private readonly drivers!: SessionDrivers;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1694,6 +1709,7 @@ export class SessionApiRoutes {
       fileReveal: this.fileReveal,
       liveStreams: this.liveStreams,
       auth: this.auth,
+      drivers: this.drivers,
     };
     const modelOAuthDeps = {
       config: this.config,
