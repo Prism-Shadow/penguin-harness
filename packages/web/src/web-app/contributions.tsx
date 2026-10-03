@@ -17,7 +17,7 @@ import { useSafeMode } from "../rescue/safe-mode";
 import { useAuth } from "../state/auth";
 import { webAppDeps } from "./deps";
 import { FramePage } from "./frame-page";
-import { parentedPagesOf, type WebAppPage } from "./page-table";
+import { parentedPagesOf, removedPagesOf, type WebAppPage } from "./page-table";
 
 /** What the store holds for the current user. */
 export interface ContributionsState {
@@ -210,6 +210,35 @@ export function fileRendererRulesOf(
 
 const NO_RULES: readonly FileRendererRule[] = [];
 
+/**
+ * The keys of the pages the answer removes, in the server's order: an entry is read when its key
+ * is a non-empty string; anything else, and an answer that sends no such list, is skipped.
+ */
+export function pageRemovalsOf(answer: ContributionsResponse | null): readonly string[] {
+  const entries: unknown = answer?.pageRemovals;
+  if (!Array.isArray(entries)) return NO_REMOVALS;
+  return (entries as Array<{ key?: unknown } | null>)
+    .map((entry) => entry?.key)
+    .filter((key): key is string => typeof key === "string" && key !== "");
+}
+
+const NO_REMOVALS: readonly string[] = [];
+
+/**
+ * The table the router and the nav read: the compiled pages with the contributed ones appended,
+ * the removed ones dropped from both, and then every page whose parent is gone — so a removed
+ * page takes the pages under it along.
+ */
+export function pageTableFor(
+  compiled: readonly WebAppPage[],
+  answer: ContributionsResponse | null,
+  renderers: ReadonlyMap<string, ComponentType>,
+): readonly WebAppPage[] {
+  return parentedPagesOf(
+    removedPagesOf(contributedPagesOf(compiled, answer, renderers), pageRemovalsOf(answer)),
+  );
+}
+
 /** The answer's parts besides the pages, for the features that read them (web-app/index.ts). */
 
 /**
@@ -230,7 +259,7 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const pending = current ? state.pending : userId !== null;
   const value = useMemo<WebAppPagesValue>(
     () => ({
-      pages: parentedPagesOf(contributedPagesOf(compiled, answer, pageRenderers)),
+      pages: pageTableFor(compiled, answer, pageRenderers),
       pending,
       // A mocked or older server may leave these out.
       quickStarts: [],

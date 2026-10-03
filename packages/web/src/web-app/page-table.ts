@@ -4,9 +4,11 @@
  * whether the server refuses it to non-admins, whether it is offered yet, and its place, and
  * binds the component that draws it. `pageTableOf` turns the contributions into the table the
  * router mounts and the sidebar derives its nav group from. Pages the server's modules and
- * plugins contribute are folded in after them by web-app/contributions.tsx.
+ * plugins contribute are folded in after them by web-app/contributions.tsx, which also drops the
+ * pages the server's removals name (removedPagesOf).
  */
 import type { ComponentType } from "react";
+import { matchPath } from "react-router";
 import type { Contributed } from "@prismshadow/penguin-core/kernel";
 import type { RendererRef } from "@prismshadow/penguin-server/api";
 
@@ -75,6 +77,42 @@ export function parentedPagesOf(pages: readonly WebAppPage[]): readonly WebAppPa
     if (p.parent === undefined) return true;
     const parent = byKey.get(p.parent);
     return parent !== undefined && parent !== p && parent.parent === undefined;
+  });
+}
+
+/**
+ * Where the router sends a path it has no page for, the index and a signed-in /login
+ * (web-app/router.tsx). The page that answers it is the one no removal can take away: without
+ * it the catch-all would redirect to a path that falls to the catch-all again.
+ */
+export const HOME_PATH = "/chat";
+
+/** A route pattern's segments: "/benchmark/:benchmarkId" → ["benchmark", ":benchmarkId"]. */
+const segmentsOf = (path: string) => path.split("/").filter((s) => s !== "");
+
+/**
+ * The table without the pages the given keys name, nor the pages whose route lies under one of
+ * theirs — whose pattern starts with every segment of the removed page's pattern, so removing
+ * `benchmark` (/benchmark) takes `benchmark-detail` (/benchmark/:benchmarkId) with it but not
+ * the other way round: what lives under a page's URL belongs to that page, and a removal names
+ * the page a user sees, not the routes behind it. A page at "/" takes only itself. The page
+ * that answers HOME_PATH stays whatever names it. Keys naming no page are ignored; pages under a
+ * removed one by `parent` are left to parentedPagesOf, which runs after this.
+ */
+export function removedPagesOf(
+  pages: readonly WebAppPage[],
+  keys: readonly string[],
+): readonly WebAppPage[] {
+  if (keys.length === 0) return pages;
+  const removed = pages.filter((p) => keys.includes(p.key)).map((p) => segmentsOf(p.path));
+  if (removed.length === 0) return pages;
+  const under = (path: readonly string[], root: readonly string[]) =>
+    root.length > 0 && root.length <= path.length && root.every((s, i) => s === path[i]);
+  return pages.filter((p) => {
+    if (matchPath(p.path, HOME_PATH) !== null) return true;
+    if (keys.includes(p.key)) return false;
+    const path = segmentsOf(p.path);
+    return !removed.some((root) => under(path, root));
   });
 }
 
