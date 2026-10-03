@@ -2420,6 +2420,15 @@ export const en: Strings = {
       hideSidebar: "Hide sidebar",
       quickAccess: "Quick access",
       thisPc: "This PC",
+      locations: "Locations",
+      drives: {
+        drive: "Local Disk",
+        removable: "USB Drive",
+        network: "Network Drive",
+        optical: "CD Drive",
+      },
+      fileSystem: "File System",
+      switchLocation: "Switch location",
       recent: "Recent",
       machines: "Machines",
       places: {

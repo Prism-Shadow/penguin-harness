@@ -15,6 +15,20 @@
  * (Desktop, Documents, Downloads) looks exactly like that, and an empty list sent people
  * looking for files that were there all along.
  *
+ * The home request (no `path`) with `places=1` also answers what the picker's sidebar needs
+ * and only this machine knows: the standard folders as this machine resolves them (a Desktop
+ * redirected into OneDrive, a localized `~/桌面`) and its storage locations — Windows drives
+ * with labels and kinds, macOS volumes, the Linux root and its mounts. Discovery is the
+ * dir-places service's: time-boxed and cached, so a disconnected network drive never holds a
+ * listing. The picker asks for places on the request that builds its sidebar and leaves the
+ * flag off the one that fills its list, so the list never waits on discovery either.
+ *
+ * On Windows every listing marks the entries Explorer hides (`hidden: true`): the hidden
+ * attribute is what keeps `AppData`, `NTUSER.DAT` and the legacy profile junctions — which
+ * are also access-denied, so a click on one only fails — out of the way, and no Node API reads
+ * it. A bare drive `D:` is accepted there as `D:\`, as Explorer's address bar does; to Node a
+ * bare drive is drive-relative and would otherwise be refused as not absolute.
+ *
  * POST /api/projects/:p/dirs/access is the picker's way out of that refusal in the desktop
  * app: see the route.
  *
@@ -32,6 +46,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { directorySkillsRoutes } from "./directory-skills.js";
 import type { Desktop, DesktopApi } from "../../hmr/capabilities.js";
 import type { Access } from "../../mechanisms/projects.js";
+import { discoverLocalPlaces, windowsHiddenNames } from "../../services/dir-places.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface DirsRouteDeps {
@@ -49,8 +64,11 @@ export function dirsRoutes(deps: DirsRouteDeps): Hono<AppEnv> {
 
     // Default starting point: home directory; an explicit path must be absolute (the frontend always sends back the realpath result).
     const raw = c.req.query("path");
-    const requested = raw?.trim() ?? "";
+    const requested = normalizeRequestedDir(raw?.trim() ?? "", process.platform);
     const home = requested === "";
+    // Places answer the home request alone: that is the one the picker makes to build its
+    // sidebar, and discovering drives on every folder change would be waste.
+    const places = home && c.req.query("places") === "1";
     const real = await resolveBrowsableDir(home ? os.homedir() : requested);
 
     let dirents: import("node:fs").Dirent[];
@@ -59,9 +77,20 @@ export function dirsRoutes(deps: DirsRouteDeps): Hono<AppEnv> {
     } catch (err) {
       throw dirReadError(err, real);
     }
-    const entries = (await describeEntries(real, dirents)).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
+    // The attribute pass and the discovery run beside the per-entry stats, not after them.
+    const [described, hidden, found] = await Promise.all([
+      describeEntries(real, dirents),
+      process.platform === "win32"
+        ? windowsHiddenNames(
+            real,
+            dirents.map((d) => d.name),
+          )
+        : null,
+      places ? discoverLocalPlaces() : null,
+    ]);
+    const entries = described
+      .map((e): DirEntryInfo => (hidden?.has(e.name) ? { ...e, hidden: true } : e))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     const parent = path.dirname(real);
     return c.json({
@@ -69,9 +98,9 @@ export function dirsRoutes(deps: DirsRouteDeps): Hono<AppEnv> {
       parent: parent === real ? null : parent,
       entries,
       platform: process.platform,
-      // Drive roots only answer the home request: that is the one the picker makes to build
-      // its sidebar, and probing 26 letters on every folder change would be waste.
-      ...(home && process.platform === "win32" ? { roots: await driveRoots() } : {}),
+      // `standardFolders` stays absent when discovery could not ask the machine, so the
+      // picker finds them by name; present and empty means there are none.
+      ...(found !== null ? found : {}),
     } satisfies DirListResponse);
   });
 
@@ -200,18 +229,13 @@ async function describeEntries(
   );
 }
 
-/** The drive roots that exist on a Windows host (`C:\`, …), for the picker's sidebar. */
-async function driveRoots(): Promise<string[]> {
-  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-  const found = await Promise.all(
-    letters.map((letter) =>
-      fs.access(`${letter}:\\`).then(
-        () => `${letter}:\\`,
-        () => null,
-      ),
-    ),
-  );
-  return found.filter((root): root is string => root !== null);
+/**
+ * A bare drive (`D:`, `d:`) typed on Windows means that drive's root, as it does in Explorer's
+ * address bar. To Node it is drive-relative — `path.isAbsolute("D:")` is false — so without
+ * this it would be refused as not absolute. Pure; exported for the unit test.
+ */
+export function normalizeRequestedDir(requested: string, platform: string): string {
+  return platform === "win32" && /^[A-Za-z]:$/.test(requested) ? `${requested}\\` : requested;
 }
 
 /** The Project-scoped directory routes; the repos and the access check are components of their own. */

@@ -771,7 +771,19 @@ router
   })
   .get("/api/projects/:projectId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
-    return store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
+    const listing = store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
+    // The home request that builds the finder's sidebar also carries the machine's own places,
+    // as the server's does: a Linux machine's root and one mounted disk.
+    if (query.get("path") || query.get("places") !== "1") return listing;
+    return {
+      ...listing,
+      platform: "linux",
+      standardFolders: {},
+      locations: [
+        { path: "/", kind: "root" },
+        { path: "/mnt/data", kind: "volume", label: "data" },
+      ],
+    };
   })
   .get("/api/projects/:projectId/machines/:machineId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";

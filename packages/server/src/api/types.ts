@@ -1655,6 +1655,23 @@ export interface DirEntryInfo {
   kind?: "dir" | "file";
   /** Last modification, epoch milliseconds; absent when unknown (listings over ssh, an entry stat could not reach). */
   mtime?: number;
+  /** Hidden by the machine's own rules beyond the dot-name convention (Windows hidden/system attribute). */
+  hidden?: true;
+}
+/** A storage location the machine offers beside its folders: a Windows drive, a macOS volume, a Linux root or mount. */
+export interface DirLocation {
+  /** Absolute path it opens (`C:\`, `/`, `/Volumes/USB`, `/media/me/USB`, `/mnt/c`). */
+  path: string;
+  kind: "drive" | "removable" | "network" | "optical" | "volume" | "root";
+  /** The machine's own name for it (volume label, volume name, share `\\nas\media`, WSL `C:`); absent when none. */
+  label?: string;
+}
+/** The platform's standard folders as that machine resolves them; only those that exist. */
+export interface DirStandardFolders {
+  desktop?: string;
+  documents?: string;
+  downloads?: string;
+  pictures?: string;
 }
 export interface DirListResponse {
   /** Absolute path of the current directory (realpath). */
@@ -1665,8 +1682,10 @@ export interface DirListResponse {
   entries: DirEntryInfo[];
   /** The listed machine's `process.platform`; absent for a machine listed over ssh. */
   platform?: string;
-  /** Windows only, on the home request (no `path`): the drive roots that exist. */
-  roots?: string[];
+  /** Home request with `places=1` only. */
+  standardFolders?: DirStandardFolders;
+  /** Home request with `places=1` only, in the order the sidebar lists them. */
+  locations?: DirLocation[];
 }
 
 /** One Skill found in a picked directory: metadata plus which of the two layouts it came from. */

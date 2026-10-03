@@ -2466,6 +2466,19 @@ export const zh = {
       quickAccess: "常用",
       /** Windows only: the section listing the drives. */
       thisPc: "此电脑",
+      /** The same section on a Mac (its volumes) or a Linux machine (the root and the mounted devices). */
+      locations: "位置",
+      /** A Windows drive with no label of its own, by its type, as Explorer names it; the letter follows. */
+      drives: {
+        drive: "本地磁盘",
+        removable: "U 盘",
+        network: "网络驱动器",
+        optical: "CD 驱动器",
+      },
+      /** A Linux machine's root directory, as its file managers name it. */
+      fileSystem: "文件系统",
+      /** The caret before the path that lists the machine's drives or volumes: its accessible name and hint. */
+      switchLocation: "切换位置",
       recent: "最近使用",
       machines: "机器",
       places: {
