@@ -35,3 +35,7 @@ export const NAV_ICONS = {
   /** The handbook, the company's knowledge base. */
   orgHandbook: ICONS.bookOpen,
 } as const;
+
+export function glyphOf(name: string | undefined): string {
+  return name !== undefined && Object.hasOwn(ICONS, name) ? ICONS[name as keyof typeof ICONS] : "";
+}

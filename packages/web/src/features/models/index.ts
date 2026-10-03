@@ -1,3 +1,5 @@
+export { PinnedBalanceBadge } from "./group-balance";
+
 export { sameModelRef } from "./model-grouping";
 
 export { hasConfiguredKey } from "./model-grouping";

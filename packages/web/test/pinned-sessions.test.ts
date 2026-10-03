@@ -22,7 +22,7 @@ import {
   savePinnedSessions,
   togglePinnedSession,
   type PinnedSessionsStorage,
-} from "../src/lib/pinned-sessions";
+} from "../src/features/session-list/pinned-sessions";
 
 import { isSidebarRow, pinnedFirst } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";

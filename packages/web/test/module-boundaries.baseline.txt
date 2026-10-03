@@ -2,41 +2,6 @@
 # One line per edge, sorted: `importing-file -> imported-file` (paths relative to src/), or
 # This list only shrinks: never add a line; delete each line whose edge your change removes.
 # `cycle: features/a -> features/b` for an edge between two feature directories that lies on a cycle.
-components/layout/app-layout.tsx -> features/builtin-browser/index.ts
-components/layout/app-layout.tsx -> features/chat/chat-page.tsx
-components/layout/app-layout.tsx -> features/chat/use-new-chat.ts
-components/layout/app-layout.tsx -> features/company/channel-sidebar.tsx
-components/layout/app-layout.tsx -> features/company/company-nav-icons.ts
-components/layout/app-layout.tsx -> features/company/index.ts
-components/layout/app-layout.tsx -> features/company/org-session-groups.tsx
-components/layout/app-layout.tsx -> features/dock/dock-state.ts
-components/layout/project-dialogs.tsx -> features/chat/chat-defaults-event.ts
-components/layout/project-dialogs.tsx -> features/chat/draft-cache.ts
-components/layout/project-dialogs.tsx -> features/chat/model-select.tsx
-components/layout/project-dialogs.tsx -> features/chat/thinking-level.ts
-components/layout/project-dialogs.tsx -> features/chat/workspace-select.tsx
-components/layout/project-dialogs.tsx -> features/models/model-grouping.ts
-components/layout/project-dialogs.tsx -> features/semantic-id/semantic-id-field.tsx
-components/layout/sidebar.tsx -> features/agents/agent-employment.ts
-components/layout/sidebar.tsx -> features/chat/chat-page.tsx
-components/layout/sidebar.tsx -> features/chat/draft-cache.ts
-components/layout/sidebar.tsx -> features/chat/draft-sessions.ts
-components/layout/sidebar.tsx -> features/chat/new-chat.ts
-components/layout/sidebar.tsx -> features/chat/workspace-select.tsx
-components/layout/sidebar.tsx -> features/company/channel-sidebar.tsx
-components/layout/sidebar.tsx -> features/company/company-beta.tsx
-components/layout/sidebar.tsx -> features/company/company-nav-icons.ts
-components/layout/sidebar.tsx -> features/company/index.ts
-components/layout/sidebar.tsx -> features/company/org-session-groups.tsx
-components/layout/sidebar.tsx -> features/company/org-switcher.tsx
-components/layout/sidebar.tsx -> features/dock/dock-state.ts
-components/layout/sidebar.tsx -> features/dock/dock-terminal.ts
-components/layout/sidebar.tsx -> features/messaging/messaging-binding-modal.tsx
-components/layout/sidebar.tsx -> features/models/group-balance.tsx
-components/layout/sidebar.tsx -> features/schedules/schedule-panel-state.ts
-components/layout/sidebar.tsx -> features/schedules/schedule-store.ts
-components/layout/user-menu.tsx -> features/settings/settings-dialog.tsx
-components/layout/user-menu.tsx -> features/settings/settings-request.ts
 cycle: features/agents -> features/ai-create
 cycle: features/agents -> features/chat
 cycle: features/agents -> features/plugins
