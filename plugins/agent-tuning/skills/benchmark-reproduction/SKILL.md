@@ -5,6 +5,12 @@ description: Reproduce an existing benchmark from a GitHub URL, name, or local c
 
 # Benchmark Reproduction
 
+If an applicable reference conflicts with this SKILL.md, follow the reference
+because it is more specific. Within its scope, a method or benchmark recipe also
+takes precedence over Penguin defaults; user instructions take precedence over
+both. Read only applicable references, record overrides, and report any behavior
+that Penguin's actual interfaces cannot support.
+
 This Skill defines general inputs, construction choices, Penguin output formats
 and verification. Benchmark-specific recipes live in references. Fetch datasets
 and generate any needed adapters only when requested, inside the destination
@@ -170,12 +176,10 @@ evidence. Record such discrepancies separately; neither gold passing its own
 scorer nor a plausible answer proves that the task is unambiguous. Any correction
 to task semantics or grading is a declared benchmark revision, not an adapter fix.
 Then delegate complete fresh Target Agent executions through `agent-evaluation`, with
-runtime setup, source grading and cleanup. Its request fields remain
+runtime setup, source grading and cleanup through its applicable references. Its request fields remain
 `protocol_version: 1`, `case_id`, `run`, `expected_version`, `test_agent_id`,
-`benchmark_id`, `provider`, `model_id`. Freeze Target Agent State/runtime; explicitly
-pass its configured thinking at launch. For stored `none`, omit that unsupported
-CLI flag and clear only `PENGUIN_SESSION_ID` for the Target Agent command, preserving
-explicit identity/model/workspace flags and connection/auth configuration.
+`benchmark_id`, `provider`, `model_id`. Freeze Target Agent State/runtime and use
+the evaluation recipe to pass its configured thinking and bind the actual run.
 
 Keep actual scores, artifacts, bound session IDs, costs and setup/cleanup evidence.
 Wrong answers are valid scored executions; do not rerun them to improve smoke

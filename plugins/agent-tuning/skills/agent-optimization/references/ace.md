@@ -3,7 +3,8 @@
 RSI method from a paper titled as Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models
 
 Follow the inputs, evaluation and output rules in `agent-optimization`.
-The complete method, playbook format and paper differences are defined here.
+This reference defines optimization, rule format and paper differences;
+baseline setup is linked under Baseline artifact.
 This is offline FDE adaptation: fresh Target Agents generate traces, Reflectors extract
 lessons, a Curator consolidates deltas, and the Optimizer publishes between batches.
 
@@ -75,25 +76,9 @@ initial/final versions to the independent Reporter without further learning.
 
 ## Baseline artifact
 
-Create `STATE/skills/ace-playbook/SKILL.md` as a target-owned custom Skill. Its
-frontmatter has `name: ace-playbook`, a domain-specific description, and a
-`YYYY.MM.DD.N` version following Agent Initialization. Keep custom Skill versions
-separate from the integer Agent State version and rule revisions.
-
-The stable body instructs the Target Agent to read `rules.yaml` in full, apply rules only
-when their conditions match public evidence, check current authoritative business
-sources, and solve normally where no rule applies. Start `rules.yaml` with
-`entries: []`. Do not copy the Optimizer's reflection prompts into the Target Agent.
-
-Before measuring H1, put this fixed instruction in the experimental Target Agent's
-AGENTS.md:
-
-> Read the complete ace-playbook SKILL.md and rules.yaml before substantive task
-> actions. Apply applicable entries using the current business evidence. In a brief
-> tool-side note in this task workspace, record rule IDs used and any conflicting
-> observations; preserve the required answer format. Never modify Agent State,
-> persistent memory, Skills, hooks or tool definitions. Do not read other cases,
-> experiment records, judge endpoints or private scoring files.
+Before H1, follow [the ACE initialization reference](../../agent-initialization/references/ace.md)
+for the empty method artifacts and fixed reader. Verify those artifacts when
+resuming; do not reinstall or change the reader during measured training.
 
 Every execution must show actual file reads in its public trace. A claimed usage
 note alone is insufficient. With an empty playbook, a read followed by ordinary

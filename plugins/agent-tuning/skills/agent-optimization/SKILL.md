@@ -5,6 +5,12 @@ description: Apply an RSI method to a Target Agent using training traces, with P
 
 # Agent Optimization
 
+If an applicable reference conflicts with this SKILL.md, follow the reference
+because it is more specific. Within its scope, a method or benchmark recipe also
+takes precedence over Penguin defaults; user instructions take precedence over
+both. Read only applicable references, record overrides, and report any behavior
+that Penguin's actual interfaces cannot support.
+
 Act as the Optimizer: analyze training traces and improve the Target Agent
 using the selected RSI method. This Skill specifies inputs, evaluation, versions
 and output formats; each reference supplies a method recipe. Use Penguin by
@@ -136,11 +142,9 @@ provider: <target_provider>
 model_id: <target_model_id>
 ```
 
-Ask the evaluator to pass configured Target Agent thinking explicitly when launching
-the Target Agent; for stored `none`, omit the unsupported flag and clear only
-`PENGUIN_SESSION_ID` for that command, keeping explicit identity/model/workspace
-flags and connection/auth environment. Use the benchmark's Runtime instructions
-when present. Keep `--source benchmark` and bind the actual Target Agent trace.
+Require the Evaluator to use the selected evaluation references for the exact
+Target runtime, launch and trace binding, plus this Benchmark's Runtime
+instructions. Do not substitute Optimizer or Project defaults for Target settings.
 
 Require one plain protocol YAML response and matching case/run/Agent/version/runtime,
 finite `0..100` score, nullable cost, duration and session ID. A formatting repair
