@@ -82,9 +82,10 @@ export interface DeslopPolicy {
   /** Rule 1: files that may transition a transform — the chevron, the sheet, launcher and drawer motion. */
   readonly transformMotion: readonly string[];
   /**
-   * Rule 1: files that may transition a size — the one `data-layout-motion` rule in the theme
-   * foundation, which moves a sidebar's width or a disclosure's grid rows on the theme's layout
-   * tokens. A component never transitions geometry itself; it sets the attribute.
+   * Rule 1: files that may transition a size or a place — the one `data-layout-motion` rule in
+   * the theme foundation, which moves a sidebar's width, a disclosure's grid rows or a lifted dock
+   * surface's insets on the theme's layout tokens. A component never transitions geometry itself;
+   * it sets the attribute.
    */
   readonly layoutMotion?: readonly string[];
   /** Rule 3: keyframe-driven entrances that may run 300 ms or longer. */
@@ -585,9 +586,14 @@ const TRANSITION_PROPERTIES = new Set(
   ),
 );
 const TRANSFORM_PROPERTIES = new Set(["transform", "translate", "scale", "rotate"]);
-/** Rule 1: the sizes the layout-motion rule may transition, and nothing else may. */
+/**
+ * Rule 1: the geometry the layout-motion rule may transition, and nothing else may — the sizes,
+ * and the two insets a fixed box moves through when a dock surface lifts off the page column.
+ */
 const LAYOUT_PROPERTIES = new Set(
-  "width height min-width max-width flex-basis grid-template-rows grid-template-columns".split(" "),
+  "width height min-width max-width flex-basis grid-template-rows grid-template-columns top left".split(
+    " ",
+  ),
 );
 
 /** Rule 12: the steps a gap, a stack or an all-sides padding may take. */

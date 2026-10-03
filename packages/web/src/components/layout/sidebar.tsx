@@ -114,6 +114,7 @@ import {
   aggregateWorkspaceLatest,
   clampGroupPage,
   completeWorkspaceGroups,
+  cutAtWatermark,
   foldedShare,
   groupPageCount,
   groupPageOf,
@@ -379,6 +380,7 @@ export function Sidebar({
     machineLabels,
     isLoadedFor,
     hasMoreFor,
+    activityWatermarkFor,
     loadMoreFor,
     loading,
     remove,
@@ -879,14 +881,32 @@ export function Sidebar({
    * the same reason. Null outside time mode, so no other mode pays for the two passes.
    */
   const timeParts = groupMode === "time" ? partitionSessions(filterRows(sessions)) : null;
-  const timeGroups = timeParts === null ? [] : groupSessionsByTime(timeParts.active, Date.now());
 
-  /** Time mode's exact server share, Project-wide: its buckets span every Agent, so the shared folders and the whole-list "More" read the summed counts. */
+  /** Time mode's exact server share, Project-wide: its buckets span every Agent, so the shared folders read the summed counts. */
   const projectCounts = totalCategoryCounts(countsByAgent);
 
   /** Agents holding rows of a category anywhere in this Project — time mode's fetch fan-out (the counts are kept in step locally, so they cover freshly added rows too). */
   const projectAgentsFor = (category: SessionCategory) =>
     [...countsByAgent].filter(([, counts]) => counts[category] > 0).map(([agentId]) => agentId);
+
+  /**
+   * Time mode's rows, cut at the list's watermark BEFORE bucketing. Every Agent (on every
+   * machine) pages its own stream, so only the rows above the most recent cursor that still
+   * has more are a true prefix of the Project's activity order; the rows below it stay in
+   * memory until "load more" lowers it. That is what makes the list grow only at its bottom —
+   * a fetched page can no longer land rows in "Last day" above an "Earlier" the user is
+   * reading. A search sees every loaded row (a hidden match would read as no match), and the
+   * open conversation always shows.
+   */
+  const timeVisible =
+    timeParts === null
+      ? []
+      : cutAtWatermark(
+          timeParts.active,
+          searching ? null : activityWatermarkFor(projectAgentsFor("active"), "active"),
+          activeSessionId,
+        );
+  const timeGroups = timeParts === null ? [] : groupSessionsByTime(timeVisible, Date.now());
 
   /** Agents with an unfetched active page left; the whole-list "More" of time mode pages all of them at once. */
   const timeMoreAgents = projectAgentsFor("active").filter((id) => hasMoreFor(id, "active"));
@@ -1155,12 +1175,17 @@ export function Sidebar({
     for (const group of groupPageSlice(orderedWorkspaceGroups, shownGroupPage)) {
       const counts = workspaceGroupCounts.get(group.key);
       const total = counts?.totals.active ?? 0;
-      // Counts not in yet (0): nothing is known to be missing, so nothing is asked for.
-      const loaded = group.sessions.filter((s) => sessionCategory(s) === "active").length;
-      if (loaded >= Math.min(SIDEBAR_PAGE_SIZE, total)) continue;
       const agents = [
         ...new Set([...(counts?.agents.active ?? []), ...group.sessions.map((s) => s.agentId)]),
       ];
+      // Counts not in yet (0): nothing is known to be missing, so nothing is asked for. What
+      // the group SHOWS is what a first page has to fill: rows in memory below its watermark
+      // (another Agent's stream reached further) are not on screen.
+      const loaded = cutAtWatermark(
+        group.sessions.filter((s) => sessionCategory(s) === "active"),
+        activityWatermarkFor(agents, "active", group.key),
+      ).length;
+      if (loaded >= Math.min(SIDEBAR_PAGE_SIZE, total)) continue;
       const unloaded = agents.filter((id) => !isLoadedFor(id, "active", group.key));
       if (unloaded.length === 0) continue;
       const key = loadKey(group.key, "active");
@@ -1181,6 +1206,7 @@ export function Sidebar({
     shownGroupPage,
     workspaceGroupCounts,
     isLoadedFor,
+    activityWatermarkFor,
     loadMoreFor,
     pendingLoads,
   ]);
@@ -1530,7 +1556,7 @@ export function Sidebar({
             scheduled={scheduledSessions.has(s.sessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
-            // evaluations / archived) are ordered chronologically inside their folder and
+            // evaluations / archived) are ordered by last activity inside their folder and
             // never pass through orderSessionRows, so a pin there would write an id, light
             // the glyph, move nothing — and then shift the active list's drag partition.
             canPin={activeList}
@@ -1621,7 +1647,17 @@ export function Sidebar({
     agentIds: string[],
     totals: SessionCategoryCounts | undefined,
   ) => {
-    const rows = parts[category];
+    const loadedRows = parts[category];
+    // In last-activity order, cut at the folder's watermark: a folder spanning several
+    // streams (Agents, machines) shows only what they have all reached, so its "More" adds
+    // rows below the ones on screen and never above them (the active list's rule).
+    const rows = cutAtWatermark(
+      loadedRows,
+      searching || agentIds.length === 0
+        ? null
+        : activityWatermarkFor(agentIds, category, fetchScope(groupKey)),
+      activeSessionId,
+    );
     // While searching the folder speaks for its loaded MATCHES only: a match hidden
     // behind a collapsed folder would look like a missing result (the models page's
     // search-forces-open rationale), so the folder is forced open, labelled by the
@@ -1629,7 +1665,7 @@ export function Sidebar({
     // (the server cannot search unloaded rows, and every match is already on screen).
     if (searching && rows.length === 0) return null;
     // Loaded rows win a disagreement with the totals (counts refresh only on reload).
-    const total = searching ? rows.length : Math.max(totals?.[category] ?? 0, rows.length);
+    const total = searching ? rows.length : Math.max(totals?.[category] ?? 0, loadedRows.length);
     if (total === 0) return null;
     const key = folderKey(groupKey, category);
     const cap = folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE;
@@ -1709,11 +1745,26 @@ export function Sidebar({
     // FETCHED: a pinned conversation that lives past the loaded pages does not surface
     // until "More" pulls its page in (the list has no server-side pin), so the pinned
     // cluster leads what is loaded, not the Agent's whole history. Folder rows keep
-    // their chronological order: pinning and manual order are active-list concerns.
+    // their last-activity order: pinning and manual order are active-list concerns.
     // While searching, the display cap is bypassed — every loaded match shows, and
     // "More" hides (it pages the unfiltered list and would read as "more matches",
     // which the server cannot promise).
-    const orderedActive = orderSessionRows(parts.active, (s) => s.sessionId, {
+    //
+    // Before any of that, the rows are cut at the group's watermark: an Agent group on
+    // several machines and a Workspace group spanning Agents both merge several streams,
+    // and only the rows above the most recent cursor that still has more are a true prefix
+    // of the group's activity order. The rest wait in memory, so "More" only ever adds rows
+    // below the ones on screen. A time bucket has no streams of its own (its rows arrive
+    // already cut), and a search sees every loaded row.
+    const activeAgents = agentsFor("active");
+    const visibleActive = cutAtWatermark(
+      parts.active,
+      searching || activeAgents.length === 0
+        ? null
+        : activityWatermarkFor(activeAgents, "active", fetchScope(groupKey)),
+      activeSessionId,
+    );
+    const orderedActive = orderSessionRows(visibleActive, (s) => s.sessionId, {
       pinned: pinnedSessions,
       sortMode: effectiveSortMode,
       order: sessionOrder,
@@ -1730,7 +1781,6 @@ export function Sidebar({
     // it is fetched out), which is when the loaded rows become the truth: server counts
     // refresh only on reload, so a count drifting above reality would otherwise leave a row
     // that reveals nothing behind it.
-    const activeAgents = agentsFor("active");
     const fullyLoaded =
       activeAgents.length > 0 &&
       !activeAgents.some((id) => hasMoreFor(id, "active", fetchScope(groupKey)));
@@ -1739,7 +1789,7 @@ export function Sidebar({
     // every folder below.
     const plan = revealPlan({
       cap: groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE,
-      loaded: parts.active.length,
+      loaded: visibleActive.length,
       total: totals?.active ?? 0,
       fullyLoaded,
     });
@@ -1749,12 +1799,12 @@ export function Sidebar({
     const folders = FOLDER_CATEGORIES.map((category) =>
       renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );
-    const empty = parts.active.length === 0 && folders.every((f) => f === null);
+    const empty = visibleActive.length === 0 && folders.every((f) => f === null);
     const activePending = pendingLoads.has(loadKey(groupKey, "active"));
     // Rows the server counts that no page has loaded yet — a Workspace group known from
     // the counts alone while its own first page is on its way (or, after a failed fetch,
     // waiting on the reveal row below to be asked for again). Not "no conversations".
-    const awaitingRows = !searching && parts.active.length === 0 && hiddenActive > 0;
+    const awaitingRows = !searching && visibleActive.length === 0 && hiddenActive > 0;
     return (
       <>
         {empty ? (
@@ -1770,7 +1820,7 @@ export function Sidebar({
           )
         ) : (
           // Drag-reorder is offered on the active list under manual sort (folders keep
-          // chronological order), and never on a search-filtered view.
+          // last-activity order), and never on a search-filtered view.
           renderRows(shownActive, withAgentHint, dragCtx, true)
         )}
 
@@ -1782,7 +1832,7 @@ export function Sidebar({
             label={S.chat.expandRestSessions(hiddenActive)}
             ariaLabel={S.chat.expandRestSessions(hiddenActive)}
             pending={activePending}
-            onClick={() => showMore(groupKey, activeAgents, parts.active.length)}
+            onClick={() => showMore(groupKey, activeAgents, visibleActive.length)}
             className="mt-0.5"
           />
         )}
@@ -2698,8 +2748,8 @@ export function Sidebar({
           so a row can never sit under a bucket its own timestamp contradicts. Empty buckets
           are dropped, and there are at most three, so this mode never paginates its groups.
           The buckets span every Agent and every Workspace: a bucket's "More" only reveals
-          further loaded rows, while fetching the next page and reaching the Subagents /
-          Scheduled / Archived rows happen once for the whole Project, below. */}
+          further rows already shown in it, while fetching the next page and reaching the
+          Subagents / Scheduled / Archived rows happen once for the whole Project, below. */}
           {groupMode !== "time" || timeParts === null ? null : loading && sessions.length === 0 ? (
             <SkeletonList rows={5} />
           ) : (
@@ -2737,22 +2787,20 @@ export function Sidebar({
                 </p>
               )}
 
-              {/* Whole-list paging: a fetched page lands in whichever bucket its rows' activity
-              puts them, so the row that pulls one belongs to the list, not to a bucket —
-              and its label says "conversations" where a bucket's says "more". */}
-              {!searching &&
-                timeParts.active.length < projectCounts.active &&
-                timeMoreAgents.length > 0 && (
-                  <MoreRow
-                    label={S.chat.loadMoreSessions}
-                    ariaLabel={S.chat.loadMoreSessions}
-                    pending={pendingLoads.has(loadKey(TIME_FOLDERS_GROUP_KEY, "active"))}
-                    onClick={() =>
-                      trackedLoadMore(TIME_FOLDERS_GROUP_KEY, "active", timeMoreAgents)
-                    }
-                    className="mt-1"
-                  />
-                )}
+              {/* Whole-list paging: every Agent stream with more advances a page, which lowers
+              the watermark and adds rows below the last one shown — in whichever bucket
+              their activity puts them, so the row that pulls them belongs to the list, not
+              to a bucket, and its label says "conversations" where a bucket's says "more".
+              It stands while any stream has more (the server's limit+1 answer). */}
+              {!searching && timeMoreAgents.length > 0 && (
+                <MoreRow
+                  label={S.chat.loadMoreSessions}
+                  ariaLabel={S.chat.loadMoreSessions}
+                  pending={pendingLoads.has(loadKey(TIME_FOLDERS_GROUP_KEY, "active"))}
+                  onClick={() => trackedLoadMore(TIME_FOLDERS_GROUP_KEY, "active", timeMoreAgents)}
+                  className="mt-1"
+                />
+              )}
 
               {/* The shared, Project-wide folders (see timeFolders). */}
               <div className="pt-2.5">{timeFolders}</div>

@@ -1,20 +1,45 @@
 /**
  * A Project's model configuration: the built-in catalog as presets, one config file holding the
- * credentials, rekeying, pricing fields, the connectivity test, and what a save does to loaded
- * Sessions.
+ * credentials, the groups' connections, rekeying, pricing fields, the connectivity test, the two
+ * preset syncs, and what a save does to loaded Sessions.
  *
  * - A new Project, and default_project when the seeded admin adopts it, is preset with every
- *   built-in model (provider and model_id stored as separate fields, the pair the key) and the
- *   default model, so a Session opens with no model ref; a default_project the CLI already
- *   configured is left alone.
+ *   built-in model (provider and model_id stored as separate fields, the pair the key), the
+ *   default model, and each built-in group's endpoint and protocol in `[providers.<id>]`, so a
+ *   Session opens with no model ref; a preset row stores a protocol or endpoint only where it
+ *   differs from its group's table; a default_project table the file already holds is kept and
+ *   the backfilled rows follow it; a default_project the CLI already configured is left alone.
+ * - The file is the only truth: a Session on a preset is built with its group table's endpoint,
+ *   protocol and key; with the table cleared a probe goes where the client's defaults send it,
+ *   and GET reports the missing values as none — the catalog never fills them back in.
  * - Credentials live inline in `.project_config.toml` (0600) and GET shows only a mask; the env
  *   fallback is reported and masked only where the entry is allowed one, never leaking a value.
- * - GET fills in display name and env key from the catalog; vision comes from the file, else the
- *   catalog default; a pre-rename `client_type = "openai"` reads as openai-chat; a model the
- *   catalog dropped still loads and stays usable; one model_id under two providers is two rows.
+ * - GET labels a row with the catalog's display name and reports the env key; a pre-rename
+ *   `client_type = "openai"` reads as openai-chat; a file written before MMSP's names and group
+ *   connections is rewritten once on its first read into the shape a new Project is written in
+ *   (OpenCode Go's and Penguin Go's included), then served from the cache; a model the catalog
+ *   dropped still loads and stays usable; one model_id under two providers is two rows.
  * - PUT persists a custom model's vision flag and max_tokens (clearing and rejecting bad values),
  *   falls back to OPENAI_API_KEY for the openai protocol, requires a provider, refuses an id a
- *   vendor group cannot route when the request introduces it, and stores or clears a discount.
+ *   vendor group cannot route when the request introduces it (unless its group names a
+ *   protocol), refuses a hand-added model in a group that takes none (OpenRouter, TokenDance and
+ *   SiliconFlow take them, stored bare), and stores or clears a discount.
+ * - Group connections (`[providers.<id>]`): GET reports each group's masked key and every row's
+ *   effective connection with its sources; a PUT `providers` change or the group route sets and
+ *   clears per field and keeps the rest, a cleared field reading as none; the group route is
+ *   owner-only and refuses an id no group could carry; a group base URL that is not an absolute
+ *   http(s) URL is refused on both routes (a blank one clears); any group takes a protocol, and
+ *   a row's own still wins; a group key leaves a row's own key in place, and the connectivity test uses
+ *   the row's key, else the group's, on the group's endpoint; a group key reaches only the rows
+ *   on its endpoint's origin (never Atria, never a row re-pointed at another host); a
+ *   user-defined group's table goes with its last row.
+ * - "Add new models" adds only the missing, non-retired presets with their promotions, each
+ *   stored against its group's table field by field (a field the table holds is followed, one it
+ *   lacks is written on the row, a group with neither rows nor table gets the catalog's), and
+ *   moves nothing else; "Restore defaults" puts built-in rows and built-in group tables back to
+ *   the catalog's shape, keeping keys (a key every keyed row of a group shares moves to the
+ *   group), the user's own rows and groups, a self-hosted group's server (vLLM's base URL),
+ *   Penguin Go's promotions, and the references that still name a valid row.
  * - renamedFrom (and a group change) migrates the credential, the config and the default and
  *   vision pointers; without it a rekey is delete-then-create; an invalid one is 400. A
  *   ModelScope settings save is serialized with a group credential write.
@@ -25,7 +50,7 @@
  * - The connectivity test sends the entry's upstream model_id, no tools, works for saved and
  *   draft models, converges to ok:false with no credential, tests the draft (clearApiKey) rather
  *   than the stored key, and refuses a keyless gateway row or a Penguin Go probe without reaching
- *   for vendor environment keys or the network.
+ *   for vendor environment keys or the network (a relay row with no endpoint anywhere included).
  * - A PUT invalidates the Project's cached Session runtimes (reads do not), tells the Project's
  *   open Session channels only, and GET/PUT report the file's updatedAt.
  *
@@ -40,7 +65,12 @@ import {
   MODEL_CATALOG,
   PENGUIN_GO_BASE_URL,
   catalogEntryFor,
+  catalogGroupConnection,
+  presetModelEntries,
   presetPromotions,
+  presetProviderTable,
+  providerInfo,
+  renderProjectConfigToml,
   userText,
 } from "@prismshadow/penguin-core";
 import type {
@@ -48,6 +78,7 @@ import type {
   ModelsResponse,
   ModelTestResponse,
   ModelVisionDetectResponse,
+  PresetSyncResponse,
   ProjectCreateResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
@@ -72,21 +103,27 @@ const pick = (body: ModelsResponse, provider: string, modelId: string) =>
 /**
  * Writes rows straight into a Project's config file, as a table saved before a rule existed
  * would hold them: rows a built-in group no longer takes from a PUT (see "model_not_addable")
- * are only ever reached this way.
+ * are only ever reached this way. Beside them, the built-in groups' tables a new Project is
+ * written with — so the file carries a `[providers]` table, as every file this release writes
+ * does, and the one-time connection migration leaves it alone.
  */
 async function storeRows(
   root: string,
   projectId: string,
   rows: Array<{ provider: string; modelId: string; clientType?: string }>,
 ): Promise<void> {
-  const toml = rows.flatMap((r) => [
-    "[[models]]",
-    `provider = "${r.provider}"`,
-    `model_id = "${r.modelId}"`,
-    ...(r.clientType !== undefined ? [`client_type = "${r.clientType}"`] : []),
-    "",
-  ]);
-  await writeFile(path.join(root, projectId, ".project_config.toml"), toml.join("\n"), "utf8");
+  await writeFile(
+    path.join(root, projectId, ".project_config.toml"),
+    renderProjectConfigToml({
+      providers: presetProviderTable(),
+      models: rows.map((r) => ({
+        provider: r.provider,
+        model_id: r.modelId,
+        ...(r.clientType !== undefined ? { client_type: r.clientType } : {}),
+      })),
+    }),
+    "utf8",
+  );
 }
 
 describe("models preset & catalog enrichment", () => {
@@ -155,7 +192,7 @@ describe("models preset & catalog enrichment", () => {
     await expect(readFile(path.join(projectDir, "project_config.toml"), "utf8")).rejects.toThrow();
   });
 
-  it("a new Project is preset with every built-in model (provider and model_id as separate fields + catalog info)", async () => {
+  it("a new Project's file carries every built-in model and each built-in group's endpoint and protocol, and every preset runs on what the file says", async () => {
     const res = await api.get(url());
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
@@ -170,42 +207,90 @@ describe("models preset & catalog enrichment", () => {
     expect(retired.length).toBeGreaterThan(0);
     expect(body.models.map(pairKey).filter((key) => retired.includes(key))).toEqual([]);
 
-    // Every row reads its display name, context window, list price, vision and pinned
-    // protocol and endpoint off its catalog row; nothing of the vendor's is copied here.
+    // The catalog's group connections are written into the file once, as `[providers.<id>]`
+    // tables: the gateways', vLLM's protocol, Penguin Go's relay. The first-party vendors and
+    // custom get none — their rows run on the client's defaults, or carry their own.
+    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    for (const id of Object.keys(presetProviderTable())) {
+      expect(toml, id).toContain(`[providers.${id}]`);
+    }
+    for (const [id, connection] of Object.entries(body.providers)) {
+      const catalog = catalogGroupConnection(id)!;
+      expect(connection, id).toEqual({
+        ...(catalog.base_url !== undefined ? { baseUrl: catalog.base_url } : {}),
+        ...(catalog.client_type !== undefined ? { clientType: catalog.client_type } : {}),
+      });
+    }
+    for (const id of ["deepseek", "anthropic", "openai", "custom"]) {
+      expect(body.providers[id], id).toBeUndefined();
+    }
+
+    // Every row reads its context window, list price and vision flag off the file — `false`
+    // written where the catalog says so, nothing (= supported) elsewhere — and is labelled with
+    // its catalog name. It carries no secret.
     for (const row of body.models) {
       const entry = catalogEntryFor(row.provider, row.modelId)!;
       const key = `${row.provider}/${row.modelId}`;
       expect(row.displayName, key).toBe(entry.displayName);
       expect(row.contextWindow, key).toBe(entry.contextWindow);
-      expect(row.vision, key).toBe(entry.supportsVision);
-      expect(row.clientType, key).toBe(entry.clientType);
-      expect(row.credential?.baseUrl, key).toBe(entry.baseUrl);
-      // A preset carries no secret.
+      expect(row.vision, key).toBe(entry.supportsVision ? undefined : false);
       expect(row.credential?.apiKeyMasked, key).toBeUndefined();
     }
 
-    // A vendor's own row falls back to its client's environment variable; it has no stored
-    // credential and no client_type (MMSP routes it by the family its upstream id begins with).
+    // A gateway preset stores nothing of its own and follows its group's table.
+    expect(pick(body, "openrouter", "anthropic/claude-opus-4.8")).toMatchObject({
+      effective: {
+        baseUrl: catalogGroupConnection("openrouter")!.base_url,
+        baseUrlSource: "provider",
+        clientType: catalogGroupConnection("openrouter")!.client_type,
+        clientTypeSource: "provider",
+      },
+    });
+    expect(pick(body, "openrouter", "anthropic/claude-opus-4.8").clientType).toBeUndefined();
+    // A row that speaks another protocol than its group, or on another path, stores exactly
+    // that difference: OpenCode Go's Messages rows their protocol and endpoint, its Chat
+    // Completions rows their protocol on the group's endpoint, Penguin Go's rows their protocol
+    // on the relay's.
+    const messagesRow = pick(body, "opencode-go", "qwen3.8-max");
+    expect(messagesRow.clientType).toBe("ant-messages");
+    expect(messagesRow.effective).toMatchObject({
+      baseUrl: catalogEntryFor("opencode-go", "qwen3.8-max")!.baseUrl,
+      baseUrlSource: "model",
+      clientTypeSource: "model",
+    });
+    expect(pick(body, "opencode-go", "glm-5.3").effective).toMatchObject({
+      baseUrlSource: "provider",
+      clientType: "openai-chat",
+      clientTypeSource: "model",
+    });
+    expect(pick(body, "penguin-go", "gemini-3.8-flash").effective).toMatchObject({
+      baseUrl: PENGUIN_GO_BASE_URL,
+      baseUrlSource: "provider",
+      clientType: "google-genai",
+      clientTypeSource: "model",
+    });
+    // Custom's Atria carries its own host and protocol; no group of its table reaches it.
+    expect(pick(body, "custom", "Atria-Dawn-Preview").effective).toMatchObject({
+      baseUrl: catalogEntryFor("custom", "Atria-Dawn-Preview")!.baseUrl,
+      baseUrlSource: "model",
+      clientTypeSource: "model",
+    });
+    // Like every gateway's rows, neither OpenCode Go row falls back to its client's
+    // environment variable — that holds the user's vendor key, and the gateway is not the
+    // vendor.
+    expect(messagesRow.envKey).toBeUndefined();
+    expect(pick(body, "opencode-go", "glm-5.3").envKey).toBeUndefined();
+
+    // A vendor's own row stores nothing and goes to the client's defaults: MMSP routes it by
+    // the family its upstream id begins with, and it falls back to its client's variable.
     const sonnet = pick(body, "anthropic", "claude-sonnet-4-6");
     expect(sonnet.isDefault).toBe(false);
     expect(sonnet.envKey).toBe("ANTHROPIC_API_KEY");
     expect(sonnet.credential).toBeUndefined();
     expect(sonnet.clientType).toBeUndefined();
+    expect(sonnet.effective).toMatchObject({ baseUrlSource: "none", clientTypeSource: "none" });
     expect(pick(body, "deepseek", "deepseek-v4-pro").envKey).toBe("DEEPSEEK_API_KEY");
     expect(pick(body, "deepseek", "deepseek-flash").isDefault).toBe(true);
-
-    // A gateway pins each row's protocol and endpoint, so one group can hold rows on different
-    // clients (OpenCode Go: a Messages row and a Chat Completions row). Like every gateway's
-    // rows, neither falls back to its client's environment variable — that holds the user's
-    // vendor key, and the gateway is not the vendor. An upstream id with a `/` is a plain
-    // string under column storage.
-    const messagesRow = pick(body, "opencode-go", "qwen3.8-max");
-    const chatRow = pick(body, "opencode-go", "glm-5.3");
-    expect(messagesRow.clientType).toBe("ant-messages");
-    expect(chatRow.clientType).toBe("openai-chat");
-    expect(messagesRow.envKey).toBeUndefined();
-    expect(chatRow.envKey).toBeUndefined();
-    expect(pick(body, "openrouter", "xiaomi/mimo-v2.5").credential?.baseUrl).toBeDefined();
 
     // A catalog row on a promotion is preset at its LIST price like every other row, and the
     // promotion is seeded beside it in web.db: the rows reporting a discount are exactly the
@@ -264,7 +349,8 @@ describe("models preset & catalog enrichment", () => {
           // Off-catalog id in a vendor group, pure auto-route: still first-party.
           { provider: "anthropic", modelId: "claude-sonnet-4-6-preview" },
           // Vendor group on a generic protocol with no base URL: the OpenAI client talks to
-          // api.openai.com, so the OpenAI key may back it — whatever the group is called.
+          // api.openai.com, so the OpenAI key may back it — whatever the group is called — but
+          // it is not shown as configured: the id's family names another client.
           { provider: "anthropic", modelId: "claude-via-gateway", clientType: "openai" },
           // A gateway row carries the gateway's endpoint: no fallback at all, so no envKey
           // and no preview, even with OPENAI_API_KEY set.
@@ -312,10 +398,9 @@ describe("models preset & catalog enrichment", () => {
       expect(pick(body, "anthropic", "claude-sonnet-4-6").envKeyMasked).toBe(masked);
       expect(pick(body, "anthropic", "claude-sonnet-4-6-preview").envKeyMasked).toBe(masked);
       expect(pick(body, "deepseek", "deepseek-v4-pro").envKeyMasked).toBeUndefined();
-      const openaiMasked = `${openaiValue.slice(0, 4)}…${openaiValue.slice(-4)}`;
       const rePointed = pick(body, "anthropic", "claude-via-gateway");
       expect(rePointed.envKey).toBe("OPENAI_API_KEY");
-      expect(rePointed.envKeyMasked).toBe(openaiMasked);
+      expect(rePointed.envKeyMasked).toBeUndefined();
       const gateway = pick(body, "openrouter", "xiaomi/mimo-v2.5");
       expect(gateway.envKey).toBeUndefined();
       expect(gateway.envKeyMasked).toBeUndefined();
@@ -481,24 +566,25 @@ describe("models preset & catalog enrichment", () => {
     expect(custom.status).toBe(200);
   });
 
-  it("PUT refuses a new row that is no preset in a built-in group but custom and vLLM, and keeps every stored one", async () => {
-    // A row a user added to a gateway group while gateways still took them.
+  it("PUT refuses a hand-added model where the group takes none and keeps every stored one; OpenRouter, TokenDance and SiliconFlow take one bare", async () => {
+    // A row a user added to a gateway group while every gateway still took them.
     await storeRows(t.root, projectId, [
-      { provider: "openrouter", modelId: "acme/legacy-pick", clientType: "openai-responses" },
+      { provider: "fireworks", modelId: "acme/legacy-pick", clientType: "openai-chat" },
       { provider: "custom", modelId: "mine", clientType: "openai-chat" },
     ]);
     const legacy = {
-      provider: "openrouter",
+      provider: "fireworks",
       modelId: "acme/legacy-pick",
-      clientType: "openai-responses",
+      clientType: "openai-chat",
     };
     const mine = { provider: "custom", modelId: "mine", clientType: "openai-chat" };
 
-    // New in this request, in two gateways and in a vendor group — the last one an id the
-    // vendor's client would route, so it is this rule and not routing that answers.
+    // New in this request, in two gateways that carry their presets only and in a vendor
+    // group — the last one an id the vendor's client would route, so it is this rule and not
+    // routing that answers.
     for (const entry of [
-      { provider: "openrouter", modelId: "acme/new-pick", clientType: "openai-responses" },
-      { provider: "tokendance", modelId: "acme/new-pick", clientType: "openai-chat" },
+      { provider: "fireworks", modelId: "acme/new-pick", clientType: "openai-chat" },
+      { provider: "qwen-pay-as-you-go", modelId: "acme/new-pick", clientType: "openai-chat" },
       { provider: "deepseek", modelId: "deepseek-v4-my-tune" },
     ]) {
       const res = await api.put(url(), { models: [legacy, mine, entry] });
@@ -514,9 +600,9 @@ describe("models preset & catalog enrichment", () => {
       models: [
         legacy,
         {
-          provider: "openrouter",
+          provider: "fireworks",
           modelId: "mine",
-          clientType: "openai-responses",
+          clientType: "openai-chat",
           renamedFrom: { provider: "custom", modelId: "mine" },
         },
       ],
@@ -527,7 +613,7 @@ describe("models preset & catalog enrichment", () => {
     // Nothing above was written.
     const before = (await (await api.get(url())).json()) as ModelsResponse;
     expect(before.models.map(pairKey).sort()).toEqual(
-      ["custom\0mine", "openrouter\0acme/legacy-pick"].sort(),
+      ["custom\0mine", "fireworks\0acme/legacy-pick"].sort(),
     );
 
     // The stored row keeps working: edited in place, then renamed inside its own group.
@@ -536,10 +622,10 @@ describe("models preset & catalog enrichment", () => {
     const renamed = await api.put(url(), {
       models: [
         {
-          provider: "openrouter",
+          provider: "fireworks",
           modelId: "acme/renamed-pick",
-          clientType: "openai-responses",
-          renamedFrom: { provider: "openrouter", modelId: "acme/legacy-pick" },
+          clientType: "openai-chat",
+          renamedFrom: { provider: "fireworks", modelId: "acme/legacy-pick" },
         },
         mine,
       ],
@@ -547,14 +633,14 @@ describe("models preset & catalog enrichment", () => {
     expect(renamed.status).toBe(200);
     const after = (await renamed.json()) as ModelsResponse;
     expect(after.models.map(pairKey).sort()).toEqual(
-      ["custom\0mine", "openrouter\0acme/renamed-pick"].sort(),
+      ["custom\0mine", "fireworks\0acme/renamed-pick"].sort(),
     );
 
-    // A group's own preset is welcome back, and custom, vLLM and user-defined groups take
-    // anything.
+    // A group's own preset is welcome back, and custom, vLLM, the three open gateways and
+    // user-defined groups take anything.
     const open = await api.put(url(), {
       models: [
-        { provider: "openrouter", modelId: "acme/renamed-pick", clientType: "openai-responses" },
+        { provider: "fireworks", modelId: "acme/renamed-pick", clientType: "openai-chat" },
         mine,
         { provider: "deepseek", modelId: "deepseek-v4-pro" },
         {
@@ -564,9 +650,26 @@ describe("models preset & catalog enrichment", () => {
           baseUrl: "http://127.0.0.1:8000/v1",
         },
         { provider: "my-own-group", modelId: "anything", clientType: "openai-chat" },
+        { provider: "openrouter", modelId: "acme/new-pick" },
+        { provider: "tokendance", modelId: "acme/new-pick" },
+        { provider: "siliconflow", modelId: "acme/new-pick" },
       ],
     });
     expect(open.status).toBe(200);
+    // A model added to one of the open gateways is stored as sent — no endpoint and no
+    // protocol of its own — and runs on the gateway's, through its group's table.
+    const body = (await open.json()) as ModelsResponse;
+    for (const provider of ["openrouter", "tokendance", "siliconflow"]) {
+      const row = pick(body, provider, "acme/new-pick");
+      expect(row.clientType, provider).toBeUndefined();
+      expect(row.credential, provider).toBeUndefined();
+      expect(row.effective, provider).toMatchObject({
+        baseUrl: body.providers[provider]!.baseUrl,
+        baseUrlSource: "provider",
+        clientType: body.providers[provider]!.clientType,
+        clientTypeSource: "provider",
+      });
+    }
   });
 
   it('a config stored before the AgentHub 0.4.2 rename (client_type = "openai") keeps working: GET reports the canonical openai-chat', async () => {
@@ -592,40 +695,101 @@ describe("models preset & catalog enrichment", () => {
     expect(legacy.envKey).toBeUndefined();
   });
 
-  it("a config stored with AgentHub 0.4 client types is migrated on its first read: GET reports MMSP's names and the file is rewritten once", async () => {
-    // A Project written before MMSP 0.5.0: the old router's per-generation names, which MMSP
-    // refuses at client construction. The service's reader rewrites the file the moment it
-    // reads it, so every consumer of the table — this GET, a Session's credential resolution,
-    // the scheduler — sees the new names, and the row stays exactly where it was.
+  it("a file from before MMSP's names and group connections is rewritten once, on its first read, into the shape a new Project is written in — no model changes where its requests go", async () => {
+    // A Project written before MMSP 0.5.0 and before `[providers.<id>]`: the old router's
+    // per-generation names (which MMSP refuses at client construction), every preset row
+    // carrying its own copy of its protocol and endpoint, and a group key copied onto each row
+    // of the group. The service's reader rewrites the file the moment it reads it, so every
+    // consumer of the table — this GET, a Session's credential resolution, the scheduler —
+    // sees the new shape. The catalog is not consulted: what moves is what the rows share.
+    const legacyName: Record<string, string> = {
+      "google-genai": "gemini-3.8",
+      "deepseek-official": "deepseek-v4",
+    };
+    const oldRows = (provider: string, key: (i: number) => string) =>
+      MODEL_CATALOG.filter((m) => m.provider === provider && m.retired !== true).flatMap((m, i) => [
+        "[[models]]",
+        `provider = "${provider}"`,
+        `model_id = "${m.modelId}"`,
+        `client_type = "${legacyName[m.clientType!] ?? m.clientType}"`,
+        `base_url = "${m.baseUrl}"`,
+        `api_key = "${key(i)}"`,
+        `created_at = "2026-09-30T10:${String(i).padStart(2, "0")}:00.000Z"`,
+        "",
+      ]);
+    const tokendance = catalogGroupConnection("tokendance")!;
     const cfgFile = path.join(t.root, projectId, ".project_config.toml");
     await writeFile(
       cfgFile,
       [
         'name = "Legacy"',
-        "[[models]]",
-        'provider = "penguin-go"',
-        'model_id = "gemini-3.8-flash"',
-        'client_type = "gemini-3.8"',
-        'base_url = "https://go.example/api"',
-        "",
-        "[[models]]",
-        'provider = "deepseek"',
-        'model_id = "deepseek-flash"',
-        'client_type = "deepseek-v4"',
-        'base_url = "https://api.deepseek.com"',
-        'api_key = "sk-keep"',
+        ...oldRows("opencode-go", () => "oc-shared-key-0001"),
+        ...oldRows("penguin-go", () => "pg-shared-key-0002"),
+        // Two models keyed to two accounts: no key is the group's.
+        ...["glm-5.3", "glm-5.3-flash"].flatMap((modelId, i) => [
+          "[[models]]",
+          'provider = "tokendance"',
+          `model_id = "${modelId}"`,
+          `client_type = "${tokendance.client_type}"`,
+          `base_url = "${tokendance.base_url}"`,
+          `api_key = "td-own-key-000${i}"`,
+          "",
+        ]),
       ].join("\n"),
       "utf8",
     );
     const body = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(pick(body, "penguin-go", "gemini-3.8-flash").clientType).toBe("google-genai");
-    expect(pick(body, "deepseek", "deepseek-flash").clientType).toBe("deepseek-official");
+
+    // OpenCode Go: the Chat Completions endpoint most rows share moves to the group; the
+    // Messages rows keep theirs (another path on the same host), every row keeps its own
+    // protocol, and the shared key — which reaches every row — is the group's, stamped with
+    // the latest write. Penguin Go: the relay every row shares moves to the group, each row
+    // keeps its protocol (renamed to MMSP's name), the key is the group's. Exactly what a new
+    // Project's file holds for those rows, plus the key.
+    const init = new Map(
+      presetModelEntries().map((m) => [pairKey({ provider: m.provider, modelId: m.model_id }), m]),
+    );
+    for (const [provider, keyMask] of [
+      ["opencode-go", "oc-s…0001"],
+      ["penguin-go", "pg-s…0002"],
+    ] as const) {
+      const rows = body.models.filter((m) => m.provider === provider);
+      expect(body.providers[provider], provider).toEqual({
+        baseUrl: catalogGroupConnection(provider)!.base_url,
+        apiKeyMasked: keyMask,
+        createdAt: `2026-09-30T10:${String(rows.length - 1).padStart(2, "0")}:00.000Z`,
+      });
+      for (const row of rows) {
+        const seeded = init.get(pairKey(row))!;
+        const key = pairKey(row);
+        expect(row.clientType, key).toBe(seeded.client_type);
+        expect(row.credential, key).toEqual(
+          seeded.base_url !== undefined ? { baseUrl: seeded.base_url } : undefined,
+        );
+        expect(row.effective, key).toMatchObject({
+          apiKeySource: "provider",
+          apiKeyMasked: keyMask,
+        });
+      }
+    }
+    // TokenDance: the endpoint and protocol both rows carried are the group's; the two keys
+    // stay where they were, each row on its own account.
+    expect(body.providers.tokendance).toEqual({
+      baseUrl: tokendance.base_url,
+      clientType: tokendance.client_type,
+    });
+    expect(pick(body, "tokendance", "glm-5.3").credential).toEqual({
+      apiKeyMasked: "td-o…0000",
+    });
+    expect(pick(body, "tokendance", "glm-5.3-flash").credential).toEqual({
+      apiKeyMasked: "td-o…0001",
+    });
+
     const rewritten = await readFile(cfgFile, "utf8");
-    expect(rewritten).toContain('client_type = "google-genai"');
-    expect(rewritten).toContain('client_type = "deepseek-official"');
-    expect(rewritten).not.toMatch(/gemini-3\.8"|deepseek-v4/);
+    expect(rewritten.match(/oc-shared-key-0001/g)).toHaveLength(1);
+    expect(rewritten.match(/pg-shared-key-0002/g)).toHaveLength(1);
+    expect(rewritten).not.toMatch(/gemini-3\.8"|deepseek-v4"/);
     expect(rewritten).toContain('name = "Legacy"');
-    expect(rewritten).toContain('api_key = "sk-keep"');
     // The rewritten file is what later reads serve, and they leave it alone.
     const { mtimeMs } = await stat(cfgFile);
     await api.get(url());
@@ -642,6 +806,8 @@ describe("models preset & catalog enrichment", () => {
     await writeFile(
       cfgFile,
       [
+        "[providers]",
+        "",
         "[[models]]",
         'provider = "openrouter"',
         'model_id = "vendor/removed-from-catalog:free"',
@@ -762,10 +928,10 @@ describe("models preset & catalog enrichment", () => {
     expect(pick(body, "moonshot", "kimi-k2.6").credential?.apiKeyMasked).toBe("sk-o…1111");
     expect(pick(body, "moonshot", "kimi-k2.6").envKey).toBe("MOONSHOT_API_KEY");
     expect(pick(body, "siliconflow", "kimi-k2.6").credential?.apiKeyMasked).toBe("sk-g…2222");
-    // Saved without the gateway's base URL, this row's client talks to api.openai.com — so
-    // the OpenAI variable honestly is its fallback (the preset, which carries the gateway
-    // endpoint, gets none; see the env-fallback test above).
-    expect(pick(body, "siliconflow", "kimi-k2.6").envKey).toBe("OPENAI_API_KEY");
+    // Saved without a base URL of its own, the gateway's row runs on its group's endpoint —
+    // the gateway's, not the vendor's — so no vendor variable backs it.
+    expect(pick(body, "siliconflow", "kimi-k2.6").envKey).toBeUndefined();
+    expect(pick(body, "siliconflow", "kimi-k2.6").effective.baseUrlSource).toBe("provider");
 
     // Round-trips through disk unchanged.
     const again = (await (await api.get(url())).json()) as ModelsResponse;
@@ -802,6 +968,8 @@ describe("default_project presets", () => {
       modelId: "deepseek-flash",
     });
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
+    // The built-in groups' tables come with them, as in a new Project.
+    expect(Object.keys(body.providers).sort()).toEqual(Object.keys(presetProviderTable()).sort());
     // Presets backfilled here bring their promotions too, seeded once the Project row exists.
     expect(body.models.filter((m) => m.discount !== undefined)).toHaveLength(
       presetPromotions().length,
@@ -816,6 +984,37 @@ describe("default_project presets", () => {
     const { session } = (await created.json()) as SessionCreateResponse;
     expect(session.provider).toBe("deepseek");
     expect(session.modelId).toBe("deepseek-flash");
+  });
+
+  it("a default_project with a group table but no models keeps the table, and the backfilled models of that group follow it", async () => {
+    t = await createTestApp({
+      beforeSeed: async (root) => {
+        await wire(ProjectConfigService, { paths: { root } }).writeRaw("default_project", {
+          providers: {
+            openrouter: { base_url: "https://or-proxy.example/v1", api_key: "sk-or-cli-0018" },
+          },
+          models: [],
+        });
+      },
+    });
+    const { cookie } = await loginAdmin(t.app);
+    const api = apiClient(t.app, cookie);
+    const body = (await (
+      await api.get("/api/projects/default_project/models")
+    ).json()) as ModelsResponse;
+    expect(body.models.map(pairKey)).toEqual(catalogPairs);
+    // The table the file held is kept as it was: the catalog's protocol is not added to it.
+    expect(body.providers.openrouter).toEqual({
+      baseUrl: "https://or-proxy.example/v1",
+      apiKeyMasked: "sk-o…0018",
+    });
+    // Its models follow its endpoint and carry the protocol it lacks; other groups get theirs.
+    for (const row of body.models.filter((m) => m.provider === "openrouter")) {
+      expect(row.credential, row.modelId).toBeUndefined();
+      expect(row.clientType, row.modelId).toBe(catalogGroupConnection("openrouter")!.client_type);
+      expect(row.effective.baseUrl, row.modelId).toBe("https://or-proxy.example/v1");
+    }
+    expect(body.providers.tokendance).toBeDefined();
   });
 
   it("a default_project that already has models configured is left untouched (existing CLI config is not overwritten)", async () => {
@@ -836,6 +1035,103 @@ describe("default_project presets", () => {
     expect(body.defaultModel).toEqual({ provider: "custom", modelId: "cli-model" });
     expect(body.models.map(pairKey)).toEqual(["custom\0cli-model"]);
     expect(body.models[0]!.contextWindow).toBe(1234);
+  });
+});
+
+describe("the file is the only truth: the catalog seeds a Project and is never a fallback", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  let projectId: string;
+  const url = () => `/api/projects/${projectId}/models`;
+
+  beforeAll(async () => {
+    // Titles stay off, so the model is asked for the Task alone.
+    t = await createTestApp({ titles: { maybeGenerate: () => {} } });
+    api = apiClient(t.app, (await provisionUser(t.app, "ivy")).cookie);
+  });
+  afterAll(async () => {
+    await t.deps.manager.shutdown();
+    await t.cleanup();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
+    const created = (await (
+      await api.post("/api/projects", { projectId: `ivy-truth_${projects}`, name: "Truth" })
+    ).json()) as ProjectCreateResponse;
+    projectId = created.project.projectId;
+  });
+
+  it("a Session on an OpenRouter preset of a new Project is built with its group table's endpoint, protocol and key", async () => {
+    const table = catalogGroupConnection("openrouter")!;
+    expect(
+      (await api.put(`${url()}/providers/openrouter`, { apiKey: "sk-or-session-0015" })).status,
+    ).toBe(200);
+    const network = stubFetch(() =>
+      jsonResponse({ error: { message: "Incorrect API key provided." } }, 401),
+    );
+    const created = await api.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {
+      provider: "openrouter",
+      modelId: "anthropic/claude-opus-4.8",
+    });
+    expect(created.status).toBe(201);
+    const { session } = (await created.json()) as SessionCreateResponse;
+    const posted = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+      input: [{ type: "text", text: "hello" }],
+    });
+    expect(posted.status).toBe(202);
+    // The table's protocol is the Responses API, on the table's endpoint, with the group key.
+    const toModel = () => network.calls.filter((c) => c.url.includes("/responses"));
+    await waitFor(() => toModel().length > 0, 20_000);
+    for (const call of toModel()) {
+      expect(call.url).toBe(`${table.base_url}/responses`);
+      expect(call.headers.get("authorization")).toBe("Bearer sk-or-session-0015");
+    }
+    await waitFor(() => t.deps.manager.statusOf(session.sessionId) !== "running", 20_000);
+  });
+
+  it("with OpenRouter's table cleared, a probe of its preset goes where the client's defaults send it — the catalog's gateway does not come back", async () => {
+    await api.put(`${url()}/providers/openrouter`, { baseUrl: null, clientType: null });
+    const network = stubFetch(() =>
+      jsonResponse({ error: { message: "Incorrect API key provided." } }, 401),
+    );
+    const probe = {
+      provider: "openrouter",
+      modelId: "anthropic/claude-opus-4.8",
+      apiKey: "sk-or-row-0016",
+    };
+    // No protocol anywhere in the file: MMSP has no family for this id, and nothing is sent.
+    const unrouted = (await (await api.post(`${url()}/test`, probe)).json()) as ModelTestResponse;
+    expect(unrouted.ok).toBe(false);
+    expect(network.calls).toEqual([]);
+    // A protocol of its own and still no endpoint: the client's own default host.
+    const routed = (await (
+      await api.post(`${url()}/test`, { ...probe, clientType: "openai-chat" })
+    ).json()) as ModelTestResponse;
+    expect(routed.ok).toBe(false);
+    expect(network.calls.length).toBeGreaterThan(0);
+    for (const call of network.calls) {
+      expect(call.url.startsWith("https://api.openai.com/")).toBe(true);
+    }
+  });
+
+  it("GET reports a value the file lacks as none, wherever the catalog would have put the preset", async () => {
+    const svc = t.deps.projectConfigService;
+    await svc.writeRaw(projectId, {
+      ...(await svc.readRaw(projectId)),
+      providers: {},
+      models: [{ provider: "openrouter", model_id: "anthropic/claude-opus-4.8" }],
+    });
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(body.providers).toEqual({});
+    expect(pick(body, "openrouter", "anthropic/claude-opus-4.8").effective).toEqual({
+      baseUrlSource: "none",
+      clientTypeSource: "none",
+      apiKeySource: "none",
+    });
   });
 });
 
@@ -945,11 +1241,11 @@ describe("model-reference rekeying and the connectivity test", () => {
     const svc = wire(ProjectConfigService, { paths: { root: t.root } });
     const raceProject = "modelscope-save-refresh-race";
     await svc.writeRaw(raceProject, {
+      providers: { modelscope: { api_key: "old-access" } },
       models: [
         {
           provider: "modelscope",
           model_id: "Qwen/Qwen3.8-27B",
-          api_key: "old-access",
           client_type: "openai-chat-vllm-adapter",
         },
       ],
@@ -992,8 +1288,11 @@ describe("model-reference rekeying and the connectivity test", () => {
 
     releaseRead();
     await Promise.all([save, credentialWrite]);
+    // The save, read before the key was written, did not put the old group key back.
     const stored = await readRaw(raceProject);
-    expect((stored.models as Array<Record<string, unknown>>)[0]?.api_key).toBe("new-access");
+    expect((stored.providers as Record<string, Record<string, unknown>>).modelscope?.api_key).toBe(
+      "new-access",
+    );
     expect(JSON.stringify(stored)).not.toContain("refreshToken");
     expect(JSON.stringify(stored)).not.toContain("accessTokenExpiresAt");
   });
@@ -1478,10 +1777,14 @@ describe("model-reference rekeying and the connectivity test", () => {
         });
       }
 
+      // A relay row with no endpoint anywhere — a model only the platform knows, tried without
+      // one, in a group whose table sets none — is refused before its key goes anywhere.
       process.env.PENGUIN_GO_API_KEY = "penguin-go-key-without-endpoint";
+      expect((await api.put(`${url()}/providers/penguin-go`, { baseUrl: null })).status).toBe(200);
       const noEndpoint = await api.post(testUrl(), {
         provider: "penguin-go",
-        modelId: "gemini-3.8-flash",
+        modelId: "gemini-platform-only",
+        clientType: "google-genai",
         baseUrl: null,
       });
       expect((await noEndpoint.json()) as ModelTestResponse).toMatchObject({
@@ -1531,6 +1834,787 @@ describe("model-reference rekeying and the connectivity test", () => {
     } finally {
       if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     }
+  });
+});
+
+describe("group connections ([providers.<id>])", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  let member: ReturnType<typeof apiClient>;
+  let projectId: string;
+  const url = () => `/api/projects/${projectId}/models`;
+  const groupUrl = (provider: string) => `${url()}/providers/${provider}`;
+  const cfgFile = () => path.join(t.root, projectId, ".project_config.toml");
+
+  beforeAll(async () => {
+    t = await createTestApp();
+    api = apiClient(t.app, (await provisionUser(t.app, "erin")).cookie);
+    member = apiClient(t.app, (await provisionUser(t.app, "frank")).cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
+    const created = (await (
+      await api.post("/api/projects", { projectId: `erin-groups_${projects}`, name: "Groups" })
+    ).json()) as ProjectCreateResponse;
+    projectId = created.project.projectId;
+    expect((await api.post(`/api/projects/${projectId}/members`, { userId: "frank" })).status).toBe(
+      201,
+    );
+  });
+
+  it("GET reports each group's stored connection, masked, and every row's effective connection with where each value came from", async () => {
+    const group = await api.put(groupUrl("openrouter"), {
+      baseUrl: "https://proxy.example/openrouter/v1",
+      clientType: "openai-chat",
+      apiKey: "sk-or-group-0001",
+    });
+    expect(group.status).toBe(200);
+    await api.put(url(), {
+      models: [
+        { provider: "openrouter", modelId: "xiaomi/mimo-v2.5" },
+        {
+          provider: "openrouter",
+          modelId: "openai/gpt-5.5",
+          clientType: "openai-responses",
+          apiKey: "sk-or-row-0002",
+        },
+        { provider: "custom", modelId: "bare-custom" },
+      ],
+    });
+    const res = await api.get(url());
+    const text = await res.text();
+    expect(text).not.toContain("sk-or-group-0001");
+    expect(text).not.toContain("sk-or-row-0002");
+    const body = JSON.parse(text) as ModelsResponse;
+    expect(body.providers.openrouter).toEqual({
+      baseUrl: "https://proxy.example/openrouter/v1",
+      clientType: "openai-chat",
+      apiKeyMasked: "sk-o…0001",
+      createdAt: expect.any(String) as string,
+    });
+    // A row with nothing of its own follows its group on every field.
+    expect(pick(body, "openrouter", "xiaomi/mimo-v2.5").effective).toEqual({
+      baseUrl: "https://proxy.example/openrouter/v1",
+      baseUrlSource: "provider",
+      clientType: "openai-chat",
+      clientTypeSource: "provider",
+      apiKeySource: "provider",
+      apiKeyMasked: "sk-o…0001",
+    });
+    // A row's own values win field by field; the rest still comes from the group.
+    const own = pick(body, "openrouter", "openai/gpt-5.5");
+    expect(own.clientType).toBe("openai-responses");
+    expect(own.credential?.apiKeyMasked).toBe("sk-o…0002");
+    expect(own.effective).toMatchObject({
+      baseUrlSource: "provider",
+      clientType: "openai-responses",
+      clientTypeSource: "model",
+      apiKeySource: "model",
+      apiKeyMasked: "sk-o…0002",
+    });
+    // A group with nothing set, a row with nothing of its own and no catalog entry: nothing.
+    expect(pick(body, "custom", "bare-custom").effective).toEqual({
+      baseUrlSource: "none",
+      clientTypeSource: "none",
+      apiKeySource: "none",
+    });
+  });
+
+  it("a group key reaches only the models on its endpoint: custom's local-server key never reaches Atria, nor does OpenRouter's reach a model re-pointed at another host", async () => {
+    const preset = (await (await api.get(url())).json()) as ModelsResponse;
+    const atria = pick(preset, "custom", "Atria-Dawn-Preview");
+    expect(
+      (
+        await api.put(groupUrl("custom"), {
+          baseUrl: "http://127.0.0.1:11434/v1",
+          clientType: "openai-chat",
+          apiKey: "sk-ollama-0003",
+        })
+      ).status,
+    ).toBe(200);
+    await api.put(groupUrl("openrouter"), { apiKey: "sk-or-group-0004" });
+    const saved = await api.put(url(), {
+      models: [
+        // Atria as a new Project stores it: its own host and protocol on the row.
+        {
+          provider: "custom",
+          modelId: atria.modelId,
+          clientType: atria.clientType,
+          baseUrl: atria.credential?.baseUrl,
+        },
+        { provider: "custom", modelId: "qwen3.8-27b-local" },
+        { provider: "openrouter", modelId: "anthropic/claude-opus-4.8" },
+        {
+          provider: "openrouter",
+          modelId: "openai/gpt-5.5",
+          baseUrl: "https://proxy.example/v1",
+        },
+        {
+          provider: "openrouter",
+          modelId: "xiaomi/mimo-v2.5",
+          baseUrl: "https://openrouter.ai/api/v2",
+        },
+      ],
+    });
+    const body = (await saved.json()) as ModelsResponse;
+    expect(pick(body, "custom", "qwen3.8-27b-local").effective).toEqual({
+      baseUrl: "http://127.0.0.1:11434/v1",
+      baseUrlSource: "provider",
+      clientType: "openai-chat",
+      clientTypeSource: "provider",
+      apiKeySource: "provider",
+      apiKeyMasked: "sk-o…0003",
+    });
+    // Atria runs on its own host and protocol, and is lent no key: it needs its own.
+    expect(pick(body, "custom", "Atria-Dawn-Preview").effective).toEqual({
+      baseUrl: atria.credential?.baseUrl,
+      baseUrlSource: "model",
+      clientType: atria.clientType,
+      clientTypeSource: "model",
+      apiKeySource: "none",
+    });
+    // OpenRouter's key goes with its endpoint: to a model on it, or on another path of its
+    // host, and not to one sent elsewhere.
+    expect(pick(body, "openrouter", "anthropic/claude-opus-4.8").effective.apiKeySource).toBe(
+      "provider",
+    );
+    expect(pick(body, "openrouter", "xiaomi/mimo-v2.5").effective.apiKeySource).toBe("provider");
+    expect(pick(body, "openrouter", "openai/gpt-5.5").effective).toMatchObject({
+      baseUrl: "https://proxy.example/v1",
+      baseUrlSource: "model",
+      apiKeySource: "none",
+    });
+  });
+
+  it("a PUT carrying providers sets and clears per field and keeps what it omits; a cleared field is the client's default, never the catalog's; an id no group could carry is refused before anything is written", async () => {
+    const models = [{ provider: "tokendance", modelId: "glm-5.3" }];
+    const catalog = catalogGroupConnection("tokendance")!;
+    const set = await api.put(url(), {
+      providers: {
+        tokendance: { apiKey: "td-group-key-0001", baseUrl: "https://td-proxy.example/v1" },
+      },
+      models,
+    });
+    expect(set.status).toBe(200);
+    expect(((await set.json()) as ModelsResponse).providers.tokendance).toMatchObject({
+      apiKeyMasked: "td-g…0001",
+      baseUrl: "https://td-proxy.example/v1",
+      clientType: catalog.client_type,
+    });
+
+    // Cleared field by field; what nobody mentioned stays, and a PUT with no providers at all
+    // leaves every group as it was. With the base URL cleared, the row has none: the client's
+    // own default endpoint, not the gateway the catalog names.
+    await api.put(url(), { providers: { tokendance: { baseUrl: null } }, models });
+    const kept = (await (await api.put(url(), { models })).json()) as ModelsResponse;
+    expect(kept.providers.tokendance).toEqual({
+      clientType: catalog.client_type,
+      apiKeyMasked: "td-g…0001",
+      createdAt: expect.any(String) as string,
+    });
+    expect(pick(kept, "tokendance", "glm-5.3").effective).toEqual({
+      baseUrlSource: "none",
+      clientType: catalog.client_type,
+      clientTypeSource: "provider",
+      apiKeySource: "provider",
+      apiKeyMasked: "td-g…0001",
+    });
+
+    const before = await readFile(cfgFile(), "utf8");
+    const invalid = await api.put(url(), { providers: { "Not A Group!": {} }, models });
+    expect(invalid.status).toBe(400);
+    expect(((await invalid.json()) as ErrorBody).error.code).toBe("invalid_provider");
+    expect(await readFile(cfgFile(), "utf8")).toBe(before);
+
+    // A group emptied of every field has no table at all.
+    const cleared = (await (
+      await api.put(url(), {
+        providers: { tokendance: { clearApiKey: true, clientType: null } },
+        models,
+      })
+    ).json()) as ModelsResponse;
+    expect(cleared.providers.tokendance).toBeUndefined();
+    expect(await readFile(cfgFile(), "utf8")).not.toContain("[providers.tokendance]");
+    expect(pick(cleared, "tokendance", "glm-5.3").effective).toEqual({
+      baseUrlSource: "none",
+      clientTypeSource: "none",
+      apiKeySource: "none",
+    });
+  });
+
+  it("the group route is the owner's: a member is refused and an id no group could carry is invalid_provider, nothing written; any group takes a protocol, and a model's own protocol still wins", async () => {
+    const before = await readFile(cfgFile(), "utf8");
+    expect((await member.put(groupUrl("tokendance"), { apiKey: "td-member-0001" })).status).toBe(
+      403,
+    );
+    const invalid = await api.put(groupUrl("Not_A_Group"), { apiKey: "sk-x-0001" });
+    expect(invalid.status).toBe(400);
+    expect(((await invalid.json()) as ErrorBody).error.code).toBe("invalid_provider");
+    for (const body of [{ apiKey: "" }, { baseUrl: 42 }, { clientType: ["openai-chat"] }]) {
+      expect((await api.put(groupUrl("tokendance"), body)).status, JSON.stringify(body)).toBe(400);
+    }
+    expect(await readFile(cfgFile(), "utf8")).toBe(before);
+
+    // Penguin Go's models each store their protocol: a group protocol is taken and changes
+    // none of them.
+    const fixed = await api.put(groupUrl("penguin-go"), { clientType: "openai-chat" });
+    expect(fixed.status).toBe(200);
+    const body = (await fixed.json()) as ModelsResponse;
+    expect(body.providers["penguin-go"]?.clientType).toBe("openai-chat");
+    for (const row of body.models.filter((m) => m.provider === "penguin-go")) {
+      expect(row.effective.clientType, row.modelId).toBe(row.clientType);
+      expect(row.effective.clientTypeSource, row.modelId).toBe("model");
+    }
+
+    // Clearing a protocol leaves the group's endpoint and key its own.
+    const cleared = await api.put(groupUrl("penguin-go"), {
+      clientType: null,
+      baseUrl: "https://relay-proxy.example/api",
+    });
+    expect(cleared.status).toBe(200);
+    expect(((await cleared.json()) as ModelsResponse).providers["penguin-go"]).toEqual({
+      baseUrl: "https://relay-proxy.example/api",
+    });
+  });
+
+  it("a group base URL that is not an absolute http(s) URL is a 400 on both write routes and writes nothing; a valid one is stored and a blank one clears it", async () => {
+    const models = [{ provider: "vllm", modelId: "qwen3.8-27b-local" }];
+    expect((await api.put(url(), { models })).status).toBe(200);
+    const before = await readFile(cfgFile(), "utf8");
+    for (const baseUrl of ["not-a-url", "lab.example/v1", "ftp://lab.example/v1"]) {
+      const viaGroup = await api.put(groupUrl("vllm"), { baseUrl });
+      expect(viaGroup.status, baseUrl).toBe(400);
+      const groupError = ((await viaGroup.json()) as ErrorBody).error;
+      expect(groupError.code, baseUrl).toBe("bad_request");
+      expect(groupError.message, baseUrl).toContain("baseUrl");
+      const viaTable = await api.put(url(), { providers: { vllm: { baseUrl } }, models });
+      expect(viaTable.status, baseUrl).toBe(400);
+      expect(((await viaTable.json()) as ErrorBody).error.code, baseUrl).toBe("bad_request");
+    }
+    expect(await readFile(cfgFile(), "utf8")).toBe(before);
+
+    const viaGroup = await api.put(groupUrl("vllm"), { baseUrl: " http://10.0.0.5:8000/v1 " });
+    expect(viaGroup.status).toBe(200);
+    expect(((await viaGroup.json()) as ModelsResponse).providers.vllm?.baseUrl).toBe(
+      "http://10.0.0.5:8000/v1",
+    );
+    const viaTable = await api.put(url(), {
+      providers: { vllm: { baseUrl: "https://gpu.example/v1" } },
+      models,
+    });
+    expect(viaTable.status).toBe(200);
+    const stored = (await viaTable.json()) as ModelsResponse;
+    expect(stored.providers.vllm?.baseUrl).toBe("https://gpu.example/v1");
+    expect(pick(stored, "vllm", "qwen3.8-27b-local").effective).toMatchObject({
+      baseUrl: "https://gpu.example/v1",
+      baseUrlSource: "provider",
+    });
+
+    // Blank is not a URL to check: it clears, on either route.
+    const clearedByGroup = await api.put(groupUrl("vllm"), { baseUrl: "  " });
+    expect(clearedByGroup.status).toBe(200);
+    expect(((await clearedByGroup.json()) as ModelsResponse).providers.vllm?.baseUrl).toBe(
+      undefined,
+    );
+    await api.put(groupUrl("vllm"), { baseUrl: "https://gpu.example/v1" });
+    const clearedByTable = await api.put(url(), { providers: { vllm: { baseUrl: "" } }, models });
+    expect(clearedByTable.status).toBe(200);
+    expect(((await clearedByTable.json()) as ModelsResponse).providers.vllm?.baseUrl).toBe(
+      undefined,
+    );
+  });
+
+  it("a group key leaves a model's own key in place, and the connectivity test runs each model on its own key, else the group's, at the group's endpoint", async () => {
+    const network = stubFetch(() =>
+      jsonResponse({ error: { message: "Incorrect API key provided." } }, 401),
+    );
+    await api.put(url(), {
+      providers: { "my-lab": { baseUrl: "https://lab.example/v1", clientType: "openai-chat" } },
+      models: [
+        { provider: "my-lab", modelId: "lab-follow" },
+        { provider: "my-lab", modelId: "lab-own", apiKey: "sk-own-row-0003" },
+      ],
+    });
+    const keyed = await api.put(groupUrl("my-lab"), { apiKey: "sk-lab-group-0004" });
+    expect(keyed.status).toBe(200);
+    const body = (await keyed.json()) as ModelsResponse;
+    expect(pick(body, "my-lab", "lab-own").credential?.apiKeyMasked).toBe("sk-o…0003");
+    expect(pick(body, "my-lab", "lab-follow").effective.apiKeySource).toBe("provider");
+
+    for (const [modelId, key] of [
+      ["lab-follow", "sk-lab-group-0004"],
+      ["lab-own", "sk-own-row-0003"],
+    ] as const) {
+      network.calls.length = 0;
+      const tested = await api.post(`${url()}/test`, { provider: "my-lab", modelId });
+      expect(((await tested.json()) as ModelTestResponse).ok, modelId).toBe(false);
+      expect(network.calls.length, modelId).toBeGreaterThan(0);
+      for (const call of network.calls) {
+        expect(call.url.startsWith("https://lab.example/v1/"), modelId).toBe(true);
+        expect(call.headers.get("authorization"), modelId).toBe(`Bearer ${key}`);
+      }
+    }
+  });
+
+  it("a user-defined group's connection goes with its last row; a built-in group keeps its key with no rows", async () => {
+    await api.put(groupUrl("tokendance"), { apiKey: "td-group-key-0005" });
+    await api.put(url(), {
+      providers: { "my-lab": { baseUrl: "https://lab.example/v1", apiKey: "sk-lab-0006" } },
+      models: [
+        { provider: "my-lab", modelId: "lab-one", clientType: "openai-chat" },
+        { provider: "custom", modelId: "keep-me" },
+      ],
+    });
+    const deleted = (await (
+      await api.put(url(), { models: [{ provider: "custom", modelId: "keep-me" }] })
+    ).json()) as ModelsResponse;
+    expect(deleted.providers["my-lab"]).toBeUndefined();
+    expect(deleted.providers.tokendance?.apiKeyMasked).toBe("td-g…0005");
+    expect(deleted.models.some((m) => m.provider === "tokendance")).toBe(false);
+    expect(await readFile(cfgFile(), "utf8")).not.toContain("sk-lab-0006");
+  });
+
+  it("a vendor group whose connection names a protocol routes a renamed model by it", async () => {
+    // Renaming inside a vendor group is writing a new id there, judged for routability: an id
+    // of no vendor family has no client until the group itself names one.
+    const renamed = {
+      models: [
+        {
+          provider: "deepseek",
+          modelId: "house-tune",
+          renamedFrom: { provider: "deepseek", modelId: "deepseek-v4-pro" },
+        },
+      ],
+    };
+    const refused = await api.put(url(), renamed);
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as ErrorBody).error.code).toBe("model_not_routable");
+    const routed = await api.put(url(), {
+      ...renamed,
+      providers: {
+        deepseek: { baseUrl: "https://proxy.example/deepseek/v1", clientType: "openai-chat" },
+      },
+    });
+    expect(routed.status).toBe(200);
+    expect(
+      pick((await routed.json()) as ModelsResponse, "deepseek", "house-tune").effective,
+    ).toMatchObject({ clientType: "openai-chat", clientTypeSource: "provider" });
+  });
+});
+
+describe("preset sync: add new models / restore defaults", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  let member: ReturnType<typeof apiClient>;
+  let projectId: string;
+  const url = () => `/api/projects/${projectId}/models`;
+  const sync = (mode: unknown, as = api) => as.post(`${url()}/sync-presets`, { mode });
+  const cfgFile = () => path.join(t.root, projectId, ".project_config.toml");
+  /** The table as the models page sends it back unchanged: each row with what it stores. */
+  const asEntries = (body: ModelsResponse) =>
+    body.models.map((m) => ({
+      provider: m.provider,
+      modelId: m.modelId,
+      ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
+      ...(m.clientType !== undefined ? { clientType: m.clientType } : {}),
+      ...(m.vision === false ? { vision: false } : {}),
+      ...(m.pricing !== undefined ? { pricing: m.pricing } : {}),
+    }));
+  const isPair =
+    (provider: string, modelId: string) => (m: { provider: string; modelId: string }) =>
+      m.provider === provider && m.modelId === modelId;
+
+  beforeAll(async () => {
+    t = await createTestApp();
+    api = apiClient(t.app, (await provisionUser(t.app, "gina")).cookie);
+    member = apiClient(t.app, (await provisionUser(t.app, "hank")).cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
+    const created = (await (
+      await api.post("/api/projects", { projectId: `gina-sync_${projects}`, name: "Sync" })
+    ).json()) as ProjectCreateResponse;
+    projectId = created.project.projectId;
+  });
+
+  it("adding new models brings back only the presets the table lacks, with their promotions, and moves nothing else", async () => {
+    const promoted = catalogEntryFor("tokendance", "glm-5.3-flash")!;
+    const preset = (await (await api.get(url())).json()) as ModelsResponse;
+    // The user dropped a promoted preset, retyped a price, and keyed a group.
+    const edited = asEntries(preset)
+      .filter((m) => !isPair("tokendance", "glm-5.3-flash")(m))
+      .map((m) =>
+        isPair("deepseek", "deepseek-flash")(m)
+          ? { ...m, pricing: { cacheRead: 1, cacheWrite: 2, output: 3 } }
+          : m,
+      );
+    expect((await api.put(url(), { models: edited })).status).toBe(200);
+    await api.put(`${url()}/providers/tokendance`, { apiKey: "td-group-key-0007" });
+
+    const res = await sync("add");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PresetSyncResponse;
+    expect(body).toMatchObject({ added: 1, restored: 0 });
+    // Back at the end of the table, as a new Project has it, with its promotion.
+    expect(body.models.at(-1)).toMatchObject({
+      provider: "tokendance",
+      modelId: "glm-5.3-flash",
+      discount: promoted.discount,
+    });
+    // The table is the presets again — no retired row among them — and nothing else moved.
+    expect(body.models.map(pairKey).sort()).toEqual([...catalogPairs].sort());
+    expect(pick(body, "deepseek", "deepseek-flash").pricing).toEqual({
+      cacheRead: 1,
+      cacheWrite: 2,
+      output: 3,
+    });
+    expect(body.providers.tokendance?.apiKeyMasked).toBe("td-g…0007");
+    expect(body.defaultModel).toEqual(preset.defaultModel);
+
+    // Nothing left to add: nothing is written.
+    const { mtimeMs } = await stat(cfgFile());
+    expect(await (await sync("add")).json()).toMatchObject({ added: 0, restored: 0 });
+    expect((await stat(cfgFile())).mtimeMs).toBe(mtimeMs);
+  });
+
+  it("an added model is stored against its group's table field by field: a field the table holds is followed, one it lacks is written out, and a group the file never had gets the catalog's table", async () => {
+    const preset = (await (await api.get(url())).json()) as ModelsResponse;
+    const without =
+      (provider: string, modelIds?: string[]) => (m: { provider: string; modelId: string }) =>
+        !(m.provider === provider && (modelIds === undefined || modelIds.includes(m.modelId)));
+    const kept = asEntries(preset)
+      // OpenRouter, pointed at a proxy: one preset dropped.
+      .filter(without("openrouter", ["anthropic/claude-opus-4.8"]))
+      // OpenCode Go, on its catalog endpoint: a Messages preset dropped.
+      .filter(without("opencode-go", ["qwen3.8-max"]))
+      // TokenDance, its base URL cleared: one preset dropped.
+      .filter(without("tokendance", ["glm-5.3"]))
+      // Fireworks, its table cleared but its models kept: one preset dropped.
+      .filter(without("fireworks", ["accounts/fireworks/models/glm-5p3"]))
+      // SiliconFlow: every model and the table gone.
+      .filter(without("siliconflow"));
+    const put = await api.put(url(), {
+      models: kept,
+      providers: {
+        openrouter: { baseUrl: "https://or-proxy.example/v1", apiKey: "sk-or-0011" },
+        tokendance: { baseUrl: null },
+        fireworks: { baseUrl: null, clientType: null },
+        siliconflow: { baseUrl: null, clientType: null },
+      },
+    });
+    expect(put.status).toBe(200);
+    const before = (await put.json()) as ModelsResponse;
+    expect(before.providers.fireworks).toBeUndefined();
+    expect(before.providers.siliconflow).toBeUndefined();
+
+    const body = (await (await sync("add")).json()) as PresetSyncResponse;
+    const siliconflowPresets = MODEL_CATALOG.filter(
+      (m) => m.provider === "siliconflow" && m.retired !== true,
+    ).length;
+    expect(body.added).toBe(4 + siliconflowPresets);
+
+    // A table holding the field: the added row stores only what its catalog row has apart
+    // from the catalog's group value — so it follows the user's proxy, and a Messages row
+    // keeps its own path and protocol as at init.
+    const opus = pick(body, "openrouter", "anthropic/claude-opus-4.8");
+    expect(opus.clientType).toBeUndefined();
+    expect(opus.credential).toBeUndefined();
+    expect(opus.effective).toMatchObject({
+      baseUrl: "https://or-proxy.example/v1",
+      baseUrlSource: "provider",
+      apiKeySource: "provider",
+    });
+    const messages = pick(body, "opencode-go", "qwen3.8-max");
+    expect(messages.clientType).toBe("ant-messages");
+    expect(messages.credential?.baseUrl).toBe(
+      catalogEntryFor("opencode-go", "qwen3.8-max")!.baseUrl,
+    );
+    // A table lacking the field: the row carries the catalog's value itself, so it never
+    // falls to the client's default endpoint with the group's key.
+    const glm = pick(body, "tokendance", "glm-5.3");
+    expect(glm.credential?.baseUrl).toBe(catalogGroupConnection("tokendance")!.base_url);
+    expect(glm.clientType).toBeUndefined();
+    expect(glm.effective.clientTypeSource).toBe("provider");
+    // A group with models but no table gets none: the added row carries both values.
+    const fireworks = pick(body, "fireworks", "accounts/fireworks/models/glm-5p3");
+    expect(fireworks.clientType).toBe(catalogGroupConnection("fireworks")!.client_type);
+    expect(fireworks.credential?.baseUrl).toBe(catalogGroupConnection("fireworks")!.base_url);
+    expect(body.providers.fireworks).toBeUndefined();
+    // A group with neither: the catalog's table, and its rows follow it.
+    expect(body.providers.siliconflow).toEqual({
+      baseUrl: catalogGroupConnection("siliconflow")!.base_url,
+      clientType: catalogGroupConnection("siliconflow")!.client_type,
+    });
+    for (const row of body.models.filter((m) => m.provider === "siliconflow")) {
+      expect(row.clientType, row.modelId).toBeUndefined();
+      expect(row.credential, row.modelId).toBeUndefined();
+    }
+
+    // Nothing that was there moved: every other group table and every kept row.
+    for (const id of Object.keys(before.providers)) {
+      expect(body.providers[id], id).toEqual(before.providers[id]);
+    }
+    for (const row of before.models) {
+      expect(pick(body, row.provider, row.modelId), pairKey(row)).toEqual(row);
+    }
+  });
+
+  it("restoring defaults puts built-in rows and groups back to the catalog, and keeps keys, the user's own models and groups, and Penguin Go's promotions", async () => {
+    const preset = (await (await api.get(url())).json()) as ModelsResponse;
+    const pro = catalogEntryFor("deepseek", "deepseek-v4-pro")!;
+    const promoted = catalogEntryFor("tokendance", "glm-5.3-flash")!;
+    expect(pro.supportsVision).toBe(false);
+    const edited = asEntries(preset)
+      .filter((m) => !isPair("moonshot", "kimi-k2.6")(m))
+      .map((m) => {
+        if (isPair("deepseek", "deepseek-v4-pro")(m)) {
+          // Every fact retyped, an endpoint and a protocol of its own, its own key, and
+          // marked as taking images so it can serve as the vision model.
+          return {
+            ...m,
+            displayName: "My Pro",
+            contextWindow: 4096,
+            pricing: { cacheRead: 1, cacheWrite: 2, output: 3 },
+            maxTokens: 1000,
+            fastMode: true,
+            vision: true,
+            clientType: "openai-chat",
+            baseUrl: "https://proxy.example/deepseek",
+            apiKey: "sk-ds-own-0008",
+          };
+        }
+        if (isPair("tokendance", "glm-5.3-flash")(m)) return { ...m, discount: 0.33 };
+        if (isPair("penguin-go", "gemini-3.8-flash")(m)) {
+          // Its protocol dropped: it would run on whatever the id's family routes to.
+          const { clientType: _clientType, ...rest } = m;
+          return { ...rest, discount: 0.42 };
+        }
+        // Its own endpoint dropped: it would run on the group's Chat Completions path.
+        if (isPair("opencode-go", "qwen3.8-max")(m)) return { ...m, baseUrl: null };
+        return m;
+      });
+    const put = await api.put(url(), {
+      visionModel: { provider: "deepseek", modelId: "deepseek-v4-pro" },
+      models: [
+        ...edited,
+        {
+          provider: "custom",
+          modelId: "my-own",
+          clientType: "openai-chat",
+          baseUrl: "https://mine.example/v1",
+          apiKey: "sk-mine-key-0009",
+          pricing: { cacheRead: 0.1, cacheWrite: 0.2, output: 0.3 },
+          discount: 0.3,
+        },
+        { provider: "my-lab", modelId: "lab-one" },
+      ],
+      providers: {
+        "my-lab": { baseUrl: "https://lab.example/v1", clientType: "openai-chat" },
+        custom: { baseUrl: "https://custom-proxy.example/v1" },
+        tokendance: { baseUrl: "https://td-proxy.example/v1", apiKey: "td-group-key-0010" },
+        openrouter: { clientType: "openai-chat" },
+        // A value the catalog does not set, and a table the catalog does.
+        moonshot: { baseUrl: "https://proxy.example/moonshot/v1" },
+        vllm: { clientType: null },
+      },
+    });
+    expect(put.status).toBe(200);
+    // A default that names no row any more (a hand edit, say).
+    const svc = t.deps.projectConfigService;
+    await svc.writeRaw(projectId, {
+      ...(await svc.readRaw(projectId)),
+      default_model: { provider: "custom", model_id: "gone" },
+    });
+
+    const res = await sync("restore");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PresetSyncResponse;
+    // Three rows reset (the others already matched the catalog), one deleted preset back.
+    expect(body).toMatchObject({ added: 1, restored: 3 });
+    expect(body.models.some(isPair("moonshot", "kimi-k2.6"))).toBe(true);
+    // The protocol and endpoint a preset stores at init are back on it.
+    expect(pick(body, "penguin-go", "gemini-3.8-flash").clientType).toBe("google-genai");
+    expect(pick(body, "opencode-go", "qwen3.8-max").credential?.baseUrl).toBe(
+      catalogEntryFor("opencode-go", "qwen3.8-max")!.baseUrl,
+    );
+
+    const row = pick(body, "deepseek", "deepseek-v4-pro");
+    expect(row).toMatchObject({
+      displayName: pro.displayName,
+      contextWindow: pro.contextWindow,
+      pricing: {
+        cacheRead: pro.pricing!.cache_read,
+        cacheWrite: pro.pricing!.cache_write,
+        output: pro.pricing!.output,
+      },
+      vision: false,
+    });
+    expect(row.maxTokens).toBeUndefined();
+    expect(row.fastMode).toBeUndefined();
+    expect(row.clientType).toBeUndefined();
+    // Back on DeepSeek's own endpoint, the key it held is the one key of its group, and
+    // reaches it as the group's: moved to the group, never deleted.
+    expect(row.credential).toBeUndefined();
+    expect(body.providers.deepseek).toEqual({
+      apiKeyMasked: "sk-d…0008",
+      createdAt: expect.any(String) as string,
+    });
+    expect(row.effective).toMatchObject({ apiKeySource: "provider", apiKeyMasked: "sk-d…0008" });
+    // It no longer takes images, so it is no longer the vision model; the orphaned default
+    // is the catalog's again.
+    expect(body.visionModel).toBeUndefined();
+    expect(body.defaultModel).toEqual({ provider: "deepseek", modelId: "deepseek-flash" });
+
+    // The user's own model and group are exactly as they were.
+    expect(pick(body, "custom", "my-own")).toMatchObject({
+      clientType: "openai-chat",
+      credential: { apiKeyMasked: "sk-m…0009", baseUrl: "https://mine.example/v1" },
+      discount: 0.3,
+    });
+    expect(body.providers["my-lab"]).toEqual({
+      baseUrl: "https://lab.example/v1",
+      clientType: "openai-chat",
+    });
+    // So is custom's: the models added there reach their endpoint through it.
+    expect(body.providers.custom).toEqual({ baseUrl: "https://custom-proxy.example/v1" });
+    // Built-in groups get the catalog's endpoint and protocol back, and keep their key; a
+    // value the catalog does not set goes, and a table the file lost is written again.
+    const catalogTable = (id: string) => {
+      const c = catalogGroupConnection(id)!;
+      return {
+        ...(c.base_url !== undefined ? { baseUrl: c.base_url } : {}),
+        ...(c.client_type !== undefined ? { clientType: c.client_type } : {}),
+      };
+    };
+    expect(body.providers.tokendance).toEqual({
+      ...catalogTable("tokendance"),
+      apiKeyMasked: "td-g…0010",
+      createdAt: expect.any(String) as string,
+    });
+    expect(body.providers.openrouter).toEqual(catalogTable("openrouter"));
+    expect(body.providers.vllm).toEqual(catalogTable("vllm"));
+    expect(body.providers.moonshot).toBeUndefined();
+    // Promotions are the catalog's, except the platform's own (Penguin Go).
+    expect(pick(body, "tokendance", "glm-5.3-flash").discount).toBe(promoted.discount);
+    expect(pick(body, "penguin-go", "gemini-3.8-flash").discount).toBe(0.42);
+  });
+
+  it("restoring defaults keeps a self-hosted group on the user's server: vLLM's base URL and key stay and only its protocol is the catalog's, while a vendor group's proxy goes", async () => {
+    const put = await api.put(url(), {
+      models: [
+        ...asEntries((await (await api.get(url())).json()) as ModelsResponse),
+        { provider: "vllm", modelId: "qwen3-local" },
+      ],
+      providers: {
+        vllm: {
+          baseUrl: "http://gpu-box.lan:8000/v1",
+          clientType: "openai-chat",
+          apiKey: "vllm-group-key-0015",
+        },
+        deepseek: { baseUrl: "https://proxy.example/deepseek" },
+      },
+    });
+    expect(put.status).toBe(200);
+
+    const body = (await (await sync("restore")).json()) as PresetSyncResponse;
+    expect(body.providers.vllm).toEqual({
+      baseUrl: "http://gpu-box.lan:8000/v1",
+      clientType: catalogGroupConnection("vllm")!.client_type,
+      apiKeyMasked: "vllm…0015",
+      createdAt: expect.any(String) as string,
+    });
+    // The model the user added there still runs on that server, with the group's key.
+    expect(pick(body, "vllm", "qwen3-local").effective).toMatchObject({
+      baseUrl: "http://gpu-box.lan:8000/v1",
+      baseUrlSource: "provider",
+      apiKeySource: "provider",
+      apiKeyMasked: "vllm…0015",
+    });
+    // A vendor's default is its official endpoint: the proxy is removed with its table.
+    expect(body.providers.deepseek).toBeUndefined();
+    expect(pick(body, "deepseek", "deepseek-flash").effective.baseUrlSource).toBe("none");
+  });
+
+  it("restoring defaults moves a key every keyed model of a group shares into the group once the group key would reach them all, and leaves differing keys on their models", async () => {
+    const svc = t.deps.projectConfigService;
+    const raw = await svc.readRaw(projectId);
+    const keyed: Record<string, { api_key: string; created_at: string; base_url?: string }> = {
+      // One OpenRouter key on two models, one of them re-pointed at another host: the group
+      // key would not reach that one until restore puts it back on the gateway.
+      "openrouter\0anthropic/claude-opus-4.8": {
+        api_key: "sk-or-shared-0012",
+        created_at: "2026-09-01T00:00:00.000Z",
+      },
+      "openrouter\0openai/gpt-5.5": {
+        api_key: "sk-or-shared-0012",
+        created_at: "2026-09-02T00:00:00.000Z",
+        base_url: "https://proxy.example/v1",
+      },
+      // Two Fireworks models on two accounts.
+      "fireworks\0accounts/fireworks/models/glm-5p3": {
+        api_key: "fw-one-key-0013",
+        created_at: "2026-09-03T00:00:00.000Z",
+      },
+      "fireworks\0accounts/fireworks/models/qwen3p8-max": {
+        api_key: "fw-two-key-0014",
+        created_at: "2026-09-04T00:00:00.000Z",
+      },
+    };
+    await svc.writeRaw(projectId, {
+      ...raw,
+      models: (raw.models as Array<Record<string, unknown>>).map((m) => ({
+        ...m,
+        ...keyed[`${String(m.provider)}\0${String(m.model_id)}`],
+      })),
+    });
+
+    const body = (await (await sync("restore")).json()) as PresetSyncResponse;
+    expect(body.providers.openrouter).toMatchObject({
+      apiKeyMasked: "sk-o…0012",
+      createdAt: "2026-09-02T00:00:00.000Z",
+    });
+    for (const modelId of ["anthropic/claude-opus-4.8", "openai/gpt-5.5", "xiaomi/mimo-v2.5"]) {
+      const row = pick(body, "openrouter", modelId);
+      expect(row.credential, modelId).toBeUndefined();
+      expect(row.effective, modelId).toMatchObject({
+        apiKeySource: "provider",
+        apiKeyMasked: "sk-o…0012",
+      });
+    }
+    expect(body.providers.fireworks?.apiKeyMasked).toBeUndefined();
+    expect(pick(body, "fireworks", "accounts/fireworks/models/glm-5p3").credential).toMatchObject({
+      apiKeyMasked: "fw-o…0013",
+    });
+    expect(
+      pick(body, "fireworks", "accounts/fireworks/models/qwen3p8-max").credential,
+    ).toMatchObject({ apiKeyMasked: "fw-t…0014" });
+    // Every key is still in the file, the shared one once.
+    const toml = await readFile(cfgFile(), "utf8");
+    expect(toml.match(/sk-or-shared-0012/g)).toHaveLength(1);
+    expect(toml).toContain("fw-one-key-0013");
+    expect(toml).toContain("fw-two-key-0014");
+  });
+
+  it("sync-presets is the owner's, and takes only its two modes", async () => {
+    expect((await api.post(`/api/projects/${projectId}/members`, { userId: "hank" })).status).toBe(
+      201,
+    );
+    const before = await readFile(cfgFile(), "utf8");
+    expect((await sync("restore", member)).status).toBe(403);
+    expect((await sync("upgrade")).status).toBe(400);
+    expect((await sync(undefined)).status).toBe(400);
+    expect(await readFile(cfgFile(), "utf8")).toBe(before);
   });
 });
 

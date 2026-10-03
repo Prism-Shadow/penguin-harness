@@ -1203,7 +1203,7 @@ function PluginFilters({
         onClick={onClear}
         tabIndex={active ? 0 : -1}
         aria-hidden={!active}
-        className={`px-2 text-xs text-gray-400 underline-offset-2 hover:underline dark:text-gray-500 ${active ? "" : "invisible"}`}
+        className={`whitespace-nowrap px-2 text-xs text-gray-400 underline-offset-2 hover:underline dark:text-gray-500 ${active ? "" : "invisible"}`}
       >
         {S.plugins.filterClear}
       </button>

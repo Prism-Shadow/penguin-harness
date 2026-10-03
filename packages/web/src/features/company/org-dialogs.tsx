@@ -192,7 +192,7 @@ function ModelField({
             type="button"
             disabled={disabled}
             onClick={() => onChange(null)}
-            className="text-xs text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-400 dark:hover:text-gray-200"
+            className="whitespace-nowrap text-xs text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-400 dark:hover:text-gray-200"
           >
             {S.company.modelClear}
           </button>

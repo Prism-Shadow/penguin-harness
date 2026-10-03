@@ -68,7 +68,7 @@ Limits apply at two moments:
 - When you pick or drop a file: a file over the per-file size (100MB by default) or an image over 20MB is refused before anything is read, and the message names the limit in force.
 - When you send: a message carries at most 20 files and 120MB in total by default. Over that, the send fails with "Too many files attached to one message." or "The request is too large."
 
-An admin can change both sizes under [Settings › Upload limits](/settings#upload-limits). The 20MB cap for images placed inline does not follow them: an inline image enters the conversation and the Trace, where its size is paid again on every history page and every Session resume.
+An admin can change both sizes under [Settings › Upload limits](/settings#upload-limits). The 20MB cap for images placed inline does not follow them: an inline image enters the conversation and the Trace, where its size is paid again on every Session resume.
 
 On send, attached files are written into the Session's scratchpad, which is deleted with the Session. The conversation shows an "Attached files" notice; the file contents never enter the conversation, and the model opens each file by path with its file tools. On a model without image input, images are saved to the scratchpad the same way and passed as file paths, and a hint above the composer says so.
 
@@ -220,7 +220,7 @@ The fork is a new Session with the same agent, model, Workspace and approval mod
 
 ### Older messages
 
-A conversation opens on its latest 50 turns. Scroll near the top to load 50 more; your reading position stays in place. If loading fails, select "Failed to load earlier messages — click to retry". Once nothing older remains, "Beginning of conversation" marks the start. Turn numbers and header statistics count from the start of the conversation, so they match a full load.
+A conversation opens on its latest 20 turns. Scroll near the top to load 20 more; your reading position stays in place. A turn with a very large output can make one load hold fewer turns. Pictures load as they scroll into view. If loading fails, select "Failed to load earlier messages — click to retry". Once nothing older remains, "Beginning of conversation" marks the start. Turn numbers and header statistics count from the start of the conversation, so they match a full load.
 
 To return to the newest message, select **Jump to latest**. In a longer conversation, ticks in the left margin mark each exchange: point at a tick to preview it, and select it to jump there. Where the margin has no room, such as on a phone, an **Outline** button in the toolbar lists the same exchanges.
 
@@ -239,6 +239,8 @@ The chat page has two docks for panels: the right sidebar and the bottom panel. 
 | Terminal | A shell; see [Use a terminal](#use-a-terminal) |
 
 Each conversation remembers its own panel layout in this browser, and switching conversations restores it. Hiding a dock keeps its panels as they were, including unsaved edits. While a subagent waits for approval, an amber dot marks the button of the dock that holds the Agents panel, or the **Right sidebar** button when the panel is closed.
+
+To make a dock as large as it goes, select **Full screen** in its header, or drag its edge past the widest (for the bottom panel, tallest) it can be. The right sidebar then covers the conversation and the bottom panel grows up to the toolbar; the toolbar with the title and statistics, and the sidebar on the left, stay where they are. Its tabs and **Add panel** keep working. To come back, select **Exit full screen** in the same place, or drag the edge back. Full screen also ends when you switch conversations, hide the dock or close its last tab, or when a panel opens in a dock it covers.
 
 ### Open panels with the shortcuts launcher
 
@@ -388,7 +390,7 @@ On a Mac, ⌘ takes the place of Ctrl in Ctrl+S and in the Ctrl+Alt rows other t
 | Attachments per message | 20 files |
 | Attachment size | 100MB per file and 120MB per message by default; set by an admin under [Upload limits](/settings#upload-limits) |
 | Shortcuts | 3 per user; name up to 40 characters, prompt up to 4000 |
-| History | The latest 50 turns on opening, then 50 more per load |
+| History | The latest 20 turns on opening, then 20 more per load; at most 4 MiB of messages per load, but always at least one turn |
 | Conversation list | 10 conversations at a time per group or folder; 10 groups per page |
 | Send to background | Offered after a call has run for 10 seconds |
 | Retry countdown | Shown for waits of 2s or more |

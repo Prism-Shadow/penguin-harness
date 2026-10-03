@@ -7,6 +7,17 @@
  * path field when clicked, a secondary click opens a context menu, and Quick access is the
  * user's to edit, starting from the standard folders of the browsed machine's own platform.
  *
+ * What the sidebar offers is the browsed machine's own answer, not this browser's: its
+ * standard folders as it resolves them, and its locations — Windows' drives under This PC, a
+ * Mac's volumes, a Linux root and its mounts under Locations — named the way that platform's
+ * file manager names them. The same locations hang off a caret at the head of the address bar,
+ * so another drive is one click away even where the sidebar is a drawer. They are asked for
+ * again on every open, beside the folder rather than ahead of it (a drive plugged in since
+ * shows up; a slow drive never holds the list), and the previous answer stays up until the new
+ * one lands. Keys follow the platform the user sits at, not the one being browsed: Explorer's
+ * Ctrl+L, Alt+D and F4 edit the address off the Mac, and F5 refreshes everywhere instead of
+ * reloading the app.
+ *
  * It is a Modal like any other dialog, so it stacks on the dialogs that host the form variant
  * without anything of its own: Modal portals to body (a later modal sits above an earlier one in
  * DOM order) and joins the shared Escape stack, so one Escape closes the finder and leaves the
@@ -31,6 +42,7 @@ import type {
 import type { DesktopPrivacyPane, DirListResponse } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  ChevronDown,
   CloseIcon,
   Dropdown,
   GlyphIcon,
@@ -73,7 +85,6 @@ import {
   clearButton,
   defaultPlaces,
   deniedBox,
-  drivePlaces,
   finderKeyAction,
   finderMenuItems,
   historyStep,
@@ -82,6 +93,8 @@ import {
   isFolder,
   isTypeSelectKey,
   loadQuickAccess,
+  locationName,
+  locationPlaces,
   parentOf,
   quickAccessPlaces,
   recentWorkspaces,
@@ -102,6 +115,11 @@ import type {
   Place,
 } from "./workspace-finder-model";
 
+/**
+ * The registry has one storage drawing, the drive, so a fixed disk, a volume and a Linux root
+ * all take it; the other kinds borrow the nearest thing the registry draws — a plug for what
+ * is plugged in, the network for a share, a disc for an optical drive.
+ */
 const PLACE_ICON: Record<Place["key"], string> = {
   home: ICONS.house,
   desktop: ICONS.monitor,
@@ -109,6 +127,11 @@ const PLACE_ICON: Record<Place["key"], string> = {
   downloads: ICONS.download,
   pictures: ICONS.image,
   drive: ICONS.hardDrive,
+  volume: ICONS.hardDrive,
+  root: ICONS.hardDrive,
+  removable: ICONS.plug,
+  network: ICONS.network,
+  optical: ICONS.target,
   folder: ICONS.folder,
 };
 
@@ -199,7 +222,10 @@ export function WorkspaceFinder({
   const machineRef = useRef(machine);
   machineRef.current = machine;
   const [machines, setMachines] = useState<WorkspaceMachine[]>([]);
-  /** The browsed machine's home listing: the Favourites, and the platform the pane's copy depends on. */
+  /**
+   * The browsed machine's home listing, asked for with its places: Quick access, the locations,
+   * and the platform the pane's copy depends on.
+   */
   const [home, setHome] = useState<{ machine: string | null; listing: DirListResponse } | null>(
     null,
   );
@@ -212,6 +238,8 @@ export function WorkspaceFinder({
   /** The address bar is a path field (clicked, or ⌘⇧G) rather than breadcrumbs; the draft is what it holds. */
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState("");
+  /** The address bar's root menu: the machine's locations, from the caret before the path. */
+  const [rootMenuOpen, setRootMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [listFocused, setListFocused] = useState(false);
   const typed = useRef({ text: "", at: 0 });
@@ -282,12 +310,22 @@ export function WorkspaceFinder({
       });
   };
 
+  /** Monotonic id of the newest home request: an older answer landing late never replaces it. */
+  const homeSeq = useRef(0);
+
+  /**
+   * Asks machine `m` for its home listing with its places — every time, not once per machine:
+   * a drive plugged in, or a folder moved, since the last ask has to show up, and the server
+   * keeps a repeat cheap. It is a request of its own beside the folder's, so the list never
+   * waits on the places being found. Whatever the sidebar shows stays up until the answer
+   * lands (or for good, if it fails), rather than emptying for the length of a request.
+   */
   const loadHome = (m: string | null) => {
-    if (home?.machine === m) return;
+    const seq = ++homeSeq.current;
     api
-      .listDirs(projectId, "", m)
+      .listDirs(projectId, "", m, { places: true })
       .then((listing) => {
-        if (machineRef.current === m) setHome({ machine: m, listing });
+        if (seq === homeSeq.current && machineRef.current === m) setHome({ machine: m, listing });
       })
       .catch(() => undefined);
   };
@@ -305,7 +343,12 @@ export function WorkspaceFinder({
   // Each open: reveal the host's folder in its parent (on the host's machine), otherwise pick
   // up where the finder was — refreshed, since the disk may have moved on while it was closed.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      // The root menu's state outlives its panel, which unmounts with the finder: left set, the
+      // next open would pop the menu up again and pull focus into it.
+      setRootMenuOpen(false);
+      return;
+    }
     setAddressEditing(false);
     setSidebarOpen(false);
     const ws = workspace.trim();
@@ -386,7 +429,7 @@ export function WorkspaceFinder({
   );
   const homeListing = home?.machine === machine ? home.listing : null;
   const defaults = useMemo(() => defaultPlaces(homeListing), [homeListing]);
-  const drives = useMemo(() => drivePlaces(homeListing), [homeListing]);
+  const locations = useMemo(() => locationPlaces(homeListing), [homeListing]);
   // Re-read on every edit (the version) and on switching machines: each machine keeps its own.
   const quickAccess = useMemo(
     () => quickAccessPlaces(defaults, loadQuickAccess(machine)),
@@ -504,6 +547,17 @@ export function WorkspaceFinder({
   const editAddress = () => {
     setAddressDraft(view.listing?.path ?? view.path);
     setAddressEditing(true);
+    // The field replaces the segments and the caret before them, menu and all.
+    setRootMenuOpen(false);
+  };
+
+  /** A location from the address bar's root menu: opened like a sidebar place, as a visit. */
+  const openLocation = (path: string) => {
+    setRootMenuOpen(false);
+    setSidebarOpen(false);
+    load(path);
+    // The panel is gone and took focus with it; the list is where the keyboard picks up.
+    listRef.current?.focus();
   };
 
   /** Leaves the field as it was: Escape, or focus moving elsewhere, as in Explorer. */
@@ -722,6 +776,9 @@ export function WorkspaceFinder({
       case "choose":
         choose();
         return;
+      case "refresh":
+        refresh();
+        return;
     }
   };
 
@@ -741,20 +798,29 @@ export function WorkspaceFinder({
    */
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.defaultPrevented || e.nativeEvent.isComposing) return;
-    // The context menu is portaled to body but is still a React child of this tree, so its
-    // keys bubble through here: its arrows and Enter are the menu's, not the list's.
-    if (!e.currentTarget.contains(e.target as Node)) return;
     const target = e.target as HTMLElement;
     const inList = target === listRef.current;
+    const action = finderKeyAction(e, isMac, inList);
+    // F5 is the finder's wherever focus is in it — a typed path and a menu portaled out of it
+    // included: let through, it reloads the whole app and the dialog with it.
+    if (action === "refresh") {
+      e.preventDefault();
+      e.stopPropagation();
+      run(action);
+      return;
+    }
+    // A menu portaled to body is still a React child of the band that opened it (the address
+    // bar's root menu is the toolbar's), so its keys bubble through here: its arrows and Enter
+    // are the menu's, not the list's.
+    if (!e.currentTarget.contains(target)) return;
     const inFilter = target === filterRef.current;
     if (inList && isContextMenuKey(e)) {
       e.preventDefault();
       openMenuFromList();
       return;
     }
-    // The address field is a path being typed: only its own chord (which closes it) applies.
+    // The address field is a path being typed: only its own chords (which close it) apply.
     const inAddress = target === addressRef.current;
-    const action = finderKeyAction(e, isMac, inList);
     if (action === null) {
       if (inList && isTypeSelectKey(e)) {
         e.preventDefault();
@@ -862,10 +928,21 @@ export function WorkspaceFinder({
   );
 
   const placeLabel = (place: Place): string => {
-    if (place.key === "home" || place.key === "drive" || place.key === "folder") return place.label;
-    // Finder says 文稿 where Explorer and Files say 文档: each machine's own word for it.
-    if (place.key === "documents" && platform === "darwin") return f.documentsMac;
-    return f.places[place.key];
+    switch (place.key) {
+      case "home":
+      case "folder":
+        return place.label;
+      case "desktop":
+      case "documents":
+      case "downloads":
+      case "pictures":
+        // Finder's Chinese word for Documents is not Explorer's or Files': each machine's own.
+        return place.key === "documents" && platform === "darwin"
+          ? f.documentsMac
+          : f.places[place.key];
+      default:
+        return locationName(place, f);
+    }
   };
 
   const currentFolder = view.listing?.path ?? null;
@@ -913,16 +990,18 @@ export function WorkspaceFinder({
           </ul>
         </>
       )}
-      {/* Windows' drives, where Explorer keeps them: under This PC, apart from Quick access. */}
-      {drives.length > 0 && (
+      {/* The machine's locations, apart from Quick access as every file manager keeps them:
+          Windows' drives under This PC, a Mac's volumes or a Linux root and its mounts under
+          Locations. */}
+      {locations.length > 0 && (
         <>
-          {sideHeading(f.thisPc)}
+          {sideHeading(homeListing?.platform === "win32" ? f.thisPc : f.locations)}
           <ul className="flex flex-col gap-1">
-            {drives.map((place) =>
+            {locations.map((place) =>
               sideRow({
-                key: `drive:${place.path}`,
+                key: `location:${place.path}`,
                 icon: PLACE_ICON[place.key],
-                label: place.label,
+                label: placeLabel(place),
                 title: place.path,
                 active: view.path === place.path,
                 onClick: () => load(place.path),
@@ -999,9 +1078,11 @@ export function WorkspaceFinder({
    * toolbar. At rest it holds the path as segments — a segment opens that folder — and a click
    * anywhere else in it (the folder mark, the current folder, the empty stretch after it) turns
    * it into a text field holding the whole path, as Explorer's does. Enter goes there, Escape or
-   * leaving the field puts the segments back. It wears the text-control look (controlBase's
-   * box, spelled out because the box is a div and its focus is the field's inside it): the
-   * focused look while it is a field, the resting one with its hover while it holds segments.
+   * leaving the field puts the segments back. Where the machine reported its locations, a caret
+   * between the folder mark and the path opens them as a menu; the field replaces it along with
+   * the segments. It wears the text-control look (controlBase's box, spelled out because the box
+   * is a div and its focus is the field's inside it): the focused look while it is a field, the
+   * resting one with its hover while it holds segments.
    */
   const addressBar = (
     <div
@@ -1047,6 +1128,44 @@ export function WorkspaceFinder({
           >
             <GlyphIcon d={ICONS.folder} size={ICON_SIZE.inlineGlyph} />
           </button>
+          {/* The machine's locations, one click from any folder, the way Explorer's address bar
+              drops its root list from the arrow at its head. It sits before the path rather
+              than in it: the path scrolls to its end, so a root segment can be out of sight —
+              on a phone above all, where the sidebar that also lists them is a drawer. */}
+          {locations.length > 0 && (
+            <Dropdown
+              open={rootMenuOpen}
+              setOpen={setRootMenuOpen}
+              portal={{ direction: "down", align: "left" }}
+              className="flex h-full shrink-0 items-center"
+              menuClass="w-max min-w-40 max-w-[calc(100vw-2rem)]"
+              button={
+                <button
+                  type="button"
+                  aria-label={f.switchLocation}
+                  aria-haspopup="menu"
+                  aria-expanded={rootMenuOpen}
+                  // Its hint would only cover the menu it names while that is open.
+                  {...(rootMenuOpen ? {} : { "data-tooltip": f.switchLocation })}
+                  onClick={() => setRootMenuOpen((v) => !v)}
+                  className="flex h-full items-center px-1.5 text-fg-subtle transition-colors duration-150 hover:text-fg"
+                >
+                  <ChevronDown size={ICON_SIZE.caret} />
+                </button>
+              }
+            >
+              <Menu density="sm" label={f.switchLocation}>
+                {locations.map((place) => (
+                  <MenuItem
+                    key={place.path}
+                    glyph={PLACE_ICON[place.key]}
+                    label={placeLabel(place)}
+                    onSelect={() => openLocation(place.path)}
+                  />
+                ))}
+              </Menu>
+            </Dropdown>
+          )}
           <nav
             ref={crumbsRef}
             aria-label={f.path}
@@ -1336,8 +1455,10 @@ export function WorkspaceFinder({
     machine,
   });
 
+  // The key map reaches the footer's buttons too, so F5 from Choose refreshes rather than
+  // reloading the app; `contents` keeps the wrapper out of the footer's own row layout.
   const footer = (
-    <>
+    <div className="contents" onKeyDown={onKeyDown}>
       {/* The host's "no folder" choice: a plain text button whatever is chosen now; the folder a
           temporary Workspace would get is its tooltip. */}
       {clear !== null && (
@@ -1364,7 +1485,7 @@ export function WorkspaceFinder({
       >
         {f.choose}
       </Button>
-    </>
+    </div>
   );
 
   return (

@@ -1,6 +1,7 @@
 /**
- * The Octicons set: every registry glyph and every component mark drawn as GitHub's Octicons, the
- * icons Primer (`github`) shows (the `ui-glyph` hook, hooks.ts). Each value is an Octicon's 16px
+ * The Octicons set: every registry glyph and every component mark drawn as GitHub's Octicons, a
+ * set the `ui-glyph` hook (hooks.ts) can show and no theme shows today — a theme takes it with
+ * two rules in its own file, swapping it for the line set. Each value is an Octicon's 16px
  * path data, copied verbatim from `@primer/octicons` 19.38.0 (`build/data.json`, MIT License,
  * copyright GitHub Inc.; the licence ships beside this file as `LICENSES/octicons.txt` and is
  * credited on the app's Credits page), its subpaths joined into one string. The comment after an

@@ -465,7 +465,7 @@ export function MessageStream({
                 <button
                   type="button"
                   onClick={older.onLoad}
-                  className="py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                  className="whitespace-nowrap py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                 >
                   {S.chat.loadEarlierRetry}
                 </button>

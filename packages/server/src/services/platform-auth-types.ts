@@ -31,7 +31,10 @@ export interface PlatformModelCatalog {
   models: PlatformCatalogModel[];
 }
 
-/** Catalog merge result. `updated` counts existing rows whose list price, client type or promotion changed. */
+/**
+ * Catalog merge result. `updated` is always 0: a merge adds what is new and never rewrites a row
+ * the Project already holds (its price, routing and promotion may be the user's own).
+ */
 export interface PlatformModelApplyResult {
   added: number;
   updated: number;

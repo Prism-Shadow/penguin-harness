@@ -77,7 +77,10 @@ export interface ModelScopeRefreshResult {
 interface ModelScopeAuthDeps {
   /** Base URL of the bridge, without a trailing slash (config.modelscopeBridgeUrl). */
   bridgeUrl: string;
-  /** Writes the delivered credential; resolves to how many rows took the access token. */
+  /**
+   * Writes the delivered credential as the group key; resolves to how many of the group's rows
+   * use the access token (0 also when a refresh lost to a newer authorization and wrote nothing).
+   */
   applyCredential: (
     projectId: string,
     credential: ModelScopeCredential,
@@ -557,10 +560,10 @@ export class ModelScopeAuthService {
     flow.status = "applying";
     flow.error = undefined;
     try {
+      // The token lands as the group key whether or not a model uses it yet: one keyed on its
+      // own keeps its key, and an empty group holds it for the models added later. The report
+      // carries how many use it, 0 included — as Enter key and the other Connect flows do.
       const applied = await this.deps.applyCredential(flow.projectId, flow.credential);
-      // A group with no rows would silently swallow the token, leaving the user authorized
-      // with nothing to show for it.
-      if (applied === 0) throw new Error("The ModelScope group is empty.");
       this.refreshFailures.delete(`${flow.projectId}:${MODELSCOPE_PROVIDER_ID}`);
       flow.applied = applied;
       flow.credential = undefined;

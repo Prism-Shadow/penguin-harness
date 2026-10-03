@@ -7,7 +7,7 @@ import {
   resolveMode,
 } from "../src/lib/url-state";
 
-const PREFS = "theme=github&mode=light&size=m&latin=theme&cjk=theme&lang=en&accent=neutral";
+const PREFS = "theme=modern&mode=light&size=m&latin=theme&cjk=theme&lang=en&accent=neutral";
 
 describe("gallery URL state", () => {
   it("reads every field and round-trips through the canonical query", () => {
@@ -67,10 +67,10 @@ describe("gallery URL state", () => {
       ),
     ).toEqual(DEFAULT_STATE);
     expect(
-      parseGalleryState("?theme=nope", { theme: "modern", lang: "zh", latin: "misans", size: "l" }),
-    ).toMatchObject({ theme: "modern", lang: "zh", latin: "misans", size: "l" });
+      parseGalleryState("?theme=nope", { theme: "github", lang: "zh", latin: "misans", size: "l" }),
+    ).toMatchObject({ theme: "github", lang: "zh", latin: "misans", size: "l" });
     // The URL beats the remembered value.
-    expect(parseGalleryState("?theme=geek", { theme: "modern" }).theme).toBe("geek");
+    expect(parseGalleryState("?theme=geek", { theme: "github" }).theme).toBe("geek");
   });
 
   it("keeps an accent preset whichever theme is active, so switching themes never loses it", () => {

@@ -349,7 +349,8 @@ export const en: GalleryStrings = {
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
       "ui-stream": "a reply that is still streaming: each theme decides how new text appears",
-      "ui-glyph": "an icon each theme draws its own way: Octicons, duotone line or pixel art",
+      "ui-glyph":
+        "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],

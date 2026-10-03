@@ -1,7 +1,7 @@
 /**
  * Unit tests for the Trace service: multi-file history concatenation, file
- * listing, pagination, performance-analysis derivation, and Agent-level
- * drill-down browsing.
+ * listing, pagination (following a growing file), performance-analysis derivation
+ * (including the head's context window), and Agent-level drill-down browsing.
  */
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -154,6 +154,28 @@ describe("trace-service", () => {
     expect((page.events[0]!.payload as { text: string }).text).toBe("m3");
     const notFound = await service.readEvents(P, A, S, 99, 0, 10).catch((e: unknown) => e);
     expect((notFound as { status: number }).status).toBe(404);
+  });
+
+  it("paginated line reads follow a file the running Task appends to", async () => {
+    const file = await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      userText("m0"),
+      userText("m1"),
+    ]);
+    expect((await service.readEvents(P, A, S, 1, 0, 10)).total).toBe(2);
+    await fs.appendFile(file, `${JSON.stringify(userText("m2"))}\n`, "utf8");
+    const grown = await service.readEvents(P, A, S, 1, 1, 10);
+    expect(grown.total).toBe(3);
+    expect(grown.events.map((e) => (e.payload as { text: string }).text)).toEqual(["m1", "m2"]);
+  });
+
+  it("the analysis carries the context window its file's head names, and none when the head names none", async () => {
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload({ model_context_window: 200_000 })),
+      userText("hi"),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-05", S, 2, [userText("no head")]);
+    expect((await service.analyze(P, A, S, 1)).modelContextWindow).toBe(200_000);
+    expect((await service.analyze(P, A, S, 2)).modelContextWindow).toBeUndefined();
   });
 
   it("performance analysis: Request pairing, tool durations, reconnect / compaction counts, Token trend", async () => {

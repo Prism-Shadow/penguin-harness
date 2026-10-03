@@ -298,9 +298,12 @@ export const zh = {
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
-    /** Touch-only: the bottom dock's height toggle, standing in for a boundary drag. */
-    maximize: "放大到整屏",
-    restore: "还原高度",
+    /** The dock header's fullscreen toggle while the dock is at its usual size. */
+    fullscreen: "全屏",
+    /** The same toggle while the dock is fullscreen: it leaves in place. */
+    exitFullscreen: "退出全屏",
+    /** A tab whose panel has no definition registered (a plugin's panel before it loads). */
+    panelUnavailable: "此面板暂不可用",
   },
 
   /** The built-in browser (desktop app only): its dock panel, toolbar and dialogs. */
@@ -527,7 +530,7 @@ export const zh = {
     theme: "主题",
     themeInfo: "应用的整体风格：布局、线条、字体与动效随之改变，内容与其他设置不受影响。",
     /** Display names of the three themes; the ids stay github / modern / geek. */
-    themeNames: { github: "通用", modern: "白领", geek: "极客" },
+    themeNames: { github: "朴素", modern: "白领", geek: "极客" },
     colorMode: "明暗",
     colorModeInfo: "应用的明暗外观。",
     themeLight: "浅色",
@@ -584,6 +587,7 @@ export const zh = {
       "服务器总开关，缺省关闭，需由管理员在此打开。关闭即停用组织调度器与全部组织路由，并隐藏所有人的模式切换；磁盘上的组织不受影响，重新打开后不会补发错过的触发。内测功能：可能有不稳定的现象，遇到问题请反馈。",
     accentNames: {
       neutral: "随主题",
+      forest: "森林绿",
       blue: "蓝",
       green: "绿",
       violet: "紫",
@@ -824,7 +828,7 @@ export const zh = {
    */
   todo: {
     pluginUpdates: (n: number) => `${n} 个插件有更新`,
-    presetUpdates: (n: number) => `${n} 个预置模型可同步`,
+    presetUpdates: (n: number) => `${n} 个新预置模型可同步`,
     unexpectedErrors: (n: number) => `${n} 条未预期错误`,
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "有待处理事项",
@@ -835,10 +839,7 @@ export const zh = {
 
     // —— The page notice's own line and its bulk action (the UI package's TodoNotice) ——
 
-    /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
-    changesWithAdded: (added: number, updated: number): string =>
-      `检测到变更：${added} 个新增，${updated} 个可升级`,
-    /** The same line where the trail has only one honest count — no padded zero (Agents, Plugins). */
+    /** The notice line on the trails whose objects are upgraded in place (Agents, Plugins). */
     changesUpgradable: (updated: number): string => `检测到变更：${updated} 个可升级`,
     /** Updates every object the notice counts, behind the page's own confirmation. */
     updateNow: "现在升级",
@@ -850,8 +851,8 @@ export const zh = {
     pluginsConfirmTitle: (n: number): string => `更新 ${n} 个插件`,
     pluginsConfirmBody:
       "更新会把库内当前副本重装到各 Agent，覆盖其已安装的技能与钩子文件——本地改动会丢失，如有需要请先导出备份。",
-    /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
-    modelsConfirmTitle: (n: number): string => `同步 ${n} 个预置模型`,
+    /** Confirmation of adding the new presets; the body reuses models.syncNewPresetsHint verbatim. */
+    modelsConfirmTitle: (n: number): string => `补入 ${n} 个新预置模型`,
     /** Every target of the batch was written. Counted in Agents: both pages that use this
      * send one request per Agent, and the partial-failure line below names Agents too. */
     bulkDone: (ok: number): string => `已更新 ${ok} 个 Agent`,
@@ -1004,9 +1005,9 @@ export const zh = {
     avatarTooLarge: "图片过大，请换一张尺寸更小的图片。",
     /** The picked file could not be decoded as an image at all. */
     avatarUnreadable: "无法读取这张图片，请换一个文件。",
-    /** Nickname row: the field, and the shape rule that stays on screen while typing. */
+    /** Nickname row: the field, and its length and blank-clears rule, disclosed by the "?" (user decision, 2026-10-03). */
     displayName: "昵称",
-    displayNameHint: "1–32 个字符，留空即清除",
+    displayNameInfo: "1–32 个字符，留空即清除",
     displayNamePlaceholder: "留空则显示用户名",
   },
 
@@ -1426,14 +1427,13 @@ export const zh = {
     addCustom: "添加自定义模型",
     addToGroup: "添加模型",
     editTitle: "模型配置",
-    addTitle: "新增模型（OpenAI 协议）",
-    addProtocolHint: "新增模型走 OpenAI Chat Completions 兼容协议，base URL 填其兼容端点",
+    addTitle: "新增模型",
     /** Add-dialog note for a group that pins one protocol on every entry (fed the client type): the protocol is not a choice here, and the endpoint is the user's own. */
     addProtocolHintPinned: (protocol: string): string =>
       `本分组的模型固定使用 ${protocol} 协议，base URL 填你自己的服务地址`,
-    /** The same note for a gateway group that pins a protocol: the endpoint is the gateway's, already filled in. */
-    addProtocolHintPinnedGateway: (protocol: string): string =>
-      `本分组的模型固定使用 ${protocol} 协议，base URL 已预填网关端点`,
+    /** The same note where the group also supplies the endpoint (a gateway, or a group whose settings name one): blank fields follow the group. */
+    addProtocolHintInherit: (protocol: string): string =>
+      `本分组的模型使用 ${protocol} 协议；base URL、API key 与协议留空即继承分组`,
     autoRouteNone:
       "厂商分组按模型 ID 开头的厂商前缀（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由，该模型 ID 无法路由；若使用 OpenAI 兼容接口，可转为自定义模型。",
     useCustomGroup: "转为自定义模型",
@@ -1442,25 +1442,13 @@ export const zh = {
       "该模型 ID 无法路由，运行时会失败：厂商分组只能路由以已知厂商前缀开头的模型 ID。",
     /** The way out offered beside that warning: opens the config dialog with the row already in the custom group. */
     moveToCustomGroup: "移到自定义分组",
-    /**
-     * Warning on a built-in row whose stored protocol pin differs from the one the catalog
-     * sets for it today (a pin MMSP no longer has, or one the catalog added since), so it
-     * cannot be routed: re-merging the catalog repairs it, and a move would be the wrong
-     * advice. It never quotes the sync button's own label — a member sees this sentence with
-     * no button beside it, and the owner who does have one reads the label right there.
-     */
-    vendorRowStalePin:
-      "该内置模型的条目与目录当前为它设定的协议不一致，当前无法路由；重新同步内置目录即可恢复。",
     /** Connectivity test on a hand-added row: replaces MMSP's "No client for model" sentence, which names client types the user has no way to act on. */
     testNotRoutable:
       "连通失败：该模型 ID 无法路由。厂商分组只能路由以已知厂商前缀开头的模型 ID；把它移到自定义分组，并选择或检测其接口协议。",
-    /** Connectivity test on a built-in row with a stale pin: the same split the card makes, so the two never give opposite advice. */
-    testStalePin:
-      "连通失败：该内置模型的条目与目录当前为它设定的协议不一致，当前无法路由。重新同步内置目录即可恢复，它不属于自定义分组。",
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后，一键导入其全部模型；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后，一键导入其全部模型，所填的 base URL、API key 与协议作为分组设置只写一次，导入的模型都跟随分组；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
     groupModeCreate: "仅新增分组",
     groupModeImport: "导入模型",
     groupImportAll: "批量导入模型",
@@ -1485,11 +1473,24 @@ export const zh = {
     groupDeleted: (n: number): string => `已删除分组（${n} 个模型）`,
     searchPlaceholder: "搜索模型：id / 名称 / 厂商",
     noSearchResults: "没有匹配的模型",
-    syncCatalog: "同步预置",
-    syncCatalogHint:
-      "用内置目录更新预置模型：新增缺失条目，并按目录刷新已有条目的上下文、定价、协议与视觉标志；base URL、API key 与输出上限一律不覆盖，本地新增模型保持不变",
-    syncDone: (added: number, updated: number) => `预置模型已同步：新增 ${added}、更新 ${updated}`,
-    syncUpToDate: "预置模型已是最新",
+    /** The header action that adds the catalog's presets the Project lacks — and nothing else. */
+    syncNewPresets: "同步新增模型",
+    /** What it does, as its tooltip and as the body of the notice's confirmation. */
+    syncNewPresetsHint:
+      "只补入内置目录里缺失的预置模型；已有的模型、你自己添加的模型、分组设置与 API key 一概不动",
+    presetsAdded: (n: number): string => `已新增 ${n} 个预置模型`,
+    presetsNone: "没有新的预置模型",
+    /** The header action that puts every built-in model back to the catalog, behind a danger confirmation. */
+    restoreDefaults: "恢复默认",
+    restoreDefaultsTitle: "恢复默认模型设置",
+    /** The confirmation's body, in three parts: what is reset, what is kept, and that it is final. */
+    restoreDefaultsResets:
+      "恢复：内置模型的上下文、价格与视觉标志回到目录值，显示名、输出上限与快速模式清除；模型与内置分组（Custom 除外）上自定的 base URL 与协议回到目录值；已删除的内置模型补回；促销折扣按目录重置（Penguin Go 的除外）。",
+    restoreDefaultsKeeps:
+      "保留：全部 API key（分组的与模型的）、你自己添加的模型（连同其折扣）与自建分组、Custom 的分组设置与 vLLM 的 base URL，以及默认模型与视觉模型的选择（所指模型不再适用时除外）。",
+    restoreDefaultsFinal: "此操作不可撤销。",
+    restoredDefaults: (added: number, restored: number): string =>
+      `已恢复默认：补回 ${added}、重置 ${restored}`,
     /**
      * The header's "Create with AI" entry: the dialog's title and lead, the prompt box's
      * placeholder, the examples and the fixed instruction tail. The tail
@@ -1541,7 +1542,9 @@ export const zh = {
         "- 不要读取或改动 .project_config.toml，配置只经 penguin 命令。",
         `- 最后运行 \`penguin config model list --project-id ${projectId} --root <数据根目录>\` 把结果列给我。`,
       ].join("\n"),
-    platformSync: "同步",
+    /** Penguin Go's "Sync models" (in its Connected menu) adds the models the platform newly offers; it never rewrites the ones already here. */
+    platformSyncAdded: (n: number): string => `已新增 ${n} 个模型`,
+    platformUpToDate: "已是最新",
     homepage: "模型主页",
     speedTest: "测速",
     /** The same icon button while its group's run is going: stops after the probe in flight. */
@@ -1599,7 +1602,6 @@ export const zh = {
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
     addProtocolHintDetect:
       "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可点“检测协议”探测端点；未选协议时保存会先自动检测",
-    addTitleCustom: "新增模型",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
     /** Detect action beside the vision switch. */
@@ -1635,6 +1637,11 @@ export const zh = {
      * group, so a user who drags that group elsewhere still sees why it is called out.
      */
     recommendedGroup: "官方推荐",
+    /** A group header's lock: its name (aria-pressed carries the state), and the hint while pinned. */
+    pinGroup: "常驻",
+    unpinGroup: "取消常驻",
+    /** The bar that folds the groups that are not pinned, naming how many it holds. */
+    foldedGroups: (n: number): string => `其余 ${n} 个分组`,
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
     discountBadge: (pct: number): string => `省 ${pct}%`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
@@ -1679,54 +1686,89 @@ export const zh = {
     keyConfigured: "已配置 key",
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",
-    baseUrlHint: "留空使用厂商默认地址",
     /** Hover title for the base URL field: explains the in-field suffix (the protocol path the client appends to the base URL); for custom groups that suffix is also the protocol picker. */
     baseUrlSuffixTitle: "客户端会在 base URL 后追加字段右侧的协议路径",
     baseUrlRequired: "必须填写 base URL",
+    /** A base URL that is set but is not an absolute http(s) URL (the group settings refuse to save it). */
+    baseUrlInvalid: "base URL 须为以 http:// 或 https:// 开头的完整地址",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,
-    groupApiKey: "填写密钥",
-    groupApiKeyTitle: (label: string): string => `为「${label}」统一配置 API key`,
-    groupApiKeyHint: (n: number): string => `将写入该分组下全部 ${n} 个模型；留空不改动。`,
     getApiKey: "前往密钥管理",
     getModelIds: "获取模型 id",
-    groupKeyApplied: (n: number): string => `已为 ${n} 个模型配置 API key`,
-    // 供应商授权取 key（模型分组头部动作）：整个 PKCE 流程都在服务端跑，前端只拿到一个
-    // 不透明的 flow id 和状态。
+    /** The group settings' link to the vendor's model list (the catalog's modelsUrl). */
+    modelList: "前往模型列表",
+    // —— Group settings (the gear at the end of every group header) ——
+    /** The header action and its accessible name. */
+    groupSettings: "设置",
+    groupSettingsTitle: (label: string): string => `${label} 分组设置`,
+    /** The clear box under a stored group key. */
+    clearGroupKey: "清除分组密钥",
+    /** A blank base URL that nothing fills: the group settings' placeholder, and a model's where its group sets none. */
+    baseUrlNone: "未设置：使用客户端默认端点",
+    /** The group settings' Detect while neither the field nor the group holds a base URL. */
+    detectNeedsBaseUrl: "先填写 base URL",
+    /** The protocol menu's first row in the group settings: the group sets none. */
+    protocolNone: "未设置",
+    /** Its second line on a built-in group: a model with no protocol of its own is routed by its id. */
+    protocolRoutedById: "按模型 id 路由",
+    /** Its second line on custom and user-defined groups, where each model keeps its own. */
+    protocolEachModel: "由各模型自行设置",
+    /** The model dialog's protocol menu row that drops a model's own protocol and follows its group. */
+    protocolFollowGroup: "跟随分组",
+    /** A model dialog's API key or base URL placeholder where the group's setting covers a blank field (no value after it). */
+    inheritFromGroup: "留空继承分组设置",
+    /** The API key placeholder where the group holds a key but the model's own base URL is on another origin, so the key is not sent there. */
+    keyNotReachedNote: "分组密钥不适用：该模型的 base URL 不在分组端点上",
+    /** The model dialogs' fold holding the fields a model rarely changes. */
+    details: "详细配置",
+    /** The card's hover note on a key that is the group's rather than the model's own. */
+    keyFromGroup: "继承分组密钥",
+    // Authorizing a key with the provider (a group header action): the whole PKCE flow runs on
+    // the server, and the page only ever holds an opaque flow id and its status.
     oauthKey: "连接",
-    /** The same button once the group holds a key: the flow again, for a fresh key or another account. */
-    reconnect: "重新连接",
-    /** The small status beside it: whether the group holds a stored key, however that key got there. */
-    connectedStatus: "连接成功",
+    /** The group's connection: whether it holds a stored key, however that key got there. Connected is a menu for the owner. */
+    connectedStatus: "已连接",
     notConnectedStatus: "未连接",
+    /** The Connected menu's rows: Penguin Go's platform catalog sync, the connect flow again, and clearing the group key. */
+    syncModels: "同步模型",
+    reconnect: "重新连接",
+    disconnect: "断开连接",
+    disconnectConfirm: (label: string): string =>
+      `断开 ${label}？将删除分组密钥；使用分组密钥的模型将无法调用，单独设置了 key 的模型不受影响。`,
+    disconnected: (label: string): string => `已断开 ${label}`,
     /**
-     * A group's account balance in its header (and pinned beside the user name): the tooltip
-     * names the group, the vendor's own figures and the time of the reading. `amounts` and
-     * `time` are already formatted.
+     * A group's account balance in its header (and pinned beside the user name): the sentence
+     * spoken behind the amount names the group, the vendor's own figures and the time of the
+     * reading. `amounts` and `time` are already formatted.
      */
     balanceTitle: (label: string, amounts: string, time: string): string =>
       `${label} 余额 ${amounts}，查询于 ${time}`,
-    balanceRefreshHint: "点击同步",
+    /** The balance menu's re-read (skips the server's cache). */
+    balanceRefresh: "更新余额",
+    /** The balance menu's last line: when the balance was read (`time` is YYYY-MM-DD HH:mm, local). */
+    balanceUpdatedAt: (time: string): string => `更新于：${time}`,
+    /** The same line, and the spoken sentence, when no balance could be read. */
+    balanceFailed: (reason: string): string => `更新失败：${reason}`,
     /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
     balanceUnavailable: "账户当前不可用，余额可能不足",
-    /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
+    /** Why no balance could be read, by the server's code: the reason after balanceFailed's prefix. */
     balanceErrors: {
-      no_key: "该分组没有可用的 API key，无法查询余额",
-      upstream_failed: "服务商没有返回余额，可点击重试",
+      no_key: "没有可用的 API key",
+      upstream_failed: "服务商没有返回余额",
       unsupported: "该分组不支持查询余额",
     } as Record<string, string | undefined>,
     /** Appended when the vendor answered with an HTTP error. */
-    balanceStatus: (status: number): string => `（服务商返回 HTTP ${status}）`,
-    /** Pin toggle before a balance: keeps it beside the user name in the sidebar, one at a time. */
-    pinBalance: "常驻到用户名旁",
-    unpinBalance: "取消常驻",
+    balanceStatus: (status: number): string => `（HTTP ${status}）`,
+    /** The balance menu's pin: keeps it beside the user name at the sidebar's bottom-left, one at a time. */
+    pinBalance: "置顶至左下角",
+    unpinBalance: "取消置顶",
     /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
     tokenDanceBanner: "连接 TokenDance 钱包，无需手动配置模型密钥",
     oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,
     oauthIntro: (label: string, n: number): string =>
-      `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
+      `将在你的 ${label} 账户下新建一个 API key，设为该分组的分组密钥，${n} 个模型使用它；单独设置了密钥的模型不受影响。`,
     oauthAuthorize: "打开授权页",
     oauthWaiting: "等待在新标签页中完成授权…",
     /**
@@ -1735,7 +1777,7 @@ export const zh = {
      * which authorization they just finished.
      */
     oauthAppliedBody: (provider: string, n: number): string =>
-      `已完成授权：${provider} 的 API key 已配置到 ${n} 个模型上，可以直接使用了。`,
+      `已完成授权：已为「${provider}」配置分组密钥（${n} 个模型使用），可以直接使用了。`,
     oauthManualSwitch: "授权页跳不回来？改为手动填写授权码",
     oauthCallbackSwitch: "改回自动跳转",
     oauthManualHint: "先打开授权页，再把页面上显示的一次性授权码粘贴到这里。",
@@ -1751,9 +1793,9 @@ export const zh = {
       apply_failed: "key 已创建但未能保存。请重新授权，并到供应商控制台删掉那个没用上的 key。",
     },
     platformKeyIntro: (n: number): string =>
-      `授权后会自动获取一个 Penguin Go API key，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key。`,
+      `授权后会自动获取一个 Penguin Go API key，设为该分组的分组密钥，${n} 个模型使用它；单独设置了密钥的模型不受影响。`,
     platformKeyAppliedBody: (n: number): string =>
-      `已完成授权：Penguin Go API key 已配置到 ${n} 个模型上，可以直接使用了。`,
+      `已完成授权：已为「Penguin Go」配置分组密钥（${n} 个模型使用），可以直接使用了。`,
     platformKeyStarting: "正在创建授权请求…",
     platformKeyApplying: "授权已完成，正在写入模型组…",
     platformKeyErrors: {
@@ -1765,12 +1807,13 @@ export const zh = {
       already_delivered: "该授权结果已经交付，请重新开始。",
       apply_failed: "API key 已取得，但未能写入模型组。可以直接重试，无需再次授权。",
     },
-    // 魔搭走的是授权中转层：harness 不直接与魔搭对话，中转层拿着 client secret 换回
-    // api-inference token。access token 会写入模型表；refresh token 只保存在服务端 DB。
+    // ModelScope goes through an authorization bridge: the harness never talks to ModelScope
+    // directly; the bridge exchanges its client secret for an api-inference token. The access
+    // token is written as the group key; the refresh token stays in the server's DB.
     modelScopeKeyIntro: (n: number): string =>
-      `授权后会自动获取一个魔搭 API token，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key；后续请求会在服务端静默续期，连续续期失败时会提示你重新授权。`,
+      `授权后会自动获取一个魔搭 API token，设为该分组的分组密钥，${n} 个模型使用它；单独设置了密钥的模型不受影响。后续请求会在服务端静默续期，连续续期失败时会提示你重新授权。`,
     modelScopeKeyAppliedBody: (n: number): string =>
-      `已完成授权：魔搭 API token 已配置到 ${n} 个模型上，可以直接使用了。`,
+      `已完成授权：已为「魔搭」配置分组密钥（${n} 个模型使用），可以直接使用了。`,
     modelScopeKeyErrors: {
       unreachable: "无法连接授权中转层，请检查网络后重新开始。",
       upstream_failed: "中转层未能完成授权，请重新开始。",
@@ -2466,6 +2509,19 @@ export const zh = {
       quickAccess: "常用",
       /** Windows only: the section listing the drives. */
       thisPc: "此电脑",
+      /** The same section on a Mac (its volumes) or a Linux machine (the root and the mounted devices). */
+      locations: "位置",
+      /** A Windows drive with no label of its own, by its type, as Explorer names it; the letter follows. */
+      drives: {
+        drive: "本地磁盘",
+        removable: "U 盘",
+        network: "网络驱动器",
+        optical: "CD 驱动器",
+      },
+      /** A Linux machine's root directory, as its file managers name it. */
+      fileSystem: "文件系统",
+      /** The caret before the path that lists the machine's drives or volumes: its accessible name and hint. */
+      switchLocation: "切换位置",
       recent: "最近使用",
       machines: "机器",
       places: {
@@ -3776,8 +3832,10 @@ Benchmark：
     globalSummary: "全局统计",
     tasksLabel: "轮次",
     messages: "消息",
-    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
-    loadingNote: (shown: number, total: number) => `已载入 ${shown} / ${total} 条消息…`,
+    /** The control above the drawn round cards: how many earlier rounds are not drawn yet; a click draws the next page of them. */
+    earlierRounds: (n: number) => `更早的 ${n} 轮`,
+    /** Spoken by an open round's placeholder while its messages are being read. */
+    roundLoading: "正在读取本轮消息",
     zoom: "缩放",
     zoomReset: "双击复位缩放",
     zoomOut: "缩小",

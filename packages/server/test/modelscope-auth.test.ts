@@ -3,8 +3,8 @@
  * writes the delivered token to the ModelScope group; later it refreshes that token.
  *
  * - The flow: the bridge's own authorize URL is passed through (never one a tab must not open),
- *   the delivered token is written, a failed or swallowed write keeps the token for a retry
- *   without polling again, every terminal status maps onto the flow's own states and ends the
+ *   the delivered token is written, a failed write keeps the token for a retry without polling
+ *   again, every terminal status maps onto the flow's own states and ends the
  *   polling, an unreachable bridge or a rejected start is an upstream failure, the bridge's
  *   rate limit surfaces with its Retry-After on start and backs a poll off, cancelling reaches
  *   the bridge and applies nothing, a flow is hidden from another Project or user and forgotten
@@ -13,8 +13,15 @@
  *   changed meanwhile, kept usable when a proactive refresh fails, and re-authorization is asked
  *   for when an expired token cannot be refreshed or after three failures (a changed refresh
  *   token resets the count).
- * - The routes: only the owner starts; the token lands on the group's preset rows and no account
- *   state is exposed; an unknown or foreign flow has its own not-found code.
+ * - The routes: only the owner starts; the token lands once, as the group's key, which the
+ *   group's preset rows use, and no account state is exposed; in a group where no model uses
+ *   it yet (every one keyed on its own), it still lands and the flow completes with a count of
+ *   0; Disconnect (clearing the group key) ends the authorization, its refresh token
+ *   included, so nothing brings the key back; an unknown or foreign flow has its own
+ *   not-found code.
+ * - A request: a model on the group key refreshes a token about to expire, and the refreshed
+ *   token lands on the group and goes out with that very request; a model with a key of its
+ *   own sends it and asks for no refresh.
  *
  * No test reaches the network: the bridge is the suite's fetch fake, handed to the service or
  * standing in for the global fetch in the route cases.
@@ -143,24 +150,6 @@ describe("ModelScope key authorization service", () => {
     });
     expect(polls).toBe(1);
     expect(applies).toBe(2);
-  });
-
-  it("treats a group that swallowed the token as a failed write, not as success", async () => {
-    const service = new ModelScopeAuthService({
-      bridgeUrl: BRIDGE,
-      applyCredential: async () => 0,
-      fetchImpl: fakeFetch(async ({ url: input }) =>
-        pathOf(input).endsWith("/start") ? started() : jsonResponse(delivery),
-      ).fetch,
-    });
-    const flow = await service.start(owner);
-    expect(await service.status({ ...owner, flowId: flow.flowId })).toMatchObject({
-      status: "apply_failed",
-    });
-    // Still retryable: an empty group is an operator problem, not a reason to re-authorize.
-    expect(await service.retryApply({ ...owner, flowId: flow.flowId })).toMatchObject({
-      status: "apply_failed",
-    });
   });
 
   it("maps every terminal status the bridge can report onto the flow's own states", async () => {
@@ -604,7 +593,7 @@ describe("ModelScope key authorization routes", () => {
     await t.cleanup();
   });
 
-  it("writes the delivered token to the group's preset row and exposes no account state", async () => {
+  it("writes the delivered token as the group's key, which the preset rows use, and exposes no account state", async () => {
     const base = `/api/projects/${projectId}/modelscope-auth`;
     const before = (await (
       await ownerClient.get(`/api/projects/${projectId}/models`)
@@ -618,8 +607,8 @@ describe("ModelScope key authorization routes", () => {
         .map((entry) => entry.model_id)
         .sort(),
     );
-    expect(preset.every((model) => model.clientType === "openai-responses")).toBe(true);
-    expect(preset.every((model) => model.credential?.apiKeyMasked === undefined)).toBe(true);
+    expect(preset.every((model) => model.effective.clientType === "openai-responses")).toBe(true);
+    expect(before.providers.modelscope?.apiKeyMasked).toBeUndefined();
 
     expect((await memberClient.post(`${base}/start`, {})).status).toBe(403);
 
@@ -645,16 +634,25 @@ describe("ModelScope key authorization routes", () => {
     ).json()) as ModelsResponse;
     const authorized = after.models.filter((model) => model.provider === "modelscope");
     expect(authorized).toHaveLength(3);
-    // The token is reported masked, never in the clear.
-    expect(authorized.every((model) => model.credential?.apiKeyMasked)).toBe(true);
-
-    const stored = (await t.deps.projectConfigService.readRaw(projectId)).models as Record<
-      string,
-      unknown
-    >[];
+    // The token is reported masked, never in the clear, and every preset row uses it.
+    expect(after.providers.modelscope?.apiKeyMasked).toBeTruthy();
     expect(
-      stored.filter((model) => model.provider === "modelscope").map((model) => model.api_key),
-    ).toEqual(["ms-token-0001", "ms-token-0001", "ms-token-0001"]);
+      authorized.every(
+        (model) =>
+          model.effective.apiKeySource === "provider" &&
+          model.effective.apiKeyMasked === after.providers.modelscope?.apiKeyMasked,
+      ),
+    ).toBe(true);
+
+    // Stored once, as the group's key; no row holds a copy.
+    const raw = await t.deps.projectConfigService.readRaw(projectId);
+    expect((raw.providers as Record<string, Record<string, unknown>>).modelscope?.api_key).toBe(
+      "ms-token-0001",
+    );
+    const stored = raw.models as Record<string, unknown>[];
+    expect(
+      stored.filter((model) => model.provider === "modelscope" && model.api_key !== undefined),
+    ).toEqual([]);
     const tokenRow = t.deps.db
       .prepare(
         `SELECT refresh_token, access_token_expires_at
@@ -665,6 +663,161 @@ describe("ModelScope key authorization routes", () => {
       { refresh_token: string; access_token_expires_at: string } | undefined;
     expect(tokenRow).toMatchObject({ refresh_token: "ms-refresh-0001" });
     expect(Date.parse(tokenRow?.access_token_expires_at ?? "")).toBeGreaterThan(Date.now());
+  });
+
+  it("in a group where every model has its own key, the token still lands as the group key and the flow completes with 0", async () => {
+    const base = `/api/projects/${projectId}/modelscope-auth`;
+    const models = `/api/projects/${projectId}/models`;
+    const own = presetModelEntries()
+      .filter((entry) => entry.provider === "modelscope")
+      .map((entry, i) => ({
+        provider: "modelscope",
+        modelId: entry.model_id,
+        apiKey: `ms-own-key-000${i}`,
+      }));
+    expect((await ownerClient.put(models, { models: own })).status).toBe(200);
+
+    const flow = (await (
+      await ownerClient.post(`${base}/start`, {})
+    ).json()) as ModelScopeAuthStartResponse;
+    await ownerClient.get(`${base}/${flow.flowId}/status`);
+    const done = (await (
+      await ownerClient.get(`${base}/${flow.flowId}/status`)
+    ).json()) as ModelScopeAuthFlowStatusResponse;
+    expect(done).toEqual({ status: "completed", applied: 0 });
+
+    const after = (await (await ownerClient.get(models)).json()) as ModelsResponse;
+    expect(after.providers.modelscope?.apiKeyMasked).toBeTruthy();
+    // Every model keeps the key it was given.
+    expect(
+      after.models
+        .filter((model) => model.provider === "modelscope")
+        .map((model) => model.effective.apiKeySource),
+    ).toEqual(own.map(() => "model"));
+  });
+
+  it("a model on the group key sends the token refreshed into the group; a model with its own key sends that and asks for no refresh", async () => {
+    const [following, owning] = presetModelEntries()
+      .filter((entry) => entry.provider === "modelscope")
+      .map((entry) => entry.model_id);
+    const models = `/api/projects/${projectId}/models`;
+    await ownerClient.put(models, {
+      models: [
+        { provider: "modelscope", modelId: following },
+        { provider: "modelscope", modelId: owning, apiKey: "ms-own-row-key-0002" },
+      ],
+    });
+    await ownerClient.put(`${models}/providers/modelscope`, { apiKey: "ms-old-access-0001" });
+    // Authorized a while ago: the group's token expires within the refresh window.
+    t.deps.db
+      .prepare(
+        `INSERT INTO model_provider_auth_tokens
+           (project_id, provider, refresh_token, access_token_expires_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        projectId,
+        "modelscope",
+        "ms-refresh-0001",
+        new Date(Date.now() + 60_000).toISOString(),
+        new Date().toISOString(),
+      );
+    const network = stubFetch(({ url }) =>
+      pathOf(url).endsWith("/oauth/refresh")
+        ? jsonResponse({
+            token: {
+              accessToken: "ms-new-access-0003",
+              refreshToken: "ms-refresh-0004",
+              expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            },
+          })
+        : jsonResponse({ error: { message: "Incorrect API key provided." } }, 401),
+    );
+    const refreshes = () => network.calls.filter((c) => pathOf(c.url).endsWith("/oauth/refresh"));
+    const sentKeys = () =>
+      network.calls
+        .filter((c) => !pathOf(c.url).endsWith("/oauth/refresh"))
+        .map((c) => c.headers.get("authorization"));
+
+    await ownerClient.post(`${models}/test`, { provider: "modelscope", modelId: owning! });
+    expect(refreshes()).toEqual([]);
+    expect(new Set(sentKeys())).toEqual(new Set(["Bearer ms-own-row-key-0002"]));
+
+    network.calls.length = 0;
+    await ownerClient.post(`${models}/test`, { provider: "modelscope", modelId: following! });
+    expect(refreshes()).toHaveLength(1);
+    expect(new Set(sentKeys())).toEqual(new Set(["Bearer ms-new-access-0003"]));
+    const raw = await t.deps.projectConfigService.readRaw(projectId);
+    expect((raw.providers as Record<string, Record<string, unknown>>).modelscope?.api_key).toBe(
+      "ms-new-access-0003",
+    );
+  });
+
+  it("a ModelScope group key typed by hand replaces the authorization: its refresh token goes with the old key", async () => {
+    const tokens = () =>
+      t.deps.db
+        .prepare("SELECT refresh_token FROM model_provider_auth_tokens WHERE project_id = ?")
+        .all(projectId);
+    const insertToken = () =>
+      t.deps.db
+        .prepare(
+          `INSERT INTO model_provider_auth_tokens
+             (project_id, provider, refresh_token, access_token_expires_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(projectId, "modelscope", "ms-refresh-0005", null, new Date().toISOString());
+    const group = `/api/projects/${projectId}/models/providers/modelscope`;
+    insertToken();
+    // The group's endpoint is not its key: the authorization stands.
+    await ownerClient.put(group, { baseUrl: "https://ms-proxy.example/v1" });
+    expect(tokens()).toHaveLength(1);
+    await ownerClient.put(group, { apiKey: "ms-typed-key-0006" });
+    expect(tokens()).toEqual([]);
+    insertToken();
+    await ownerClient.put(`/api/projects/${projectId}/models`, {
+      providers: { modelscope: { clearApiKey: true } },
+      models: [],
+    });
+    expect(tokens()).toEqual([]);
+  });
+
+  it("Disconnect ends the authorization: the group key and its refresh token both go, and a later request neither refreshes nor brings the key back", async () => {
+    const base = `/api/projects/${projectId}/modelscope-auth`;
+    const flow = (await (
+      await ownerClient.post(`${base}/start`, {})
+    ).json()) as ModelScopeAuthStartResponse;
+    await ownerClient.get(`${base}/${flow.flowId}/status`);
+    const done = (await (
+      await ownerClient.get(`${base}/${flow.flowId}/status`)
+    ).json()) as ModelScopeAuthFlowStatusResponse;
+    expect(done.status).toBe("completed");
+    const tokens = () =>
+      t.deps.db
+        .prepare("SELECT refresh_token FROM model_provider_auth_tokens WHERE project_id = ?")
+        .all(projectId);
+    expect(tokens()).toHaveLength(1);
+
+    const res = await ownerClient.put(`/api/projects/${projectId}/models/providers/modelscope`, {
+      clearApiKey: true,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ModelsResponse;
+    expect(body.providers.modelscope?.apiKeyMasked).toBeUndefined();
+    const rows = body.models.filter((model) => model.provider === "modelscope");
+    expect(rows.every((model) => model.effective.apiKeySource === "none")).toBe(true);
+    expect(tokens()).toEqual([]);
+
+    const probe = (await (
+      await ownerClient.post(`/api/projects/${projectId}/models/test`, {
+        provider: "modelscope",
+        modelId: rows[0]!.modelId,
+      })
+    ).json()) as { ok: boolean; message?: string };
+    expect(probe.ok).toBe(false);
+    expect(probe.message).toMatch(/has no API key/);
+    expect(await t.deps.projectConfigService.getGroupApiKey(projectId, "modelscope")).toBe(
+      undefined,
+    );
   });
 
   it("answers an unknown or foreign flow with its own not-found code", async () => {

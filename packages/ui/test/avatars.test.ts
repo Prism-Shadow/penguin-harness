@@ -43,7 +43,7 @@ describe("UserAvatar", () => {
     );
     expect(html).toContain('src="data:image/png;base64,AAAA"');
     expect(html).toContain('alt=""');
-    expect(html).toContain("width:64px");
+    expect(html).toContain(`width:${USER_AVATAR_SIZE.preview}px`);
   });
 });
 

@@ -141,8 +141,9 @@ export function orderModelsLikeLibrary<T extends ModelRowLike>(
 }
 
 /**
- * Row shape for the configured-key filter: adds the read-only credential display and the masked
- * env-fallback preview (the DTO's ModelInfo is a superset).
+ * Row shape for the configured-key filter: adds the read-only credential display, the masked
+ * env-fallback preview and the effective connection's key source (the DTO's ModelInfo is a
+ * superset).
  */
 export interface ModelCredentialRowLike extends ModelRowLike {
   credential?: { apiKeyMasked?: string };
@@ -152,17 +153,23 @@ export interface ModelCredentialRowLike extends ModelRowLike {
    * this entry.
    */
   envKeyMasked?: string;
+  /** Where the key the row is used with comes from (GET /models' `effective`); its group's key included. */
+  effective?: { apiKeySource: "model" | "provider" | "env" | "none" };
 }
 
 /**
  * Whether the model has an API key behind it — the single rule shared by the model library, the
- * chat model picker and the chat credential guide: a stored (masked) key **or** a masked env
- * fallback, since a user who exported the variable has configured the key just as deliberately as
- * one who typed it into the dialog. `envKey` is only the NAME of that variable and says nothing
- * about whether it is set, so it never counts on its own.
+ * chat model picker and the chat credential guide: a key of its own, its group's key, or a masked
+ * env fallback, since a user who exported the variable has configured the key just as
+ * deliberately as one who typed it into the dialog. `envKey` is only the NAME of that variable
+ * and says nothing about whether it is set, so it never counts on its own.
  */
 export function hasConfiguredKey(m: ModelCredentialRowLike): boolean {
-  return !!m.credential?.apiKeyMasked || !!m.envKeyMasked;
+  return (
+    !!m.credential?.apiKeyMasked ||
+    !!m.envKeyMasked ||
+    (m.effective !== undefined && m.effective.apiKeySource !== "none")
+  );
 }
 
 /**
@@ -355,7 +362,7 @@ export interface VisibleChatModelsOptions {
 
 /**
  * Candidate list for the chat model picker: library order → keep only models with a key
- * (hasConfiguredKey: stored or env-backed; plus the selected and the default model, unless
+ * (hasConfiguredKey: its own, its group's or env-backed; plus the selected and the default model, unless
  * showAll) → the query then filters whatever is visible. When NO model has a key, the filter
  * degrades to showAll (everything listed), so the picker is never uselessly empty.
  */

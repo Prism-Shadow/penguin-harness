@@ -256,7 +256,8 @@
    * - `data-reveal`: content that just appeared inside a settled surface — a streamed chunk of
    *   text, a new tool row — fades (and de-blurs) in once; put it on the appended element only.
    * - `data-layout-motion`: an element whose size changes between states, the sidebar's width or a
-   *   disclosure's `grid-template-rows: 0fr ↔ 1fr`; the theme sets the duration and the curve.
+   *   disclosure's `grid-template-rows: 0fr ↔ 1fr` — or whose place does, a dock surface lifting
+   *   off the page column to cover it (`top`, `left`); the theme sets the duration and the curve.
    *
    * The presence keyframes move the element through the individual `translate` and `scale`
    * properties, never `transform`, so a layer that positions itself with a `transform` keeps it
@@ -343,7 +344,8 @@
 
   [data-layout-motion] {
     transition-property:
-      width, height, min-width, max-width, flex-basis, grid-template-rows, grid-template-columns;
+      width, height, min-width, max-width, flex-basis, grid-template-rows, grid-template-columns,
+      top, left;
     transition-duration: var(--ui-dur-layout);
     transition-timing-function: var(--ui-ease-layout);
   }

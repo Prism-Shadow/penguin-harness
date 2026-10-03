@@ -66,7 +66,7 @@ An unparseable value stops the server at startup instead of falling back silentl
 
 ### Provider credential variables
 
-When a model entry has no inline `api_key`, it falls back to the provider's environment variable **only when its requests go to that provider's official endpoint**: the entry has no `base_url`, or its `base_url` is the vendor's own endpoint. A `*_BASE_URL` value is used only when the entry does not inline `base_url`; an entry with its own `base_url` is never covered by the environment, even when `OPENAI_BASE_URL` names the same server. Every other entry — the gateway groups' preset endpoints, custom, vLLM and user-created groups with their own endpoints — needs its own `api_key`, and PenguinHarness refuses to build a client for it otherwise; see [Set API keys](/models#set-api-keys).
+When neither a model entry nor its group holds an `api_key` that reaches it, the entry falls back to the provider's environment variable **only when its requests go to that provider's official endpoint**: no `base_url` resolves for it (see [Group connections](#group-connections)), or the one it resolves to is the vendor's own endpoint. A `*_BASE_URL` value is used only when no `base_url` resolves; an entry whose own or group `base_url` points elsewhere is never covered by the environment, even when `OPENAI_BASE_URL` names the same server. Every other entry — the gateway groups' preset endpoints, custom, vLLM and user-created groups with their own endpoints — needs an `api_key` of its own or its group's, and PenguinHarness refuses to build a client for it otherwise; see [Set API keys](/models#set-api-keys).
 
 | Provider | API key | Base URL |
 | --- | --- | --- |
@@ -79,11 +79,11 @@ When a model entry has no inline `api_key`, it falls back to the provider's envi
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables — which, by the rule above, their rows do not fall back to: the variable holds your OpenAI key, and a gateway is not OpenAI. The same holds for the opencode-go models on Anthropic Messages, whose client reads `ANTHROPIC_*`. ModelScope also shares `OPENAI_*` because its group credential is an api-inference token, and all three presets pin the generic Responses client; its rows do not fall back to it either. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. MiniMax's official Responses client uses `MINIMAX_*`; the built-in MiniMax preset carries no base URL and reaches the official endpoint through that client's default. For provider groups and the built-in model catalog, see [Models & Providers](/models).
+The openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables — which, by the rule above, their rows do not fall back to: the variable holds your OpenAI key, and a gateway is not OpenAI. The same holds for the opencode-go models on Anthropic Messages, whose client reads `ANTHROPIC_*`. ModelScope also shares `OPENAI_*` because its group credential is an api-inference token, and its group stores the generic Responses client; its rows do not fall back to it either. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. MiniMax's official Responses client uses `MINIMAX_*`; the built-in MiniMax preset carries no base URL and reaches the official endpoint through that client's default. For provider groups and the built-in model catalog, see [Models & Providers](/models).
 
 ## Project config
 
-`<root>/<project>/.project_config.toml` is the Project's single config file: a hidden file written with mode 0600, with credentials inlined on the model entries. A model's identity is always the `(provider, model_id)` pair. Strings are never concatenated into one id, every reference into this file carries both halves, and the provider is never inferred from a bare `model_id`.
+`<root>/<project>/.project_config.toml` is the Project's single config file: a hidden file written with mode 0600, with credentials inlined in it: once per group in `[providers.<id>]`, and on a model entry that overrides its group. A model's identity is always the `(provider, model_id)` pair. Strings are never concatenated into one id, every reference into this file carries both halves, and the provider is never inferred from a bare `model_id`.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -93,6 +93,7 @@ The openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you
 | `[default_chat]` | table | — | Prefilled defaults for new chats; see [New chat defaults](#new-chat-defaults) |
 | `[command_policy]` | table | Factory set | Deny rules for shell commands, applied ahead of the approval mode; see [Command policy](#command-policy) |
 | `[plugins]` | table | — | The server plugins the Project asks for; see [Plugins](#plugins) |
+| `[providers.<id>]` | table | — | A group's connection, which its models follow; see [Group connections](#group-connections) |
 | `[[models]]` | array of tables | — | The available model entries |
 
 ### Model entries
@@ -102,14 +103,14 @@ The openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you
 | `provider` | string | — | Provider group; with `model_id`, the entry's unique key |
 | `model_id` | string | — | Upstream request id, sent to MMSP unchanged |
 | `context_window` | number | — | Context window size |
-| `client_type` | string | Routed by the vendor family `model_id` begins with | MMSP client type |
+| `client_type` | string | The group's; with neither, routed by the vendor family `model_id` begins with | MMSP client type, this model's own |
 | `display_name` | string | The built-in catalog name | Display name; persisted only when it differs from the catalog |
 | `vision` | boolean | `true` | Whether the model accepts image input |
 | `max_tokens` | number | The agent's `model.max_tokens` | Per-model max output Tokens; overrides the agent's `model.max_tokens` when set |
 | `fast_mode` | boolean | Off | Per-model fast mode (the provider's premium faster serving tier) |
 | `pricing` | table | — | Three price buckets, `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`). Always the list price |
-| `api_key` | string | The provider's environment variable, for the vendor's own endpoint only | Inline credential |
-| `base_url` | string | Preset for some catalog entries | Custom base URL |
+| `api_key` | string | The group key, where it reaches the entry; with none, the provider's environment variable, for the vendor's own endpoint only | Inline credential, this model's own |
+| `base_url` | string | The group's; with neither, the client's default endpoint | Custom base URL, this model's own |
 | `created_at` | string | — | When `api_key` was written (ISO 8601); a display field maintained by the interface layer |
 
 Field notes:
@@ -117,32 +118,66 @@ Field notes:
 - `client_type`: custom endpoints use a generic protocol client: `openai-responses`, `ant-messages` or `openai-chat`. The Web dialog can detect which one a base URL serves. The pre-0.4.2 spelling `openai` is a deprecated alias of `openai-chat`, normalized on read. MMSP's other client types are accepted too: a vendor's official client (`openai-official`, `anthropic-official`, `gemini-official`, `zai-official`, `moonshot-official`, `deepseek-official`, `minimax-official`) and the remaining generic clients (`openai-chat-vllm-adapter`, `openai-embedding`, `google-genai`). Unset, the model id routes to the official client of the vendor family it begins with (`gpt-`, `text-embedding-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`); an id of any other family needs a `client_type`.
 - `fast_mode`: only `true` is persisted. It is offered only for models whose MMSP client can serve it, and the others reject requests that carry it. See [Models](/models#fast-mode).
 - `pricing`: the figure here is the list price. A running promotion is not written to this file: the server keeps it in `web.db` and takes it off when it computes cost. See [Prices and promotions](/models#prices-and-promotions).
-- `base_url`: the built-in catalog presets it for gateway rows. Direct vendor rows leave it unset and reach the vendor's default endpoint, or its `*_BASE_URL` variable.
-- `api_key`: when empty, the entry falls back to the provider's environment variable only when its endpoint is the vendor's own (see [Provider credential variables](#provider-credential-variables)); a gateway, custom or vLLM entry needs its own key.
+- `base_url`: a new Project stores each gateway's endpoint on its group, and a preset row stores one only where it differs from its group's (OpenCode Go's Anthropic Messages rows, custom's Atria Dawn Preview). Nothing fills a missing one when a model is used: direct vendor rows have none and reach the vendor's default endpoint, or its `*_BASE_URL` variable.
+- `api_key`: when empty, the entry uses its group key, unless the entry's own `base_url` is on another origin than the group's (see [Group connections](#group-connections)). With neither, it falls back to the provider's environment variable only when its endpoint is the vendor's own (see [Provider credential variables](#provider-credential-variables)); a gateway, custom or vLLM entry needs a key of its own or its group's.
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
+
+[providers.deepseek]
+api_key = "sk-..."
+created_at = "2026-10-02T08:00:00.000Z"
+
+[providers.openrouter]
+base_url = "https://proxy.example.com/openrouter/v1"
+client_type = "openai-responses"
 
 [[models]]
 provider = "deepseek"
 model_id = "deepseek-flash"
 context_window = 1000000
-vision = true
-api_key = "sk-..."
 
 [models.pricing]
 unit = "usd_per_mtok"
 cache_read = 0.005714
 cache_write = 0.285714
 output = 1.142857
+
+[[models]]
+provider = "openrouter"
+model_id = "openrouter/free"
+context_window = 128000
+vision = false
+api_key = "sk-or-..."
 ```
 
-`pricing.unit` is currently always `usd_per_mtok` (USD per million Tokens). The three buckets map onto the three counters of `token_usage`.
+The deepseek row stores no key and uses the group's; the openrouter row reaches the proxy set on its group with its group's protocol and a key of its own. `pricing.unit` is currently always `usd_per_mtok` (USD per million Tokens). The three buckets map onto the three counters of `token_usage`.
 
 Edit this file with the CLI (`penguin config model …`) or on the Web App's Models page.
 
 > [!WARNING]
 > Do not edit `.project_config.toml` by hand while the service is running. The model has no right to read or write it.
+
+### Group connections
+
+`[providers.<id>]` holds one group's connection, keyed by provider id: a built-in group or one you created. A new Project's file holds one for every built-in group the catalog gives an endpoint or protocol: the gateways' base URL and protocol, Penguin Go's relay base URL, vLLM's protocol; the first-party vendors and custom get none. The Models page's group settings and connecting a group write it, and so does `penguin config model add --provider <group>` without `--model-id`. A user-created group's table is removed together with the group's last model.
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `api_key` | string | The group key, used by every model in the group without a key of its own that goes to the group's endpoint |
+| `base_url` | string | The group's base URL |
+| `client_type` | string | The group's MMSP client type; a model's own `client_type` wins over it |
+| `created_at` | string | When `api_key` was written (ISO 8601); a display field maintained by the interface layer |
+
+Each connection field of a model resolves on its own; the first non-empty value wins:
+
+| Field | Resolution order |
+| --- | --- |
+| `base_url` | model entry → group → none: the client's default endpoint |
+| `client_type` | model entry → group → none: routed by `model_id` |
+| `api_key` | model entry → group, where its key reaches the model → none: the environment, where [Provider credential variables](#provider-credential-variables) allows it |
+
+The file is the only source of these values. The built-in catalog is a reference: it is written into the file when a Project is created and by the Models page's **Add new models** and **Restore defaults**, and it is never read when a request is built. A key belongs to the endpoint it was issued for: the group key reaches a model only when the model has no `base_url` of its own, or its own has the same origin (scheme, host and port) as the group's `base_url`. OpenCode Go's Anthropic Messages rows, at `https://opencode.ai/zen/go` beside the group's `https://opencode.ai/zen/go/v1`, take it; custom's Atria Dawn Preview, which carries its own endpoint, does not. The environment rule judges the `base_url` a model resolves to, so a group `base_url` that points at a proxy ends the fallback for every model in the group.
 
 ### New chat defaults
 
