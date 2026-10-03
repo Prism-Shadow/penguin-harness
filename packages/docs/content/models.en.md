@@ -39,7 +39,7 @@ Select a card to open **Model settings**. It links to the provider's model list 
 
 A group's header shows the provider's logo, the group's name, its model count and an arrow that turns when the group opens, then, on hover or focus, the star that makes it a favorite. On the right it holds, from left to right:
 
-- the group's balance, for TokenDance and DeepSeek once the group has a key, with a divider after it; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
+- the group's balance, for TokenDance and DeepSeek once the group has a key; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
 - the connection, for TokenDance, Penguin Go and ModelScope: **Not connected**, which you select to connect, or **Connected**, a menu with **Sync models** (Penguin Go only), **Reconnect** and **Disconnect**; see [Connect an account](#connect-an-account);
 - **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow** and groups you created; see [Add a model](#add-a-model);
 - the speed test and **Settings** (a gear), which end every group, **Custom** included, so the two stand at the same right edge on every group; see [Measure speed](#measure-speed) and [Group settings](#group-settings).

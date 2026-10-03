@@ -123,11 +123,3 @@ export function connectedMenuItems(provider: ModelProviderInfo): ConnectedMenuIt
     ? ["syncModels", "reconnect", "disconnect"]
     : ["reconnect", "disconnect"];
 }
-
-/**
- * Whether a divider follows the balance: it separates the account's figure from the group's
- * status and actions, so it stands only where the balance leads and something comes after it.
- */
-export function dividerAfterBalance(actions: readonly GroupHeaderAction[]): boolean {
-  return actions[0] === "balance" && actions.length > 1;
-}

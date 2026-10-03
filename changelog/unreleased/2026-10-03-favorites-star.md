@@ -19,4 +19,6 @@ the lock it used to draw read as permission or secrecy, so the owner asked for a
 - **Wording:** 常驻 / 取消常驻 became 收藏 / 取消收藏, and "Pin" / "Unpin" became "Add to
   favorites" / "Remove from favorites", on both toggles. What the toggle does is unchanged, and so
   are the stored choices: a favorite always shows, everything else sits in the fold.
+- **Balance:** a model group's header no longer draws a rule after the account balance; the
+  balance sits among the header's other items at the same spacing.
 - **Docs:** the Web App and Models pages describe the star.

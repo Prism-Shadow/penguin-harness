@@ -14,9 +14,9 @@
  * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
  * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
  * delete). The group header's right side holds the group's actions in a fixed order
- * (group-header.ts): its balance (one menu: pin, refresh, when it was read; a divider after
- * it), the connection ("Not connected", which connects, or one "Connected" menu: Sync models on
- * Penguin Go, Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
+ * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
+ * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
+ * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
  * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, user-defined),
  * the speed test, and the group settings (provider-settings-dialog.tsx) last on every group.
  *
@@ -194,7 +194,6 @@ import {
   HEADER_BUTTON,
   HEADER_LABEL,
   HEADER_SQUARE,
-  dividerAfterBalance,
   groupHeaderActions,
   groupKeyFromEnv,
   groupKeyStored,
@@ -1595,17 +1594,7 @@ export function ModelsPage() {
             {actions.length > 0 && (
               <div className="ml-auto flex shrink-0 items-center gap-2 py-1">
                 {actions.map((action) => (
-                  <Fragment key={action}>
-                    {renderGroupAction(group, action, keyStored)}
-                    {/* A rule between the account's figure and the group's status and
-                          actions, drawn only when something follows the balance. */}
-                    {action === "balance" && dividerAfterBalance(actions) && (
-                      <span
-                        aria-hidden
-                        className="h-7 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
-                      />
-                    )}
-                  </Fragment>
+                  <Fragment key={action}>{renderGroupAction(group, action, keyStored)}</Fragment>
                 ))}
               </div>
             )}
