@@ -35,3 +35,5 @@ The plugins are data, not code — there is nothing to build here. The loader, i
 pnpm --filter @prismshadow/penguin-core build       # includes the plugin loader
 pnpm --filter @prismshadow/penguin-core test        # loader, README tables, the hook scripts against fake Traces
 ```
+
+Each plugin that ships skills also has its own `test/skills.test.ts`: it runs every `skills/<name>/` through [`@prismshadow/skills`](../packages/skills) (its `SKILL.md` must pass the parser vendored from vercel-labs/skills), so `pnpm -r test` covers them. The loader's own rules on top of that — a one-line description, skill names unique across the library — are core's test.

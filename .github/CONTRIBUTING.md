@@ -63,7 +63,7 @@ Plugins are the exception to the snapshot rule: in a workspace checkout core's l
 the repo's `plugins/<name>/` directories directly, not pnpm's injected copies (plugins have
 no `build` script, so those copies would never re-sync), so an edit under `plugins/` — a new
 skill, a changed SKILL.md, a bumped `plugin.json` — is live in `pnpm dev` and in the test
-suites at once. Any content change under a plugin must bump its `plugin.json` date version
+suites at once. Any content change under a plugin (its `package.json` and `test/` aside) must bump its `plugin.json` date version
 (`YYYY.MM.DD.N`): that version is how installed copies learn they are behind, and CI fails a
 pull request whose plugin files changed without it (`scripts/check-plugin-versions.mjs`).
 

@@ -26,10 +26,13 @@ const git = (...args) => execFileSync("git", args, { encoding: "utf8" });
  * it cannot be invisible to a user — and demanding a `plugin.json` bump for it would advertise an
  * update whose content is identical. Release preparation bumps every plugin's `package.json` in
  * lockstep, so without this the first release after this guard landed failed on all thirteen.
+ * The same holds for a plugin's `test/` directory, which neither the installer nor `files` ships.
  */
 const isInstalledContent = (file) => {
   const parts = file.split("/");
-  return !(parts.length === 3 && parts[2] === "package.json");
+  if (parts.length === 3 && parts[2] === "package.json") return false;
+  // A plugin's own tests (test/, e.g. the skills lint) are neither installed nor packed.
+  return parts[2] !== "test";
 };
 
 const changed = git("diff", "--name-only", `${base}...HEAD`, "--", "plugins/")

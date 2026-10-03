@@ -92,6 +92,20 @@ describe("loadLibraryPlugins", () => {
     }
   });
 
+  // Whether each SKILL.md parses is each plugin's own test, through the @prismshadow/skills
+  // package; this one is the library's: it installs into one flat skills/
+  // directory, so a second skill of the same name would silently overwrite the first.
+  it("ships no skill name from two plugins", () => {
+    const owner = new Map<string, string>();
+    for (const plugin of loadLibraryPlugins()) {
+      for (const skill of plugin.skills) {
+        expect(owner.get(skill.name), `${plugin.name}/${skill.name}`).toBeUndefined();
+        owner.set(skill.name, plugin.name);
+      }
+    }
+    expect(owner.size).toBeGreaterThan(0);
+  });
+
   it("collects auxiliary files a SKILL.md references (reference/*), excluding SKILL.md and icon.svg", () => {
     const humanizer = librarySkill("humanizer");
     expect(humanizer).toBeDefined();
