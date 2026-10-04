@@ -1,6 +1,8 @@
 /**
  * The PR graph page (`proposals/graph`): the delivery repository's open PRs as a commit graph,
- * newest on top and the base branch at the bottom, laid out by pr-graph-model.ts. Each row is one
+ * drawn the way Sapling's smartlog draws a stack — newest on top, a line forking off a node right
+ * above it in the column to its right, joining back with `├─╯`, the base branch last — from the
+ * rows the server laid out (the same ones the CLI prints). Each row is one
  * PR at its head — its number (to GitHub), the proposal it is the impl PR of (to that proposal's
  * page), its title and branch, how many commits it adds to the layer below, the marks the server
  * gave it (top, fork, the closed PRs its base led through, stale, off the chain and why) and the PRs
@@ -16,8 +18,9 @@
  * Each registered deployment is marked on the row its commit sits on, and listed under the
  * graph when it sits on none.
  *
- * The lanes are an SVG drawn behind fixed-height rows, so a row's geometry never depends on how
- * its text wraps: the text truncates and carries the full value in its tooltip.
+ * Each row's glyph cells are drawn beside its text (pr-graph-lanes.tsx), at a fixed height, so a
+ * row's geometry never depends on how its text wraps: the text truncates and carries the full
+ * value in its tooltip.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -34,23 +37,15 @@ import { useLocale } from "../../state/locale";
 import { orgContributedPagePath, orgProposalPath } from "../company/company-nav";
 import { OrgEmptyLine, OrgPage, useOrg } from "../company/org-layout";
 import { ErrorLine, TitleButton } from "../company/shared";
-import {
-  baseStacks,
-  focusedProposal,
-  foldedAsMerged,
-  layoutGraph,
-  rowOfProposal,
-  graphGeometry,
-  topDown,
-} from "./pr-graph-model";
+import { baseStacks, focusedProposal, foldedAsMerged, nodeOfProposal } from "./pr-graph-model";
 import { FOCUS_WASH, Mark, NodeListSection, NodeRow, UnplacedSection } from "./pr-graph-rows";
 import { DeployDialog, DeployableRow, useDeployScripts } from "./pr-graph-deploy";
 import { DeployDock, useDeployJobs } from "./pr-graph-deploy-dock";
 import { AssociateDialog } from "./pr-graph-associate";
 import { DeploymentMarks, DeploymentsOff } from "./pr-graph-deployments";
-import { FoldedLine, GraphLanes, RoadmapHeading, displayMetrics } from "./pr-graph-lanes";
+import { FoldedLine, GraphCells, RoadmapHeading, graphGeometry } from "./pr-graph-lanes";
 import { useProposalRoadmaps } from "./pr-graph-roadmaps";
-import { displayLayout } from "./pr-graph-segments";
+import { displayRows, linesFromAbove } from "./pr-graph-segments";
 
 /** Reads of a graph the organization's machine is still building, and the pause between them. */
 const GRAPH_READ_TRIES = 4;
@@ -128,10 +123,12 @@ export function GraphPage() {
     return () => clearTimeout(timer);
   }, [refreshing, projectId, orgId]);
 
-  const layout = useMemo(
-    () => (graph === null ? null : topDown(layoutGraph(graph.nodes, graph.top))),
-    [graph],
-  );
+  // The server laid the graph out (smartlog rows); a node with no row is listed apart.
+  const detached = useMemo(() => {
+    const drawn = new Set(graph?.rows.filter((r) => r.kind === "node").map((r) => r.key));
+    return graph?.nodes.filter((n) => !drawn.has(n.key)) ?? [];
+  }, [graph]);
+  const byKey = useMemo(() => new Map(graph?.nodes.map((n) => [n.key, n])), [graph]);
   const remPx = useRootFontPx();
   const geo = useMemo(() => graphGeometry(remPx), [remPx]);
   // Segments: each run between forks headed by its roadmaps, folded by clicking that heading.
@@ -145,22 +142,26 @@ export function GraphPage() {
     });
   const display = useMemo(
     () =>
-      layout === null
+      graph === null
         ? null
-        : displayLayout(
-            layout.rows,
-            (r) => (r.node?.proposal ? (roadmapsByProposal.get(r.node.proposal.number) ?? []) : []),
+        : displayRows(
+            graph.rows,
+            graph.nodes,
+            (n) => (n.proposal ? (roadmapsByProposal.get(n.proposal.number) ?? []) : []),
             folded,
           ),
-    [layout, roadmapsByProposal, folded],
+    [graph, roadmapsByProposal, folded],
   );
+  const up = useMemo(() => (display === null ? [] : linesFromAbove(display)), [display]);
   // The row under the pointer; its lanes' dot and edge light up with it.
   const [hovered, setHovered] = useState<number | null>(null);
-  const focusLayoutRow = layout === null || focus === null ? -1 : rowOfProposal(layout.rows, focus);
+  const focusNode = graph === null || focus === null ? null : nodeOfProposal(graph.nodes, focus);
   const focusRow =
-    display === null
+    display === null || focusNode === null
       ? -1
-      : display.rows.findIndex((d) => d.kind === "node" && d.row === focusLayoutRow);
+      : display.findIndex(
+          (d) => d.kind === "row" && d.row.kind === "node" && d.row.key === focusNode.key,
+        );
   const focusUnplaced =
     graph !== null && focus !== null && graph.unplaced.some((u) => u.number === focus);
 
@@ -194,16 +195,15 @@ export function GraphPage() {
   );
   const onChain = graph?.nodes.filter((n) => n.onChain).length ?? 0;
   const drawnOff = useMemo(() => {
-    const undrawn = new Set(layout?.detached.map((n) => n.key));
+    const undrawn = new Set(detached.map((n) => n.key));
     return graph?.nodes.filter((n) => !n.onChain && !undrawn.has(n.key)) ?? [];
-  }, [graph, layout]);
+  }, [graph, detached]);
   // Merged proposals off the chain are finished business: folded into one line unless asked for.
   const [showMerged, setShowMerged] = useState(false);
   const lists = useMemo(() => {
     const keep = <T,>(items: readonly T[], status: (item: T) => string | null | undefined) =>
       showMerged ? [...items] : items.filter((item) => !foldedAsMerged(status(item)));
     const off = drawnOff;
-    const detached = layout?.detached ?? [];
     const unplaced = graph?.unplaced ?? [];
     const folded =
       off.filter((n) => foldedAsMerged(n.proposal?.status)).length +
@@ -215,7 +215,7 @@ export function GraphPage() {
       unplaced: keep(unplaced, (u) => u.status),
       folded,
     };
-  }, [drawnOff, layout, graph, showMerged]);
+  }, [drawnOff, detached, graph, showMerged]);
 
   const crumb = (
     <nav aria-label={S.nav.org.proposals} className="mb-3 text-xs text-gray-500 dark:text-gray-400">
@@ -247,7 +247,7 @@ export function GraphPage() {
       {crumb}
       {error !== null ? (
         <ErrorLine message={t.loadFailed} detail={error} onRetry={() => void load()} />
-      ) : graph === null || layout === null ? (
+      ) : graph === null ? (
         <div className="space-y-2" aria-busy="true">
           <Skeleton className="h-10" />
           <Skeleton className="h-10" />
@@ -291,26 +291,45 @@ export function GraphPage() {
 
           <div ref={listRef} className="overflow-x-auto">
             {display !== null && (
-              <div className="relative" style={{ height: displayMetrics(display, geo).total }}>
-                <ol className="absolute inset-0">
-                  {display.rows.map((d, i) => {
-                    const heading = d.kind !== "node";
-                    return (
-                      <li
-                        key={d.kind === "node" ? `n${d.row}` : `${d.kind}${d.segment}`}
-                        data-focus={i === focusRow ? "true" : undefined}
-                        style={{
-                          height: d.kind === "node" ? geo.row : geo.head,
-                          paddingLeft: display.widths[i]! * geo.lane + geo.textGap,
-                        }}
-                        onMouseEnter={() => setHovered(i)}
-                        onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
-                        onClick={heading ? () => toggleFold(d.segment) : undefined}
-                        // A hairline between rows: a node's two lines read as one block, apart
-                        // from the next. A roadmap heading folds its segment on a click.
-                        className={`flex items-center border-b border-line-muted pr-3 transition-colors duration-150 last:border-b-0 ${
-                          heading ? "cursor-pointer select-none" : ""
-                        } ${i === focusRow ? FOCUS_WASH : i === hovered ? "bg-surface-muted" : ""}`}
+              <ol>
+                {display.map((d, i) => {
+                  const heading = d.kind === "roadmap" || d.kind === "folded";
+                  const node =
+                    d.kind === "row" && d.row.kind === "node"
+                      ? (byKey.get(d.row.key) ?? null)
+                      : null;
+                  const height = geo.height(d);
+                  return (
+                    <li
+                      key={
+                        d.kind === "row"
+                          ? `${d.row.kind}${i}:${d.row.key}`
+                          : `${d.kind}${d.segment}`
+                      }
+                      data-focus={i === focusRow ? "true" : undefined}
+                      style={{ height }}
+                      onMouseEnter={() => setHovered(i)}
+                      onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
+                      onClick={heading ? () => toggleFold(d.segment) : undefined}
+                      // A hairline under each node's row: its two lines read as one block. A
+                      // roadmap heading or a folded run folds its segment on a click.
+                      className={`flex items-center pr-3 transition-colors duration-150 ${
+                        node !== null ? "border-b border-line-muted" : ""
+                      } ${heading ? "cursor-pointer select-none" : ""} ${
+                        i === focusRow ? FOCUS_WASH : i === hovered ? "bg-surface-muted" : ""
+                      }`}
+                    >
+                      <GraphCells
+                        cells={d.kind === "row" ? d.row.cells : d.cells}
+                        up={up[i] ?? []}
+                        node={node}
+                        height={height}
+                        hovered={i === hovered}
+                        geo={geo}
+                      />
+                      <div
+                        className="flex min-w-0 flex-1 items-center"
+                        style={{ paddingLeft: geo.textGap }}
                       >
                         {d.kind === "roadmap" ? (
                           <RoadmapHeading
@@ -322,31 +341,19 @@ export function GraphPage() {
                           />
                         ) : d.kind === "folded" ? (
                           <FoldedLine count={d.count} />
-                        ) : layout.rows[d.row]!.node === null ? (
-                          <BaseRow graph={graph} />
-                        ) : (
+                        ) : d.row.kind === "base" ? (
+                          <BaseRow graph={graph} behind={d.row.behind} />
+                        ) : node !== null ? (
                           deployable(
-                            layout.rows[d.row]!.node!,
-                            <NodeRow
-                              graph={graph}
-                              node={layout.rows[d.row]!.node!}
-                              onOpenProposal={openProposal}
-                            />,
+                            node,
+                            <NodeRow graph={graph} node={node} onOpenProposal={openProposal} />,
                           )
-                        )}
-                      </li>
-                    );
-                  })}
-                </ol>
-                {/* Over the rows (a focused row's wash stays under the dots), never taking a click. */}
-                <GraphLanes
-                  rows={layout.rows}
-                  display={display}
-                  lanes={layout.lanes}
-                  hovered={hovered}
-                  geo={geo}
-                />
-              </div>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
             )}
           </div>
 
@@ -423,7 +430,7 @@ export function GraphPage() {
   );
 }
 
-function BaseRow({ graph }: { graph: ProposalGraphResponse }) {
+function BaseRow({ graph, behind }: { graph: ProposalGraphResponse; behind: number | null }) {
   const t = S.company.proposals.graph;
   return (
     <div className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs`}>
@@ -434,12 +441,10 @@ function BaseRow({ graph }: { graph: ProposalGraphResponse }) {
           {graph.base.head.slice(0, 9)}
         </span>
       )}
-      {graph.base.fork &&
-        (baseStacks(graph.nodes) > 1 ? (
-          <Mark tone="muted">{t.baseStacks(baseStacks(graph.nodes))}</Mark>
-        ) : (
-          <Mark tone="attention">{t.baseForked}</Mark>
-        ))}
+      {behind !== null && behind > 0 && <Mark tone="attention">{t.baseBehind(behind)}</Mark>}
+      {baseStacks(graph.nodes) > 1 && (
+        <Mark tone="muted">{t.baseStacks(baseStacks(graph.nodes))}</Mark>
+      )}
       <DeploymentMarks deployments={graph.deployments} at="" />
     </div>
   );

@@ -6523,7 +6523,7 @@ Benchmark：
         loadFailed: "关系图读取失败",
         partial: "关系图不完整，以下各项没读到：",
         base: "底座",
-        baseForked: "底座上分叉",
+        baseBehind: (n: number): string => `落后 ${n}`,
         baseStacks: (n: number): string => `底座上 ${n} 个 stack`,
         top: "链顶",
         fork: "分叉",

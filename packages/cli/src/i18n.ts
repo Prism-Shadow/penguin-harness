@@ -760,6 +760,8 @@ export interface Messages {
     graphUnplacedReason(reason: string, at: string, into: string, base: string): string;
     graphErrors(): string;
     graphDeploymentsOff(): string;
+    /** The base branch's row: the commits it gained since the first stack's bottom was built. */
+    graphBaseBehind(n: number): string;
     deploymentRegistered(id: string, url: string | null): string;
     proposalFeedbackRecorded(number: number): string;
     proposalConcluded(number: number, owner: string): string;
@@ -2075,6 +2077,7 @@ const en: Messages = {
       })[reason] ?? reason,
     graphErrors: () => "Not read from GitHub:",
     graphDeploymentsOff: () => "Deployments on no layer:",
+    graphBaseBehind: (n) => `(behind ${n})`,
     deploymentRegistered: (id, url) =>
       url === null
         ? `Registered deployment ${id}.`
@@ -3351,6 +3354,7 @@ const zh: Messages = {
       })[reason] ?? reason,
     graphErrors: () => "没能从 GitHub 读到：",
     graphDeploymentsOff: () => "不在图上的部署：",
+    graphBaseBehind: (n) => `（落后 ${n}）`,
     deploymentRegistered: (id, url) =>
       url === null ? `已登记部署 ${id}。` : `已登记部署 ${id}（server，${url}）。`,
     proposalFeedbackRecorded: (number) => `已记录对提案 #${number} 的反馈。`,

@@ -88,6 +88,7 @@ import type {
   ProposalDetail,
   ProposalGraphNode,
   ProposalGraphResponse,
+  ProposalGraphRow,
   ProposalGraphDeployment,
   ProposalDeploymentsResponse,
   ProposalTestGroupsResponse,
@@ -599,8 +600,10 @@ function renderProposals(items: readonly ProposalItem[], t: Messages): string {
 }
 
 /**
- * `proposal graph`: the chain from the base branch, one node per line indented by its depth,
- * then the nodes off the chain with the reason each is off, and the proposals whose impl is not
+ * `proposal graph`: the repository, then the graph as the server laid it out (`rows`, Sapling's
+ * smartlog shape: newest on top, a line forking off a node in the column to its right right above
+ * it, joining back with `├─╯`, the base branch the last row `~`), each node's row followed by its
+ * line; then the nodes the graph cannot draw, with the reason, and the proposals whose impl is not
  * on the graph with the reason why. Each line: the PR (`branch` for an impl branch no PR is open
  * on), its branch and head, the layer's size, the marks, the proposal, the origins' twins.
  * Relations, statuses and marks stay in English: they are field values; the reasons are
@@ -655,16 +658,6 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
       ...origins,
     ].join("  ");
   };
-  const depth = (n: ProposalGraphNode): number => {
-    let d = 1;
-    let at = n.parent;
-    // The nodes arrive in chain order; the cap guards a cycle of declared bases.
-    while (at !== null && at !== "" && d < g.nodes.length + 1) {
-      d++;
-      at = byKey.get(at)?.parent ?? null;
-    }
-    return d;
-  };
   // Each deployment sits on a layer (`""` = the base branch) or on none.
   const deployments = g.deployments;
   const deploymentMark = (d: ProposalGraphDeployment): string =>
@@ -674,13 +667,17 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
     return marks.length > 0 ? `  ${marks.join("  ")}` : "";
   };
   const offDeployments = deployments.filter((d) => d.at === null);
-  const chain = g.nodes.filter((n) => n.onChain);
-  const off = g.nodes.filter((n) => !n.onChain);
+  const drawn = new Set(g.rows.filter((r) => r.kind === "node").map((r) => r.key));
+  const off = g.nodes.filter((n) => !drawn.has(n.key));
+  const cells = (r: ProposalGraphRow): string => r.cells.join("");
+  const row = (r: ProposalGraphRow): string => {
+    if (r.kind === "join") return cells(r).trimEnd();
+    if (r.kind === "node") return `${cells(r)} ${line(byKey.get(r.key)!)}${on(r.key)}`;
+    const behind = r.behind === null || r.behind === 0 ? "" : ` ${t.org.graphBaseBehind(r.behind)}`;
+    return `${cells(r)} ${g.base.branch} ${short(g.base.head)}${behind}${stacks > 1 ? `  [${stacks} stacks]` : ""}${on("")}`;
+  };
   const blocks = [
-    [
-      `${g.repo} ${g.base.branch} ${short(g.base.head)}${g.base.fork ? (stacks > 1 ? `  [${stacks} stacks]` : "  [fork]") : ""}${on("")}`,
-      ...chain.map((n) => indent(depth(n), line(n) + on(n.key))),
-    ].join("\n"),
+    [g.repo, ...g.rows.map(row)].join("\n"),
     ...(off.length > 0
       ? [[t.org.graphOffChain(), ...off.map((n) => indent(1, line(n) + on(n.key)))].join("\n")]
       : []),

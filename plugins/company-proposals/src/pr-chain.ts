@@ -23,18 +23,20 @@
  *    base moved on after the stack was built. The node is `stale`, its `behind` the commits the
  *    base gained, and the layers above it stay on the chain: one move of the base does not scatter
  *    the graph. Only a head with no fork point on the base's history (no merge base) is an old line.
- * 3. At a fork the chain takes the one branch that keeps going (a child with stacked children of
- *    its own); the others are off the chain. When none or several keep going, choosing takes the
- *    record — the roadmap's order — which this plugin does not read: the graph walks every branch,
- *    marks the fork and names no single top. The base branch can carry several stacks this way,
- *    each starting on it and keeping going; every branch walked has its own last layer (`tops`).
+ * 3. At a fork inside a stack the chain takes the one branch that keeps going (a child with
+ *    stacked children of its own); the others are `not-taken`. When none or several keep going,
+ *    choosing takes the record — the roadmap's order — which this plugin does not read: the graph
+ *    walks every branch, marks the fork and names no single top.
+ * 3a. Rule 3 does not apply on the base branch: every line hanging straight from it is a stack of
+ *    its own and is never `not-taken` — a single PR that goes no further is a standalone stack.
+ *    Every branch walked has its own last layer (`tops`). The walk itself is chain-walk.ts.
  *
  * The nodes are the heads graph-heads.ts lists — open PRs and the impl branches no open PR claims
  * — keyed by head branch. Everything here is pure: the reader (pr-graph.ts) fetches, buildGraph
  * lays out what it read — each node with its parent, edge and chain verdict, the proposal whose
  * impl it is and the PR every other origin has on the same branch, each proposal whose impl is
- * not on the graph with the reason why, and each registered deployment on the layer its commit
- * sits on (deployments.ts).
+ * not on the graph with the reason why, each registered deployment on the layer its commit
+ * sits on (deployments.ts), and the rows the graph is drawn in (smartlog.ts).
  */
 import type {
   ProposalGraphNode,
@@ -48,12 +50,11 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { placeDeployment, type DeploymentReading } from "./deployments.js";
 import { BASE_KEY, headsOf, pullKey, type GraphHead } from "./graph-heads.js";
+import { WALK_CAP, walkChain } from "./chain-walk.js";
 import { adoptNearest, type Lineage } from "./graph-lineage.js";
+import { smartlogRows } from "./smartlog.js";
 
 export { pullKey };
-
-/** Hops walked through merged or closed PRs, and nodes walked up a parent line, before giving up. */
-const WALK_CAP = 1000;
 
 /** A merged or closed PR found on a branch the walk needed: where the walk goes next. */
 export interface ShutPull {
@@ -153,89 +154,6 @@ export function edgeVerdict(
     return { stacked: true, stale: true };
   }
   return { stacked: false, reason: "old-line" };
-}
-
-export interface ChainNode {
-  key: string;
-  parent: string | null;
-  /** The edge to the parent holds. */
-  stacked: boolean;
-  /** Why it is off already, before the walk: its own edge or its declared base. */
-  off: ProposalGraphOffReason | null;
-}
-
-export interface Chain {
-  /** On the chain, in walk order (each node after its parent). */
-  order: string[];
-  /** The chain's last layer, or null when it is empty or a fork could not be decided. */
-  top: string | null;
-  /** The last layer of every branch the walk took, in the nodes' order: one per stack. */
-  tops: string[];
-  /** Nodes with more than one stacked child; BASE_KEY = the base branch. */
-  forks: Set<string>;
-  /** Why each node off the chain is off, and the node the reason names. */
-  off: Map<string, { reason: ProposalGraphOffReason; at: string | null }>;
-}
-
-/**
- * Walks the chain from the base branch (rule 3 at each fork) and says why every other node is
- * off it. The nodes come in drawing order (graph-heads.ts); siblings and tops keep that order.
- */
-export function walkChain(nodes: readonly ChainNode[]): Chain {
-  const byKey = new Map(nodes.map((n) => [n.key, n]));
-  const rank = new Map(nodes.map((n, i) => [n.key, i]));
-  const kids = new Map<string, string[]>();
-  for (const n of nodes) {
-    if (n.parent === null || !n.stacked || n.off !== null) continue;
-    kids.set(n.parent, [...(kids.get(n.parent) ?? []), n.key]);
-  }
-  const off = new Map<string, { reason: ProposalGraphOffReason; at: string | null }>();
-  const forks = new Set<string>();
-  const order: string[] = [];
-  const leaves: string[] = [];
-  const seen = new Set<string>([BASE_KEY]);
-  const todo: string[] = [BASE_KEY];
-  while (todo.length > 0) {
-    const at = todo.pop()!;
-    const children = (kids.get(at) ?? []).filter((k) => !seen.has(k));
-    if (children.length === 0) {
-      if (at !== BASE_KEY) leaves.push(at);
-      continue;
-    }
-    if (children.length > 1) forks.add(at);
-    const going = children.filter((k) => (kids.get(k)?.length ?? 0) > 0);
-    // One child, or the one that keeps going; otherwise undecided — every candidate is walked.
-    const taken = children.length === 1 || going.length === 0 ? children : going;
-    for (const k of children) {
-      seen.add(k);
-      if (taken.includes(k)) {
-        order.push(k);
-        todo.push(k);
-      } else off.set(k, { reason: "not-taken", at });
-    }
-  }
-
-  // Everything else: its own reason, or the reason of the line it hangs from.
-  const onChain = new Set(order);
-  for (const n of nodes) {
-    if (onChain.has(n.key) || off.has(n.key)) continue;
-    if (n.off !== null) off.set(n.key, { reason: n.off, at: null });
-    else if (!n.stacked) off.set(n.key, { reason: "old-line", at: null });
-    else if (inCycle(n.key, byKey)) off.set(n.key, { reason: "cycle", at: null });
-    else off.set(n.key, { reason: "above", at: n.parent });
-  }
-  const tops = [...leaves].sort((a, b) => rank.get(a)! - rank.get(b)!);
-  return { order, top: tops.length === 1 ? tops[0]! : null, tops, forks, off };
-}
-
-/** Whether walking up the parents from a node comes back to it. */
-function inCycle(start: string, byKey: ReadonlyMap<string, ChainNode>): boolean {
-  let at = byKey.get(start)?.parent ?? null;
-  for (let steps = 0; at !== null && at !== BASE_KEY && steps < WALK_CAP; steps++) {
-    if (at === start) return true;
-    at = byKey.get(at)?.parent ?? null;
-  }
-  return false;
 }
 
 /** A registered impl PR that is not an open PR on the delivery repository, as GitHub answers it. */
@@ -462,6 +380,7 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
     nodes: drawn,
     top: chain.top,
     tops: chain.tops,
+    rows: smartlogRows(drawn, chain.top),
     unplaced: [...unplaced, ...branchUnplaced].sort((a, b) => a.number - b.number),
     errors: input.errors,
     checkedAt: input.checkedAt,

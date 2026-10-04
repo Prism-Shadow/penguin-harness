@@ -1862,7 +1862,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(await cli(["org", "proposal", "diff", "7"])).toBe(1);
   });
 
-  it("graph prints the chain indented by depth, each line with its PR, proposal, origins and marks, then what is off the chain and why", async () => {
+  it("graph prints the server's smartlog rows, each node's with its PR, proposal, origins and marks, then what it cannot draw and why", async () => {
     server.addProposal("acme", { number: 1 });
     const node = (n: Record<string, unknown>) => ({
       key: n.branch,
@@ -1945,9 +1945,31 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           onChain: false,
           off: { reason: "old-line", at: null },
         }),
+        // Its declared base leads nowhere: the graph cannot draw it.
+        node({
+          number: 14,
+          branch: "feat/x",
+          head: "ffffffffffff",
+          base: "gone",
+          parent: null,
+          ahead: null,
+          relation: "unknown",
+          stacked: false,
+          onChain: false,
+          off: { reason: "no-base", at: null },
+        }),
       ],
       top: null,
       tops: ["feat/b", "impl/d"],
+      rows: [
+        { kind: "node", key: "feat/b", cells: ["○ "], behind: null },
+        { kind: "node", key: "impl/d", cells: ["│ ", "○ "], behind: null },
+        { kind: "join", key: "feat/a", cells: ["├─", "╯ "], behind: null },
+        { kind: "node", key: "feat/c", cells: ["│ ", "× "], behind: null },
+        { kind: "join", key: "feat/a", cells: ["├─", "╯ "], behind: null },
+        { kind: "node", key: "feat/a", cells: ["○ "], behind: null },
+        { kind: "base", key: "", cells: ["~ "], behind: 3 },
+      ],
       unplaced: [
         {
           number: 2,
@@ -1966,13 +1988,17 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(await cli(["org", "proposal", "graph"])).toBe(0);
     expect(out()).toBe(
       [
-        "acme/site dev aaaaaaaaa",
-        "  #11 feat/a bbbbbbbbb +2 -3  [stale, behind dev by 3, restack pending]  proposal #1 ready  origin #801 behind",
-        `    #12 feat/b ccccccccc +1 -2  [top, via closed #9, stale, restack pending]  ${t.org.graphNoProposal()}`,
-        "    branch impl/d eeeeeeeee +1  [top]  proposal #3 drafting",
+        "acme/site",
+        `○  #12 feat/b ccccccccc +1 -2  [top, via closed #9, stale, restack pending]  ${t.org.graphNoProposal()}`,
+        "│ ○  branch impl/d eeeeeeeee +1  [top]  proposal #3 drafting",
+        "├─╯",
+        `│ ×  #13 feat/c ddddddddd +3 -4  [${t.org.graphOffReason("old-line", "#11", "diverged", "feat/a")}]  ${t.org.graphNoProposal()}`,
+        "├─╯",
+        "○  #11 feat/a bbbbbbbbb +2 -3  [stale, behind dev by 3, restack pending]  proposal #1 ready  origin #801 behind",
+        `~  dev aaaaaaaaa ${t.org.graphBaseBehind(3)}`,
         "",
         t.org.graphOffChain(),
-        `  #13 feat/c ddddddddd +3 -4  [${t.org.graphOffReason("old-line", "#11", "diverged", "feat/a")}]  ${t.org.graphNoProposal()}`,
+        `  #14 feat/x fffffffff  [${t.org.graphOffReason("no-base", "?", "unknown", "gone")}]  ${t.org.graphNoProposal()}`,
         "",
         t.org.graphUnplaced(),
         `  proposal #2 approved  https://github.com/acme/site/pull/5  [${t.org.graphUnplacedReason("merged", "?", "feat/a", "dev")}]`,
@@ -2070,6 +2096,10 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       ],
       top: "feat/a",
       tops: ["feat/a"],
+      rows: [
+        { kind: "node", key: "feat/a", cells: ["○ "], behind: null },
+        { kind: "base", key: "", cells: ["~ "], behind: null },
+      ],
       unplaced: [],
       errors: [],
       checkedAt: "2026-09-30T00:00:00.000Z",
@@ -2139,8 +2169,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(await cli(["org", "proposal", "graph"])).toBe(0);
     expect(out()).toBe(
       [
-        "acme/site dev aaaaaaaaa  @old aaaaaaaaa",
-        `  #11 feat/a bbbbbbbbb +2  [top]  ${t.org.graphNoProposal()}  @here bbbbbbbbb  @late eeeeeeeee +3`,
+        "acme/site",
+        `○  #11 feat/a bbbbbbbbb +2  [top]  ${t.org.graphNoProposal()}  @here bbbbbbbbb  @late eeeeeeeee +3`,
+        "~  dev aaaaaaaaa  @old aaaaaaaaa",
         "",
         t.org.graphDeploymentsOff(),
         "  @local fffffffff  v1-5-gfffffffff  http://h:3",

@@ -1,7 +1,13 @@
 /**
- * What the PR graph draws beside its rows: the lanes (every edge, then every dot over them) over
- * the display rows of pr-graph-segments, whose heights differ — a PR's row is two lines, a
- * roadmap heading and a folded run one — and the two row kinds that segmenting adds.
+ * The PR graph's glyph cells, drawn: each display row (pr-graph-segments.ts) carries the cells
+ * the server laid out — two characters per column, the same ones `penguin org proposal graph`
+ * prints — and the page draws them in a fixed-width grid beside the row's text. A text glyph
+ * cannot stretch to a row two lines tall, so each cell is drawn as a few strokes instead: `│` a
+ * line through, a node a dot with its line down to its parent, `├─╯` a line joining back into
+ * the node below, `~` the base branch. A line into a cell from above is drawn when the cell
+ * above goes on down, so the strokes meet across rows of different heights.
+ *
+ * Also here: the two row kinds segmenting adds — a segment's roadmap heading and a folded run.
  */
 import { Link } from "react-router";
 import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
@@ -9,117 +15,141 @@ import { Chevron, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/pen
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { orgChannelPath } from "../company/company-nav";
-import type { GraphGeometry, GraphRow } from "./pr-graph-model";
 import { RELATION_TONE } from "./pr-graph-rows";
-import type { DisplayLayout, RoadmapRef } from "./pr-graph-segments";
+import { FOLDED_GLYPH, type DisplayRow, type RoadmapRef } from "./pr-graph-segments";
 
-/** Each display row's height and centre, from the geometry. */
-export function displayMetrics(display: DisplayLayout, geo: GraphGeometry) {
-  const heights = display.rows.map((d) => (d.kind === "node" ? geo.row : geo.head));
-  const tops: number[] = [];
-  let y = 0;
-  for (const h of heights) {
-    tops.push(y);
-    y += h;
-  }
-  return { heights, tops, centers: tops.map((t, i) => t + heights[i]! / 2), total: y };
+/** The measures, in rem: the theme's text size sets the root font-size, so the graph scales with it. */
+const NODE_REM = 3.75;
+const HEAD_REM = 2.25;
+const JOIN_REM = 1.25;
+const CELL_REM = 1;
+const DOT_REM = 0.28;
+const TEXT_GAP_REM = 0.625;
+
+export interface GraphGeometry {
+  cell: number;
+  dot: number;
+  textGap: number;
+  height: (d: DisplayRow) => number;
 }
 
-/** An edge from (x1,y1) to its parent at (x2,y2), bending beside the parent within half its row. */
-function edgeD(x1: number, y1: number, x2: number, y2: number, half: number): string {
-  if (x1 === x2) return `M${x1} ${y1}V${y2}`;
-  const dir = y1 < y2 ? -1 : 1;
-  const bend = y2 + dir * half;
-  return `M${x1} ${y1}V${bend}C${x1} ${y2 + (dir * half) / 3} ${x2} ${bend - (dir * half) / 3} ${x2} ${y2}`;
+/** The measures in px for one root font-size. */
+export function graphGeometry(remPx: number): GraphGeometry {
+  return {
+    cell: CELL_REM * remPx,
+    dot: DOT_REM * remPx,
+    textGap: TEXT_GAP_REM * remPx,
+    height: (d) =>
+      (d.kind === "row" && d.row.kind === "node"
+        ? NODE_REM
+        : d.kind === "row" && d.row.kind === "join"
+          ? JOIN_REM
+          : HEAD_REM) * remPx,
+  };
 }
 
-export function GraphLanes({
-  rows,
-  display,
-  lanes,
+const LINE = "text-gray-400 dark:text-gray-500";
+
+/** A vertical stroke at `x` from `y1` down to `y2`. */
+const vline = (x: number, y1: number, y2: number): string => `M${x} ${y1}V${y2}`;
+
+/** The joining stroke: from `from` at mid-height to `to`, bending up there to the top. */
+const joinUp = (from: number, to: number, mid: number, bend: number): string =>
+  `M${from} ${mid}H${to - bend}Q${to} ${mid} ${to} ${mid - bend}V0`;
+
+/** One row's cells. `up[c]`: a line comes into column c from the row above. */
+export function GraphCells({
+  cells,
+  up,
+  node,
+  height,
   hovered,
   geo,
 }: {
-  rows: readonly GraphRow[];
-  display: DisplayLayout;
-  lanes: number;
-  /** The display row under the pointer: its dot and its edge are drawn heavier. */
-  hovered: number | null;
+  cells: readonly string[];
+  up: readonly boolean[];
+  /** The node a node row draws (its dot's fill and ink); null on any other row. */
+  node: ProposalGraphNode | null;
+  height: number;
+  hovered: boolean;
   geo: GraphGeometry;
 }) {
-  const { heights, centers, total } = displayMetrics(display, geo);
-  const relationInk = (node: ProposalGraphNode | null) =>
-    toneInk[RELATION_TONE[node?.relation ?? "unknown"]];
+  const x = (c: number) => c * geo.cell + geo.cell / 2;
+  const mid = height / 2;
+  const stroke = hovered ? 2.6 : 1.7;
+  const bend = Math.min(mid, geo.cell / 2);
+  const parts = cells.flatMap((cell, c) => {
+    const g = cell[0];
+    const into = up[c] ? [<path key={`u${c}`} d={vline(x(c), 0, mid)} className={LINE} />] : [];
+    if (g === "│" || g === "├")
+      return [<path key={`v${c}`} d={vline(x(c), 0, height)} className={LINE} />];
+    if (g === "╯") {
+      // The joining line: from the column on its left, bending up into its own.
+      return [<path key={`j${c}`} d={joinUp(x(c - 1), x(c), mid, bend)} className={LINE} />];
+    }
+    if (g === "~") {
+      return [
+        ...into,
+        <circle
+          key={`b${c}`}
+          cx={x(c)}
+          cy={mid}
+          r={geo.dot + 1}
+          className="fill-current text-gray-600 dark:text-gray-300"
+        />,
+      ];
+    }
+    if (g === FOLDED_GLYPH) {
+      const w = geo.dot * 2;
+      return [
+        ...into,
+        <path key={`d${c}`} d={vline(x(c), mid, height)} className={LINE} />,
+        <rect
+          key={`f${c}`}
+          x={x(c) - w / 2}
+          y={mid - geo.dot * 1.8}
+          width={w}
+          height={geo.dot * 3.6}
+          rx={geo.dot}
+          className="fill-white text-gray-500 dark:fill-gray-950 dark:text-gray-400"
+        />,
+      ];
+    }
+    if (g === undefined || g === " " || node === null) return into;
+    // A node: its line down to the parent is dashed when that edge does not hold.
+    const ink = node.stacked
+      ? "text-gray-500 dark:text-gray-400"
+      : toneInk[RELATION_TONE[node.relation]];
+    return [
+      ...into,
+      <path
+        key={`d${c}`}
+        d={vline(x(c), mid, height)}
+        strokeDasharray={node.stacked ? undefined : "3 3"}
+        className={node.stacked ? LINE : ink}
+      />,
+      <circle
+        key={`n${c}`}
+        cx={x(c)}
+        cy={mid}
+        r={geo.dot + (hovered ? 1.5 : 0)}
+        className={`${node.proposal !== null ? "fill-current" : "fill-white dark:fill-gray-950"} ${
+          g === "○" ? ink : `${ink} opacity-70`
+        }`}
+      />,
+    ];
+  });
   return (
     <svg
       aria-hidden="true"
-      width={lanes * geo.lane + 4}
-      height={total}
-      className="pointer-events-none absolute top-0 left-0"
+      width={cells.length * geo.cell}
+      height={height}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={stroke}
+      className="pointer-events-none shrink-0"
     >
-      {display.edges.map((e) => {
-        const child = rows[e.child]!;
-        return (
-          <path
-            key={`e${e.from}-${e.to}-${e.lane}`}
-            d={edgeD(
-              geo.laneX(e.lane),
-              centers[e.from]!,
-              geo.laneX(e.toLane),
-              centers[e.to]!,
-              heights[e.to]! / 2,
-            )}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={e.from === hovered ? 2.6 : 1.7}
-            strokeDasharray={child.stacked ? undefined : "3 3"}
-            className={child.stacked ? "text-gray-400 dark:text-gray-500" : relationInk(child.node)}
-          />
-        );
-      })}
-      {display.rows.map((d, i) => {
-        if (d.kind === "roadmap") return null;
-        if (d.kind === "folded") {
-          // A run folded into one line: a hollow capsule in its lane, as tall as a few dots.
-          const w = geo.dot * 2;
-          return (
-            <rect
-              key={`f${i}`}
-              x={geo.laneX(d.lane) - w / 2}
-              y={centers[i]! - geo.dot * 1.8}
-              width={w}
-              height={geo.dot * 3.6}
-              rx={geo.dot}
-              strokeWidth={1.7}
-              stroke="currentColor"
-              className="fill-white text-gray-500 dark:fill-gray-950 dark:text-gray-400"
-            />
-          );
-        }
-        const row = rows[d.row]!;
-        const proposal = row.node?.proposal ?? null;
-        return (
-          <circle
-            key={`d${i}`}
-            cx={geo.laneX(row.lane)}
-            cy={centers[i]}
-            r={(row.node === null ? geo.dot + 1 : geo.dot) + (i === hovered ? 1.5 : 0)}
-            stroke="currentColor"
-            strokeWidth={i === hovered ? 2.6 : 1.7}
-            className={`${
-              proposal !== null || row.node === null
-                ? "fill-current"
-                : "fill-white dark:fill-gray-950"
-            } ${
-              row.node === null
-                ? "text-gray-600 dark:text-gray-300"
-                : row.stacked
-                  ? "text-gray-500 dark:text-gray-400"
-                  : relationInk(row.node)
-            }`}
-          />
-        );
-      })}
+      {parts}
     </svg>
   );
 }

@@ -6339,7 +6339,7 @@ Scenarios:
         loadFailed: "Could not read the PR graph",
         partial: "The graph is partial; these could not be read:",
         base: "base",
-        baseForked: "forks on the base",
+        baseBehind: (n: number): string => `behind ${n}`,
         baseStacks: (n: number): string => `${n} stacks on the base`,
         top: "top",
         fork: "fork",

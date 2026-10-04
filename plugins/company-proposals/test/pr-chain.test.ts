@@ -260,14 +260,37 @@ describe("buildGraph: the handbook's chain", () => {
     expect(g.base.fork).toBe(true);
     expect(topOf(g)).toBeNull();
     expect(topsOf(g)).toEqual([3, 5, 7]);
-    // A one-layer branch on the base beside stacks that keep going is not taken (rule 3).
+    // A one-layer branch on the base beside stacks that keep going is a stack of its own (3a).
     const p8 = pull(8, "dev", sha("8"));
     const withLeaf = graph([...p, p8], { ...c, [`${DEV}...${p8.head}`]: ahead() });
-    expect(offOf(withLeaf)).toEqual({ 8: { reason: "not-taken", at: 0 } });
-    expect(topsOf(withLeaf)).toEqual([3, 5, 7]);
+    expect(offOf(withLeaf)).toEqual({});
+    expect(topsOf(withLeaf)).toEqual([3, 5, 7, 8]);
     // One stack: its top is both `top` and the only entry of `tops`.
     const single = graph(p.slice(0, 3), c);
     expect([topOf(single), topsOf(single)]).toEqual([3, [3]]);
+  });
+
+  it("takes every line on the base as a stack, never not-taken; a fork inside a stack still is (3, 3a)", () => {
+    // A three-layer stack #1→#2→#3 with #4 forking off #1 and going nowhere; #5, #6, #7 alone on dev.
+    const p = [
+      pull(1, "dev", sha("a")),
+      pull(2, "b1", sha("b")),
+      pull(3, "b2", sha("c")),
+      pull(4, "b1", sha("d")),
+      pull(5, "dev", sha("e")),
+      pull(6, "dev", sha("f")),
+      pull(7, "dev", sha("1")),
+    ];
+    const c: Record<string, Comparison> = {};
+    for (const x of p) {
+      const parent = x.base === "dev" ? DEV : p.find((y) => y.branch === x.base)!.head;
+      c[`${parent}...${x.head}`] = ahead();
+    }
+    const g = graph(p, c);
+    expect(chainOf(g).sort()).toEqual([1, 2, 3, 5, 6, 7]);
+    expect(offOf(g)).toEqual({ 4: { reason: "not-taken", at: 1 } });
+    expect(topsOf(g)).toEqual([3, 5, 6, 7]);
+    expect([g.base.fork, topOf(g)]).toEqual([true, null]);
   });
 
   it("says why the rest is off: a base that leads nowhere, a cycle, an edge not compared", () => {

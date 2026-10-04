@@ -163,9 +163,9 @@ describe("parents by ancestry, read from a repository", () => {
       "impl/three": ["impl/two", "ahead", 1, true],
       "impl/side": ["", "ahead", 1, true],
     });
-    // Two stacks keep going from dev; the lone branch off dev is not taken.
-    expect(g.tops).toEqual(["pr/upper", "impl/three"]);
-    expect(at("impl/side").off).toEqual({ reason: "not-taken", at: "" });
+    // Every line on dev is a stack of its own: the lone branch off dev too (rule 3a).
+    expect([...g.tops].sort()).toEqual(["impl/side", "impl/three", "pr/upper"]);
+    expect(at("impl/side").off).toBeNull();
     // The ancestry the walk read is what the refresh stores; the distances are in commits.
     expect(Object.fromEntries(got.lineage.get(tip["impl/three"]!)!)).toEqual({
       [tip["impl/one"]!]: 3,

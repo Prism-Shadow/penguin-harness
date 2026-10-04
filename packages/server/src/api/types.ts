@@ -7079,6 +7079,24 @@ export interface ProposalGraphUnplaced {
   into: string | null;
 }
 
+/**
+ * One row of the drawn graph. `cells` holds one cell per column, two characters each: `│ ` a line
+ * passing through, `○ ` a node on the chain, `◌ ` one off it whose edge holds, `× ` one whose edge
+ * does not, `├─` and `╯ ` a line joining back into the node below, `~ ` the base branch.
+ */
+export interface ProposalGraphRow {
+  /** `node`: a node's row; `join`: a line joining back; `base`: the base branch, the last row. */
+  kind: "node" | "join" | "base";
+  /** The node drawn (`""` for the base branch); for a join, the node the line joins into. */
+  key: string;
+  cells: string[];
+  /**
+   * The base row: the commits the base branch gained since the bottom layer of the first
+   * column's stack was built; null when it has not moved on, and on every other row.
+   */
+  behind: number | null;
+}
+
 /** `GET …/proposals/graph`: the delivery repository's open PRs as a commit graph. */
 export interface ProposalGraphResponse {
   repo: string;
@@ -7092,11 +7110,18 @@ export interface ProposalGraphResponse {
    */
   top: string | null;
   /**
-   * The last layer of every branch the chain walk took (keys, in key order). Several stacks that
-   * each start on the base branch and keep going are all on the chain; each one's last layer is
-   * here, so each is marked as its stack's top.
+   * The last layer of every branch the chain walk took (keys, in key order). Every line hanging
+   * straight from the base branch is a stack of its own and on the chain; each one's last layer
+   * is here, so each is marked as its stack's top.
    */
   tops: string[];
+  /**
+   * The graph drawn as Sapling's smartlog draws a stack, top to bottom: newest on top, a line
+   * forking from a node in the column to its right right above it, joining back with `├─╯`,
+   * the base branch the last row. The CLI prints the cells; the page draws the same cells.
+   * A node with no row (no parent, or a cycle of declarations) is not drawn.
+   */
+  rows: ProposalGraphRow[];
   /** Proposals whose impl is on no node of the graph. */
   unplaced: ProposalGraphUnplaced[];
   /** What could not be read from GitHub; the graph is partial when present. */
