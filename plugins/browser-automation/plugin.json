@@ -3,7 +3,7 @@
   "description_zh": "用 penguin browser 在 shell 中驱动 Agent 浏览器——桌面应用的内置浏览器或用户自己的 Chrome，由用户选择——以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击与输入操作页面，提取订单、搜索结果等结构化数据；登录用的是用户自己的账号。",
   "short_description": "Read pages, act and extract data in the built-in browser or your Chrome.",
   "short_description_zh": "在内置浏览器或你的 Chrome 中读取页面、执行操作、提取数据。",
-  "version": "2026.10.03.1",
+  "version": "2026.10.04.1",
   "category": "office-productivity",
   "quick_start": {
     "prompt": "Open news.ycombinator.com in the agent browser and list the top five stories as a table of title, points and link.",
