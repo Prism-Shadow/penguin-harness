@@ -14,8 +14,8 @@ The smallest plugin that adds a page to the PenguinHarness web app. It demonstra
   shows "Hello World". It is styled only with the theme tokens the app copies into the frame,
   so it follows light/dark mode and the accent colour.
 
-The package is private: it is not published and not shipped with the builtin plugins
-(`scripts/build-plugins.mjs` skips private packages), so no install enables it.
+The package is private, so it is not published, and it is not shipped with the builtin plugins
+(`scripts/build-plugins.mjs` skips the `plugins/example-*` directories), so no install enables it.
 
 ## Enable it
 
