@@ -1,10 +1,10 @@
 /**
  * The dock's interface and its slot. A panel tab's body comes from the module that owns it — the
  * conversation's agents and memory from chat, the files from workspace, the trace, the messaging
- * binding, the scheduled tasks, the built-in browser from theirs — as a contribution to `panels`,
- * so the dock names none of them. A body reads the conversation it is docked beside through
- * `useChatSession()` (lib/chat-session.ts) and shows its own draft placeholder
- * (lib/dock-panel-empty.tsx).
+ * binding, the scheduled tasks, the built-in browser and the port forwards from theirs — as a
+ * contribution to `panels`, so the dock names none of them. A body reads the conversation it is
+ * docked beside through `useChatSession()` (lib/chat-session.ts) and shows its own draft
+ * placeholder (lib/dock-panel-empty.tsx).
  *
  * The interface itself carries nothing: the kernel hangs a module's slots on an interface it
  * provides (`DockSlots` beside `Dock`), and the dock module registers every contribution in the
