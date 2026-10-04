@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feat
 - **Scope:** `server`, `web`, `ui`
+- **PR:** [#975](https://github.com/Prism-Shadow/penguin-harness/pull/975)
 
 [English](2026-09-30-simple-sandbox-settings.md)
 
