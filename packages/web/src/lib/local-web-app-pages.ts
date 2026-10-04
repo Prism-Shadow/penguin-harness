@@ -1,7 +1,7 @@
 /** Same merged-page context and readers; original provider/store/fetch stay owned by WebApp. */
 import { createContext, useContext } from "react";
 import type { WebAppPage } from "./local-page-table";
-export interface WebAppPagesValue {
+export interface WebAppPagesValue extends ContributionsValue {
   pages: readonly WebAppPage[];
   pending: boolean;
 }

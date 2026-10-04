@@ -7,7 +7,7 @@ import { webAppDeps, type WebAppLayer } from "./deps";
 export type { PageData, PageEntry, WebAppPage } from "./page-table";
 export { navPagesOf, orgPagesOf, pageTitle } from "./page-table";
 export { ContributedPage } from "./contributed-page";
-export { useWebAppPages } from "./contributions";
+export { useContributions, useWebAppPages } from "./contributions";
 
 /** The contributed layers, by `order`: the app layout mounts each once, beside the page. */
 export function useWebAppLayers(): readonly WebAppLayer[] {

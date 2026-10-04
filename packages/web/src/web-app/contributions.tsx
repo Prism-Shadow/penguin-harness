@@ -27,6 +27,12 @@ export interface ContributionsState {
 export interface ContributionsStore {
   /** The signed-in user (null = nobody): a change drops the last user's answer and asks again. */
   setUser(userId: string | null): void;
+  /**
+   * Asks again for the signed-in user (after a plugin is installed or removed) and answers the
+   * new response, or null when nobody is signed in or the request failed — which keeps the
+   * answer held so far.
+   */
+  refresh(): Promise<ContributionsResponse | null>;
   current(): ContributionsState;
   subscribe(listener: () => void): () => void;
 }
@@ -57,6 +63,21 @@ export function createContributionsStore(
           // Nothing to fold in: the compiled table is a complete app. No retry — the next
           // sign-in asks again.
           if (asked === mine) set({ user: next, answer: null, pending: false });
+        },
+      );
+    },
+    refresh() {
+      const user = state.user;
+      if (user === null) return Promise.resolve(null);
+      const mine = ++asked;
+      return fetch().then(
+        (answer) => {
+          if (asked === mine) set({ user, answer, pending: false });
+          return answer;
+        },
+        () => {
+          if (asked === mine && state.pending) set({ ...state, pending: false });
+          return null;
         },
       );
     },
@@ -134,6 +155,13 @@ export function contributedPagesOf(
   return out;
 }
 
+/** The answer's parts besides the pages, for the features that read them (web-app/index.ts). */
+export interface ContributionsValue {
+  /** The module plugins' quick starts; none until the server answers. */
+  quickStarts: ContributionsResponse["quickStarts"];
+  refresh: () => Promise<ContributionsResponse | null>;
+}
+
 /** Holds the signed-in user's contributions and the merged page table, for everything under the router. */
 export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const { pages: compiled, pageRenderers } = webAppDeps.useDeps();
@@ -146,11 +174,22 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const current = state.user === userId;
   const answer = current ? state.answer : null;
   const pending = current ? state.pending : userId !== null;
-  const value = useMemo(
-    () => ({ pages: contributedPagesOf(compiled, answer, pageRenderers), pending }),
-    [compiled, answer, pageRenderers, pending],
+  const value = useMemo<WebAppPagesValue>(
+    () => ({
+      pages: contributedPagesOf(compiled, answer, pageRenderers),
+      pending,
+      // A mocked or older server may leave these out.
+      quickStarts: [],
+      refresh: store.refresh,
+    }),
+    [compiled, answer, pageRenderers, pending, store],
   );
   return <PagesContext.Provider value={value}>{children}</PagesContext.Provider>;
+}
+
+/** The quick starts the server contributes, and the way to ask again. */
+export function useContributions(): ContributionsValue {
+  return usePagesValue();
 }
 import { PagesContext } from "../lib/local-web-app-pages";
 export { useWebAppPages, useWebAppPagesPending } from "../lib/local-web-app-pages";

@@ -3,7 +3,8 @@
  *
  * - The store asks once per signed-in user; a failure leaves no answer, so the table is the
  *   compiled one; a user change drops the last answer and asks again, and a late answer for
- *   the user just left is dropped; signing out clears it.
+ *   the user just left is dropped; signing out clears it. A refresh asks again for the same
+ *   user; its failure keeps what was held.
  * - The merge appends iframe pages after the compiled ones; a compiled page wins a key or
  *   path clash; a builtin page is drawn by the renderer a module contributed under its name
  *   (`WebAppModule.pageRenderers`) and skipped when there is none; an entry without a key, a
@@ -115,6 +116,39 @@ describe("createContributionsStore", () => {
     calls[2]!.resolve(answer([]));
     await settle();
     expect(store.current().answer).toBeNull();
+  });
+});
+
+describe("refresh", () => {
+  it("asks again for the signed-in user and answers the new response; a failure keeps the old answer", async () => {
+    const { fetch, calls } = manualFetch();
+    const store = createContributionsStore(fetch);
+    expect(await store.refresh()).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+    store.setUser("alice");
+    const first = answer([]);
+    calls[0]!.resolve(first);
+    await settle();
+    const asked = store.refresh();
+    const next = answer([{ id: "x.hello", from: "x", key: "hello" }]);
+    calls[1]!.resolve(next);
+    expect(await asked).toBe(next);
+    expect(store.current()).toEqual({ user: "alice", answer: next, pending: false });
+    const failed = store.refresh();
+    calls[2]!.reject(new Error("500"));
+    expect(await failed).toBeNull();
+    expect(store.current()).toEqual({ user: "alice", answer: next, pending: false });
+  });
+
+  it("a refresh during the first request supersedes it, and its failure ends the wait", async () => {
+    const { fetch, calls } = manualFetch();
+    const store = createContributionsStore(fetch);
+    store.setUser("alice");
+    const asked = store.refresh();
+    calls[0]!.resolve(answer([{ id: "old", from: "x", key: "old" }]));
+    calls[1]!.reject(new Error("500"));
+    expect(await asked).toBeNull();
+    expect(store.current()).toEqual({ user: "alice", answer: null, pending: false });
   });
 });
 
