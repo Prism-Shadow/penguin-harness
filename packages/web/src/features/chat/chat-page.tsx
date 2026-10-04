@@ -493,6 +493,11 @@ export function ChatPage() {
    * `routeSessionPending` and the redirect below still read `listed`, so a Session actually
    * deleted still probes, still fails, and still redirects — one tick later than before.
    */
+  // One lookup per Session at a time. The effect below re-runs whenever the list churns
+  // (a status flip, a page landing), and re-running it used to cancel and REISSUE this
+  // request — a deep link into a busy Project fired a dozen identical lookups for one
+  // conversation. The ref makes a second issue for the same Session impossible.
+  const probeInFlight = useRef<string | null>(null);
   const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
   const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
   const heldSession = useRef<SessionInfo | null>(null);
@@ -842,7 +847,11 @@ export function ChatPage() {
    */
   const routeSessionOffline = routeSessionPending && probeFailedKey === probeKey;
   useEffect(() => {
-    if (draft || !projectId || !routeSessionId || !probeKey || sessionsLoading) return;
+    // NOT gated on `sessionsLoading`: the direct lookup is what opens the conversation, and
+    // holding it behind the sidebar's list fan-out (one first page per Agent per machine)
+    // put seconds of sidebar work in front of the conversation the reader asked for. The
+    // failure path below is the one place the list still matters, and it is handled there.
+    if (draft || !projectId || !routeSessionId || !probeKey) return;
     // Settled (row loaded, or the lookup already failed): nothing to probe — and a failed
     // key must not be re-probed just because the list's identity churned.
     if (!routeSessionPending) return;
@@ -855,10 +864,20 @@ export function ChatPage() {
       setProbeFailedKey(probeKey);
       return;
     }
-    let cancelled = false;
+    // Deliberately NOT cancelled on re-run/unmount: this lookup is keyed by the routed
+    // Session, and its answer stays valid across the list churn that re-runs this effect.
+    // Tying its lifetime to one effect run is what made a deep link issue a dozen identical
+    // requests — and abandoning it on a re-run is worse still: the row never arrives and the
+    // conversation sits on its skeleton with nothing left to ask. A result for a Session the
+    // route has left is ignored by resolveRoutedSession anyway.
+    if (probeInFlight.current === probeKey) return;
+    probeInFlight.current = probeKey;
+    const settle = () => {
+      if (probeInFlight.current === probeKey) probeInFlight.current = null;
+    };
     api.getSession(routeSessionId).then(
       (res) => {
-        if (cancelled) return;
+        settle();
         const session = sessionForProject(res.session, projectId);
         if (session) {
           setFetchedSession(session);
@@ -866,15 +885,18 @@ export function ChatPage() {
           // A Session of an Agent the list has not loaded (company mode creates Agents
           // server-side): fetch the list, or the page has no Agent to render under.
           if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
-        } else setProbeFailedKey(probeKey);
+        } else if (!sessionsLoading) setProbeFailedKey(probeKey);
       },
       () => {
-        if (!cancelled) setProbeFailedKey(probeKey);
+        settle();
+        // A lookup that failed while the sidebar's own list is still in flight is not a
+        // verdict: a Session created moments ago can be neither listed nor answered-for yet.
+        // Leave the route pending — this effect re-runs when the list settles, probes once
+        // more, and only then does a second failure mean gone.
+        if (sessionsLoading) return;
+        setProbeFailedKey(probeKey);
       },
     );
-    return () => {
-      cancelled = true;
-    };
     // `selected` rather than `sessions`: while the routed row stays unloaded, list churn
     // (status flips, new pages) keeps it null and leaves the in-flight lookup alone —
     // depending on the array identity cancelled and re-issued it on every user event.

@@ -177,6 +177,8 @@ import type {
   PluginReadmeResponse,
   SessionsResponse,
   SessionSwitchModelRequest,
+  SessionBatchPageRequest,
+  SessionsBatchResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
   SteerRequest,
@@ -762,6 +764,28 @@ export const listSessions = (
   );
 };
 
+/**
+ * A whole sidebar reload in one round trip: every (Agent, page) pair the sidebar wants,
+ * asked in a single POST instead of one GET each.
+ *
+ * The split matters on a Project with several Agents (and several machines): as individual
+ * requests they were fired all at once and serialised by the browser's six-connections-per-host
+ * limit, so the conversation pane's own message read queued behind dozens of list calls.
+ * One request keeps every answer separate — `results` lines up with `requests`, and an Agent
+ * this server does not host comes back as `ok: false, reason: "absent"` rather than failing
+ * the batch.
+ */
+export const batchSessions = (
+  projectId: string,
+  requests: SessionBatchPageRequest[],
+  machineId?: string | null,
+) =>
+  apiFetch<SessionsBatchResponse>(`/api/projects/${encodeURIComponent(projectId)}/sessions/batch`, {
+    method: "POST",
+    body: { requests },
+    server: machineId ?? null,
+  });
+
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**
  * Browses directories. With no machine, this server's own filesystem; with one, THAT
@@ -1011,6 +1035,18 @@ export type MessagesPageQuery =
   { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
 
 /**
+ * Byte budget for one windowed page.
+ *
+ * The unit limit bounds how much of the conversation is ASKED for, never how much comes back:
+ * a wide unit window of a tool-calling run is tens of megabytes (one screenshot alone is a
+ * megabyte of base64), and the reader only ever looks at the newest part of it. The server cuts
+ * the page at a record boundary and hands back the `before` cursor for what it dropped, so
+ * scrolling up asks for exactly those records — nothing is lost, it is simply not shipped
+ * before it is wanted.
+ */
+export const WINDOW_MAX_BYTES = 1_500_000;
+
+/**
  * History rebuild. Carries the server's clock at read time (see ApiFetchMeta.serverNowMs)
  * alongside the messages: a Task still running has no Trace entry for the event currently in
  * flight, so its elapsed can only be measured by differencing this against the Task's first
@@ -1026,8 +1062,9 @@ export const getMessages = (sessionId: string, page?: MessagesPageQuery) => {
     page === undefined
       ? ""
       : page.kind === "tail"
-        ? `?tailLimit=${page.limit}`
-        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`;
+        ? `?tailLimit=${page.limit}&maxBytes=${WINDOW_MAX_BYTES}`
+        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}` +
+          `&maxBytes=${WINDOW_MAX_BYTES}`;
   return apiFetchWithMeta<MessagesResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs}`,
   ).then(({ data, serverNowMs }) => ({ ...data, serverNowMs }));

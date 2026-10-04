@@ -1814,6 +1814,47 @@ export interface SessionsResponse {
   workspaceLatest?: Record<string, string>;
 }
 
+/**
+ * One page request inside POST /api/projects/:p/sessions/batch — the same knobs the
+ * Agent-level list takes, carried per entry so one call can stand in for a whole sidebar
+ * reload (one first page per Agent, plus every other page pair already open).
+ */
+export interface SessionBatchPageRequest {
+  agentId: string;
+  limit: number;
+  /** `activity`: last activity first — the sidebar's order. Omitted: creation order. */
+  order?: "created" | "activity";
+  /**
+   * Activity order only: rows strictly below this cursor — the last row of the previous page
+   * (`lastActiveAt` + `sessionId`, the pair the list endpoint's `before` param carries).
+   */
+  before?: { lastActiveAt: string; sessionId: string };
+  category?: SessionCategory;
+  workspaceGroup?: string;
+  /** Totals per category over the Agent's whole list, as the collapsed folders' labels. */
+  withCounts?: boolean;
+  /** The user's own rows only: leave an organization's own sessions out of page and totals. */
+  excludeOrg?: boolean;
+}
+
+/**
+ * One entry's answer. `ok: false` is a real answer about THAT Agent, never about the batch:
+ * `absent` is an Agent this server does not host (its rows come from the machine that does),
+ * `error` is a failure to answer at all — which the caller must not read as "no rows".
+ */
+export type SessionBatchResult =
+  | ({ agentId: string; ok: true } & Omit<SessionsResponse, never>)
+  | { agentId: string; ok: false; reason: "absent" | "error" };
+
+export interface SessionsBatchRequest {
+  requests: SessionBatchPageRequest[];
+}
+
+export interface SessionsBatchResponse {
+  /** One entry per requested page, in request order (repeated Agent ids stay repeated). */
+  results: SessionBatchResult[];
+}
+
 /** Server directory browsing (the Workspace picker): starts from the home directory by default, can navigate up to the root. */
 export interface DirEntryInfo {
   name: string;
