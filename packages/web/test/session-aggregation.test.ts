@@ -64,6 +64,13 @@ const page = (
     ...(workspaceCounts === undefined ? {} : { workspaceCounts }),
   }) as SessionsResponse;
 
+/** More rows than one sidebar page (SIDEBAR_PAGE_SIZE), newest first, all in `/w`. */
+const run = (prefix: string, day: string): SessionInfo[] =>
+  Array.from({ length: 12 }, (_, i) => {
+    const n = String(i).padStart(2, "0");
+    return row(`${prefix}-${n}`, `${day}T00:${String(59 - i).padStart(2, "0")}:00Z`);
+  });
+
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
   return {
@@ -224,8 +231,9 @@ describe("the list across machines", () => {
   });
 
   it("a group's page is asked only of the machine that group is on, by path", async () => {
-    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
-    answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+    // Both hold more than a page, so a group's own stream has something left to ask for.
+    answers.set(key(null, "a1"), page(run("here", "2026-01-02"), 12));
+    answers.set(key("M1", "a1"), page(run("there", "2026-01-03"), 12));
     const store = boot(["M1"]);
     await store.getState().reload();
 
