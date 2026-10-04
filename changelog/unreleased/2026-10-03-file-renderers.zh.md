@@ -10,7 +10,7 @@
 
 - 服务器的 `WebModule` 新增 `fileRenderers` 槽位：`{ extensions, renderer }`，扩展名不带点、比较时不区分大小写。`GET /api/contributions` 以 `fileRenderers` 返回。
 - 对话中，助手回复的段落或列表项链接到扩展名命中规则的工作区文件时，在该块正下方绘制所指名的 renderer：每个文件一次，按链接顺序。Markdown 不变，链接保持原有点击行为（在文件面板中打开）。代码里的链接不是链接。renderer 在回复结束后出现，流式输出期间不出现。安全模式与其他贡献一样跳过这些规则。
-- Web 内置一个 renderer `audio`：以工作区文件 URL 为源的浏览器播放器（`preload="none"`），可访问名称含文件名；加载失败时变为一行说明文件无法播放。renderer 按名字登记在 chat 的槽位 `ChatModule.fileRenderers`；renderer 为 iframe 的规则被跳过。
+- Web 内置一个 renderer `audio`：以工作区文件 URL 为源（`preload="none"`）的紧凑单行播放卡片，用主题 Token 绘制，与对话中的其他卡片同一圆角、边框与底色：强调色圆形播放/暂停按钮、文件名、已播放/总时长，以及一条细进度条（浅色段标出已加载、可跳转的范围）；宽度有上限，元数据到达时不发生布局位移。按钮与进度条均有含文件名的可访问名称，进度条支持方向键与 Home/End。加载失败时，卡片变为一行说明文件无法播放。renderer 按名字登记在 chat 的槽位 `ChatModule.fileRenderers`；renderer 为 iframe 的规则被跳过。
 - UI 包的 Markdown 渲染新增 `ProseBlockTrailerProvider`：调用方可在 settled 渲染时，根据段落或列表项内的链接在其后追加内容。
 - 工作区中 `.mp3`、`.wav`、`.ogg`、`.m4a` 文件改以对应的音频 Content-Type 返回，而非 `application/octet-stream`。
 - `plugins/example-music`：示例插件，贡献 `mp3`/`wav`/`ogg`/`m4a` → `audio`，并附 `send-music` Skill，教 Agent 在工作区合成一段短曲并在回复中链接。Skill 需手工安装到 Agent（见插件 README）。它是 private 包，不会发布；作为 `plugins/example-*` 目录也不会随构建内置，除非设置 `PENGUIN_PLUGIN_EXAMPLES=1` 让构建把示例插件与内置插件一并放入插件目录，之后由项目按包名启用。Web e2e 在运行时两步都做。
