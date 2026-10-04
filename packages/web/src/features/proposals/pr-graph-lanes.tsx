@@ -163,6 +163,8 @@ export function GraphCells({
       stroke="currentColor"
       strokeWidth={stroke}
       className="pointer-events-none shrink-0"
+      // The page draws the rows reversed (base on top): mirroring each row turns `├─╯` into `├─╮`.
+      style={{ transform: "scaleY(-1)" }}
     >
       {parts}
     </svg>

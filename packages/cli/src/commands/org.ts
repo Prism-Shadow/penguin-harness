@@ -689,7 +689,10 @@ function renderGraph(g: ProposalGraphResponse, t: Messages, all: boolean): strin
   const blocks = [
     [
       `${g.repo}${!all && others > 0 ? `  ${t.org.graphOthersHidden(others)}` : ""}`,
-      ...rows.map(row),
+      // Base on top: the smartlog rows reversed, each join turned from `├─╯` into `├─╮`.
+      ...[...rows]
+        .reverse()
+        .map((r) => row({ ...r, cells: r.cells.map((x) => x.replace("╯", "╮")) })),
     ].join("\n"),
     ...(off.length > 0
       ? [[t.org.graphOffChain(), ...off.map((n) => indent(1, line(n) + on(n.key)))].join("\n")]

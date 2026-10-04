@@ -329,75 +329,80 @@ export function GraphPage() {
           <div ref={listRef} className="overflow-x-auto">
             {display !== null && (
               <ol>
-                {display.map((d, i) => {
-                  const heading = d.kind === "roadmap" || d.kind === "folded";
-                  const node =
-                    d.kind === "row" && d.row.kind === "node"
-                      ? (byKey.get(d.row.key) ?? null)
-                      : null;
-                  const height = geo.height(d);
-                  const isTarget = node !== null && node.key === target;
-                  const connector = d.kind === "row" && d.row.connector;
-                  return (
-                    <li
-                      key={
-                        d.kind === "row"
-                          ? `${d.row.kind}${i}:${d.row.key}`
-                          : `${d.kind}${d.segment}`
-                      }
-                      data-focus={i === focusRow ? "true" : undefined}
-                      data-search-target={isTarget ? "true" : undefined}
-                      style={{ height }}
-                      onMouseEnter={() => setHovered(i)}
-                      onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
-                      onClick={heading ? () => toggleFold(d.segment) : undefined}
-                      // A hairline under each node's row: its two lines read as one block. A
-                      // roadmap heading or a folded run folds its segment on a click.
-                      className={`flex items-center pr-3 transition-colors duration-150 ${
-                        node !== null ? "border-b border-line-muted" : ""
-                      } ${heading ? "cursor-pointer select-none" : ""} ${
-                        i === focusRow || isTarget
-                          ? FOCUS_WASH
-                          : i === hovered
-                            ? "bg-surface-muted"
-                            : ""
-                      } ${isTarget ? "ring-2 ring-blue-400 ring-inset" : ""}`}
-                    >
-                      <GraphCells
-                        cells={d.kind === "row" ? d.row.cells : d.cells}
-                        up={up[i] ?? []}
-                        node={node}
-                        height={height}
-                        hovered={i === hovered}
-                        geo={geo}
-                      />
-                      <div
-                        className={`flex min-w-0 flex-1 items-center ${connector ? "opacity-60" : ""}`}
-                        style={{ paddingLeft: geo.textGap }}
-                        data-tooltip={connector ? t.connector : undefined}
+                {/* Base on top: the rows are laid out newest-first (smartlog) and drawn reversed,
+                    each row keeping its index for hover, focus and search; GraphCells mirrors its lanes. */}
+                {display
+                  .map((d, i) => [d, i] as const)
+                  .reverse()
+                  .map(([d, i]) => {
+                    const heading = d.kind === "roadmap" || d.kind === "folded";
+                    const node =
+                      d.kind === "row" && d.row.kind === "node"
+                        ? (byKey.get(d.row.key) ?? null)
+                        : null;
+                    const height = geo.height(d);
+                    const isTarget = node !== null && node.key === target;
+                    const connector = d.kind === "row" && d.row.connector;
+                    return (
+                      <li
+                        key={
+                          d.kind === "row"
+                            ? `${d.row.kind}${i}:${d.row.key}`
+                            : `${d.kind}${d.segment}`
+                        }
+                        data-focus={i === focusRow ? "true" : undefined}
+                        data-search-target={isTarget ? "true" : undefined}
+                        style={{ height }}
+                        onMouseEnter={() => setHovered(i)}
+                        onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
+                        onClick={heading ? () => toggleFold(d.segment) : undefined}
+                        // A hairline under each node's row: its two lines read as one block. A
+                        // roadmap heading or a folded run folds its segment on a click.
+                        className={`flex items-center pr-3 transition-colors duration-150 ${
+                          node !== null ? "border-b border-line-muted" : ""
+                        } ${heading ? "cursor-pointer select-none" : ""} ${
+                          i === focusRow || isTarget
+                            ? FOCUS_WASH
+                            : i === hovered
+                              ? "bg-surface-muted"
+                              : ""
+                        } ${isTarget ? "ring-2 ring-blue-400 ring-inset" : ""}`}
                       >
-                        {d.kind === "roadmap" ? (
-                          <RoadmapHeading
-                            projectId={projectId}
-                            orgId={orgId}
-                            roadmaps={d.roadmaps}
-                            count={d.count}
-                            folded={d.folded}
-                          />
-                        ) : d.kind === "folded" ? (
-                          <FoldedLine count={d.count} />
-                        ) : d.row.kind === "base" ? (
-                          <BaseRow graph={graph} behind={d.row.behind} />
-                        ) : node !== null ? (
-                          deployable(
-                            node,
-                            <NodeRow graph={graph} node={node} onOpenProposal={openProposal} />,
-                          )
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
+                        <GraphCells
+                          cells={d.kind === "row" ? d.row.cells : d.cells}
+                          up={up[i] ?? []}
+                          node={node}
+                          height={height}
+                          hovered={i === hovered}
+                          geo={geo}
+                        />
+                        <div
+                          className={`flex min-w-0 flex-1 items-center ${connector ? "opacity-60" : ""}`}
+                          style={{ paddingLeft: geo.textGap }}
+                          data-tooltip={connector ? t.connector : undefined}
+                        >
+                          {d.kind === "roadmap" ? (
+                            <RoadmapHeading
+                              projectId={projectId}
+                              orgId={orgId}
+                              roadmaps={d.roadmaps}
+                              count={d.count}
+                              folded={d.folded}
+                            />
+                          ) : d.kind === "folded" ? (
+                            <FoldedLine count={d.count} />
+                          ) : d.row.kind === "base" ? (
+                            <BaseRow graph={graph} behind={d.row.behind} />
+                          ) : node !== null ? (
+                            deployable(
+                              node,
+                              <NodeRow graph={graph} node={node} onOpenProposal={openProposal} />,
+                            )
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
               </ol>
             )}
           </div>
