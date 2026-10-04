@@ -1,5 +1,4 @@
 import { backgroundStyle, useBackground } from "../state/background";
-import { FindBar } from "../components/find/find-bar";
 /**
  * The app's layout route: the UI package's `AppShell` bound to the app's state.
  * - >=md: the navigation column holds the pinned sidebar (Project / new chat / nav / Session list /
@@ -31,6 +30,7 @@ import { ChangePasswordDialog } from "../components/account/change-password-dial
 import { AppInfoDialog } from "../components/account/app-info-dialog";
 
 import { setDockScope } from "../features/dock";
+import { FindBar } from "../components/find/find-bar";
 
 /**
  * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is

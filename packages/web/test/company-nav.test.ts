@@ -28,6 +28,9 @@ import {
   resolveOrgLanding,
 } from "../src/features/company/company-nav";
 import { DEFAULT_CHANNEL_ID } from "../src/features/company/channel-list";
+import { COMPANY_NAV_ICONS, ORG_PAGE_ICONS } from "../src/features/company/company-nav-icons";
+import { zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
 import {
   LAST_ORG_KEY,
   WORK_MODE_KEY,
@@ -184,5 +187,88 @@ describe("work-mode storage mirrors", () => {
     expect(() => clearLastOrgKey(broken)).not.toThrow();
     expect(initialWorkMode(broken)).toBe("dev");
     expect(initialLastOrgKey(broken)).toBeNull();
+  });
+});
+
+describe("contributed company-mode pages", () => {
+  const page = (
+    over: Partial<{
+      key: string;
+      path: string;
+      nav: string;
+      renderer: { builtin: string } | { iframe: unknown };
+    }> = {},
+  ) => ({
+    key: "org-proposals",
+    path: "proposals/:number?",
+    nav: "org",
+    renderer: { builtin: "OrgProposalsPage" as const },
+    ...over,
+  });
+
+  it("has a zh label, an en label and a glyph for every renderer it knows a row for", () => {
+    for (const renderer of Object.keys(ORG_PAGE_RENDERERS) as Array<
+      keyof typeof ORG_PAGE_RENDERERS
+    >) {
+      const label = ORG_PAGE_RENDERERS[renderer].label;
+      expect(typeof zh.nav.org[label]).toBe("string");
+      expect(typeof en.nav.org[label]).toBe("string");
+      expect(ORG_PAGE_ICONS[renderer]).toMatch(/^M/);
+    }
+  });
+
+  it("turns a contributed org page into a row leading to its first segment, disabled without an organization", () => {
+    expect(orgPageSegment("proposals/:number?")).toBe("proposals");
+    expect(orgPageSegment("/reports")).toBe("reports");
+    expect(orgPageRows([page()], { projectId: "p 1", orgId: "acme" })).toEqual([
+      { key: "org-proposals", renderer: "OrgProposalsPage", to: "/org/p%201/acme/proposals" },
+    ]);
+    expect(orgPageRows([page()], null)).toEqual([
+      { key: "org-proposals", renderer: "OrgProposalsPage", to: null },
+    ]);
+  });
+
+  it("skips pages outside the org nav, iframe pages, and renderers this build has no row for", () => {
+    expect(
+      orgPageRows(
+        [
+          page({ nav: "main" }),
+          page({ key: "x", renderer: { iframe: { src: "x" } } }),
+          page({ key: "y", renderer: { builtin: "SomethingElse" } }),
+        ],
+        { projectId: "p", orgId: "o" },
+      ),
+    ).toEqual([]);
+  });
+
+  it("draws no org-nav row for the roadmaps page — its roadmaps are the sidebar's own section, below the channels", () => {
+    const roadmaps = page({
+      key: "roadmaps",
+      path: "roadmaps/:number?",
+      renderer: { iframe: { src: "/api/company-roadmaps/page", namespace: "company-roadmaps" } },
+    });
+    const org = { projectId: "p", orgId: "acme" };
+    // Whichever order the plugins are listed in, the only contributed row is Proposals.
+    for (const listed of [
+      [page(), roadmaps],
+      [roadmaps, page()],
+    ]) {
+      expect(orgPageRows(listed, org).map((row) => row.key)).toEqual(["org-proposals"]);
+    }
+    expect(Object.keys(ORG_PAGE_RENDERERS)).toEqual(["OrgProposalsPage"]);
+    expect("roadmaps" in zh.nav.org).toBe(false);
+    expect("roadmaps" in en.nav.org).toBe(false);
+    // An iframe page keyed like a builtin renderer still draws nothing.
+    expect(
+      orgPageRows([page({ key: "OrgProposalsPage", renderer: { iframe: { src: "x" } } })], org),
+    ).toEqual([]);
+    // Two pages with one renderer keep the order they were contributed in.
+    expect(
+      orgPageRows([page({ key: "b" }), roadmaps, page({ key: "a" })], org).map((row) => row.key),
+    ).toEqual(["b", "a"]);
+  });
+
+  it("addresses one proposal by its number under the proposals page", () => {
+    expect(orgProposalPath("p", "acme", 12)).toBe("/org/p/acme/proposals/12");
   });
 });
