@@ -4,7 +4,7 @@ Proposals for company mode: a person **delegates a change to an employee**, that
 
 ## What you get
 
-- **Proposals come from roadmaps.** A new proposal is created when a roadmap item's brief gets its last approval: [company-roadmaps](../company-roadmaps/README.md) creates it through this plugin's `createFromRoadmap`, with the item's owner as its author.
+- **Proposals come from roadmaps.** A new proposal is created when a roadmap item's brief gets its last approval: [company-roadmaps](../company-roadmaps/README.md) creates it through this plugin's `createFromRoadmap`, with the item's owner as its author. When an item already linked to a proposal changes its brief and is approved again, that proposal's brief is rewritten; no second proposal is made.
 - **A proposal.** Numbered per organization (`#12`), with an author, an implementer, the person who delegated it, a scope (`<file, optional name pattern>` pairs — the only place a file path appears), three sections — change, purpose, one test — and materials (the PR, an issue, a branch, a ticket). Every paragraph is a place to comment.
 - **Comments in batches.** A person comments as they read; nothing reaches the author until they click _Request changes_ — then the author gets one batch, resolves each comment, publishes a revision and marks the proposal ready again. Paragraphs that did not change keep their identity across revisions, and their comments with them.
 - **Implementation in parallel.** The author asks for an implementer; a session opens on the proposal's text, works on a `proposal/<n>-<slug>` branch, opens a PR against the dev branch, and merges into dev as soon as it is usable — before anyone approves. What the proposal did not foresee comes back as feedback, and the author revises.
