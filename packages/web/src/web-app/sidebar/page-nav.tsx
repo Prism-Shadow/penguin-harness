@@ -54,6 +54,10 @@ export interface CompanyNavItem {
   to: string | null;
   label: string;
   icon: string;
+  /** What the row's count means, for its tooltip; null for none. */
+  note?: string | null;
+  /** A count the row wears at its end (a contributed page's unread total); null for none. */
+  count?: number | null;
 }
 
 /**
@@ -288,6 +292,19 @@ export function PageNav({
               active={item.to !== null && isCurrentPath(item.to, location.pathname)}
               renderLink={renderRouterLink}
               onClick={() => onNavigate?.()}
+              {...(item.count !== undefined && item.count !== null
+                ? {
+                    ariaLabel: `${item.label} · ${item.note ?? ""}`,
+                    ...(item.note ? { tooltip: item.note } : {}),
+                    /* A count rather than a dot: the number is the information, as on a
+                       channel row, and the tooltip says what it counts. */
+                    badge: (
+                      <span className="ml-auto shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400">
+                        {item.count}
+                      </span>
+                    ),
+                  }
+                : {})}
             />
           ))
         : collapsibleNavPages.map(renderNavEntry)}
