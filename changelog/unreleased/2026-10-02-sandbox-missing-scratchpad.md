@@ -3,6 +3,7 @@
 - **Date:** 2026-10-02
 - **Type:** fix
 - **Scope:** `server`, `core`
+- **PR:** [#976](https://github.com/Prism-Shadow/penguin-harness/pull/976)
 
 [中文版](2026-10-02-sandbox-missing-scratchpad.zh.md)
 
