@@ -8,6 +8,7 @@ import {
 import { glyphOf } from "../../lib/nav-icons";
 import { marksFor } from "../../lib/sidebar-modes";
 import { S } from "../../lib/strings";
+import {
   isNavPinned,
   navEntryKeysFor,
   splitNavEntries,

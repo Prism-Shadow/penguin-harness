@@ -2,10 +2,11 @@
  * Page removals on the server side: a module's `WebModule.pageRemovals` contribution reaches
  * GET /api/contributions as data (id, contributing module, key), none without it, and an entry
  * the slot's type does not accept — a key that is not a string, a field the slot does not
- * declare — is refused by the boot check, naming the contribution.
+ * declare — fails the boot check. A plugin's malformed contribution does not refuse the App
+ * (plugin/unsatisfied.ts): it is dropped and named in the log, the plugin and the App stay, and
+ * the answer carries no removal.
  */
-import fs from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { ContributionsResponse } from "../src/api/types.js";
@@ -32,17 +33,22 @@ function removing(entries: Array<Record<string, unknown>>): PluginHost {
   return host;
 }
 
-/** The boot error of an App with the host's plugins; the check runs before anything is built. */
-async function refusal(host: PluginHost): Promise<unknown> {
-  let root: string | undefined;
+/**
+ * The removals an App with the host's plugins answers, and what its boot logged about dropped
+ * contributions.
+ */
+async function bootedWith(
+  host: PluginHost,
+): Promise<{ t: TestApp; removals: unknown; logged: string }> {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   try {
-    await createTestApp({ plugins: host, beforeSeed: async (r) => void (root = r) });
-  } catch (err) {
-    return err;
+    const t = await createTestApp({ plugins: host });
+    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    const body = (await (await admin.get("/api/contributions")).json()) as ContributionsResponse;
+    return { t, removals: body.pageRemovals, logged: warn.mock.calls.flat().join("\n") };
   } finally {
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    warn.mockRestore();
   }
-  throw new Error("the App booted");
 }
 
 describe("web page removals", () => {
@@ -69,14 +75,21 @@ describe("web page removals", () => {
     ]);
   });
 
-  it("refuses a removal whose key is not a string", async () => {
-    expect(String(await refusal(removing([{ key: 7 }])))).toMatch(
-      /contribution 'removal\.0' to 'WebModule\.pageRemovals'/,
+  it("drops a removal whose key is not a string, and boots without it", async () => {
+    const booted = await bootedWith(removing([{ key: 7 }]));
+    t = booted.t;
+    expect(booted.removals).toEqual([]);
+    expect(booted.logged).toMatch(
+      /plugin 'test-removal' runs without .*NoEvaluationCenter: contribution 'removal\.0' to 'WebModule\.pageRemovals'/,
     );
   });
 
-  it("refuses a removal carrying a field the slot does not declare", async () => {
-    const err = await refusal(removing([{ key: "benchmark", path: "/benchmark" }]));
-    expect(String(err)).toMatch(/contribution 'removal\.0' to 'WebModule\.pageRemovals'/);
+  it("drops a removal carrying a field the slot does not declare", async () => {
+    const booted = await bootedWith(removing([{ key: "benchmark", path: "/benchmark" }]));
+    t = booted.t;
+    expect(booted.removals).toEqual([]);
+    expect(booted.logged).toMatch(
+      /plugin 'test-removal' runs without .*NoEvaluationCenter: contribution 'removal\.0' to 'WebModule\.pageRemovals'/,
+    );
   });
 });
