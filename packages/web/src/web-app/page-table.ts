@@ -81,11 +81,14 @@ export function parentedPagesOf(pages: readonly WebAppPage[]): readonly WebAppPa
 }
 
 /**
- * Where the router sends a path it has no page for, the index and a signed-in /login
- * (web-app/router.tsx). The page that answers it is the one no removal can take away: without
- * it the catch-all would redirect to a path that falls to the catch-all again.
+ * Where home leads: company mode's `home` page (path `*`, features/company/home-redirect.tsx)
+ * answers `/`, a signed-in /login and every path nothing else matches by sending it to the
+ * effective mode's home — development mode's conversations or company mode's organizations
+ * (features/company/company-nav.ts `homePath`, which test/page-removal.test.ts holds to this
+ * list). The pages that answer these paths, the `*` page included, are the ones no removal can
+ * take away: without them home would lead to a path that falls to home again.
  */
-export const HOME_PATH = "/chat";
+export const HOME_PATHS: readonly string[] = ["/chat", "/org"];
 
 /** A route pattern's segments: "/benchmark/:benchmarkId" → ["benchmark", ":benchmarkId"]. */
 const segmentsOf = (path: string) => path.split("/").filter((s) => s !== "");
@@ -95,9 +98,9 @@ const segmentsOf = (path: string) => path.split("/").filter((s) => s !== "");
  * theirs — whose pattern starts with every segment of the removed page's pattern, so removing
  * `benchmark` (/benchmark) takes `benchmark-detail` (/benchmark/:benchmarkId) with it but not
  * the other way round: what lives under a page's URL belongs to that page, and a removal names
- * the page a user sees, not the routes behind it. A page at "/" takes only itself. The page
- * that answers HOME_PATH stays whatever names it. Keys naming no page are ignored; pages under a
- * removed one by `parent` are left to parentedPagesOf, which runs after this.
+ * the page a user sees, not the routes behind it. A page at "/" takes only itself. A page that
+ * answers one of HOME_PATHS stays whatever names it. Keys naming no page are ignored; pages
+ * under a removed one by `parent` are left to parentedPagesOf, which runs after this.
  */
 export function removedPagesOf(
   pages: readonly WebAppPage[],
@@ -109,7 +112,7 @@ export function removedPagesOf(
   const under = (path: readonly string[], root: readonly string[]) =>
     root.length > 0 && root.length <= path.length && root.every((s, i) => s === path[i]);
   return pages.filter((p) => {
-    if (matchPath(p.path, HOME_PATH) !== null) return true;
+    if (HOME_PATHS.some((home) => matchPath(p.path, home) !== null)) return true;
     if (keys.includes(p.key)) return false;
     const path = segmentsOf(p.path);
     return !removed.some((root) => under(path, root));

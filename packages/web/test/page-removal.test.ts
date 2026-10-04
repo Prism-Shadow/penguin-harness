@@ -4,7 +4,8 @@
  *
  * - A removal drops the page its key names and every page whose route lies under that page's
  *   path (`benchmark` takes `/benchmark/:benchmarkId`, not the other way round); a key naming no
- *   page does nothing; a page at "/" takes only itself; the page answering HOME_PATH stays.
+ *   page does nothing; a page at "/" takes only itself; the pages answering HOME_PATHS stay —
+ *   the home page (`*`) and the homes it leads to in both modes (company-nav.ts `homePath`).
  * - Only non-empty string keys are read; an answer without the list removes nothing.
  * - The table: removals apply to compiled and contributed pages alike, before the parent check,
  *   so a removed page's children go too; without an answer the table is the compiled one.
@@ -25,7 +26,8 @@ import {
 } from "../src/web-app/contributions";
 import { webAppDeps, type WebAppDeps } from "../src/web-app/deps";
 
-import { HOME_PATH, removedPagesOf, type WebAppPage } from "../src/web-app/page-table";
+import { homePath } from "../src/features/company/company-nav";
+import { HOME_PATHS, removedPagesOf, type WebAppPage } from "../src/web-app/page-table";
 
 import { setSafeMode } from "../src/rescue/safe-mode";
 
@@ -132,11 +134,23 @@ describe("removedPagesOf", () => {
   });
 
   it("keeps the page the catch-all leads to, however it is named", () => {
-    expect(HOME_PATH).toBe("/chat");
     expect(keysOf(removedPagesOf(COMPILED, ["chat"]))).toEqual(keysOf(COMPILED));
-    // Kept by what it answers, not by its key: any page HOME_PATH would land on stays.
+    // Kept by what it answers, not by its key: any page a home path would land on stays.
     const table = [...COMPILED, page("section", "/:section")];
     expect(keysOf(removedPagesOf(table, ["section"]))).toEqual(keysOf(table));
+  });
+
+  it("keeps the home page and the homes it leads to in either mode", () => {
+    expect(HOME_PATHS).toEqual([homePath("dev"), homePath("company")]);
+    const table = [
+      ...COMPILED,
+      page("org", "/org/*", { nav: "none", order: 120 }),
+      page("home", "*", { nav: "none", order: 130 }),
+    ];
+    expect(keysOf(removedPagesOf(table, ["home", "org", "chat"]))).toEqual(keysOf(table));
+    expect(keysOf(removedPagesOf(table, ["home", "benchmark"]))).toEqual(
+      keysOf(table).filter((k) => !k.startsWith("benchmark")),
+    );
   });
 });
 
