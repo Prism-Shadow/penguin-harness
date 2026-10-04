@@ -8,12 +8,12 @@ import { describe, expect, it } from "vitest";
 import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
 import {
   baseStacks,
-  deployTarget,
   focusedProposal,
   foldedAsMerged,
   nodeOfProposal,
   nodeRef,
 } from "../src/features/proposals/pr-graph-model";
+import { nodeSubject } from "../src/features/proposals/pr-graph-deploy";
 
 /** A PR's node key in these tests (its head branch), `""` for the base branch (0). */
 const k = (n: number): string => (n === 0 ? "" : `b${n}`);
@@ -71,9 +71,9 @@ describe("branch nodes", () => {
     const b = branchNode("impl/a", "", 40);
     expect(nodeRef(b)).toBe("impl/a");
     expect(nodeRef(node(7, 0))).toBe("#7");
-    expect(deployTarget(b)).toEqual({ proposal: 40 });
-    expect(deployTarget(node(7, 0))).toEqual({ pr: 7 });
-    expect(deployTarget({ number: null, proposal: null })).toBeNull();
+    expect(nodeSubject("acme/app", b)).toBe("proposal:40");
+    expect(nodeSubject("acme/app", node(7, 0))).toBe("pr:acme/app#7");
+    expect(nodeSubject("acme/app", { number: null, proposal: null })).toBeNull();
   });
 
   it("finds a branch node by its proposal", () => {

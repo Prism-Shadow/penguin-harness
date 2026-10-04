@@ -41,7 +41,7 @@ import { OrgEmptyLine, OrgPage, useOrg } from "../company/org-layout";
 import { ErrorLine, TitleButton } from "../company/shared";
 import { baseStacks, focusedProposal, foldedAsMerged, nodeOfProposal } from "./pr-graph-model";
 import { FOCUS_WASH, Mark, NodeListSection, NodeRow, UnplacedSection } from "./pr-graph-rows";
-import { DeployDialog, DeployableRow, prSubject } from "./pr-graph-deploy";
+import { DeployDialog, DeployableRow, nodeSubject } from "./pr-graph-deploy";
 import { DeployDock, useDeployJobs } from "./pr-graph-deploy-dock";
 import { DeploymentMarks, DeploymentsOff } from "./pr-graph-deployments";
 import {
@@ -203,7 +203,8 @@ export function GraphPage() {
   const deploys = useDeployJobs(projectId, orgId);
   const openJob = deploys.jobs.find((j) => j.key === deploys.open) ?? null;
   const deployable = (node: ProposalGraphNode, row: ReactNode) => {
-    const subject = prSubject(graph?.repo ?? "", node.number);
+    const subject = nodeSubject(graph?.repo ?? "", node);
+    if (subject === null) return row;
     return (
       <DeployableRow
         projectId={projectId}

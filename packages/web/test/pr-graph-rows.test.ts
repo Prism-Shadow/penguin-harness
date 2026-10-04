@@ -132,11 +132,11 @@ describe("a branch node", () => {
   it("keeps the deploy menu, named by its branch", () => {
     const html = renderToStaticMarkup(
       createElement(DeployableRow, {
+        projectId: "p",
+        orgId: "o",
         node: branch,
-        scripts: [],
-        scriptsError: null,
+        subject: "proposal:184",
         onPick: () => {},
-        onAssociate: () => {},
         children: createElement(NodeRow, {
           graph: withBranch,
           node: branch,

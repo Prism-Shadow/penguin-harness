@@ -21,17 +21,6 @@ export function nodeRef(node: Pick<ProposalGraphNode, "number" | "branch">): str
   return node.number === null ? node.branch : `#${node.number}`;
 }
 
-/**
- * What a deploy from a node names: its PR, or — a branch node, which always has a proposal —
- * the proposal whose impl branch it is (the deploy resolves that branch's tip). Null for neither.
- */
-export function deployTarget(
-  node: Pick<ProposalGraphNode, "number" | "proposal">,
-): { pr: number } | { proposal: number } | null {
-  if (node.number !== null) return { pr: node.number };
-  return node.proposal === null ? null : { proposal: node.proposal.number };
-}
-
 /** The node showing a proposal's impl (its PR or its branch), or null when it has none on the graph. */
 export function nodeOfProposal(
   nodes: readonly ProposalGraphNode[],

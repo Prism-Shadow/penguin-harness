@@ -36,6 +36,18 @@ export function prSubject(repo: string, number: number): string {
   return `pr:${repo}#${number}`;
 }
 
+/**
+ * The subject a deploy from a node runs on: its PR, or — a branch node, which always has a
+ * proposal — that proposal, whose head is its impl branch's tip. Null for neither.
+ */
+export function nodeSubject(
+  repo: string,
+  node: Pick<ProposalGraphNode, "number" | "proposal">,
+): string | null {
+  if (node.number !== null) return prSubject(repo, node.number);
+  return node.proposal === null ? null : `proposal:${node.proposal.number}`;
+}
+
 /** What the menu calls a deploy Action: its key past `deploy.`. */
 export function deployName(key: string): string {
   return key.startsWith("deploy.") ? key.slice("deploy.".length) : key;
