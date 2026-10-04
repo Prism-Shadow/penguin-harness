@@ -43,6 +43,8 @@ import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
+import type { Telemetry } from "../mechanisms/telemetry.js";
+import { spanIn, timeIn } from "../telemetry/measure.js";
 
 const SANDBOX_MODE_RANK: Record<SandboxSettings["mode"], number> = {
   "read-only": 0,
@@ -179,6 +181,8 @@ export type SessionListPaging =
 
 export interface SessionServiceDeps {
   root: string;
+  /** Telemetry's session-list segments (PRFC-0008); absent or off, nothing is timed. */
+  telemetry?: Telemetry;
   sessions: SessionIndex;
   manager: SessionManager;
   projectConfig: ProjectConfigStore;
@@ -431,8 +435,13 @@ export class SessionService {
     workspaceLatest?: Record<string, string>;
   }> {
     const { paging, order = "created", category, workspaceGroup, withCounts, excludeOrg } = opts;
-    const rows = new Map(
-      this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
+    const rows = timeIn(
+      this.deps.telemetry,
+      "sessions.list.sql",
+      {},
+      () =>
+        new Map(this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r])),
+      (r) => ({ attrs: { rows: r.size } }),
     );
     // One query for the whole Project's organization-owned sessions, looked up per row
     // below: the company caches are small, and a lookup per row would put a statement
@@ -451,7 +460,13 @@ export class SessionService {
       // reconciled index read supplies discovery so sourceOf's facts lookups and the
       // has_trace cache need no per-row work. Steady state (everything classified)
       // skips this.
-      traces = await this.discoverTraces(projectId, agentId);
+      traces = await spanIn(
+        this.deps.telemetry,
+        "sessions.list.reconcile",
+        {},
+        () => this.discoverTraces(projectId, agentId),
+        (t) => ({ attrs: { traces: t.size } }),
+      );
       for (const row of rows.values()) {
         if (!row.hasTrace && traces.has(row.sessionId)) {
           row.hasTrace = true;

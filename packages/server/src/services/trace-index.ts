@@ -51,6 +51,8 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionOrigins } from "../mechanisms/sessions.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
+import { spanIn } from "../telemetry/measure.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -133,6 +135,8 @@ export class TraceIndexService implements TraceIndex {
   @Use() readonly repo!: TraceIndexStore;
   /** Shared origin registry: registration-time classification publishes into it (single source of truth for `source`). */
   @Use() private readonly sources?: SessionOrigins;
+  /** Telemetry's trace.reconcile (PRFC-0008); narrow tests omit it. */
+  @Use() private readonly telemetry?: Telemetry;
 
   /**
    * Brings one Agent's index in step with disk. Hot path: one root stat, then the
@@ -154,7 +158,10 @@ export class TraceIndexService implements TraceIndex {
         ? existing.then(() => this.reconcileAgent(projectId, agentId, opts))
         : existing;
     }
-    const run = this.doReconcile(projectId, agentId, opts.force === true).finally(() => {
+    // One sample per pass, timed from its start; a caller that joins a pass in flight adds none.
+    const run = spanIn(this.telemetry, "trace.reconcile", {}, () =>
+      this.doReconcile(projectId, agentId, opts.force === true),
+    ).finally(() => {
       this.inflight.delete(key);
     });
     this.inflight.set(key, run);

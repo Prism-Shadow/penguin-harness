@@ -63,6 +63,8 @@ export interface PluginLoadResult {
   loaded: LoadedPlugin[];
   /** specifier → why it was skipped. */
   failed: Map<string, string>;
+  /** specifier → how long its import and check took; a reused entry has none. */
+  importMs: Map<string, number>;
 }
 /** The Project ids of a data root: every directory holding a `.project_config.toml`. */
 export async function listProjectIds(root: string): Promise<string[]> {
@@ -566,6 +568,7 @@ export async function loadPlugins(
   machineId: string | null = null,
 ): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
+  const importMs = new Map<string, number>();
   const pushedAssets = assetsDir === undefined ? await committedAssetsDir(root) : assetsDir;
   const bases = pluginBases(root, pushedAssets);
   // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
@@ -593,6 +596,7 @@ export async function loadPlugins(
       loaded.push(held);
       continue;
     }
+    const startedAt = performance.now();
     try {
       const { module, file, stamp } = await importPlugin(specifier, bases);
       const read = await readPackageTable(file);
@@ -639,9 +643,11 @@ export async function loadPlugins(
       loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));
+    } finally {
+      importMs.set(specifier, performance.now() - startedAt);
     }
   }
-  return { loaded, failed };
+  return { loaded, failed, importMs };
 }
 
 /**
@@ -664,6 +670,8 @@ export async function loadPluginHost(
   assetsDir?: string | null,
   /** This server's own machine id (see loadPlugins). */
   machineId: string | null = null,
+  /** Per-plugin timings (see loadPlugins). */
+  observe?: (specifier: string, ms: number, ok: boolean) => void,
 ): Promise<PluginHost> {
   const inherited = pluginHostFrom(resources);
   // An older generation's host may predate `entries()`; then nothing is reused and every
@@ -687,5 +695,9 @@ export async function loadPluginHost(
     host.skip(specifier, reason);
     console.warn(`[plugins] skipped ${specifier}: ${reason}`);
   }
+  // Reported once admission is settled, so a plugin the host refused (a module clash) is
+  // not ok however cleanly it imported.
+  for (const [specifier, ms] of result.importMs)
+    observe?.(specifier, ms, !result.failed.has(specifier));
   return host;
 }

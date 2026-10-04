@@ -83,6 +83,7 @@ import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { Telemetry } from "../mechanisms/telemetry.js";
+import { spanIn } from "../telemetry/measure.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -341,10 +342,13 @@ export class TraceService implements Traces {
   /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
   private async readShard(path: string): Promise<OmniMessage[]> {
     this.observeShardRead?.(path);
-    const read = () => readTraceTolerant(path);
-    return this.telemetry
-      ? this.telemetry.span("trace.read", {}, read, (m) => ({ attrs: { messages: m.length } }))
-      : read();
+    return spanIn(
+      this.telemetry,
+      "trace.read",
+      {},
+      () => readTraceTolerant(path),
+      (m) => ({ attrs: { messages: m.length } }),
+    );
   }
 
   /** Deletes all of this Session's Trace files (called when the Session is deleted); the index rows go with them. */
@@ -579,10 +583,9 @@ export class TraceService implements Traces {
     sessionId: string,
     req: MessagesPageRequest,
   ): Promise<MessagesPageResult> {
-    const read = () => this.messagesPage(projectId, agentId, sessionId, req);
-    if (!this.telemetry) return read();
     // The Trace files it reads are this sample's trace.read samples, keyed by the same session.
-    return this.telemetry.span("session.messages", { session: sessionId }, read, (r) => ({
+    const read = () => this.messagesPage(projectId, agentId, sessionId, req);
+    return spanIn(this.telemetry, "session.messages", { session: sessionId }, read, (r) => ({
       attrs: { kind: req.kind, messages: r.messages.length },
     }));
   }

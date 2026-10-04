@@ -73,6 +73,11 @@ export class Channel {
     return this.listeners.size;
   }
 
+  /** The size of the events held for a page that reconnects (UTF-16 length of the serialized data): telemetry's session.memory counts it. */
+  get bufferedBytes(): number {
+    return this.bufferBytes;
+  }
+
   /**
    * Id of the most recently assigned event (`<epoch>-<seq>`; seq 0 when none was assigned
    * yet). Unicast (sendTo) seqs count too — the value is a position marker, not a buffer

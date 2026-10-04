@@ -30,15 +30,37 @@ export const TELEMETRY_ENABLED_KEY = "telemetry.enabled";
  */
 export const TELEMETRY_GENERATION_RESOURCE_ID = "platform.telemetryGeneration";
 
+/**
+ * The registry entry behind TELEMETRY_GENERATION_RESOURCE_ID: how many App generations this
+ * process has created.
+ */
+export interface GenerationRecord {
+  n: number;
+}
+
+/**
+ * What the outgoing App measured of its own going — its park() and its dispose effect — left
+ * in the registry for the next generation to record (the outgoing buffer is dropped with it).
+ */
+export const TELEMETRY_HANDOVER_RESOURCE_ID = "platform.telemetryHandover";
+
+export interface TelemetryHandover {
+  generation: number;
+  parkMs?: number;
+  disposeMs?: number;
+}
+
 @Component()
 export class TelemetryService implements Telemetry {
   @Use() private readonly settings!: Settings;
   #ring: SampleRing | null = null;
   readonly #scope = new AsyncLocalStorage<TelemetryKeys>();
   #generation: number | undefined;
+  readonly #snapshots: Array<() => void> = [];
 
   setup({ resources }: ClassCtx) {
-    this.#generation = resources.claim<{ n: number }>(TELEMETRY_GENERATION_RESOURCE_ID)?.n;
+    const record = resources.claim<GenerationRecord>(TELEMETRY_GENERATION_RESOURCE_ID);
+    this.#generation = record?.n;
     if (this.settings.get(TELEMETRY_ENABLED_KEY) === "true") this.#ring = new SampleRing();
   }
 
@@ -103,11 +125,46 @@ export class TelemetryService implements Telemetry {
     return result;
   }
 
+  time<T>(
+    probe: string,
+    keys: TelemetryKeys,
+    run: () => T,
+    describe?: (result: T) => Pick<TelemetrySampleInput, "bytes" | "attrs">,
+  ): T {
+    if (this.#ring === null) return run();
+    const start = performance.now();
+    let result: T;
+    try {
+      result = this.#scope.run({ ...this.#scope.getStore(), ...keys }, run);
+    } catch (err) {
+      this.record({ probe, durMs: performance.now() - start, status: "error", keys });
+      throw err;
+    }
+    this.record({
+      probe,
+      durMs: performance.now() - start,
+      status: "ok",
+      keys,
+      ...describe?.(result),
+    });
+    return result;
+  }
+
   samples(query: TelemetryQuery): TelemetrySample[] {
     return this.#ring === null ? [] : selectSamples(this.#ring.list(), query);
   }
 
   clear(): void {
     this.#ring?.clear();
+  }
+
+  addSnapshot(take: () => void): void {
+    this.#snapshots.push(take);
+  }
+
+  snapshot(): void {
+    if (this.#ring === null) return;
+    this.record({ probe: "process.memory", attrs: { memoryCost: process.memoryUsage().rss } });
+    for (const take of this.#snapshots) take();
   }
 }
