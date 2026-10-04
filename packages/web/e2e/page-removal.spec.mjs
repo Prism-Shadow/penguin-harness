@@ -32,12 +32,13 @@ test.beforeEach(async ({ page }) => {
 test("page removal: the plugin removes the Evaluation Center, its routes and the page under it", async ({
   page,
 }) => {
-  const answered = page.waitForResponse((r) => r.url().endsWith("/api/contributions"));
-  // Not /chat: a fresh user's chat page opens the "no model credential" dialog over the nav.
-  await page.goto(`${BASE}/agents`);
-  const body = await (await answered).json();
+  // Asked here rather than watched: the app's own API calls ride its socket, which a response
+  // listener does not see. The request shares the signed-in page's cookies.
+  const body = await (await page.request.get(`${BASE}/api/contributions`)).json();
   expect(body.pageRemovals.map((r) => r.key)).toEqual(["benchmark"]);
   expect(body.pages.map((p) => p.key)).toContain("example-hello");
+  // Not /chat: a fresh user's chat page opens the "no model credential" dialog over the nav.
+  await page.goto(`${BASE}/agents`);
 
   const sidebar = page.locator("aside").first();
   await expect(sidebar.locator('a[href="/agents"]')).toBeVisible();
