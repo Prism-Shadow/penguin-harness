@@ -22,6 +22,8 @@
  * What npm installs for those dependencies is what pnpm-lock.yaml resolves, nothing newer: the
  * prefix's manifest pins their whole locked closure as `overrides`, and a tree that differs from
  * the lockfile by version or by tarball integrity fails the build (scripts/lib/locked-prefix.mjs).
+ * The licenses of those third-party packages ship beside them as `THIRD-PARTY-NOTICES.md` at the
+ * prefix's root (scripts/lib/third-party-notices.mjs); a package without license text fails it.
  *
  * Cached by content: the hash over every plugin's `src/`, `package.json`, `README.md` and
  * `tsup.config.ts`, and over the lockfile entries the prefix is pinned to, names a directory
@@ -45,6 +47,7 @@ import {
   platformSpecs,
   readPnpmLock,
 } from "./lib/locked-prefix.mjs";
+import { readVendoredPackages, thirdPartyNotices } from "./lib/third-party-notices.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGINS_SRC = path.join(ROOT, "plugins");
@@ -85,6 +88,9 @@ const TARGET_PLATFORMS = [
   { os: "win32", cpu: "x64" },
   { os: "darwin", cpu: "arm64" },
 ];
+
+/** The third-party license notices written at the prefix's root, beside its manifest. */
+const NOTICES_FILE = "THIRD-PARTY-NOTICES.md";
 
 /** What npm leaves in the prefix that is not a package: its hidden lockfile. Never shipped. */
 const NOT_SHIPPED = new Set(["node_modules/.package-lock.json"]);
@@ -289,6 +295,16 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
           throw new Error(
             `npm's tree in the builtin prefix differs from pnpm-lock.yaml:\n  ${drift.join("\n  ")}`,
           );
+        }
+        const thirdParty = readVendoredPackages(path.join(out, "node_modules")).filter(
+          (p) => !builtinNames.has(p.name),
+        );
+        if (thirdParty.length > 0) {
+          const notices = thirdPartyNotices(thirdParty, {
+            carrier: PREFIX_MANIFEST.name,
+            location: "node_modules/",
+          });
+          await fsp.writeFile(path.join(out, NOTICES_FILE), notices);
         }
         log(`${closure.size} locked third-party packages: verified`);
       }
