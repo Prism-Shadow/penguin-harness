@@ -9,13 +9,10 @@
  * SandboxService): what a plugin package owes is that its own confinement works, and
  * routing/settings are the harness's behavior, tested there with fakes.
  *
- * One exception, the last describe: the Session scratchpad's existence is a precondition
- * the SERVICE guarantees on this backend's behalf (see SandboxPolicy.writableRoots), and
- * only real bwrap shows what happens without it — a refusal to start on the missing bind
- * source. That describe goes through the service's confiner, imported from the server's
- * source by path: this package depends on core alone, and a test is no reason to change that.
+ * Exception: the last describe drives the server's SandboxService (imported by path; this
+ * package depends on core alone), which creates the scratchpad bwrap binds.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -166,51 +163,35 @@ describe.skipIf(!usable)("penguin-bwrap live enforcement (host-gated)", () => {
 });
 
 describe.skipIf(!usable)("penguin-bwrap behind the sandbox service: the Session scratchpad", () => {
-  // Under the home directory, NOT /tmp: the home directory is read-only in the sandbox, so a
-  // file that reaches the host here came through the scratchpad's own bind — under /tmp the
-  // writable temp area could carry it instead.
-  let agentScratchpad: string;
-  let scratchpad: string;
-  let served: CommandSessionManager;
-
-  beforeAll(async () => {
-    agentScratchpad = mkdtempSync(path.join(homedir(), "penguin-bwrap-scratchpad-"));
-    scratchpad = path.join(agentScratchpad, "session-1");
+  it("a command writes to a scratchpad not created yet, or deleted mid-Session", async () => {
+    // Under the read-only home, not /tmp: a file reaching the host came through the bind itself.
+    const agentScratchpad = mkdtempSync(path.join(homedir(), "penguin-bwrap-scratchpad-"));
+    const scratchpad = path.join(agentScratchpad, "session-1");
     const svc = new SandboxService([["penguin-bwrap", provider]]);
     await svc.whenReady();
     const confiner = svc.confinerFor(() => ({ mode: "workspace-write" }));
-    served = new CommandSessionManager({
+    const served = new CommandSessionManager({
       confineSpawn: () => confiner,
       workspaceDir: ws,
       scratchpadDir: scratchpad,
     });
-  });
-
-  afterAll(() => {
-    served.dispose();
-    rmSync(agentScratchpad, { recursive: true, force: true });
-  });
-
-  async function runServed(cmd: string): Promise<{ code: number | null; out: string }> {
-    const session = served.spawn({ cmd, cwd: ws });
-    let out = "";
-    for await (const chunk of session.collect(15000)) out += chunk;
-    if (session.running) session.kill();
-    return { code: session.exit?.code ?? null, out };
-  }
-
-  it("a command writing to a scratchpad not created yet succeeds, and the file lands on the host", async () => {
-    expect(existsSync(scratchpad)).toBe(false);
-    const r = await runServed(`echo first > ${JSON.stringify(path.join(scratchpad, "a.txt"))}`);
-    // Without the service creating it, bwrap exits before the command: "Can't find source path".
-    expect(r.code, r.out).toBe(0);
-    expect(readFileSync(path.join(scratchpad, "a.txt"), "utf8")).toBe("first\n");
-  });
-
-  it("a scratchpad deleted while the Session lives does not stop the next command", async () => {
-    rmSync(scratchpad, { recursive: true, force: true });
-    const r = await runServed(`echo again > ${JSON.stringify(path.join(scratchpad, "b.txt"))}`);
-    expect(r.code, r.out).toBe(0);
-    expect(readFileSync(path.join(scratchpad, "b.txt"), "utf8")).toBe("again\n");
+    try {
+      for (const file of ["a.txt", "b.txt"]) {
+        // Without the service creating it, bwrap exits first: "Can't find source path".
+        expect(existsSync(scratchpad)).toBe(false);
+        const session = served.spawn({
+          cmd: `echo ${file} > ${JSON.stringify(path.join(scratchpad, file))}`,
+          cwd: ws,
+        });
+        let out = "";
+        for await (const chunk of session.collect(15000)) out += chunk;
+        expect(session.exit?.code, out).toBe(0);
+        expect(readFileSync(path.join(scratchpad, file), "utf8")).toBe(`${file}\n`);
+        rmSync(scratchpad, { recursive: true, force: true });
+      }
+    } finally {
+      served.dispose();
+      rmSync(agentScratchpad, { recursive: true, force: true });
+    }
   });
 });

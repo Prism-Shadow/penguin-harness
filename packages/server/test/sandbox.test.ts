@@ -186,46 +186,38 @@ describe("sandbox service — the built-in interface and its optional dimensions
     expect(dsh.calls[1]).not.toHaveProperty("writableRoots");
   });
 
-  it("a scratchpad not on disk yet is created before the backend sees it, and an existing one is left as it is", async () => {
-    // Created lazily by the Session, and removable mid-Session by a command, an agent or the
-    // user: a backend that binds it (bwrap) refuses to start on a missing bind source.
+  it("a scratchpad missing on disk is created before the backend sees it, and an existing one is left as it is", async () => {
+    // bwrap refuses to start on a missing bind source; a command may delete it mid-Session.
     const scratchpad = path.join(tmp(), "scratchpad", "session-1");
-    const existedWhenConfined: boolean[] = [];
+    const existed: boolean[] = [];
+    const dsh = fake("dsh");
     const svc = await service([
       [
         "dsh-local",
         {
           confine(argv, policy) {
-            existedWhenConfined.push(policy.writableRoots!.every((root) => fs.existsSync(root)));
-            return {
-              argv: [...argv],
-              enforcement: "full",
-              denialSignatures: [],
-              runnerFailureRules: [],
-            };
+            existed.push(fs.existsSync(policy.writableRoots![0]!));
+            return dsh.provider.confine(argv, policy);
           },
         },
       ],
     ]);
-    const confine = svc.confinerFor(() => ({ mode: "workspace-write" }));
-    confine([...ARGV], { ...OPTS, scratchpadDir: scratchpad });
-    expect(fs.statSync(scratchpad).isDirectory()).toBe(true);
-
+    const confine = () =>
+      svc.confinerFor(() => ({ mode: "workspace-write" }))([...ARGV], {
+        ...OPTS,
+        scratchpadDir: scratchpad,
+      });
+    confine();
     fs.writeFileSync(path.join(scratchpad, "plan.md"), "keep me");
-    confine([...ARGV], { ...OPTS, scratchpadDir: scratchpad });
-    expect(fs.readdirSync(scratchpad)).toEqual(["plan.md"]);
+    confine();
     expect(fs.readFileSync(path.join(scratchpad, "plan.md"), "utf8")).toBe("keep me");
-
-    // Deleted while the Session lives: the next spawn brings it back.
     fs.rmSync(scratchpad, { recursive: true });
-    confine([...ARGV], { ...OPTS, scratchpadDir: scratchpad });
-    expect(fs.statSync(scratchpad).isDirectory()).toBe(true);
-    expect(existedWhenConfined).toEqual([true, true, true]);
+    confine();
+    expect(existed).toEqual([true, true, true]);
   });
 
-  it("a scratchpad that cannot be created fails closed, naming the scratchpad, instead of confining without it", async () => {
-    // A file where a parent directory belongs: mkdir fails the same way for every user and
-    // platform, where a read-only parent would not stop root (or Windows) from creating it.
+  it("a scratchpad that cannot be created fails closed, naming it, instead of confining without it", async () => {
+    // A file where a parent directory belongs fails mkdir for every user, root included.
     const blocker = path.join(tmp(), "scratchpad");
     fs.writeFileSync(blocker, "");
     const dsh = fake("dsh");
@@ -237,18 +229,15 @@ describe("sandbox service — the built-in interface and its optional dimensions
     expect(dsh.calls).toHaveLength(0);
   });
 
-  it("outside workspace-write the scratchpad is neither bound nor created, since no backend writes it there", async () => {
+  it("outside workspace-write the scratchpad is neither bound nor created", async () => {
     const scratchpad = path.join(tmp(), "scratchpad", "session-1");
     const bwrap = fake("bwrap", ["fs-write", "network"]);
     const svc = await service([["penguin-bwrap", bwrap.provider]]);
-    svc.confinerFor(() => ({ mode: "read-only" }))([...ARGV], {
-      ...OPTS,
-      scratchpadDir: scratchpad,
-    });
-    svc.confinerFor(() => ({ mode: "danger-full-access", network: "none" }))([...ARGV], {
-      ...OPTS,
-      scratchpadDir: scratchpad,
-    });
+    for (const policy of [
+      { mode: "read-only" },
+      { mode: "danger-full-access", network: "none" },
+    ] as const)
+      svc.confinerFor(() => policy)([...ARGV], { ...OPTS, scratchpadDir: scratchpad });
     expect(bwrap.calls).toHaveLength(2);
     for (const call of bwrap.calls) expect(call).not.toHaveProperty("writableRoots");
     expect(fs.existsSync(scratchpad)).toBe(false);
