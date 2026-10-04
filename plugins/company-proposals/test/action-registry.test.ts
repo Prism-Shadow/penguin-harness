@@ -6,7 +6,8 @@
  * Actions out of a company workflow's reach, a guard replacement handed the default, hooks in
  * their order (built-in first, then by workflow and id), and how each refusal and failure ends
  * (a 5xx failure keeping its status) —
- * and a retry with the same request id answered with the first run.
+ * and a retry with the same request id answered with the first run; a write's notice resolved by
+ * its key under the same rules, and a notify Action refused on its own.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
@@ -462,5 +463,84 @@ describe("the Action registry", () => {
     expect((await a.run("test.note", "organization", {}, { userId: "stranger" })).status).toBe(403);
     gateway.enabled = false;
     expect((await a.run("test.note", "organization")).status).toBe(404);
+  });
+
+  it("a write's notice is a notify Action run by key, under the same rules: a company's replaces the built-in, two are ambiguous, and neither runs on its own", async () => {
+    const told: Array<{ by: string; params: Record<string, unknown> }> = [];
+    const notice = (id: string, workflow?: string): Contributed => ({
+      id,
+      from: workflow === undefined ? "CompanyProposalsPlugin" : "Workflow",
+      data: {
+        kind: "action",
+        key: "notify.test.noted",
+        subjects: ["organization"],
+        params: { to: "string[]", text: "string", runId: "string" },
+      },
+      ...(workflow !== undefined ? { workflow } : {}),
+      code: {
+        run: async (ctx) => {
+          told.push({ by: id, params: ctx.params });
+          return { delivered: ctx.params.to, failed: [] };
+        },
+      } satisfies ActionCode,
+    });
+    // A write that sends one notice once it wrote, and answers how it went.
+    const noting: Contributed = {
+      ...action("t.note", "test.note"),
+      code: {
+        run: async (ctx) => {
+          await noteAction(() => db).run(ctx);
+          return ctx.act.notify!({
+            key: "notify.test.noted",
+            subject: "organization",
+            params: { to: ["acme_dev"], text: "noted" },
+          });
+        },
+      } satisfies ActionCode,
+    };
+    const builtin = appOf([noting, notice("t.noted")]);
+    const ran = await builtin.run("test.note", "organization", { text: "one" }, DEV);
+    expect(ran.status).toBe(200);
+    const runId = (ran.body.run as { id: string }).id;
+    expect(told).toEqual([{ by: "t.noted", params: { to: ["acme_dev"], text: "noted", runId } }]);
+    const [sent] = (await builtin.get("/runs?key=notify.test.noted")).body.runs as Array<
+      Record<string, unknown>
+    >;
+    expect(sent).toMatchObject({
+      contribution: "t.noted",
+      by: "agent:acme_dev",
+      via: "notify",
+      outcome: "succeeded",
+    });
+
+    told.length = 0;
+    const replaced = appOf([noting, notice("t.noted"), notice("co.noted", "acme")]);
+    expect((await replaced.run("test.note", "organization", { text: "two" })).status).toBe(200);
+    expect(told.map((t) => t.by)).toEqual(["co.noted"]);
+
+    told.length = 0;
+    const ambiguous = appOf([
+      noting,
+      notice("t.noted"),
+      notice("co.noted", "acme"),
+      notice("co.other", "zeta"),
+    ]);
+    const amb = await ambiguous.run("test.note", "organization", { text: "three" });
+    // The write stands; the notice that could not resolve is listed with the run.
+    expect(amb.status).toBe(200);
+    expect(amb.body.result).toMatchObject({ ok: false });
+    expect((amb.body.run as { hookErrors: string[] }).hookErrors).toEqual([
+      expect.stringMatching(/^notify\.test\.noted: /),
+    ]);
+    expect(told).toEqual([]);
+    expect(notes()).toEqual(["one", "two", "three"]);
+
+    const direct = await builtin.run("notify.test.noted", "organization", {
+      to: ["acme_dev"],
+      text: "spoofed",
+      runId: "x",
+    });
+    expect([direct.status, direct.body.error]).toMatchObject([403, { code: "notify_direct" }]);
+    expect(told).toEqual([]);
   });
 });

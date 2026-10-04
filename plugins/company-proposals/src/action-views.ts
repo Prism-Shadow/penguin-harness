@@ -17,6 +17,7 @@ import { ActionRefusal, parseSubject } from "./action-model.js";
 import type { StoredRun } from "./action-store.js";
 import { liveRuns, outputFrom, runningCount } from "./action-live.js";
 import type { ActionRegistry } from "./action-registry.js";
+import { NOTIFY_PREFIX } from "./action-notice.js";
 
 export function viewOf(r: StoredRun): ActionRunView {
   return {
@@ -77,7 +78,14 @@ export async function listActions(
       description: a.description,
       builtin: a.builtin,
     };
-    if (subject !== null) {
+    if (subject !== null && a.key.startsWith(NOTIFY_PREFIX)) {
+      view.allowed = false;
+      view.refusal = {
+        status: 403,
+        code: "notify_direct",
+        message: `${a.key} runs only as the notice of a write, not on its own.`,
+      };
+    } else if (subject !== null) {
       try {
         index.guardOf(a)({
           caller: scope.caller,

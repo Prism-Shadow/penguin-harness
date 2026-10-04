@@ -6091,8 +6091,8 @@ Benchmark：
         aborted: "已中止",
         abandoned: "已放弃",
       },
-      via: { web: "经 Web", cli: "经 CLI", session: "经会话", api: "经 API" },
-      hookErrors: (errors: string) => `after 挂钩失败：${errors}`,
+      via: { web: "经 Web", cli: "经 CLI", session: "经会话", api: "经 API", notify: "作为通知" },
+      hookErrors: (errors: string) => `after 挂钩或通知失败：${errors}`,
     },
     roadmaps: {
       listTitle: "路线图",

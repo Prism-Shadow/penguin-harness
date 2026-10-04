@@ -21,6 +21,7 @@ import plugin, {
   sectionSource,
   CompanyActionRegistry,
   CompanyProposalsPlugin,
+  ProposalNotices,
   ProposalsRetirement,
   RETIRE_ID,
   ACTION_ROUTES_ID,
@@ -2330,11 +2331,13 @@ describe("the manifest", () => {
     };
     expect(plugin.modules).toEqual([
       CompanyProposalsPlugin,
+      ProposalNotices,
       CompanyActionRegistry,
       ProposalsRetirement,
     ]);
     expect(table.plugin.modules).toEqual([
       "CompanyProposalsPlugin",
+      "ProposalNotices",
       "CompanyActionRegistry",
       "ProposalsRetirement",
     ]);

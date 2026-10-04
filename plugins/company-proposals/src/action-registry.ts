@@ -19,7 +19,10 @@
  * `refused` (the guard, a hook, a check above, or a domain error with a 4xx status the run
  * threw), `failed` (anything else the run threw: its write rolled back; answered with its own
  * status when that is a 5xx, else 500), `succeeded` (the write
- * stands — an after hook that fails is listed in `hookErrors`, never undoes it). A retry with
+ * stands — an after hook that fails is listed in `hookErrors`, never undoes it). A run's write
+ * may send notices once it committed (`ctx.act.notify`): each is a run of a `notify.*` Action by
+ * key, as the same caller, recorded `via: "notify"`; one that is refused or fails is listed in the
+ * sending run's `hookErrors` too. A `notify.*` Action runs only as such a notice. A retry with
  * the same `requestId` answers the first run. The answer to a run that started a process goes
  * out as soon as the process starts (202); the run ends when the process exits.
  *
@@ -50,9 +53,11 @@ import {
   isRecord,
   prepare,
   requestIdOf,
+  targetOf,
   viaOf,
   type Prepared,
 } from "./action-prepare.js";
+import { actorOf, requireNoticeOnly, sendNotice } from "./action-notice.js";
 import { companyDbPath } from "./schema.js";
 import type { StartProcess } from "./deploy-process.js";
 
@@ -85,6 +90,8 @@ export interface RunRequest {
   params?: unknown;
   requestId?: unknown;
   via?: unknown;
+  /** Set by the registry alone (never from a route): the run is a notice another run sent. */
+  notice?: boolean;
 }
 
 /** A run's answer: 200 once it ended, 202 while its process runs. */
@@ -203,10 +210,11 @@ export class ActionRegistry {
     req: RunRequest,
   ): Promise<RunAnswer> {
     const scope = await this.scope(projectId, orgId, actor);
-    const via = viaOf(req.via, scope.caller);
+    const via = req.notice === true ? "notify" : viaOf(req.via, scope.caller);
     // Which Action, judged by which guard: a key that resolves to none, or to two of one
     // standing, is answered here, before any run exists — it is not recorded.
     const { action, guard } = targetOf(scope.index, req);
+    requireNoticeOnly(action.key, req);
     const start: RunStart = {
       id: randomBytes(8).toString("hex"),
       key: action.key,
@@ -266,6 +274,8 @@ export class ActionRegistry {
     const store = scope.store;
     const guard: Guard = p.guard;
     let wroteStart = false;
+    // The notices the run sent that were refused or failed: listed with its after hooks'.
+    const noticeErrors: string[] = [];
     const ctx: RunContext = {
       runId: start.id,
       key: action.key,
@@ -282,6 +292,13 @@ export class ActionRegistry {
           writeStart(db, start);
           wroteStart = true;
         },
+        notify: (notice) =>
+          sendNotice(
+            (req) => this.run(scope.org.projectId, scope.org.orgId, actorOf(scope.caller), req),
+            start.id,
+            notice,
+            noticeErrors,
+          ),
       },
       process: async (argv, opts) => {
         if (live.hasProcess) throw new Error("a run starts one process");
@@ -340,7 +357,7 @@ export class ActionRegistry {
         const pe: ProcessEnd = processEnd;
         if (ended.result === null) ended.result = { exitCode: pe.exitCode, error: pe.error };
       }
-      const hookErrors: string[] = [];
+      const hookErrors: string[] = [...noticeErrors];
       for (const hook of scope.index.hooksOf(action.key, "after")) {
         try {
           await hook.code({
@@ -445,28 +462,4 @@ export class ActionRegistry {
     this.stopped = true;
     for (const orgKey of [...this.stores.keys()]) this.closeIfIdle(orgKey);
   }
-}
-
-/**
- * The Action a request runs and the guard that judges it. By key: the key's Action and its
- * guard in force. By contribution id: an `action` contribution runs, its guard resolved by its
- * key as usual; a `guard` contribution runs its key's Action, judged by that guard alone. Either
- * may answer 404, or 409 `action_ambiguous` when the key still resolves to two of one standing.
- */
-function targetOf(index: ActionIndex, req: RunRequest): { action: IndexedAction; guard: Guard } {
-  if (req.contribution === undefined) {
-    const action = index.resolve(String(req.key ?? ""));
-    return { action, guard: index.guardOf(action) };
-  }
-  const entry = index.byId(req.contribution);
-  if (entry?.kind === "action") return { action: entry, guard: index.guardOf(entry) };
-  if (entry?.kind === "guard") {
-    const action = index.resolve(entry.key);
-    return { action, guard: index.guardOf(action, entry) };
-  }
-  throw new ActionRefusal(
-    404,
-    "action_not_found",
-    `No action or guard contribution ${req.contribution} in this organization.`,
-  );
 }

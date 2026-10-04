@@ -7190,8 +7190,8 @@ export interface ProposalDeploymentRegisterRequest {
   url?: string;
 }
 
-/** Where an ActionRun came from. */
-export type ActionRunVia = "web" | "cli" | "session" | "api";
+/** Where an ActionRun came from; `notify`: a notice another run sent once its write committed. */
+export type ActionRunVia = "web" | "cli" | "session" | "api" | "notify";
 
 /** How an ActionRun ended; null while it runs. */
 export type ActionRunOutcome = "succeeded" | "refused" | "failed" | "aborted" | "abandoned";

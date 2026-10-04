@@ -19,6 +19,7 @@ import { ProposalService } from "./service.js";
 import { ROUTES_ID, proposalRoutes } from "./routes.js";
 import { proposalCode } from "./builtin-actions.js";
 import { retireListeners, type RetireListener } from "./org-retire.js";
+import type { Act, NoticeResult } from "./action-model.js";
 
 /** The page contribution's id, as the manifest names it. */
 export const PAGE_ID = "company-proposals.page";
@@ -450,8 +451,9 @@ export class CompanyProposalsPlugin {
 
   /**
    * The brief of the proposal a roadmap item is linked to, rewritten when the item's changed
-   * brief is approved again (ProposalService.rebriefFromRoadmap). Answers false, writing
-   * nothing, when that proposal is merged or rejected: the roadmap creates a new one instead.
+   * brief is approved again (ProposalService.rebriefFromRoadmap), its author told through the
+   * approval run's notices when given. Answers false, writing nothing, when that proposal is
+   * merged or rejected: the roadmap creates a new one instead.
    */
   rebriefFromRoadmap(
     projectId: string,
@@ -463,7 +465,20 @@ export class CompanyProposalsPlugin {
       delegatedBy: string;
       roadmap: { number: number; key: string };
     },
+    notify?: Act["notify"],
   ): Promise<boolean> {
-    return this.service.rebriefFromRoadmap(projectId, orgId, number, req);
+    return this.service.rebriefFromRoadmap(projectId, orgId, number, req, notify);
+  }
+
+  /** What the built-in proposal notices deliver (notify-actions.ts, ProposalService.deliverNotice). */
+  deliverNotice(
+    projectId: string,
+    orgId: string,
+    number: number,
+    to: readonly string[],
+    line: string,
+    caller: { principal: string },
+  ): Promise<NoticeResult> {
+    return this.service.deliverNotice(projectId, orgId, number, to, line, caller);
   }
 }

@@ -160,3 +160,30 @@ export async function prepare(
   }
   return { subject, params, guard, commit };
 }
+
+/**
+ * The Action a request runs and the guard that judges it. By key: the key's Action and its
+ * guard in force. By contribution id: an `action` contribution runs, its guard resolved by its
+ * key as usual; a `guard` contribution runs its key's Action, judged by that guard alone. Either
+ * may answer 404, or 409 `action_ambiguous` when the key still resolves to two of one standing.
+ */
+export function targetOf(
+  index: ActionIndex,
+  req: RunRequest,
+): { action: IndexedAction; guard: Guard } {
+  if (req.contribution === undefined) {
+    const action = index.resolve(String(req.key ?? ""));
+    return { action, guard: index.guardOf(action) };
+  }
+  const entry = index.byId(req.contribution);
+  if (entry?.kind === "action") return { action: entry, guard: index.guardOf(entry) };
+  if (entry?.kind === "guard") {
+    const action = index.resolve(entry.key);
+    return { action, guard: index.guardOf(action, entry) };
+  }
+  throw new ActionRefusal(
+    404,
+    "action_not_found",
+    `No action or guard contribution ${req.contribution} in this organization.`,
+  );
+}

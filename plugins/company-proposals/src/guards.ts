@@ -21,7 +21,7 @@ import type {
   ProposalStatus,
 } from "@prismshadow/penguin-server/api";
 import type { DatabaseSync } from "node:sqlite";
-import type { ActionCaller, Guard, GuardInput, Subject } from "./action-model.js";
+import type { Act, ActionCaller, Guard, GuardInput, Subject } from "./action-model.js";
 import { ProposalError, type Proposal } from "./domain.js";
 import { refKey, refLabel } from "./impl-branch.js";
 import type { ProposalTx } from "./ports.js";
@@ -337,6 +337,8 @@ export function mergedOnWord(p: Proposal, caller: Caller): boolean {
 export interface WriteAct {
   check(state: Proposal | null, opts?: { tx?: ProposalTx; params?: Record<string, unknown> }): void;
   inTx?: (db: DatabaseSync) => void;
+  /** The run's notices (Act.notify); absent, a use case delivers what the built-in notify Action would. */
+  notify?: Act["notify"];
 }
 
 /** The default guard of `key`, for `caller` on `subject` with `params`. */

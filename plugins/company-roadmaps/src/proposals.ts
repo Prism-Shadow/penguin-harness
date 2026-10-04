@@ -5,6 +5,7 @@
  * index.ts wires it, by name, to the company-proposals module.
  */
 import { Interface } from "@prismshadow/penguin-core/plugin";
+import type { WriteAct } from "./guards.js";
 
 @Interface()
 export abstract class ProposalCreator {
@@ -33,7 +34,8 @@ export abstract class ProposalCreator {
    * comments and approvals stand), recorded under `delegatedBy`, and its author is told unless
    * it is `owner`, whom this plugin tells. Answers false, writing nothing, when that proposal is
    * merged or rejected (or does not exist): a new one is to be created instead. Idempotent: a
-   * proposal that has the brief already answers true.
+   * proposal that has the brief already answers true. `notify` is the approval run's notices:
+   * the author is told through it (`notify.proposal.brief_edited`), as that run's notice.
    */
   abstract rebriefFromRoadmap(
     projectId: string,
@@ -45,6 +47,7 @@ export abstract class ProposalCreator {
       delegatedBy: string;
       roadmap: { number: number; key: string };
     },
+    notify?: WriteAct["notify"],
   ): Promise<boolean>;
 }
 
@@ -66,11 +69,12 @@ export async function proposalOfApproval(
     delegatedBy: string;
     roadmap: { number: number; key: string };
   },
+  notify?: WriteAct["notify"],
 ): Promise<{ number: number; rebriefed: boolean }> {
   const { linked, owner, title, ...rest } = req;
   if (
     linked !== undefined &&
-    (await proposals.rebriefFromRoadmap(projectId, orgId, linked, { owner, ...rest }))
+    (await proposals.rebriefFromRoadmap(projectId, orgId, linked, { owner, ...rest }, notify))
   ) {
     return { number: linked, rebriefed: true };
   }

@@ -50,7 +50,25 @@ export interface RunContext {
   act: {
     guard(input: Omit<GuardInput, "running">): unknown;
     inTx?: (db: DatabaseSync) => void;
+    /** Runs the notify Action of `notice.key` as this run's notice; never throws. */
+    notify?: (notice: Notice) => Promise<NoticeOutcome>;
   };
+}
+
+/** A notice a write sends once it committed: a notify Action run by key, with its parameters. */
+export interface Notice {
+  key: string;
+  subject: string;
+  params: Record<string, unknown>;
+}
+
+/** How a notice went: its run's result, or why it was refused or failed. */
+export type NoticeOutcome = { ok: true; result: unknown } | { ok: false; error: string };
+
+/** What a built-in notify Action answers: the recipients told, and those not with the reason. */
+export interface NoticeResult {
+  delivered: string[];
+  failed: Array<{ agentId: string; error: string }>;
 }
 
 export interface ActionCode {

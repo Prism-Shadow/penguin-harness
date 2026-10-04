@@ -22,7 +22,14 @@ import {
   type Roadmap,
   type RoadmapStatus,
 } from "./domain.js";
-import type { ActionCaller, Guard, GuardCode, GuardInput, Subject } from "./action-shapes.js";
+import type {
+  ActionCaller,
+  Guard,
+  GuardCode,
+  GuardInput,
+  RunContext,
+  Subject,
+} from "./action-shapes.js";
 
 /** The caller, resolved: the principal a write is recorded under, and the employee it is, if one. */
 export interface Caller {
@@ -243,6 +250,8 @@ export function verdictRoles(verdict: unknown): string[] {
 export interface WriteAct {
   check(state: Roadmap | null, opts?: { params?: Record<string, unknown> }): unknown;
   inTx?: (db: DatabaseSync) => void;
+  /** The run's notices (notices.ts); absent, a use case delivers what the built-in notify Action would. */
+  notify?: RunContext["act"]["notify"];
 }
 
 /** The default guard of `key`, for `caller` on `subject` (a use case called directly). */

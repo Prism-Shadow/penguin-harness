@@ -21,9 +21,9 @@ CREATE TRIGGER IF NOT EXISTS ${table}_no_update BEFORE UPDATE ON ${table}
 CREATE TRIGGER IF NOT EXISTS ${table}_no_delete BEFORE DELETE ON ${table}
   BEGIN SELECT RAISE(ABORT, 'history_append_only'); END;`;
 
-/** The registry's tables. */
-export const ACTION_SCHEMA = `
-CREATE TABLE IF NOT EXISTS action_runs (
+/** The runs' start rows, created as `name`. */
+const runsTable = (name: string): string => `
+CREATE TABLE IF NOT EXISTS ${name} (
   id           TEXT PRIMARY KEY,
   key          TEXT NOT NULL,
   contribution TEXT NOT NULL,
@@ -32,11 +32,14 @@ CREATE TABLE IF NOT EXISTS action_runs (
   commit_sha   TEXT,
   params       TEXT NOT NULL,
   by           TEXT NOT NULL,
-  via          TEXT NOT NULL CHECK (via IN ('web','cli','session','api')),
+  via          TEXT NOT NULL CHECK (via IN ('web','cli','session','api','notify')),
   session_id   TEXT,
   request_id   TEXT,
   started_at   TEXT NOT NULL
-);
+);`;
+
+/** The registry's tables. */
+export const ACTION_SCHEMA = `${runsTable("action_runs")}
 CREATE UNIQUE INDEX IF NOT EXISTS action_runs_request ON action_runs (by, key, request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS action_runs_by_time    ON action_runs (started_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS action_runs_by_subject ON action_runs (subject, started_at DESC);
@@ -183,6 +186,7 @@ export class ActionStore {
   /** Opens an organization's `company.db` with the registry's tables, and records the runs a past process left. */
   static open(file: string, processStartedAt: string, now?: () => number): ActionStore {
     const store = new ActionStore(openCompanyDb(file, ACTION_SCHEMA), now);
+    widenRunVia(store.db);
     store.abandonBefore(processStartedAt);
     return store;
   }
@@ -302,5 +306,48 @@ export class ActionStore {
       ORDER BY r.started_at DESC, r.id DESC LIMIT ?`;
     args.push(filter.limit);
     return (this.q(sql).all(...args) as Row[]).map(runOf);
+  }
+}
+
+/**
+ * TODO(action-runs-via-notify): `action_runs` created before notices existed checks `via`
+ * against ('web','cli','session','api'), so a notice's run (`via = 'notify'`) could not be
+ * recorded in it. Such a table is rebuilt once, here, with the current CHECK: SQLite cannot
+ * change a constraint in place, so the rows are copied into a new table that takes the old one's
+ * name (the procedure of https://sqlite.org/lang_altertable.html#otheralter), its indexes and
+ * triggers created again; no row changes. It runs when a registry opens the store, inside one
+ * write transaction, and does nothing on a table that has the CHECK already. Remove it once
+ * every `company.db` written before 2026-10-04 has been opened by a registry with it — at the
+ * latest when the first release ships, since no released build ever wrote the old table.
+ */
+export function widenRunVia(db: DatabaseSync): void {
+  const current = (): boolean => {
+    const row = db
+      .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'action_runs'`)
+      .get() as Row | undefined;
+    return row === undefined || String(row.sql).includes("'notify'");
+  };
+  if (current()) return;
+  // The end rows reference the runs; the copy keeps every id, which foreign_key_check confirms.
+  db.exec("PRAGMA foreign_keys = OFF;");
+  try {
+    immediate(db, () => {
+      if (current()) return;
+      db.exec(runsTable("action_runs_widened"));
+      db.exec(`INSERT INTO action_runs_widened
+        (id, key, contribution, subject_kind, subject, commit_sha, params, by, via, session_id, request_id, started_at)
+        SELECT id, key, contribution, subject_kind, subject, commit_sha, params, by, via, session_id, request_id, started_at
+        FROM action_runs`);
+      // Dropping the table drops its indexes and its triggers; with the foreign keys off it
+      // deletes no row first, so the append-only trigger has nothing to refuse.
+      db.exec("DROP TABLE action_runs;");
+      db.exec("ALTER TABLE action_runs_widened RENAME TO action_runs;");
+      db.exec(ACTION_SCHEMA);
+      if (db.prepare("PRAGMA foreign_key_check").all().length > 0) {
+        throw new Error("action_runs rebuild left end rows without their run");
+      }
+    });
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON;");
   }
 }

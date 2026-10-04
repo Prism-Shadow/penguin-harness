@@ -5923,8 +5923,9 @@ Scenarios:
         cli: "from the CLI",
         session: "from a session",
         api: "over the API",
+        notify: "as a notice",
       },
-      hookErrors: (errors: string) => `After hooks failed: ${errors}`,
+      hookErrors: (errors: string) => `After hooks or notices failed: ${errors}`,
     },
     roadmaps: {
       listTitle: "Roadmaps",

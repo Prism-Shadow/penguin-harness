@@ -65,7 +65,12 @@ describe("the company-proposals plugin on a real server", () => {
     const [row] = await harness.installedPlugins();
     expect(row).toMatchObject({
       active: true,
-      modules: ["CompanyProposalsPlugin", "CompanyActionRegistry", "ProposalsRetirement"],
+      modules: [
+        "CompanyProposalsPlugin",
+        "ProposalNotices",
+        "CompanyActionRegistry",
+        "ProposalsRetirement",
+      ],
       replaces: [],
     });
     const { pages } = await api.get<Contributions>("/api/contributions");

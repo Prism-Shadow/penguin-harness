@@ -9,6 +9,7 @@ import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   ROADMAP_ACTION_IDS,
+  ROADMAP_NOTICE_IDS,
   ROADMAP_SUBJECTS_ID,
   roadmapGuards,
   withApprovalRoles,
@@ -189,7 +190,7 @@ describe("the approval roles", () => {
 });
 
 describe("the manifest", () => {
-  it("declares exactly the Actions builtin-actions.ts implements, and the subject resolver", () => {
+  it("declares exactly the Actions builtin-actions.ts implements, their notices, and the subject resolver", () => {
     const table = JSON.parse(readFileSync(path.join(PLUGIN_DIR, "ifaces.json"), "utf8")) as {
       modules: Record<
         string,
@@ -199,7 +200,11 @@ describe("the manifest", () => {
     const declared =
       table.modules.CompanyRoadmapsPlugin?.contributes["CompanyActionRegistry.actions"] ?? [];
     expect(declared.map((d) => d.id).sort()).toEqual(
-      [...Object.values(ROADMAP_ACTION_IDS), ROADMAP_SUBJECTS_ID].sort(),
+      [
+        ...Object.values(ROADMAP_ACTION_IDS),
+        ...Object.values(ROADMAP_NOTICE_IDS),
+        ROADMAP_SUBJECTS_ID,
+      ].sort(),
     );
     for (const [key, id] of Object.entries(ROADMAP_ACTION_IDS)) {
       expect(declared.find((d) => d.id === id)).toMatchObject({ kind: "action", key });

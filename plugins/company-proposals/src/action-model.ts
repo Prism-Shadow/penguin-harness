@@ -59,8 +59,8 @@ export interface Subject {
 /** The outcome of a run; a run without one is still running. */
 export type ActionOutcome = "succeeded" | "refused" | "failed" | "aborted" | "abandoned";
 
-/** Where a run came from. */
-export type ActionVia = "web" | "cli" | "session" | "api";
+/** Where a run came from; `notify` is a notice another run sent once its write committed. */
+export type ActionVia = "web" | "cli" | "session" | "api" | "notify";
 
 /** The caller, resolved: the principal a run is recorded under, and the person behind it. */
 export interface ActionCaller {
@@ -138,6 +138,57 @@ export type Guard = (input: GuardInput, options?: Record<string, unknown>) => un
 export interface Act {
   guard(input: Omit<GuardInput, "running">): unknown;
   inTx?: (db: DatabaseSync) => void;
+  /**
+   * Sends a notice: runs the notify Action of `notice.key` (`notify.proposal.approved`) in the
+   * organization, as the same caller, recorded with `via: "notify"` and the sending run's id as
+   * its `runId` parameter. A company workflow's `action` on that key replaces the built-in one,
+   * and its guard and hooks apply. Never throws: a notice that was refused or failed is listed
+   * in the sending run's `hookErrors` and answered with its reason.
+   */
+  notify?: (notice: Notice) => Promise<NoticeOutcome>;
+}
+
+/** A notice a write sends once it committed: who is told what, as a notify Action's parameters. */
+export interface Notice {
+  /** The notify Action's key, `notify.<plugin>.<event>`. */
+  key: string;
+  /** The subject as written: the sending write's (`proposal:12`, `item:3/<key>`). */
+  subject: string;
+  /** The recipients (`to`) and the line they are told (`text`), and whatever else the key declares. */
+  params: Record<string, unknown>;
+}
+
+/** How a notice went: its run's result, or why it was refused or failed. */
+export type NoticeOutcome = { ok: true; result: unknown } | { ok: false; error: string };
+
+/**
+ * What a built-in notify Action answers: the recipients told, and those not (each with the
+ * reason, and the delivery error's status and code when it had them). A company workflow's
+ * replacement answers what it likes; a sender reads this shape only when it is there.
+ */
+export interface NoticeResult {
+  delivered: string[];
+  failed: NoticeFailure[];
+}
+
+export interface NoticeFailure {
+  agentId: string;
+  error: string;
+  status?: number;
+  code?: string;
+}
+
+/** The failures a notify run's result lists, read leniently (a replacement's result may be anything). */
+export function noticeFailures(result: unknown): NoticeFailure[] {
+  const failed = (result as { failed?: unknown } | null)?.failed;
+  if (!Array.isArray(failed)) return [];
+  return failed.filter(
+    (f): f is NoticeFailure =>
+      typeof f === "object" &&
+      f !== null &&
+      typeof (f as NoticeFailure).agentId === "string" &&
+      typeof (f as NoticeFailure).error === "string",
+  );
 }
 
 /** A subject's commit, resolved when a run starts: what a deploy runs on. */

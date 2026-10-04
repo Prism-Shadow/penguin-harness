@@ -48,7 +48,8 @@ import {
   type Caller,
   type WriteAct,
 } from "./guards.js";
-import type { Subject } from "./action-shapes.js";
+import type { NoticeResult, Subject } from "./action-shapes.js";
+import { sendNotice } from "./notices.js";
 import type { RoadmapStore } from "./ports.js";
 import { COMPANY_DB, companyDbPath } from "./schema.js";
 import { SqliteRoadmapStore } from "./store.js";
@@ -440,6 +441,42 @@ export class RoadmapService {
     }
   }
 
+  /**
+   * What the built-in desk notices do (notices.ts): `line` on each desk of `to`; a desk that
+   * cannot take it recorded as `notify_failed` on roadmap `number`, under `by`.
+   */
+  async deliverNotice(
+    projectId: string,
+    orgId: string,
+    number: number,
+    to: readonly string[],
+    line: string,
+    by: string,
+  ): Promise<NoticeResult> {
+    const store = this.store(projectId, orgId);
+    const out: NoticeResult = { delivered: [], failed: [] };
+    for (const agentId of to) {
+      const hints: string[] = [];
+      const res = await this.deliver(projectId, orgId, store, number, agentId, line, by, hints);
+      if (res.delivered) out.delivered.push(agentId);
+      else out.failed.push({ agentId, error: res.error ?? "" });
+    }
+    return out;
+  }
+
+  /** What the built-in approval request does: `line` into room session `sessionId` of `agentId`. */
+  async noticeInSession(sessionId: string, agentId: string, line: string): Promise<NoticeResult> {
+    try {
+      await this.tell(sessionId, line);
+      return { delivered: [agentId], failed: [] };
+    } catch (err) {
+      return {
+        delivered: [],
+        failed: [{ agentId, error: err instanceof Error ? err.message : String(err) }],
+      };
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Reads
   // -------------------------------------------------------------------------
@@ -785,16 +822,16 @@ export class RoadmapService {
             `The moderator ${moderator ?? "(none)"} has no open room session to ask for its approvals.`,
           );
         } else {
-          try {
-            await this.tell(
-              clone.sessionId,
-              approvalRequestLine({ orgId, roadmap: established, items: briefed }),
-            );
-          } catch (err) {
-            hints.push(
-              `The moderator's room session was not asked for its approvals: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
+          const text = approvalRequestLine({ orgId, roadmap: established, items: briefed });
+          await sendNotice(
+            a,
+            "approval_requested",
+            roadmapSubject(number).text,
+            { to: [clone.agentId], text, sessionId: clone.sessionId },
+            () => this.noticeInSession(clone.sessionId, clone.agentId, text),
+            hints,
+            (f) => `The moderator's room session was not asked for its approvals: ${f.error}`,
+          );
         }
       }
       return { roadmap: this.view(this.require(store, number)), hints };
@@ -840,14 +877,20 @@ export class RoadmapService {
       let made: { number: number; rebriefed: boolean } | null = null;
       if (last) {
         try {
-          made = await proposalOfApproval(this.deps.proposals, projectId, orgId, {
-            linked: d.proposal,
-            owner: item.owner,
-            title: item.title,
-            brief: d.brief,
-            delegatedBy: caller.principal,
-            roadmap: { number, key },
-          });
+          made = await proposalOfApproval(
+            this.deps.proposals,
+            projectId,
+            orgId,
+            {
+              linked: d.proposal,
+              owner: item.owner,
+              title: item.title,
+              brief: d.brief,
+              delegatedBy: caller.principal,
+              roadmap: { number, key },
+            },
+            a.notify,
+          );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           throw new RoadmapError(
@@ -921,19 +964,18 @@ export class RoadmapService {
           proposal,
           rebriefed: made.rebriefed,
         });
-        const res = await this.deliver(
-          projectId,
-          orgId,
-          store,
-          number,
-          item.owner,
-          line,
-          caller.principal,
+        const res = await sendNotice(
+          a,
+          "item_approved",
+          itemSubject(number, key).text,
+          { to: [item.owner], text: line },
+          () => this.deliverNotice(projectId, orgId, number, [item.owner], line, caller.principal),
           hints,
+          notTold,
         );
         store.recordDelivery(number, key, res.delivered, res.error ?? null);
         if (!made.rebriefed) {
-          await this.tellStacked(projectId, orgId, store, r, item, proposal, caller, hints);
+          await this.tellStacked(projectId, orgId, a, r, item, proposal, caller, hints);
         }
       }
       return { roadmap: this.view(this.require(store, number)), hints };
@@ -989,16 +1031,19 @@ export class RoadmapService {
         (now) => a.check(now),
       );
       const hints: string[] = [];
-      await this.tellStacked(projectId, orgId, store, r, item, proposal, caller, hints);
+      await this.tellStacked(projectId, orgId, a, r, item, proposal, caller, hints);
       return { roadmap: this.view(this.require(store, number)), hints };
     });
   }
 
-  /** The owners of the items stacked on `item` learn the number of its proposal (not the caller's own). */
+  /**
+   * The owners of the items stacked on `item` learn the number of its proposal (not the caller's
+   * own), each by the notice `notify.roadmap.base_linked` of the write (`act`).
+   */
   private async tellStacked(
     projectId: string,
     orgId: string,
-    store: RoadmapStore,
+    act: WriteAct,
     r: Roadmap,
     item: DraftItem,
     proposal: number,
@@ -1010,15 +1055,15 @@ export class RoadmapService {
       const dep = r.items.find((x) => x.key === depKey);
       const depOwner = r.delegations[depKey]?.owner;
       if (dep === undefined || depOwner === undefined || depOwner === caller.agentId) continue;
-      await this.deliver(
-        projectId,
-        orgId,
-        store,
-        r.number,
-        depOwner,
-        baseLinkedLine(r, dep, item, proposal),
-        caller.principal,
+      const text = baseLinkedLine(r, dep, item, proposal);
+      await sendNotice(
+        act,
+        "base_linked",
+        itemSubject(r.number, item.key).text,
+        { to: [depOwner], text },
+        () => this.deliverNotice(projectId, orgId, r.number, [depOwner], text, caller.principal),
         hints,
+        notTold,
       );
     }
   }
@@ -1482,6 +1527,10 @@ export class RoadmapService {
 
 /** The subjects of a use case called directly, for the default guard of its Action. */
 const ORGANIZATION: Subject = { kind: "organization", id: "", text: "organization" };
+/** The hint of a desk that was not told. */
+const notTold = (f: { agentId: string; error: string }): string =>
+  `${f.agentId} was not told: ${f.error}`;
+
 const roadmapSubject = (number: number): Subject => ({
   kind: "roadmap",
   id: String(number),

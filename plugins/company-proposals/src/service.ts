@@ -1,8 +1,9 @@
 /**
  * The proposal service: the use cases over the ports (ports.ts), the views a caller gets, and
  * the one way it speaks to employees — a line of work put straight on the employee's desk,
- * `[proposal #<n>] ` + what happened + the command to run, in nobody's name. No channel, no
- * trigger kind of its own.
+ * `[proposal #<n>] ` + what happened + the command to run, in nobody's name, sent as the write's
+ * notice (desk.ts), a notify Action a company workflow may replace. No channel, no trigger kind
+ * of its own.
  *
  * Who may do what, and in which state, are the default rules (guards.ts): the person delegates,
  * comments, requests changes and approves; the author publishes, marks ready, asks for an
@@ -87,7 +88,8 @@ import {
   type Caller,
   type WriteAct,
 } from "./guards.js";
-import { parseSubject, type Subject } from "./action-model.js";
+import { noticeFailures, parseSubject, type NoticeResult, type Subject } from "./action-model.js";
+import { ProposalDesk } from "./desk.js";
 import type { HeadScope } from "./heads.js";
 import type { Forge, GitMirror, ProposalFacts, Viewer } from "./ports.js";
 import { SqliteProposalStore } from "./store-write.js";
@@ -169,7 +171,6 @@ interface OrgStores {
 
 /** One write's desk deliveries: the reasons a delivery failed, collected for the answer. */
 interface Delivery {
-  store: SqliteProposalStore;
   hints: string[];
 }
 
@@ -192,10 +193,6 @@ function callerOfPrincipal(principal: string): Caller {
   const agentId = principal.startsWith("agent:") ? principal.slice("agent:".length) : null;
   const userId = agentId === null ? principal.replace(/^user:/, "") : "";
   return { principal, agentId, userId };
-}
-
-function agentPrincipal(agentId: string): string {
-  return `agent:${agentId}`;
 }
 
 /** A slug of a title for a branch name: lower-case ASCII words, at most six. */
@@ -227,8 +224,19 @@ export class ProposalService {
   private readonly graphs: GraphRefresher;
   /** Organizations being (or already) deleted, whose stores may not open again (org-retire.ts). */
   private readonly retired = new RetiredOrgs();
+  /** How the plugin speaks to employees: the notices of its writes (desk.ts). */
+  private readonly desk: ProposalDesk;
 
   constructor(private readonly deps: ServiceDeps) {
+    this.desk = new ProposalDesk({
+      gateway: deps.gateway,
+      log: (line) => deps.log.line(line),
+      recordFailed: async (projectId, orgId, number, reason, by) => {
+        const { org, store } = await this.openInternal(projectId, orgId);
+        const written = store.notifyFailed(number, () => ({ reason, by }));
+        this.notify(org, number, written.seq, "notify_failed");
+      },
+    });
     const forge = deps.forge ?? new GithubForge(deps.gh);
     this.prStatus = new PrStatusReader({
       forge,
@@ -720,8 +728,8 @@ export class ProposalService {
   // ---------------------------------------------------------------------------
 
   /** What one write's deliveries report back: the reasons a delivery failed, for the answer. */
-  private delivery(store: SqliteProposalStore): Delivery {
-    return { store, hints: [] };
+  private delivery(): Delivery {
+    return { hints: [] };
   }
 
   /** The write's answer, carrying any delivery that failed as a hint the page shows. */
@@ -736,62 +744,16 @@ export class ProposalService {
     return this.detail(store, this.requireProposal(store, number), caller);
   }
 
-  /**
-   * The plugin's one drive: a line of work on each employee's desk, in nobody's name —
-   * `[proposal #<n>] ` + what happened + the command to run. The caller's own employee is
-   * never told of its own act. A desk that cannot take it (the organization or the employee
-   * paused, no desk) is recorded as a `notify_failed` event and returned as a hint, never
-   * raised: the write it follows already stands.
-   */
-  private async tell(
-    delivery: Delivery,
-    org: OrgView,
-    p: Pick<Proposal, "number">,
-    caller: Caller,
-    agentIds: readonly string[],
-    text: string,
-  ): Promise<void> {
-    const line = `[proposal #${p.number}] ${text}`;
-    for (const agentId of new Set(agentIds)) {
-      if (agentId === caller.agentId) continue;
-      try {
-        await this.deps.gateway.deliverToDesk(org.projectId, org.orgId, agentId, line);
-      } catch (err) {
-        await this.deliveryFailed(delivery, org, p, caller, agentId, err);
-      }
-    }
-  }
-
-  /**
-   * A delivery that failed is not silent: the desk is the only way the plugin reaches an
-   * employee, so a failure is logged, recorded as a `notify_failed` event (the timeline and
-   * the unread count show it) and handed back on the write's answer.
-   */
-  private async deliveryFailed(
-    delivery: Delivery,
-    org: OrgView,
-    p: Pick<Proposal, "number">,
-    caller: Caller,
-    agentId: string,
-    err: unknown,
-  ): Promise<void> {
-    const message = err instanceof Error ? err.message : String(err);
-    const reason = `${agentPrincipal(agentId)} not notified: ${message}`;
-    this.deps.log.line(`[${PLUGIN_NAME}] proposal #${p.number}: ${reason}`);
-    delivery.hints.push(reason);
-    try {
-      const written = delivery.store.notifyFailed(p.number, () => ({
-        reason,
-        by: caller.principal,
-      }));
-      this.notify(org, p.number, written.seq, "notify_failed");
-    } catch (recordErr) {
-      this.deps.log.line(
-        `[${PLUGIN_NAME}] proposal #${p.number}: the failed delivery was not recorded: ${
-          recordErr instanceof Error ? recordErr.message : String(recordErr)
-        }`,
-      );
-    }
+  /** What the built-in proposal notices deliver (notify-actions.ts): see ProposalDesk.deliver. */
+  deliverNotice(
+    projectId: string,
+    orgId: string,
+    number: number,
+    to: readonly string[],
+    line: string,
+    caller: Pick<Caller, "principal">,
+  ): Promise<NoticeResult> {
+    return this.desk.deliver(projectId, orgId, number, to, line, caller);
   }
 
   private notify(
@@ -854,8 +816,9 @@ export class ProposalService {
     act?: WriteAct,
   ): Promise<ProposalDetail> {
     const { org, store, caller } = await this.open(projectId, orgId, actor, act);
-    (act ?? defaultAct("proposal.create", caller, ORGANIZATION)).check(null);
-    const delivery = this.delivery(store);
+    const a = act ?? defaultAct("proposal.create", caller, ORGANIZATION);
+    a.check(null);
+    const delivery = this.delivery();
     const brief = req.brief.trim();
     if (brief === "") throw badRequest("brief must not be empty.");
     const author = req.author;
@@ -872,11 +835,13 @@ export class ProposalService {
     }));
     this.notify(org, number, seq, "created");
     await this.ensureSkills(projectId, author);
-    await this.tell(
+    await this.desk.tell(
       delivery,
       org,
       { number },
       caller,
+      a,
+      "created",
       [author],
       `${whoOf(caller)} asks you to write it: ${brief}\n\nWrite the proposal: \`penguin org proposal publish ${number} --file <markdown>\`, then \`penguin org proposal ready ${number}\` when a person can read it.`,
     );
@@ -950,6 +915,7 @@ export class ProposalService {
       delegatedBy: string;
       roadmap: { number: number; key: string };
     },
+    notify?: WriteAct["notify"],
   ): Promise<boolean> {
     const { org, store } = await this.openInternal(projectId, orgId);
     const brief = req.brief.trim();
@@ -969,11 +935,13 @@ export class ProposalService {
     this.notify(org, number, written.seq, "brief_edited");
     if (p.author !== req.owner) {
       const caller = callerOfPrincipal(req.delegatedBy);
-      await this.tell(
-        this.delivery(store),
+      await this.desk.tell(
+        this.delivery(),
         org,
         p,
         caller,
+        notify !== undefined ? { notify } : undefined,
+        "brief_edited",
         [p.author],
         `Item [${req.roadmap.key}] of roadmap #${req.roadmap.number} was approved again with a changed brief, so ${whoOf(caller)} rewrote this proposal's brief: ${brief}\n\nRead it with \`penguin org proposal show ${number}\` before the next revision.`,
       );
@@ -998,7 +966,7 @@ export class ProposalService {
   ): Promise<ProposalDetail> {
     const { org, store, caller } = await this.open(projectId, orgId, actor, act);
     const a = act ?? defaultAct("proposal.brief", caller, proposalSubject(number));
-    const delivery = this.delivery(store);
+    const delivery = this.delivery();
     const brief = text.trim();
     if (brief === "") throw badRequest("brief must not be empty.");
     a.check(this.requireProposal(store, number), { params: { brief } });
@@ -1009,11 +977,13 @@ export class ProposalService {
     const p = written.proposal;
     this.notify(org, number, written.seq, "brief_edited");
     if (p.status === "drafting") {
-      await this.tell(
+      await this.desk.tell(
         delivery,
         org,
         p,
         caller,
+        a,
+        "brief_edited",
         [p.author],
         `${whoOf(caller)} rewrote the brief: ${brief}\n\nRead it with \`penguin org proposal show ${number}\` before the next revision.`,
       );
@@ -1031,7 +1001,7 @@ export class ProposalService {
   ): Promise<ProposalDetail> {
     const { org, store, caller } = await this.open(projectId, orgId, actor, act);
     const a = act ?? defaultAct("proposal.publish", caller, proposalSubject(number));
-    const delivery = this.delivery(store);
+    const delivery = this.delivery();
     const before = this.requireProposal(store, number);
     a.check(before);
     let doc;
@@ -1100,11 +1070,13 @@ export class ProposalService {
     this.notify(org, number, written.seq, approvedRevision !== null ? "ready" : "revised");
     if (approvedRevision !== null && p.implementer !== null) {
       // The person learns through the unread event; the one who must not merge yet is told.
-      await this.tell(
+      await this.desk.tell(
         delivery,
         org,
         p,
         caller,
+        a,
+        "revised_after_approval",
         [p.implementer],
         `revised after approval (revision ${approvedRevision} → ${p.revision}) — wait for a new approval before merging.`,
       );
@@ -1140,7 +1112,7 @@ export class ProposalService {
   ): Promise<ProposalDetail> {
     const { org, store, caller } = await this.open(projectId, orgId, actor, act);
     const a = act ?? defaultAct("proposal.approve", caller, proposalSubject(number));
-    const delivery = this.delivery(store);
+    const delivery = this.delivery();
     this.requireProposal(store, number);
     const written = store.setStatus(number, (p, tx) => {
       a.check(p, { tx });
@@ -1150,11 +1122,13 @@ export class ProposalService {
     this.notify(org, number, written.seq, "approved");
     const p = written.proposal;
     const to = p.implementer ?? p.author;
-    await this.tell(
+    await this.desk.tell(
       delivery,
       org,
       p,
       caller,
+      a,
+      "approved",
       [to],
       p.implementer !== null
         ? `approved by ${whoOf(caller)} — merge the PR and run \`penguin org proposal merged ${number}\`.`
@@ -1179,7 +1153,7 @@ export class ProposalService {
   ): Promise<ProposalDetail> {
     const { org, store, caller } = await this.open(projectId, orgId, actor, act);
     const a = act ?? defaultAct("proposal.reject", caller, proposalSubject(number));
-    const delivery = this.delivery(store);
+    const delivery = this.delivery();
     this.requireProposal(store, number);
     if (reason.trim() === "") throw badRequest("reason must not be empty.");
     const written = store.setStatus(number, (p, tx) => {
@@ -1188,11 +1162,13 @@ export class ProposalService {
     });
     this.notify(org, number, written.seq, "rejected");
     const p = written.proposal;
-    await this.tell(
+    await this.desk.tell(
       delivery,
       org,
       p,
       caller,
+      a,
+      "rejected",
       [p.author, ...(p.implementer !== null ? [p.implementer] : [])],
       `rejected by ${whoOf(caller)}: ${reason.trim()} — stop work on it, and close its PR if one is open.`,
     );
@@ -1264,7 +1240,7 @@ export class ProposalService {
   ): Promise<ProposalDetail & { sessionId: string }> {
     const { org, store, caller } = await this.open(projectId, orgId, actor, act);
     const a = act ?? defaultAct("proposal.implement", caller, proposalSubject(number));
-    const delivery = this.delivery(store);
+    const delivery = this.delivery();
     const p = this.requireProposal(store, number);
     // Nobody is hired to build: the author builds its own proposal unless it names a colleague.
     const implementer = req.agentId ?? p.author;
@@ -1411,17 +1387,27 @@ export class ProposalService {
     }
     this.concluding.add(key);
     try {
-      const line = `[proposal #${number}] the discussion with ${discussion.by.replace(/^user:/, "")} concluded (session ${sessionId}):\n\n${conclusion}\n\nRead it against the proposal (\`penguin org proposal show ${number}\`); if it changes what is proposed, revise the proposal or the branch.`;
-      try {
-        await this.deps.gateway.deliverToDesk(org.projectId, org.orgId, discussion.agentId, line);
-      } catch (err) {
-        await this.deliveryFailed(this.delivery(store), org, p, caller, discussion.agentId, err);
-        const e = err as { status?: unknown; code?: unknown; message?: unknown };
+      // The conclusion is the discussion's one product: its notice goes before the record,
+      // and one that did not reach the desk leaves the discussion open to be concluded again.
+      const sent = await this.desk.tell(
+        this.delivery(),
+        org,
+        p,
+        // The owner's own discussion session may conclude: its desk is told all the same.
+        { ...caller, agentId: null },
+        a,
+        "discussion_concluded",
+        [discussion.agentId],
+        `the discussion with ${discussion.by.replace(/^user:/, "")} concluded (session ${sessionId}):\n\n${conclusion}\n\nRead it against the proposal (\`penguin org proposal show ${number}\`); if it changes what is proposed, revise the proposal or the branch.`,
+        discussionSubject(number, sessionId).text,
+      );
+      const failed = sent.ok ? noticeFailures(sent.result)[0] : undefined;
+      if (!sent.ok || failed !== undefined) {
         throw new ProposalError(
-          typeof e.status === "number" ? e.status : 409,
-          typeof e.code === "string" ? e.code : "notify_failed",
+          failed?.status ?? 409,
+          failed?.code ?? "notify_failed",
           `The conclusion did not reach ${discussion.agentId}'s desk: ${
-            err instanceof Error ? err.message : String(err)
+            sent.ok ? failed!.error : sent.error
           } The discussion stays open; conclude it again once that is resolved.`,
         );
       }
@@ -1926,7 +1912,7 @@ export class ProposalService {
   ): Promise<ProposalDetail> {
     const { org, store, caller } = await this.open(projectId, orgId, actor, act);
     const a = act ?? defaultAct("proposal.feedback", caller, proposalSubject(number));
-    const delivery = this.delivery(store);
+    const delivery = this.delivery();
     this.requireProposal(store, number);
     const text = req.text.trim();
     if (text === "") throw badRequest("text must not be empty.");
@@ -1939,11 +1925,13 @@ export class ProposalService {
     const p = written.proposal;
     const to = [p.author];
     if (runtime && p.implementer !== null) to.push(p.implementer);
-    await this.tell(
+    await this.desk.tell(
       delivery,
       org,
       p,
       caller,
+      a,
+      "feedback",
       to,
       runtime
         ? `runtime feedback from ${whoOf(caller)}: ${text}\n\nRevise together — the author updates the proposal (\`penguin org proposal publish ${number} --file …\`), the implementer the branch.`
@@ -2037,7 +2025,7 @@ export class ProposalService {
   ): Promise<ProposalDetail> {
     const { org, store, caller } = await this.open(projectId, orgId, actor, act);
     const a = act ?? defaultAct("proposal.requestChanges", caller, proposalSubject(number));
-    const delivery = this.delivery(store);
+    const delivery = this.delivery();
     this.requireProposal(store, number);
     let sent = 0;
     const written = store.requestChanges(number, (p, tx) => {
@@ -2054,11 +2042,13 @@ export class ProposalService {
     });
     this.notify(org, number, written.seq, "changes_requested");
     const p = written.proposal;
-    await this.tell(
+    await this.desk.tell(
       delivery,
       org,
       p,
       caller,
+      a,
+      "changes_requested",
       [p.author],
       `${whoOf(caller)} requested changes: a batch of ${sent} comment${sent === 1 ? "" : "s"} — read it with \`penguin org proposal comments ${number} --pending\`, resolve each (\`penguin org proposal resolve ${number} <commentId> -m …\`), then publish the revision and mark it ready again.`,
     );

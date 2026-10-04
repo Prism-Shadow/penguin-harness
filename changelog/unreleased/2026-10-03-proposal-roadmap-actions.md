@@ -54,6 +54,16 @@ Every write to an organization's proposals and roadmaps became an Action: a key,
 - A finished deploy run refreshes the PR graph through a built-in after hook on `deploy.*`.
 - Deleting an organization stops its Action runs first: each process a run started — a deploy's among them — gets SIGTERM, then SIGKILL after 10 s, and the run is recorded `failed`; then the registry closes its `company.db` connection and disposes the organization's company workflow trees, and only then does the proposal service close its own. A run an instance before a hot update started is stopped too. The deploy-script part of [the organization delete](2026-10-03-proposals-relational-store.md) went with the deploy scripts.
 
+## Notices
+
+- The desk lines the proposal and roadmap writes deliver became built-in notify Actions, one key each: `notify.proposal.created`, `notify.proposal.approved`, `notify.proposal.rejected`, `notify.proposal.changes_requested`, `notify.proposal.revised_after_approval`, `notify.proposal.feedback`, `notify.proposal.brief_edited`, `notify.proposal.discussion_concluded`, `notify.roadmap.item_approved`, `notify.roadmap.base_linked` and `notify.roadmap.approval_requested` (the last asks the moderator's room session, not a desk).
+- A write runs its notice by key once its write committed, through the run's `act.notify`, as the same caller. The notice is recorded as an ActionRun with `via: "notify"` (a new value of `ActionRunVia`), the sending run's id as its `runId` parameter, and the recipients (`to`) and the line (`text`) as its other parameters.
+- The built-in notices deliver the same lines to the same desks as before, and record `notify_failed` and answer a hint for a desk that cannot take one. A discussion's conclusion still goes out before it is recorded, and a conclusion that did not reach the desk still leaves the discussion open.
+- A company workflow's `action` on a notify key replaces the built-in one, and its guard and hooks apply as for any Action. A notice that is refused or fails never fails the write: it is listed in the write's `hookErrors` and answered as a hint.
+- A `notify.*` Action runs only as a write's notice: run on its own it is refused with 403 `notify_direct`, and the Action listing marks it so.
+- The web Activity labels a notice's run "as a notice"; its hook error line reads "After hooks or notices failed". `action_runs` in an existing `company.db` is widened once to accept `via = 'notify'` (see [backward compatibility](2026-10-04-backward-compatibility-notify-actions.md)).
+- The other lines a roadmap delivers (the room an employee joined, a derived roadmap's room, a reopening) are not notices and go to the desk as before.
+
 ## CLI
 
 - The `penguin org proposal` write commands kept their shape and run the matching Actions. `penguin org proposal deploy` runs `deploy.<id>` and follows its output.

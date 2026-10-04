@@ -12,6 +12,7 @@ import type { OrgActor, OrgGateway } from "@prismshadow/penguin-server/plugin";
 import {
   ActionRegistry,
   actionRoutes,
+  noticeCode,
   proposalCode,
   proposalRoutes,
   type Contributed,
@@ -39,9 +40,12 @@ export function manifestContributions(
   return entries.map(({ id, ...data }) => ({ id, from: module, data, code: code[id] }));
 }
 
-/** The plugin's own contributions over `service`. */
+/** The plugin's own contributions over `service`: the proposal Actions and their notices. */
 export function proposalContributions(service: ProposalService): Contributed[] {
-  return manifestContributions(PLUGIN_DIR, "CompanyProposalsPlugin", proposalCode(service));
+  return [
+    ...manifestContributions(PLUGIN_DIR, "CompanyProposalsPlugin", proposalCode(service)),
+    ...manifestContributions(PLUGIN_DIR, "ProposalNotices", noticeCode(service)),
+  ];
 }
 
 export interface ActionApp {

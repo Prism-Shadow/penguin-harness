@@ -3,7 +3,7 @@
  * company-proposals' `CompanyActionRegistry.actions` (their data halves are the manifest,
  * index.ts). Each runs one use case of RoadmapService under the Action's guard in force in the
  * organization (a company workflow may replace it); the defaults are guards.ts's. The plugin also contributes the subject
- * resolver of roadmaps and their items.
+ * resolver of roadmaps and their items, and the built-in notify Actions its writes send (notices.ts).
  */
 import {
   subjectKey,
@@ -14,6 +14,7 @@ import {
 } from "./action-shapes.js";
 import { roadmapGuards, type WriteAct } from "./guards.js";
 import { RoadmapError } from "./domain.js";
+import { ROADMAP_NOTICE_IDS } from "./notices.js";
 import type { RoadmapService } from "./service.js";
 
 /** The ids of the built-in roadmap Actions, by key. */
@@ -44,6 +45,7 @@ export function writeActOf(ctx: RunContext): WriteAct {
         params: { ...ctx.params, ...opts?.params },
       }),
     ...(ctx.act.inTx !== undefined ? { inTx: ctx.act.inTx } : {}),
+    ...(ctx.act.notify !== undefined ? { notify: ctx.act.notify } : {}),
   };
 }
 
@@ -172,5 +174,30 @@ export function roadmapCode(service: RoadmapService): Record<string, ActionCode 
     },
   };
   out[ROADMAP_SUBJECTS_ID] = subjects;
+  // The built-in notices (notices.ts): the desk lines, and the approval request into the
+  // moderator's room session.
+  const desk: ActionCode = {
+    run: (ctx) =>
+      service.deliverNotice(
+        ctx.org.projectId,
+        ctx.org.orgId,
+        subjectNumber(ctx.subject),
+        ctx.params.to as string[],
+        ctx.params.text as string,
+        ctx.caller.principal,
+      ),
+  };
+  out[ROADMAP_NOTICE_IDS.item_approved] = desk;
+  out[ROADMAP_NOTICE_IDS.base_linked] = desk;
+  out[ROADMAP_NOTICE_IDS.approval_requested] = {
+    run: (ctx) => {
+      const to = ctx.params.to as string[];
+      return service.noticeInSession(
+        ctx.params.sessionId as string,
+        to[0] ?? "",
+        ctx.params.text as string,
+      );
+    },
+  };
   return out;
 }

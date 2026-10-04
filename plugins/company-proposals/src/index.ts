@@ -17,7 +17,8 @@
  * document form, service.ts the state machine and the desk deliveries that drive the
  * employees, routes.ts the reads. Every write is an Action: action-model.ts the model and the
  * slot, action-registry.ts the registry that runs them and records each run (action-store.ts),
- * builtin-actions.ts the proposal Actions, company-workflows.ts the organizations' company
+ * builtin-actions.ts the proposal Actions, notify-actions.ts the notices they send (each a
+ * replaceable notify Action), company-workflows.ts the organizations' company
  * workflows that customize them, deploy.ts what a deploy Action is lent. The modules are
  * plugin.ts's and registry-module.ts's. The page is the web app's own `OrgProposalsPage` renderer,
  * declared as a company-mode page so it appears — with its nav row — only while the plugin is
@@ -27,6 +28,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import { CompanyProposalsPlugin } from "./plugin.js";
 import { CompanyActionRegistry } from "./registry-module.js";
 import { ProposalsRetirement } from "./retirement-module.js";
+import { ProposalNotices } from "./notify-actions.js";
 
 export {
   COMPANY_DB,
@@ -171,9 +173,20 @@ export { CompanyProposalsPlugin, PAGE_ID } from "./plugin.js";
 export { CompanyActionRegistry } from "./registry-module.js";
 
 export { ProposalsRetirement, RETIRE_ID } from "./retirement-module.js";
+export {
+  PROPOSAL_NOTICE_EVENTS,
+  PROPOSAL_NOTICE_IDS,
+  ProposalNoticeDesk,
+  ProposalNotices,
+  noticeCode,
+  noticeKey,
+} from "./notify-actions.js";
+export type { ProposalNoticeEvent } from "./notify-actions.js";
+export { NOTIFY_PREFIX, actorOf, requireNoticeOnly, sendNotice } from "./action-notice.js";
+export { widenRunVia } from "./action-store.js";
 
 const plugin: Plugin = {
-  modules: [CompanyProposalsPlugin, CompanyActionRegistry, ProposalsRetirement],
+  modules: [CompanyProposalsPlugin, ProposalNotices, CompanyActionRegistry, ProposalsRetirement],
 };
 
 export default plugin;

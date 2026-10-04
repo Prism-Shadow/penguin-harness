@@ -35,6 +35,7 @@ export function writeActOf(ctx: RunContext): WriteAct {
         ...(opts?.tx !== undefined ? { tx: opts.tx } : {}),
       }),
     ...(ctx.act.inTx !== undefined ? { inTx: ctx.act.inTx } : {}),
+    ...(ctx.act.notify !== undefined ? { notify: ctx.act.notify } : {}),
   };
 }
 
