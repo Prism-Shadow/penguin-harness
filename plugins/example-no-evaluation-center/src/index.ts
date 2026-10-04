@@ -7,7 +7,7 @@
  * from GET /api/contributions. The app then drops the page keyed `benchmark` — the Evaluation
  * Center — with the routes under its path (one Benchmark's page, /benchmark/:benchmarkId) and the
  * pages under it (such as example-hello-page's Hello World), so it has no row in the nav and its
- * URLs lead to the chat page. Safe mode asks the server nothing, so it brings the page back.
+ * URLs lead home. Safe mode asks the server nothing, so it brings the page back.
  */
 import { Component } from "@prismshadow/penguin-core/plugin";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
