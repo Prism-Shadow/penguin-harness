@@ -19,9 +19,10 @@ const OrgProposalsPage = () => null;
  *   session, the six layers in their mount order, and the user event handlers of company, the
  *   built-in browser and schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
- *   company's mode with its switcher, channels and desks, the to-do dots and the balance on
- *   their anchors, and company's unread count on the contributed proposals page's row; the session list receives the messaging binding, the scheduled mark and the
- *   dock's "Browse files".
+ *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots and the
+ *   balance on their anchors, and company's unread count on the contributed proposals page's row;
+ *   the session list receives the messaging binding, the scheduled mark and the dock's "Browse
+ *   files".
  */
 import {
   bootModules,
@@ -266,7 +267,7 @@ describe("the booted sidebar slots", () => {
     expect(sectionsIn(sections, "dev", "body").map((s) => s.section)).toEqual([sessionListSection]);
   });
 
-  it("company contributes its mode, its switcher, its channels and its desks", () => {
+  it("company contributes its mode, its switcher, its channels, its roadmaps and its desks", () => {
     const sections = sectionsOf(sidebarSlots.sections ?? []);
     expect(modesOf(sidebarSlots.modes ?? []).map(({ key, mode }) => ({ key, mode }))).toEqual([
       { key: "company", mode: companyMode },
