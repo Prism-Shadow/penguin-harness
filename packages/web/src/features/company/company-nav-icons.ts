@@ -5,9 +5,8 @@
  * testable alone).
  */
 import type { IconName } from "@prismshadow/penguin-ui";
-
 import { NAV_ICONS } from "../../lib/nav-icons";
-import type { CompanyNavKey, OrgPageRenderer } from "../../lib/company-nav";
+import type { CompanyNavKey } from "../../lib/company-nav";
 
 export const COMPANY_NAV_ICONS: Record<CompanyNavKey, IconName> = {
   overview: "dashboard",
@@ -18,9 +17,4 @@ export const COMPANY_NAV_ICONS: Record<CompanyNavKey, IconName> = {
   finance: "dollarCircle",
   /** The handbook, the company's knowledge base. */
   handbook: "bookOpen",
-};
-
-/** The glyph of each contributed company-mode page, by what its contribution names (ORG_PAGE_RENDERERS). */
-export const ORG_PAGE_ICONS: Record<OrgPageRenderer, string> = {
-  OrgProposalsPage: NAV_ICONS.orgProposals,
 };

@@ -3,9 +3,10 @@
  * away under a slim toggle, each row with a hover pin button and, where a pointer can drag, a
  * drag across the areas; in a contributed mode that mode's own rows, all under the toggle.
  * The fold and the pin choices persist (nav-state.ts). A row's name and glyph are its page's
- * data (web-app/page-table.ts), its dot a nav badge contributed for its key.
+ * data (web-app/page-table.ts), its dot a nav badge contributed for its key — a contributed mode's
+ * rows too, by their own keys, where a badge's marks stand in for the dot.
  */
-import { useRef, useState, type DragEvent as ReactDragEvent } from "react";
+import { useRef, useState, type ComponentType, type DragEvent as ReactDragEvent } from "react";
 
 import { useLocation } from "react-router";
 import {
@@ -158,6 +159,7 @@ export function PageNav({
   nav,
   modeItems,
   notes,
+  marksFor,
   onNavigate,
 }: {
   nav: ReturnType<typeof usePageNav>;
@@ -165,6 +167,8 @@ export function PageNav({
   modeItems: readonly ModeNavItem[] | null;
   /** What each badged page's dot says, by page key (no entry = no dot). */
   notes: ReadonlyMap<string, string>;
+  /** The marks contributed to one anchor, in order (modes.ts `marksFor`); read for a mode's rows. */
+  marksFor: (anchor: string) => ReadonlyArray<{ id: string; Mark: ComponentType }>;
   onNavigate: (() => void) | undefined;
 }) {
   const location = useLocation();
@@ -269,21 +273,36 @@ export function PageNav({
           })}
     >
       {modeItems !== null
-        ? modeItems.map((item) => (
-            /* A row with nowhere to go keeps its place and its glyph, muted, with nothing to
-                 click or tab to. */
-            <NavRow
-              key={item.key}
-              surface="muted"
-              label={item.label}
-              glyph={glyphOf(item.icon)}
-              href={item.to ?? ""}
-              disabled={item.to === null}
-              active={item.to !== null && isCurrentPath(item.to, location.pathname)}
-              renderLink={renderRouterLink}
-              onClick={() => onNavigate?.()}
-            />
-          ))
+        ? modeItems.map((item) => {
+            const note = notes.get(item.key) ?? null;
+            const marks = marksFor(item.key);
+            return (
+              /* A row with nowhere to go keeps its place and its glyph, muted, with nothing to
+                 click or tab to. A badge's marks (a count) stand in for the dot: the number is
+                 the information, and the tooltip says what it counts. */
+              <NavRow
+                key={item.key}
+                surface="muted"
+                label={item.label}
+                glyph={glyphOf(item.icon)}
+                href={item.to ?? ""}
+                disabled={item.to === null}
+                active={item.to !== null && isCurrentPath(item.to, location.pathname)}
+                renderLink={renderRouterLink}
+                onClick={() => onNavigate?.()}
+                {...(note !== null ? { ariaLabel: `${item.label} · ${note}`, tooltip: note } : {})}
+                {...(marks.length > 0
+                  ? { badge: marks.map(({ id, Mark }) => <Mark key={id} />) }
+                  : note !== null
+                    ? {
+                        badge: (
+                          <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />
+                        ),
+                      }
+                    : {})}
+              />
+            );
+          })
         : collapsibleNavPages.map(renderNavEntry)}
     </SidebarNavGroup>
   );

@@ -24,10 +24,6 @@ export const NAV_ICONS = {
   orgFinance: ICONS.dollarCircle,
   /** The handbook, the company's knowledge base. */
   orgHandbook: ICONS.bookOpen,
-  /** Proposals: a change written up, waiting to be approved. */
-  orgProposals: ICONS.fileCheck,
-  /** Roadmaps: where a discussion leads, and the proposals on the way. */
-  orgRoadmaps: ICONS.foldedMap,
 } as const;
 
 /** The glyph a registry name stands for; "" (no glyph) for a name the registry lacks. */

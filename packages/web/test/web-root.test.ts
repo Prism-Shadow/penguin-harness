@@ -19,8 +19,8 @@ const OrgProposalsPage = () => null;
  *   session, the six layers in their mount order, and the user event handlers of company, the
  *   built-in browser and schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
- *   company's mode with its switcher, channels and desks, and the to-do dots and the balance on
- *   their anchors; the session list receives the messaging binding, the scheduled mark and the
+ *   company's mode with its switcher, channels and desks, the to-do dots and the balance on
+ *   their anchors, and company's unread count on the contributed proposals page's row; the session list receives the messaging binding, the scheduled mark and the
  *   dock's "Browse files".
  */
 import {
@@ -287,6 +287,11 @@ describe("the booted sidebar slots", () => {
       expect(typeof on[0]!.badge.useNote).toBe("function");
     }
     expect(marksFor(badges, "account").map((m) => m.Mark)).toEqual([PinnedBalanceBadge]);
+  });
+  it("does not register a retired proposal badge", () => {
+    expect(
+      badgesOf(sidebarSlots.navBadges ?? []).filter((b) => b.anchor === "org-proposals"),
+    ).toEqual([]);
   });
 
   it("gives the session list the binding entry, the two marks and Browse files", () => {
