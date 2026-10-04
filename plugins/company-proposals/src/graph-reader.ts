@@ -119,6 +119,8 @@ export class PrGraphReader {
     /** The deployments' commits, compared against every layer. */
     deploymentCommits: string[];
     checkedAt: string;
+    /** The layout code's identity (layout-code.ts), part of the snapshot's key. */
+    code: string;
     signal?: AbortSignal;
   }): Promise<Collected> {
     const { forge, mirror, store } = this.deps;
@@ -236,7 +238,7 @@ export class PrGraphReader {
       },
       compare: () => undefined,
     };
-    const inputs = inputsOf(facts, project, opts.proposals);
+    const inputs = inputsOf(facts, project, opts.proposals, opts.code);
     const known = new Map<string, Comparison>();
     const failed = new Map<string, string>();
     const computed: Array<{ from: string; to: string; cmp: Comparison }> = [];

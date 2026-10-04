@@ -2,7 +2,8 @@
  * The PR graph's read path and its refresher.
  *
  * A read never runs git and never reaches the network: it computes the input key from the
- * stored facts and the proposals (a few hundred rows, milliseconds), answers the snapshot laid
+ * stored facts, the proposals and the layout code's identity (layout-code.ts; a few hundred
+ * rows, milliseconds), answers the snapshot laid
  * out for that key — laying it out from the stored facts and storing it when there is none —
  * and places the deployments on it from the stored comparisons. When the probe is due it starts
  * a refresh in the background and answers what it has, with `refreshing`.
@@ -38,6 +39,7 @@ import {
 import { BASE_KEY } from "./graph-heads.js";
 import { buildGraph, type GraphProposal } from "./pr-chain.js";
 import { PrGraphReader } from "./graph-reader.js";
+import { LAYOUT_CODE } from "./layout-code.js";
 import { incomplete, inputsOf, layout, storedFacts, type GraphProject } from "./pr-graph.js";
 import type { Forge, GitMirror, GraphStore } from "./ports.js";
 
@@ -82,6 +84,8 @@ export interface RefresherDeps {
   mirrorFor(orgDir: string, repo: string): GitMirror;
   forgeFor(project: Project): Forge;
   probe: ProbeServer;
+  /** The layout code's identity in the snapshot key; this build's (LAYOUT_CODE) when not given. */
+  layoutCode?: string;
 }
 
 interface OrgState {
@@ -113,6 +117,10 @@ export class GraphRefresher {
 
   private now(): number {
     return this.deps.now?.() ?? Date.now();
+  }
+
+  private code(): string {
+    return this.deps.layoutCode ?? LAYOUT_CODE;
   }
 
   private windowMs(): number {
@@ -221,11 +229,13 @@ export class GraphRefresher {
       origins: project.origins,
     };
     const facts = storedFacts(ctx.store, graphProject);
-    const inputs = inputsOf(facts, graphProject, proposals);
+    const inputs = inputsOf(facts, graphProject, proposals, this.code());
     let snapshot = ctx.store.snapshot(repo, graphProject.base, inputs.inputKey);
     if (snapshot === null) {
-      // The facts did not move but the proposals did (an impl registered, a status changed):
-      // laid out again from the stored facts, no git and no network.
+      // The facts did not move but the proposals did (an impl registered, a status changed), or
+      // this is another build of the layout code: laid out again from the stored facts, no git
+      // and no network. A forced refresh that could not run (another holder's lease) still
+      // reaches this, so the button never answers an older build's layout.
       const laid = layout(inputs, facts.compare, checkedAt);
       ctx.store.putSnapshot(repo, graphProject.base, inputs.inputKey, laid.graph);
       snapshot = { inputKey: inputs.inputKey, builtAt: checkedAt, checkedAt, graph: laid.graph };
@@ -358,6 +368,7 @@ export class GraphRefresher {
         refs: remote.refs,
         deploymentCommits: commits,
         checkedAt,
+        code: this.code(),
         signal,
       });
       store.write({

@@ -132,6 +132,7 @@ async function refresh(
     refs: repo.mirror.refs,
     deploymentCommits: deployments.flatMap((d) => (d.commit === null ? [] : [d.commit])),
     checkedAt: "1970-01-01T00:00:00.000Z",
+    code: "test",
   });
   repo.store.write({
     repo: "acme/site",

@@ -6,7 +6,9 @@
  * lays them out from the stored copy (storedFacts) with the same pure functions.
  *
  * `inputKey` hashes everything the layout reads except the comparisons, which never change for
- * a pair of commits: a snapshot is keyed by it.
+ * a pair of commits, together with the identity of the code that lays it out (layout-code.ts):
+ * a snapshot is keyed by it, so a build with other layout rules does not answer an older
+ * build's snapshot.
  */
 import { createHash } from "node:crypto";
 import type { ProposalGraphResponse } from "@prismshadow/penguin-server/api";
@@ -121,11 +123,12 @@ export function walkShut(
   return shut;
 }
 
-/** Everything a layout reads except the comparisons, with its key. */
+/** Everything a layout reads except the comparisons, with its key; `code` is the layout code's identity. */
 export function inputsOf(
   facts: GraphFacts,
   project: GraphProject,
   proposals: GraphProposal[],
+  code: string,
 ): GraphInputs {
   const pulls = facts.openPulls(project.repo) ?? [];
   const tips = tipsOf(facts, project.repo, proposals);
@@ -146,6 +149,7 @@ export function inputsOf(
     pulls: o.repo.toLowerCase() === project.repo.toLowerCase() ? null : facts.openPulls(o.repo),
   }));
   const keyed = {
+    code,
     repo: project.repo,
     base: project.base,
     baseHead: facts.baseHead,

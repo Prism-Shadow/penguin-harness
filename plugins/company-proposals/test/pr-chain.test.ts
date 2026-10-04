@@ -525,6 +525,7 @@ describe("impl branch nodes, read from a repository", () => {
       refs: remote.refs,
       deploymentCommits: [],
       checkedAt: "2026-10-04T00:00:00.000Z",
+      code: "test",
     });
     return { graph: got.layout.graph, key: got.inputs.inputKey, errors: got.errors };
   }
@@ -641,6 +642,7 @@ describe("the base branch moves on, read from a repository", () => {
       refs: remote.refs,
       deploymentCommits: [],
       checkedAt: "2026-10-04T00:00:00.000Z",
+      code: "test",
     });
     expect(got.errors).toEqual([]);
     const g = got.layout.graph;

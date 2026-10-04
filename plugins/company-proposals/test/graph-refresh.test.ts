@@ -5,7 +5,8 @@
  * snapshot; quiet probes double the interval up to 30 minutes and a change resets it; an impl
  * registered, the refresh button and a finished deploy each refresh at once; nobody reading
  * means no remote call at all; the lease keeps a second refresher out until it expires; a
- * failure waits a minute; a read during a refresh answers the stored graph at once.
+ * failure waits a minute; a read during a refresh answers the stored graph at once; another
+ * build of the layout code lays the same inputs out again, the same build answers its snapshot.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -16,6 +17,7 @@ import {
   type Project,
 } from "../src/index.js";
 import type { GraphContext } from "../src/graph-refresh.js";
+import { layoutCodeOf } from "../src/layout-code.js";
 import type { GraphProposal } from "../src/pr-chain.js";
 import type { RegisteredDeployment } from "../src/domain.js";
 import { FakeForge, FakeMirror, cr, rel } from "./graph-fakes.js";
@@ -65,16 +67,20 @@ function world() {
   const deployments: RegisteredDeployment[] = [];
   let probed = 0;
   let commit: string | null = null;
-  const refresher = new GraphRefresher({
-    log: () => undefined,
-    now: () => now,
-    mirrorFor: () => mirror,
-    forgeFor: () => forge,
-    probe: async () => {
-      probed++;
-      return { installId: "i", commit, describe: null };
-    },
-  });
+  /** A refresher over this world's store, as one build of the layout code runs it. */
+  const refresherFor = (layoutCode: string) =>
+    new GraphRefresher({
+      log: () => undefined,
+      now: () => now,
+      mirrorFor: () => mirror,
+      forgeFor: () => forge,
+      probe: async () => {
+        probed++;
+        return { installId: "i", commit, describe: null };
+      },
+      layoutCode,
+    });
+  const refresher = refresherFor("build-1");
   const ctx: GraphContext = {
     key: "proj/acme",
     orgDir: "/nowhere",
@@ -95,6 +101,7 @@ function world() {
     store,
     db,
     refresher,
+    refresherFor,
     ctx,
     settle,
     snapshots,
@@ -179,6 +186,44 @@ describe("GraphRefresher", () => {
     expect(g.nodes[0]!.proposal).toMatchObject({ status: "approved" });
     expect(w.snapshots()).toBe(snaps + 1);
     expect(w.forge.queries.length).toBe(queries);
+  });
+
+  it("lays the same inputs out again for another build of the layout code, and hits for the same build", async () => {
+    const w = world();
+    await w.refresher.read(w.ctx, { refresh: true });
+    const snaps = w.snapshots();
+    const first = await w.refresher.read(w.ctx);
+    w.advance(MIN);
+    // The same build, the same inputs: the stored snapshot, nothing laid out or stored.
+    expect((await w.refresher.read(w.ctx)).checkedAt).toBe(first.checkedAt);
+    expect(w.snapshots()).toBe(snaps);
+    // A new build reads the same store (a deploy): its key differs, so its first read lays the
+    // graph out from the stored facts by its own rules and stores that — no git, no forge.
+    const next = w.refresherFor("build-2");
+    const calls = { ls: w.mirror.lsRemoteCalls, queries: w.forge.queries.length };
+    const relaid = await next.read(w.ctx);
+    expect(relaid.checkedAt).toBe(new Date(w.now()).toISOString());
+    expect(relaid.nodes.map((n) => n.number)).toEqual([11, 12]);
+    expect(w.snapshots()).toBe(snaps + 1);
+    expect(w.mirror.lsRemoteCalls).toBe(calls.ls);
+    expect(w.forge.queries.length).toBe(calls.queries);
+    w.advance(MIN);
+    expect((await next.read(w.ctx)).checkedAt).toBe(relaid.checkedAt);
+    expect(w.snapshots()).toBe(snaps + 1);
+  });
+
+  it("answers the new build's layout to the refresh button even when another holder's lease keeps the refresh out", async () => {
+    const w = world();
+    await w.refresher.read(w.ctx, { refresh: true });
+    const old = await w.refresher.read(w.ctx);
+    w.advance(MIN);
+    // The previous build's refresher still holds the lease (it was stopped mid-refresh).
+    w.store.acquire("acme/site", "previous-build", new Date(w.now() + 5 * MIN).toISOString());
+    const calls = w.mirror.lsRemoteCalls;
+    const g = await w.refresherFor("build-2").read(w.ctx, { refresh: true });
+    expect(w.mirror.lsRemoteCalls).toBe(calls);
+    expect(g.checkedAt).not.toBe(old.checkedAt);
+    expect(g.checkedAt).toBe(new Date(w.now()).toISOString());
   });
 
   it("doubles the interval with each quiet probe up to 30 minutes, and resets it on a change", async () => {
@@ -295,5 +340,15 @@ describe("GraphRefresher", () => {
     expect(during.nodes).toHaveLength(2);
     release();
     await w.settle();
+  });
+});
+
+describe("layoutCodeOf", () => {
+  it("is the loader's stamp on the entry's import URL, else the package version", () => {
+    const entry = "file:///data/plugins/company-proposals/dist/index.js";
+    expect(layoutCodeOf(`${entry}?v=sha256-0123abcd`, "0.1.0")).toBe("build:sha256-0123abcd");
+    expect(layoutCodeOf(`${entry}?v=1759536000000.5`, "0.1.0")).toBe("build:1759536000000.5");
+    expect(layoutCodeOf(entry, "0.1.0")).toBe("version:0.1.0");
+    expect(layoutCodeOf(`${entry}?v=`, "0.1.0")).toBe("version:0.1.0");
   });
 });
