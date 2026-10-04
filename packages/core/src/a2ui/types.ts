@@ -10,7 +10,8 @@
  * runs in the browser renderer and in the checker script bundled into the skill.
  */
 
-export type A2uiType = "choice" | "form" | "steps" | "callout";
+export type A2uiType =
+  "choice" | "form" | "steps" | "callout" | "weather" | "clock" | "countdown" | "metrics";
 
 export interface A2uiOption {
   label: string;
@@ -81,7 +82,174 @@ export interface A2uiCallout {
   text: string;
 }
 
-export type A2uiSpec = A2uiChoice | A2uiForm | A2uiSteps | A2uiCallout;
+/*
+ * The widgets below are read-only snapshots the model supplies: the client fetches nothing, and
+ * the only live parts are client-side time (the clock ticks, the countdown counts down). A
+ * date-time field holds ISO 8601 (`2026-10-04T14:05+08:00`, `…Z`, or no offset for the viewer's
+ * local time); see parseA2uiInstant in widgets.ts.
+ */
+
+export type A2uiWeatherCondition =
+  | "clear"
+  | "partly-cloudy"
+  | "cloudy"
+  | "fog"
+  | "drizzle"
+  | "rain"
+  | "heavy-rain"
+  | "thunder"
+  | "snow"
+  | "sleet"
+  | "wind";
+
+export interface A2uiWeatherHour {
+  /** "HH:mm" (24 h) or an ISO date-time; the renderer shows the hour. */
+  time: string;
+  temp: number;
+  condition?: A2uiWeatherCondition;
+  /** Chance of precipitation, 0–100. */
+  precip?: number;
+  /** Draws the night variant of the hour's condition art. */
+  night?: boolean;
+}
+
+export interface A2uiWeatherDay {
+  /** "YYYY-MM-DD" (or an ISO date-time; only the date is used). */
+  date: string;
+  high: number;
+  low: number;
+  condition: A2uiWeatherCondition;
+  /** Chance of precipitation, 0–100. */
+  precip?: number;
+}
+
+/** Current conditions at a place, optionally with the next hours and days. A snapshot. */
+export interface A2uiWeather {
+  type: "weather";
+  place: string;
+  condition: A2uiWeatherCondition;
+  temp: number;
+  /** Default "C". */
+  unit?: "C" | "F";
+  /** Night art (moon) for clear / partly-cloudy. */
+  night?: boolean;
+  /** One line in the model's words. */
+  summary?: string;
+  high?: number;
+  low?: number;
+  feelsLike?: number;
+  /** 0–100. */
+  humidity?: number;
+  /** At least 0. */
+  windSpeed?: number;
+  /** Default "km/h". */
+  windUnit?: "km/h" | "m/s" | "mph";
+  /** "NE", "东北". */
+  windDirection?: string;
+  /** 2–24 entries. */
+  hourly?: A2uiWeatherHour[];
+  /** 2–7 entries. */
+  daily?: A2uiWeatherDay[];
+  /** When the data was read (ISO date-time). */
+  asOf?: string;
+  /** Where the data came from, e.g. "Open-Meteo". */
+  source?: string;
+}
+
+export interface A2uiClockZone {
+  /** An IANA zone ("Asia/Shanghai") or "local" for the viewer's own. */
+  zone: string;
+  /** "Beijing", "北京". */
+  label?: string;
+}
+
+/** The time now, in one to four zones. Live: ticks on the client. */
+export interface A2uiClock {
+  type: "clock";
+  title?: string;
+  /** 1–4 zones; omitted means one zone, "local". */
+  zones?: A2uiClockZone[];
+  /** Default "digital". */
+  style?: "digital" | "analog" | "both";
+  /** Default "auto": the interface locale decides. */
+  hourCycle?: "12" | "24" | "auto";
+  /** The digital figure shows seconds; default false. */
+  seconds?: boolean;
+  /** Shows the weekday and date under the time; default true. */
+  date?: boolean;
+}
+
+/** Time left until one instant. Live: counts down on the client. */
+export interface A2uiCountdown {
+  type: "countdown";
+  /** ISO date-time (no offset = the viewer's local time) or "YYYY-MM-DD" (local midnight). */
+  to: string;
+  /** What happens then. */
+  label: string;
+  /** Shown once the instant is reached; default: the UI's "Time's up". */
+  doneLabel?: string;
+  /** Shows the target date-time under the figure; default true. */
+  showTarget?: boolean;
+}
+
+export type A2uiMetricKind = "reading" | "used" | "remaining" | "progress";
+
+export interface A2uiMetric {
+  label: string;
+  /** Finite. */
+  value: number;
+  /** The whole: required for used / remaining / progress and for a ring or bar gauge. */
+  max?: number;
+  /** Default 0; below max. */
+  min?: number;
+  /**
+   * reading — a measurement (CPU 37 %, load 1.2, latency 120 ms); default.
+   * used — part of a whole consumed (disk 320 of 512 GB).
+   * remaining — part of a whole still left (quota 1,240 of 5,000; budget ¥320 of ¥1,000).
+   * progress — how far a job got (upload 63 %, 7 of 12 tasks); at value ≥ max it is done.
+   */
+  kind?: A2uiMetricKind;
+  /** Default: progress → "bar"; max given → "ring"; else "none". ring/bar need max. */
+  gauge?: "ring" | "bar" | "none";
+  /** After the number: "%", "GB", "ms", "tasks". */
+  unit?: string;
+  /** Before the number: "¥", "$", "€". */
+  prefix?: string;
+  /** An integer 0–3; default: 0 for an integer value, else up to 2. */
+  decimals?: number;
+  /** Which way is bad. Default: remaining → "low"; everything else → "high". */
+  worse?: "high" | "low";
+  /** Thresholds in value units, read along `worse`: attention at warn, danger at danger. */
+  warn?: number;
+  danger?: number;
+  /** One quiet line ("resets in 3 days"); default from the kind (metricDetail). */
+  detail?: string;
+  /** Change since the previous reading, in the same unit. */
+  delta?: number;
+  /** "vs. yesterday". */
+  deltaLabel?: string;
+  /** 2–60 points in the same unit, oldest first. */
+  history?: number[];
+}
+
+/** A snapshot of one to eight readings. */
+export interface A2uiMetrics {
+  type: "metrics";
+  title?: string;
+  items: A2uiMetric[];
+  /** When the data was read (ISO date-time). */
+  asOf?: string;
+}
+
+export type A2uiSpec =
+  | A2uiChoice
+  | A2uiForm
+  | A2uiSteps
+  | A2uiCallout
+  | A2uiWeather
+  | A2uiClock
+  | A2uiCountdown
+  | A2uiMetrics;
 
 export type A2uiLevel = "error" | "warning";
 
@@ -159,6 +327,28 @@ export const A2UI_LIMITS = {
   lang: 20,
   calloutText: 400,
   mermaid: { statements: 30, lines: 400 },
+  // weather
+  place: 60,
+  summary: 80,
+  source: 40,
+  windDirection: 6,
+  hourly: { min: 2, max: 24, warn: 12 },
+  daily: { min: 2, max: 7 },
+  // clock
+  zones: { min: 1, max: 4 },
+  zoneLabel: 24,
+  zone: 64,
+  clockTitle: 40,
+  // countdown
+  countdownLabel: 60,
+  // metrics
+  metricsTitle: 40,
+  metrics: { min: 1, max: 8, warn: 6 },
+  metricLabel: 40,
+  metricDetail: 60,
+  prefix: 4,
+  deltaLabel: 24,
+  history: { min: 2, max: 60 },
 } as const;
 
 /**

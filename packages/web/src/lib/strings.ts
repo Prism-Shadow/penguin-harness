@@ -3324,12 +3324,14 @@ Benchmark：
     copyCode: "复制代码",
     copyReply: "复制回复",
     /**
-     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram),
-     * handed to the UI package that draws them (lib/ui-strings.ts). Of the four tone names, a
-     * warning is about loss or harm and a caution about something recoverable breaking, so the
-     * two must not read as the same level.
+     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram, and
+     * the weather, clock, countdown and metrics widgets), handed to the UI package that draws
+     * them (lib/ui-strings.ts). Of the four tone names, a warning is about loss or harm and a
+     * caution about something recoverable breaking, so the two must not read as the same level.
      */
     a2ui: {
+      /** The language these words are in: widgets format numbers, dates and weekdays in it. */
+      lang: "zh" as "zh" | "en",
       /** The button that puts a multi-select pick, or a form's answers, in the composer. */
       fill: "填入输入框",
       /** A choice's own-answer control: focuses the composer. */
@@ -3348,6 +3350,53 @@ Benchmark：
       diagram: "图表",
       /** The toggle that shows a diagram's source. */
       showSource: "查看源码",
+      /** A form's number stepper: add or subtract one step. */
+      stepUp: "增加",
+      stepDown: "减少",
+      /** The weather conditions, by the catalog's key (the same words as core's fallback). */
+      conditions: {
+        clear: "晴",
+        "partly-cloudy": "多云",
+        cloudy: "阴",
+        fog: "雾",
+        drizzle: "小雨",
+        rain: "雨",
+        "heavy-rain": "大雨",
+        thunder: "雷雨",
+        snow: "雪",
+        sleet: "雨夹雪",
+        wind: "大风",
+      },
+      /** A snapshot widget's head: when its data was read. */
+      asOf: (time: string) => `数据时间 ${time}`,
+      /** A weather widget's foot: where its data came from. */
+      source: (name: string) => `来源：${name}`,
+      feelsLike: "体感",
+      humidity: "湿度",
+      wind: "风",
+      precipitation: "降水",
+      high: "最高",
+      low: "最低",
+      hourly: "逐小时",
+      daily: "未来几天",
+      today: "今天",
+      /** The widgets' accessible names when the model gave no title. */
+      weather: "天气",
+      clock: "时钟",
+      countdown: "倒计时",
+      metrics: "指标",
+      localTime: "本地时间",
+      /** A countdown past its moment, unless the model named it. */
+      countdownDone: "时间到",
+      unitDays: "天",
+      unitHours: "时",
+      unitMinutes: "分",
+      unitSeconds: "秒",
+      /** A finished progress reading. */
+      done: "已完成",
+      /** Which way a reading moved, read out before its change. */
+      deltaUp: "上升",
+      deltaDown: "下降",
     },
     forkSession: "从这里分叉对话",
     forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",

@@ -5,8 +5,8 @@
  * cannot be drawn; a placeholder while the reply streams; and Md routing both fences to them.
  *
  * Static markup only: a pick's fill and the diagram's drawing run in the browser. The pieces of
- * that logic which decide something — the form's gate and its answers, the arrow-key walk — are
- * pure and called directly.
+ * that logic which decide something — the form's gate and its answers, a number's step, the
+ * arrow-key walk, which options fit one row — are pure and called directly.
  */
 import { createElement } from "react";
 import type { ReactElement } from "react";
@@ -17,11 +17,12 @@ import type { A2uiActions } from "../src/components/content/a2ui/actions";
 import { A2uiBlock } from "../src/components/content/a2ui/a2ui-block";
 import { filledAnswers, formReady } from "../src/components/content/a2ui/form-answers";
 import { MermaidBlock } from "../src/components/content/a2ui/mermaid-block";
-import { rovingTarget } from "../src/components/content/a2ui/parts";
+import { NumberField, stepNumber } from "../src/components/content/a2ui/number-field";
+import { rovingTarget, shortOptions } from "../src/components/content/a2ui/parts";
 import { a2uiRendererFor, registerA2uiRenderer } from "../src/components/content/a2ui/registry";
 import { Md } from "../src/components/content/prose/prose";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
-import { renderStatic } from "../src/testing";
+import { classTokens, renderStatic } from "../src/testing";
 
 const LIVE: A2uiActions = { interactive: true, fill: () => {}, lang: "en" };
 
@@ -73,6 +74,9 @@ const FORM: A2uiForm = {
 /** Every `<button>` opening tag. */
 const buttons = (html: string) => html.match(/<button\b[^>]*>/g) ?? [];
 
+/** A card's leading disc, the radio's drawing. */
+const DISC = /size-3\.5 shrink-0 rounded-full/;
+
 describe("ChoiceBlock", () => {
   it("shows the question, every option, its description and the recommended mark", () => {
     const html = block(CHOICE);
@@ -106,18 +110,69 @@ describe("ChoiceBlock", () => {
     expect(fill).toContain('disabled=""');
     expect(block({ ...CHOICE, multiple: true })).not.toContain("Fill in");
   });
+
+  it("sets a few short options as a row of chips, and longer ones as cards led by a disc", () => {
+    const short = {
+      type: "choice",
+      question: "Merge it now?",
+      options: [
+        { label: "Now", recommended: true },
+        { label: "After review" },
+        { label: "Not yet" },
+      ],
+    };
+    const chips = block(short, LIVE);
+    for (const tag of buttons(chips)) expect(tag).toContain("rounded-control");
+    expect(chips).not.toMatch(DISC);
+    const cards = block(CHOICE, LIVE);
+    for (const tag of buttons(cards)) expect(tag).toContain("rounded-md");
+    expect(cards.match(new RegExp(DISC, "g"))).toHaveLength(3);
+  });
+});
+
+describe("shortOptions", () => {
+  it("fits a row only with few options, no description, and labels counted in code points", () => {
+    const labels = (...names: string[]) => names.map((label) => ({ label }));
+    expect(shortOptions(labels("Yes", "No"), 4, 20)).toBe(true);
+    expect(shortOptions(labels("a", "b", "c", "d", "e"), 4, 20)).toBe(false);
+    expect(shortOptions([{ label: "Yes", description: "Ship it" }, { label: "No" }], 4, 20)).toBe(
+      false,
+    );
+    // Twenty CJK characters are twenty code points: the limit counts characters, not width.
+    const twenty = "现在合并并且发布到生产环境里去吧今天下午";
+    expect(shortOptions(labels(twenty, "No"), 4, 20)).toBe(true);
+    expect(shortOptions(labels(`${twenty}吗`, "No"), 4, 20)).toBe(false);
+  });
 });
 
 describe("FormBlock", () => {
-  it("draws each field kind as its control, with the number's range and unit", () => {
+  it("draws each field kind as its control, with the number's range, unit and stepper", () => {
     const html = block(FORM, LIVE);
     expect(html).toContain('data-a2ui="form"');
-    expect(html.match(/<input type="radio"/g)).toHaveLength(2);
-    expect(html.match(/<input type="checkbox"/g)).toHaveLength(2);
+    // Two short options each: a segmented control for the single, toggle chips for the multiple.
+    expect(html).not.toMatch(/<input type="(?:radio|checkbox)"/);
+    expect(classTokens(html)).toContain("grid-cols-[repeat(2,1fr)]");
+    expect(html.match(/aria-pressed="false"/g)).toHaveLength(4);
     expect(html).toMatch(/<input[^>]*placeholder="billing-api"/);
     expect(html).toMatch(/<input[^>]*type="number"[^>]*min="1" max="10" step="1"/);
     expect(html).toContain("pods");
     expect(html).toContain("1–10");
+    expect(html).toContain('aria-label="Decrease"');
+    expect(html).toContain('aria-label="Increase"');
+  });
+
+  it("keeps radios and checkboxes for options that carry a description", () => {
+    const described = {
+      ...FORM,
+      fields: FORM.fields.map((field) =>
+        field.options === undefined
+          ? field
+          : { ...field, options: field.options.map((o) => ({ ...o, description: "Details" })) },
+      ),
+    };
+    const html = block(described, LIVE);
+    expect(html.match(/<input type="radio"/g)).toHaveLength(2);
+    expect(html.match(/<input type="checkbox"/g)).toHaveLength(2);
   });
 
   it("marks a required field and holds the fill button until the form is ready", () => {
@@ -125,8 +180,32 @@ describe("FormBlock", () => {
     expect(html).toContain('aria-hidden="true">*</span>');
     expect(buttons(html).at(-1)).toMatch(/type="submit"[^>]*disabled=""/);
     const readOnly = block(FORM);
-    expect(buttons(readOnly)).toEqual([]);
-    expect(readOnly).toMatch(/<fieldset[^>]*disabled=""/);
+    expect(readOnly).not.toContain('type="submit"');
+    expect(readOnly.match(/<fieldset[^>]*disabled=""/g)).toHaveLength(2);
+  });
+
+  it("steps a number by its step within the range, and disables a step past a bound", () => {
+    const replicas = FORM.fields[3]!;
+    const stepper = (value: string, disabled = false) =>
+      buttons(
+        renderStatic(
+          createElement(NumberField, {
+            field: replicas,
+            value,
+            onChange: () => {},
+            disabled,
+            strings: DEFAULT_UI_STRINGS.a2ui,
+          }),
+        ),
+      );
+    const [down, up] = stepper("10");
+    expect(up).toContain('disabled=""');
+    expect(down).not.toContain('disabled=""');
+    expect(stepper("1")[0]).toContain('disabled=""');
+    for (const tag of stepper("5", true)) expect(tag).toContain('disabled=""');
+    expect(stepNumber("", replicas, 1)).toBe("1");
+    expect(stepNumber("12", replicas, -1)).toBe("10");
+    expect(stepNumber("0.1", { ...replicas, min: 0, max: 1, step: 0.2 }, 1)).toBe("0.3");
   });
 
   it("gates on required fields and numbers in range, and fills only what was answered", () => {
@@ -168,6 +247,8 @@ describe("StepsBlock", () => {
     expect(html).toContain("code-block");
     expect(html).toContain("penguin keys rotate");
     expect(html).toMatch(/<ol role="list"/);
+    // A timeline: one rule from the first disc to the second, none after the last.
+    expect(html.match(/after:w-px/g)).toHaveLength(1);
   });
 });
 
@@ -206,7 +287,12 @@ describe("A2uiBlock", () => {
       expect(html).toContain("be shown:");
       expect(html).toContain("code-block");
       expect(html).toContain(source.replace(/"/g, "&quot;"));
+      expect(html).not.toContain("data-reveal");
     }
+  });
+
+  it("brings a block that draws in under the theme's reveal", () => {
+    expect(block(CHOICE)).toMatch(/^<div data-reveal="true"><div class="a2ui-block/);
   });
 
   it("is a placeholder while the reply streams, and parses nothing", () => {

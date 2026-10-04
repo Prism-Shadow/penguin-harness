@@ -9,7 +9,10 @@
  * an empty box. A renderer that throws is caught the same way.
  *
  * While the reply streams the block is a quiet placeholder: a half-written fence is not JSON yet,
- * and parsing it on every frame would flash errors at the reader. It parses once, on the settle.
+ * and parsing it on every frame would flash errors at the reader. It parses once, on the settle,
+ * and a block that draws arrives under `data-reveal`, the theme's entrance for content appearing
+ * in a settled surface, so it never pops in where the placeholder stood. The fallback for a block
+ * that cannot be drawn takes no entrance: it is a notice, not the block.
  */
 import { Component, useMemo } from "react";
 import type { ReactNode } from "react";
@@ -63,7 +66,9 @@ function ParsedBlock({ source }: { source: string }) {
   if (Renderer === undefined) return invalid(parsed.spec.type);
   return (
     <RenderGuard source={source} fallback={invalid}>
-      <Renderer spec={parsed.spec} />
+      <div data-reveal>
+        <Renderer spec={parsed.spec} />
+      </div>
     </RenderGuard>
   );
 }

@@ -4,7 +4,8 @@
  * without a DOM.
  *
  * An option field's answer is its options' labels (unique within the field), a text field's the
- * text as typed, a number field's the digits as typed — a number is checked, never rewritten.
+ * text as typed, a number field's the digits as typed or as its stepper left them — the gate
+ * checks a number, it never rewrites one.
  */
 import type { A2uiForm, A2uiFormField } from "@prismshadow/penguin-core/a2ui";
 

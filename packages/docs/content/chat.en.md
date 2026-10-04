@@ -227,6 +227,12 @@ A reply can hold blocks that the chat draws as components instead of plain text:
 - **Steps**: a numbered procedure. A warning or caution appears above the step it applies to.
 - **Callout**: a short note, tip, caution or warning on one line, its icon saying which (point at the icon to see the name). A step's warnings, cautions and notes look the same.
 - **Diagram**: a Mermaid diagram, such as a flowchart or a sequence diagram. **Show source** shows the text it is drawn from.
+- **Weather**: the conditions and forecast at a place, with an illustration that moves (rain falls, clouds drift). It stays still when your system is set to reduce motion.
+- **Clock**: the time now in one to four time zones. It ticks live.
+- **Countdown**: the time left until a deadline or an event. It counts down live.
+- **Metrics**: tiles with gauges for a snapshot, such as system resources, a quota or budget left, or the progress of a job. A tile takes the warning or danger colour when its value crosses the thresholds the agent set.
+
+Weather and metrics are snapshots the agent took at the time shown on the block; they do not update. Only the clock and the countdown change while you watch.
 
 Picking sends nothing. The composer gets ordinary text that you can edit, and you still select **Send**. If the composer holds text you typed, you are asked before it is replaced. Only the latest reply takes answers, and only until a message follows it; earlier replies, subagent conversations and the Trace show the same blocks read-only. A block that cannot be drawn shows its source under a one-line reason.
 

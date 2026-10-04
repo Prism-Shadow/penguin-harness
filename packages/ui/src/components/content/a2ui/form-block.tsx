@@ -2,30 +2,44 @@
  * A form: a few questions answered together, then filled into the composer as one message, a line
  * per answered field.
  *
- * Every control is the package's own and a real input, so the keyboard is the browser's: a
- * single-answer field is a radio group (one tab stop, arrows move), a multi-answer field a column
- * of checkboxes, a text field an input, a number field a number input with the field's range and
- * step and its unit drawn inside the box. Required fields carry the red mark, and the fill button
- * stays disabled until each has an answer and every number is in range. Enter in a text or number
- * field fills, as a form submits.
+ * Every control is the package's own — the ones the settings pages use — so the keyboard is the
+ * browser's. A single-answer field with a few short options is a segmented control, and one with
+ * longer options, or options that carry a description, a radio group. A multi-answer field with a
+ * few short options is a row of toggle chips, otherwise a column of checkboxes. A text field is an
+ * input, and a number field a number input with the field's range under it and its unit inside the
+ * box, plus a minus and a plus that step it (number-field.tsx). Required fields carry the red
+ * mark, and the fill button stays disabled until each has an answer and every number is in range.
+ * Enter in a text or number field fills, as a form submits.
  *
  * Read-only, the fields show with every control disabled and no fill button.
  */
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { formFillText } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiForm, A2uiFormField } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiForm, A2uiFormField, A2uiOption } from "@prismshadow/penguin-core/a2ui";
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";
 import { Button } from "../../actions/button/button";
+import { Badge } from "../../feedback/badge/badge";
 import { Checkbox } from "../../forms/checkbox/checkbox";
 import { RequiredMark } from "../../forms/field/field";
 import { Input } from "../../forms/input/input";
 import { RadioGroup } from "../../forms/radio/radio";
+import { Segmented } from "../../forms/segmented/segmented";
 import { useA2uiActions } from "./actions";
-import { filledAnswers, formReady, numberOutOfRange } from "./form-answers";
+import { filledAnswers, formReady } from "./form-answers";
 import type { A2uiFormAnswer, A2uiFormAnswers } from "./form-answers";
-import { InlineText, OptionLabel } from "./parts";
+import { NumberField } from "./number-field";
+import {
+  A2UI_CHIP,
+  A2UI_TITLE,
+  InlineText,
+  OptionLabel,
+  displayWidth,
+  plainText,
+  pressLook,
+  shortOptions,
+} from "./parts";
 
 /** A field's title with the required mark: an option group's legend. */
 function LegendText({ field }: { field: A2uiFormField }): ReactNode {
@@ -37,20 +51,35 @@ function LegendText({ field }: { field: A2uiFormField }): ReactNode {
   );
 }
 
+/** The legend look RadioGroup gives its question, for the other option groups beside it. */
+const LEGEND = "mb-1 text-xs font-semibold text-fg-muted";
+
 /**
- * A number field's range in symbols every language reads ("1–10", "≥ 0"), under the box, so a
- * reader sees the limits before the fill button refuses a value outside them.
+ * A single-answer field as a segmented control: four options at most, short and undescribed, and
+ * narrow enough together for one row — a segment never wraps its label, so the options' combined
+ * width (a CJK character counting two) is held to what a phone-width reply fits.
  */
-function rangeHint(field: A2uiFormField): string | undefined {
-  const { min, max } = field;
-  if (min !== undefined && max !== undefined) return `${min}–${max}`;
-  if (min !== undefined) return `≥ ${min}`;
-  if (max !== undefined) return `≤ ${max}`;
-  return undefined;
+function segmented(options: readonly A2uiOption[]): boolean {
+  const width = options.reduce((sum, option) => sum + displayWidth(option.label), 0);
+  return shortOptions(options, 4, 16) && width <= 32;
 }
 
-/** The legend look RadioGroup gives its question, for the checkbox column beside it. */
-const LEGEND = "mb-1 text-xs font-semibold text-fg-muted";
+/** A multi-answer field as toggle chips: five options at most, short and undescribed. */
+function chips(options: readonly A2uiOption[]): boolean {
+  return shortOptions(options, 5, 16);
+}
+
+/** The labels `picked` holds once `label` is turned on or off, in the options' own order. */
+function toggled(
+  options: readonly A2uiOption[],
+  picked: ReadonlySet<string>,
+  label: string,
+  on: boolean,
+): string[] {
+  return options
+    .map((option) => option.label)
+    .filter((each) => (each === label ? on : picked.has(each)));
+}
 
 function FormField({
   field,
@@ -68,6 +97,40 @@ function FormField({
   const options = field.options ?? [];
   switch (field.kind) {
     case "single":
+      if (segmented(options)) {
+        // The fieldset names the group and, read-only, disables every segment in it; the well
+        // dims as the other read-only controls do.
+        return (
+          <fieldset disabled={disabled} className="min-w-0">
+            <legend className={LEGEND}>
+              <LegendText field={field} />
+            </legend>
+            <div className={disabled ? "cursor-not-allowed opacity-60" : undefined}>
+              <Segmented
+                options={options.map((option) => ({
+                  value: option.label,
+                  label: plainText(option.label),
+                  ...(option.recommended === true
+                    ? {
+                        badge: {
+                          node: (
+                            <Badge tone="info" size="sm">
+                              {strings.recommended}
+                            </Badge>
+                          ),
+                          name: strings.recommended,
+                        },
+                      }
+                    : {}),
+                }))}
+                value={typeof answer === "string" ? answer : ""}
+                onChange={onChange}
+                cols={options.length as 2 | 3 | 4}
+              />
+            </div>
+          </fieldset>
+        );
+      }
       return (
         <RadioGroup
           label={<LegendText field={field} />}
@@ -92,51 +155,54 @@ function FormField({
           <legend className={LEGEND}>
             <LegendText field={field} />
           </legend>
-          <div className="flex flex-col gap-2">
-            {options.map((option) => (
-              <Checkbox
-                key={option.label}
-                checked={picked.has(option.label)}
-                // Kept in the options' order, whatever order they were ticked in.
-                onChange={(on) =>
-                  onChange(
-                    options
-                      .map((o) => o.label)
-                      .filter((label) => (label === option.label ? on : picked.has(label))),
-                  )
-                }
-                label={<OptionLabel option={option} strings={strings} />}
-                hint={
-                  option.description !== undefined ? (
-                    <InlineText text={option.description} />
-                  ) : undefined
-                }
-                size="sm"
-                disabled={disabled}
-              />
-            ))}
-          </div>
+          {chips(options) ? (
+            <div className="flex flex-wrap gap-2">
+              {options.map((option) => (
+                <button
+                  key={option.label}
+                  type="button"
+                  aria-pressed={picked.has(option.label)}
+                  disabled={disabled}
+                  // Kept in the options' order, whatever order they were pressed in.
+                  onClick={() =>
+                    onChange(toggled(options, picked, option.label, !picked.has(option.label)))
+                  }
+                  className={`${A2UI_CHIP.sm} ${pressLook(picked.has(option.label))} text-fg`}
+                >
+                  <OptionLabel option={option} strings={strings} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {options.map((option) => (
+                <Checkbox
+                  key={option.label}
+                  checked={picked.has(option.label)}
+                  onChange={(on) => onChange(toggled(options, picked, option.label, on))}
+                  label={<OptionLabel option={option} strings={strings} />}
+                  hint={
+                    option.description !== undefined ? (
+                      <InlineText text={option.description} />
+                    ) : undefined
+                  }
+                  size="sm"
+                  disabled={disabled}
+                />
+              ))}
+            </div>
+          )}
         </fieldset>
       );
     }
     case "number":
       return (
-        <Input
-          type="number"
-          inputMode="decimal"
-          label={field.label}
-          required={field.required}
-          placeholder={field.placeholder}
-          min={field.min}
-          max={field.max}
-          step={field.step}
-          hint={rangeHint(field)}
-          invalid={numberOutOfRange(field, answer)}
-          affix={field.unit !== undefined ? { trailing: field.unit } : undefined}
+        <NumberField
+          field={field}
           value={typeof answer === "string" ? answer : ""}
-          onChange={(event) => onChange(event.target.value)}
-          size="sm"
+          onChange={onChange}
           disabled={disabled}
+          strings={strings}
         />
       );
     default:
@@ -170,7 +236,7 @@ export function FormBlock({ spec }: { spec: A2uiForm }) {
   return (
     <form className="a2ui-block my-3" data-a2ui="form" onSubmit={submit}>
       {spec.title !== undefined && (
-        <div className="mb-2 font-medium text-fg">
+        <div className={A2UI_TITLE}>
           <InlineText text={spec.title} />
         </div>
       )}

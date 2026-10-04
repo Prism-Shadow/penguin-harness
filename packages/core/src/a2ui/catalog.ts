@@ -13,14 +13,25 @@ import {
   A2UI_LIMITS,
   type A2uiCallout,
   type A2uiChoice,
+  type A2uiClock,
+  type A2uiClockZone,
+  type A2uiCountdown,
   type A2uiForm,
   type A2uiFormField,
   type A2uiIssue,
+  type A2uiMetric,
+  type A2uiMetricKind,
+  type A2uiMetrics,
   type A2uiOption,
   type A2uiSpec,
   type A2uiStep,
   type A2uiSteps,
+  type A2uiWeather,
+  type A2uiWeatherCondition,
+  type A2uiWeatherDay,
+  type A2uiWeatherHour,
 } from "./types.js";
+import { parseA2uiInstant } from "./widgets.js";
 
 export interface A2uiParseResult {
   /** Set only when there is no error-level issue. */
@@ -123,11 +134,21 @@ function readBoolean(is: Issues, obj: Obj, key: string, path: string): boolean |
   return value;
 }
 
-function readNumber(is: Issues, obj: Obj, key: string, path: string): number | undefined {
+function readNumber(
+  is: Issues,
+  obj: Obj,
+  key: string,
+  path: string,
+  required = false,
+): number | undefined {
   const value = obj[key];
-  if (value === undefined || value === null) return undefined;
+  const p = join(path, key);
+  if (value === undefined || value === null) {
+    if (required) is.error("missing_field", `\`${p}\` is required: a number.`, p);
+    return undefined;
+  }
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    is.error("wrong_type", `\`${join(path, key)}\` must be a number.`, join(path, key));
+    is.error("wrong_type", `\`${p}\` must be a number.`, p);
     return undefined;
   }
   return value;
@@ -139,11 +160,14 @@ function readEnum<T extends string>(
   key: string,
   path: string,
   values: readonly T[],
+  required = true,
 ): T | undefined {
   const value = obj[key];
   const p = join(path, key);
   if (value === undefined || value === null) {
-    is.error("missing_field", `\`${p}\` is required: one of ${values.join(", ")}.`, p);
+    if (required) {
+      is.error("missing_field", `\`${p}\` is required: one of ${values.join(", ")}.`, p);
+    }
     return undefined;
   }
   if (typeof value !== "string" || !(values as readonly string[]).includes(value)) {
@@ -158,6 +182,8 @@ interface CountRule {
   max: number;
   warn?: number;
   warnCode?: string;
+  /** Appended to the warning: what to do about it. */
+  warnHint?: string;
   what: string;
 }
 
@@ -187,7 +213,7 @@ function readArray(
   } else if (rule.warn !== undefined && rule.warnCode && value.length > rule.warn) {
     is.warn(
       rule.warnCode,
-      `\`${p}\` has ${value.length} ${rule.what}; more than ${rule.warn} is hard to take in at a glance.`,
+      `\`${p}\` has ${value.length} ${rule.what}; more than ${rule.warn} is hard to take in at a glance.${rule.warnHint ? ` ${rule.warnHint}` : ""}`,
       p,
     );
   }
@@ -476,6 +502,501 @@ function parseCallout(is: Issues, obj: Obj): A2uiCallout | undefined {
   return spec;
 }
 
+/*
+ * The widgets: read-only snapshots the model supplies (weather, metrics) and the two live ones
+ * that read client time (clock, countdown). A date-time must be one parseA2uiInstant reads, the
+ * same function the renderers draw it with.
+ */
+
+const present = (value: unknown): boolean => value !== undefined && value !== null;
+
+/** A string field holding an instant: ISO 8601, or a date for local midnight. */
+function readInstant(
+  is: Issues,
+  obj: Obj,
+  key: string,
+  path: string,
+  required = false,
+): string | undefined {
+  const value = readString(is, obj, key, path, { required, max: Number.POSITIVE_INFINITY });
+  if (value === undefined || parseA2uiInstant(value) !== null) return value;
+  const p = join(path, key);
+  is.error(
+    "invalid_datetime",
+    `\`${p}\` is "${value}", not a date-time; write ISO 8601 such as 2026-10-04T14:05+08:00 (Z or an offset; without one it is the viewer's local time), or 2026-10-04 for local midnight.`,
+    p,
+  );
+  return undefined;
+}
+
+function readPercent(is: Issues, obj: Obj, key: string, path: string): number | undefined {
+  const value = readNumber(is, obj, key, path);
+  if (value === undefined || (value >= 0 && value <= 100)) return value;
+  const p = join(path, key);
+  is.error("range_invalid", `\`${p}\` is ${value}; a percentage is 0–100. Fix the value.`, p);
+  return undefined;
+}
+
+/** Reports `high` below `low`; the two are read together on the block and on every day. */
+function checkHighLow(
+  is: Issues,
+  high: number | undefined,
+  low: number | undefined,
+  path: string,
+): void {
+  if (high === undefined || low === undefined || high >= low) return;
+  const p = join(path, "high");
+  is.error(
+    "range_invalid",
+    `\`${p}\` ${high} is below \`${join(path, "low")}\` ${low}; swap them or fix the values.`,
+    p,
+  );
+}
+
+const WEATHER_CONDITIONS: readonly A2uiWeatherCondition[] = [
+  "clear",
+  "partly-cloudy",
+  "cloudy",
+  "fog",
+  "drizzle",
+  "rain",
+  "heavy-rain",
+  "thunder",
+  "snow",
+  "sleet",
+  "wind",
+];
+const TEMP_UNITS = ["C", "F"] as const;
+const WIND_UNITS = ["km/h", "m/s", "mph"] as const;
+const HOUR_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DAY_DATE = /^\d{4}-\d{2}-\d{2}/;
+const HOUR_FIELDS = ["time", "temp", "condition", "precip", "night"] as const;
+const DAY_FIELDS = ["date", "high", "low", "condition", "precip"] as const;
+const WEATHER_FIELDS = [
+  "type",
+  "place",
+  "condition",
+  "temp",
+  "unit",
+  "night",
+  "summary",
+  "high",
+  "low",
+  "feelsLike",
+  "humidity",
+  "windSpeed",
+  "windUnit",
+  "windDirection",
+  "hourly",
+  "daily",
+  "asOf",
+  "source",
+] as const;
+
+function parseHour(is: Issues, item: unknown, hp: string): A2uiWeatherHour | undefined {
+  if (!isObj(item)) {
+    is.error("wrong_type", `\`${hp}\` must be an object with \`time\` and \`temp\`.`, hp);
+    return undefined;
+  }
+  const time = readString(is, item, "time", hp, { required: true, max: Number.POSITIVE_INFINITY });
+  if (
+    time !== undefined &&
+    !HOUR_TIME.test(time) &&
+    !(time.includes("T") && parseA2uiInstant(time) !== null)
+  ) {
+    is.error(
+      "invalid_format",
+      `\`${hp}.time\` must be HH:mm on the 24-hour clock, such as 14:00, or an ISO 8601 date-time such as 2026-10-04T14:00+08:00.`,
+      `${hp}.time`,
+    );
+  }
+  const temp = readNumber(is, item, "temp", hp, true);
+  const condition = readEnum(is, item, "condition", hp, WEATHER_CONDITIONS, false);
+  const precip = readPercent(is, item, "precip", hp);
+  const night = readBoolean(is, item, "night", hp);
+  unknownFields(is, item, HOUR_FIELDS, hp, "an hour");
+  if (time === undefined || temp === undefined) return undefined;
+  const hour: A2uiWeatherHour = { time, temp };
+  if (condition !== undefined) hour.condition = condition;
+  if (precip !== undefined) hour.precip = precip;
+  if (night !== undefined) hour.night = night;
+  return hour;
+}
+
+function parseDay(is: Issues, item: unknown, dp: string): A2uiWeatherDay | undefined {
+  if (!isObj(item)) {
+    is.error(
+      "wrong_type",
+      `\`${dp}\` must be an object with \`date\`, \`high\`, \`low\` and \`condition\`.`,
+      dp,
+    );
+    return undefined;
+  }
+  const date = readString(is, item, "date", dp, { required: true, max: Number.POSITIVE_INFINITY });
+  if (date !== undefined && !(DAY_DATE.test(date) && parseA2uiInstant(date) !== null)) {
+    is.error(
+      "invalid_format",
+      `\`${dp}.date\` must be a date that exists, written YYYY-MM-DD, such as 2026-10-05.`,
+      `${dp}.date`,
+    );
+  }
+  const high = readNumber(is, item, "high", dp, true);
+  const low = readNumber(is, item, "low", dp, true);
+  const condition = readEnum(is, item, "condition", dp, WEATHER_CONDITIONS);
+  const precip = readPercent(is, item, "precip", dp);
+  unknownFields(is, item, DAY_FIELDS, dp, "a day");
+  checkHighLow(is, high, low, dp);
+  if (date === undefined || high === undefined || low === undefined || condition === undefined) {
+    return undefined;
+  }
+  const day: A2uiWeatherDay = { date, high, low, condition };
+  if (precip !== undefined) day.precip = precip;
+  return day;
+}
+
+function parseWeather(is: Issues, obj: Obj): A2uiWeather | undefined {
+  const place = readString(is, obj, "place", "", { required: true, max: A2UI_LIMITS.place });
+  const condition = readEnum(is, obj, "condition", "", WEATHER_CONDITIONS);
+  const temp = readNumber(is, obj, "temp", "", true);
+  const unit = readEnum(is, obj, "unit", "", TEMP_UNITS, false);
+  const night = readBoolean(is, obj, "night", "");
+  const summary = readString(is, obj, "summary", "", { max: A2UI_LIMITS.summary });
+  const high = readNumber(is, obj, "high", "");
+  const low = readNumber(is, obj, "low", "");
+  const feelsLike = readNumber(is, obj, "feelsLike", "");
+  const humidity = readPercent(is, obj, "humidity", "");
+  let windSpeed = readNumber(is, obj, "windSpeed", "");
+  if (windSpeed !== undefined && windSpeed < 0) {
+    is.error(
+      "range_invalid",
+      `\`windSpeed\` is ${windSpeed}; a speed is at least 0 — put the direction in \`windDirection\`.`,
+      "windSpeed",
+    );
+    windSpeed = undefined;
+  }
+  const windUnit = readEnum(is, obj, "windUnit", "", WIND_UNITS, false);
+  const windDirection = readString(is, obj, "windDirection", "", {
+    max: A2UI_LIMITS.windDirection,
+  });
+  if (!present(obj.windSpeed)) {
+    for (const key of ["windUnit", "windDirection"] as const) {
+      if (!present(obj[key])) continue;
+      is.warn(
+        "ignored_field",
+        `\`${key}\` without \`windSpeed\` has no effect; add the speed or remove it.`,
+        key,
+      );
+    }
+  }
+  let hourly: A2uiWeatherHour[] | undefined;
+  if (present(obj.hourly)) {
+    const raw = readArray(is, obj, "hourly", "", {
+      ...A2UI_LIMITS.hourly,
+      warnCode: "weather_hourly_long",
+      warnHint: "Show the next 12 hours, or one entry every two hours.",
+      what: "hours",
+    });
+    const list: A2uiWeatherHour[] = [];
+    raw?.forEach((item, i) => {
+      const hour = parseHour(is, item, `hourly[${i}]`);
+      if (hour !== undefined) list.push(hour);
+    });
+    hourly = list;
+  }
+  let daily: A2uiWeatherDay[] | undefined;
+  if (present(obj.daily)) {
+    const raw = readArray(is, obj, "daily", "", { ...A2UI_LIMITS.daily, what: "days" });
+    const list: A2uiWeatherDay[] = [];
+    raw?.forEach((item, i) => {
+      const day = parseDay(is, item, `daily[${i}]`);
+      if (day !== undefined) list.push(day);
+    });
+    daily = list;
+  }
+  const asOf = readInstant(is, obj, "asOf", "");
+  const source = readString(is, obj, "source", "", { max: A2UI_LIMITS.source });
+  unknownFields(is, obj, WEATHER_FIELDS, "", "a weather block");
+  checkHighLow(is, high, low, "");
+  if (place === undefined || condition === undefined || temp === undefined) return undefined;
+  const spec: A2uiWeather = { type: "weather", place, condition, temp };
+  if (unit !== undefined) spec.unit = unit;
+  if (night !== undefined) spec.night = night;
+  if (summary !== undefined) spec.summary = summary;
+  if (high !== undefined) spec.high = high;
+  if (low !== undefined) spec.low = low;
+  if (feelsLike !== undefined) spec.feelsLike = feelsLike;
+  if (humidity !== undefined) spec.humidity = humidity;
+  if (windSpeed !== undefined) spec.windSpeed = windSpeed;
+  if (windUnit !== undefined) spec.windUnit = windUnit;
+  if (windDirection !== undefined) spec.windDirection = windDirection;
+  if (hourly !== undefined) spec.hourly = hourly;
+  if (daily !== undefined) spec.daily = daily;
+  if (asOf !== undefined) spec.asOf = asOf;
+  if (source !== undefined) spec.source = source;
+  return spec;
+}
+
+const CLOCK_STYLES = ["digital", "analog", "both"] as const;
+const HOUR_CYCLES = ["12", "24", "auto"] as const;
+const ZONE_FIELDS = ["zone", "label"] as const;
+const CLOCK_FIELDS = ["type", "title", "zones", "style", "hourCycle", "seconds", "date"] as const;
+
+/** The zone's canonical IANA name, or null when Intl does not know it. */
+function canonicalZone(zone: string): string | null {
+  try {
+    return new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
+function parseZones(is: Issues, obj: Obj): A2uiClockZone[] | undefined {
+  const raw = readArray(is, obj, "zones", "", { ...A2UI_LIMITS.zones, what: "zones" });
+  if (raw === undefined) return undefined;
+  const zones: A2uiClockZone[] = [];
+  const seen = new Map<string, number>();
+  raw.forEach((item, i) => {
+    const zp = `zones[${i}]`;
+    if (!isObj(item)) {
+      is.error("wrong_type", `\`${zp}\` must be an object with a \`zone\`.`, zp);
+      return;
+    }
+    const zone = readString(is, item, "zone", zp, { required: true, max: A2UI_LIMITS.zone });
+    const label = readString(is, item, "label", zp, { max: A2UI_LIMITS.zoneLabel });
+    unknownFields(is, item, ZONE_FIELDS, zp, "a clock zone");
+    if (zone === undefined) return;
+    const key = zone === "local" ? zone : canonicalZone(zone);
+    if (key === null) {
+      is.error(
+        "invalid_timezone",
+        `\`${zp}.zone\` "${zone}" is not a time zone; use an IANA name such as Asia/Shanghai, or local.`,
+        `${zp}.zone`,
+      );
+      return;
+    }
+    const first = seen.get(key);
+    if (first !== undefined) {
+      is.error(
+        "duplicate_zone",
+        `\`${zp}.zone\` repeats zone ${first + 1} ("${zone}"); list each zone once.`,
+        `${zp}.zone`,
+      );
+    } else {
+      seen.set(key, i);
+    }
+    const entry: A2uiClockZone = { zone };
+    if (label !== undefined) entry.label = label;
+    zones.push(entry);
+  });
+  return zones;
+}
+
+function parseClock(is: Issues, obj: Obj): A2uiClock | undefined {
+  const title = readString(is, obj, "title", "", { max: A2UI_LIMITS.clockTitle });
+  const zones = present(obj.zones) ? parseZones(is, obj) : undefined;
+  const style = readEnum(is, obj, "style", "", CLOCK_STYLES, false);
+  const hourCycle = readEnum(is, obj, "hourCycle", "", HOUR_CYCLES, false);
+  const seconds = readBoolean(is, obj, "seconds", "");
+  const date = readBoolean(is, obj, "date", "");
+  unknownFields(is, obj, CLOCK_FIELDS, "", "a clock");
+  const spec: A2uiClock = { type: "clock" };
+  if (title !== undefined) spec.title = title;
+  if (zones !== undefined) spec.zones = zones;
+  if (style !== undefined) spec.style = style;
+  if (hourCycle !== undefined) spec.hourCycle = hourCycle;
+  if (seconds !== undefined) spec.seconds = seconds;
+  if (date !== undefined) spec.date = date;
+  return spec;
+}
+
+const COUNTDOWN_FIELDS = ["type", "to", "label", "doneLabel", "showTarget"] as const;
+
+function parseCountdown(is: Issues, obj: Obj): A2uiCountdown | undefined {
+  const to = readInstant(is, obj, "to", "", true);
+  const label = readString(is, obj, "label", "", {
+    required: true,
+    max: A2UI_LIMITS.countdownLabel,
+  });
+  const doneLabel = readString(is, obj, "doneLabel", "", { max: A2UI_LIMITS.countdownLabel });
+  const showTarget = readBoolean(is, obj, "showTarget", "");
+  unknownFields(is, obj, COUNTDOWN_FIELDS, "", "a countdown");
+  if (to === undefined || label === undefined) return undefined;
+  const spec: A2uiCountdown = { type: "countdown", to, label };
+  if (doneLabel !== undefined) spec.doneLabel = doneLabel;
+  if (showTarget !== undefined) spec.showTarget = showTarget;
+  return spec;
+}
+
+const METRIC_KINDS: readonly A2uiMetricKind[] = ["reading", "used", "remaining", "progress"];
+const GAUGES = ["ring", "bar", "none"] as const;
+const DIRECTIONS = ["high", "low"] as const;
+const METRIC_FIELDS = [
+  "label",
+  "value",
+  "max",
+  "min",
+  "kind",
+  "gauge",
+  "unit",
+  "prefix",
+  "decimals",
+  "worse",
+  "warn",
+  "danger",
+  "detail",
+  "delta",
+  "deltaLabel",
+  "history",
+] as const;
+const METRICS_FIELDS = ["type", "title", "items", "asOf"] as const;
+
+function readHistory(is: Issues, item: Obj, mp: string): number[] | undefined {
+  const raw = readArray(is, item, "history", mp, { ...A2UI_LIMITS.history, what: "points" });
+  if (raw === undefined) return undefined;
+  const points: number[] = [];
+  raw.forEach((point, i) => {
+    if (typeof point === "number" && Number.isFinite(point)) {
+      points.push(point);
+      return;
+    }
+    const pp = `${mp}.history[${i}]`;
+    is.error("wrong_type", `\`${pp}\` must be a number; leave out a reading you do not have.`, pp);
+  });
+  return points;
+}
+
+function parseMetric(is: Issues, item: unknown, mp: string): A2uiMetric | undefined {
+  if (!isObj(item)) {
+    is.error("wrong_type", `\`${mp}\` must be an object with a \`label\` and a \`value\`.`, mp);
+    return undefined;
+  }
+  const label = readString(is, item, "label", mp, {
+    required: true,
+    max: A2UI_LIMITS.metricLabel,
+  });
+  const value = readNumber(is, item, "value", mp, true);
+  const max = readNumber(is, item, "max", mp);
+  const min = readNumber(is, item, "min", mp);
+  const kind = readEnum(is, item, "kind", mp, METRIC_KINDS, false);
+  const gauge = readEnum(is, item, "gauge", mp, GAUGES, false);
+  const unit = readString(is, item, "unit", mp, { max: A2UI_LIMITS.unit });
+  const prefix = readString(is, item, "prefix", mp, { max: A2UI_LIMITS.prefix });
+  const decimals = readNumber(is, item, "decimals", mp);
+  const worse = readEnum(is, item, "worse", mp, DIRECTIONS, false);
+  const warn = readNumber(is, item, "warn", mp);
+  const danger = readNumber(is, item, "danger", mp);
+  const detail = readString(is, item, "detail", mp, { max: A2UI_LIMITS.metricDetail });
+  const delta = readNumber(is, item, "delta", mp);
+  const deltaLabel = readString(is, item, "deltaLabel", mp, { max: A2UI_LIMITS.deltaLabel });
+  const history = present(item.history) ? readHistory(is, item, mp) : undefined;
+  unknownFields(is, item, METRIC_FIELDS, mp, "a metric");
+
+  if (!present(item.max)) {
+    if (kind === "used" || kind === "remaining" || kind === "progress") {
+      is.error(
+        "missing_field",
+        `\`${mp}.max\` is required for kind "${kind}"; add the whole the value is a part of.`,
+        `${mp}.max`,
+      );
+    } else if (gauge === "ring" || gauge === "bar") {
+      is.error(
+        "missing_field",
+        `\`${mp}.max\` is required for a ${gauge} gauge; add it, or set gauge "none".`,
+        `${mp}.max`,
+      );
+    }
+  }
+  if (max !== undefined && (min ?? 0) >= max) {
+    is.error(
+      "range_invalid",
+      `\`${mp}\`: max ${max} is not above min ${min ?? "0 (the default)"}; fix the range.`,
+      min !== undefined ? `${mp}.min` : `${mp}.max`,
+    );
+  }
+  if (decimals !== undefined && !(Number.isInteger(decimals) && decimals >= 0 && decimals <= 3)) {
+    is.error(
+      "range_invalid",
+      `\`${mp}.decimals\` is ${decimals}; use a whole number from 0 to 3.`,
+      `${mp}.decimals`,
+    );
+  }
+  if (warn !== undefined && danger !== undefined) {
+    const direction = worse ?? (kind === "remaining" ? "low" : "high");
+    const why = worse === undefined ? ` (the default for kind "${kind ?? "reading"}")` : "";
+    if (direction === "high" && warn > danger) {
+      is.error(
+        "range_invalid",
+        `\`${mp}\`: warn ${warn} is above danger ${danger}, but worse is "high"${why} — a higher value is worse, so warn must be at most danger. Swap them, or set worse to "low".`,
+        `${mp}.warn`,
+      );
+    } else if (direction === "low" && warn < danger) {
+      is.error(
+        "range_invalid",
+        `\`${mp}\`: warn ${warn} is below danger ${danger}, but worse is "low"${why} — a lower value is worse, so warn must be at least danger. Swap them, or set worse to "high".`,
+        `${mp}.warn`,
+      );
+    }
+  }
+  if (deltaLabel !== undefined && !present(item.delta)) {
+    is.warn(
+      "ignored_field",
+      `\`${mp}.deltaLabel\` without \`delta\` has no effect; add the change or remove the label.`,
+      `${mp}.deltaLabel`,
+    );
+  }
+  if (label === undefined || value === undefined) return undefined;
+  const metric: A2uiMetric = { label, value };
+  if (max !== undefined) metric.max = max;
+  if (min !== undefined) metric.min = min;
+  if (kind !== undefined) metric.kind = kind;
+  if (gauge !== undefined) metric.gauge = gauge;
+  if (unit !== undefined) metric.unit = unit;
+  if (prefix !== undefined) metric.prefix = prefix;
+  if (decimals !== undefined) metric.decimals = decimals;
+  if (worse !== undefined) metric.worse = worse;
+  if (warn !== undefined) metric.warn = warn;
+  if (danger !== undefined) metric.danger = danger;
+  if (detail !== undefined) metric.detail = detail;
+  if (delta !== undefined) metric.delta = delta;
+  if (deltaLabel !== undefined) metric.deltaLabel = deltaLabel;
+  if (history !== undefined) metric.history = history;
+  return metric;
+}
+
+function parseMetrics(is: Issues, obj: Obj): A2uiMetrics | undefined {
+  const title = readString(is, obj, "title", "", { max: A2UI_LIMITS.metricsTitle });
+  const raw = readArray(is, obj, "items", "", {
+    ...A2UI_LIMITS.metrics,
+    warnCode: "metrics_too_many",
+    warnHint: "Keep the readings that matter and say the rest in a sentence.",
+    what: "items",
+  });
+  const asOf = readInstant(is, obj, "asOf", "");
+  unknownFields(is, obj, METRICS_FIELDS, "", "a metrics block");
+  if (raw === undefined) return undefined;
+  const items: A2uiMetric[] = [];
+  const labels = new Map<string, number>();
+  raw.forEach((item, i) => {
+    const metric = parseMetric(is, item, `items[${i}]`);
+    if (metric === undefined) return;
+    const seen = labels.get(metric.label);
+    if (seen !== undefined) {
+      is.error(
+        "duplicate_label",
+        `\`items[${i}].label\` repeats item ${seen + 1}'s label "${metric.label}"; labels must be unique.`,
+        `items[${i}].label`,
+      );
+    } else {
+      labels.set(metric.label, i);
+    }
+    items.push(metric);
+  });
+  const spec: A2uiMetrics = { type: "metrics", items };
+  if (title !== undefined) spec.title = title;
+  if (asOf !== undefined) spec.asOf = asOf;
+  return spec;
+}
+
 /** Removes commas that sit before a closing bracket, outside strings. Reports whether any did. */
 function stripTrailingCommas(text: string): { text: string; changed: boolean } {
   let out = "";
@@ -567,7 +1088,11 @@ export function parseA2ui(source: string): A2uiParseResult {
   }
   const type = data.type;
   if (typeof type !== "string") {
-    is.error("missing_type", "`type` is required: one of choice, form, steps, callout.", "type");
+    is.error(
+      "missing_type",
+      "`type` is required: one of choice, form, steps, callout, weather, clock, countdown, metrics.",
+      "type",
+    );
     return { issues: is.list };
   }
   let spec: A2uiSpec | undefined;
@@ -584,10 +1109,22 @@ export function parseA2ui(source: string): A2uiParseResult {
     case "callout":
       spec = parseCallout(is, data);
       break;
+    case "weather":
+      spec = parseWeather(is, data);
+      break;
+    case "clock":
+      spec = parseClock(is, data);
+      break;
+    case "countdown":
+      spec = parseCountdown(is, data);
+      break;
+    case "metrics":
+      spec = parseMetrics(is, data);
+      break;
     default:
       is.error(
         "unknown_type",
-        `Unknown type "${type}"; the catalog has choice, form, steps and callout.`,
+        `Unknown type "${type}"; the catalog has choice, form, steps, callout, weather, clock, countdown and metrics.`,
         "type",
       );
       return { issues: is.list, type };

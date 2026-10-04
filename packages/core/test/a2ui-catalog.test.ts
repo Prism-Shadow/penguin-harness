@@ -52,6 +52,54 @@ const steps = {
   ],
 };
 const callout = { type: "callout", tone: "tip", title: "Faster", text: "Use the cache." };
+const weather = {
+  type: "weather",
+  place: "Beijing",
+  condition: "partly-cloudy",
+  temp: 18,
+  high: 22,
+  low: 12,
+  humidity: 62,
+  windSpeed: 12,
+  windDirection: "NE",
+  hourly: [
+    { time: "14:00", temp: 18, condition: "partly-cloudy", precip: 10 },
+    { time: "2026-10-04T15:00+08:00", temp: 19, night: false },
+  ],
+  daily: [
+    { date: "2026-10-05", high: 22, low: 12, condition: "partly-cloudy", precip: 20 },
+    { date: "2026-10-06", high: 19, low: 11, condition: "rain" },
+  ],
+  asOf: "2026-10-04T14:05+08:00",
+  source: "Open-Meteo",
+};
+const clock = {
+  type: "clock",
+  zones: [{ zone: "local" }, { zone: "America/New_York", label: "New York" }],
+  style: "both",
+  hourCycle: "24",
+};
+const countdown = { type: "countdown", to: "2026-12-31T23:59:59+08:00", label: "New Year" };
+const metrics = {
+  type: "metrics",
+  title: "This machine",
+  items: [
+    { label: "CPU", value: 37, max: 100, unit: "%", warn: 80, danger: 95, history: [20, 37] },
+    {
+      label: "Budget",
+      value: 320,
+      max: 1000,
+      kind: "remaining",
+      prefix: "¥",
+      warn: 300,
+      danger: 100,
+      delta: -60,
+      deltaLabel: "today",
+    },
+    { label: "Upload", value: 7, max: 12, kind: "progress", unit: "tasks" },
+  ],
+  asOf: "2026-10-04T06:05:00Z",
+};
 
 describe("parseA2ui: valid blocks", () => {
   it.each([
@@ -59,6 +107,10 @@ describe("parseA2ui: valid blocks", () => {
     ["form", form],
     ["steps", steps],
     ["callout", callout],
+    ["weather", weather],
+    ["clock", clock],
+    ["countdown", countdown],
+    ["metrics", metrics],
   ])("%s round-trips to its spec with no issue", (_type, input) => {
     const result = parse(input);
     expect(result.issues).toEqual([]);
@@ -177,6 +229,35 @@ describe("parseA2ui: L1 errors (no spec)", () => {
       ["too_long", "text"],
     ]);
   });
+
+  it("widgets: time zones, date-times, the whole of a share, threshold order, high and low", () => {
+    expect(errorPaths({ type: "clock", zones: [{ zone: "Beijing" }] })).toEqual([
+      ["invalid_timezone", "zones[0].zone"],
+    ]);
+    expect(
+      errorPaths({ type: "clock", zones: [{ zone: "Asia/Shanghai" }, { zone: "asia/shanghai" }] }),
+    ).toEqual([["duplicate_zone", "zones[1].zone"]]);
+    expect(errorPaths({ type: "countdown", to: "next Friday", label: "Launch" })).toEqual([
+      ["invalid_datetime", "to"],
+    ]);
+    expect(errorPaths({ ...metrics, asOf: "14:05" })).toEqual([["invalid_datetime", "asOf"]]);
+    expect(
+      errorPaths({ type: "metrics", items: [{ label: "Quota", value: 1240, kind: "remaining" }] }),
+    ).toEqual([["missing_field", "items[0].max"]]);
+    // A reading reads high as worse: warn may not be above danger.
+    expect(
+      errorPaths({
+        type: "metrics",
+        items: [{ label: "CPU", value: 37, max: 100, warn: 95, danger: 80 }],
+      }),
+    ).toEqual([["range_invalid", "items[0].warn"]]);
+    // A remaining share reads low as worse: warn may not be below danger.
+    const quota = { label: "Quota", value: 1240, max: 5000, kind: "remaining" };
+    expect(errorPaths({ type: "metrics", items: [{ ...quota, warn: 250, danger: 1000 }] })).toEqual(
+      [["range_invalid", "items[0].warn"]],
+    );
+    expect(errorPaths({ ...weather, high: 10 })).toEqual([["range_invalid", "high"]]);
+  });
 });
 
 describe("parseA2ui: warnings keep the spec", () => {
@@ -216,6 +297,17 @@ describe("parseA2ui: warnings keep the spec", () => {
     expect(
       codes({ type: "steps", steps: Array.from({ length: 11 }, () => ({ text: "Do it." })) }),
     ).toEqual(["steps_too_many"]);
+  });
+
+  it("warns past the widget marks: hourly > 12, metrics items > 6", () => {
+    const hours = Array.from({ length: 13 }, (_, i) => ({ time: `${10 + i}:00`, temp: 18 }));
+    const long = parse({ ...weather, hourly: hours });
+    expect(long.issues.map((i) => i.code)).toEqual(["weather_hourly_long"]);
+    expect(long.spec).toBeDefined();
+    const items = Array.from({ length: 7 }, (_, i) => ({ label: `Reading ${i + 1}`, value: i }));
+    const many = parse({ type: "metrics", items });
+    expect(many.issues.map((i) => i.code)).toEqual(["metrics_too_many"]);
+    expect(many.spec).toBeDefined();
   });
 
   it("warns about fields that have no effect: a placeholder on an option field, a lang without code", () => {

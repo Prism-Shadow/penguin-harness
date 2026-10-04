@@ -1,11 +1,13 @@
 /**
  * The a2ui plugin as shipped: in the library with its support files; every example in SKILL.md
  * and references/components.md passes the checker it teaches (the documentation is the first
- * test case of the grammar); the numbers the skill quotes are the exported weights; and the
- * committed checker bundle was built from the current a2ui sources.
+ * test case of the grammar); the numbers the skill quotes are the exported weights; the two data
+ * scripts build blocks the catalog accepts; and the committed checker bundle was built from the
+ * current a2ui sources.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { A2UI_SCORING, checkMermaid, checkReply, parseA2ui } from "../src/a2ui/index.js";
 import { scanFences } from "../src/a2ui/fences.js";
@@ -21,7 +23,7 @@ const skillDir = path.resolve(import.meta.dirname, "../../../plugins/a2ui/skills
 const read = (file: string) => fs.readFile(path.join(skillDir, file), "utf8");
 
 describe("the a2ui plugin", () => {
-  it("is in the library, preinstalled, under office productivity, with the skill, its reference and its checker", () => {
+  it("is in the library, preinstalled, under office productivity, with the skill, its reference, its checker and its data scripts", () => {
     const plugin = libraryPlugin("a2ui");
     expect(plugin).toMatchObject({
       name: "a2ui",
@@ -32,6 +34,8 @@ describe("the a2ui plugin", () => {
     expect(Object.keys(plugin!.skills[0]!.files ?? {}).sort()).toEqual([
       "references/components.md",
       "scripts/check.mjs",
+      "scripts/sysinfo.mjs",
+      "scripts/weather.mjs",
     ]);
   });
 
@@ -40,7 +44,7 @@ describe("the a2ui plugin", () => {
       const spans = scanFences(await read(doc)).filter(
         (span) => span.lang === "a2ui" || span.lang === "mermaid",
       );
-      if (doc.endsWith("components.md")) expect(spans.length).toBeGreaterThanOrEqual(6);
+      if (doc.endsWith("components.md")) expect(spans.length).toBeGreaterThanOrEqual(10);
       for (const span of spans) {
         const source = span.body.join("\n");
         const issues = span.lang === "a2ui" ? parseA2ui(source).issues : checkMermaid(source);
@@ -52,7 +56,7 @@ describe("the a2ui plugin", () => {
       const examples = scanFences(await read(doc)).filter(
         (span) => span.lang === "markdown" && span.closed,
       );
-      if (doc === "SKILL.md") expect(examples.length).toBeGreaterThanOrEqual(3);
+      if (doc === "SKILL.md") expect(examples.length).toBeGreaterThanOrEqual(5);
       for (const span of examples) {
         const report = checkReply(span.body.join("\n"));
         expect(report.issues, `${doc} line ${span.startLine}`).toEqual([]);
@@ -70,6 +74,103 @@ describe("the a2ui plugin", () => {
     expect(reference).toContain(`L2 = 100 − ${A2UI_SCORING.l2PerWarning} ×`);
     expect(reference).toContain(`prose = 100 − ${A2UI_SCORING.prosePerWarning} ×`);
     expect(reference).toContain(`total ≥ ${A2UI_SCORING.passTotal}`);
+  });
+});
+
+/** A skill script: plain ESM with no type declarations, so it is imported by URL and typed here. */
+async function importScript<T>(name: string): Promise<T> {
+  return (await import(pathToFileURL(path.join(skillDir, "scripts", name)).href)) as T;
+}
+
+type Block = Record<string, unknown>;
+
+interface WeatherScript {
+  wmoToCondition(code: number, windSpeedKmh?: number): string;
+  buildWeatherBlock(
+    geo: object,
+    forecast: object,
+    opts: { days: number; hours: number; unit: "C" | "F"; lang: "zh" | "en" },
+  ): Block;
+}
+
+interface SysinfoScript {
+  collectSysinfo(opts: { samples: number; interval: number }): Promise<object>;
+  buildMetricsBlock(info: object, opts: { lang: "zh" | "en" }): Block;
+}
+
+/** A minimal Open-Meteo answer: Beijing at 14:15 local time, hours from 13:00, three days. */
+const FIXTURE_GEO = { name: "Beijing", admin1: "Beijing", country: "China", latitude: 39.9 };
+const HOURS = Array.from({ length: 11 }, (_, i) => `2026-10-04T${13 + i}:00`);
+const FIXTURE_FORECAST = {
+  utc_offset_seconds: 28_800,
+  current: {
+    time: "2026-10-04T14:15",
+    temperature_2m: 18.4,
+    relative_humidity_2m: 62,
+    apparent_temperature: 17.2,
+    is_day: 1,
+    weather_code: 2,
+    wind_speed_10m: 12.3,
+    wind_direction_10m: 45,
+  },
+  hourly: {
+    time: HOURS,
+    temperature_2m: HOURS.map((_, i) => 17 + i / 2),
+    weather_code: HOURS.map((_, i) => (i < 5 ? 2 : 3)),
+    precipitation_probability: HOURS.map((_, i) => (i === 3 ? null : 10 * i)),
+    is_day: HOURS.map((_, i) => (i < 6 ? 1 : 0)),
+  },
+  daily: {
+    time: ["2026-10-04", "2026-10-05", "2026-10-06"],
+    weather_code: [2, 61, 0],
+    temperature_2m_max: [22.1, 19.4, 21],
+    temperature_2m_min: [12.2, 11, 10.6],
+    precipitation_probability_max: [20, 80, null],
+  },
+};
+
+describe("the skill's data scripts", () => {
+  it("weather.mjs maps WMO codes and turns an Open-Meteo answer into a valid weather block", async () => {
+    const weather = await importScript<WeatherScript>("weather.mjs");
+    expect([0, 3, 61, 95].map((code) => weather.wmoToCondition(code))).toEqual([
+      "clear",
+      "cloudy",
+      "rain",
+      "thunder",
+    ]);
+    expect(weather.wmoToCondition(1, 60)).toBe("wind");
+
+    const block = weather.buildWeatherBlock(FIXTURE_GEO, FIXTURE_FORECAST, {
+      days: 3,
+      hours: 6,
+      unit: "C",
+      lang: "en",
+    });
+    expect(parseA2ui(JSON.stringify(block)).issues).toEqual([]);
+    expect(block).toMatchObject({
+      place: "Beijing",
+      condition: "partly-cloudy",
+      temp: 18,
+      windDirection: "NE",
+      asOf: "2026-10-04T14:15+08:00",
+    });
+    expect((block.hourly as Array<{ time: string }>).map((hour) => hour.time)).toEqual([
+      "14:00",
+      "15:00",
+      "16:00",
+      "17:00",
+      "18:00",
+      "19:00",
+    ]);
+    expect(block.daily).toHaveLength(3);
+  });
+
+  it("sysinfo.mjs takes a snapshot of this machine and builds a metrics block without errors", async () => {
+    const sysinfo = await importScript<SysinfoScript>("sysinfo.mjs");
+    const info = await sysinfo.collectSysinfo({ samples: 2, interval: 50 });
+    const block = sysinfo.buildMetricsBlock(info, { lang: "en" });
+    const { issues } = parseA2ui(JSON.stringify(block));
+    expect(issues.filter((issue) => issue.level === "error")).toEqual([]);
   });
 });
 
