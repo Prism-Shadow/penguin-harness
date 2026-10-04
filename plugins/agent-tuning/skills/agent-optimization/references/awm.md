@@ -9,6 +9,12 @@ Offline AWM learns reusable parameterized subroutines from successful experience
 then freezes them for testing. Experience admission and batch collection here are
 declared adaptations, not a reproduction of the paper's numerical results.
 
+The imported Agent Supervision contract supplies caller-owned cheating recovery:
+logical method cells/rounds are unchanged, with up to four actual attempts per
+cell and a fresh companion for each. Reserve that overhead and both roles' costs
+within the declared budget. These retries are not extra optimization proposals;
+terminal penalties do not become learning evidence or a valid candidate measure.
+
 ## Method settings
 
 | Setting | Default |
@@ -32,7 +38,7 @@ linear candidates, successful-experience plus artifact-validity admission. Own
 Allocate unused `awm-<number>` IDs; never overwrite an unrelated Skill. State
 version and snapshots are bookkeeping. Other State, tools, hooks and model stay fixed.
 
-Budget `(rounds + 1) × cases × runs` Target Agent starts. Each consumed trace permits
+Budget `(rounds + 1) × cases × runs` logical Target cells. Each consumed trace permits
 one public success judge if selected; each round permits one inducer and one
 consolidator. Extra workers/calls require a declared budget, not hidden retries.
 

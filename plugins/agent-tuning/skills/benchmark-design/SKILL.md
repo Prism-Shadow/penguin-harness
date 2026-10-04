@@ -16,6 +16,16 @@ case design and calibration; fresh Evaluator workers run and score individual
 cells. Keep the Target Harness fixed and stop after the Benchmark and baseline
 handoff. Optimization is a separate phase.
 
+## Companion supervision
+
+Read and follow [Agent Supervision](../agent-supervision/SKILL.md) before work.
+Without an assigned pair, act as the delegating Root and start a Supervised Agent
+with its Supervisor companion. With a verified pair binding, execute this Skill;
+pair each new task child separately. Join both reports at the parent. Confirmed
+cheating permits at most three fresh retries with corrective user instructions;
+continued cheating on attempt 4 receives a policy zero and reason under that
+contract. This caller-owned recovery is separate from unstarted-launch repair.
+
 ## Before you start
 
 Use [Penguin](references/penguin.md) by default for Pilot calibration, difficulty
@@ -81,6 +91,8 @@ instructions belong in the Rubric when the task needs them.
 
 Require `run_subagent` and an installed `agent-evaluation` Skill. Dispatch independent
 Case × Run cells in parallel up to available concurrency, each with a fresh worker:
+Reserve a Supervisor companion for each worker and its Target through the imported
+contract; the caller keeps one retry counter per logical cell.
 
 ```text
 Use agent-evaluation and its applicable references. Run and score this cell once.
@@ -105,6 +117,11 @@ new measurement of the affected revision. On `version_changed`, discard the curr
 matrix and wait for stable State. For `evaluation_failed`, retry only if evidence
 proves the Target did not start and a new specific repair exists; otherwise stop
 and report the blocker. Never retry a completed wrong answer to raise its score.
+Confirmed cheating uses the imported bounded retry policy with new user
+instructions. After exhaustion, include zero and its reason in the final evaluation
+report. A penalty does not prove useful difficulty or satisfy calibration; do not
+publish or select a Formal Baseline from a penalized Pilot. Stop calibration as
+failed with the anomaly report rather than designing around the cheating case.
 
 ## Record and report
 

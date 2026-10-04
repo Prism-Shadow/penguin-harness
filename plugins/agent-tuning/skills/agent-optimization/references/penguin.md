@@ -4,6 +4,12 @@ Penguin's default optimization method. Use the common Agent Optimization input,
 evaluation, snapshot and output contracts; this reference defines its search and
 acceptance policy. It preserves the original method's behavior.
 
+The imported Agent Supervision contract supplies caller-owned cheating recovery:
+logical method cells/rounds are unchanged, with up to four actual attempts per
+cell and a fresh companion for each. Reserve that overhead and both roles' costs
+within the declared budget. These retries are not extra optimization proposals;
+terminal penalties do not become learning evidence or a valid candidate measure.
+
 ## Requirements and declaration
 
 Require a published training Benchmark, a complete Formal Baseline matching the

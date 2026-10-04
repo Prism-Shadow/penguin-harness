@@ -8,6 +8,12 @@ baseline setup is linked under Baseline artifact.
 This is offline FDE adaptation: fresh Target Agents generate traces, Reflectors extract
 lessons, a Curator consolidates deltas, and the Optimizer publishes between batches.
 
+The imported Agent Supervision contract supplies caller-owned cheating recovery:
+logical method cells/rounds are unchanged, with up to four actual attempts per
+cell and a fresh companion for each. Reserve that overhead and both roles' costs
+within the declared budget. These retries are not extra optimization proposals;
+terminal penalties do not become learning evidence or a valid candidate measure.
+
 ## Method settings
 
 | Setting | Default |
@@ -25,7 +31,7 @@ batch updates by Optimizer, linear candidates and evidence/structure admission.
 Only `STATE/skills/ace-playbook/` is behaviorally writable; State version and
 snapshots are bookkeeping exceptions. Tools, hooks, model and reader remain fixed.
 
-The launch cap is `(rounds + 1) × cases × runs`. Each update permits one Reflector
+The logical cell cap is `(rounds + 1) × cases × runs`. Each update permits one Reflector
 per case (all repeats together), one Curator, and at most one detailed-feedback
 worker per consumed execution. Count all started/failed calls and keep within the
 declared resource budget.

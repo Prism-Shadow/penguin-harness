@@ -16,6 +16,16 @@ and verification. Benchmark-specific recipes live in references. Fetch datasets
 and generate any needed adapters only when requested, inside the destination
 Project; do not bundle them into Penguin or make them default benchmarks.
 
+## Companion supervision
+
+Read and follow [Agent Supervision](../agent-supervision/SKILL.md) before work.
+Without an assigned pair, act as the delegating Root and start a Supervised Agent
+with its Supervisor companion. With a verified pair binding, execute this Skill;
+pair each new task child separately. Join both reports at the parent. Confirmed
+cheating permits at most three fresh retries with corrective user instructions;
+continued cheating on attempt 4 receives a policy zero and reason under that
+contract. This caller-owned recovery is separate from unstarted-launch repair.
+
 ## Before you start
 
 Resolve the source URL/name/local checkout, destination Project and Test Agent
@@ -186,6 +196,10 @@ Wrong answers are valid scored executions; do not rerun them to improve smoke
 results. Environment, protocol or grading failure blocks publication. Fix real
 adapter defects and rerun only affected coverage with a new attempt record.
 Grader-only checks do not establish that the Agent execution path works.
+Pair smoke Evaluators and Targets through Agent Supervision. Confirmed cheating
+uses its three-retry policy; corrective text goes only in the next user instruction.
+If all four attempts still cheat, return policy zero and its reason for that case,
+keep the failed attempts, and do not publish the Benchmark as smoke-verified.
 Save each attempt's evidence before repair; never overwrite a failed check with
 the successful rerun. Verify the packaged runtime, not just the source checkout.
 Resolve every control-evidence path from the delivered benchmark; retain the

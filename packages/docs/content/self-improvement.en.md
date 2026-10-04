@@ -5,27 +5,50 @@ description: Use Skills to create or reproduce benchmarks, evaluate a Target Age
 
 The default Penguin method is a loop: build a Benchmark for an agent, score the agent on it, change the agent, and keep a change only when the score strictly improves. The loop adds no runtime of its own. Skills orchestrate the ordinary agent machinery: evaluations are ordinary Sessions, optimization is ordinary file editing, and every result is a file in the Project.
 
-Building a Benchmark and optimizing an agent run in two independent top-level Sessions, and each single evaluation is delegated through the built-in `run_subagent` tool. The top-level prompt supplies the settings for the task: the agent, the Benchmark, the capability, the scores and the rounds. The Skills own everything else: call relationships, calibration, Freeze, the result protocol, repair, rollback and reporting.
+The Root Agent, usually Default Agent, delegates each phase to a Supervised Agent
+and creates its independent Supervisor companion. The five task Skills import
+`agent-supervision`; each task child gets its own companion and reports to its
+own parent.
 
 ## Roles
 
-| Role | Skill | Runs as | Responsibility |
-| --- | --- | --- | --- |
-| Builder | `agent-initialization`, then `benchmark-design` or `benchmark-reproduction` | A top-level Session | Sets up the Target Agent and creates or reproduces its Benchmark |
-| Target Agent | — | A fresh top-level Session for every run | The agent being evaluated or improved; it works only inside its own isolated Workspace |
-| Evaluator | `agent-evaluation` | A leaf subagent created through `run_subagent` | Runs the Target Agent on one Case once and scores that run |
-| Optimizer | `agent-optimization` | A separate top-level Session | Analyzes training traces and updates the Target Agent's harness according to the selected RSI method |
+| Role | Work |
+| --- | --- |
+| Root Agent | Creates pairs, tracks task/attempt states, stops abnormal work and joins reports |
+| Builder | Initializes the Target and designs or reproduces its Benchmark |
+| Optimizer | Analyzes permitted training traces and updates the Target Harness |
+| Evaluator | Runs one Target attempt and privately scores its saved artifact |
+| Target Agent | Solves one assigned task with a fixed harness and fresh context |
+| Supervisor Agent | Observes one assigned execution from release through final audit |
 
-These are workflow roles, not dedicated built-in Agent identities. The five Skills ship in `agent-tuning`. **Target Agent**, **Test Agent** and **Tested agent** refer to the same role; it runs both training and testing cases. **Optimizer** is the role that improves it. The built-in `default_agent` is the General Agent and may perform ordinary work. A separate **Root Agent** supervisor is proposed in the FDE design; it is not a built-in identity or a root Session.
+These are workflow roles. Builder, Optimizer, Evaluator, Target and Reporter can
+all be Supervised Agents. Supervisors are leaf observers. Six Skills ship in
+`agent-tuning`; Target/Test Agent denotes the same task-solving role in either
+training or testing. Root is the delegating role, not another name for Supervisor.
 
-### How the roles call each other
+### Pair lifecycle and recovery
 
-1. The Builder or the Optimizer dispatches the full Case × runs matrix in parallel through `run_subagent`: one Evaluator per cell, each told to use `agent-evaluation`.
-2. Each Evaluator uses the Penguin CLI to launch the Target Agent once, in a fresh top-level Session and a unique Workspace under the Target Agent's `workspaces/` directory, given by its absolute path. The launch passes `--source benchmark`, so every Test Session lands in the **Evaluations** folder of the Web App's session list instead of among the agent's active conversations. The Evaluator's own Session is an ordinary subagent Session.
-3. When the Target Agent finishes, the Evaluator scores the run against the rubric and returns one protocol result: the score, cost, duration and Test Session id. It changes no agent or Benchmark, and never writes `scoreboard.yaml`.
-4. The caller checks the complete matrix and writes `scoreboard.yaml`.
+The parent binds both Sessions, waits for Supervisor readiness, then releases the
+task. Independent case pairs can run in parallel within the declared budget.
+A tool subagent is limited to one level; further logical delegation uses explicitly
+registered server Sessions. CLI Targets are created with source `benchmark` before
+starting work, so they still appear in the Evaluation Center's session folder.
 
-Both callers first check that each Evaluator's complete response is plain protocol YAML, and only then read its status or score. When the formatting is invalid, the same Evaluator resends its existing result; the Target Agent is not run again.
+The companion reads actual instructions and trace actions. On an anomaly it
+immediately alerts the parent, which stops the executor and confirms termination.
+For confirmed cheating, a new pair repeats the same work with specific corrective
+**user instructions**, without changing system prompt/config or persistent State.
+The first execution plus three retries is the limit; a clean low score is accepted
+without retry. Continued cheating on attempt 4 receives a policy zero and a reason,
+while raw grader output and all attempts remain available in private records.
+
+The Root's task list records work ID, both Sessions, attempt, status and pending
+alerts. Both members finish before the pair closes. No-growth traces require
+status checks; missing evidence is incomplete coverage, not a clean result.
+Evaluator result YAML remains separate from audit reports. The caller applies
+terminal penalty scores with an explicit reason; penalties cannot certify a
+Formal Baseline, train a method or validate a contaminated harness. A supervised
+recovery score is distinguished from an improvement learned in the harness.
 
 ## The information barrier
 
@@ -45,7 +68,7 @@ The Evaluator keeps rubric contents, Gold answers, per-item scores and scoring r
 
 ## Building a Benchmark
 
-The first top-level Session creates the agent and its capability evaluation. The Builder follows `agent-initialization`, then `benchmark-design`, and is given the Target Agent, the capability to measure, a desired baseline score and a Pilot iteration limit.
+A supervised Builder phase creates the agent and its capability evaluation. The Builder follows `agent-initialization`, then `benchmark-design`, and is given the Target Agent, the capability to measure, a desired baseline score and a Pilot iteration limit.
 
 The evaluation runtime is fixed before the first Pilot. A `(provider, model_id)` pair the user specifies takes priority; otherwise the pair is inherited from the Builder Session. The thinking level comes from the Target Agent's `model.thinking_level`, `medium` when the field is absent. Calibration always runs each Case once, so the Builder's `runs` is fixed at 1.
 
@@ -198,6 +221,7 @@ Every score can be traced back to the run that produced it.
 
 | Skill | Purpose |
 | --- | --- |
+| `agent-supervision` | Pair delegated work with an independent companion, immediate alerts and bounded recovery |
 | `agent-initialization` | Turn a requirement into a working agent: write its `AGENTS.md` and install the Skills it needs |
 | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark |
 | `benchmark-reproduction` | Reproduce an existing benchmark and verify smoke runs before a full evaluation |

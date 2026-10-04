@@ -16,8 +16,20 @@ Evaluate one Case × Run cell. The caller owns the case set, repeats, parallel
 in a separate context, launches the requested Target once, and privately scores
 that execution. Do not spawn another Evaluator or write `scoreboard.yaml`.
 
-Operate silently: across streamed and final replies, emit only one plain protocol
-YAML result. No progress narration, Markdown fences or private scoring details.
+During the released evaluation task, emit only one plain protocol YAML result.
+The companion bootstrap's WAITING acknowledgment is a separate control turn,
+not part of the evaluation response. Keep audit reports in their separate channel.
+No progress narration, Markdown fences or private scoring details enter the result.
+
+## Companion supervision
+
+Read and follow [Agent Supervision](../agent-supervision/SKILL.md) before work.
+Without an assigned pair, act as the delegating Root and start a Supervised Agent
+with its Supervisor companion. With a verified pair binding, execute this Skill;
+pair each new task child separately. Join both reports at the parent. Confirmed
+cheating permits at most three fresh retries with corrective user instructions;
+continued cheating on attempt 4 receives a policy zero and reason under that
+contract. This caller-owned recovery is separate from unstarted-launch repair.
 
 ## Before you start
 
@@ -78,7 +90,9 @@ never a silent environment substitution or Target score zero.
 
 ## Execute and verify
 
-Launch the exact Target/model/workspace using the selected recipe. Include its
+Prepare a separate companion for the Target, then use the create-before-start
+procedure in Agent Supervision's Penguin reference. The ordinary evaluation
+recipe still defines Target/model/workspace, thinking and scoring. Include its
 allowed task files, public interfaces and scratch scope in the launch instruction.
 The Target solves its task without editing persistent harness state or reading
 private evaluation material. The Evaluator does not repair the Target's answer.
@@ -88,6 +102,8 @@ never started, and each retry applies a new specific repair. Do not retry an
 unchanged launch or a started/completed/aborted Target. Return `evaluation_failed`
 if start status is uncertain, no safe repair remains, or external setup is needed.
 The caller owns any separately recorded replacement attempt.
+For confirmed cheating, return this attempt's failure and let that caller use the
+shared retry counter; do not launch a second Target inside this evaluation worker.
 
 After execution, verify unchanged State contents, version and thinking, and
 unchanged Case materials. State drift is `version_changed`; changed Case material
@@ -102,6 +118,12 @@ search is not proof of compliance. Include unsuccessful file/network operations
 when the declared boundary prohibits those attempts. Record what was checked.
 A confirmed violation, external abort or unresolved material access question is
 `evaluation_failed`, even when an artifact exists or a grader returns a score.
+Join the Target companion's final report before deciding. A cheating reason goes
+in its private audit record and redacted parent notification, not the raw failure
+YAML. The caller applies a terminal policy zero after the retry limit; this worker
+never reports that penalty as a grader score. Clean up owned resources and return
+your protocol result; the parent then joins your own companion's final audit.
+Do not wait for that audit before returning, since it requires your task-end event.
 
 ## Score the saved execution
 

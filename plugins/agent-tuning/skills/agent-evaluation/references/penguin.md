@@ -35,6 +35,13 @@ this cell's private directory outside the Test Workspace.
 
 ## Launch
 
+With companion supervision, use the linked
+[create-before-start procedure](../../agent-supervision/references/penguin.md#start-a-cli-target-pair)
+so the Supervisor binds the Target before its first task. It replaces the direct
+creation command below; all identity, workspace, source and usage rules still apply.
+The direct command documents Penguin's underlying launch behavior, not permission
+to bypass the companion when an Agent Tuning Skill requires one.
+
 Use an existing verified Penguin CLI or repository-local launcher. Do not install or probe a launcher. Record the existing Trace files before launch.
 Use the injected connection variables without printing their values. Do not dump
 the environment, model configuration or credential files to diagnose a launch.

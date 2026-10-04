@@ -15,6 +15,16 @@ Turn a user requirement into a Target Agent's initial harness, or extend an
 existing Agent within the requested scope. The current Agent acts as Builder.
 Initialization creates the baseline; evaluation and optimization are separate.
 
+## Companion supervision
+
+Read and follow [Agent Supervision](../agent-supervision/SKILL.md) before work.
+Without an assigned pair, act as the delegating Root and start a Supervised Agent
+with its Supervisor companion. With a verified pair binding, execute this Skill;
+pair each new task child separately. Join both reports at the parent. Confirmed
+cheating permits at most three fresh retries with corrective user instructions;
+continued cheating on attempt 4 receives a policy zero and reason under that
+contract. This caller-owned recovery is separate from unstarted-launch repair.
+
 ## Before you start
 
 | Recipe | Read when |

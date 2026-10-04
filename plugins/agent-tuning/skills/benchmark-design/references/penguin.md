@@ -4,6 +4,13 @@ Penguin's default calibration recipe. Follow the parent Skill's file formats,
 parallel evaluation protocol and reporting contract. This recipe supplies the
 Pilot policy, difficulty refinement, private-standard rules and publish gate.
 
+Agent Supervision's imported policy governs confirmed cheating: the parent may
+retry the same logical cell at most three times with user-instruction constraints.
+A terminal policy zero is reported with its reason but cannot make a Pilot valid,
+lower the calibration gate or select a Formal Baseline; stop with calibration
+failure and preserve the anomaly records. Do not discard failed-attempt evidence
+when removing temporary calibration scaffolding.
+
 ## Default settings
 
 Require a target capability, desired baseline score on `0..100` and positive Pilot

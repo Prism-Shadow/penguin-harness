@@ -21,6 +21,16 @@ The Target Agent is also called the Test Agent in Agent Tuning. The Optimizer
 performs optimization; the Evaluator runs and scores each case. These are roles,
 not dedicated built-in Agent identities.
 
+## Companion supervision
+
+Read and follow [Agent Supervision](../agent-supervision/SKILL.md) before work.
+Without an assigned pair, act as the delegating Root and start a Supervised Agent
+with its Supervisor companion. With a verified pair binding, execute this Skill;
+pair each new task child separately. Join both reports at the parent. Confirmed
+cheating permits at most three fresh retries with corrective user instructions;
+continued cheating on attempt 4 receives a policy zero and reason under that
+contract. This caller-owned recovery is separate from unstarted-launch repair.
+
 ## Before you start
 
 Resolve an existing Test Agent, a published frozen training Benchmark and the
@@ -145,6 +155,9 @@ model_id: <target_model_id>
 Require the Evaluator to use the selected evaluation references for the exact
 Target runtime, launch and trace binding, plus this Benchmark's Runtime
 instructions. Do not substitute Optimizer or Project defaults for Target settings.
+Give each Evaluator its own companion; it creates another pair for the Target.
+The logical cell owner retains the attempt counter across both levels. Pair
+analysis and reporting workers too, without importing their private audit traces.
 
 Require one plain protocol YAML response and matching case/run/Agent/version/runtime,
 finite `0..100` score, nullable cost, duration and session ID. A formatting repair
@@ -157,6 +170,13 @@ identity separately, not from the Target Agent fields in the evaluator result.
 Stop on `version_changed`, `benchmark_invalid`, runtime mismatch or unrepairable
 evaluation failure. Repair an unstarted launch only with evidence, a specific
 correction and remaining budget; never repeat a completed Target Agent for a better score.
+Confirmed cheating follows the imported three-retry policy before terminating
+the affected work. Add constraints only to the next user instruction. Reserve
+both roles and retry overhead in budgets; do not increase optimization rounds.
+Exclude contaminated attempts and terminal penalties from learning evidence.
+If retries exhaust, report the cell's policy zero and reason; a matrix containing
+penalties cannot validate adoption of a new harness. Stop with the last clean
+measured version, restoring an owned active candidate after workers settle.
 
 ## Version and output contract
 
@@ -177,6 +197,11 @@ raw cells, accepted/rejected versions, evidence, costs and failures in OUT.
 Append complete retained evaluations under `TRAIN/scoreboard.yaml`'s `evaluations`
 list using the established shape below. Partial/invalid or rejected matrices stay
 in OUT. Do not change the schema to carry method-specific fields.
+The supervision contract is the explicit exception for reporting a completed
+matrix with terminal policy zeros: label it as a penalized evaluation in the
+existing summary fields. It is not a retained clean measurement or a selectable
+baseline. Keep detailed reasons and attempt history in OUT, without changing the
+scoreboard schema or converting raw failure responses into fabricated successes.
 Concurrent writers use the same `scoreboard.yaml.lock`: acquire it once, reread
 and parse the latest YAML, append the evaluation object, then atomically replace
 the file. Do not concatenate YAML text or nest a second lock on the same file.
@@ -245,9 +270,7 @@ If method instructions are revised after examining testing traces or scores,
 record that exposure. Those cases can support regression checks, but a new claim
 of held-out improvement needs testing data not used to develop the revision.
 
-These are Skill-level role boundaries, not guaranteed sandbox enforcement.
-A dedicated Supervisor may be created by `default_agent` or another orchestrator
-to observe the experiment continuously in a separate context. It need not be the
-root Session or a built-in Agent type. Keep supervision separate from optimization;
-record which observation and stop controls are actually available, and distinguish
-live monitoring from an audit performed after execution.
+The imported companion contract governs every delegated role, including Reflectors,
+Curators and independent Reporters. Each pair reports to its own parent; the Root
+receives joined results. Supervision relies on Skills and observation tools, not
+guaranteed sandbox enforcement.
