@@ -209,14 +209,14 @@ sudo tee /etc/apparmor.d/penguin-sandbox-bwrap >/dev/null <<'EOF'
 abi <abi/4.0>,
 include <tunables/global>
 
-profile penguin-sandbox-bwrap @{HOME}/.penguin/data/plugin-store/@penguinharness/sandbox-bwrap/*/*/package/vendor/linux-*/bin/bwrap flags=(unconfined) {
+profile penguin-sandbox-bwrap @{HOME}/.penguin/**/plugins/node_modules/@penguinharness/sandbox-bwrap/vendor/linux-*/bin/bwrap flags=(unconfined) {
   userns,
 }
 EOF
 sudo apparmor_parser -r /etc/apparmor.d/penguin-sandbox-bwrap
 ```
 
-Then select **Save** on the Sandbox card. The backend is checked again without a restart. The profile loads again at every boot and covers later versions of the backend, because the pattern matches every version in the plugin store. If you set `PENGUIN_HOME`, replace `@{HOME}/.penguin/data` with that directory.
+Then select **Save** on the Sandbox card. The backend is checked again without a restart. The profile loads again at every boot. Its pattern matches every place the backend's bubblewrap is unpacked under `~/.penguin`: a download into the data root (`~/.penguin/data/plugins/`), the installation's bundled plugins (`~/.penguin/lib/plugins/`) and the plugins a hot push carries (under `~/.penguin/data/hmr/`). An upgrade replaces the package at the same path, so later versions stay covered. If `PENGUIN_HOME` or `PENGUIN_INSTALL_DIR` points outside `~/.penguin`, load a copy of the profile under another name with `@{HOME}/.penguin` replaced by that directory.
 
 The profile applies to whatever program is at that path, and you can write to that path. On a machine shared with users you do not trust, set the bwrap program on the Sandbox card to a root-owned copy, such as `/usr/bin/bwrap` from `apt install bubblewrap`, and name that path in the profile instead. The other option is to lift the restriction for every program with `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. To keep that setting after a reboot, add the same line without `sudo sysctl -w` to a file in `/etc/sysctl.d/`.
 

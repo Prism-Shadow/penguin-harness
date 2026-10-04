@@ -209,14 +209,14 @@ sudo tee /etc/apparmor.d/penguin-sandbox-bwrap >/dev/null <<'EOF'
 abi <abi/4.0>,
 include <tunables/global>
 
-profile penguin-sandbox-bwrap @{HOME}/.penguin/data/plugin-store/@penguinharness/sandbox-bwrap/*/*/package/vendor/linux-*/bin/bwrap flags=(unconfined) {
+profile penguin-sandbox-bwrap @{HOME}/.penguin/**/plugins/node_modules/@penguinharness/sandbox-bwrap/vendor/linux-*/bin/bwrap flags=(unconfined) {
   userns,
 }
 EOF
 sudo apparmor_parser -r /etc/apparmor.d/penguin-sandbox-bwrap
 ```
 
-然后在沙盒卡片上点**保存**，后端会重新检查，无需重启。profile 在每次开机时重新加载；路径模式匹配插件仓里的每个版本，所以后端升级后依然有效。如果设置了 `PENGUIN_HOME`，把 `@{HOME}/.penguin/data` 换成那个目录。
+然后在沙盒卡片上点**保存**，后端会重新检查，无需重启。profile 在每次开机时重新加载。它的路径模式匹配 `~/.penguin` 下后端自带的 bubblewrap 可能解压到的每个位置：下载到数据根目录的（`~/.penguin/data/plugins/`）、安装目录随包带的插件（`~/.penguin/lib/plugins/`），以及热推送携带的插件（位于 `~/.penguin/data/hmr/` 下）。升级会在同一路径上替换这个包，所以后端升级后依然有效。如果 `PENGUIN_HOME` 或 `PENGUIN_INSTALL_DIR` 指向 `~/.penguin` 之外，再以另一个名字加载一份 profile，把其中的 `@{HOME}/.penguin` 换成那个目录。
 
 这份 profile 作用于该路径上的任何程序，而这个路径你自己就能写入。在与不受信任的用户共用的机器上，改为在沙盒卡片上把 bwrap 程序设为一份属于 root 的副本（例如 `apt install bubblewrap` 装的 `/usr/bin/bwrap`），并在 profile 里写那个路径。另一种做法是用 `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` 对所有程序解除这项限制。要在重启后保留这项设置，把同一行（去掉 `sudo sysctl -w`）写进 `/etc/sysctl.d/` 下的一个文件。
 
