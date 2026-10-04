@@ -189,6 +189,8 @@ const packages = new Map<string, { dir: string; manifest: PackageManifest }>();
 for (const dir of readdirSync(PLUGINS_DIR)) {
   // A worktree can hold a directory a build left behind; only a real package counts.
   if (!existsSync(`${PLUGINS_DIR}${dir}/package.json`)) continue;
+  // A repository example is never shipped (scripts/build-plugins.mjs skips plugins/example-*).
+  if (dir.startsWith("example-")) continue;
   const manifest = JSON.parse(
     readFileSync(`${PLUGINS_DIR}${dir}/package.json`, "utf8"),
   ) as PackageManifest;

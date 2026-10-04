@@ -165,7 +165,7 @@ async function sourceHash(dir, into) {
   }
 }
 
-/** Every shipped plugin package under `plugins/`: a package.json with a code entry, not private. */
+/** Every shipped plugin package under `plugins/`: a package.json with a code entry, not an example. */
 async function pluginPackages() {
   const out = [];
   const entries = fs.existsSync(PLUGINS_SRC) ? await fsp.readdir(PLUGINS_SRC) : [];
@@ -176,8 +176,10 @@ async function pluginPackages() {
     const pkg = JSON.parse(await fsp.readFile(manifestFile, "utf8"));
     // A package with a code entry is built and packed; one without (skills, hooks) carries no code.
     if (pkg.main === undefined && pkg.exports === undefined) continue;
-    // A private package is a repository example (plugins/example-*), never shipped.
-    if (pkg.private === true) continue;
+    // A repository example (plugins/example-*) is never shipped. It is known by its directory,
+    // not by `private`: several shipped plugins (languages, the company plugins, claude-code,
+    // discord-bot) are private packages too, kept off npm, and are still builtin.
+    if (dirName.startsWith("example-")) continue;
     const unbundled = Object.keys(pkg.dependencies ?? {}).filter(
       (d) => !NATIVE_DEPENDENCIES.has(d),
     );
