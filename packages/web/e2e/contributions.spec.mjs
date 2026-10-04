@@ -2,8 +2,8 @@
  * Server-contributed pages, end to end against a real server.
  *
  * No plugin on this line contributes a page yet, so the spec answers GET /api/contributions
- * itself (and serves the page's document): one iframe page in the main nav, one with a builtin
- * renderer this build does not carry, and one claiming the Agents page's key.
+ * itself over HTTP (and serves the page's document): one iframe page in the main nav, one
+ * with a builtin renderer this build does not carry, and one claiming the Agents page's key.
  *
  * - Only the iframe page joins the nav; opening it draws its document in the content area,
  *   and its URL opened directly lands on it too (the catch-all waits for the answer).
@@ -54,6 +54,11 @@ const CONTRIBUTIONS = {
 
 test.beforeEach(async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
+  // While the page's socket is open the API rides it (api/client.ts), out of `page.route`'s
+  // reach; without a WebSocket every call is a fetch, so the spec can answer the contributions.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "WebSocket", { value: undefined, configurable: true });
+  });
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.route("**/plugin-hello.html", (route) =>
     route.fulfill({
