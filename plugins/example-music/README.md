@@ -21,12 +21,17 @@ The package is private, so it is not published, and it is not shipped with the b
 
 ## Enable the player
 
-Build it (`pnpm --filter @penguinharness/example-music build`), then list its entry file by
-absolute path in a Project's `.project_config.toml` and restart the server:
+A plugin is loaded by its package name only, from the bundled plugin directory a build stages.
+Stage the examples into it with the builtin plugins, then list the package in a Project's
+`.project_config.toml` and restart the server:
+
+```sh
+PENGUIN_PLUGIN_EXAMPLES=1 node scripts/build-plugins.mjs --out packages/server/plugins
+```
 
 ```toml
 [plugins]
-"/path/to/penguin-harness/plugins/example-music/dist/index.js" = "*"
+"@penguinharness/example-music" = "*"
 ```
 
 What a Project lists is loaded for the whole server. Reload the web app after enabling it: the app
