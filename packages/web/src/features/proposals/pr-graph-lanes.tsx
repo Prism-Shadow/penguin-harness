@@ -9,6 +9,7 @@
  *
  * Also here: the two row kinds segmenting adds — a segment's roadmap heading and a folded run.
  */
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { ProposalGraphNode } from "@prismshadow/penguin-server/api";
 import { Chevron, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
@@ -46,6 +47,20 @@ export function graphGeometry(remPx: number): GraphGeometry {
           ? JOIN_REM
           : HEAD_REM) * remPx,
   };
+}
+
+/** The root font-size in px, kept current: the theme's text size rewrites it on <html>. */
+export function useRootFontPx(): number {
+  const read = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const [px, setPx] = useState(read);
+  useEffect(() => {
+    const update = () => setPx(read());
+    const watch = new MutationObserver(update);
+    watch.observe(document.documentElement, { attributes: true });
+    update();
+    return () => watch.disconnect();
+  }, []);
+  return px;
 }
 
 const LINE = "text-gray-400 dark:text-gray-500";

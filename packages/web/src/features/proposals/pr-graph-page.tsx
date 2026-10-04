@@ -43,29 +43,23 @@ import { DeployDialog, DeployableRow, useDeployScripts } from "./pr-graph-deploy
 import { DeployDock, useDeployJobs } from "./pr-graph-deploy-dock";
 import { AssociateDialog } from "./pr-graph-associate";
 import { DeploymentMarks, DeploymentsOff } from "./pr-graph-deployments";
-import { FoldedLine, GraphCells, RoadmapHeading, graphGeometry } from "./pr-graph-lanes";
+import {
+  FoldedLine,
+  GraphCells,
+  RoadmapHeading,
+  graphGeometry,
+  useRootFontPx,
+} from "./pr-graph-lanes";
 import { useProposalRoadmaps } from "./pr-graph-roadmaps";
 import { displayRows, linesFromAbove } from "./pr-graph-segments";
+import { GraphSearchBox } from "./pr-graph-search-box";
+import { useGraphView } from "./use-graph-view";
 
 /** Reads of a graph the organization's machine is still building, and the pause between them. */
 const GRAPH_READ_TRIES = 4;
 const GRAPH_RETRY_MS = 2_000;
 /** How soon a graph answered while the server refreshes it is read again. */
 const GRAPH_REFRESHING_POLL_MS = 5_000;
-
-/** The root font-size in px, kept current: the theme's text size rewrites it on <html>. */
-function useRootFontPx(): number {
-  const read = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  const [px, setPx] = useState(read);
-  useEffect(() => {
-    const update = () => setPx(read());
-    const watch = new MutationObserver(update);
-    watch.observe(document.documentElement, { attributes: true });
-    update();
-    return () => watch.disconnect();
-  }, []);
-  return px;
-}
 
 export function GraphPage() {
   const { projectId, orgId, org } = useOrg();
@@ -123,16 +117,7 @@ export function GraphPage() {
     return () => clearTimeout(timer);
   }, [refreshing, projectId, orgId]);
 
-  // The server laid the graph out (smartlog rows); a node with no row is listed apart.
-  const detached = useMemo(() => {
-    const drawn = new Set(graph?.rows.filter((r) => r.kind === "node").map((r) => r.key));
-    return graph?.nodes.filter((n) => !drawn.has(n.key)) ?? [];
-  }, [graph]);
-  const byKey = useMemo(() => new Map(graph?.nodes.map((n) => [n.key, n])), [graph]);
-  const remPx = useRootFontPx();
-  const geo = useMemo(() => graphGeometry(remPx), [remPx]);
   // Segments: each run between forks headed by its roadmaps, folded by clicking that heading.
-  const roadmapsByProposal = useProposalRoadmaps(projectId, orgId, graph?.checkedAt ?? null);
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
   const toggleFold = (segment: string) =>
     setFolded((f) => {
@@ -140,17 +125,46 @@ export function GraphPage() {
       if (!next.delete(segment)) next.add(segment);
       return next;
     });
+  const unfold = useCallback(
+    (segment: string) =>
+      setFolded((f) => (f.has(segment) ? new Set([...f].filter((s) => s !== segment)) : f)),
+    [],
+  );
+  // The organization's own part or every PR, and the in-graph search (Ctrl+F / ⌘F).
+  const view = useGraphView(graph, unfold);
+  const target = view.search.target;
+  // The server laid the graph out (smartlog rows); a node with no row is listed apart — in the
+  // own view only when it carries a proposal.
+  const drawable = useMemo(
+    () => new Set(graph?.rows.filter((r) => r.kind === "node").map((r) => r.key)),
+    [graph],
+  );
+  const shown = useMemo(
+    () => new Set(view.rows.filter((r) => r.kind === "node").map((r) => r.key)),
+    [view.rows],
+  );
+  const detached = useMemo(
+    () =>
+      graph?.nodes.filter(
+        (n) => !drawable.has(n.key) && (view.showOthers || n.proposal !== null),
+      ) ?? [],
+    [graph, drawable, view.showOthers],
+  );
+  const byKey = useMemo(() => new Map(graph?.nodes.map((n) => [n.key, n])), [graph]);
+  const remPx = useRootFontPx();
+  const geo = useMemo(() => graphGeometry(remPx), [remPx]);
+  const roadmapsByProposal = useProposalRoadmaps(projectId, orgId, graph?.checkedAt ?? null);
   const display = useMemo(
     () =>
       graph === null
         ? null
         : displayRows(
-            graph.rows,
+            view.rows,
             graph.nodes,
             (n) => (n.proposal ? (roadmapsByProposal.get(n.proposal.number) ?? []) : []),
             folded,
           ),
-    [graph, roadmapsByProposal, folded],
+    [graph, view.rows, roadmapsByProposal, folded],
   );
   const up = useMemo(() => (display === null ? [] : linesFromAbove(display)), [display]);
   // The row under the pointer; its lanes' dot and edge light up with it.
@@ -176,6 +190,13 @@ export function GraphPage() {
     const target = listRef.current?.querySelector<HTMLElement>(`[data-focus="true"]`);
     target?.scrollIntoView({ block: "center" });
   }, [graph, focus]);
+  // The search's target row scrolls into view each time it changes.
+  useEffect(() => {
+    if (target === null) return;
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-search-target="true"]`)
+      ?.scrollIntoView({ block: "center" });
+  }, [target, display]);
 
   const openProposal = (n: number) => navigate(orgProposalPath(projectId, orgId, n));
   const deployScripts = useDeployScripts(projectId, orgId);
@@ -195,9 +216,8 @@ export function GraphPage() {
   );
   const onChain = graph?.nodes.filter((n) => n.onChain).length ?? 0;
   const drawnOff = useMemo(() => {
-    const undrawn = new Set(detached.map((n) => n.key));
-    return graph?.nodes.filter((n) => !n.onChain && !undrawn.has(n.key)) ?? [];
-  }, [graph, detached]);
+    return graph?.nodes.filter((n) => !n.onChain && shown.has(n.key)) ?? [];
+  }, [graph, shown]);
   // Merged proposals off the chain are finished business: folded into one line unless asked for.
   const [showMerged, setShowMerged] = useState(false);
   const lists = useMemo(() => {
@@ -289,6 +309,23 @@ export function GraphPage() {
 
           {graph.nodes.length === 0 && <OrgEmptyLine>{t.empty}</OrgEmptyLine>}
 
+          {graph.nodes.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <label
+                className={`flex items-center ${ICON_GAP.row} text-xs`}
+                data-tooltip={t.showOthersHint}
+              >
+                <input
+                  type="checkbox"
+                  checked={view.showOthers}
+                  onChange={(e) => view.setShowOthers(e.target.checked)}
+                />
+                {t.showOthers}
+              </label>
+              {view.search.open && <GraphSearchBox search={view.search} />}
+            </div>
+          )}
+
           <div ref={listRef} className="overflow-x-auto">
             {display !== null && (
               <ol>
@@ -299,6 +336,8 @@ export function GraphPage() {
                       ? (byKey.get(d.row.key) ?? null)
                       : null;
                   const height = geo.height(d);
+                  const isTarget = node !== null && node.key === target;
+                  const connector = d.kind === "row" && d.row.connector;
                   return (
                     <li
                       key={
@@ -307,6 +346,7 @@ export function GraphPage() {
                           : `${d.kind}${d.segment}`
                       }
                       data-focus={i === focusRow ? "true" : undefined}
+                      data-search-target={isTarget ? "true" : undefined}
                       style={{ height }}
                       onMouseEnter={() => setHovered(i)}
                       onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
@@ -316,8 +356,12 @@ export function GraphPage() {
                       className={`flex items-center pr-3 transition-colors duration-150 ${
                         node !== null ? "border-b border-line-muted" : ""
                       } ${heading ? "cursor-pointer select-none" : ""} ${
-                        i === focusRow ? FOCUS_WASH : i === hovered ? "bg-surface-muted" : ""
-                      }`}
+                        i === focusRow || isTarget
+                          ? FOCUS_WASH
+                          : i === hovered
+                            ? "bg-surface-muted"
+                            : ""
+                      } ${isTarget ? "ring-2 ring-blue-400 ring-inset" : ""}`}
                     >
                       <GraphCells
                         cells={d.kind === "row" ? d.row.cells : d.cells}
@@ -328,8 +372,9 @@ export function GraphPage() {
                         geo={geo}
                       />
                       <div
-                        className="flex min-w-0 flex-1 items-center"
+                        className={`flex min-w-0 flex-1 items-center ${connector ? "opacity-60" : ""}`}
                         style={{ paddingLeft: geo.textGap }}
+                        data-tooltip={connector ? t.connector : undefined}
                       >
                         {d.kind === "roadmap" ? (
                           <RoadmapHeading

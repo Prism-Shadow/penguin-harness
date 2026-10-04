@@ -2,12 +2,13 @@
  * The PR graph's smartlog rows (smartlog.ts): newest on top, the main line in the node's own
  * column, each other line drawn right above its node in the column to the right and joining back
  * with `├─╯` (never a fan), the base branch a last row `~` with how far it moved on; and the same
- * rows out of buildGraph over the chain rules.
+ * rows out of buildGraph over the chain rules; and the organization's own part (ownRows): the
+ * nodes with a proposal, the ones below them their lines need as faded connectors, nobody else's.
  */
 import { describe, expect, it } from "vitest";
 import type { ProposalGraphNode, ProposalGraphRow } from "@prismshadow/penguin-server/api";
 import { buildGraph, type Comparison, type OpenPull } from "../src/pr-chain.js";
-import { smartlogRows } from "../src/smartlog.js";
+import { ownRows, smartlogRows } from "../src/smartlog.js";
 
 type Drawn = Parameters<typeof smartlogRows>[0][number];
 
@@ -18,6 +19,7 @@ const n = (key: string, parent: string | null, over: Partial<Drawn> = {}): Drawn
   onChain: true,
   stale: false,
   behind: 0,
+  proposal: null,
   ...over,
 });
 
@@ -111,6 +113,37 @@ describe("smartlogRows", () => {
 
   it("draws the base alone when there is nothing on it", () => {
     expect(text(smartlogRows([], null))).toEqual(["~  dev"]);
+  });
+});
+
+describe("ownRows", () => {
+  const p = (number: number) => ({ number, title: `P${number}`, status: "ready" as const });
+
+  it("draws the proposals' nodes and the upstream PRs under them as connectors, and nobody else's", () => {
+    const nodes = [
+      n("upstream", ""),
+      n("ours", "upstream", { proposal: p(1) }),
+      n("ours-2", "ours", { proposal: p(2) }),
+      n("theirs", ""),
+      n("theirs-on-upstream", "upstream"),
+      n("lone-ours", "", { proposal: p(3) }),
+    ];
+    const rows = ownRows(nodes, null);
+    expect(text(rows)).toEqual([
+      "○  ours-2",
+      "○  ours",
+      "○  upstream",
+      "│ ○  lone-ours",
+      "├─╯",
+      "~  dev",
+    ]);
+    expect(rows.filter((r) => r.connector).map((r) => r.key)).toEqual(["upstream"]);
+    // The full drawing still has everyone.
+    expect(smartlogRows(nodes, null).filter((r) => r.kind === "node")).toHaveLength(6);
+  });
+
+  it("draws the base alone when no node carries a proposal", () => {
+    expect(text(ownRows([n("theirs", "")], null))).toEqual(["~  dev"]);
   });
 });
 

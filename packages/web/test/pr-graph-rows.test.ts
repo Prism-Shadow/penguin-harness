@@ -46,6 +46,7 @@ const graph: ProposalGraphResponse = {
   top: null,
   tops: [],
   rows: [],
+  ownRows: [],
   unplaced: [],
   errors: [],
   checkedAt: "2026-10-01T00:00:00.000Z",

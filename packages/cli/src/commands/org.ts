@@ -600,16 +600,18 @@ function renderProposals(items: readonly ProposalItem[], t: Messages): string {
 }
 
 /**
- * `proposal graph`: the repository, then the graph as the server laid it out (`rows`, Sapling's
- * smartlog shape: newest on top, a line forking off a node in the column to its right right above
- * it, joining back with `├─╯`, the base branch the last row `~`), each node's row followed by its
+ * `proposal graph`: the repository, then the graph as the server laid it out (Sapling's smartlog
+ * shape: newest on top, a line forking off a node in the column to its right right above it,
+ * joining back with `├─╯`, the base branch the last row `~`), each node's row followed by its
  * line; then the nodes the graph cannot draw, with the reason, and the proposals whose impl is not
- * on the graph with the reason why. Each line: the PR (`branch` for an impl branch no PR is open
+ * on the graph with the reason why. By default only the organization's own part is drawn
+ * (`ownRows`: its proposals' nodes and the PRs below them their lines need, marked `connector`)
+ * and the first line says how many others are left out; `all` draws every node (`rows`). Each line: the PR (`branch` for an impl branch no PR is open
  * on), its branch and head, the layer's size, the marks, the proposal, the origins' twins.
  * Relations, statuses and marks stay in English: they are field values; the reasons are
  * sentences and follow the locale.
  */
-function renderGraph(g: ProposalGraphResponse, t: Messages): string {
+function renderGraph(g: ProposalGraphResponse, t: Messages, all: boolean): string {
   const short = (sha: string | null): string => (sha === null ? "?" : sha.slice(0, 9));
   const byKey = new Map(g.nodes.map((n) => [n.key, n]));
   // A node by its key: `""` is the base branch, a PR is its number, a branch node its branch.
@@ -667,17 +669,28 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
     return marks.length > 0 ? `  ${marks.join("  ")}` : "";
   };
   const offDeployments = deployments.filter((d) => d.at === null);
-  const drawn = new Set(g.rows.filter((r) => r.kind === "node").map((r) => r.key));
-  const off = g.nodes.filter((n) => !drawn.has(n.key));
+  const nodeKeys = (rows: readonly ProposalGraphRow[]) =>
+    new Set(rows.filter((r) => r.kind === "node").map((r) => r.key));
+  const drawable = nodeKeys(g.rows);
+  const rows = all ? g.rows : g.ownRows;
+  const shown = nodeKeys(rows);
+  const others = [...drawable].filter((k) => !shown.has(k)).length;
+  // What the graph cannot draw at all; in the own view only what carries a proposal.
+  const off = g.nodes.filter((n) => !drawable.has(n.key) && (all || n.proposal !== null));
   const cells = (r: ProposalGraphRow): string => r.cells.join("");
   const row = (r: ProposalGraphRow): string => {
     if (r.kind === "join") return cells(r).trimEnd();
-    if (r.kind === "node") return `${cells(r)} ${line(byKey.get(r.key)!)}${on(r.key)}`;
+    if (r.kind === "node") {
+      return `${cells(r)} ${line(byKey.get(r.key)!)}${r.connector ? "  [connector]" : ""}${on(r.key)}`;
+    }
     const behind = r.behind === null || r.behind === 0 ? "" : ` ${t.org.graphBaseBehind(r.behind)}`;
     return `${cells(r)} ${g.base.branch} ${short(g.base.head)}${behind}${stacks > 1 ? `  [${stacks} stacks]` : ""}${on("")}`;
   };
   const blocks = [
-    [g.repo, ...g.rows.map(row)].join("\n"),
+    [
+      `${g.repo}${!all && others > 0 ? `  ${t.org.graphOthersHidden(others)}` : ""}`,
+      ...rows.map(row),
+    ].join("\n"),
     ...(off.length > 0
       ? [[t.org.graphOffChain(), ...off.map((n) => indent(1, line(n) + on(n.key)))].join("\n")]
       : []),
@@ -2270,7 +2283,13 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     }
   });
 
-  scoped(proposal.command("graph").description(t.org.proposalGraphDesc), t).action(async (opts) => {
+  scoped(
+    proposal
+      .command("graph")
+      .description(t.org.proposalGraphDesc)
+      .option("--all", t.org.proposalGraphAllOpt),
+    t,
+  ).action(async (opts) => {
     const scope = await orgScope(opts, t);
     if (scope === null) return;
     const graph = await proposalRequest<ProposalGraphResponse>(
@@ -2281,7 +2300,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     );
     if (graph === null) return;
     if (opts.json === true) printJson(graph);
-    else process.stdout.write(renderGraph(graph, t));
+    else process.stdout.write(renderGraph(graph, t, opts.all === true));
   });
 
   const kit: DeployKit = {

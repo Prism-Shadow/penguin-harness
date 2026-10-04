@@ -52,7 +52,7 @@ import { placeDeployment, type DeploymentReading } from "./deployments.js";
 import { BASE_KEY, headsOf, pullKey, type GraphHead } from "./graph-heads.js";
 import { WALK_CAP, walkChain } from "./chain-walk.js";
 import { adoptNearest, type Lineage } from "./graph-lineage.js";
-import { smartlogRows } from "./smartlog.js";
+import { ownRows, smartlogRows } from "./smartlog.js";
 
 export { pullKey };
 
@@ -381,6 +381,7 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
     top: chain.top,
     tops: chain.tops,
     rows: smartlogRows(drawn, chain.top),
+    ownRows: ownRows(drawn, chain.top),
     unplaced: [...unplaced, ...branchUnplaced].sort((a, b) => a.number - b.number),
     errors: input.errors,
     checkedAt: input.checkedAt,

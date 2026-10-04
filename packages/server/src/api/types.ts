@@ -7095,6 +7095,11 @@ export interface ProposalGraphRow {
    * column's stack was built; null when it has not moved on, and on every other row.
    */
   behind: number | null;
+  /**
+   * A node without a proposal drawn in `ownRows` only because a proposal's node stacks on it:
+   * drawn faded. False on every other row, and always in `rows`.
+   */
+  connector: boolean;
 }
 
 /** `GET …/proposals/graph`: the delivery repository's open PRs as a commit graph. */
@@ -7122,6 +7127,12 @@ export interface ProposalGraphResponse {
    * A node with no row (no parent, or a cycle of declarations) is not drawn.
    */
   rows: ProposalGraphRow[];
+  /**
+   * The same drawing of the organization's own part, the default view: the nodes that carry one
+   * of its proposals and, below them, the nodes without one their lines need (`connector`). The
+   * chain was decided over every node; this only leaves the others out of the drawing.
+   */
+  ownRows: ProposalGraphRow[];
   /** Proposals whose impl is on no node of the graph. */
   unplaced: ProposalGraphUnplaced[];
   /** What could not be read from GitHub; the graph is partial when present. */

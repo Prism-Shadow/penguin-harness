@@ -1962,13 +1962,19 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       top: null,
       tops: ["feat/b", "impl/d"],
       rows: [
-        { kind: "node", key: "feat/b", cells: ["○ "], behind: null },
-        { kind: "node", key: "impl/d", cells: ["│ ", "○ "], behind: null },
-        { kind: "join", key: "feat/a", cells: ["├─", "╯ "], behind: null },
-        { kind: "node", key: "feat/c", cells: ["│ ", "× "], behind: null },
-        { kind: "join", key: "feat/a", cells: ["├─", "╯ "], behind: null },
-        { kind: "node", key: "feat/a", cells: ["○ "], behind: null },
-        { kind: "base", key: "", cells: ["~ "], behind: 3 },
+        { kind: "node", key: "feat/b", cells: ["○ "], behind: null, connector: false },
+        { kind: "node", key: "impl/d", cells: ["│ ", "○ "], behind: null, connector: false },
+        { kind: "join", key: "feat/a", cells: ["├─", "╯ "], behind: null, connector: false },
+        { kind: "node", key: "feat/c", cells: ["│ ", "× "], behind: null, connector: false },
+        { kind: "join", key: "feat/a", cells: ["├─", "╯ "], behind: null, connector: false },
+        { kind: "node", key: "feat/a", cells: ["○ "], behind: null, connector: false },
+        { kind: "base", key: "", cells: ["~ "], behind: 3, connector: false },
+      ],
+      // The own view: #1's layer and impl/d (proposal #3); #12 and #13 are nobody's proposal.
+      ownRows: [
+        { kind: "node", key: "impl/d", cells: ["○ "], behind: null, connector: false },
+        { kind: "node", key: "feat/a", cells: ["○ "], behind: null, connector: false },
+        { kind: "base", key: "", cells: ["~ "], behind: 3, connector: false },
       ],
       unplaced: [
         {
@@ -1985,7 +1991,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       checkedAt: "2026-09-30T00:00:00.000Z",
       deployments: [],
     };
-    expect(await cli(["org", "proposal", "graph"])).toBe(0);
+    expect(await cli(["org", "proposal", "graph", "--all"])).toBe(0);
     expect(out()).toBe(
       [
         "acme/site",
@@ -1999,6 +2005,22 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
         "",
         t.org.graphOffChain(),
         `  #14 feat/x fffffffff  [${t.org.graphOffReason("no-base", "?", "unknown", "gone")}]  ${t.org.graphNoProposal()}`,
+        "",
+        t.org.graphUnplaced(),
+        `  proposal #2 approved  https://github.com/acme/site/pull/5  [${t.org.graphUnplacedReason("merged", "?", "feat/a", "dev")}]`,
+        "",
+      ].join("\n"),
+    );
+    // By default only the organization's own part: #12 and #13 are left out and counted, and
+    // #14, which carries no proposal, is not listed apart either.
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "graph"])).toBe(0);
+    expect(out()).toBe(
+      [
+        `acme/site  ${t.org.graphOthersHidden(2)}`,
+        "○  branch impl/d eeeeeeeee +1  [top]  proposal #3 drafting",
+        "○  #11 feat/a bbbbbbbbb +2 -3  [stale, behind dev by 3, restack pending]  proposal #1 ready  origin #801 behind",
+        `~  dev aaaaaaaaa ${t.org.graphBaseBehind(3)}`,
         "",
         t.org.graphUnplaced(),
         `  proposal #2 approved  https://github.com/acme/site/pull/5  [${t.org.graphUnplacedReason("merged", "?", "feat/a", "dev")}]`,
@@ -2097,8 +2119,13 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       top: "feat/a",
       tops: ["feat/a"],
       rows: [
-        { kind: "node", key: "feat/a", cells: ["○ "], behind: null },
-        { kind: "base", key: "", cells: ["~ "], behind: null },
+        { kind: "node", key: "feat/a", cells: ["○ "], behind: null, connector: false },
+        { kind: "base", key: "", cells: ["~ "], behind: null, connector: false },
+      ],
+      // feat/a carries no proposal but a proposal's PR is stacked on it: a connector.
+      ownRows: [
+        { kind: "node", key: "feat/a", cells: ["○ "], behind: null, connector: true },
+        { kind: "base", key: "", cells: ["~ "], behind: null, connector: false },
       ],
       unplaced: [],
       errors: [],
@@ -2170,7 +2197,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(out()).toBe(
       [
         "acme/site",
-        `○  #11 feat/a bbbbbbbbb +2  [top]  ${t.org.graphNoProposal()}  @here bbbbbbbbb  @late eeeeeeeee +3`,
+        `○  #11 feat/a bbbbbbbbb +2  [top]  ${t.org.graphNoProposal()}  [connector]  @here bbbbbbbbb  @late eeeeeeeee +3`,
         "~  dev aaaaaaaaa  @old aaaaaaaaa",
         "",
         t.org.graphDeploymentsOff(),

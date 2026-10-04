@@ -373,6 +373,7 @@ export const en: Strings = {
       "terminal.new": "New terminal",
       "terminal.close": "Close the focused terminal",
       "editor.save": "Save",
+      "graph.search": "Search the PR graph",
     },
     groups: {
       general: "General",
@@ -6340,6 +6341,18 @@ Scenarios:
         partial: "The graph is partial; these could not be read:",
         base: "base",
         baseBehind: (n: number): string => `behind ${n}`,
+        showOthers: "Show other PRs",
+        showOthersHint:
+          "Draw every open PR on the delivery repository, not only the organization's proposals and the PRs they are stacked on",
+        connector:
+          "Not a proposal of this organization: drawn because a proposal's PR is stacked on it",
+        search: {
+          label: "Search the PR graph",
+          placeholder: "#PR, proposal 194, branch or title",
+          count: (at: number, of: number): string => `${at}/${of}`,
+          none: "No match",
+          close: "Close the search",
+        },
         baseStacks: (n: number): string => `${n} stacks on the base`,
         top: "top",
         fork: "fork",

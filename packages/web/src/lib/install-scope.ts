@@ -115,6 +115,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.prGraph.showOthers",
+    scope: "browser",
+    why: "Whether the PR graph draws every open PR or only the organization's own part; a view preference of this browser.",
+  },
+  {
+    kind: "exact",
     key: "penguin.textSize",
     scope: "browser",
     why: "Root text size (five steps) — a readability preference of this display.",

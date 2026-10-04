@@ -39,7 +39,8 @@ export type CommandId =
   | "terminal.toggle"
   | "terminal.new"
   | "terminal.close"
-  | "editor.save";
+  | "editor.save"
+  | "graph.search";
 
 /**
  * One key combination. `code` is the `KeyboardEvent.code` of the non-modifier key ("KeyW",

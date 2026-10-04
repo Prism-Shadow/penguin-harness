@@ -656,6 +656,9 @@ export interface Messages {
     proposalDiffStatOpt: string;
     /** `proposal graph`: the delivery repository's PR graph. */
     proposalGraphDesc: string;
+    proposalGraphAllOpt: string;
+    /** The graph's first line, when the default view leaves other people's PRs out. */
+    graphOthersHidden(n: number): string;
     /** `proposal deploy <n> --to <id>`: run a registered deploy script on the impl PR head. */
     proposalDeployDesc: string;
     proposalDeployTo: string;
@@ -1958,6 +1961,8 @@ const en: Messages = {
     proposalDiffStatOpt: "Only the changed files with their added and deleted lines",
     proposalGraphDesc:
       "Show the delivery repository's open PRs as a commit graph, with each PR's proposal and the origins' PRs on the same branch",
+    proposalGraphAllOpt:
+      "Draw every open PR, not only the organization's proposals and the PRs they are stacked on",
     proposalDeployDesc:
       "Run one of the organization's deploy scripts on the proposal's impl PR head, on the server that holds the organization; arguments after -- go to the script",
     proposalDeployTo: "The deploy script's id (deploy-script ls lists them)",
@@ -2078,6 +2083,7 @@ const en: Messages = {
     graphErrors: () => "Not read from GitHub:",
     graphDeploymentsOff: () => "Deployments on no layer:",
     graphBaseBehind: (n) => `(behind ${n})`,
+    graphOthersHidden: (n) => `(${n} other PR${n === 1 ? "" : "s"} not drawn; --all draws them)`,
     deploymentRegistered: (id, url) =>
       url === null
         ? `Registered deployment ${id}.`
@@ -3246,6 +3252,7 @@ const zh: Messages = {
     proposalDiffStatOpt: "只列改动的文件及其增删行数",
     proposalGraphDesc:
       "把交付仓库的 open PR 排成提交关系图，标出每张 PR 的提案和各 origin 在同名分支上的 PR",
+    proposalGraphAllOpt: "画出全部 open PR，而不只是本组织的提案及其所叠在的 PR",
     proposalDeployDesc:
       "在持有本组织的服务器上，对提案的 impl PR head 运行组织登记的某个部署脚本；-- 之后的参数原样传给脚本",
     proposalDeployTo: "部署脚本的 id（deploy-script ls 可列出）",
@@ -3355,6 +3362,7 @@ const zh: Messages = {
     graphErrors: () => "没能从 GitHub 读到：",
     graphDeploymentsOff: () => "不在图上的部署：",
     graphBaseBehind: (n) => `（落后 ${n}）`,
+    graphOthersHidden: (n) => `（另有 ${n} 张其他 PR 未画出；--all 画出全部）`,
     deploymentRegistered: (id, url) =>
       url === null ? `已登记部署 ${id}。` : `已登记部署 ${id}（server，${url}）。`,
     proposalFeedbackRecorded: (number) => `已记录对提案 #${number} 的反馈。`,

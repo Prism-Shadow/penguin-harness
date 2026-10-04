@@ -32,6 +32,7 @@ const row = (kind: ProposalGraphRow["kind"], n: number, cells: string[]): Propos
   key: k(n),
   cells,
   behind: null,
+  connector: false,
 });
 
 const rm = (n: number): RoadmapRef => ({

@@ -100,6 +100,14 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     // Every editor's save chord: the editors take it from the browser's Save Page on purpose.
     defaults: { default: "Mod+KeyS" },
   },
+  {
+    id: "graph.search",
+    scope: "global",
+    group: "general",
+    // An optional separate binding. The graph also handles find.open while its page is mounted,
+    // so the default Find chord works without two global commands sharing the same default.
+    defaults: { default: null },
+  },
 ];
 
 /** The settings page draws groups in this order. */
