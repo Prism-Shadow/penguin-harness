@@ -382,10 +382,10 @@ describe("ProposalService", () => {
     values = { deliveryRepo: "acme/site" };
     const graph = (await (await call("GET", "/graph?refresh=1")).json()) as {
       nodes: Array<{ number: number; proposal: { number: number } | null }>;
-      top: number | null;
+      top: string | null;
     };
     expect(graph.nodes.map((n) => [n.number, n.proposal?.number])).toEqual([[11, first]]);
-    expect(graph.top).toBe(11);
+    expect(graph.top).toBe("feat/a");
 
     // The one-time adoption: the latest pr material on the delivery repository, by anybody in the
     // organization — here an employee, recorded as it.

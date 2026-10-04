@@ -6985,26 +6985,41 @@ export interface ProposalGraphVia {
  * Why a node is off the chain:
  * - `old-line`: its head neither contains its parent's head nor forked inside the parent's own layer;
  * - `unread`: its edge could not be compared;
- * - `no-base`: its declared base is neither the base branch nor the head branch of an open, merged or closed PR, so it is not drawn;
- * - `not-taken`: it stacks on a fork (`at`; 0 = the base branch) where another branch keeps going;
+ * - `no-base`: its declared base is neither the base branch nor the head branch of a node or of a merged or closed PR, so it is not drawn;
+ * - `not-taken`: it stacks on a fork (`at`, a node's key; `""` = the base branch) where another branch keeps going;
  * - `above`: it stacks on `at`, which is off the chain itself;
  * - `cycle`: its declared bases lead back to itself.
  */
 export type ProposalGraphOffReason =
   "old-line" | "unread" | "no-base" | "not-taken" | "above" | "cycle";
 
-/** One open PR on the delivery repository: a commit in the graph. */
+/**
+ * A commit in the graph: an open PR on the delivery repository, or a proposal's impl branch on it
+ * that no open PR claims yet (a branch node: `number` and `url` are null). Once a PR is opened on
+ * the branch, the same node carries its number.
+ */
 export interface ProposalGraphNode {
-  number: number;
-  url: string;
+  /**
+   * The node's identity: its head branch. A second open PR on a branch name another node has
+   * (a PR from another repository) is `<branch>#<number>`. `""` is never a node's key: it names
+   * the base branch wherever a key is expected.
+   */
+  key: string;
+  /** The open PR; null for a branch node. */
+  number: number | null;
+  url: string | null;
+  /** The PR's title; a branch node's proposal's title. */
   title: string;
   draft: boolean;
   branch: string;
   head: string;
-  /** The declared base branch (`baseRefName`): a declaration, checked against ancestry below. */
+  /**
+   * The declared base branch — the PR's `baseRefName`, or the base a branch node's impl
+   * registered: a declaration, checked against ancestry below.
+   */
   base: string;
-  /** The open PR the declared base leads to, through the PRs in `via`; 0 = the base branch; null = neither (`off.reason` says why). */
-  parent: number | null;
+  /** The node the declared base leads to, through the PRs in `via` (its key; `""` = the base branch); null = neither (`off.reason` says why). */
+  parent: string | null;
   /** The merged or closed PRs between the declared base and `parent`, nearest first; empty when the base is the parent's branch. */
   via: ProposalGraphVia[];
   /** The head against the parent's head. */
@@ -7022,29 +7037,28 @@ export interface ProposalGraphNode {
   /** On the chain: reached from the base branch through stacked edges, taking one branch at each fork. */
   onChain: boolean;
   /** Why the node is off the chain; null when it is on it. */
-  off: { reason: ProposalGraphOffReason; at: number | null } | null;
+  off: { reason: ProposalGraphOffReason; at: string | null } | null;
   /** More than one stacked child: the chain forks here. */
   fork: boolean;
-  /** The proposal whose impl PR this is; null for a PR no proposal registered. */
+  /** The proposal whose impl this is; null for a PR no proposal registered (never for a branch node). */
   proposal: { number: number; title: string; status: ProposalStatus } | null;
   /** The other origins' PRs on the same branch. */
   origins: ProposalGraphOriginPr[];
 }
 
 /**
- * Why a proposal's impl PR is not on the graph:
+ * Why a proposal's impl is not on the graph:
  * - `counterpart`: an open PR on the delivery repository (`at`) has the impl PR's head branch — the registration names the other one;
- * - `merged`: merged, into `into`;
+ * - `merged`: merged, into `into` (for an impl branch with no PR: the proposal is merged, into the base it registered);
  * - `in-base`: not merged, but its head is already in the base branch;
  * - `closed`: closed without merging, and not in the base branch;
  * - `open-elsewhere`: open, on another repository;
- * - `unread`: GitHub could not be asked about it;
- * - `no-pr`: an impl branch with no PR, whose head is no open PR's branch on the delivery repository.
+ * - `unread`: GitHub could not be asked about it, or an impl branch's head is not on the delivery repository or could not be read there.
  */
 export type ProposalGraphUnplacedReason =
-  "counterpart" | "merged" | "in-base" | "closed" | "open-elsewhere" | "unread" | "no-pr";
+  "counterpart" | "merged" | "in-base" | "closed" | "open-elsewhere" | "unread";
 
-/** A proposal whose impl PR is not an open PR on the delivery repository, and why. */
+/** A proposal whose impl is on no node of the graph, and why. */
 export interface ProposalGraphUnplaced {
   number: number;
   title: string;
@@ -7067,17 +7081,18 @@ export interface ProposalGraphResponse {
   origins: Array<{ name: string; repo: string }>;
   nodes: ProposalGraphNode[];
   /**
-   * The chain's last layer, or null when the chain is empty or forks with no single branch that
-   * keeps going — choosing there takes the record (the roadmap's order), which the graph does not read.
+   * The chain's last layer (its key), or null when the chain is empty or forks with no single
+   * branch that keeps going — choosing there takes the record (the roadmap's order), which the
+   * graph does not read.
    */
-  top: number | null;
+  top: string | null;
   /**
-   * The last layer of every branch the chain walk took, in PR order. Several stacks that each
-   * start on the base branch and keep going are all on the chain; each one's last layer is here,
-   * so each is marked as its stack's top. Absent from a server older than the field.
+   * The last layer of every branch the chain walk took (keys, in key order). Several stacks that
+   * each start on the base branch and keep going are all on the chain; each one's last layer is
+   * here, so each is marked as its stack's top.
    */
-  tops?: number[];
-  /** Proposals with an impl PR that is not an open PR on the delivery repository. */
+  tops: string[];
+  /** Proposals whose impl is on no node of the graph. */
   unplaced: ProposalGraphUnplaced[];
   /** What could not be read from GitHub; the graph is partial when present. */
   errors: string[];
@@ -7093,9 +7108,9 @@ export interface ProposalGraphResponse {
 }
 
 /**
- * A registered deployment as the graph places it. `at` is the node whose head the
+ * A registered deployment as the graph places it. `at` is the key of the node whose head the
  * deployment's commit is (`relation: "same"`) or contains (`"ahead"`, `ahead` commits past it);
- * 0 is the base branch; null when the commit is unknown or compares with no layer.
+ * `""` is the base branch; null when the commit is unknown or compares with no layer.
  */
 export interface ProposalGraphDeployment {
   id: string;
@@ -7103,7 +7118,7 @@ export interface ProposalGraphDeployment {
   url: string | null;
   commit: string | null;
   describe: string | null;
-  at: number | null;
+  at: string | null;
   relation: "same" | "ahead" | null;
   ahead: number | null;
   /** Why the commit could not be read, when it could not. */

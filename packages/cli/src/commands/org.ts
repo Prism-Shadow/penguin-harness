@@ -599,25 +599,30 @@ function renderProposals(items: readonly ProposalItem[], t: Messages): string {
 }
 
 /**
- * `proposal graph`: the chain from the base branch, one PR per line indented by its depth,
- * then the PRs off the chain with the reason each is off, and the proposals whose impl is not
- * on the graph with the reason why. Each line: the PR, its branch and head, the layer's size,
- * the marks, the proposal, the origins' twins. Relations, statuses and marks stay in English:
- * they are field values; the reasons are sentences and follow the locale.
+ * `proposal graph`: the chain from the base branch, one node per line indented by its depth,
+ * then the nodes off the chain with the reason each is off, and the proposals whose impl is not
+ * on the graph with the reason why. Each line: the PR (`branch` for an impl branch no PR is open
+ * on), its branch and head, the layer's size, the marks, the proposal, the origins' twins.
+ * Relations, statuses and marks stay in English: they are field values; the reasons are
+ * sentences and follow the locale.
  */
 function renderGraph(g: ProposalGraphResponse, t: Messages): string {
   const short = (sha: string | null): string => (sha === null ? "?" : sha.slice(0, 9));
-  const label = (n: number | null): string =>
-    n === null ? "?" : n === 0 ? g.base.branch : `#${n}`;
-  // Every stack's top; a server older than `tops` names at most one.
-  const tops = g.tops ?? (g.top === null ? [] : [g.top]);
+  const byKey = new Map(g.nodes.map((n) => [n.key, n]));
+  // A node by its key: `""` is the base branch, a PR is its number, a branch node its branch.
+  const label = (key: string | null): string => {
+    if (key === null) return "?";
+    if (key === "") return g.base.branch;
+    const n = byKey.get(key);
+    return n?.number != null ? `#${n.number}` : (n?.branch ?? key);
+  };
   // Stacks side by side on the base branch: its children on the chain.
-  const stacks = g.nodes.filter((n) => n.parent === 0 && n.onChain).length;
+  const stacks = g.nodes.filter((n) => n.parent === "" && n.onChain).length;
   const line = (n: ProposalGraphNode): string => {
     const marks = [
       ...(n.draft ? ["draft"] : []),
       ...(n.fork ? ["fork"] : []),
-      ...(tops.includes(n.number) ? ["top"] : []),
+      ...(g.tops.includes(n.key) ? ["top"] : []),
       ...n.via.map((v) => `via ${v.state} #${v.number}`),
       ...(n.stale ? ["stale, restack pending"] : []),
       ...(n.off === null
@@ -638,28 +643,27 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
         : `proposal #${n.proposal.number} ${n.proposal.status}`;
     const origins = n.origins.map((o) => `${o.origin} #${o.number} ${o.relation}`);
     return [
-      `#${n.number} ${n.branch} ${short(n.head)}${size}`,
+      `${n.number === null ? "branch" : `#${n.number}`} ${n.branch} ${short(n.head)}${size}`,
       ...(marks.length > 0 ? [`[${marks.join(", ")}]`] : []),
       proposal,
       ...origins,
     ].join("  ");
   };
-  const byNumber = new Map(g.nodes.map((n) => [n.number, n]));
   const depth = (n: ProposalGraphNode): number => {
     let d = 1;
     let at = n.parent;
     // The nodes arrive in chain order; the cap guards a cycle of declared bases.
-    while (at !== null && at !== 0 && d < g.nodes.length + 1) {
+    while (at !== null && at !== "" && d < g.nodes.length + 1) {
       d++;
-      at = byNumber.get(at)?.parent ?? null;
+      at = byKey.get(at)?.parent ?? null;
     }
     return d;
   };
-  // Each deployment sits on a layer (0 = the base branch) or on none; a server older than the field sends none.
-  const deployments = g.deployments ?? [];
+  // Each deployment sits on a layer (`""` = the base branch) or on none.
+  const deployments = g.deployments;
   const deploymentMark = (d: ProposalGraphDeployment): string =>
     `@${d.id} ${short(d.commit)}${d.relation === "ahead" ? ` +${d.ahead}` : ""}`;
-  const on = (at: number): string => {
+  const on = (at: string): string => {
     const marks = deployments.filter((d) => d.at === at).map(deploymentMark);
     return marks.length > 0 ? `  ${marks.join("  ")}` : "";
   };
@@ -668,11 +672,11 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
   const off = g.nodes.filter((n) => !n.onChain);
   const blocks = [
     [
-      `${g.repo} ${g.base.branch} ${short(g.base.head)}${g.base.fork ? (stacks > 1 ? `  [${stacks} stacks]` : "  [fork]") : ""}${on(0)}`,
-      ...chain.map((n) => indent(depth(n), line(n) + on(n.number))),
+      `${g.repo} ${g.base.branch} ${short(g.base.head)}${g.base.fork ? (stacks > 1 ? `  [${stacks} stacks]` : "  [fork]") : ""}${on("")}`,
+      ...chain.map((n) => indent(depth(n), line(n) + on(n.key))),
     ].join("\n"),
     ...(off.length > 0
-      ? [[t.org.graphOffChain(), ...off.map((n) => indent(1, line(n) + on(n.number)))].join("\n")]
+      ? [[t.org.graphOffChain(), ...off.map((n) => indent(1, line(n) + on(n.key)))].join("\n")]
       : []),
     ...(offDeployments.length > 0
       ? [
@@ -696,7 +700,7 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
                 1,
                 `proposal #${p.number} ${p.status}  ${p.implPr ?? p.branch ?? "?"}  [${t.org.graphUnplacedReason(
                   p.reason,
-                  label(p.at),
+                  p.at === null ? "?" : `#${p.at}`,
                   p.into ?? "?",
                   g.base.branch,
                 )}]`,

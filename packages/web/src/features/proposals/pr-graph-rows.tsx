@@ -2,9 +2,10 @@
  * The PR graph page's rows and the three lists under the graph. A node row carries the marks the
  * server gave it — top, fork, the merged or closed PRs its base led through, stale, the reason
  * it is off the chain — and the registered deployments whose commit sits on it. Under the
- * graph, three lists answer three different questions and are named apart: the PRs drawn but off
- * the chain, the PRs the graph cannot draw at all, and the proposals whose impl PR is not an open
- * PR on the delivery repository — each row with its reason.
+ * graph, three lists answer three different questions and are named apart: the nodes drawn but
+ * off the chain, the nodes the graph cannot draw at all, and the proposals whose impl is on no
+ * node — each row with its reason. A node is an open PR, or an impl branch no PR is open on yet
+ * (a branch node: no number, its proposal always named).
  */
 import type { ReactNode } from "react";
 import type {
@@ -21,7 +22,7 @@ import { Badge, ICON_GAP, RuledSection } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../company/shared";
 import { PROPOSAL_STATUS_TONE } from "./proposals-model";
 import { DeploymentMarks } from "./pr-graph-deployments";
-import { graphTops } from "./pr-graph-model";
+import { nodeRef } from "./pr-graph-model";
 
 /** The focused proposal's row: a background wash only, so the marks on it keep their own ink. */
 export const FOCUS_WASH = "bg-blue-50 dark:bg-blue-950/40";
@@ -64,9 +65,12 @@ export function Mark({ tone, children, title }: { tone: Tone; children: string; 
   );
 }
 
-/** `#n`, or the base branch's name for 0. */
-function layerLabel(graph: ProposalGraphResponse, n: number | null): string {
-  return n === null ? "?" : n === 0 ? graph.base.branch : `#${n}`;
+/** A node by its key: `#n` for a PR, the branch for a branch node, the base branch's name for `""`. */
+export function layerLabel(graph: ProposalGraphResponse, key: string | null): string {
+  if (key === null) return "?";
+  if (key === "") return graph.base.branch;
+  const node = graph.nodes.find((n) => n.key === key);
+  return node === undefined ? key : nodeRef(node);
 }
 
 /** The sentence saying why a node is off the chain; empty when it is on it. */
@@ -96,15 +100,24 @@ export function NodeRow({
   return (
     <div className="flex min-w-0 flex-1 flex-col justify-center gap-0">
       <div className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs`}>
-        <a
-          href={node.url}
-          target="_blank"
-          rel="noreferrer"
-          data-tooltip={t.openPr}
-          className="shrink-0 font-mono text-gray-500 hover:underline dark:text-gray-400"
-        >
-          #{node.number}
-        </a>
+        {node.number !== null && node.url !== null ? (
+          <a
+            href={node.url}
+            target="_blank"
+            rel="noreferrer"
+            data-tooltip={t.openPr}
+            className="shrink-0 font-mono text-gray-500 hover:underline dark:text-gray-400"
+          >
+            #{node.number}
+          </a>
+        ) : (
+          <span
+            data-tooltip={t.branchNodeTitle}
+            className="shrink-0 font-mono text-gray-500 dark:text-gray-400"
+          >
+            {t.branchNode}
+          </span>
+        )}
         {node.proposal === null ? (
           <Mark tone="muted">{t.noProposal}</Mark>
         ) : (
@@ -122,7 +135,7 @@ export function NodeRow({
         <span className="min-w-0 flex-1 truncate" data-tooltip={node.title}>
           {node.title}
         </span>
-        {graphTops(graph).includes(node.number) && <Mark tone="success">{t.top}</Mark>}
+        {graph.tops.includes(node.key) && <Mark tone="success">{t.top}</Mark>}
         {node.fork && <Mark tone="attention">{t.fork}</Mark>}
         {node.via.map((v) => (
           <Mark
@@ -141,7 +154,7 @@ export function NodeRow({
         {node.off !== null && (
           <Mark tone={OFF_TONE[node.off.reason]}>{offReasonText(graph, node)}</Mark>
         )}
-        <DeploymentMarks deployments={graph.deployments} at={node.number} />
+        <DeploymentMarks deployments={graph.deployments} at={node.key} />
       </div>
       {/* The branch line sits under the first, indented: it belongs to that node. */}
       <div
@@ -201,7 +214,7 @@ export function NodeListSection({
     <RuledSection title={title} count={nodes.length} info={info}>
       <ul className="divide-y divide-gray-100 dark:divide-gray-800">
         {nodes.map((node) => (
-          <li key={node.number} className="flex items-center py-1.5 pr-3">
+          <li key={node.key} className="flex items-center py-1.5 pr-3">
             {wrapRow(node, <NodeRow graph={graph} node={node} onOpenProposal={onOpenProposal} />)}
           </li>
         ))}
@@ -210,7 +223,7 @@ export function NodeListSection({
   );
 }
 
-/** The proposals whose impl PR is not an open PR on the delivery repository, each with why. */
+/** The proposals whose impl is on no node of the graph, each with why. */
 export function UnplacedSection({
   graph,
   unplaced = graph.unplaced,
@@ -250,7 +263,7 @@ export function UnplacedSection({
             <Mark tone={u.reason === "counterpart" ? "attention" : "muted"}>
               {t.unplacedReason(
                 u.reason,
-                layerLabel(graph, u.at),
+                u.at === null ? "?" : `#${u.at}`,
                 u.into ?? "?",
                 graph.base.branch,
               )}

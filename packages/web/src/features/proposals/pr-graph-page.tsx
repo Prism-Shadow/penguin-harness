@@ -136,8 +136,8 @@ export function GraphPage() {
   const geo = useMemo(() => graphGeometry(remPx), [remPx]);
   // Segments: each run between forks headed by its roadmaps, folded by clicking that heading.
   const roadmapsByProposal = useProposalRoadmaps(projectId, orgId, graph?.checkedAt ?? null);
-  const [folded, setFolded] = useState<ReadonlySet<number>>(() => new Set());
-  const toggleFold = (segment: number) =>
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleFold = (segment: string) =>
     setFolded((f) => {
       const next = new Set(f);
       if (!next.delete(segment)) next.add(segment);
@@ -194,8 +194,8 @@ export function GraphPage() {
   );
   const onChain = graph?.nodes.filter((n) => n.onChain).length ?? 0;
   const drawnOff = useMemo(() => {
-    const undrawn = new Set(layout?.detached.map((n) => n.number));
-    return graph?.nodes.filter((n) => !n.onChain && !undrawn.has(n.number)) ?? [];
+    const undrawn = new Set(layout?.detached.map((n) => n.key));
+    return graph?.nodes.filter((n) => !n.onChain && !undrawn.has(n.key)) ?? [];
   }, [graph, layout]);
   // Merged proposals off the chain are finished business: folded into one line unless asked for.
   const [showMerged, setShowMerged] = useState(false);
@@ -440,7 +440,7 @@ function BaseRow({ graph }: { graph: ProposalGraphResponse }) {
         ) : (
           <Mark tone="attention">{t.baseForked}</Mark>
         ))}
-      <DeploymentMarks deployments={graph.deployments} at={0} />
+      <DeploymentMarks deployments={graph.deployments} at="" />
     </div>
   );
 }

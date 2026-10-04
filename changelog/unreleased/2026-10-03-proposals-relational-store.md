@@ -7,7 +7,7 @@
 
 [中文版](2026-10-03-proposals-relational-store.zh.md)
 
-The company-proposals and company-roadmaps plugins stopped replaying append-only JSON-lines ledgers. Each organization got one SQLite store, `company.db` in its directory (`node:sqlite`, WAL), shared by both plugins, each writing only its own tables. The PR graph and the PR statuses moved into the same store, and the graph stopped asking GitHub for every comparison. Routes, response shapes, error codes and the CLI stayed as they were, apart from the graph's refresh described below.
+The company-proposals and company-roadmaps plugins stopped replaying append-only JSON-lines ledgers. Each organization got one SQLite store, `company.db` in its directory (`node:sqlite`, WAL), shared by both plugins, each writing only its own tables. The PR graph and the PR statuses moved into the same store, and the graph stopped asking GitHub for every comparison. Routes, response shapes, error codes and the CLI stayed as they were, apart from the graph's refresh and its nodes described below.
 
 ## Storage
 
@@ -30,6 +30,7 @@ The company-proposals and company-roadmaps plugins stopped replaying append-only
 - A declared impl branch stores, with each side, the GitHub repository its remote named when it was registered (`git remote -v` of the proposal's repository, read once then). The graph, the impl patch and a deploy read the stored repository instead of reading the remotes again; a remote that is later pointed elsewhere changes a registered impl only when it is registered again.
 - With no delivery repository set, the shared workspace's remotes are read by the refresher on its beat, and graph reads use the repository it found; until the first refresh after a restart the graph is the base branch alone, with `refreshing`.
 - Deployments' servers are probed at each refresh instead of at every graph read; until the first refresh after a restart a deployment's commit reads as not probed yet.
+- An impl branch became a node of the graph: besides the open PRs, every registered impl branch of a live proposal whose head is on the delivery repository and that no open PR claims is drawn, with its proposal and stage, its tip as the probe's `ls-remote` read it (fetched into the mirror with the other refs), and its parent decided by ancestry like a PR's (its registered base being another node's head makes that node the parent). When a PR is opened on the branch, the same node carries its number. Nodes are keyed by head branch: `ProposalGraphNode` gained `key`, its `number` and `url` became nullable, and `parent`, `off.at`, `top`, `tops` (now always present) and a deployment's `at` name a node's key, `""` for the base branch. The graph page and `penguin org proposal graph` show a branch node by its branch, with the proposal link, the stage mark and the deploy menu (a deploy from it deploys the branch's tip through its proposal). The unplaced reason `no-pr` was removed: an impl branch is listed apart only as `unread` (its head not on the delivery repository, or not read there) or `merged`. The snapshot's input key includes each impl's base branch and its head's tip.
 - PR statuses are cached in the store for 5 minutes and read in one background batch; reading a proposal no longer waits for `gh`. Reporting `merged` still asks the forge at once and writes the answer back.
 
 ## Deleting an organization

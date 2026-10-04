@@ -148,8 +148,8 @@ async function refresh(
   const graph = got.layout.graph;
   const known = new Map(got.comparisons.map((c) => [`${c.from}...${c.to}`, c.cmp]));
   const layers = [
-    { number: 0, head: graph.base.head },
-    ...graph.nodes.map((n) => ({ number: n.number, head: n.head })),
+    { key: "", head: graph.base.head },
+    ...graph.nodes.map((n) => ({ key: n.key, head: n.head })),
   ];
   return {
     ...graph,
@@ -180,11 +180,11 @@ describe("PrGraphReader", () => {
       n.fork,
     ];
     expect(g.nodes.map(row)).toEqual([
-      [11, 0, "ahead", 2, true, true],
-      [12, 11, "ahead", 1, true, false],
-      [13, 11, "ahead", 3, true, false],
-      [16, 11, "ahead", 3, true, false],
-      [14, 12, "diverged", 2, false, false],
+      [11, "", "ahead", 2, true, true],
+      [12, "feat/a", "ahead", 1, true, false],
+      [13, "feat/a", "ahead", 3, true, false],
+      [16, "feat/a", "ahead", 3, true, false],
+      [14, "feat/b", "diverged", 2, false, false],
       [15, null, "unknown", null, false, false],
     ]);
     // Three leaves above #11 and none keeps going: the graph marks the fork and names no top.
@@ -214,7 +214,7 @@ describe("PrGraphReader", () => {
       errors: [],
       checkedAt: "2026-09-30T00:00:00.000Z",
     });
-    expect(g.top).toBe(12);
+    expect(g.top).toBe("feat/b");
     expect(g.nodes.map((n) => n.fork)).toEqual([false, false]);
   });
 
@@ -312,8 +312,8 @@ describe("PrGraphReader", () => {
       reading("dark", null, "/api/install answered 401"),
     ]);
     expect(g.deployments.map((d) => [d.id, d.at, d.relation, d.ahead, d.error])).toEqual([
-      ["here", 11, "same", 0, null],
-      ["late", 12, "ahead", 3, null],
+      ["here", "feat/a", "same", 0, null],
+      ["late", "feat/b", "ahead", 3, null],
       ["local", null, null, null, null],
       ["dark", null, null, null, "/api/install answered 401"],
     ]);

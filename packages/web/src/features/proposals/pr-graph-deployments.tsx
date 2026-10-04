@@ -9,13 +9,13 @@ import { S } from "../../lib/strings";
 import { ICON_GAP, RuledSection } from "@prismshadow/penguin-ui";
 import { toneSurface } from "../../lib/tone";
 
-/** The marks of the deployments on one layer (0 = the base branch); nothing when none sits there. */
+/** The marks of the deployments on one layer (by node key; `""` = the base branch); nothing when none sits there. */
 export function DeploymentMarks({
   deployments,
   at,
 }: {
   deployments: readonly ProposalGraphDeployment[] | undefined;
-  at: number;
+  at: string;
 }) {
   const t = S.company.proposals.graph;
   const here = (deployments ?? []).filter((d) => d.at === at);

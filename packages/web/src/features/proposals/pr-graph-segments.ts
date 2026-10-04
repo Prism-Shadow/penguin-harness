@@ -26,14 +26,14 @@ export type DisplayRow =
   | { kind: "node"; row: number }
   | {
       kind: "roadmap";
-      /** The segment's key: its head PR's number, stable across reloads. */
-      segment: number;
+      /** The segment's key: its head node's key, stable across reloads. */
+      segment: string;
       roadmaps: RoadmapRef[];
       /** PRs in the segment. */
       count: number;
       folded: boolean;
     }
-  | { kind: "folded"; segment: number; count: number; lane: number };
+  | { kind: "folded"; segment: string; count: number; lane: number };
 
 export interface DisplayEdge {
   /** Display rows of the child and the parent. */
@@ -83,12 +83,12 @@ export function segments(rows: readonly GraphRow[]): Map<number, number[]> {
 /**
  * The rows to draw: each segment headed by its roadmap row, a folded one as a single line, and
  * the edges and widths for those rows. `roadmapsOf` names the roadmaps of a head row; `folded`
- * holds the head PR numbers of the folded segments.
+ * holds the head node keys of the folded segments.
  */
 export function displayLayout(
   rows: readonly GraphRow[],
   roadmapsOf: (row: GraphRow) => RoadmapRef[],
-  folded: ReadonlySet<number>,
+  folded: ReadonlySet<string>,
 ): DisplayLayout {
   const runs = segments(rows);
   const out: DisplayRow[] = [];
@@ -100,7 +100,7 @@ export function displayLayout(
       out.push({ kind: "node", row: i });
       continue;
     }
-    const key = rows[i]!.node!.number;
+    const key = rows[i]!.node!.key;
     const isFolded = folded.has(key);
     out.push({
       kind: "roadmap",

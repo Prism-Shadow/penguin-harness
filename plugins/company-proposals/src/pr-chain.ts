@@ -3,9 +3,9 @@
  * (the one-PR-stack decision, criterion 2 and its addenda), so that the graph, the
  * CLI and the page read the same chain the deploy line's stack reader does:
  *
- * 1. A node's parent is the open PR whose head branch is its declared base. When the base is the
+ * 1. A node's parent is the node whose head branch is its declared base. When the base is the
  *    head branch of a merged PR — or of one closed without merging (1a) — the walk goes on from
- *    that PR's own base until it reaches the base branch or an open PR; the PRs walked through are
+ *    that PR's own base until it reaches the base branch or a node; the PRs walked through are
  *    the node's `via`, and a closed one is marked, since its commits are still in the node's layer.
  * 2. An edge holds by ancestry, not by `baseRefName`: the head contains its parent's head, or the
  *    commits it lacks carry no content (the parent's tree is the merge base's tree).
@@ -18,11 +18,12 @@
  *    marks the fork and names no single top. The base branch can carry several stacks this way,
  *    each starting on it and keeping going; every branch walked has its own last layer (`tops`).
  *
- * Everything here is pure: the reader (pr-graph.ts) fetches, buildGraph lays out what it read —
- * each node with its parent, edge and chain verdict, the proposal whose impl it is (by its impl
- * PR, or — an impl branch with no PR — by its head branch) and the PR every other origin has on
- * the same branch, each proposal whose impl is not on the graph with the reason why, and each
- * registered deployment on the layer its commit sits on (deployments.ts).
+ * The nodes are the heads graph-heads.ts lists — open PRs and the impl branches no open PR claims
+ * — keyed by head branch. Everything here is pure: the reader (pr-graph.ts) fetches, buildGraph
+ * lays out what it read — each node with its parent, edge and chain verdict, the proposal whose
+ * impl it is and the PR every other origin has on the same branch, each proposal whose impl is
+ * not on the graph with the reason why, and each registered deployment on the layer its commit
+ * sits on (deployments.ts).
  */
 import type {
   ProposalGraphNode,
@@ -34,8 +35,10 @@ import type {
   ProposalGraphVia,
   ProposalStatus,
 } from "@prismshadow/penguin-server/api";
-import { parsePullUrl } from "./pr-status.js";
 import { placeDeployment, type DeploymentReading } from "./deployments.js";
+import { BASE_KEY, headsOf, pullKey, type GraphHead } from "./graph-heads.js";
+
+export { pullKey };
 
 /** Hops walked through merged or closed PRs, and nodes walked up a parent line, before giving up. */
 const WALK_CAP = 1000;
@@ -55,31 +58,33 @@ export type ShutBranches = ReadonlyMap<string, ShutPull | null>;
 
 /** Where the walk from a node's declared base ended. */
 export interface Parentage {
-  /** The open PR reached, 0 for the base branch, null for neither. */
-  parent: number | null;
+  /** The node reached (its key), BASE_KEY for the base branch, null for neither. */
+  parent: string | null;
   via: ProposalGraphVia[];
   /** A branch the walk reached that is in no list yet: look it up and walk again. */
   missing: string | null;
 }
 
-/** The parent of every open PR, walking merged and closed PRs through (rules 1 and 1a). */
+/** The parent of every node, walking merged and closed PRs through (rules 1 and 1a). */
 export function parentsOf(
-  pulls: ReadonlyArray<{ number: number; branch: string; base: string }>,
+  heads: ReadonlyArray<{ key: string; branch: string; base: string }>,
   shut: ShutBranches,
   baseBranch: string,
-): Map<number, Parentage> {
-  const byBranch = new Map(pulls.map((p) => [p.branch, p.number]));
-  const out = new Map<number, Parentage>();
-  for (const pull of pulls) {
+): Map<string, Parentage> {
+  // A branch two heads have (a PR from another repository) leads to the first: the one keyed by it.
+  const byBranch = new Map<string, string>();
+  for (const h of heads) if (!byBranch.has(h.branch)) byBranch.set(h.branch, h.key);
+  const out = new Map<string, Parentage>();
+  for (const head of heads) {
     const via: ProposalGraphVia[] = [];
     const seen = new Set<string>();
-    let branch = pull.base;
+    let branch = head.base;
     let result: Parentage | null = null;
     while (result === null) {
       const open = byBranch.get(branch);
-      if (branch === baseBranch) result = { parent: 0, via, missing: null };
+      if (branch === baseBranch) result = { parent: BASE_KEY, via, missing: null };
       else if (open !== undefined)
-        result = { parent: open === pull.number ? null : open, via, missing: null };
+        result = { parent: open === head.key ? null : open, via, missing: null };
       else if (!shut.has(branch)) result = { parent: null, via, missing: branch };
       else {
         const found = shut.get(branch)!;
@@ -92,7 +97,7 @@ export function parentsOf(
         }
       }
     }
-    out.set(pull.number, result);
+    out.set(head.key, result);
   }
   return out;
 }
@@ -131,8 +136,8 @@ export function edgeVerdict(
 }
 
 export interface ChainNode {
-  number: number;
-  parent: number | null;
+  key: string;
+  parent: string | null;
   /** The edge to the parent holds. */
   stacked: boolean;
   /** Why it is off already, before the walk: its own edge or its declared base. */
@@ -141,36 +146,40 @@ export interface ChainNode {
 
 export interface Chain {
   /** On the chain, in walk order (each node after its parent). */
-  order: number[];
+  order: string[];
   /** The chain's last layer, or null when it is empty or a fork could not be decided. */
-  top: number | null;
-  /** The last layer of every branch the walk took, in PR order: one per stack. */
-  tops: number[];
-  /** Nodes with more than one stacked child; 0 = the base branch. */
-  forks: Set<number>;
+  top: string | null;
+  /** The last layer of every branch the walk took, in the nodes' order: one per stack. */
+  tops: string[];
+  /** Nodes with more than one stacked child; BASE_KEY = the base branch. */
+  forks: Set<string>;
   /** Why each node off the chain is off, and the node the reason names. */
-  off: Map<number, { reason: ProposalGraphOffReason; at: number | null }>;
+  off: Map<string, { reason: ProposalGraphOffReason; at: string | null }>;
 }
 
-/** Walks the chain from the base branch (rule 3 at each fork) and says why every other node is off it. */
+/**
+ * Walks the chain from the base branch (rule 3 at each fork) and says why every other node is
+ * off it. The nodes come in drawing order (graph-heads.ts); siblings and tops keep that order.
+ */
 export function walkChain(nodes: readonly ChainNode[]): Chain {
-  const byNumber = new Map(nodes.map((n) => [n.number, n]));
-  const kids = new Map<number, number[]>();
-  for (const n of [...nodes].sort((a, b) => a.number - b.number)) {
+  const byKey = new Map(nodes.map((n) => [n.key, n]));
+  const rank = new Map(nodes.map((n, i) => [n.key, i]));
+  const kids = new Map<string, string[]>();
+  for (const n of nodes) {
     if (n.parent === null || !n.stacked || n.off !== null) continue;
-    kids.set(n.parent, [...(kids.get(n.parent) ?? []), n.number]);
+    kids.set(n.parent, [...(kids.get(n.parent) ?? []), n.key]);
   }
-  const off = new Map<number, { reason: ProposalGraphOffReason; at: number | null }>();
-  const forks = new Set<number>();
-  const order: number[] = [];
-  const leaves: number[] = [];
-  const seen = new Set<number>([0]);
-  const todo: number[] = [0];
+  const off = new Map<string, { reason: ProposalGraphOffReason; at: string | null }>();
+  const forks = new Set<string>();
+  const order: string[] = [];
+  const leaves: string[] = [];
+  const seen = new Set<string>([BASE_KEY]);
+  const todo: string[] = [BASE_KEY];
   while (todo.length > 0) {
     const at = todo.pop()!;
     const children = (kids.get(at) ?? []).filter((k) => !seen.has(k));
     if (children.length === 0) {
-      if (at !== 0) leaves.push(at);
+      if (at !== BASE_KEY) leaves.push(at);
       continue;
     }
     if (children.length > 1) forks.add(at);
@@ -189,22 +198,22 @@ export function walkChain(nodes: readonly ChainNode[]): Chain {
   // Everything else: its own reason, or the reason of the line it hangs from.
   const onChain = new Set(order);
   for (const n of nodes) {
-    if (onChain.has(n.number) || off.has(n.number)) continue;
-    if (n.off !== null) off.set(n.number, { reason: n.off, at: null });
-    else if (!n.stacked) off.set(n.number, { reason: "old-line", at: null });
-    else if (inCycle(n.number, byNumber)) off.set(n.number, { reason: "cycle", at: null });
-    else off.set(n.number, { reason: "above", at: n.parent });
+    if (onChain.has(n.key) || off.has(n.key)) continue;
+    if (n.off !== null) off.set(n.key, { reason: n.off, at: null });
+    else if (!n.stacked) off.set(n.key, { reason: "old-line", at: null });
+    else if (inCycle(n.key, byKey)) off.set(n.key, { reason: "cycle", at: null });
+    else off.set(n.key, { reason: "above", at: n.parent });
   }
-  const tops = [...leaves].sort((a, b) => a - b);
+  const tops = [...leaves].sort((a, b) => rank.get(a)! - rank.get(b)!);
   return { order, top: tops.length === 1 ? tops[0]! : null, tops, forks, off };
 }
 
 /** Whether walking up the parents from a node comes back to it. */
-function inCycle(start: number, byNumber: ReadonlyMap<number, ChainNode>): boolean {
-  let at = byNumber.get(start)?.parent ?? null;
-  for (let steps = 0; at !== null && at !== 0 && steps < WALK_CAP; steps++) {
+function inCycle(start: string, byKey: ReadonlyMap<string, ChainNode>): boolean {
+  let at = byKey.get(start)?.parent ?? null;
+  for (let steps = 0; at !== null && at !== BASE_KEY && steps < WALK_CAP; steps++) {
     if (at === start) return true;
-    at = byNumber.get(at)?.parent ?? null;
+    at = byKey.get(at)?.parent ?? null;
   }
   return false;
 }
@@ -239,12 +248,6 @@ export function unplacedReason(input: {
   return { reason: input.onDelivery ? "unread" : "open-elsewhere", at: null, into: null };
 }
 
-/** `owner/repo#n`, lower-cased owner and repo: how two URLs of one PR are recognised as one. */
-export function pullKey(url: string): string | null {
-  const ref = parsePullUrl(url);
-  return ref === null ? null : `${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}#${ref.number}`;
-}
-
 /** An open PR as the graph needs it. */
 export interface OpenPull {
   number: number;
@@ -264,10 +267,16 @@ export interface GraphProposal {
   implPr: string | null;
   /**
    * The declared head of its impl branch: `label` as declared (`<remote>/<branch>`), `repo` the
-   * GitHub repository it resolved to (null when it did not). Absent or null for an impl
+   * GitHub repository it resolved to (null when it did not), `base` the branch of the base side
+   * it registered (null: none, the graph's base branch stands in). Absent or null for an impl
    * registered as a PR alone.
    */
-  implBranch?: { label: string; repo: string | null; branch: string } | null;
+  implBranch?: {
+    label: string;
+    repo: string | null;
+    branch: string;
+    base?: string | null;
+  } | null;
 }
 
 /** Everything read from GitHub and the ledger, as plain data: what buildGraph lays out. */
@@ -276,8 +285,10 @@ export interface GraphInput {
   base: { branch: string; head: string | null };
   pulls: OpenPull[];
   origins: Array<{ name: string; repo: string; pulls: OpenPull[] | null }>;
-  /** The merged or closed PR on each branch a declared base named that no open PR has; absent = not looked up. */
+  /** The merged or closed PR on each branch a declared base named that no node has; absent = not looked up. */
   shut?: ShutBranches;
+  /** The tip of each impl branch on the delivery repository (graph-heads.ts); absent or missing = not read. */
+  tips?: ReadonlyMap<string, string>;
   /** A comparison read earlier; undefined when it was not (or could not be) read. */
   compare: (from: string, to: string) => Comparison | undefined;
   proposals: GraphProposal[];
@@ -292,45 +303,42 @@ export interface GraphInput {
 /** The layout: parents through the declared bases, the chain from the base branch, forks, the top, the annotations. */
 export function buildGraph(input: GraphInput): ProposalGraphResponse {
   const repoKey = input.repo.toLowerCase();
-  const byKey = new Map<string, GraphProposal>();
-  // An impl branch with no PR claims the open PR whose head branch it is on the delivery repository.
-  const byHead = new Map<string, GraphProposal>();
-  for (const p of input.proposals) {
-    if (p.status === "rejected") continue;
-    const key = p.implPr === null ? null : pullKey(p.implPr);
-    if (key !== null) byKey.set(key, p);
-    else if (p.implBranch?.repo != null && p.implBranch.repo.toLowerCase() === repoKey) {
-      byHead.set(p.implBranch.branch, p);
-    }
-  }
-  const parents = parentsOf(input.pulls, input.shut ?? new Map(), input.base.branch);
-  const byNumber = new Map(input.pulls.map((p) => [p.number, p]));
-  const headOf = (n: number | null): string | null =>
-    n === null ? null : n === 0 ? input.base.head : (byNumber.get(n)?.head ?? null);
+  const { heads, unplaced: branchUnplaced } = headsOf({
+    repo: input.repo,
+    baseBranch: input.base.branch,
+    pulls: input.pulls,
+    proposals: input.proposals,
+    tips: input.tips ?? new Map(),
+  });
+  const parents = parentsOf(heads, input.shut ?? new Map(), input.base.branch);
+  const byKey = new Map(heads.map((h) => [h.key, h]));
+  const headOf = (k: string | null): string | null =>
+    k === null ? null : k === BASE_KEY ? input.base.head : (byKey.get(k)?.head ?? null);
 
-  const nodes = new Map<number, ProposalGraphNode>();
-  for (const pull of input.pulls) {
-    const { parent, via } = parents.get(pull.number)!;
+  const nodes = new Map<string, ProposalGraphNode>();
+  for (const head of heads) {
+    const { parent, via } = parents.get(head.key)!;
     const parentHead = headOf(parent);
-    const cmp = parentHead === null ? undefined : input.compare(parentHead, pull.head);
+    const cmp = parentHead === null ? undefined : input.compare(parentHead, head.head);
     const verdict =
       parent === null
         ? null
         : edgeVerdict(cmp, () => {
-            const grand = parent === 0 ? null : headOf(parents.get(parent)?.parent ?? null);
+            const grand = parent === BASE_KEY ? null : headOf(parents.get(parent)?.parent ?? null);
             return grand === null || cmp?.mergeBase == null
               ? undefined
               : input.compare(grand, cmp.mergeBase);
           });
-    const proposal = byKey.get(`${repoKey}#${pull.number}`) ?? byHead.get(pull.branch) ?? null;
-    nodes.set(pull.number, {
-      number: pull.number,
-      url: pull.url,
-      title: pull.title,
-      draft: pull.draft,
-      branch: pull.branch,
-      head: pull.head,
-      base: pull.base,
+    const { pull, proposal } = head;
+    nodes.set(head.key, {
+      key: head.key,
+      number: pull?.number ?? null,
+      url: pull?.url ?? null,
+      title: pull?.title ?? proposal?.title ?? head.branch,
+      draft: pull?.draft ?? false,
+      branch: head.branch,
+      head: head.head,
+      base: head.base,
       parent,
       via,
       relation: cmp?.relation ?? "unknown",
@@ -350,43 +358,30 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
         proposal === null
           ? null
           : { number: proposal.number, title: proposal.title, status: proposal.status },
-      origins: originsOf(input, pull),
+      origins: originsOf(input, head),
     });
   }
 
   const chain = walkChain(
     [...nodes.values()].map((n) => ({
-      number: n.number,
+      key: n.key,
       parent: n.parent,
       stacked: n.stacked,
       off: n.off?.reason ?? null,
     })),
   );
   for (const n of nodes.values()) {
-    n.onChain = !chain.off.has(n.number);
-    n.off = chain.off.get(n.number) ?? null;
-    n.fork = chain.forks.has(n.number);
+    n.onChain = !chain.off.has(n.key);
+    n.off = chain.off.get(n.key) ?? null;
+    n.fork = chain.forks.has(n.key);
   }
-  const offChain = [...nodes.keys()].filter((n) => chain.off.has(n)).sort((a, b) => a - b);
+  const offChain = heads.map((h) => h.key).filter((k) => chain.off.has(k));
+  const drawn = [...chain.order, ...offChain].map((k) => nodes.get(k)!);
 
-  const placed = new Set([...nodes.keys()].map((n) => `${repoKey}#${n}`));
-  const claimed = new Set(
-    [...nodes.values()].flatMap((n) => (n.proposal === null ? [] : [n.proposal.number])),
+  const placed = new Set(
+    heads.flatMap((h) => (h.pull === null ? [] : [`${repoKey}#${h.pull.number}`])),
   );
   const byBranch = new Map(input.pulls.map((p) => [p.branch, p.number]));
-  const branchOnly = input.proposals
-    .filter((p) => p.status !== "rejected" && p.implPr === null && p.implBranch != null)
-    .filter((p) => !claimed.has(p.number))
-    .map((p) => ({
-      number: p.number,
-      title: p.title,
-      status: p.status,
-      implPr: null,
-      branch: p.implBranch!.label,
-      reason: (p.implBranch!.repo === null ? "unread" : "no-pr") as ProposalGraphUnplacedReason,
-      at: null,
-      into: null,
-    }));
   const unplaced = input.proposals
     .filter((p) => p.status !== "rejected" && p.implPr !== null)
     .filter((p) => !placed.has(pullKey(p.implPr!) ?? ""))
@@ -421,35 +416,28 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
     base: {
       branch: input.base.branch,
       head: input.base.head,
-      fork: chain.forks.has(0),
+      fork: chain.forks.has(BASE_KEY),
     },
     origins: input.origins.map((o) => ({ name: o.name, repo: o.repo })),
-    nodes: [...chain.order, ...offChain].map((n) => nodes.get(n)!),
+    nodes: drawn,
     top: chain.top,
     tops: chain.tops,
-    unplaced: [...unplaced, ...branchOnly].sort((a, b) => a.number - b.number),
+    unplaced: [...unplaced, ...branchUnplaced].sort((a, b) => a.number - b.number),
     errors: input.errors,
     checkedAt: input.checkedAt,
     deployments: input.deployments.map((deployment) =>
-      placeDeployment(
-        deployment,
-        layersOf(
-          input.base.head,
-          [...chain.order, ...offChain].map((n) => nodes.get(n)!),
-        ),
-        input.compare,
-      ),
+      placeDeployment(deployment, layersOf(input.base.head, drawn), input.compare),
     ),
   };
 }
 
-/** The layers a deployment may sit on: the base branch (0) first, then every node in graph order. */
-function layersOf(baseHead: string | null, nodes: Array<{ number: number; head: string }>) {
-  return [{ number: 0, head: baseHead }, ...nodes.map((n) => ({ number: n.number, head: n.head }))];
+/** The layers a deployment may sit on: the base branch (BASE_KEY) first, then every node in graph order. */
+export function layersOf(baseHead: string | null, nodes: Array<{ key: string; head: string }>) {
+  return [{ key: BASE_KEY, head: baseHead }, ...nodes.map((n) => ({ key: n.key, head: n.head }))];
 }
 
 /** Each origin's open PR on the node's branch, with its head against the node's. */
-function originsOf(input: GraphInput, pull: OpenPull): ProposalGraphOriginPr[] {
+function originsOf(input: GraphInput, pull: GraphHead): ProposalGraphOriginPr[] {
   const out: ProposalGraphOriginPr[] = [];
   for (const origin of input.origins) {
     if (origin.repo.toLowerCase() === input.repo.toLowerCase()) continue;

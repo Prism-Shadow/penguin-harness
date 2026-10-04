@@ -13,9 +13,10 @@ import {
   baseStacks,
   focusedProposal,
   graphGeometry,
-  graphTops,
+  deployTarget,
   layoutGraph,
   foldedAsMerged,
+  nodeRef,
   rowOfProposal,
   rowWidths,
   splitArgs,
@@ -23,8 +24,12 @@ import {
 } from "../src/features/proposals/pr-graph-model";
 import type { GraphRow } from "../src/features/proposals/pr-graph-model";
 
+/** A PR's node key in these tests (its head branch), `""` for the base branch (0). */
+const k = (n: number): string => (n === 0 ? "" : `b${n}`);
+
 const node = (number: number, parent: number | null, over: Partial<ProposalGraphNode> = {}) =>
   ({
+    key: k(number),
     number,
     url: `https://github.com/acme/app/pull/${number}`,
     title: `PR ${number}`,
@@ -32,7 +37,7 @@ const node = (number: number, parent: number | null, over: Partial<ProposalGraph
     branch: `b${number}`,
     head: `h${number}`,
     base: parent === 0 ? "dev" : `b${parent}`,
-    parent,
+    parent: parent === null ? null : k(parent),
     via: [],
     relation: "ahead",
     ahead: 1,
@@ -52,7 +57,7 @@ const shape = (rows: ReturnType<typeof layoutGraph>["rows"]) =>
 
 describe("layoutGraph", () => {
   it("draws a straight chain in one lane, newest on top and the base last", () => {
-    const layout = layoutGraph([node(2, 1), node(1, 0), node(3, 2)], 3);
+    const layout = layoutGraph([node(2, 1), node(1, 0), node(3, 2)], k(3));
     expect(shape(layout.rows)).toEqual([
       [3, 0, 1],
       [2, 0, 2],
@@ -80,7 +85,7 @@ describe("layoutGraph", () => {
   });
 
   it("keeps the lane for the child that leads to the top, even when it is shorter", () => {
-    const layout = layoutGraph([node(1, 0), node(2, 1), node(5, 2), node(3, 1)], 3);
+    const layout = layoutGraph([node(1, 0), node(2, 1), node(5, 2), node(3, 1)], k(3));
     expect(layout.rows[0]!.node?.number).toBe(3);
     expect(layout.rows[0]!.lane).toBe(0);
     expect(layout.rows.find((r) => r.node?.number === 5)!.lane).toBe(1);
@@ -90,7 +95,7 @@ describe("layoutGraph", () => {
     // 1 has three children: 2 continues, 3 and 4 branch off; 3 has its own child 6.
     const layout = layoutGraph(
       [node(1, 0), node(2, 1), node(3, 1), node(4, 1), node(6, 3), node(7, 2), node(8, 7)],
-      8,
+      k(8),
     );
     const lane = (n: number) => layout.rows.find((r) => r.node?.number === n)!.lane;
     expect(lane(2)).toBe(0);
@@ -103,7 +108,7 @@ describe("layoutGraph", () => {
   it("draws an edge that does not hold unstacked, and a branch the chain did not take with its solid edge", () => {
     const off = (reason: "old-line" | "not-taken", at: number | null) => ({
       onChain: false,
-      off: { reason, at },
+      off: { reason, at: at === null ? null : k(at) },
     });
     const layout = layoutGraph(
       [
@@ -113,7 +118,7 @@ describe("layoutGraph", () => {
         node(4, 1),
         node(5, 4),
       ],
-      5,
+      k(5),
     );
     const row = (n: number) => layout.rows.find((r) => r.node?.number === n)!;
     expect(row(2).stacked).toBe(false);
@@ -127,7 +132,7 @@ describe("layoutGraph", () => {
   it("hangs a layer the server reached through a closed PR from its parent instead of listing it apart", () => {
     const layout = layoutGraph(
       [node(1, 0), node(2, 1, { base: "closed-branch", via: [{ number: 9, state: "closed" }] })],
-      2,
+      k(2),
     );
     expect(shape(layout.rows)).toEqual([
       [2, 0, 1],
@@ -138,9 +143,13 @@ describe("layoutGraph", () => {
   });
 
   it("lists apart a PR on an unknown branch and PRs whose declarations form a cycle", () => {
-    const layout = layoutGraph([node(1, 0), node(9, null), node(5, 6), node(6, 5), node(7, 42)], 1);
+    const layout = layoutGraph(
+      [node(1, 0), node(9, null), node(5, 6), node(6, 5), node(7, 42)],
+      k(1),
+    );
     expect(layout.rows.map((r) => r.node?.number ?? 0)).toEqual([1, 0]);
-    expect(layout.detached.map((n) => n.number)).toEqual([5, 6, 7, 9]);
+    // In the order the server listed them.
+    expect(layout.detached.map((n) => n.number)).toEqual([9, 5, 6, 7]);
   });
 
   it("draws the base alone when there are no PRs", () => {
@@ -166,11 +175,43 @@ describe("several stacks on the base", () => {
     // A branch on the base that is off the chain does not count as a stack.
     expect(baseStacks([...nodes, node(7, 0, { onChain: false })])).toBe(3);
   });
+});
 
-  it("marks every stack's top, and reads a single top from a server older than the field", () => {
-    expect(graphTops({ top: null, tops: [2, 4, 6] })).toEqual([2, 4, 6]);
-    expect(graphTops({ top: 6 })).toEqual([6]);
-    expect(graphTops({ top: null })).toEqual([]);
+describe("branch nodes", () => {
+  /** An impl branch no PR is open on: no number, keyed by its branch, its proposal named. */
+  const branchNode = (branch: string, parent: string, proposal: number) =>
+    node(0, null, {
+      key: branch,
+      number: null,
+      url: null,
+      title: `P${proposal}`,
+      branch,
+      base: parent === "" ? "dev" : parent,
+      parent,
+      proposal: { number: proposal, title: `P${proposal}`, status: "drafting" },
+    });
+
+  it("lays a branch node out like a PR, a PR stacked on it hanging from it, and focuses its proposal", () => {
+    // dev ─ #1 ─ impl/a (proposal 40) ─ #2
+    const nodes = [
+      node(1, 0),
+      node(2, 0, { parent: "impl/a", base: "impl/a" }),
+      branchNode("impl/a", k(1), 40),
+    ];
+    const layout = layoutGraph(nodes, k(2));
+    expect(layout.rows.map((r) => r.node?.key ?? "")).toEqual([k(2), "impl/a", k(1), ""]);
+    expect(layout.rows.every((r) => r.lane === 0)).toBe(true);
+    expect(layout.detached).toEqual([]);
+    expect(rowOfProposal(layout.rows, 40)).toBe(1);
+  });
+
+  it("names a branch node by its branch and deploys it through its proposal", () => {
+    const b = branchNode("impl/a", "", 40);
+    expect(nodeRef(b)).toBe("impl/a");
+    expect(nodeRef(node(7, 0))).toBe("#7");
+    expect(deployTarget(b)).toEqual({ proposal: 40 });
+    expect(deployTarget(node(7, 0))).toEqual({ pr: 7 });
+    expect(deployTarget({ number: null, proposal: null })).toBeNull();
   });
 });
 
@@ -178,7 +219,7 @@ describe("the proposal focus", () => {
   it("finds the row of a proposal's impl PR, and -1 without one", () => {
     const layout = layoutGraph(
       [node(1, 0), node(2, 1, { proposal: { number: 138, title: "Graph", status: "ready" } })],
-      2,
+      k(2),
     );
     expect(rowOfProposal(layout.rows, 138)).toBe(0);
     expect(rowOfProposal(layout.rows, 7)).toBe(-1);
@@ -223,7 +264,7 @@ describe("rowWidths", () => {
 
 describe("topDown", () => {
   it("puts the base first and the top last, and renumbers every parent row", () => {
-    const layout = layoutGraph([node(1, 0), node(2, 1), node(3, 2)], 3);
+    const layout = layoutGraph([node(1, 0), node(2, 1), node(3, 2)], k(3));
     const down = topDown(layout);
     expect(down.rows.map((r) => r.node?.number ?? 0)).toEqual([0, 1, 2, 3]);
     expect(down.rows.map((r) => r.parentRow)).toEqual([null, 0, 1, 2]);
@@ -231,7 +272,7 @@ describe("topDown", () => {
   });
 
   it("keeps the widths a row crosses when the edges run downward", () => {
-    const layout = topDown(layoutGraph([node(1, 0), node(2, 1), node(5, 1), node(3, 2)], 3));
+    const layout = topDown(layoutGraph([node(1, 0), node(2, 1), node(5, 1), node(3, 2)], k(3)));
     const widths = rowWidths(layout.rows);
     expect(widths[0]).toBe(1); // the base
     expect(Math.max(...widths)).toBe(layout.lanes);

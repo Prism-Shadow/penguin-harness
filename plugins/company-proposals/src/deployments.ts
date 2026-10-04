@@ -164,9 +164,10 @@ export interface DeploymentReading {
   error: string | null;
 }
 
-/** A layer a deployment may sit on: 0 for the base branch, else the PR number, with its head. */
+/** A layer a deployment may sit on: the base branch or a node, by key, with its head. */
 export interface Layer {
-  number: number;
+  /** The node's key; `""` for the base branch. */
+  key: string;
   head: string | null;
 }
 
@@ -190,17 +191,17 @@ export function placeDeployment(
   const commit = reading.commit?.toLowerCase() ?? null;
   if (commit === null) return out;
   const same = layers.find((l) => l.head !== null && l.head.toLowerCase().startsWith(commit));
-  if (same !== undefined) return { ...out, at: same.number, relation: "same", ahead: 0 };
-  let best: { number: number; ahead: number } | null = null;
+  if (same !== undefined) return { ...out, at: same.key, relation: "same", ahead: 0 };
+  let best: { key: string; ahead: number } | null = null;
   for (const l of layers) {
     if (l.head === null) continue;
     const cmp = compare(l.head, commit);
     if (cmp === undefined) continue;
-    if (cmp.relation === "same") return { ...out, at: l.number, relation: "same", ahead: 0 };
+    if (cmp.relation === "same") return { ...out, at: l.key, relation: "same", ahead: 0 };
     if (cmp.relation !== "ahead") continue;
-    if (best === null || cmp.ahead <= best.ahead) best = { number: l.number, ahead: cmp.ahead };
+    if (best === null || cmp.ahead <= best.ahead) best = { key: l.key, ahead: cmp.ahead };
   }
-  return best === null ? out : { ...out, at: best.number, relation: "ahead", ahead: best.ahead };
+  return best === null ? out : { ...out, at: best.key, relation: "ahead", ahead: best.ahead };
 }
 
 /** The registry as the API lists it: the registered deployments, in the order they were registered. */

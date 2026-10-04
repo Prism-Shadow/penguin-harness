@@ -4,10 +4,13 @@ import { layoutGraph, topDown } from "../src/features/proposals/pr-graph-model";
 import { displayLayout, segments } from "../src/features/proposals/pr-graph-segments";
 import type { RoadmapRef } from "../src/features/proposals/pr-graph-segments";
 
+const k = (n: number): string => (n === 0 ? "" : `b${n}`);
+
 const node = (number: number, parent: number | null): ProposalGraphNode =>
   ({
+    key: k(number),
     number,
-    parent,
+    parent: parent === null ? null : k(parent),
     stacked: true,
     onChain: true,
     relation: "ahead",
@@ -23,7 +26,7 @@ const rm = (n: number): RoadmapRef => ({
 // dev ─ 1 ─ 2 ─ 3 (fork) ┬ 4 ─ 5
 //                       └ 6
 const rows = topDown(
-  layoutGraph([node(1, 0), node(2, 1), node(3, 2), node(4, 3), node(5, 4), node(6, 3)], 5),
+  layoutGraph([node(1, 0), node(2, 1), node(3, 2), node(4, 3), node(5, 4), node(6, 3)], k(5)),
 ).rows;
 const numberAt = (i: number) => rows[i]!.node?.number ?? 0;
 
@@ -48,12 +51,12 @@ describe("displayLayout", () => {
     const d = displayLayout(rows, roadmapsOf, new Set());
     const headings = d.rows.filter((r) => r.kind === "roadmap");
     expect(headings).toHaveLength(3);
-    expect(headings[0]).toMatchObject({ segment: 1, count: 3, roadmaps: [rm(4), rm(7)] });
+    expect(headings[0]).toMatchObject({ segment: k(1), count: 3, roadmaps: [rm(4), rm(7)] });
     expect(d.rows.filter((r) => r.kind === "node")).toHaveLength(rows.length);
   });
 
   it("folds a segment into one line and keeps every lane connected through it", () => {
-    const d = displayLayout(rows, roadmapsOf, new Set([1]));
+    const d = displayLayout(rows, roadmapsOf, new Set([k(1)]));
     const kinds = d.rows.map((r) => r.kind);
     expect(kinds.filter((k) => k === "folded")).toHaveLength(1);
     // dev, the heading, the folded line, then the two branches below the fork (heading + rows).

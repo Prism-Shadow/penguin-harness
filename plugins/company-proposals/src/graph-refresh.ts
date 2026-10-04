@@ -35,15 +35,10 @@ import {
   type DeploymentReading,
   type ProbeServer,
 } from "./deployments.js";
+import { BASE_KEY } from "./graph-heads.js";
 import { buildGraph, type GraphProposal } from "./pr-chain.js";
-import {
-  PrGraphReader,
-  incomplete,
-  inputsOf,
-  layout,
-  storedFacts,
-  type GraphProject,
-} from "./pr-graph.js";
+import { PrGraphReader } from "./graph-reader.js";
+import { incomplete, inputsOf, layout, storedFacts, type GraphProject } from "./pr-graph.js";
 import type { Forge, GitMirror, GraphStore } from "./ports.js";
 
 /** The probe window when the settings name none. */
@@ -246,8 +241,8 @@ export class GraphRefresher {
     const commits = readings.flatMap((r) => (r.commit === null ? [] : [r.commit.toLowerCase()]));
     const known = ctx.store.comparisonsTo(repo, commits);
     const layers = [
-      { number: 0, head: graph.base.head },
-      ...graph.nodes.map((n) => ({ number: n.number, head: n.head })),
+      { key: BASE_KEY, head: graph.base.head },
+      ...graph.nodes.map((n) => ({ key: n.key, head: n.head })),
     ];
     const deployments = readings.map((r) =>
       placeDeployment(r, layers, (from, to) => known.get(`${from}...${to.toLowerCase()}`)),

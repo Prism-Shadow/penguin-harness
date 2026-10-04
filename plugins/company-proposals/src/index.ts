@@ -99,7 +99,8 @@ export {
   undeclaredGroupsMessage,
 } from "./config.js";
 export type { GraphConfig } from "./config.js";
-export { PrGraphReader, compareInMirror, inputsOf, layout, storedFacts } from "./pr-graph.js";
+export { PrGraphReader, compareInMirror } from "./graph-reader.js";
+export { inputsOf, layout, storedFacts } from "./pr-graph.js";
 export { buildGraph, pullKey } from "./pr-chain.js";
 export type { GraphInput, GraphProposal } from "./pr-chain.js";
 export { checkScope, scopeBase, scopeStates, suggestPaths } from "./scope-check.js";

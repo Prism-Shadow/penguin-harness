@@ -120,10 +120,10 @@ describe("GraphRefresher", () => {
     await w.settle();
     const warm = await w.refresher.read(w.ctx);
     expect(warm.nodes.map((n) => [n.number, n.parent, n.onChain])).toEqual([
-      [11, 0, true],
-      [12, 11, true],
+      [11, "", true],
+      [12, "feat/a", true],
     ]);
-    expect(warm.top).toBe(12);
+    expect(warm.top).toBe("feat/b");
     expect(warm.refreshing).toBe(false);
   });
 
@@ -236,7 +236,7 @@ describe("GraphRefresher", () => {
     expect(w.probed()).toBe(probed + 1);
     const g = await w.refresher.read(w.ctx);
     expect(g.deployments).toEqual([
-      expect.objectContaining({ id: "desk", commit: X, at: 12, relation: "ahead", ahead: 1 }),
+      expect.objectContaining({ id: "desk", commit: X, at: "feat/b", relation: "ahead", ahead: 1 }),
     ]);
   });
 

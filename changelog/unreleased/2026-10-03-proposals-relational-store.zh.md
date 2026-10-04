@@ -7,7 +7,7 @@
 
 [English](2026-10-03-proposals-relational-store.md)
 
-company-proposals 与 company-roadmaps 两个插件不再整份重放只追加的 JSON Lines 账本。每个组织在自己的目录下有一个 SQLite 存储 `company.db`（`node:sqlite`，WAL），两个插件共用，各自只写自己的表。PR 关系图与 PR 状态也落入同一个存储，关系图不再为每一对提交询问 GitHub。路由、响应形状、错误码与 CLI 保持不变，关系图的刷新方式见下文。
+company-proposals 与 company-roadmaps 两个插件不再整份重放只追加的 JSON Lines 账本。每个组织在自己的目录下有一个 SQLite 存储 `company.db`（`node:sqlite`，WAL），两个插件共用，各自只写自己的表。PR 关系图与 PR 状态也落入同一个存储，关系图不再为每一对提交询问 GitHub。路由、响应形状、错误码与 CLI 保持不变，关系图的刷新方式与节点见下文。
 
 ## 存储
 
@@ -30,6 +30,7 @@ company-proposals 与 company-roadmaps 两个插件不再整份重放只追加�
 - 声明的 impl 分支在登记时为每一侧解析一次其 remote 指向的 GitHub 仓库（读提案所在仓库的 `git remote -v`），并与该侧一同保存。关系图、impl 补丁与部署读取保存的仓库，不再重新读取 remotes；remote 之后改指别处时，已登记的 impl 只有在重新登记后才随之改变。
 - 未设置交付仓库时，共享工作区的 remotes 由刷新器按探测节奏读取，读图使用它找到的仓库；重启后第一次刷新之前，关系图只有栈底分支，并带 `refreshing`。
 - 各部署的服务器改为在每次刷新时探测，不再在每次读图时探测；重启后第一次刷新之前，部署的提交显示为尚未探测。
+- impl branch 成为关系图的节点：除开放 PR 外，存活提案已登记、head 在交付仓库上、且没有开放 PR 认领的 impl branch 也画上图，显示提案与阶段；它的 tip 取自探测时 `ls-remote` 读到的值（随其余 ref 一起 fetch 进 mirror），父节点与 PR 一样按祖系判定（登记的 base 若是另一节点的 head，就是那个节点）。分支上开出 PR 后，同一个节点带上 PR 号。节点以 head 分支为键：`ProposalGraphNode` 新增 `key`，`number` 与 `url` 可为 null，`parent`、`off.at`、`top`、`tops`（现总是存在）与部署的 `at` 都指节点的键，`""` 表示栈底分支。关系图页面与 `penguin org proposal graph` 以分支名显示分支节点，并带提案链接、阶段标记与部署菜单（从它部署时经由其提案部署分支的 tip）。未放置原因 `no-pr` 删除：impl branch 只在 `unread`（head 不在交付仓库上或读不到）与 `merged` 时列在图下。快照的输入键包含各 impl 的 base 分支与 head 的 tip。
 - PR 状态在存储中缓存 5 分钟，在后台以一次批量读取刷新；读提案不再等待 `gh`。报告 `merged` 仍立即询问 forge，并回写结果。
 
 ## 删除组织

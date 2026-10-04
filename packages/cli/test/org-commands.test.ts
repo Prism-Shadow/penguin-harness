@@ -1865,6 +1865,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
   it("graph prints the chain indented by depth, each line with its PR, proposal, origins and marks, then what is off the chain and why", async () => {
     server.addProposal("acme", { number: 1 });
     const node = (n: Record<string, unknown>) => ({
+      key: n.branch,
       url: `https://github.com/acme/site/pull/${String(n.number)}`,
       title: `PR ${String(n.number)}`,
       draft: false,
@@ -1890,7 +1891,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           branch: "feat/a",
           head: "bbbbbbbbbbbb",
           base: "dev",
-          parent: 0,
+          parent: "",
           ahead: 2,
           proposal: { number: 1, title: "A", status: "ready" },
           origins: [
@@ -1909,18 +1910,30 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           branch: "feat/b",
           head: "cccccccccccc",
           base: "feat/gone",
-          parent: 11,
+          parent: "feat/a",
           ahead: 1,
           behind: 2,
           via: [{ number: 9, state: "closed" }],
           stale: true,
+        }),
+        // An impl branch no PR is open on yet: a node with no number.
+        node({
+          number: null,
+          url: null,
+          title: "D",
+          branch: "impl/d",
+          head: "eeeeeeeeeeee",
+          base: "feat/a",
+          parent: "feat/a",
+          ahead: 1,
+          proposal: { number: 3, title: "D", status: "drafting" },
         }),
         node({
           number: 13,
           branch: "feat/c",
           head: "dddddddddddd",
           base: "feat/a",
-          parent: 11,
+          parent: "feat/a",
           ahead: 3,
           behind: 4,
           relation: "diverged",
@@ -1929,7 +1942,8 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           off: { reason: "old-line", at: null },
         }),
       ],
-      top: 12,
+      top: null,
+      tops: ["feat/b", "impl/d"],
       unplaced: [
         {
           number: 2,
@@ -1943,6 +1957,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       ],
       errors: [],
       checkedAt: "2026-09-30T00:00:00.000Z",
+      deployments: [],
     };
     expect(await cli(["org", "proposal", "graph"])).toBe(0);
     expect(out()).toBe(
@@ -1950,6 +1965,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
         "acme/site dev aaaaaaaaa",
         "  #11 feat/a bbbbbbbbb +2  proposal #1 ready  origin #801 behind",
         `    #12 feat/b ccccccccc +1 -2  [top, via closed #9, stale, restack pending]  ${t.org.graphNoProposal()}`,
+        "    branch impl/d eeeeeeeee +1  [top]  proposal #3 drafting",
         "",
         t.org.graphOffChain(),
         `  #13 feat/c ddddddddd +3 -4  [${t.org.graphOffReason("old-line", "#11", "diverged", "feat/a")}]  ${t.org.graphNoProposal()}`,
@@ -2026,6 +2042,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       origins: [],
       nodes: [
         {
+          key: "feat/a",
           number: 11,
           url: "https://github.com/acme/site/pull/11",
           title: "PR 11",
@@ -2033,7 +2050,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           branch: "feat/a",
           head: "bbbbbbbbbbbb",
           base: "dev",
-          parent: 0,
+          parent: "",
           relation: "ahead",
           ahead: 2,
           behind: 0,
@@ -2047,7 +2064,8 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           origins: [],
         },
       ],
-      top: 11,
+      top: "feat/a",
+      tops: ["feat/a"],
       unplaced: [],
       errors: [],
       checkedAt: "2026-09-30T00:00:00.000Z",
@@ -2057,7 +2075,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           url: "http://h:0",
           commit: "bbbbbbbbbbbb",
           describe: "v1-1-gbbbbbbb",
-          at: 11,
+          at: "feat/a",
           relation: "same",
           ahead: 0,
           error: null,
@@ -2067,7 +2085,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           url: "http://h:1",
           commit: "aaaaaaaaaaaa",
           describe: "v1",
-          at: 0,
+          at: "",
           relation: "same",
           ahead: 0,
           error: null,
@@ -2077,7 +2095,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           url: "http://h:2",
           commit: "eeeeeeeeeeee",
           describe: "v1-9-geeeeeee",
-          at: 11,
+          at: "feat/a",
           relation: "ahead",
           ahead: 3,
           error: null,

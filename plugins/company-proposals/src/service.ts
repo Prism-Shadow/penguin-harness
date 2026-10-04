@@ -1842,12 +1842,20 @@ export class ProposalService {
   /** Each live proposal's declared impl head, with the repository stored when it was registered. */
   private declaredHeads(
     proposals: ProposalFacts[],
-  ): Map<number, { label: string; repo: string; branch: string }> {
-    const out = new Map<number, { label: string; repo: string; branch: string }>();
+  ): Map<number, { label: string; repo: string; branch: string; base: string | null }> {
+    const out = new Map<
+      number,
+      { label: string; repo: string; branch: string; base: string | null }
+    >();
     for (const p of proposals) {
       const head = p.impl?.head;
       if (p.status === "rejected" || head == null) continue;
-      out.set(p.number, { label: refLabel(head), repo: head.repo, branch: head.branch });
+      out.set(p.number, {
+        label: refLabel(head),
+        repo: head.repo,
+        branch: head.branch,
+        base: p.impl?.base?.branch ?? null,
+      });
     }
     return out;
   }

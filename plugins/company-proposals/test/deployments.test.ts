@@ -108,9 +108,9 @@ describe("placeDeployment", () => {
     error: null,
   });
   const layers = [
-    { number: 0, head: "0".repeat(40) },
-    { number: 11, head: "a".repeat(40) },
-    { number: 12, head: "b".repeat(40) },
+    { key: "", head: "0".repeat(40) },
+    { key: "feat/a", head: "a".repeat(40) },
+    { key: "feat/b", head: "b".repeat(40) },
   ];
   const compare = (from: string, to: string) =>
     (
@@ -123,7 +123,7 @@ describe("placeDeployment", () => {
 
   it("sits on the layer whose head the commit is, by a short sha too", () => {
     expect(placeDeployment(reading("AAAAAAA"), layers, compare)).toMatchObject({
-      at: 11,
+      at: "feat/a",
       relation: "same",
       ahead: 0,
     });
@@ -131,7 +131,7 @@ describe("placeDeployment", () => {
 
   it("sits on the nearest layer the commit contains, with the commits past it", () => {
     expect(placeDeployment(reading("c"), layers, compare)).toMatchObject({
-      at: 11,
+      at: "feat/a",
       relation: "ahead",
       ahead: 3,
     });

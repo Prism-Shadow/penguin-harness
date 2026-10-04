@@ -3057,7 +3057,8 @@ export const createOrgDeployScript = (
 export const startOrgDeploy = (
   projectId: string,
   orgId: string,
-  body: { script: string; pr: number; head: string; args: string[] },
+  /** A PR, or a proposal whose impl branch is deployed (a branch node on the graph). */
+  body: { script: string; head: string; args: string[] } & ({ pr: number } | { proposal: number }),
 ) =>
   apiFetch<ProposalDeployStartResponse>(`${proposalsBase(projectId, orgId)}/deploys`, {
     method: "POST",

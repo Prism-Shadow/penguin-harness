@@ -15,6 +15,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { CloseButton, Spinner } from "@prismshadow/penguin-ui";
+import { nodeRef } from "./pr-graph-model";
 
 /** One deploy started from the graph: what was deployed where, and its run once it has one. */
 export interface DeployJob {
@@ -56,7 +57,7 @@ export function useDeployJobs(projectId: string, orgId: string) {
 
   const start = useCallback((node: ProposalGraphNode, script: ProposalDeployScript) => {
     const job: DeployJob = {
-      key: `${node.number}:${script.id}:${Date.now()}`,
+      key: `${node.key}:${script.id}:${Date.now()}`,
       node,
       script,
       runId: null,
@@ -149,12 +150,12 @@ export function DeployDock({
             <button
               type="button"
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-              aria-label={t.dockOpen(`#${job.node.number}`, job.script.id)}
+              aria-label={t.dockOpen(nodeRef(job.node), job.script.id)}
               onClick={() => onOpen(job.key)}
             >
               {live && <Spinner size="sm" label={t.running} />}
               <span className="min-w-0 truncate">
-                <span className="font-mono">#{job.node.number}</span> → {job.script.id}
+                <span className="font-mono">{nodeRef(job.node)}</span> → {job.script.id}
               </span>
               <span className={`shrink-0 ${tone}`}>{word}</span>
             </button>

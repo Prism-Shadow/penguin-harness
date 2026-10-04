@@ -31,6 +31,7 @@ import {
   Modal,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
+import { deployTarget, nodeRef } from "./pr-graph-model";
 
 const POLL_MS = 1000;
 
@@ -110,7 +111,7 @@ export function DeployableRow({
           <button
             type="button"
             data-tooltip={t.menuTitle}
-            aria-label={`#${node.number} · ${t.menuTitle}`}
+            aria-label={`${nodeRef(node)} · ${t.menuTitle}`}
             aria-haspopup="menu"
             aria-expanded={ctx.open}
             onClick={(e) => {
@@ -194,10 +195,12 @@ export function DeployDialog({
 
   const start = useCallback(async () => {
     setError(null);
+    const target = deployTarget(node);
+    if (target === null) return;
     try {
       const res = await api.startOrgDeploy(projectId, orgId, {
         script: script.id,
-        pr: node.number,
+        ...target,
         head: node.head,
         args: [],
       });
@@ -209,7 +212,7 @@ export function DeployDialog({
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, orgId, script.id, node.number, node.head]);
+  }, [projectId, orgId, script.id, node]);
 
   // A plain deploy starts as the dialog opens — once, and never for a run reopened from the dock.
   const autoStarted = useRef(false);
@@ -251,7 +254,7 @@ export function DeployDialog({
     if (el !== null) el.scrollTop = el.scrollHeight;
   }, [output]);
 
-  const ref = `#${node.number}`;
+  const ref = nodeRef(node);
   const head = node.head.slice(0, 12);
   const status =
     run === null || run.status === "running" ? (

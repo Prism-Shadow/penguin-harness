@@ -6586,7 +6586,7 @@ Benchmark：
           `部署 ${id} 跑在 ${describe ?? commit}${ahead !== null && ahead > 0 ? `，比这一层多 ${ahead} 个提交` : ""}`,
         deploymentUnread: "读不到 commit",
         unplacedHint:
-          "登记了实现，但它不是交付仓库上的 open PR；每行写明原因：已合并、已在底座分支里、已关闭、开在别的仓库、这里有一张 open PR 带着它的分支（登记的是另一张），或者 impl branch 上还没有开出 open PR。",
+          "登记了实现，但它不在图上的任何节点；每行写明原因：已合并、已在底座分支里、已关闭、开在别的仓库、这里有一张 open PR 带着它的分支（登记的是另一张），或者没读到（impl branch 的 head 不在交付仓库上，或 PR 读不到）。",
         unplacedReason: (reason: string, at: string, into: string, base: string): string =>
           ({
             counterpart: `${at} 带着它的分支`,
@@ -6595,7 +6595,6 @@ Benchmark：
             closed: "已关闭",
             "open-elsewhere": "开在别的仓库",
             unread: "没读到",
-            "no-pr": "head 分支上还没有 PR",
           })[reason] ?? reason,
         empty: "交付仓库上没有 open PR，图上只有底座。",
         focusMissing: (n: number): string =>
@@ -6603,6 +6602,8 @@ Benchmark：
         checkedAt: (when: string): string => `读取于 ${when}`,
         summary: (nodes: number, onChain: number): string => `${nodes} 张 PR，${onChain} 张在链上`,
         openPr: "在 GitHub 上打开",
+        branchNode: "分支",
+        branchNodeTitle: "impl 分支，尚未开 PR",
         deploy: {
           menu: "部署",
           menuTitle: "部署这张 PR 的 head",

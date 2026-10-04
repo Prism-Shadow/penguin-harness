@@ -6404,7 +6404,7 @@ Scenarios:
           `Deployment ${id} runs ${describe ?? commit}${ahead !== null && ahead > 0 ? `, ${ahead} commits past this layer` : ""}`,
         deploymentUnread: "commit not read",
         unplacedHint:
-          "The impl is registered but is not an open PR on the delivery repository; each line says why — merged, already in the base branch, closed, open on another repository, an open PR here carries its branch (the registration names the other one), or an impl branch no open PR is opened from yet.",
+          "The impl is registered but is on no node of the graph; each line says why — merged, already in the base branch, closed, open on another repository, an open PR here carries its branch (the registration names the other one), or not read (an impl branch whose head is not on the delivery repository, or a PR that could not be read).",
         unplacedReason: (reason: string, at: string, into: string, base: string): string =>
           ({
             counterpart: `${at} carries its branch`,
@@ -6413,7 +6413,6 @@ Scenarios:
             closed: "closed",
             "open-elsewhere": "open on another repository",
             unread: "not read",
-            "no-pr": "no PR on its head branch",
           })[reason] ?? reason,
         empty: "No open PRs on the delivery repository; the graph is the base alone.",
         focusMissing: (n: number): string =>
@@ -6422,6 +6421,8 @@ Scenarios:
         summary: (nodes: number, onChain: number): string =>
           `${nodes} PRs, ${onChain} on the chain`,
         openPr: "Open on GitHub",
+        branchNode: "branch",
+        branchNodeTitle: "An impl branch with no PR opened yet",
         deploy: {
           menu: "Deploy",
           menuTitle: "Deploy this PR's head",

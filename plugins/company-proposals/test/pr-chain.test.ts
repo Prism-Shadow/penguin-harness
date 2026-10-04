@@ -3,15 +3,29 @@
  * closed layers through (marking the closed ones), lets an edge whose missing commits carry no
  * content hold, keeps a layer that forked inside the moved-on layer below as stale, takes the
  * branch that keeps going at a fork and leaves the record's forks undecided, and says why every
- * other node is off the chain — and why every impl PR that is not on the graph is not.
+ * other node is off the chain — and why every impl PR that is not on the graph is not. An impl
+ * branch no PR is open on is a node of its own, here also read end to end from a temporary
+ * repository through the real mirror.
  */
-import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ProposalGraphResponse } from "@prismshadow/penguin-server/api";
+import {
+  LocalGitMirror,
+  PrGraphReader,
+  SqliteGraphStore,
+  SqliteProposalStore,
+} from "../src/index.js";
+import { FakeForge, cr } from "./graph-fakes.js";
 import {
   buildGraph,
   parentsOf,
   type Comparison,
   type GraphInput,
+  type GraphProposal,
   type ImplPull,
   type OpenPull,
   type ShutPull,
@@ -58,9 +72,20 @@ function graph(
   });
 }
 
+/** A node's key as a PR number, as these tests name nodes: "" (the base branch) is 0. */
+const numOf = (g: ProposalGraphResponse, key: string | null): number | null =>
+  key === null ? null : key === "" ? 0 : (g.nodes.find((n) => n.key === key)?.number ?? null);
 const chainOf = (g: ProposalGraphResponse) => g.nodes.filter((n) => n.onChain).map((n) => n.number);
 const offOf = (g: ProposalGraphResponse) =>
-  Object.fromEntries(g.nodes.filter((n) => !n.onChain).map((n) => [n.number, n.off]));
+  Object.fromEntries(
+    g.nodes
+      .filter((n) => !n.onChain)
+      .map((n) => [n.number, n.off && { reason: n.off.reason, at: numOf(g, n.off.at) }]),
+  );
+const topOf = (g: ProposalGraphResponse) => numOf(g, g.top);
+const topsOf = (g: ProposalGraphResponse) => g.tops.map((k) => numOf(g, k));
+/** The heads parentsOf walks, keyed by branch as graph-heads.ts keys open PRs. */
+const keyed = (pulls: OpenPull[]) => pulls.map((p) => ({ ...p, key: p.branch }));
 
 describe("parentsOf", () => {
   it("walks a base through merged and closed PRs to an open one, and names a branch not looked up yet", () => {
@@ -70,21 +95,21 @@ describe("parentsOf", () => {
       ["nothing", null],
     ]);
     const parents = parentsOf(
-      [pull(1, "dev"), pull(2, "gone-merged"), pull(3, "nothing"), pull(4, "unknown")],
+      keyed([pull(1, "dev"), pull(2, "gone-merged"), pull(3, "nothing"), pull(4, "unknown")]),
       shut,
       "dev",
     );
-    expect(parents.get(1)).toEqual({ parent: 0, via: [], missing: null });
-    expect(parents.get(2)).toEqual({
-      parent: 1,
+    expect(parents.get("b1")).toEqual({ parent: "", via: [], missing: null });
+    expect(parents.get("b2")).toEqual({
+      parent: "b1",
       via: [
         { number: 7, state: "merged" },
         { number: 8, state: "closed" },
       ],
       missing: null,
     });
-    expect(parents.get(3)).toEqual({ parent: null, via: [], missing: null });
-    expect(parents.get(4)).toEqual({ parent: null, via: [], missing: "unknown" });
+    expect(parents.get("b3")).toEqual({ parent: null, via: [], missing: null });
+    expect(parents.get("b4")).toEqual({ parent: null, via: [], missing: "unknown" });
   });
 
   it("stops on closed PRs whose bases loop", () => {
@@ -92,7 +117,7 @@ describe("parentsOf", () => {
       ["x", { number: 7, state: "closed", base: "y" }],
       ["y", { number: 8, state: "closed", base: "x" }],
     ]);
-    expect(parentsOf([pull(1, "x")], shut, "dev").get(1)!.parent).toBeNull();
+    expect(parentsOf(keyed([pull(1, "x")]), shut, "dev").get("b1")!.parent).toBeNull();
   });
 });
 
@@ -110,9 +135,9 @@ describe("buildGraph: the handbook's chain", () => {
       { shut: new Map([["closed-branch", { number: 9, state: "closed", base: "b1" }]]) },
     );
     expect(chainOf(g)).toEqual([1, 2, 3]);
-    expect(g.top).toBe(3);
+    expect(topOf(g)).toBe(3);
     const n2 = g.nodes.find((n) => n.number === 2)!;
-    expect([n2.parent, n2.via, n2.ahead]).toEqual([1, [{ number: 9, state: "closed" }], 4]);
+    expect([n2.parent, n2.via, n2.ahead]).toEqual(["b1", [{ number: 9, state: "closed" }], 4]);
   });
 
   it("holds an edge whose missing commits carry no content (2) and a layer that forked inside the moved-on parent (2a)", () => {
@@ -163,17 +188,17 @@ describe("buildGraph: the handbook's chain", () => {
     // Two leaves on #1: neither keeps going, so the record would decide — both stay, no top.
     const leaves = graph([p[0]!, p[1]!, p[2]!], c);
     expect(chainOf(leaves)).toEqual([1, 2, 3]);
-    expect(leaves.top).toBeNull();
+    expect(topOf(leaves)).toBeNull();
     // #2 keeps going (#5 on it), #3 does not: the chain takes #2.
     const one = graph([p[0]!, p[1]!, p[2]!, p[4]!], c);
     expect(chainOf(one)).toEqual([1, 2, 5]);
-    expect(one.top).toBe(5);
+    expect(topOf(one)).toBe(5);
     expect(one.nodes.find((n) => n.number === 1)!.fork).toBe(true);
     expect(offOf(one)).toEqual({ 3: { reason: "not-taken", at: 1 } });
     // Two branches keep going: the record would decide, so both stay and there is no top.
     const two = graph(p, c);
     expect(chainOf(two).sort()).toEqual([1, 2, 3, 4, 5]);
-    expect(two.top).toBeNull();
+    expect(topOf(two)).toBeNull();
   });
 
   it("keeps several stacks that start on the base side by side, and names each one's top", () => {
@@ -196,16 +221,16 @@ describe("buildGraph: the handbook's chain", () => {
     expect(chainOf(g).sort()).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(offOf(g)).toEqual({});
     expect(g.base.fork).toBe(true);
-    expect(g.top).toBeNull();
-    expect(g.tops).toEqual([3, 5, 7]);
+    expect(topOf(g)).toBeNull();
+    expect(topsOf(g)).toEqual([3, 5, 7]);
     // A one-layer branch on the base beside stacks that keep going is not taken (rule 3).
     const p8 = pull(8, "dev", sha("8"));
     const withLeaf = graph([...p, p8], { ...c, [`${DEV}...${p8.head}`]: ahead() });
     expect(offOf(withLeaf)).toEqual({ 8: { reason: "not-taken", at: 0 } });
-    expect(withLeaf.tops).toEqual([3, 5, 7]);
+    expect(topsOf(withLeaf)).toEqual([3, 5, 7]);
     // One stack: its top is both `top` and the only entry of `tops`.
     const single = graph(p.slice(0, 3), c);
-    expect([single.top, single.tops]).toEqual([3, [3]]);
+    expect([topOf(single), topsOf(single)]).toEqual([3, [3]]);
   });
 
   it("says why the rest is off: a base that leads nowhere, a cycle, an edge not compared", () => {
@@ -284,23 +309,32 @@ describe("buildGraph: why an impl PR is not on the graph", () => {
 });
 
 describe("buildGraph: an impl branch with no PR", () => {
-  it("claims the open PR on the delivery repository whose head branch it is, else is listed as no-pr", () => {
-    const branch = (label: string, repo: string | null, name: string) => ({
+  it("claims the open PR on its head branch, else is a node of its own, else is listed unread", () => {
+    const branch = (label: string, repo: string | null, name: string, base?: string) => ({
       label,
       repo,
       branch: name,
+      base: base ?? null,
     });
     const proposals = [
       // Claims PR 1 (branch b1) on acme/site.
       { n: 1, implBranch: branch("origin/b1", "acme/site", "b1") },
-      // The same branch name on another repository claims nothing.
+      // The same branch name on another repository: not on the delivery repository.
       { n: 2, implBranch: branch("fork/b2", "me/site", "b2") },
-      // No open PR on that branch yet.
-      { n: 3, implBranch: branch("origin/later", "acme/site", "later") },
+      // No open PR on that branch yet: a branch node on PR 2's branch.
+      { n: 3, implBranch: branch("origin/later", "acme/site", "later", "b2") },
       // A remote that resolved to no repository.
       { n: 4, implBranch: branch("ghost/b2", null, "b2") },
       // A rejected proposal claims nothing and is not listed.
-      { n: 5, implBranch: branch("origin/b2", "acme/site", "b2"), status: "rejected" as const },
+      { n: 5, implBranch: branch("origin/b9", "acme/site", "b9"), status: "rejected" as const },
+      // Its branch is not on the delivery repository (no tip read).
+      { n: 6, implBranch: branch("origin/gone", "acme/site", "gone") },
+      // A merged proposal's branch is not drawn: it went into its base.
+      {
+        n: 7,
+        implBranch: branch("origin/done", "acme/site", "done", "b1"),
+        status: "merged" as const,
+      },
     ].map((p) => ({
       number: p.n,
       title: `P${p.n}`,
@@ -308,19 +342,43 @@ describe("buildGraph: an impl branch with no PR", () => {
       implPr: null,
       implBranch: p.implBranch,
     }));
+    const L = sha("l");
     const g = graph(
       [pull(1, "dev"), pull(2, "b1")],
-      { [`${DEV}...${sha("1")}`]: ahead(), [`${sha("1")}...${sha("2")}`]: ahead() },
-      { proposals },
+      {
+        [`${DEV}...${sha("1")}`]: ahead(),
+        [`${sha("1")}...${sha("2")}`]: ahead(),
+        [`${sha("2")}...${L}`]: ahead(2),
+      },
+      {
+        proposals,
+        tips: new Map([
+          ["later", L],
+          ["b9", sha("9")],
+          ["done", sha("d")],
+        ]),
+      },
     );
-    expect(g.nodes.map((n) => [n.number, n.proposal?.number ?? null])).toEqual([
-      [1, 1],
-      [2, null],
+    expect(g.nodes.map((n) => [n.key, n.number, n.parent, n.proposal?.number ?? null])).toEqual([
+      ["b1", 1, "", 1],
+      ["b2", 2, "b1", null],
+      ["later", null, "b2", 3],
     ]);
-    expect(g.unplaced.map((u) => [u.number, u.reason, u.implPr, u.branch])).toEqual([
-      [2, "no-pr", null, "fork/b2"],
-      [3, "no-pr", null, "origin/later"],
-      [4, "unread", null, "ghost/b2"],
+    const later = g.nodes[2]!;
+    expect([later.url, later.title, later.head, later.base, later.ahead, later.onChain]).toEqual([
+      null,
+      "P3",
+      L,
+      "b2",
+      2,
+      true,
+    ]);
+    expect(g.top).toBe("later");
+    expect(g.unplaced.map((u) => [u.number, u.reason, u.implPr, u.branch, u.into])).toEqual([
+      [2, "unread", null, "fork/b2", null],
+      [4, "unread", null, "ghost/b2", null],
+      [6, "unread", null, "origin/gone", null],
+      [7, "merged", null, "origin/done", "b1"],
     ]);
   });
 
@@ -348,5 +406,123 @@ describe("buildGraph: an impl branch with no PR", () => {
       },
     );
     expect(g.nodes[0]!.proposal?.number).toBe(7);
+  });
+});
+
+describe("impl branch nodes, read from a repository", () => {
+  let dir: string;
+  let origin: string;
+  const tip: Record<string, string> = {};
+
+  const git = (cwd: string, ...args: string[]): string =>
+    execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@example.com",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@example.com",
+      },
+    }).trim();
+  const commit = async (branch: string, file: string): Promise<void> => {
+    await fs.writeFile(path.join(origin, file), `${file} ${Date.now()} ${Math.random()}\n`);
+    git(origin, "add", "-A");
+    git(origin, "commit", "-q", "-m", file);
+    tip[branch] = git(origin, "rev-parse", "HEAD");
+  };
+
+  beforeAll(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "graph-branch-nodes-"));
+    origin = path.join(dir, "origin");
+    await fs.mkdir(origin);
+    git(origin, "init", "-q", "-b", "dev");
+    git(origin, "config", "uploadpack.allowFilter", "true");
+    await commit("dev", "base.txt");
+    // dev ─ impl/one (proposal 1) ─ impl/two (proposal 2) ─ impl/three (proposal 3, PR #30).
+    git(origin, "checkout", "-q", "-b", "impl/one");
+    await commit("impl/one", "one.txt");
+    git(origin, "checkout", "-q", "-b", "impl/two");
+    await commit("impl/two", "two.txt");
+    git(origin, "checkout", "-q", "-b", "impl/three");
+    await commit("impl/three", "three.txt");
+    git(origin, "update-ref", "refs/pull/30/head", tip["impl/three"]!);
+    // A rejected proposal's branch, on dev.
+    git(origin, "checkout", "-q", "-b", "impl/dropped", tip.dev!);
+    await commit("impl/dropped", "dropped.txt");
+    git(origin, "checkout", "-q", "dev");
+  });
+  afterAll(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  const impl = (n: number, branch: string, base: string, repo = "acme/site"): GraphProposal => ({
+    number: n,
+    title: `P${n}`,
+    status: "drafting",
+    implPr: null,
+    implBranch: { label: `origin/${branch}`, repo, branch, base },
+  });
+  const proposals: GraphProposal[] = [
+    impl(1, "impl/one", "dev"),
+    impl(2, "impl/two", "impl/one"),
+    impl(3, "impl/three", "impl/two"),
+    // Its head is on another repository.
+    impl(4, "impl/elsewhere", "dev", "me/site"),
+    { ...impl(5, "impl/dropped", "dev"), status: "rejected" },
+  ];
+  const project = { repo: "acme/site", base: "dev", origins: [] };
+
+  /** One refresh through the real mirror: ls-remote, fetch, ancestry. */
+  async function read() {
+    const forge = new FakeForge([
+      cr("acme/site", 30, { head: tip["impl/three"]!, branch: "impl/three", base: "impl/two" }),
+    ]);
+    const mirror = new LocalGitMirror({ dir: path.join(dir, "mirror.git"), url: origin });
+    const store = new SqliteGraphStore(SqliteProposalStore.open(":memory:").db);
+    const remote = await mirror.lsRemote();
+    const got = await new PrGraphReader({ forge, mirror, store }).collect({
+      project,
+      proposals,
+      refs: remote.refs,
+      deploymentCommits: [],
+      checkedAt: "2026-10-04T00:00:00.000Z",
+    });
+    return { graph: got.layout.graph, key: got.inputs.inputKey, errors: got.errors };
+  }
+
+  it("draws stacked branch-only impls as nodes, the one with a PR once with its number, and lists the rest", async () => {
+    const { graph: g, errors } = await read();
+    expect(errors).toEqual([]);
+    expect(
+      g.nodes.map((n) => [n.key, n.number, n.parent, n.proposal?.number, n.relation, n.onChain]),
+    ).toEqual([
+      ["impl/one", null, "", 1, "ahead", true],
+      ["impl/two", null, "impl/one", 2, "ahead", true],
+      ["impl/three", 30, "impl/two", 3, "ahead", true],
+    ]);
+    expect(g.nodes.map((n) => n.head)).toEqual([
+      tip["impl/one"],
+      tip["impl/two"],
+      tip["impl/three"],
+    ]);
+    expect(g.top).toBe("impl/three");
+    // Not on the delivery repository: unread. Rejected: neither drawn nor listed.
+    expect(g.unplaced.map((u) => [u.number, u.reason])).toEqual([[4, "unread"]]);
+  });
+
+  it("changes the input key when a branch tip moves, and draws the new tip", async () => {
+    const before = await read();
+    git(origin, "checkout", "-q", "impl/two");
+    await commit("impl/two", "two-more.txt");
+    git(origin, "checkout", "-q", "dev");
+    const after = await read();
+    expect(after.key).not.toBe(before.key);
+    const two = after.graph.nodes.find((n) => n.key === "impl/two")!;
+    expect([two.head, two.ahead]).toEqual([tip["impl/two"], 2]);
+    // impl/three forked inside impl/two's layer, which moved on: stale, still stacked.
+    const three = after.graph.nodes.find((n) => n.key === "impl/three")!;
+    expect([three.number, three.stacked, three.stale]).toEqual([30, true, true]);
   });
 });

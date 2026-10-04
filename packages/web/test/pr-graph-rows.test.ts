@@ -2,6 +2,8 @@
  * features/proposals/pr-graph-rows.tsx's NodeListSection, via react-dom/server static markup
  * (node env, no DOM): the rows listed under the graph carry the page's deploy menu when the page
  * hands its row wrapper in — every listed PR gets its own menu button — and stay bare without it.
+ * A branch node (an impl branch no PR is open on) reads as its branch with its proposal and stage,
+ * and keeps the deploy menu.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -9,10 +11,11 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ProposalGraphNode, ProposalGraphResponse } from "@prismshadow/penguin-server/api";
 import { S } from "../src/lib/strings";
-import { NodeListSection } from "../src/features/proposals/pr-graph-rows";
+import { NodeListSection, NodeRow } from "../src/features/proposals/pr-graph-rows";
 import { DeployableRow } from "../src/features/proposals/pr-graph-deploy";
 
 const node = (number: number): ProposalGraphNode => ({
+  key: `b${number}`,
   number,
   url: `https://github.com/acme/app/pull/${number}`,
   title: `PR ${number}`,
@@ -41,6 +44,7 @@ const graph: ProposalGraphResponse = {
   origins: [],
   nodes,
   top: null,
+  tops: [],
   unplaced: [],
   errors: [],
   checkedAt: "2026-10-01T00:00:00.000Z",
@@ -60,8 +64,11 @@ const list = (wrapRow?: (n: ProposalGraphNode, row: ReactNode) => ReactNode) =>
   );
 
 /** The menu button's label as static markup spells it (React escapes the apostrophe). */
-const menuLabel = (n: number) =>
-  `#${n} · ${S.company.proposals.graph.deploy.menuTitle}`.replace(/'/g, "&#x27;");
+const menuLabel = (n: number | string) =>
+  `${typeof n === "number" ? `#${n}` : n} · ${S.company.proposals.graph.deploy.menuTitle}`.replace(
+    /'/g,
+    "&#x27;",
+  );
 
 describe("NodeListSection", () => {
   it("gives every listed PR the deploy menu the page wraps its rows in", () => {
@@ -83,5 +90,58 @@ describe("NodeListSection", () => {
     const html = list();
     expect(html).toContain("PR 7");
     expect(html).not.toContain(menuLabel(7));
+  });
+});
+
+describe("a branch node", () => {
+  const branch: ProposalGraphNode = {
+    ...node(0),
+    key: "impl/graph",
+    number: null,
+    url: null,
+    title: "Branch nodes",
+    branch: "impl/graph",
+    base: "dev",
+    parent: "",
+    stacked: true,
+    onChain: true,
+    off: null,
+    proposal: { number: 184, title: "Branch nodes", status: "drafting" },
+  };
+  const withBranch: ProposalGraphResponse = {
+    ...graph,
+    nodes: [branch],
+    top: "impl/graph",
+    tops: ["impl/graph"],
+  };
+
+  it("shows its branch instead of a PR number, its proposal, its stage and the top mark", () => {
+    const t = S.company.proposals.graph;
+    const html = renderToStaticMarkup(
+      createElement(NodeRow, { graph: withBranch, node: branch, onOpenProposal: () => {} }),
+    );
+    expect(html).toContain(`>${t.branchNode}<`);
+    expect(html).not.toContain("href=");
+    expect(html).toContain(t.proposalRef(184));
+    expect(html).toContain(S.company.proposals.status.drafting);
+    expect(html).toContain(`>${t.top}<`);
+  });
+
+  it("keeps the deploy menu, named by its branch", () => {
+    const html = renderToStaticMarkup(
+      createElement(DeployableRow, {
+        node: branch,
+        scripts: [],
+        scriptsError: null,
+        onPick: () => {},
+        onAssociate: () => {},
+        children: createElement(NodeRow, {
+          graph: withBranch,
+          node: branch,
+          onOpenProposal: () => {},
+        }),
+      }),
+    );
+    expect(html).toContain(`aria-label="${menuLabel("impl/graph")}"`);
   });
 });
