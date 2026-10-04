@@ -583,7 +583,7 @@ export class TraceService implements Traces {
     if (!this.telemetry) return read();
     // The Trace files it reads are this sample's trace.read samples, keyed by the same session.
     return this.telemetry.span("session.messages", { session: sessionId }, read, (r) => ({
-      attrs: { kind: req.kind, messages: r.messages.length, reachesEnd: r.reachesEnd },
+      attrs: { kind: req.kind, messages: r.messages.length },
     }));
   }
 
