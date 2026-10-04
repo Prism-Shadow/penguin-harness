@@ -8,7 +8,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   autoStartEntry,
   connectionLabel,
@@ -227,9 +227,42 @@ describe("credential resolution", () => {
       JSON.stringify({ server, userId: "admin", token: "signed-in" }),
     );
 
-  it("an api-token file on the data root is never read", () => {
-    fs.writeFileSync(path.join(root, "api-token"), "boot-token\n");
-    expect(new ServerClient(conn("http://localhost:7364"), t).tokenSource).toBe("none");
+  const writeTokenFile = (value: string) => fs.writeFileSync(path.join(root, "api-token"), value);
+
+  it("outside a Session: PENGUIN_API_TOKEN, then the stored sign-in, then the api-token file", () => {
+    writeTokenFile("boot-token\n");
+    expect(new ServerClient(conn("http://localhost:7364"), t).tokenSource).toBe("file");
+    storeLogin("http://localhost:7364");
+    expect(new ServerClient(conn("http://localhost:7364"), t).tokenSource).toBe("login");
+    process.env.PENGUIN_API_TOKEN = "from-env";
+    expect(new ServerClient(conn("http://localhost:7364"), t).tokenSource).toBe("env");
+  });
+
+  it("the api-token file is never read for a remote target", () => {
+    writeTokenFile("boot-token\n");
+    const remote = { ...conn("https://remote.example"), loopback: false };
+    expect(new ServerClient(remote, t).tokenSource).toBe("none");
+  });
+
+  it("a 401 with the file's token re-reads the file once and retries (the server restarted)", async () => {
+    writeTokenFile("old-boot\n");
+    const client = new ServerClient(conn("http://localhost:7364"), t);
+    const seen: Array<string | undefined> = [];
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const auth = (init.headers as Record<string, string>).authorization;
+      seen.push(auth);
+      return auth === "Bearer new-boot"
+        ? new Response(JSON.stringify({ ok: true }), { status: 200 })
+        : new Response("{}", { status: 401 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      writeTokenFile("new-boot\n");
+      await expect(client.request("GET", "/api/me")).resolves.toEqual({ ok: true });
+      expect(seen).toEqual(["Bearer old-boot", "Bearer new-boot"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("outside a Session the sign-in stored on the data root is used, for loopback targets only", () => {
@@ -242,6 +275,7 @@ describe("credential resolution", () => {
 
   it("inside a Session only the environment's credential counts", () => {
     storeLogin("http://localhost:7364");
+    writeTokenFile("boot-token\n");
     process.env.PENGUIN_SESSION_ID = "session-2026-09-30-00-00-00-00000000";
     expect(new ServerClient(conn("http://localhost:7364"), t).tokenSource).toBe("none");
     process.env.PENGUIN_API_TOKEN = "pst1.claims.mac";

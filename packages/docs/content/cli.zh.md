@@ -18,7 +18,7 @@ CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`�
 3. 数据根目录下存在活跃的 `server.lock`（数据根目录取 `PENGUIN_HOME`，否则为 `~/.penguin/data`）：CLI 接入正在运行的本地服务器。在 PenguinHarness 的终端或 Agent 的命令里运行的 `penguin`，经由那台服务器自己的 `<root>/bin/penguin` 启动；你没有设置 `PENGUIN_HOME` 时，它会填上这台服务器的数据根目录，所以连上的是它所在的服务器，而不是 `~/.penguin/data` 上的那一台。`penguin run` 和 `penguin chat` 会在开场横幅里写明所连的服务器。
 4. 自动启动：CLI 在临时端口上拉起一个独立运行的本地服务器，等它就绪后接入。服务器输出写入 `<root>/logs/server-auto-<date>.log`。如果两个 CLI 同时抢着启动，落败一方的启动进程会退出，双方都接入先成功的那台。
 
-CLI 设置了 `PENGUIN_API_TOKEN` 时用它认证；否则，对本机上的服务器，用 `penguin auth login` 或 `penguin auth token` 存在数据根目录里的登录（`<root>/cli-session.json`），以 `Authorization: Bearer` 的形式发送。在拥有数据根目录的机器上，`penguin auth token` 不需要密码。远程 `--server` 需要显式设置 `PENGUIN_API_TOKEN`。在会话里，CLI 只用环境变量里的凭据，也就是这个会话自己的凭据：它只够得到本 Agent 自己的会话和它的命令要调用的路由，够不到管理员路由（见 [服务器 API](/server-api#会话凭据)）。服务器不再写 `api-token` 文件。
+CLI 设置了 `PENGUIN_API_TOKEN` 时用它认证；否则，对本机上的服务器，用 `penguin auth login` 或 `penguin auth token` 存在数据根目录里的登录（`<root>/cli-session.json`），没有登录再用服务器写入 `<root>/api-token` 的本地 API token（仅所有者可读），以 `Authorization: Bearer` 的形式发送。在拥有数据根目录的机器上，`penguin auth token` 不需要密码。远程 `--server` 需要显式设置 `PENGUIN_API_TOKEN`。在会话里，CLI 只用环境变量里的凭据，也就是这个会话自己的凭据：它只够得到本 Agent 自己的会话和它的命令要调用的路由，够不到管理员路由（见 [服务器 API](/server-api#会话凭据)）。按设计，持有 `api-token` 就等于持有管理员权限——能直接访问数据根目录的本地文件系统，本来就拥有同样的权限；`penguin server reset-admin-password` 依据的也是同一条规则。用文件里的 token 得到 401 时，CLI 会重读一次文件，以防服务器已经重启。
 
 少数修改只接受人的登录，例如改变 Agent 对外暴露的修改（见 [penguin agent api](#penguin-agent-api)）。服务器以 `403` `human_required` 拒绝携带 token 的这类请求，CLI 随即改用你通过 [`penguin auth login`](#penguin-auth-login) 或 [`penguin auth token`](#penguin-auth-token) 保存的登录把同一请求再发一次：登录存放在 `<root>/cli-session.json`，以会话 Cookie 发送。CLI 只对本机上的服务器这样做，只在登录的对象本身就是本机服务器时使用，且从不在 Session 内使用——那里的命令属于 Agent。其余请求一律只带 token。
 

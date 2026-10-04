@@ -56,9 +56,10 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 ### Bearer credentials
 
-Every protected route also accepts `Authorization: Bearer <token>`. Two kinds of token are accepted:
+Every protected route also accepts `Authorization: Bearer <token>`. Three kinds of token are accepted:
 
 - **A sign-in token.** The token `penguin auth login` or `penguin auth token` issues authenticates as that user, the same as the session cookie would. `penguin auth token` needs no password on the machine that owns the data root: it writes the session row into `web.db` directly. This is what a script or a person's CLI holds.
+- **The local API token.** The server mints a fresh token at every boot and writes it to `<root>/api-token` with owner-only permissions (`0600`); the previous boot's token stops working. It authenticates as the built-in `admin`. This is the authorization model by design: local filesystem access to the data root already is admin authority, since whoever can read `api-token` can also read `web.db` next to it. `penguin server reset-admin-password` relies on the same rule.
 - **A session credential.** Server-driven sessions inject a credential of their own into every tool subprocess as `PENGUIN_API_TOKEN`, together with `PENGUIN_API_URL`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID`. It is signed by a key the server holds in memory and dies at the next restart.
 
 ### Session credential

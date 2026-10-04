@@ -60,7 +60,7 @@ export abstract class Auth {
   abstract localApiToken(): string | null;
   abstract authenticateApiToken(
     token: string,
-  ): { user: UserRow; via: SessionVia; scope?: SessionClaims } | null;
+  ): { user: UserRow; via: SessionVia; scope?: SessionClaims; signedIn?: true } | null;
   abstract authenticateWithMeta(
     token: string,
   ): { user: UserRow; via: SessionVia; renewed: boolean; cli: boolean } | null;

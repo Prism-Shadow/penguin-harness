@@ -5,7 +5,8 @@
  *
  * Connection resolution order (first hit wins):
  *   1. `--server <url>` — an explicit target. A non-loopback URL requires
- *      PENGUIN_API_TOKEN.
+ *      PENGUIN_API_TOKEN: the stored sign-in and the token file belong to the LOCAL data root
+ *      and must never be sent to a remote host.
  *   2. `PENGUIN_API_URL` — the same, from the environment. Server-driven sessions inject
  *      it (with PENGUIN_API_TOKEN, the Session's own credential) into tool subprocesses,
  *      which is how an agent's own `penguin` calls find the server that runs them.
@@ -20,7 +21,9 @@
  *
  * Token resolution: PENGUIN_API_TOKEN, else — for a loopback target, outside a Session — the
  * sign-in `penguin auth login` / `penguin auth token` stored on the data root
- * (`<root>/cli-session.json`).
+ * (`<root>/cli-session.json`), else `<root>/api-token` (written by the server). A 401 with a
+ * file-sourced token re-reads the file once and retries — the server may have restarted (and
+ * rotated the token) since the first read.
  * Inside a Session (PENGUIN_SESSION_ID set) the environment's credential is the only one: the
  * CLI reads no credential off the disk for an Agent, so an Agent's commands carry exactly
  * what its Session was given.
@@ -39,13 +42,13 @@ const SESSION_ID_RE = /^session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$
 /** Hosts that count as this machine for token-file purposes. */
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
-/** How the auth token was obtained. */
-export type TokenSource = "env" | "login" | "none";
+/** How the auth token was obtained; "file" decides whether a 401 retries after re-reading the file. */
+export type TokenSource = "env" | "login" | "file" | "none";
 
 export interface Connection {
   /** Normalized base URL, no trailing slash. */
   baseUrl: string;
-  /** Data root used for the stored sign-in and the lock (resolution-time value). */
+  /** Data root used for the stored sign-in, the token file and the lock (resolution-time value). */
   root: string;
   /** Whether this call auto-started the server (surfaced to the user on stderr). */
   autoStarted: boolean;
@@ -90,6 +93,20 @@ export function normalizeServerUrl(raw: string, t: Messages): URL {
     throw new Error(t.client.invalidServerUrl(raw));
   }
   return url;
+}
+
+/** The token file the server writes (kept in sync with the server's auth/api-token.ts). */
+export function apiTokenPath(root: string): string {
+  return path.join(root, "api-token");
+}
+
+function readTokenFile(root: string): string | null {
+  try {
+    const value = fs.readFileSync(apiTokenPath(root), "utf8").trim();
+    return value === "" ? null : value;
+  } catch {
+    return null;
+  }
 }
 
 /** A person's stored loopback sign-in; never read for an Agent or sent off this machine. */
@@ -230,27 +247,36 @@ export class ApiError extends Error {
 }
 
 export class ServerClient {
-  private readonly token: string | null;
-  /** Where the credential came from (the environment, a stored sign-in, or nowhere). */
-  readonly tokenSource: TokenSource;
+  private token: string | null;
+  /** Where the credential came from (the environment, a stored sign-in, the token file, or nowhere). */
+  private source: TokenSource;
 
   constructor(
     readonly conn: Connection,
     private readonly t: Messages,
   ) {
     const envToken = process.env.PENGUIN_API_TOKEN?.trim();
-    const login =
-      !envToken && conn.loopback && !process.env.PENGUIN_SESSION_ID?.trim() ? storedLoginToken(conn.root) : null;
+    // An explicit environment credential never triggers a disk credential read.
+    const fromDisk = !envToken && conn.loopback && !process.env.PENGUIN_SESSION_ID?.trim();
+    const login = fromDisk ? storedLoginToken(conn.root) : null;
+    const file = fromDisk && login === null ? readTokenFile(conn.root) : null;
     if (envToken) {
       this.token = envToken;
-      this.tokenSource = "env";
+      this.source = "env";
     } else if (login !== null) {
       this.token = login;
-      this.tokenSource = "login";
+      this.source = "login";
+    } else if (file !== null) {
+      this.token = file;
+      this.source = "file";
     } else {
       this.token = null;
-      this.tokenSource = "none";
+      this.source = "none";
     }
+  }
+
+  get tokenSource(): TokenSource {
+    return this.source;
   }
 
   private headers(extra: Record<string, string> = {}): Record<string, string> {
@@ -261,8 +287,9 @@ export class ServerClient {
   }
 
   /**
-   * One JSON request; every non-2xx becomes an ApiError carrying the server's code and
-   * message.
+   * One JSON request. 401 with a file-sourced token re-reads the file once (the server may
+   * have restarted and rotated it) and retries; every other non-2xx becomes an ApiError
+   * carrying the server's code and message.
    */
   async request<T>(method: string, apiPath: string, body?: unknown): Promise<T> {
     const res = await this.fetchAuthed(apiPath, {
@@ -279,9 +306,16 @@ export class ServerClient {
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 
-  /** The authenticated fetch. */
-  private fetchAuthed(apiPath: string, init: RequestInit): Promise<Response> {
-    return fetch(`${this.conn.baseUrl}${apiPath}`, init);
+  /** The authenticated fetch with the one-shot 401 file-token refresh. */
+  private async fetchAuthed(apiPath: string, init: RequestInit): Promise<Response> {
+    const res = await fetch(`${this.conn.baseUrl}${apiPath}`, init);
+    if (res.status !== 401 || this.source !== "file") return res;
+    const fresh = readTokenFile(this.conn.root);
+    if (fresh === null || fresh === this.token) return res;
+    void res.body?.cancel();
+    this.token = fresh;
+    const headers = { ...(init.headers as Record<string, string>), ...this.headers() };
+    return fetch(`${this.conn.baseUrl}${apiPath}`, { ...init, headers });
   }
 
   private async toError(res: Response): Promise<ApiError> {
@@ -301,7 +335,7 @@ export class ServerClient {
         401,
         "unauthorized",
         this.token === null
-          ? this.t.client.noToken(this.conn.baseUrl)
+          ? this.t.client.noToken(this.conn.baseUrl, apiTokenPath(this.conn.root))
           : this.t.client.authFailed(this.conn.baseUrl),
       );
     }

@@ -7,7 +7,7 @@
  * they outlive a restart and renew in place.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { tokensEqual } from "./api-token.js";
+import { storeApiToken, tokensEqual } from "./api-token.js";
 import { isSessionToken, verifySessionToken } from "./session-token.js";
 import type { SessionClaims } from "./session-token.js";
 import type { UserInfo } from "../api/types.js";
@@ -114,6 +114,11 @@ export class AuthService implements Auth {
 
   setup(): void {
     this.authSessions.deleteExpired(this.clock.now().toISOString());
+    // Every App writes the boot token to `<root>/api-token`, not only the boot that minted it:
+    // a root whose file is gone gets it back from the next push. A runtime older than the
+    // token's holder publishes none, and then there is nothing to write.
+    const apiToken = this.state.apiToken;
+    if (apiToken !== null) storeApiToken(this.config.root, apiToken);
   }
 
   /**
@@ -336,11 +341,11 @@ export class AuthService implements Auth {
   }
 
   /**
-   * The current boot's local API token: the key session credentials are signed with
-   * (session-token.ts); null when none was minted. It lives on the runtime state, not on this
-   * service, so the credentials a Session's subprocesses hold keep verifying across the pushes
-   * that replace this App (auth/runtime-state.ts). It is never written to disk and never
-   * accepted as a Bearer by itself.
+   * The current boot's local API token: the admin's `<root>/api-token` and the key session
+   * credentials are signed with (session-token.ts); null when none was minted. It lives on the
+   * runtime state, not on this service, so the file and the credentials a Session's
+   * subprocesses hold keep verifying across the pushes that replace this App
+   * (auth/runtime-state.ts).
    */
   localApiToken(): string | null {
     return this.state.apiToken;
@@ -349,15 +354,17 @@ export class AuthService implements Auth {
   /**
    * Validates a Bearer value. A session credential this boot signed authenticates as the
    * built-in admin narrowed to its claims — what it reaches is the route table's
-   * (session-scope.ts), applied by the HTTP layer on `scope`. Any other value is a person's
-   * sign-in token (`penguin auth login` / `penguin auth token`), which authenticates as that
-   * person just as the same value would in the cookie; only the admin's speaks as "token",
-   * the via under which the routes honour a body's identity claims. The boot token itself is
-   * no credential. Null on mismatch.
+   * (session-scope.ts), applied by the HTTP layer on `scope`. The boot's local API token
+   * (`<root>/api-token`, constant-time compare) authenticates as the built-in admin: holding
+   * it proves filesystem access to the data root, which is admin authority (see
+   * auth/api-token.ts). Any other value is a person's sign-in token (`penguin auth login` /
+   * `penguin auth token`), which authenticates as that person just as the same value would in
+   * the cookie; only the admin's speaks as "token", the via under which the routes honour a
+   * body's identity claims. Null on mismatch.
    */
   authenticateApiToken(
     token: string,
-  ): { user: UserRow; via: SessionVia; scope?: SessionClaims } | null {
+  ): { user: UserRow; via: SessionVia; scope?: SessionClaims; signedIn?: true } | null {
     if (token.length === 0) return null;
     if (isSessionToken(token)) {
       const apiToken = this.state.apiToken;
@@ -367,11 +374,20 @@ export class AuthService implements Auth {
       const user = this.users.findById(ADMIN_USER_ID);
       return user === null ? null : { user, via: "token", scope };
     }
+    const apiToken = this.state.apiToken;
+    if (apiToken !== null && tokensEqual(token, apiToken)) {
+      const user = this.users.findById(ADMIN_USER_ID);
+      return user === null ? null : { user, via: "token" };
+    }
     const signedIn = this.authenticateWithMeta(token);
     // A setup session may set a password without the old one: it stays in the browser that
     // redeemed the link, never on a command line.
     if (signedIn === null || signedIn.via === "setup") return null;
-    return { user: signedIn.user, via: signedIn.user.isAdmin ? "token" : signedIn.via };
+    return {
+      user: signedIn.user,
+      via: signedIn.user.isAdmin ? "token" : signedIn.via,
+      signedIn: true,
+    };
   }
 
   /**

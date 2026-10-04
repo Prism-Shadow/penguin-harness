@@ -3,7 +3,8 @@
  * the user is injected into c.var.
  *
  * The Bearer path takes a Session's credential (auth/session-token.ts: the admin, narrowed
- * by the HTTP layer to the route table in auth/session-scope.ts) or a person's sign-in token
+ * by the HTTP layer to the route table in auth/session-scope.ts), the boot's local API token
+ * (`<root>/api-token`, the admin; auth/api-token.ts) or a person's sign-in token
  * (`penguin auth login` / `penguin auth token`). It applies to every route behind this
  * middleware, SSE endpoints included (the CLI consumes SSE via fetch with headers). A
  * Bearer header that does not match fails the
@@ -139,6 +140,8 @@ export type AppEnv = {
      * speaks for. The HTTP layer narrows the request to the route table (session-scope.ts).
      */
     sessionScope?: SessionClaims;
+    /** A verified sign-in carried as Bearer, never a boot or scoped Session token. */
+    bearerSignIn?: boolean;
   };
 };
 
@@ -163,6 +166,7 @@ export function authMiddleware(
       }
       c.set("user", viaToken.user);
       c.set("sessionVia", viaToken.via);
+      if (viaToken.signedIn === true) c.set("bearerSignIn", true);
       if (viaToken.scope !== undefined) c.set("sessionScope", viaToken.scope);
       await next();
       return;
@@ -215,9 +219,10 @@ export function bearerToken(header: string | undefined): string | null {
 
 /**
  * Writes that expose an Agent or choose the person's browser require a person's sign-in.
- * A scoped Session credential is never a person; cookie and Bearer sign-ins are equivalent.
- * The boot key itself is no longer accepted as a Bearer credential. Every tool subprocess of
- * a server-driven Session holds a Session credential as `PENGUIN_API_TOKEN`, so these are
+ * Writes that expose an Agent or choose the person's browser require a person's sign-in.
+ * Cookie and Bearer sign-ins are equivalent; boot and scoped Session tokens are not people.
+ * Every tool subprocess of a server-driven Session holds a Session credential as
+ * `PENGUIN_API_TOKEN` (the boot token itself is never handed to a Session), so these are
  * the writes an Agent must not make from its own shell:
  *
  * - who can reach an Agent from outside — its API switch, keyless access and approval mode, its
@@ -230,13 +235,16 @@ export function bearerToken(header: string | undefined): string | null {
  * the data root. The sandbox is the boundary.
  */
 export function requireHuman(c: {
-  var: { sessionVia: SessionVia; sessionScope?: SessionClaims };
+  var: { sessionVia: SessionVia; sessionScope?: SessionClaims; bearerSignIn?: boolean };
 }): void {
-  if (c.var.sessionScope !== undefined) {
+  if (
+    c.var.sessionScope !== undefined ||
+    (c.var.sessionVia === "token" && c.var.bearerSignIn !== true)
+  ) {
     throw new HttpError(
       403,
       "human_required",
-      "Only the signed-in user can do this; a Session credential cannot.",
+      "Only the signed-in user can do this; an API token cannot.",
     );
   }
 }

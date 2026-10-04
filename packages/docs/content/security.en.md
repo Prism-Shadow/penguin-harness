@@ -113,7 +113,7 @@ Password logins, wherever they come from, are throttled per username with expone
 
 Scripts and the CLI never need a password, because local ownership already outranks one.
 
-When a CLI command runs against a server on this machine, it authenticates with the sign-in stored on the data root (`penguin auth login`, or `penguin auth token` below). See [CLI Reference](/cli#server-connection). An agent's commands carry their session's own credential instead, which reaches the agent's own sessions and never an admin route; the server keeps no admin token on disk for them to read.
+When a CLI command runs against a server on this machine, it authenticates with the sign-in stored on the data root (`penguin auth login`, or `penguin auth token` below), else with the local API token, which the server writes to `<root>/api-token` at every start. See [CLI Reference](/cli#server-connection). An agent's commands carry their session's own credential instead, which reaches the agent's own sessions and never an admin route.
 
 The local API token cannot change an agent's exposure: turning an agent's API on, keyless access, its approval mode, its keys and the server-wide Agent API switch take a person's sign-in, because every agent's commands carry that token. The server refuses the token on them with `403` `human_required`, and outside a Session the CLI then sends the request once more with your stored sign-in, if you have one; `penguin auth token`, below, gives the CLI that sign-in. This keeps an agent from exposing itself through the credential the harness hands it; it is not a boundary, since a process running as the data root's OS account can mint a session too. The sandbox is what bounds an agent.
 
@@ -183,6 +183,7 @@ Cookies are HttpOnly and SameSite=Lax. They are also Secure when the request rea
 | `web.db` | Password **hashes**, session **hashes**, application data | Permanently |
 | `<project>/.project_config.toml` | Model API keys, inline, mode 0600 | Until edited |
 | `cli-session.json` | One live session token, mode 0600 | Until sign-out or expiry |
+| `api-token` | The local API token, mode 0600: admin authority for any request that sends it as a Bearer header | Until the next server start |
 
 Never on disk in usable form: session tokens (only their sha256) and passwords. A chosen password exists only as an scrypt hash, and a seeded one is discarded as soon as it is created.
 

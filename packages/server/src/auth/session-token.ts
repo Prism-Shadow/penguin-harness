@@ -4,8 +4,9 @@
  *
  * `pst1.<claims>.<mac>` — the claims (Project, Agent, Session and, for a desk or ticket
  * session, the organization) as base64url JSON, and an HMAC-SHA256 over them. The key is
- * derived from the boot's local API token, which never leaves the process: no key file, and
- * a restart rotates every credential it minted, exactly as it rotates the boot token. Nothing
+ * derived from the boot's local API token (auth/api-token.ts), never handed to a Session: no
+ * key file of its own, and a restart rotates every credential it minted, exactly as it rotates
+ * the boot token. Whoever can read `<root>/api-token` is the admin already. Nothing
  * is stored per credential; the claims are the whole state, and what they reach is decided
  * per request by the route table in session-scope.ts.
  */

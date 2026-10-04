@@ -15,7 +15,7 @@ If the user's message only invokes this skill (e.g. "use penguin-orchestration s
 ## How the connection works
 
 - **Inside a harness agent session** (you, now): every command subprocess has `PENGUIN_API_URL`, `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID` injected, so `penguin` commands automatically reach your own server with your project and agent as the defaults — no login step.
-- **Outside an agent** (a human shell): the CLI attaches to the running local server via its lock file, or auto-starts one; the sign-in `penguin auth login` / `penguin auth token` stored on the data root authenticates it.
+- **Outside an agent** (a human shell): the CLI attaches to the running local server via its lock file, or auto-starts one; the sign-in `penguin auth login` / `penguin auth token` stored on the data root authenticates it, else the local `<data-root>/api-token` file (0600).
 - You are operating the same server that runs you: sessions and agents you create appear live in the web UI, where the user sees and owns everything you spawn.
 - The injected token is your session's own credential: it reaches your own agent's sessions (and the ones you start), the project's agents, schedules, usage and organizations, and nothing admin-level. Another agent's sessions answer `403 session_scope`. Stick to what the task requires, and prefer read-only commands until a mutation is clearly needed.
 

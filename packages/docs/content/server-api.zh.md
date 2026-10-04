@@ -56,9 +56,10 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 ### Bearer 凭据
 
-所有受保护的路由也接受 `Authorization: Bearer <token>`，接受两种 token：
+所有受保护的路由也接受 `Authorization: Bearer <token>`，接受三种 token：
 
 - **登录 token。** `penguin auth login` 或 `penguin auth token` 签发的 token 以该用户的身份通过认证，与会话 cookie 等价。在拥有数据根目录的机器上，`penguin auth token` 不需要密码：它直接把会话行写进 `web.db`。脚本和人自己的 CLI 用的就是它。
+- **本地 API token。** 服务器每次启动都会生成一个新 token，写入 `<root>/api-token`，权限仅所有者可读写（`0600`）；上一次启动的 token 随即失效。它以内置的 `admin` 身份通过认证。这是有意为之的授权模型：能直接访问数据根目录的本地文件系统本来就拥有管理员权限，能读 `api-token` 的人也能读它旁边的 `web.db`。`penguin server reset-admin-password` 依据的也是同一条规则。
 - **会话凭据。** 服务器驱动的会话会把自己的凭据注入每个工具子进程的环境变量 `PENGUIN_API_TOKEN`，同时注入 `PENGUIN_API_URL`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`。它由服务器保存在内存里的密钥签名，下次重启即失效。
 
 ### 会话凭据

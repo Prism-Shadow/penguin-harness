@@ -1,9 +1,12 @@
 /**
  * Bearer credentials: what a command line may present as `Authorization: Bearer`.
  *
- * - The boot's local API token is minted per boot and held in memory only: it signs session
- *   credentials (session-credential.test.ts) and is no credential itself. No `<root>/api-token`
- *   is written, and one an older build left is removed.
+ * - The boot's local API token is minted per boot, written to `<root>/api-token` (owner-only)
+ *   and accepted as the admin (sessionVia "token"); it also signs session credentials
+ *   (session-credential.test.ts). An older boot's value is no credential.
+ * - Every App writes the file when it starts, idempotently: a re-assembly (what a hot push
+ *   performs) puts a removed file back with the same token, and an App on a runtime that
+ *   published no token writes nothing.
  * - A person's sign-in token (`penguin auth login` / `penguin auth token`) authenticates as that
  *   person on every protected route, SSE endpoints included (the CLI consumes SSE via fetch with
  *   headers, so header auth must reach them); the admin's speaks as the admin (sessionVia
@@ -26,7 +29,10 @@ import { Hono } from "hono";
 import fs from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { MeResponse, SessionCreateResponse } from "../src/api/types.js";
-import { apiTokenPath, tokensEqual } from "../src/auth/api-token.js";
+import { apiTokenPath, readApiToken, tokensEqual } from "../src/auth/api-token.js";
+import type { AuthRuntimeState } from "../src/auth/runtime-state.js";
+import { HMR_AUTH_STATE_RESOURCE_ID } from "../src/hmr/capabilities.js";
+import type { Reassembly } from "../src/hmr/capabilities.js";
 import { authMiddleware, bearerToken, SESSION_COOKIE } from "../src/auth/middleware.js";
 import { REMOTE_SESSION_TTL_MS } from "../src/auth/service.js";
 import { remoteRoutes } from "../src/http/routes/remote.js";
@@ -58,7 +64,7 @@ describe("Bearer credentials", () => {
 
   beforeAll(async () => {
     t = await createTestApp({
-      // A token file an older build wrote at its boot: the admin's authority for any reader.
+      // A token file an older boot wrote: replaced by this boot's.
       beforeSeed: async (root) => {
         fs.mkdirSync(root, { recursive: true });
         fs.writeFileSync(apiTokenPath(root), "older-boot-token\n");
@@ -88,13 +94,21 @@ describe("Bearer credentials", () => {
   const bearer = (value: string, init: RequestInit = {}, apiPath = "/api/me") =>
     bearerFor(t.app, value, init, apiPath);
 
-  it("boot holds the token in memory: no <root>/api-token, and an older build's is removed", () => {
-    expect(t.deps.authService.localApiToken()).not.toBeNull();
-    expect(fs.existsSync(apiTokenPath(t.root))).toBe(false);
+  it("boot writes the token to <root>/api-token with owner-only permissions", () => {
+    const bootToken = t.deps.authService.localApiToken();
+    expect(bootToken).not.toBeNull();
+    expect(readApiToken(t.root)).toBe(bootToken);
+    if (process.platform !== "win32") {
+      expect(fs.statSync(apiTokenPath(t.root)).mode & 0o777).toBe(0o600);
+    }
   });
 
-  it("the boot token and an older build's file value are no credential (401)", async () => {
-    expect((await bearer(t.deps.authService.localApiToken()!)).status).toBe(401);
+  it("the boot token is the admin (sessionVia 'token'); an older boot's file value is 401", async () => {
+    const res = await bearer(t.deps.authService.localApiToken()!);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as MeResponse;
+    expect(body.user.userId).toBe("admin");
+    expect(body.sessionVia).toBe("token");
     expect((await bearer("older-boot-token")).status).toBe(401);
   });
 
@@ -490,5 +504,50 @@ describe("Bearer credentials", () => {
     expect(bearerToken("Basic dXNlcjpwYXNz")).toBeNull();
     expect(bearerToken(undefined)).toBeNull();
     expect(bearerToken("Bearer")).toBeNull();
+  });
+});
+
+describe("the api-token file across Apps", () => {
+  let t: TestApp;
+
+  beforeAll(async () => {
+    t = await createTestApp();
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // The kernel re-assembly a hot push performs: a new App over the same runtime, asked of
+  // whichever App is current.
+  const reassemble = async (): Promise<boolean> => {
+    const instance = await t.deps.hmr.ensure();
+    return instance.api.business()!.api<Reassembly>("RuntimeModule", "Reassembly").reassemble();
+  };
+
+  it("a new App puts a removed file back with the same token, and leaves no temp file", async () => {
+    const bootToken = t.deps.authService.localApiToken();
+    fs.rmSync(apiTokenPath(t.root));
+    expect(await reassemble()).toBe(true);
+    expect(readApiToken(t.root)).toBe(bootToken);
+    expect(fs.readdirSync(t.root).filter((name) => name.startsWith("api-token."))).toEqual([]);
+    // Idempotent: an App finding the file as it should be leaves it untouched.
+    const before = fs.statSync(apiTokenPath(t.root)).mtimeMs;
+    expect(await reassemble()).toBe(true);
+    expect(fs.statSync(apiTokenPath(t.root)).mtimeMs).toBe(before);
+  });
+
+  it("an App on a runtime that published no token writes no file", async () => {
+    const state = t.deps.hmr.resources.claim<AuthRuntimeState>(HMR_AUTH_STATE_RESOURCE_ID)!;
+    const bootToken = state.apiToken;
+    fs.rmSync(apiTokenPath(t.root));
+    state.apiToken = null;
+    try {
+      expect(await reassemble()).toBe(true);
+      expect(fs.existsSync(apiTokenPath(t.root))).toBe(false);
+    } finally {
+      state.apiToken = bootToken;
+      expect(await reassemble()).toBe(true);
+    }
+    expect(readApiToken(t.root)).toBe(bootToken);
   });
 });
