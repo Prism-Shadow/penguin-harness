@@ -429,12 +429,18 @@ describe("applyUserEvent forwarding", () => {
         sessionId: "s",
         kind: "init",
       };
-      applyUserEvent(sessions, [], [companyUserEvents], run, () => undefined);
-      applyUserEvent(sessions, [], [companyUserEvents], { ...run, projectId: "p2" }, () => undefined);
-      applyUserEvent(sessions, [], [companyUserEvents], posted(), () => undefined);
-      expect(seen.map((e) => e.type)).toEqual(["org_run", "org_run", "org_channel"]);
-      // Only the run of the current Project refreshes; a channel message changes no session row.
-      expect(reload).toHaveBeenCalledTimes(1);
+      applyUserEvent(sessions, [companyUserEvents], run, () => undefined);
+      applyUserEvent(sessions, [companyUserEvents], { ...run, projectId: "p2" }, () => undefined);
+      applyUserEvent(sessions, [companyUserEvents], posted(), () => undefined);
+      applyUserEvent(
+        sessions,
+        [companyUserEvents],
+        { ...run, sessionId: "another-run" },
+        () => undefined,
+      );
+      expect(seen.map((e) => e.type)).toEqual(["org_run", "org_run", "org_channel", "org_run"]);
+      // Main refreshes for each work run of this Project; another Project and a channel message do not.
+      expect(reload).toHaveBeenCalledTimes(2);
     } finally {
       stop();
     }
@@ -446,7 +452,7 @@ describe("applyUserEvent forwarding", () => {
     const company = createCompanyStore();
     const stop = subscribeCompanyResync(() => company.getState().resync());
     try {
-      applyUserEvent(sessions, [], [companyUserEvents], { type: "resync_required" }, () => undefined);
+      applyUserEvent(sessions, [companyUserEvents], { type: "resync_required" }, () => undefined);
       // `runs` re-reads the sessions route; `orgs` the organization list and the open chart;
       // `proposals` the index a lost proposal event would have moved.
       expect(company.getState().versions).toEqual({
@@ -461,4 +467,5 @@ describe("applyUserEvent forwarding", () => {
     }
   });
 });
+
 
