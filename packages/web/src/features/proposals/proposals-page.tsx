@@ -103,6 +103,7 @@ import { ImplSection } from "./proposal-impl";
 import { GraphPage } from "./pr-graph-page";
 import { ActivityPage, SubjectActivity } from "./activity-view";
 import { useAllowedActions } from "./use-allowed-actions";
+import { RefusalNotes, refusalNoteId, type RefusalNote } from "./action-refusals";
 import {
   PROPOSAL_STATUS_TONE,
   commentsInSection,
@@ -808,9 +809,19 @@ function DetailPage({ number }: { number: number }) {
     }
   };
 
-  const allowed = useAllowedActions(projectId, orgId, `proposal:${number}`, detail);
+  const answers = useAllowedActions(projectId, orgId, `proposal:${number}`, detail);
   const actions =
-    detail === null ? null : proposalActions(detail.status, detail.pendingComments, allowed);
+    detail === null
+      ? null
+      : proposalActions(detail.status, detail.pendingComments, answers?.allowed ?? null);
+  // Why each button a guard refuses is disabled: a line under the bar, the button's description.
+  const refusals: RefusalNote[] = [];
+  const refusedProps = (key: string, label: string, enabled: boolean) => {
+    const refusal = enabled ? undefined : answers?.refusals.get(key);
+    if (refusal === undefined) return {};
+    refusals.push({ key, label, refusal });
+    return { "aria-describedby": refusalNoteId("proposal-actions", key) };
+  };
   const owner = detail === null ? null : (detail.implementer ?? detail.author);
   const crumb = (
     <nav aria-label={S.nav.org.proposals} className="mb-3 text-xs text-gray-500 dark:text-gray-400">
@@ -893,6 +904,7 @@ function DetailPage({ number }: { number: number }) {
                     <Button
                       size="sm"
                       disabled={busy || !actions.discuss}
+                      {...refusedProps("proposal.discuss", t.discuss, actions.discuss)}
                       title={t.discussHint(owner === null ? "" : (names.get(owner) ?? owner))}
                       onClick={() => void discuss()}
                     >
@@ -901,6 +913,11 @@ function DetailPage({ number }: { number: number }) {
                     <Button
                       size="sm"
                       disabled={busy || !actions.requestChanges}
+                      {...refusedProps(
+                        "proposal.requestChanges",
+                        t.requestChanges(detail.pendingComments),
+                        actions.requestChanges,
+                      )}
                       onClick={() => setConfirm("request")}
                     >
                       {t.requestChanges(detail.pendingComments)}
@@ -909,6 +926,7 @@ function DetailPage({ number }: { number: number }) {
                       size="sm"
                       variant="primary"
                       disabled={busy || !actions.approve}
+                      {...refusedProps("proposal.approve", t.approve, actions.approve)}
                       onClick={() => setConfirm("approve")}
                     >
                       {t.approve}
@@ -922,10 +940,12 @@ function DetailPage({ number }: { number: number }) {
                       size="sm"
                       variant="danger"
                       disabled={busy || !actions.reject}
+                      {...refusedProps("proposal.reject", t.reject, actions.reject)}
                       onClick={() => setConfirm("reject")}
                     >
                       {t.reject}
                     </Button>
+                    <RefusalNotes scope="proposal-actions" notes={refusals} />
                   </>
                 )
               }

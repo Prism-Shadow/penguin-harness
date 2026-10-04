@@ -7341,7 +7341,7 @@ export interface CompanyWorkflowView {
   loadedAt: string | null;
   /** Why the files on disk did not load; the previous instance, if any, keeps serving. */
   error: string | null;
-  /** The ids of the contributions the serving instance gives the organization's registry. */
+  /** The ids of the serving instance's contributions in force: those the registry took in. */
   contributions: string[];
   /** Its contributions the registry left out, and why (a `workflow.*` key, a clashing id). */
   skipped: Array<{ id: string; reason: string }>;

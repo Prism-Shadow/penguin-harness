@@ -22,8 +22,8 @@
   - `hook`：在 Action 之前或之后执行，键可以以 `.*` 结尾；
   - `subject`：读取对象的状态，对象有提交时一并读取提交。
 - 两个插件各自贡献内置 Action：company-proposals 贡献 20 个 Action（`proposal.*` 与 `target.register`），company-roadmaps 贡献 9 个 `roadmap.*` Action。
-- 同一个键有两份同级的贡献（两份 company workflow 的，或两份内置的）时，只在调用该键时以 409 `action_ambiguous` 拒绝，拒绝中列出每份贡献的精确调用方式。
-- 运行的开始行写在它的第一个写事务里，运行与其写入一同提交。被拒绝和失败的尝试同样留下记录。执行体抛出带 4xx 状态的领域错误时记为 `refused` 并答该状态与错误码；其余错误记为 `failed` 并答 500。
+- 同一个键有两份同级的贡献（两份 company workflow 的，或两份内置的）时，只在调用该键时以 409 `action_ambiguous` 拒绝，两份 action 与两份 guard 的拒绝同形。拒绝中列出每份贡献的精确调用方式，且不记为运行。按 id 调用一份 `action` 贡献时，其 guard 照常按键解析；按 id 调用一份 `guard` 贡献时，运行该键的 Action，只由这份 guard 判定。
+- 运行的开始行写在它的第一个写事务里，运行与其写入一同提交。被拒绝和失败的尝试同样留下记录。执行体抛出带 4xx 状态的领域错误时记为 `refused` 并答该状态与错误码；其余错误记为 `failed`：带 5xx 状态的（如 502 `branch_unreadable`）答该状态与错误码，其他答 500。
 - 带相同 `requestId` 的重试答第一次的运行。
 - `company.db` 中的 `action_runs` 与 `action_run_ends` 只追加。上一个进程留下的未结束运行，在下次打开库时补记为 `abandoned`。
 - Action 的参数用 arktype 字符串语法的一个子集声明，在运行之前检查。
@@ -32,7 +32,7 @@
 
 - company workflow 是以组织为作用域的 Agent workflow：组织目录下 `workflows/<id>/` 中的一个包，由同一个加载器加载。它的模块树得到 `Host`（`CompanyHost`：组织、共享工作区与部署帮助函数）与槽 `CompanyActionRegistry.actions`，根模块 `Workflow` 不必提供 `WorkflowMain`。
 - 加载成功即在本组织生效，无需另行启用。它的 `action` 或 `guard` 取代同键的内置贡献；替换 guard 的贡献收到下一层 guard。挂钩先执行内置的，再按 workflow id 与贡献 id 执行 company workflow 的。
-- 经 Action `workflow.write`、`workflow.remove`、`workflow.rollback` 与 `workflow.reload`（对象 `workflow:<id>`）写入；每次运行的结果说明是否加载成功及失败原因。加载失败的版本不取代上一个生效的版本。company workflow 不能替换或挂钩 `workflow.*`，这样的贡献不被采用。
+- 经 Action `workflow.write`、`workflow.remove`、`workflow.rollback` 与 `workflow.reload`（对象 `workflow:<id>`）写入；每次运行的结果说明是否加载成功及失败原因，并在生效的贡献之外列出未被采用的贡献及原因。加载失败的版本不取代上一个生效的版本。company workflow 不能替换或挂钩 `workflow.*`，这样的贡献不被采用。
 - 读路由为 `GET …/organizations/:orgId/workflows[/:id[/files/<path>|/history]]`。
 - 服务器级插件只贡献内置 Action。
 - 服务器中 workflow 的编译、接口检查、模块树检查、按内容定版本、历史与回滚抽成共用加载器（`packages/server/src/workflows/loader.ts`），以 `WorkflowLoader`（由 `WorkflowsModule` 导出）提供给插件；Agent workflow 改经它加载，行为不变。
@@ -62,7 +62,7 @@
 ## Web
 
 - 提案与 roadmap 的写操作经 Action 路由执行。
-- 提案页的按钮按各 Action 对调用者的 guard 显示。
+- 提案页的按钮按各 Action 对调用者的 guard 显示；被 guard 拒绝的按钮下方注明原因（guard 的说明与错误码），并作为该按钮的描述。
 - 提案页新增 Activity 视图，单个提案与 roadmap 旁边也显示自己的运行。
 - PR 关系图的节点菜单列出本组织的 `deploy.*` Action，并跟随运行的输出；删除「关联部署脚本」对话框。
 - roadmap 右栏显示每份批准及其角色。

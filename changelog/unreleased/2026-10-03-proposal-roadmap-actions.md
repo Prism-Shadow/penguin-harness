@@ -22,8 +22,8 @@ Every write to an organization's proposals and roadmaps became an Action: a key,
   - `hook`: runs before or after an Action, and a key may end in `.*`;
   - `subject`: reads a subject's state, and its commit when it has one.
 - Both plugins contribute their built-in Actions: 20 Actions from company-proposals (`proposal.*` and `target.register`), and 9 `roadmap.*` Actions from company-roadmaps.
-- A key answered by two contributions of the same standing (two company workflows', or two built-in ones) is refused with 409 `action_ambiguous` only when it is invoked. The refusal names each contribution's exact invocation.
-- A run's start row is written inside its first write transaction, so the run commits with its write. Refused and failed attempts are recorded too. A domain error with a 4xx status that a run throws is recorded `refused` with its status and code; anything else a run throws is `failed` and answers 500.
+- A key answered by two contributions of the same standing (two company workflows', or two built-in ones) is refused with 409 `action_ambiguous` only when it is invoked, in the same shape for two actions and for two guards. The refusal names each contribution's exact invocation, and is not recorded as a run. Run by its id, an `action` contribution has its guard resolved by key as usual; a `guard` contribution runs its key's Action, judged by that guard alone.
+- A run's start row is written inside its first write transaction, so the run commits with its write. Refused and failed attempts are recorded too. A domain error with a 4xx status that a run throws is recorded `refused` with its status and code; anything else a run throws is `failed`, answered with its own status and code when that status is a 5xx (502 `branch_unreadable`), else 500.
 - A retry with the same `requestId` answers the first run.
 - `action_runs` and `action_run_ends` in `company.db` are append-only. A run a past process left unfinished is recorded `abandoned` when the store next opens.
 - An Action's parameters are declared with a subset of arktype's string syntax and are checked before the run.
@@ -32,7 +32,7 @@ Every write to an organization's proposals and roadmaps became an Action: a key,
 
 - A company workflow is an Agent's workflow scoped to an organization: a package under `<org dir>/workflows/<id>/`, loaded by the same loader. Its tree is given `Host` (`CompanyHost`: the organization, its shared workspace and the deploy helper) and the slot `CompanyActionRegistry.actions`, and its root `Workflow` need not provide `WorkflowMain`.
 - Its contributions take effect in its organization as soon as it loads, with no further step. Its `action` or `guard` takes the place of the built-in one on the same key; a replacing guard is handed the one below it. Hooks run built-in ones first, then the company workflows' by workflow id and contribution id.
-- It is written through the Actions `workflow.write`, `workflow.remove`, `workflow.rollback` and `workflow.reload` on `workflow:<id>`; each run's result says whether the workflow loaded and why not. A version that does not load keeps the previous one in force. A company workflow cannot replace or hook `workflow.*`; such a contribution is left out.
+- It is written through the Actions `workflow.write`, `workflow.remove`, `workflow.rollback` and `workflow.reload` on `workflow:<id>`; each run's result says whether the workflow loaded and why not, and lists the contributions left out with their reasons, apart from those in force. A version that does not load keeps the previous one in force. A company workflow cannot replace or hook `workflow.*`; such a contribution is left out.
 - `GET …/organizations/:orgId/workflows[/:id[/files/<path>|/history]]` reads them.
 - Server-wide plugins contribute only built-in Actions.
 - The server's workflow loading — compile, interface check, tree check, revision by content, history and rollback — moved into a shared loader (`packages/server/src/workflows/loader.ts`), offered to plugins as `WorkflowLoader` (exported by `WorkflowsModule`). Agent workflows load through it unchanged.
@@ -62,7 +62,7 @@ Every write to an organization's proposals and roadmaps became an Action: a key,
 ## Web
 
 - The proposal and roadmap writes go through the Action routes.
-- The proposal page's buttons follow each Action's guard for the caller.
+- The proposal page's buttons follow each Action's guard for the caller; under the buttons, each one a guard refuses says why (the guard's message and code), as the button's description.
 - Added an Activity view to the proposals page, and the runs of one proposal or roadmap beside it.
 - The PR graph's node menu lists the organization's `deploy.*` Actions and follows a run's output. The "associate a deploy script" dialog was removed.
 - The roadmap column shows each approval with its role.

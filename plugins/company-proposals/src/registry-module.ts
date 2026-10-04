@@ -49,13 +49,15 @@ export class CompanyActionRegistry implements CompanyActions {
   setup({ contributions, effect }: ClassCtx) {
     const log = (line: string) => this.log.line(line);
     const workflows = new CompanyWorkflows({ loader: this.loader, root: this.paths.root, log });
-    const registry = new ActionRegistry({
+    // The `workflow.*` Actions report what the registry built over them leaves out: the
+    // closure reads `registry` only when a run calls it, long after it is assigned.
+    const registry: ActionRegistry = new ActionRegistry({
       gateway: this.gateway,
       root: this.paths.root,
       log,
       contributions: [
         ...((contributions.actions ?? []) as Contributed[]),
-        ...workflowContributions(workflows),
+        ...workflowContributions(workflows, (org) => registry.skippedIn(org)),
       ],
       company: workflows,
     });

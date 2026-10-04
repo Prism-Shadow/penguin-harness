@@ -121,6 +121,9 @@ describe("penguin org action", () => {
     expect(JSON.parse(h.out[0]!)).toEqual({ number: 12, status: "approved" });
     await h.exec(["org", "action", "exec", "company-proposals.action.approve", "proposal:12"]);
     expect(h.calls[1]!.suffix).toBe("/by-id/company-proposals.action.approve/runs");
+    // A guard's id: the server runs its key's Action, judged by that guard alone.
+    await h.exec(["org", "action", "exec", "acme.approve-guard", "proposal:12"]);
+    expect(h.calls[2]!.suffix).toBe("/by-id/acme.approve-guard/runs");
   });
 
   it("a run that started a process is followed to its end", async () => {
@@ -159,19 +162,21 @@ describe("penguin org action", () => {
     expect(h.errors).toEqual([t.org.actionLimitInvalid("500")]);
   });
 
-  it("check lists the conflicts, or says there are none", async () => {
+  it("check lists the conflicts, each side with its exact invocation, or says there are none", async () => {
     let conflicts: unknown[] = [
       { key: "proposal.approve", kind: "guard", contributions: ["a.guard", "b.guard"] },
     ];
     const h = harness(() => ({ conflicts, skipped: [] }));
     await h.exec(["org", "action", "check"]);
     expect(h.calls[0]).toEqual({ method: "GET", suffix: "/check?agentId=dev1" });
-    expect(h.out[0]).toBe(
+    expect(h.out).toEqual([
       `${t.org.actionConflict("proposal.approve", "guard", "a.guard, b.guard")}\n`,
-    );
+      `${t.org.actionExecForm("penguin org action exec a.guard")}\n`,
+      `${t.org.actionExecForm("penguin org action exec b.guard")}\n`,
+    ]);
     conflicts = [];
     await h.exec(["org", "action", "check"]);
-    expect(h.out[1]).toBe(`${t.org.actionCheckNone}\n`);
+    expect(h.out[3]).toBe(`${t.org.actionCheckNone}\n`);
   });
 });
 
@@ -206,7 +211,7 @@ describe("penguin org workflow", () => {
     expect(h.out.join("")).toContain("aaaaaaaaaaaa");
   });
 
-  it("put sends a local directory as one workflow.write run, and reports whether it loaded", async () => {
+  it("put sends a local directory as one workflow.write run, and reports whether it loaded and what was left out", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-put-"));
     try {
       fs.writeFileSync(path.join(dir, "package.json"), "{}");
@@ -222,7 +227,13 @@ describe("penguin org workflow", () => {
       const h = harness(() => ({
         run: run({ key: "workflow.write", subject: "workflow:deploy" }),
         result: loaded
-          ? { workflow: view(), loaded: true, error: null }
+          ? {
+              workflow: view({
+                skipped: [{ id: "acme.lock", reason: "it reaches workflow.*" }],
+              }),
+              loaded: true,
+              error: null,
+            }
           : { workflow: view({ error: "TS2322 nope" }), loaded: false, error: "TS2322 nope" },
       }));
       await h.exec(["org", "workflow", "put", "deploy", dir]);
@@ -236,7 +247,10 @@ describe("penguin org workflow", () => {
           agentId: "dev1",
         },
       });
-      expect(h.out[0]).toBe(`${t.org.workflowLoaded("deploy", "aaaaaaaaaaaa")}\n`);
+      expect(h.out).toEqual([
+        `${t.org.workflowLoaded("deploy", "aaaaaaaaaaaa")}\n`,
+        `${t.org.workflowSkipped("acme.lock", "it reaches workflow.*")}\n`,
+      ]);
       loaded = false;
       await h.exec(["org", "workflow", "put", "deploy", dir, "--keep"]);
       expect((h.calls[1]?.body as { params: Record<string, unknown> }).params.replace).toBe(

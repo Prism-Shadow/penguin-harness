@@ -125,13 +125,17 @@ describe("a company workflow", () => {
 
   /** The registry of one App over the organization's workflows, with the workflow routes. */
   function app(w: CompanyWorkflows, extra: Contributed[] = [], now?: () => number): ActionApp {
-    const made = actionApp({
+    const made: ActionApp = actionApp({
       gateway: org.gateway,
       root: org.root,
       project: PROJECT,
       org: ORG,
       service: org.service,
-      contributions: [...proposalContributions(org.service), ...workflowContributions(w), ...extra],
+      contributions: [
+        ...proposalContributions(org.service),
+        ...workflowContributions(w, (o) => made.registry.skippedIn(o)),
+        ...extra,
+      ],
       deps: { company: w, ...(now !== undefined ? { now } : {}) },
     });
     made.app.route("/p/:projectId/o/:orgId/workflows", workflowRoutes(made.registry, w));
@@ -282,12 +286,47 @@ describe("a company workflow", () => {
     ]);
   });
 
-  it("outranks the built-in guard; two company guards on a key are ambiguous; removing one ends it", async () => {
+  it("outranks the built-in guard; two company guards on a key are ambiguous, each runnable by its id; removing one ends it", async () => {
     await write("fixture", fixtureFiles());
     await write("second", guardWorkflow("second", "proposal.approve", "second_says_no"));
     const n = await readyProposal();
     const amb = await a.run("proposal.approve", `proposal:${n}`, {}, DEV);
-    expect([amb.status, amb.body.error]).toMatchObject([409, { code: "action_ambiguous" }]);
+    expect([amb.status, amb.body.error]).toMatchObject([
+      409,
+      {
+        code: "action_ambiguous",
+        contributions: [
+          {
+            contribution: "fixture.approve-guard",
+            cli: "penguin org action exec fixture.approve-guard",
+          },
+          { contribution: "second.guard", cli: "penguin org action exec second.guard" },
+        ],
+      },
+    ]);
+    // The built-in Action's own id still resolves the guard by key: the same answer.
+    const byAction = await a.run(
+      "by-id/company-proposals.action.approve",
+      `proposal:${n}`,
+      {},
+      DEV,
+    );
+    expect([byAction.status, byAction.body.error]).toMatchObject([
+      409,
+      { code: "action_ambiguous" },
+    ]);
+    // Neither ambiguity is a run.
+    expect((await a.get(`/runs?subject=proposal:${n}&key=proposal.approve`)).body.runs).toEqual([]);
+    // Named by its id, one guard judges alone.
+    const second = await a.run("by-id/second.guard", `proposal:${n}`, {}, DEV);
+    expect([second.status, second.body.error]).toMatchObject([403, { code: "second_says_no" }]);
+    const fixture = await a.run("by-id/fixture.approve-guard", `proposal:${n}`, {}, DEV);
+    expect(fixture.status).toBe(200);
+    expect(fixture.body.run).toMatchObject({
+      key: "proposal.approve",
+      contribution: "company-proposals.action.approve",
+      outcome: "succeeded",
+    });
     expect((await a.get("/check")).body.conflicts).toEqual([
       {
         key: "proposal.approve",
@@ -296,16 +335,31 @@ describe("a company workflow", () => {
       },
     ]);
     expect((await a.run("workflow.remove", "workflow:second")).status).toBe(200);
-    expect((await a.run("proposal.approve", `proposal:${n}`, {}, DEV)).status).toBe(200);
+    // One company guard is left on the key: it decides, and the proposal is approved already.
+    expect((await a.run("proposal.approve", `proposal:${n}`, {}, DEV)).body).toMatchObject({
+      error: { code: "proposal_status" },
+    });
   });
 
-  it("cannot replace or hook the workflow.* Actions: such a contribution is left out", async () => {
+  it("cannot replace or hook the workflow.* Actions: such a contribution is left out, and the write says so", async () => {
     const written = await write("lock", guardWorkflow("lock", "workflow.write", "locked_out"));
-    expect(written.body.result).toMatchObject({ loaded: true });
+    // The run's result lists it as the read does, and not among the contributions in force.
+    expect(written.body.result).toMatchObject({
+      loaded: true,
+      workflow: {
+        contributions: [],
+        skipped: [{ id: "lock.guard", reason: expect.stringContaining("workflow.*") }],
+      },
+    });
+    const reloaded = await a.run("workflow.reload", "workflow:lock");
+    expect(reloaded.body.result).toMatchObject({
+      workflow: { contributions: [], skipped: [{ id: "lock.guard" }] },
+    });
     const shown = await a.app.request(`/p/${PROJECT}/o/${ORG}/workflows/lock`, {
       headers: { "x-user": "boss" },
     });
     expect(await shown.json()).toMatchObject({
+      contributions: [],
       skipped: [{ id: "lock.guard", reason: expect.stringContaining("workflow.*") }],
     });
     expect((await write("fixture", fixtureFiles())).status).toBe(200);

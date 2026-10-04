@@ -15,7 +15,9 @@
  *   POST   /by-id/:contribution/runs        the same, naming the contribution exactly
  *
  * A refused or failed run answers `{ error: { code, message, runId } }` with the run's status;
- * an ambiguous key's adds `contributions`, each with its exact invocation. A run from inside a
+ * an ambiguous key — two actions, or two guards — is answered before any run, with
+ * `contributions` (each with its exact invocation) in place of `runId`. By id, a `guard`
+ * contribution runs its key's Action judged by that guard alone. A run from inside a
  * Session carries `sessionId` / `agentId` in the body, honoured only behind the local API
  * token (route-input.ts).
  */

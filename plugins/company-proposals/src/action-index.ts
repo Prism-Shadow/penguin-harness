@@ -10,7 +10,7 @@
  *   contribution's exact invocation; none is 404;
  * - the guard of an Action is its own default, replaced by a built-in `guard` contribution if
  *   there is one, then by a company workflow's if there is one — each handed the guard below it;
- *   two of the same standing are ambiguous the same way;
+ *   two of the same standing are ambiguous the same way, answered in the same shape;
  * - the hooks of a key run built-in ones first, by id, then the company workflows', by workflow
  *   id and then id. A hook key may end in `.*` to follow every key under it (`deploy.*`);
  * - a subject kind is read by a company workflow's resolver when one reads it, else a built-in
@@ -255,11 +255,17 @@ export class ActionIndex {
     return found[0]!;
   }
 
-  /** The guard of `action` in force: its default, under a built-in replacement, under a company one. */
-  guardOf(action: IndexedAction): Guard {
+  /**
+   * The guard of `action` in force: its default, under a built-in replacement, under a company
+   * one. With `only` — a guard contribution named exactly — that guard judges alone: it is
+   * handed the guard below its own standing, as it would be in force, and nothing above or
+   * beside it is asked.
+   */
+  guardOf(action: IndexedAction, only?: IndexedGuard): Guard {
     let guard: Guard = action.code.guard ?? (() => undefined);
     const { company, builtin } = this.ofKey("guard", action.key);
     for (const layer of [builtin, company]) {
+      if (only !== undefined && layer.includes(only)) return only.code(guard);
       if (layer.length > 1) throw ambiguous(action.key, "guard", layer);
       if (layer.length === 1) guard = layer[0]!.code(guard);
     }

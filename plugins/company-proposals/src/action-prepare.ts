@@ -47,15 +47,18 @@ export function hasStatus(err: unknown): err is { status: number; code: string; 
 /**
  * How an error ends a run. One with a 4xx status and a code — a guard's or a hook's refusal, a
  * use case's domain error (`impl_pr_missing`, `proposal_body_links_files`), a check of the
- * registry — is a refusal, answered with its status and code. Anything else is a failure,
- * answered 500: a `failed` run in the Activity means something broke, never that a rule said no.
+ * registry — is a refusal, answered with its status and code. Anything else is a failure: one
+ * with a 5xx status and a code (502 `branch_unreadable`, the forge not answering) is answered
+ * with them, the rest 500. A `failed` run in the Activity means something broke, never that a
+ * rule said no.
  */
 export function classify(err: unknown): Classified {
   if (hasStatus(err)) {
     const refused = err.status >= 400 && err.status < 500;
+    const own = refused || (err.status >= 500 && err.status < 600);
     return {
       outcome: refused ? "refused" : "failed",
-      status: refused ? err.status : 500,
+      status: own ? err.status : 500,
       code: err.code,
       message: err.message,
     };
@@ -101,11 +104,12 @@ export function eventOf(
   };
 }
 
-/** Steps 2–5 of a run: everything that may refuse before it runs. */
+/** Steps 2–5 of a run, under the guard step 1 chose: everything that may refuse before it runs. */
 export async function prepare(
   scope: OrgScope,
   index: ActionIndex,
   action: IndexedAction,
+  guard: Guard,
   req: RunRequest,
   start: RunStart,
 ): Promise<Prepared> {
@@ -121,7 +125,6 @@ export async function prepare(
   }
   const params = action.params(req.params);
   start.params = params;
-  const guard = index.guardOf(action);
   const resolver = index.subjectOf(subject.kind);
   const subjectScope = { org: scope.org, caller: scope.caller };
   const state = resolver === undefined ? null : await resolver.code.state(subjectScope, subject);

@@ -5,7 +5,8 @@
  *
  *   action ls [--subject <subject>] [--all]
  *   action run <key> <subject> [--param name=value ...] [--params <json>] [--request-id <id>]
- *   action exec <contribution> <subject> [same options]
+ *   action exec <contribution> <subject> [same options]   an action's id, or a guard's: the
+ *                                                         key's Action judged by that guard
  *   action runs [--subject S] [--by P] [--key K] [--before <cursor>] [--limit N]
  *   action check
  *
@@ -217,8 +218,12 @@ export function registerOrgAction(org: Command, t: Messages, kit: DeployKit): vo
         return;
       }
       if (res.conflicts.length === 0) kit.print(t.org.actionCheckNone);
+      // Each conflict with the exact invocation of each side, as running the key would list them.
       for (const c of res.conflicts) {
         kit.print(t.org.actionConflict(c.key, c.kind, c.contributions.join(", ")));
+        for (const id of c.contributions) {
+          kit.print(t.org.actionExecForm(`penguin org action exec ${id}`));
+        }
       }
     });
 }

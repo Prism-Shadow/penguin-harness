@@ -2034,7 +2034,8 @@ const en: Messages = {
     actionLsAll:
       "Every contribution — actions, guards, hooks, subject resolvers — built in or a company workflow's",
     actionRunDesc: "Run the Action a key names on a subject (e.g. proposal:12)",
-    actionExecDesc: "Run one contribution exactly, by its id (what an ambiguous key asks for)",
+    actionExecDesc:
+      "Run one contribution exactly, by its id (what an ambiguous key asks for): an action's id runs it; a guard's runs its key's Action, judged by that guard alone",
     actionParam:
       "A parameter, name=value (the value as JSON when it parses, else a string); repeatable",
     actionParams: "The parameters as one JSON object (--param flags override it)",
@@ -3367,7 +3368,8 @@ const zh: Messages = {
     actionLsSubject: "只列作用于该对象的 Action，并标出你此刻能否运行",
     actionLsAll: "全部贡献（action、guard、挂钩、对象解析），内置的与 company workflow 的",
     actionRunDesc: "在一个对象（如 proposal:12）上运行某个键对应的 Action",
-    actionExecDesc: "按贡献 id 精确运行一份贡献（键有歧义时用它）",
+    actionExecDesc:
+      "按贡献 id 精确运行一份贡献（键有歧义时用它）：action 的 id 运行该 Action；guard 的 id 运行该键的 Action，只由这份 guard 判定",
     actionParam: "一个参数，写作 name=value（能按 JSON 解析则按 JSON，否则为字符串）；可重复",
     actionParams: "以一个 JSON 对象给出全部参数（--param 会覆盖其中的同名项）",
     actionRequestId: "用同一个 id 重试时返回第一次的运行，不再执行",

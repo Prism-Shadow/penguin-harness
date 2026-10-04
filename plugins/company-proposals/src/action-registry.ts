@@ -3,7 +3,9 @@
  * here (action-routes.ts is its one way in). A run, in order:
  *
  *   1. the key resolves to one contribution in the organization's index (action-index.ts) — a
- *      company workflow's ahead of the built-in one — or the caller names the contribution;
+ *      company workflow's ahead of the built-in one — and to its guard in force, or the caller
+ *      names an action or a guard contribution exactly; an ambiguous key is answered here, with
+ *      no run recorded;
  *   2. the subject and the parameters are checked (400);
  *   3. the subject's state is read, and — for an Action that runs on a commit — its commit,
  *      checked against `expectedHead`;
@@ -15,7 +17,8 @@
  *
  * Steps 2–5 are action-prepare.ts. Every attempt once its contribution is known leaves a run:
  * `refused` (the guard, a hook, a check above, or a domain error with a 4xx status the run
- * threw), `failed` (anything else the run threw: its write rolled back), `succeeded` (the write
+ * threw), `failed` (anything else the run threw: its write rolled back; answered with its own
+ * status when that is a 5xx, else 500), `succeeded` (the write
  * stands — an after hook that fails is listed in `hookErrors`, never undoes it). A retry with
  * the same `requestId` answers the first run. The answer to a run that started a process goes
  * out as soon as the process starts (202); the run ends when the process exits.
@@ -152,6 +155,14 @@ export class ActionRegistry {
     return index;
   }
 
+  /**
+   * The contributions the organization's index leaves out now, and why — read after a company
+   * workflow loaded, so a run of `workflow.*` reports them (workflow-actions.ts).
+   */
+  async skippedIn(org: OrgView): Promise<ReadonlyArray<{ id: string; reason: string }>> {
+    return (await this.indexOf(org, `${org.projectId}/${org.orgId}`)).skipped;
+  }
+
   /** The organization with company mode on and the caller belonging to it. */
   async scope(projectId: string, orgId: string, actor: OrgActor): Promise<OrgScope> {
     if (this.stopped) throw new ActionRefusal(503, "stopping", "The registry is stopping.");
@@ -193,10 +204,9 @@ export class ActionRegistry {
   ): Promise<RunAnswer> {
     const scope = await this.scope(projectId, orgId, actor);
     const via = viaOf(req.via, scope.caller);
-    const action =
-      req.contribution !== undefined
-        ? actionById(scope.index, req.contribution)
-        : scope.index.resolve(String(req.key ?? ""));
+    // Which Action, judged by which guard: a key that resolves to none, or to two of one
+    // standing, is answered here, before any run exists — it is not recorded.
+    const { action, guard } = targetOf(scope.index, req);
     const start: RunStart = {
       id: randomBytes(8).toString("hex"),
       key: action.key,
@@ -225,7 +235,7 @@ export class ActionRegistry {
     }
     let prepared: Prepared;
     try {
-      prepared = await prepare(scope, scope.index, action, req, start);
+      prepared = await prepare(scope, scope.index, action, guard, req, start);
     } catch (err) {
       throw this.endRefused(scope.store, start, err);
     }
@@ -437,15 +447,26 @@ export class ActionRegistry {
   }
 }
 
-/** A contribution named exactly: an action of the organization's index. */
-function actionById(index: ActionIndex, id: string): IndexedAction {
-  const entry = index.byId(id);
-  if (entry === undefined || entry.kind !== "action") {
-    throw new ActionRefusal(
-      404,
-      "action_not_found",
-      `No action contribution ${id} in this organization.`,
-    );
+/**
+ * The Action a request runs and the guard that judges it. By key: the key's Action and its
+ * guard in force. By contribution id: an `action` contribution runs, its guard resolved by its
+ * key as usual; a `guard` contribution runs its key's Action, judged by that guard alone. Either
+ * may answer 404, or 409 `action_ambiguous` when the key still resolves to two of one standing.
+ */
+function targetOf(index: ActionIndex, req: RunRequest): { action: IndexedAction; guard: Guard } {
+  if (req.contribution === undefined) {
+    const action = index.resolve(String(req.key ?? ""));
+    return { action, guard: index.guardOf(action) };
   }
-  return entry;
+  const entry = index.byId(req.contribution);
+  if (entry?.kind === "action") return { action: entry, guard: index.guardOf(entry) };
+  if (entry?.kind === "guard") {
+    const action = index.resolve(entry.key);
+    return { action, guard: index.guardOf(action, entry) };
+  }
+  throw new ActionRefusal(
+    404,
+    "action_not_found",
+    `No action or guard contribution ${req.contribution} in this organization.`,
+  );
 }

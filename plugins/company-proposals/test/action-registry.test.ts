@@ -1,9 +1,11 @@
 /**
  * The registry over contributions of the test's own: a key resolved to one contribution, a
  * company workflow's taking the place of the built-in one on its key, an ambiguous key answered
- * only when invoked (with each contribution's exact invocation), `exec` by id, the `workflow.*`
+ * only when invoked (with each contribution's exact invocation) and never recorded, two company
+ * guards answered the same way, `exec` by an action's or a guard's id, the `workflow.*`
  * Actions out of a company workflow's reach, a guard replacement handed the default, hooks in
- * their order (built-in first, then by workflow and id), and how each refusal and failure ends —
+ * their order (built-in first, then by workflow and id), and how each refusal and failure ends
+ * (a 5xx failure keeping its status) —
  * and a retry with the same request id answered with the first run.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -80,6 +82,10 @@ describe("the Action registry", () => {
   const appOf = (contributions: Contributed[]) =>
     actionApp({ gateway, root: org.root, project: PROJECT, org: ORG, contributions });
 
+  /** `POST …/actions/by-id/<id>/runs`: one contribution named exactly. */
+  const exec = (a: ReturnType<typeof appOf>, id: string, params: Record<string, unknown> = {}) =>
+    a.run(`by-id/${id}`, "organization", params);
+
   it("resolves a key to its one bound contribution; an unknown key is 404", async () => {
     const a = appOf([{ ...action("t.note", "test.note"), code: noteAction(() => db) }]);
     const ran = await a.run("test.note", "organization", { text: "one" });
@@ -113,15 +119,11 @@ describe("the Action registry", () => {
       "penguin org action exec t.one",
       "penguin org action exec t.two",
     ]);
-    const res = await a.app.request(`/p/${PROJECT}/o/${ORG}/actions/by-id/t.two/runs`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-user": "boss" },
-      body: JSON.stringify({ subject: "organization", params: { text: "exact" } }),
-    });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { run: { contribution: string } }).run.contribution).toBe(
-      "t.two",
-    );
+    // The ambiguity comes before any Action is chosen: no run is recorded for it.
+    expect((await a.get("/runs")).body.runs).toEqual([]);
+    const exact = await exec(a, "t.two", { text: "exact" });
+    expect(exact.status).toBe(200);
+    expect((exact.body.run as { contribution: string }).contribution).toBe("t.two");
     const check = await a.get("/check");
     expect(check.body.conflicts).toEqual([
       { key: "test.note", kind: "action", contributions: ["t.one", "t.two"] },
@@ -161,6 +163,70 @@ describe("the Action registry", () => {
     expect((await two.get("/check")).body.conflicts).toEqual([
       { key: "test.note", kind: "action", contributions: ["co.note", "co.other"] },
     ]);
+  });
+
+  it("answers two company guards on a key as two actions are answered, unrecorded; exec by a guard's id lets it judge alone", async () => {
+    const guard = (id: string, workflow: string, verdict: "yes" | "no"): Contributed => ({
+      id,
+      from: "Workflow",
+      data: { kind: "guard", key: "test.note" },
+      code: (() => () => {
+        if (verdict === "no") throw new ActionRefusal(403, `${workflow}_says_no`, "No.");
+      }) as GuardCode,
+      workflow,
+    });
+    const a = appOf([
+      { ...action("t.note", "test.note"), code: noteAction(() => db) },
+      guard("co.no", "acme", "no"),
+      guard("co.yes", "beta", "yes"),
+      {
+        id: "h.seen",
+        from: "CompanyProposalsPlugin",
+        data: { kind: "hook", key: "test.note", when: "before" },
+        code: (() => undefined) as HookCode,
+      },
+    ]);
+    const amb = await a.run("test.note", "organization", { text: "x" });
+    expect([amb.status, amb.body.error]).toMatchObject([
+      409,
+      {
+        code: "action_ambiguous",
+        contributions: [
+          {
+            contribution: "co.no",
+            route: "POST …/actions/by-id/co.no/runs",
+            cli: "penguin org action exec co.no",
+          },
+          {
+            contribution: "co.yes",
+            route: "POST …/actions/by-id/co.yes/runs",
+            cli: "penguin org action exec co.yes",
+          },
+        ],
+      },
+    ]);
+    // The action's own id resolves its guard by key as usual: ambiguous the same way.
+    const byAction = await exec(a, "t.note", { text: "x" });
+    expect([byAction.status, byAction.body.error]).toMatchObject([
+      409,
+      { code: "action_ambiguous", contributions: [{ contribution: "co.no" }, {}] },
+    ]);
+    expect((await a.get("/runs")).body.runs).toEqual([]);
+    // A guard's id runs the key's Action, judged by that guard alone.
+    const yes = await exec(a, "co.yes", { text: "allowed" });
+    expect(yes.status).toBe(200);
+    expect(yes.body.run).toMatchObject({ key: "test.note", contribution: "t.note" });
+    const no = await exec(a, "co.no", { text: "refused" });
+    expect([no.status, no.body.error]).toMatchObject([403, { code: "acme_says_no" }]);
+    expect(notes()).toEqual(["allowed"]);
+    const runs = (await a.get("/runs")).body.runs as Array<{ outcome: string; code: string }>;
+    expect(runs.map((r) => [r.outcome, r.code])).toEqual([
+      ["refused", "acme_says_no"],
+      ["succeeded", null],
+    ]);
+    // Neither a hook's id nor an unknown one names something to run.
+    expect((await exec(a, "h.seen")).body.error).toMatchObject({ code: "action_not_found" });
+    expect((await exec(a, "nope")).status).toBe(404);
   });
 
   it("leaves out a company workflow's contribution that would replace or hook the workflow.* Actions", async () => {
@@ -296,6 +362,17 @@ describe("the Action registry", () => {
           },
         } satisfies ActionCode,
       },
+      {
+        ...action("t.forge", "test.forge"),
+        code: {
+          run: async () => {
+            throw Object.assign(new Error("acme/site:feat/x could not be read from GitHub."), {
+              status: 502,
+              code: "branch_unreadable",
+            });
+          },
+        } satisfies ActionCode,
+      },
       { ...action("t.after", "test.after"), code: noteAction(() => db) },
       {
         id: "h.bad",
@@ -315,6 +392,9 @@ describe("the Action registry", () => {
     // A domain error with a 4xx status the run throws is a refusal, with its status and code.
     const domain = await a.run("test.domain", "organization", { text: "d" });
     expect([domain.status, domain.body.error]).toMatchObject([409, { code: "impl_pr_missing" }]);
+    // One with a 5xx status is a failure, still answered with its own status and code.
+    const forge = await a.run("test.forge", "organization", { text: "f" });
+    expect([forge.status, forge.body.error]).toMatchObject([502, { code: "branch_unreadable" }]);
     const after = await a.run("test.after", "organization", { text: "a" });
     expect(after.status).toBe(200);
     expect(notes()).toEqual(["a"]);
@@ -333,6 +413,12 @@ describe("the Action registry", () => {
       status: 409,
       code: "impl_pr_missing",
     });
+    expect(byKey["test.forge"]).toMatchObject({
+      outcome: "failed",
+      status: 502,
+      code: "branch_unreadable",
+    });
+    expect(byKey["test.broken"]).toMatchObject({ status: 500 });
     expect(byKey["test.after"]).toMatchObject({
       outcome: "succeeded",
       hookErrors: ["h.bad: mail down"],

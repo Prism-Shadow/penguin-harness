@@ -133,7 +133,7 @@ export function registerOrgWorkflow(org: Command, t: Messages, kit: DeployKit): 
             w.id,
             w.serving ?? "-",
             w.revision,
-            String(w.contributions.length - w.skipped.length),
+            String(w.contributions.length),
             w.error === null ? "ok" : w.error.split("\n")[0]!.slice(0, 80),
           ]),
         ),
