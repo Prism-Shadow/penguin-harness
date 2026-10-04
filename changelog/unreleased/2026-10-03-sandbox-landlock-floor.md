@@ -27,7 +27,7 @@ Turning the sandbox on in Linux offered `@penguinharness/sandbox-bwrap` alone, a
 
 - The DSH adaptor selects its rung when it loads. On Linux this runs the chain's probes, so a host where neither bubblewrap nor Landlock works fails the load with DSH's reason instead of mounting a backend that refuses every command. macOS and Windows have one rung each, which DSH selects without probing.
 - On a kernel older than Landlock ABI 5 (Ubuntu 24.04's 6.8 has ABI 4), the Landlock launcher prints `landlock-run: partial enforcement (older Landlock ABI)` on every run. The spawn now drops the lines a backend reports as informational (core's `ConfinedSpawn.runnerLines`) from the head of a command's or hook script's stderr. Later lines are not examined.
-- `@penguinharness/sandbox-dsh`, `sandbox-bwrap`, `sandbox-seatbelt` and `sandbox-wsl` are 0.2.3. A build that ships them loads its own copy over a downloaded one of the same version, but a machine that downloads them (an npm global install) installs only a version it does not hold, and npm publishes each version once: at an unchanged 0.2.2, a machine that had downloaded 0.2.2 into `<data root>/plugins/` would keep running it, without the `closed-temp` declarations.
+- `@penguinharness/sandbox-dsh`, `sandbox-bwrap`, `sandbox-seatbelt` and `sandbox-wsl` are 0.2.3. A machine whose build does not ship them (an npm global install) installs them with npm into `<data root>/plugins/`, and npm publishes each version once: at an unchanged 0.2.2, a machine already holding 0.2.2 there would keep running it, without the `closed-temp` declarations.
 - bubblewrap's refusal carries what bwrap said (`setting up uid map: Permission denied`, or the spawn error), and states that the Ubuntu root step is optional and adds network isolation and masked paths.
 
 ## The composer
@@ -37,4 +37,4 @@ Turning the sandbox on in Linux offered `@penguinharness/sandbox-bwrap` alone, a
 
 ## Docs
 
-- The CLI quickstart's **Sandbox on Ubuntu** section, the Settings and Server API pages, and both backends' READMEs describe the default: it works with no step, file writes only through Landlock, and the root step only adds network isolation and masked paths. The AppArmor profile's path was corrected to the plugin store's layout, `plugin-store/packages/@penguinharness/sa/nd/sandbox-bwrap/…`.
+- The CLI quickstart's **Sandbox on Ubuntu** section, the Settings and Server API pages, and both backends' READMEs describe the default: it works with no step, file writes only through Landlock, and the root step only adds network isolation and masked paths.

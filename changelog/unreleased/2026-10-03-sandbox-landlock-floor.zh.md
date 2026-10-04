@@ -27,7 +27,7 @@
 
 - DSH 适配器在加载时选定所用的一级。在 Linux 上这会运行链条的探测，因此在 bubblewrap 与 Landlock 都不可用的主机上，加载会带着 DSH 的原因失败，而不是挂载一个拒绝每条命令的后端。macOS 与 Windows 各只有一级，DSH 不经探测直接选用。
 - 在 Landlock ABI 低于 5 的内核上（Ubuntu 24.04 的 6.8 为 ABI 4），Landlock 启动器每次运行都会打印 `landlock-run: partial enforcement (older Landlock ABI)`。现在 spawn 会从命令与钩子脚本 stderr 的开头去掉后端报告为提示性的行（core 的 `ConfinedSpawn.runnerLines`），之后的输出不做检查。
-- `@penguinharness/sandbox-dsh`、`sandbox-bwrap`、`sandbox-seatbelt` 与 `sandbox-wsl` 升为 0.2.3。随构建发布它们的机器，同一版本下优先加载构建自带的副本；但下载它们的机器（npm 全局安装）只下载自己没有的版本，而 npm 上每个版本只能发布一次：若版本仍是 0.2.2，已把 0.2.2 下载到 `<数据根>/plugins/` 的机器会继续运行旧内容，拿不到 `closed-temp` 声明。
+- `@penguinharness/sandbox-dsh`、`sandbox-bwrap`、`sandbox-seatbelt` 与 `sandbox-wsl` 升为 0.2.3。构建不随包带它们的机器（npm 全局安装）用 npm 把它们装进 `<数据根>/plugins/`，而 npm 上每个版本只能发布一次：若版本仍是 0.2.2，已在那里装有 0.2.2 的机器会继续运行旧内容，拿不到 `closed-temp` 声明。
 - bubblewrap 的拒绝原因带上 bwrap 的输出（`setting up uid map: Permission denied`，或启动错误），并说明 Ubuntu 上的 root 操作是可选的，只增加网络隔离与屏蔽路径。
 
 ## 输入框
@@ -37,4 +37,4 @@
 
 ## 文档
 
-- CLI 快速开始的「Ubuntu 上的沙盒」一节、设置与 Server API 页面，以及两个后端的 README 都改为描述默认情形：无需任何操作即可工作，通过 Landlock 只约束文件写入，root 操作只增加网络隔离与屏蔽路径。AppArmor profile 的路径按插件仓的布局改正为 `plugin-store/packages/@penguinharness/sa/nd/sandbox-bwrap/…`。
+- CLI 快速开始的「Ubuntu 上的沙盒」一节、设置与 Server API 页面，以及两个后端的 README 都改为描述默认情形：无需任何操作即可工作，通过 Landlock 只约束文件写入，root 操作只增加网络隔离与屏蔽路径。
