@@ -3,6 +3,7 @@
 - **Date:** 2026-10-03
 - **Type:** feature
 - **Scope:** `server`, `web`, `plugins`, `core`, `docs`
+- **PR:** [#978](https://github.com/Prism-Shadow/penguin-harness/pull/978)
 
 [中文版](2026-10-03-sandbox-landlock-floor.zh.md)
 

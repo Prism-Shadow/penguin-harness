@@ -3,6 +3,7 @@
 - **Date:** 2026-10-03
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#978](https://github.com/Prism-Shadow/penguin-harness/pull/978)
 
 [English](2026-10-03-backward-compatibility-sandbox-recommended.md)
 
