@@ -1994,14 +1994,15 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(await cli(["org", "proposal", "graph", "--all"])).toBe(0);
     expect(out()).toBe(
       [
+        // Base on top: the smartlog rows reversed, each join drawn as `├─╮`.
         "acme/site",
-        `○  #12 feat/b ccccccccc +1 -2  [top, via closed #9, stale, restack pending]  ${t.org.graphNoProposal()}`,
-        "│ ○  branch impl/d eeeeeeeee +1  [top]  proposal #3 drafting",
-        "├─╯",
-        `│ ×  #13 feat/c ddddddddd +3 -4  [${t.org.graphOffReason("old-line", "#11", "diverged", "feat/a")}]  ${t.org.graphNoProposal()}`,
-        "├─╯",
-        "○  #11 feat/a bbbbbbbbb +2 -3  [stale, behind dev by 3, restack pending]  proposal #1 ready  origin #801 behind",
         `~  dev aaaaaaaaa ${t.org.graphBaseBehind(3)}`,
+        "○  #11 feat/a bbbbbbbbb +2 -3  [stale, behind dev by 3, restack pending]  proposal #1 ready  origin #801 behind",
+        "├─╮",
+        `│ ×  #13 feat/c ddddddddd +3 -4  [${t.org.graphOffReason("old-line", "#11", "diverged", "feat/a")}]  ${t.org.graphNoProposal()}`,
+        "├─╮",
+        "│ ○  branch impl/d eeeeeeeee +1  [top]  proposal #3 drafting",
+        `○  #12 feat/b ccccccccc +1 -2  [top, via closed #9, stale, restack pending]  ${t.org.graphNoProposal()}`,
         "",
         t.org.graphOffChain(),
         `  #14 feat/x fffffffff  [${t.org.graphOffReason("no-base", "?", "unknown", "gone")}]  ${t.org.graphNoProposal()}`,
@@ -2018,9 +2019,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(out()).toBe(
       [
         `acme/site  ${t.org.graphOthersHidden(2)}`,
-        "○  branch impl/d eeeeeeeee +1  [top]  proposal #3 drafting",
-        "○  #11 feat/a bbbbbbbbb +2 -3  [stale, behind dev by 3, restack pending]  proposal #1 ready  origin #801 behind",
         `~  dev aaaaaaaaa ${t.org.graphBaseBehind(3)}`,
+        "○  #11 feat/a bbbbbbbbb +2 -3  [stale, behind dev by 3, restack pending]  proposal #1 ready  origin #801 behind",
+        "○  branch impl/d eeeeeeeee +1  [top]  proposal #3 drafting",
         "",
         t.org.graphUnplaced(),
         `  proposal #2 approved  https://github.com/acme/site/pull/5  [${t.org.graphUnplacedReason("merged", "?", "feat/a", "dev")}]`,
@@ -2197,8 +2198,8 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(out()).toBe(
       [
         "acme/site",
-        `○  #11 feat/a bbbbbbbbb +2  [top]  ${t.org.graphNoProposal()}  [connector]  @here bbbbbbbbb  @late eeeeeeeee +3`,
         "~  dev aaaaaaaaa  @old aaaaaaaaa",
+        `○  #11 feat/a bbbbbbbbb +2  [top]  ${t.org.graphNoProposal()}  [connector]  @here bbbbbbbbb  @late eeeeeeeee +3`,
         "",
         t.org.graphDeploymentsOff(),
         "  @local fffffffff  v1-5-gfffffffff  http://h:3",
