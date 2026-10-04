@@ -12,12 +12,20 @@
  *   live session; on a held session the corpse is dropped but the hold kept.
  * - A held session that dies comes back on its own after the shortest reconnect wait; a
  *   closed one stays closed; closing lets go, and the next ask opens a new session.
+ * - With a telemetry sink set, every command is a sample: its exit code, a timeout as such,
+ *   never its text.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { closeConnectionTo, connectionTo, sessionOf } from "../src/machines/transport/index.js";
+import {
+  closeConnectionTo,
+  connectionTo,
+  sessionOf,
+  setTimingsSink,
+} from "../src/machines/transport/index.js";
+import type { MachineSample } from "../src/machines/transport/index.js";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
@@ -58,6 +66,25 @@ exit 1
     expect((await conn.exec("exit 3")).code).toBe(3);
     expect(await conn.exec("echo still here")).toMatchObject({ code: 0, stdout: "still here\n" });
     expect(spawns()).toHaveLength(1);
+  });
+
+  it("with a sink set, every command is a sample — exit code, a timeout as such, never its text", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const samples: MachineSample[] = [];
+    setTimingsSink((sample) => samples.push(sample));
+    try {
+      expect((await conn.exec("echo top-secret-words")).code).toBe(0);
+      expect((await conn.exec("exit 3")).code).toBe(3);
+      await conn.stream("sleep 5", { input: Buffer.alloc(0), timeoutMs: 150 });
+    } finally {
+      setTimingsSink(null);
+    }
+    expect(samples.map((s) => [s.probe, s.status, s.attrs?.code])).toEqual([
+      ["machine.ssh.command", "ok", 0],
+      ["machine.ssh.command", "exit", 3],
+      ["machine.ssh.command", "timeout", 255],
+    ]);
+    expect(JSON.stringify(samples)).not.toContain("top-secret-words");
   });
 
   it("hands a command its stdin as a heredoc, bytes intact, and relays lines as they arrive", async () => {

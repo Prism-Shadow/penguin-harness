@@ -79,6 +79,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
+import { ConnectClock } from "./connect-stages.js";
 import { HttpError } from "../http/errors.js";
 import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
@@ -87,6 +88,8 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Db, Hmr, Paths } from "../hmr/capabilities.js";
 import { currentRemoteLayout } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
+import { bindMachineTimings } from "./telemetry-binding.js";
 
 /** A job's narrator: a line for the log, and optionally the step of the pipeline it begins. */
 type Say = (line: string, phase?: MachinePhase) => void;
@@ -189,7 +192,7 @@ export class MachinesService {
   readonly #queue: Array<{
     job: MachineJob;
     opts: { offerReplaceProgram: boolean };
-    work: (say: Say) => Promise<MachineJob["result"]>;
+    work: (say: Say, job: MachineJob) => Promise<MachineJob["result"]>;
   }> = [];
   /** The latest job per machine — queued, running or finished — for the page's rows. */
   readonly #jobs = new Map<string, MachineJob>();
@@ -617,7 +620,7 @@ export class MachinesService {
      * initiative: it stops a server other people may be using.
      */
     opts: { offerReplaceProgram: boolean },
-    work: (say: Say) => Promise<MachineJob["result"]>,
+    work: (say: Say, job: MachineJob) => Promise<MachineJob["result"]>,
   ): void {
     const job: MachineJob = {
       kind,
@@ -663,7 +666,7 @@ export class MachinesService {
   async #run(
     job: MachineJob,
     opts: { offerReplaceProgram: boolean },
-    work: (say: Say) => Promise<MachineJob["result"]>,
+    work: (say: Say, job: MachineJob) => Promise<MachineJob["result"]>,
   ): Promise<void> {
     job.queued = false;
     job.running = true;
@@ -674,7 +677,7 @@ export class MachinesService {
     };
     try {
       this.#busy.add(job.machineId);
-      job.result = await work(say);
+      job.result = await work(say, job);
     } catch (err) {
       job.result = {
         ok: false,
@@ -932,8 +935,8 @@ export class MachinesService {
         refused.push({ machineId: address, why: "no-image" });
         continue;
       }
-      this.#startJob("use", machine, { offerReplaceProgram: !replaceProgram }, (say) =>
-        this.#useWork(projectId, address, plan, replaceProgram, say),
+      this.#startJob("use", machine, { offerReplaceProgram: !replaceProgram }, (say, job) =>
+        this.#useWork(projectId, address, plan, replaceProgram, say, job),
       );
     }
     return { refused };
@@ -946,6 +949,7 @@ export class MachinesService {
     plan: NonNullable<ReturnType<MachinesEffects["resolvePlan"]>>,
     replaceProgram: boolean,
     say: Say,
+    job: MachineJob,
   ): Promise<MachineJob["result"]> {
     // Read at run time, not at queue time: a batch's later rows see what the earlier ones did.
     const machine = this.#allMachines().find((entry) => entry.id === address);
@@ -968,7 +972,7 @@ export class MachinesService {
       return { ok: true, installed: "already-installed", version: plan.version };
     }
     const fresh = this.#allMachines().find((entry) => entry.id === address) ?? machine;
-    return this.#connect(fresh, say);
+    return this.#connect(fresh, say, job);
   }
 
   /**
@@ -1001,13 +1005,36 @@ export class MachinesService {
     // it with. Said here, in one sentence, rather than discovered as a POSIX command failing
     // under cmd.exe in the job's log.
     if (this.repo.get(address)?.platform === "win32") return { ok: false, why: "unsupported" };
-    this.#startJob("connect", machine, { offerReplaceProgram: true }, (say) =>
-      this.#connect(machine, say),
+    this.#startJob("connect", machine, { offerReplaceProgram: true }, (say, job) =>
+      this.#connect(machine, say, job),
     );
     return { ok: true };
   }
 
-  async #connect(machine: MachineInfo, say: Say): Promise<MachineJob["result"]> {
+  /**
+   * `job` is the job this connect runs as, which keeps its stages; none for a re-hold. The
+   * stages are timed either way while telemetry is on (connect-stages.ts).
+   */
+  async #connect(
+    machine: MachineInfo,
+    say: Say,
+    job: MachineJob | null,
+  ): Promise<MachineJob["result"]> {
+    const clock = new ConnectClock(
+      machine.id,
+      this.#effects.now,
+      job === null ? null : (job.stages ??= []),
+    );
+    const result = await this.#connectStages(machine, say, clock);
+    clock.done(result);
+    return result;
+  }
+
+  async #connectStages(
+    machine: MachineInfo,
+    say: Say,
+    clock: ConnectClock,
+  ): Promise<MachineJob["result"]> {
     const address = machine.id;
     const target = this.#targetOf(machine.alias);
 
@@ -1017,7 +1044,11 @@ export class MachinesService {
     // connect, which said "already connected" again, forever. Reconnecting (to retry a sync
     // that failed, or pick up a new key) now costs one probe and stays honest.
     say("Asking what is running there…", "check");
-    const probed = await this.#probe(address, target);
+    const probed = await clock.stage(
+      "probe",
+      () => this.#probe(address, target),
+      (answer) => answer.state.kind !== "unreachable",
+    );
     this.#recordProbe(address, probed);
     if (probed.state.kind === "unreachable") {
       // The same dead end an install reaches, and the same way out — installing anyway,
@@ -1043,27 +1074,40 @@ export class MachinesService {
     } else {
       remotePort = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
       say(`Starting its server on port ${remotePort}…`);
-      const started = await this.#effects.startServer(target, remotePort);
+      const started = await clock.stage(
+        "start-server",
+        () => this.#effects.startServer(target, remotePort),
+        (outcome) => outcome.ok,
+      );
       if (!started.ok) return { ok: false, step: "start its server", message: started.detail };
       // A machine mints its id when its server starts, so one that was down had none — and
       // its port and pid are now the freshest fact about it. The port is taken from what the
       // machine says, not from what was asked for: the two differ when an earlier, slower
       // start is the server that answered.
-      const after = await this.#probe(address, target);
+      const after = await clock.stage(
+        "reprobe",
+        () => this.#probe(address, target),
+        (answer) => answer.state.kind === "running",
+      );
       this.#recordProbe(address, after);
       if (after.state.kind === "running") remotePort = after.state.port;
     }
 
     say("Opening the connection…", "connect");
-    const connection = await this.#connection(address, target);
+    const connection = await clock.stage(
+      "hold",
+      () => this.#connection(address, target),
+      (held) => held.ok,
+    );
     if (!connection.ok) return { ok: false, step: "connect", message: connection.detail };
+    const connectedAt = this.#effects.now().toISOString();
     this.repo.patch(address, { remotePort });
     say(`Connected; its server is on port ${remotePort} over there.`);
     // An Agent started over there resolves its model against THAT machine's config, so a
     // machine without our credentials is connected and unusable.
     say("Handing over the Model config…", "sync");
-    await this.#syncModels(address, target, remotePort, say, this.#projectsUsing(address));
-    return { ok: true, connected: true };
+    await this.#syncModels(address, target, remotePort, say, this.#projectsUsing(address), clock);
+    return { ok: true, connected: true, connectedAt };
   }
 
   /**
@@ -1124,7 +1168,13 @@ export class MachinesService {
     port: number,
     say: Say,
     projects: string[],
+    /** The connect this sync is a stage of, which times it; none for a sync on its own. */
+    clock?: ConnectClock,
   ): Promise<void> {
+    const stage = <T>(name: "sync-models" | "sync-plugins", work: () => Promise<T>): Promise<T> =>
+      clock === undefined
+        ? work()
+        : clock.stage(name, work, (o) => (o as { kind?: string }).kind !== "failed");
     if (projects.length === 0) {
       say("No models synced — no Project on this server uses that machine.");
       return;
@@ -1134,11 +1184,13 @@ export class MachinesService {
       say(`Models not synced — ${session.detail}`);
       return;
     }
-    const outcome = await syncModelsToMachine({
-      api: machineApi(this.#effects.agent(target, port), port, session.cookie),
-      loadLocal: (projectId) => this.#localModels(projectId),
-      projects,
-    });
+    const outcome = await stage("sync-models", () =>
+      syncModelsToMachine({
+        api: machineApi(this.#effects.agent(target, port), port, session.cookie),
+        loadLocal: (projectId) => this.#localModels(projectId),
+        projects,
+      }),
+    );
     if (outcome.kind === "failed") {
       say(`Models not synced — ${outcome.detail}`);
       return;
@@ -1151,14 +1203,16 @@ export class MachinesService {
     // Same session, same Projects: a plugin a Project asks for has to be loaded on the
     // machine that will run its Sessions, and enabling it once per machine by hand is not
     // a path this product has (PRFC-0010).
-    const plugins = await syncPluginsToMachine({
-      api: machineApi(this.#effects.agent(target, port), port, session.cookie),
-      // Asked of THIS machine: its own table joins the shared one, keyed by the id its server
-      // minted — null (no server there has reported one) reads the shared table alone.
-      loadLocal: (projectId) =>
-        this.#localPlugins(projectId, this.repo.get(address)?.machineId ?? null),
-      projects,
-    });
+    const plugins = await stage("sync-plugins", () =>
+      syncPluginsToMachine({
+        api: machineApi(this.#effects.agent(target, port), port, session.cookie),
+        // Asked of THIS machine: its own table joins the shared one, keyed by the id its server
+        // minted — null (no server there has reported one) reads the shared table alone.
+        loadLocal: (projectId) =>
+          this.#localPlugins(projectId, this.repo.get(address)?.machineId ?? null),
+        projects,
+      }),
+    );
     if (plugins.kind === "failed") {
       say(`Plugins not synced — ${plugins.detail}`);
       return;
@@ -1435,7 +1489,7 @@ export class MachinesService {
       unconnected.map((m) => m.id),
       async (address) => {
         const machine = unconnected.find((m) => m.id === address)!;
-        const result = await this.#connect(machine, () => {});
+        const result = await this.#connect(machine, () => {}, null);
         if (result !== null && result.ok) {
           this.#reholdNotBefore.delete(address);
           this.#reholdFailures.delete(address);
@@ -1528,6 +1582,8 @@ export class MachinesModule {
   @Use() private readonly db!: Db;
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly access!: Access;
+  /** Absent in a test App without it: the connection probes then stay off, as they are while it is off. */
+  @Use() private readonly telemetry?: Telemetry;
   @Provide() machines!: Machines;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
@@ -1545,6 +1601,8 @@ export class MachinesModule {
     // Every ssh session THIS generation opened closes with it; the successor's setup
     // re-holds each one the install record says was held.
     effect(() => machines.stop());
+    // The connection probes follow the Telemetry switch (PRFC-0008), into this generation's buffer.
+    if (this.telemetry !== undefined) effect(bindMachineTimings(this.telemetry));
   }
 }
 

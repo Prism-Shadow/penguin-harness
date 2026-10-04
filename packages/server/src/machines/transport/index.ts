@@ -23,3 +23,5 @@ export type { ShellSession } from "./ssh-session.js";
 export { execFailureText, looksLikeAuthFailure, runBytes } from "./exec.js";
 export type { ExecResult } from "./exec.js";
 export { appendHostBlock, listHostAliases, readSshConfig, writeSshConfig } from "./targets.js";
+export { emit, round, setTimingsSink, timingsSink } from "./timings.js";
+export type { MachineSample, TimingsSink } from "./timings.js";

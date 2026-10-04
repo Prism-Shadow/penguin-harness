@@ -318,6 +318,8 @@ export interface TelemetryKeys {
   request?: string;
   session?: string;
   generation?: number;
+  /** The machine a connection probe measured, by its address (`ssh:<alias>`). */
+  machine?: string;
 }
 
 /** A sample as a probe hands it over; the buffer stamps `ts`. */
@@ -4588,10 +4590,18 @@ export interface MachineJob {
    */
   phase: MachinePhase | null;
   log: string[];
+  /**
+   * The connect stages this job ran, each with when it began and ended — which one a slow
+   * connect spent its time in (machines/connect-stages.ts). Only a job that connects has
+   * them, only the stages it needed, in the order it ran them. Absent from a server older
+   * than this field.
+   */
+  stages?: MachineStageTiming[];
   result:
     | null
     | { ok: true; installed: "installed" | "already-installed"; version: string | null }
-    | { ok: true; connected: true }
+    /** `connectedAt`: when the connection was held (ISO). Absent from an older server. */
+    | { ok: true; connected: true; connectedAt?: string }
     | {
         ok: false;
         step: string;
@@ -4636,6 +4646,29 @@ export const MACHINE_PHASES = [
   "sync",
 ] as const;
 export type MachinePhase = (typeof MACHINE_PHASES)[number];
+
+/**
+ * The stages of a connect, finer than its phases: asking what runs there, starting its server
+ * when none does, asking again, holding the connection, and handing over the Model config
+ * and then the plugins. A stage not needed is not run and not recorded.
+ */
+export const MACHINE_CONNECT_STAGES = [
+  "probe",
+  "start-server",
+  "reprobe",
+  "hold",
+  "sync-models",
+  "sync-plugins",
+] as const;
+export type MachineConnectStage = (typeof MACHINE_CONNECT_STAGES)[number];
+
+/** One connect stage as a job ran it. ISO timestamps; `ok` false when it did not go through. */
+export interface MachineStageTiming {
+  stage: MachineConnectStage;
+  startedAt: string;
+  endedAt: string;
+  ok: boolean;
+}
 
 /**
  * `POST /api/projects/:projectId/machines/ssh-hosts`: append a host block to this server's

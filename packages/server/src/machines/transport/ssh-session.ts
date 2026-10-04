@@ -38,6 +38,7 @@ import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { sessionArgs } from "../commands.js";
 import type { RemoteTarget } from "../commands.js";
+import { NO_ANSWER, timedCommand } from "./timings.js";
 
 /**
  * What a command in the session produced. `output` is stdout and stderr merged, with the
@@ -121,7 +122,11 @@ class MachineShell {
   #reopen: NodeJS.Timeout | null = null;
   #backoffMs = RECONNECT_MIN_MS;
 
-  constructor(private readonly target: RemoteTarget) {}
+  constructor(
+    /** The machine's address (`ssh:<alias>`): the key its command samples carry. */
+    readonly address: string,
+    private readonly target: RemoteTarget,
+  ) {}
 
   /** Keeps the session from here on: a session opened transiently is promoted in place. */
   hold(): void {
@@ -139,7 +144,7 @@ class MachineShell {
     const next = this.#queue.then(() => this.#runExclusive(command, opts));
     // The queue must survive a rejection, or one failure would stall every later command.
     this.#queue = next.catch(() => undefined);
-    return next;
+    return timedCommand(this.address, () => next);
   }
 
   /** The session while it is up — pid and SOCKS port — or null. */
@@ -299,7 +304,7 @@ class MachineShell {
         // fact that the machine simply never replied.
         this.#pending = null;
         this.#reset();
-        resolve({ code: 255, output: "the machine did not answer in time" });
+        resolve({ code: 255, output: NO_ANSWER });
       }, opts.timeoutMs ?? COMMAND_TIMEOUT_MS);
       this.#pending = { resolve, timer, onLine: opts.onLine };
       const mark = `printf '\\n${this.#mark} %s\\n' "$?"`;
@@ -341,7 +346,7 @@ const sessions = new Map<string, MachineShell>();
 function shellFor(machineAddress: string, target: RemoteTarget): MachineShell {
   let shell = sessions.get(machineAddress);
   if (shell === undefined) {
-    shell = new MachineShell(target);
+    shell = new MachineShell(machineAddress, target);
     sessions.set(machineAddress, shell);
   }
   return shell;
