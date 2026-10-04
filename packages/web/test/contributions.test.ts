@@ -5,8 +5,9 @@
  *   compiled one; a user change drops the last answer and asks again, and a late answer for
  *   the user just left is dropped; signing out clears it.
  * - The merge appends iframe pages after the compiled ones; a compiled page wins a key or
- *   path clash; a builtin renderer is skipped (this build carries none); an entry without a
- *   key, a path or an iframe src is skipped.
+ *   path clash; a builtin page is drawn by the renderer a module contributed under its name
+ *   (`WebAppModule.pageRenderers`) and skipped when there is none; an entry without a key, a
+ *   path or a renderer is skipped.
  * - A merged iframe page is routed at its path and draws a sandboxed frame of its src.
  */
 import { createElement, type ComponentType } from "react";
@@ -45,6 +46,9 @@ const COMPILED: WebAppPage[] = [
     Component: Blank,
   },
 ];
+
+/** No module contributed a page renderer. */
+const NONE: ReadonlyMap<string, ComponentType> = new Map();
 
 const frame = (src: string) => ({ iframe: { src, namespace: "hello" } });
 
@@ -88,7 +92,7 @@ describe("createContributionsStore", () => {
     calls[0]!.reject(new Error("500"));
     await settle();
     expect(store.current()).toEqual({ user: "alice", answer: null, pending: false });
-    expect(contributedPagesOf(COMPILED, store.current().answer)).toBe(COMPILED);
+    expect(contributedPagesOf(COMPILED, store.current().answer, NONE)).toBe(COMPILED);
   });
 
   it("a user change drops the last answer and asks again; a late answer for the old user is dropped", async () => {
@@ -116,8 +120,8 @@ describe("createContributionsStore", () => {
 
 describe("contributedPagesOf", () => {
   it("returns the compiled table as it is without an answer", () => {
-    expect(contributedPagesOf(COMPILED, null)).toBe(COMPILED);
-    expect(contributedPagesOf(COMPILED, answer([]))).toBe(COMPILED);
+    expect(contributedPagesOf(COMPILED, null, NONE)).toBe(COMPILED);
+    expect(contributedPagesOf(COMPILED, answer([]), NONE)).toBe(COMPILED);
   });
 
   it("appends an iframe page after the compiled ones, inside the shell", () => {
@@ -134,6 +138,7 @@ describe("contributedPagesOf", () => {
           renderer: frame("/hello.html"),
         },
       ]),
+      NONE,
     );
     expect(merged.slice(0, 2)).toEqual(COMPILED);
     expect(merged[2]).toMatchObject({
@@ -158,11 +163,26 @@ describe("contributedPagesOf", () => {
         { id: "d", from: "x", key: "d", path: "/d", renderer: frame("/d.html") },
         { id: "e", from: "x", key: "d", path: "/e", renderer: frame("/e.html") },
       ]),
+      NONE,
     );
     expect(merged.map((p) => p.id)).toEqual(["agents.page", "terminal.page", "d"]);
   });
 
-  it("skips a builtin renderer, and an entry without a key, a path or an iframe src", () => {
+  it("draws a builtin page with the renderer a module contributed under its name", () => {
+    const Proposals: ComponentType = () => null;
+    const merged = contributedPagesOf(
+      COMPILED,
+      answer([
+        { id: "a", from: "x", key: "a", path: "/a", renderer: { builtin: "Proposals" } },
+        { id: "b", from: "x", key: "b", path: "/b", renderer: { builtin: "Unknown" } },
+      ]),
+      new Map([["Proposals", Proposals]]),
+    );
+    expect(merged.map((p) => p.id)).toEqual(["agents.page", "terminal.page", "a"]);
+    expect(merged[2]!.Component).toBe(Proposals);
+  });
+
+  it("skips a builtin renderer nobody contributed, and an entry without a key, a path or an iframe src", () => {
     const merged = contributedPagesOf(
       COMPILED,
       answer([
@@ -173,6 +193,7 @@ describe("contributedPagesOf", () => {
         { id: "e", from: "x", key: "e", path: "/e", renderer: { iframe: { namespace: "e" } } },
         { id: "f", from: "x", key: "f", path: "/f" },
       ]),
+      NONE,
     );
     expect(merged.map((p) => p.id)).toEqual(["agents.page", "terminal.page"]);
   });
@@ -193,6 +214,7 @@ describe("contributedPagesOf", () => {
           renderer: frame("/plugins/hello/index.html"),
         },
       ]),
+      NONE,
     );
     const html = renderToStaticMarkup(
       createElement(

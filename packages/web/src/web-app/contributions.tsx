@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
@@ -71,15 +78,28 @@ function framePageFor(src: string, title: string) {
   };
 }
 
+/** The component a contributed page's renderer resolves to; undefined when this build cannot draw it. */
+function componentOf(
+  renderer: unknown,
+  key: string,
+  renderers: ReadonlyMap<string, ComponentType>,
+): ComponentType | undefined {
+  const ref = renderer as { iframe?: { src?: unknown }; builtin?: unknown } | undefined;
+  if (typeof ref?.iframe?.src === "string") return framePageFor(ref.iframe.src, key);
+  if (typeof ref?.builtin === "string") return renderers.get(ref.builtin);
+  return undefined;
+}
+
 /**
  * The compiled pages plus the contributed ones this build can draw, appended in the server's
  * order after the last compiled page. An entry is skipped when it lacks a key or a path, when
- * a compiled page (or an earlier entry) owns its key or path, or when its renderer is not an
- * iframe with a `src`.
+ * a compiled page (or an earlier entry) owns its key or path, or when its renderer is neither
+ * an iframe with a `src` nor a `builtin` name in `renderers`.
  */
 export function contributedPagesOf(
   compiled: readonly WebAppPage[],
   answer: ContributionsResponse | null,
+  renderers: ReadonlyMap<string, ComponentType>,
 ): readonly WebAppPage[] {
   if (answer === null || answer.pages.length === 0) return compiled;
   const keys = new Set(compiled.map((p) => p.key));
@@ -90,8 +110,13 @@ export function contributedPagesOf(
     const { key, path, nav, admin, renderer } = entry;
     if (typeof key !== "string" || key === "" || keys.has(key)) continue;
     if (typeof path !== "string" || !path.startsWith("/") || paths.has(path)) continue;
-    const src = (renderer as { iframe?: { src?: unknown } } | undefined)?.iframe?.src;
-    if (typeof src !== "string") continue;
+    const Component = componentOf(renderer, key, renderers);
+    if (Component === undefined) {
+      console.warn(
+        `Missing builtin renderer "${"builtin" in renderer ? renderer.builtin : ""}" for contributed page "${key}" (${path}); skipping page`,
+      );
+      continue;
+    }
     keys.add(key);
     paths.add(path);
     out.push({
@@ -103,7 +128,7 @@ export function contributedPagesOf(
       admin: admin === true,
       released: true,
       order: ++order,
-      Component: framePageFor(src, key),
+      Component,
     });
   }
   return out;
@@ -111,7 +136,7 @@ export function contributedPagesOf(
 
 /** Holds the signed-in user's contributions and the merged page table, for everything under the router. */
 export function WebAppPagesProvider({ children }: { children: ReactNode }) {
-  const { pages: compiled } = webAppDeps.useDeps();
+  const { pages: compiled, pageRenderers } = webAppDeps.useDeps();
   const userId = useAuth().user?.userId ?? null;
   const [store] = useState(() => createContributionsStore(api.getContributions));
   useEffect(() => store.setUser(userId), [store, userId]);
@@ -122,8 +147,8 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const answer = current ? state.answer : null;
   const pending = current ? state.pending : userId !== null;
   const value = useMemo(
-    () => ({ pages: contributedPagesOf(compiled, answer), pending }),
-    [compiled, answer, pending],
+    () => ({ pages: contributedPagesOf(compiled, answer, pageRenderers), pending }),
+    [compiled, answer, pageRenderers, pending],
   );
   return <PagesContext.Provider value={value}>{children}</PagesContext.Provider>;
 }
