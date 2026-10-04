@@ -13,6 +13,7 @@ const OrgProposalsPage = () => null;
  * - The chat page is the chat page; the dashboard and one machine's ports are
  *   pages of their own modules, off the nav, the ports page admin-only.
  * - Home (`/` and every unmatched path) is company mode's page, since it depends on the mode.
+ * - The proposals page is the one page renderer, under the name its plugin's page names.
  * - Beside the booted table, a contributed page whose key the app owns is ignored, and the
  *   company-mode proposals page passes the renderers company mode carries.
  * - The shell receives company's provider and the update badges' owner for the signed-in
@@ -97,6 +98,7 @@ import { sessionTabsOf } from "../src/features/chat/deps";
 import { WorkbenchSessionTab } from "../src/features/workbenches/session-tab";
 
 let pages: readonly WebAppPage[] = [];
+let pageRenderers: readonly Contributed[] = [];
 let sessionProviders: readonly Contributed[] = [];
 let layers: readonly Contributed[] = [];
 let userEvents: readonly UserEventHandler[] = [];
@@ -119,6 +121,7 @@ beforeAll(async () => {
   const webApp = Object.assign(new WebAppModule(), {
     setup({ contributions }: ClassCtx) {
       pages = pageTableOf(contributions.pages ?? []);
+      pageRenderers = contributions.pageRenderers ?? [];
       sessionProviders = contributions.sessionProviders ?? [];
       layers = contributions.layers ?? [];
       userEvents = webApp.userEventHandlers.all();
@@ -248,6 +251,9 @@ describe("the booted page table", () => {
       admin: false,
       Component: HomeRedirect,
     });
+  });
+  it("keeps builtin renderer registration pluggable without restoring a retired owner", () => {
+    expect(pageRenderers).toEqual([]);
   });
 
   it("lets a contributed page in beside the table only under a key the app does not own", () => {
