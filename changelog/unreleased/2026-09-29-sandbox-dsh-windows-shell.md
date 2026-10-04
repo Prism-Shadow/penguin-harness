@@ -3,7 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `plugins`, `core`
-- **PR:** [#971](https://github.com/Prism-Shadow/penguin-harness/pull/971)
+- **PR:** [#972](https://github.com/Prism-Shadow/penguin-harness/pull/972)
 
 [中文版](2026-09-29-sandbox-dsh-windows-shell.zh.md)
 
