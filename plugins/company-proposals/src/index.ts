@@ -284,6 +284,25 @@ export class CompanyProposalsPlugin {
   ): Promise<number> {
     return this.service.createFromRoadmap(projectId, orgId, req);
   }
+
+  /**
+   * The brief of the proposal a roadmap item is linked to, rewritten when the item's changed
+   * brief is approved again (ProposalService.rebriefFromRoadmap). Answers false, writing
+   * nothing, when that proposal is merged or rejected: the roadmap creates a new one instead.
+   */
+  rebriefFromRoadmap(
+    projectId: string,
+    orgId: string,
+    number: number,
+    req: {
+      owner: string;
+      brief: string;
+      delegatedBy: string;
+      roadmap: { number: number; key: string };
+    },
+  ): Promise<boolean> {
+    return this.service.rebriefFromRoadmap(projectId, orgId, number, req);
+  }
 }
 
 /** The retirement's contribution id, as the manifest names it. */

@@ -128,6 +128,8 @@ export class FakeGateway implements Pick<
 /**
  * company-proposals' creation: every proposal it was asked to create, numbered from 200 so a
  * test tells a created number from one it linked by hand; `refuse` makes the next call throw.
+ * Every brief rewrite it was asked for is kept in `rebriefed`; a number in `closed` is merged
+ * or rejected, so its rewrite answers false and writes nothing.
  */
 export class FakeProposals implements ProposalCreator {
   created: Array<{
@@ -140,7 +142,31 @@ export class FakeProposals implements ProposalCreator {
     roadmap: { number: number; key: string };
   }> = [];
   refuse: string | null = null;
+  rebriefed: Array<{
+    number: number;
+    owner: string;
+    brief: string;
+    delegatedBy: string;
+    roadmap: { number: number; key: string };
+  }> = [];
+  closed = new Set<number>();
   private next = 200;
+
+  async rebriefFromRoadmap(
+    _projectId: string,
+    _orgId: string,
+    number: number,
+    req: {
+      owner: string;
+      brief: string;
+      delegatedBy: string;
+      roadmap: { number: number; key: string };
+    },
+  ): Promise<boolean> {
+    if (this.closed.has(number)) return false;
+    this.rebriefed.push({ number, ...req });
+    return true;
+  }
 
   async createFromRoadmap(
     projectId: string,

@@ -30,7 +30,7 @@ import type {
 } from "@prismshadow/penguin-server/plugin";
 import { RetiredOrgs } from "./org-retire.js";
 import { CONFIG_GROUP, configOf, type RoadmapConfig } from "./config.js";
-import type { ProposalCreator } from "./proposals.js";
+import { proposalOfApproval, type ProposalCreator } from "./proposals.js";
 import {
   RoadmapError,
   orgDirOf,
@@ -803,6 +803,12 @@ export class RoadmapService {
    * that fails fails the approval, which stands unrecorded and can be given again. Then the
    * approval, the delegation and the link are recorded, the owner is told the number (with
    * who approved and when), and the owners stacked on the item learn it too.
+   *
+   * An item still linked to its proposal — a re-establishment changed its brief and kept the
+   * link — creates nothing while that proposal is open: its brief is rewritten to the item's
+   * (proposalOfApproval), the link stays, and the owner is told of the rewrite; the owners
+   * stacked on it know the number already. Merged or rejected, a new proposal is created and
+   * linked in its place, as for an item with none.
    */
   async approve(
     projectId: string,
@@ -816,11 +822,12 @@ export class RoadmapService {
       const r = this.require(store, number);
       const { role, item, second } = this.rules.approve(r, key, caller);
       const d = r.delegations[key]!;
-      let proposal: number | null = null;
+      let made: { number: number; rebriefed: boolean } | null = null;
       if (second) {
         try {
-          proposal = await this.deps.proposals.createFromRoadmap(projectId, orgId, {
-            author: item.owner,
+          made = await proposalOfApproval(this.deps.proposals, projectId, orgId, {
+            linked: d.proposal,
+            owner: item.owner,
             title: item.title,
             brief: d.brief,
             delegatedBy: caller.principal,
@@ -831,7 +838,7 @@ export class RoadmapService {
           throw new RoadmapError(
             409,
             "proposal_not_created",
-            `Item ${key}'s proposal could not be created, so this approval is not recorded: ${message}`,
+            `Item ${key}'s proposal could not be ${d.proposal === undefined ? "created" : "created or rewritten"}, so this approval is not recorded: ${message}`,
           );
         }
       }
@@ -839,7 +846,8 @@ export class RoadmapService {
       // write) and, when it is the second, the delegation and the link to the proposal. A
       // failure between the creation above and this write leaves the proposal unlinked and the
       // approval unrecorded; approving again finds the same proposal (createFromRoadmap is
-      // idempotent on the item and its brief) and links it.
+      // idempotent on the item and its brief, a rewrite on the brief) and links it. A rewritten
+      // proposal is linked already: the delegation keeps it.
       const approved: RoadmapWrite = {
         kind: "approved",
         number,
@@ -849,7 +857,7 @@ export class RoadmapService {
         by: caller.principal,
       };
       store.write(
-        proposal === null
+        made === null
           ? approved
           : [
               approved,
@@ -864,7 +872,17 @@ export class RoadmapService {
                 delivered: false,
                 by: caller.principal,
               },
-              { kind: "linked", number, key, proposal, by: caller.principal },
+              ...(made.rebriefed
+                ? []
+                : [
+                    {
+                      kind: "linked" as const,
+                      number,
+                      key,
+                      proposal: made.number,
+                      by: caller.principal,
+                    },
+                  ]),
             ],
         (now) => {
           this.rules.approve(now, key, caller);
@@ -874,34 +892,39 @@ export class RoadmapService {
       const hints: string[] = [];
       const now = this.require(store, number).delegations[key]!;
       const { person, moderator: mod } = now.approvals;
-      if (proposal !== null && person !== undefined && mod !== undefined) {
+      if (made !== null && person !== undefined && mod !== undefined) {
+        const proposal = made.number;
         const base = now.base === null ? null : (r.items.find((x) => x.key === now.base) ?? null);
         const baseProposal = now.base === null ? undefined : r.delegations[now.base]?.proposal;
+        const line = approvedLine({
+          roadmap: r,
+          item,
+          base:
+            base === null
+              ? null
+              : {
+                  title: base.title,
+                  ...(baseProposal !== undefined ? { proposal: baseProposal } : {}),
+                },
+          person,
+          moderator: mod,
+          proposal,
+          rebriefed: made.rebriefed,
+        });
         const res = await this.deliver(
           projectId,
           orgId,
           store,
           number,
           item.owner,
-          approvedLine({
-            roadmap: r,
-            item,
-            base:
-              base === null
-                ? null
-                : {
-                    title: base.title,
-                    ...(baseProposal !== undefined ? { proposal: baseProposal } : {}),
-                  },
-            person,
-            moderator: mod,
-            proposal,
-          }),
+          line,
           caller.principal,
           hints,
         );
         store.recordDelivery(number, key, res.delivered, res.error ?? null);
-        await this.tellStacked(projectId, orgId, store, r, item, proposal, caller, hints);
+        if (!made.rebriefed) {
+          await this.tellStacked(projectId, orgId, store, r, item, proposal, caller, hints);
+        }
       }
       return { roadmap: this.view(this.require(store, number)), hints };
     });

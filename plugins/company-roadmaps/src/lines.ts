@@ -158,7 +158,8 @@ export function approvalRequestLine(args: {
  * The desk line telling an owner that its proposal item was approved — by a person and by the
  * moderator, named with when — that its proposal is created and linked, with the number, and
  * what it is stacked on. It carries no command: the proposal is written in the step the
- * organization assigns for it.
+ * organization assigns for it. `rebriefed`: the item's changed brief was approved again and
+ * the open proposal it is linked to got the new brief instead of a second proposal being made.
  */
 export function approvedLine(args: {
   roadmap: Roadmap;
@@ -167,6 +168,7 @@ export function approvedLine(args: {
   person: { by: string; at: string };
   moderator: { by: string; at: string };
   proposal: number;
+  rebriefed?: boolean;
 }): string {
   const { roadmap: r, item, base } = args;
   const stacked =
@@ -179,7 +181,9 @@ export function approvedLine(args: {
     `${tag(r)} Your item [${item.key}] "${item.title}" is approved: by ${args.person.by} (${args.person.at}) and by the moderator ${args.moderator.by} (${args.moderator.at}).`,
     `Brief: ${item.brief}`,
     stacked,
-    `Its proposal is created for you: proposal #${args.proposal}, with you as its author and this brief, linked to this item. Writing it is a write step: it is done where your organization does write steps, not from this desk.`,
+    args.rebriefed === true
+      ? `No new proposal is created: proposal #${args.proposal}, linked to this item, has this brief now in place of the old one (its revisions, comments and approvals stand). Revising it to match is a write step: it is done where your organization does write steps, not from this desk.`
+      : `Its proposal is created for you: proposal #${args.proposal}, with you as its author and this brief, linked to this item. Writing it is a write step: it is done where your organization does write steps, not from this desk.`,
   ].join("\n");
 }
 

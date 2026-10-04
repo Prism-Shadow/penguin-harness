@@ -179,6 +179,13 @@ function whoOf(caller: Caller): string {
   return caller.agentId ?? caller.userId;
 }
 
+/** The caller a principal recorded elsewhere stands for (a roadmap's approver): `agent:<id>` or `user:<id>`. */
+function callerOfPrincipal(principal: string): Caller {
+  const agentId = principal.startsWith("agent:") ? principal.slice("agent:".length) : null;
+  const userId = agentId === null ? principal.replace(/^user:/, "") : "";
+  return { principal, agentId, userId };
+}
+
 function agentPrincipal(agentId: string): string {
   return `agent:${agentId}`;
 }
@@ -910,6 +917,62 @@ export class ProposalService {
     this.notify(org, created.number, created.seq, "created");
     await this.ensureSkills(projectId, req.author);
     return created.number;
+  }
+
+  /**
+   * The brief of the proposal a roadmap item is linked to, rewritten when the item's changed
+   * brief has both approvals again: company-roadmaps calls it, in place of creating a second
+   * proposal, while it records the second approval (`delegatedBy`, whose name the rewrite is
+   * recorded under). Not a route. The effect is editBrief's — only the brief moves, the
+   * revisions, comments and approvals stand — except that the two approvals are the authority,
+   * and the author is told whatever the status; not when it is the item's owner, whom the
+   * roadmap tells with the approval, so it hears of it once.
+   *
+   * Answers false, writing nothing, when the proposal is merged or rejected (the default rule)
+   * or there is no such proposal (a link by hand names any number):
+   * the roadmap then creates a new proposal and links it instead. Idempotent: a proposal that
+   * has the brief already answers true and is not written again, so a roadmap that retries the
+   * approval after a failure in between does not record the rewrite twice.
+   */
+  async rebriefFromRoadmap(
+    projectId: string,
+    orgId: string,
+    number: number,
+    req: {
+      owner: string;
+      brief: string;
+      delegatedBy: string;
+      roadmap: { number: number; key: string };
+    },
+  ): Promise<boolean> {
+    const { org, store } = await this.openInternal(projectId, orgId);
+    const brief = req.brief.trim();
+    if (brief === "") throw badRequest("brief must not be empty.");
+    const before = store.get(number);
+    if (before === null || !this.rules.rebriefFromRoadmap(before)) return false;
+    if (before.brief === brief) return true;
+    const written = store.editBrief(number, (p) => {
+      // Closed since the read above (another writer): the approval fails and, given again,
+      // finds it closed and creates the new proposal.
+      if (!this.rules.rebriefFromRoadmap(p)) {
+        throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);
+      }
+      return { brief, by: req.delegatedBy };
+    });
+    const p = written.proposal;
+    this.notify(org, number, written.seq, "brief_edited");
+    if (p.author !== req.owner) {
+      const caller = callerOfPrincipal(req.delegatedBy);
+      await this.tell(
+        this.delivery(store),
+        org,
+        p,
+        caller,
+        [p.author],
+        `Item [${req.roadmap.key}] of roadmap #${req.roadmap.number} was approved again with a changed brief, so ${whoOf(caller)} rewrote this proposal's brief: ${brief}\n\nRead it with \`penguin org proposal show ${number}\` before the next revision.`,
+      );
+    }
+    return true;
   }
 
   /**

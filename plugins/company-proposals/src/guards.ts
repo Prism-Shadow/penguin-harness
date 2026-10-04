@@ -2,7 +2,7 @@
  * The default rules of the proposal operations: who may do what, in which state, and the
  * process checks the store does not make — revision numbers, terminal states, what an approval
  * covers, one impl per PR and per head, comments frozen once sent, an idempotent creation from a
- * roadmap item. They are the rules the service has always applied, error codes and messages
+ * roadmap item and the rewrite of its proposal's brief while that one is open. They are the rules the service has always applied, error codes and messages
  * included, gathered as plain functions so they can be replaced (ServiceDeps.rules): the store
  * only guarantees the data itself and an append-only history.
  *
@@ -92,6 +92,15 @@ export const defaultRules = {
   /** The idempotency key of a creation from a roadmap item: the same item and brief create one proposal. */
   createKey(brief: string): string {
     return createHash("sha256").update(brief).digest("hex");
+  },
+
+  /**
+   * What a roadmap item's changed brief, approved again, does to the proposal the item is
+   * linked to: true rewrites that proposal's brief (it is still open), false leaves it and a
+   * new proposal is created and linked in its place (it is merged or rejected).
+   */
+  rebriefFromRoadmap(p: Proposal): boolean {
+    return p.status !== "merged" && p.status !== "rejected";
   },
 
   editBrief(p: Proposal, caller: Caller, brief: string): void {
