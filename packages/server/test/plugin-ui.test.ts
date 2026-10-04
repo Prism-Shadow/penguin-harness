@@ -42,6 +42,7 @@ describe("plugin ui route", () => {
     await fs.writeFile(path.join(dir, "ui", "app.js"), "export {};");
     await fs.writeFile(path.join(dir, "secret.txt"), "not for the frame");
     await fs.symlink(path.join(dir, "secret.txt"), path.join(dir, "ui", "leak.txt"));
+    // The current loader discovers shipped packages through the prefix manifest above.
     return dir;
   };
 
