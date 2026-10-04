@@ -32,9 +32,7 @@ named file mode, network level and approval mode, and one pick saves all three o
   Access can only be renamed, unpinned or made the default; a value stored for one of its
   locked cells by hand is ignored. Names wrap by words, and below the
   table's minimum width the table scrolls instead of crushing them.
-- **Explanations sit behind a "?" beside their title** on every settings card; the "?" opens on
-  hover and keyboard focus (a pointer leaving does not close it while the "?" has keyboard
-  focus), and a click or tap still toggles it: the card's
+- **Explanations sit behind a "?" beside their title** on every settings card: the card's
   description, each field's and the table's. A format rule (masked paths: one absolute path
   per line) stays on screen under its field.
 - **New Sessions start from the default preset.** One row is the default, Workspace Write until
