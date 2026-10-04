@@ -38,7 +38,6 @@ import { useRuntimeLanguages } from "../lib/use-runtime-languages";
 import { ProjectProvider } from "../state/project";
 import { MachinesProvider } from "../state/machines";
 import { SessionsProvider } from "../state/sessions";
-import { useCompany } from "../features/company";
 import { AppLayout } from "../components/layout/app-layout";
 import { LoginPage } from "../pages/login";
 import { webAppDeps } from "./deps";
@@ -59,9 +58,7 @@ function RequireAuth() {
   return (
     <ProjectProvider>
       <MachinesProvider>
-        <SessionsProvider userEvents={userEvents}>
-          <CompanyProvider>{layout}</CompanyProvider>
-        </SessionsProvider>
+        <SessionsProvider userEvents={userEvents}>{layout}</SessionsProvider>
       </MachinesProvider>
     </ProjectProvider>
   );
@@ -80,20 +77,11 @@ function RequireAuthBare({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** When already logged in, visiting /login redirects to WebApp's home (see HomeRedirect). */
+/** When already logged in, visiting /login redirects to WebApp's home (company mode's `home` page). */
 function LoginRoute() {
   const { user } = useAuth();
   if (user) return <Navigate to="/" replace />;
   return <LoginPage />;
-}
-
-/**
- * `/` and every path nothing matches: the home of the mode the shell stands in (`homePath`) —
- * the organizations in company mode, the conversations in development mode. A sign-in and
- * the desktop shell's start both arrive at `/`.
- */
-function HomeRedirect() {
-  return <Navigate to={useCompany().homePath} replace />;
 }
 
 /**
@@ -140,17 +128,17 @@ function appRoutes(pages: readonly WebAppPage[]) {
           />
         ))}
       <Route element={<RequireAuth />}>
-        <Route index element={<HomeRedirect />} />
         {/* Admin-only pages are refused server-side (403); the sidebar hides their row, so a
-            member only ever reaches one by typing the URL. */}
+            member only ever reaches one by typing the URL. Company mode is one page, /org/*,
+            whose nested routes are its own (features/company/org-routes.tsx). `/` and every
+            path nothing else matches lead home, which depends on the mode: company mode
+            contributes that page too (path `*`). Settings and user management live in the
+            settings dialog now (see SettingsDialog); their old routes fall through to it. */}
         {pages
           .filter((page) => page.frame === "shell")
           .map(({ id, path, Component }) => (
             <Route key={id} path={path} element={<Component />} />
           ))}
-        {/* Settings and user management live in the settings dialog now (see
-            SettingsDialog); their old routes fall through to the catch-all. */}
-        <Route path="*" element={<HomeRedirect />} />
       </Route>
     </Route>,
   );
@@ -176,3 +164,4 @@ export function AppRouter({ initialPath }: AppRouterProps = {}) {
   );
   return <RouterProvider router={router} />;
 }
+
