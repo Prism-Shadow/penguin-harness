@@ -25,18 +25,24 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
   (cd "$ROOT" \
     && pnpm --filter @prismshadow/penguin-core build \
     && pnpm --filter @prismshadow/penguin-server build \
-    && pnpm --filter @prismshadow/penguin-web build \
-    && pnpm --filter @penguinharness/example-hello-page build) || { echo "BUILD FAILED"; exit 1; }
+    && pnpm --filter @prismshadow/penguin-web build) || { echo "BUILD FAILED"; exit 1; }
+  # The builtin plugins and the index the build rebuilds from them, beside the program the way
+  # an installation ships them (`<program>/../plugins`): the catalogue's builtin rows come
+  # from there, and a server run from dist/ has none otherwise. Cached by content. The example
+  # plugins are staged too (PENGUIN_PLUGIN_EXAMPLES=1): a plugin loads only by its package
+  # name, from this prefix, and the specs enable plugins/example-hello-page below.
+  echo "== stage builtin plugins =="
+  (cd "$ROOT" && PENGUIN_PLUGIN_EXAMPLES=1 node scripts/build-plugins.mjs --out packages/server/plugins) \
+    || { echo "PLUGIN BUILD FAILED"; exit 1; }
 fi
 
 echo "== seed the data root =="
 # The example plugin (plugins/example-hello-page, plugin-page.spec.mjs) is enabled for
-# default_project by its built entry's absolute path — the loader's dev-checkout form. The
-# server adopts an existing default_project without rewriting its plugin table, and what one
-# Project lists is loaded for every user. No route can enable it instead: installing over the
-# API is limited to the plugins a build ships, and this one is never shipped.
+# default_project by its package name; the staged prefix above carries it. The server adopts
+# an existing default_project without rewriting its plugin table, and what one Project lists
+# is loaded for every user. Under SKIP_BUILD=1 it loads only if an earlier run staged it.
 mkdir -p "$DATA/default_project"
-printf '[plugins]\n"%s" = "*"\n' "$ROOT/plugins/example-hello-page/dist/index.js" \
+printf '[plugins]\n"@penguinharness/example-hello-page" = "*"\n' \
   >"$DATA/default_project/.project_config.toml"
 
 echo "== start mock LLM =="
