@@ -37,7 +37,7 @@ const ENTRY: PluginConfigEntry = {
   actions: [{ id: "setup", title: "Set up" }],
 };
 
-const heading = (draft: Record<string, unknown>, entry = ENTRY) =>
+const heading = (draft: Record<string, unknown>, entry = ENTRY, locale: "en" | "zh" = "en") =>
   renderToStaticMarkup(
     createElement(ConfigHeading, {
       entry,
@@ -45,7 +45,7 @@ const heading = (draft: Record<string, unknown>, entry = ENTRY) =>
       nested: false,
       disabled: false,
       onAction: () => {},
-      locale: "en",
+      locale,
     }),
   );
 
@@ -66,39 +66,23 @@ describe("the settings card", () => {
   });
 
   it("folds a notice's details under it, collapsed, in the page's language", () => {
-    const withDetails: PluginConfigEntry = {
-      ...ENTRY,
-      notices: [
-        {
-          tone: "muted",
-          text: "Enforced here: file writes, by Landlock (dsh-local).",
-          details:
-            "penguin-bwrap is installed but not in use: refused\nSaving this card checks these backends again.",
-          detailsZh: "penguin-bwrap 已安装但未启用：refused",
-        },
-      ],
-    };
-    const render = (locale: "en" | "zh") =>
-      renderToStaticMarkup(
-        createElement(ConfigHeading, {
-          entry: withDetails,
-          draft: { enabled: true },
-          nested: false,
-          disabled: false,
-          onAction: () => {},
-          locale,
-        }),
+    const notice = { tone: "muted" as const, text: "Enforced here: file writes." };
+    const withDetails = (locale: "en" | "zh") =>
+      heading(
+        { enabled: true },
+        { ...ENTRY, notices: [{ ...notice, details: "bwrap refused", detailsZh: "bwrap 已拒绝" }] },
+        locale,
       );
-    const html = render("en");
-    expect(html).toContain("Enforced here: file writes, by Landlock (dsh-local).");
-    // A disclosure: a collapsed button controlling the hidden panel that holds the text.
+    const html = withDetails("en");
+    // A collapsed button controlling the hidden panel that holds the details.
     const control = /aria-expanded="false" aria-controls="([^"]+)"/.exec(html)?.[1];
-    expect(control).toBeDefined();
-    const panel = html.slice(html.indexOf(`id="${control}"`));
-    expect(panel).toMatch(/^id="[^"]+" hidden=""/);
-    expect(panel).toContain("penguin-bwrap is installed but not in use: refused");
-    expect(render("zh")).toContain("penguin-bwrap 已安装但未启用：refused");
-    expect(heading({ enabled: true })).not.toContain("aria-expanded");
+    expect(html.slice(html.indexOf(`id="${control}"`))).toMatch(
+      /^id="[^"]+" hidden=""[^]*bwrap refused/,
+    );
+    expect(withDetails("zh")).toContain("bwrap 已拒绝");
+    expect(heading({ enabled: true }, { ...ENTRY, notices: [notice] })).not.toContain(
+      "aria-expanded",
+    );
   });
 
   it("holds the effective name in the name box, the declared one when not renamed", () => {

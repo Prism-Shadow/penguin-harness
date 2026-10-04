@@ -28,15 +28,10 @@ describe("the default-backend prompt", () => {
     [{ backend: { installed: false } }, null],
     [{ backend: { installed: false, recommended: [] } }, null],
     [{}, null],
+    // An older server names its one default as a bare string: that package, not its characters.
+    [{ backend: { installed: false, recommended: "@x/bwrap" } } as never, ["@x/bwrap"]],
   ])("offers %j: %j", (report, offer) => {
     expect(backendToOffer(report, "m1", memoryStorage())).toEqual(offer);
-  });
-
-  it("offers the one package an older server reports as a bare string, not its characters", () => {
-    const old = { backend: { installed: false, recommended: "@penguinharness/sandbox-bwrap" } };
-    expect(backendToOffer(old as never, "m1", memoryStorage())).toEqual([
-      "@penguinharness/sandbox-bwrap",
-    ]);
   });
 
   it("remembers don't-ask-again per machine, in this browser's storage only", () => {

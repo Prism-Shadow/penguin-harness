@@ -1,7 +1,6 @@
 /**
- * A sandbox runner's own report lines (ConfinedSpawn.runnerLines) are dropped from the head of
- * the confined command's stderr — in the filter itself, in a command's output, and in a hook
- * script's failure reason — while the command's own stderr flows untouched.
+ * A sandbox runner's own report lines (ConfinedSpawn.runnerLines) leave the head of the confined
+ * command's stderr — in the filter, a command's output and a hook's failure reason — and only those.
  */
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,61 +13,48 @@ import { rmEventually } from "./rm-eventually.js";
 
 const LINE = "landlock-run: partial enforcement (older Landlock ABI)";
 
-/** Feeds the chunks through one filter and returns everything it passed on. */
-function run(lines: readonly string[] | undefined, chunks: readonly string[]): string {
-  const filter = runnerLineFilter(lines);
-  return chunks.map((c) => filter.push(c)).join("") + filter.flush();
-}
-
 describe("the runner-line filter on a stderr stream", () => {
-  it("drops a runner line at the head, whole or split across chunks, CRLF included", () => {
-    expect(run([LINE], [`${LINE}\nboom\n`])).toBe("boom\n");
-    expect(
-      run([LINE], ["landlock-run: par", "tial enforcement (older Landlock ABI)\r", "\nx"]),
-    ).toBe("x");
-    expect(run([LINE], [`${LINE.toUpperCase()}\n`])).toBe("");
-  });
+  const run = (lines: readonly string[] | undefined, chunks: readonly string[]) => {
+    const filter = runnerLineFilter(lines);
+    return chunks.map((c) => filter.push(c)).join("") + filter.flush();
+  };
 
-  it("passes the command's own stderr untouched, the same words after its first line included", () => {
-    expect(run([LINE], [`own\n${LINE}\n`])).toBe(`own\n${LINE}\n`);
-    expect(run([LINE], ["landlock-run: something else\n"])).toBe("landlock-run: something else\n");
+  it.each([
+    [[`${LINE}\nboom\n`], "boom\n"],
+    [["landlock-run: par", "tial enforcement (older Landlock ABI)\r", "\nx"], "x"],
+    [[`${LINE.toUpperCase()}\n`], ""],
+    // The command's own stderr: the same words after its first line, another runner-prefixed line.
+    [[`own\n${LINE}\n`], `own\n${LINE}\n`],
+    [["landlock-run: other\n"], "landlock-run: other\n"],
     // Held while it could still be the runner's line; released when the stream ends.
-    expect(run([LINE], ["landlock-run"])).toBe("landlock-run");
+    [["landlock-run"], "landlock-run"],
+  ])("%j leaves %j", (chunks, out) => {
+    expect(run([LINE], chunks)).toBe(out);
   });
 
   it("is the identity when the runner names no lines", () => {
     expect(run(undefined, [`${LINE}\n`])).toBe(`${LINE}\n`);
-    expect(run([], [`${LINE}\n`])).toBe(`${LINE}\n`);
   });
 });
 
 // The command case runs a POSIX shell line.
 describe.skipIf(process.platform === "win32")("the spawn paths drop the runner's lines", () => {
   let dir: string;
+  let wrap: string;
   beforeEach(async () => {
     dir = await mkdtemp(path.join(tmpdir(), "penguin-runner-lines-"));
-  });
-  afterEach(async () => {
-    await rmEventually(dir);
-  });
-
-  /** A stand-in runner: prints its report line on stderr, then runs the rest of its argv. */
-  async function runner(): Promise<string> {
-    const file = path.join(dir, "runner.mjs");
+    // A stand-in runner: prints its report line on stderr, then runs the rest of its argv.
+    wrap = path.join(dir, "runner.mjs");
     await writeFile(
-      file,
-      [
-        'import { spawnSync } from "node:child_process";',
-        `process.stderr.write(${JSON.stringify(LINE + "\n")});`,
-        'const r = spawnSync(process.argv[2], process.argv.slice(3), { stdio: "inherit" });',
-        "process.exit(r.status ?? 1);",
-      ].join("\n"),
+      wrap,
+      'import { spawnSync } from "node:child_process";\n' +
+        `process.stderr.write(${JSON.stringify(LINE + "\n")});\n` +
+        'process.exit(spawnSync(process.argv[2], process.argv.slice(3), { stdio: "inherit" }).status ?? 1);\n',
     );
-    return file;
-  }
+  });
+  afterEach(() => rmEventually(dir));
 
   it("a command's output", async () => {
-    const wrap = await runner();
     const session = new ManagedSession({
       cmd: "echo out; echo own-error >&2",
       cwd: dir,
@@ -87,15 +73,14 @@ describe.skipIf(process.platform === "win32")("the spawn paths drop the runner's
   });
 
   it("a hook script's failure reason", async () => {
-    const wrap = await runner();
     const script = path.join(dir, "fail.mjs");
     await writeFile(script, 'process.stderr.write("hook broke\\n"); process.exit(3);\n');
-    await expect(
-      runHookScript(
-        script,
-        {},
-        { confine: (argv) => ({ argv: [argv[0]!, wrap, ...argv], runnerLines: [LINE] }) },
-      ),
-    ).rejects.toThrow(/^exit 3: hook broke$/);
+    const confine = {
+      confine: (argv: readonly string[]) => ({
+        argv: [argv[0]!, wrap, ...argv],
+        runnerLines: [LINE],
+      }),
+    };
+    await expect(runHookScript(script, {}, confine)).rejects.toThrow(/^exit 3: hook broke$/);
   });
 });

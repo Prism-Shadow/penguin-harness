@@ -1,8 +1,5 @@
-/**
- * The composer's view of a Session whose policy hides paths: `masksPaths` marks it, and
- * `maskPathsSupported` says whether a backend here can enforce it — where none can, every level
- * would refuse every command, and the composer says so.
- */
+// `masksPaths` marks a Session whose policy hides paths; `maskPathsSupported` says whether a
+// backend here can enforce it.
 import { describe, expect, it } from "vitest";
 import { sessionSandboxOf } from "../src/services/session-service.js";
 
