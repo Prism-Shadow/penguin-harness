@@ -123,8 +123,14 @@ export async function runHookScript(
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
     // The runner's own report lines (ConfinedSpawn.runnerLines) are no reason for a failure.
     const runner = runnerLineFilter(confined.runnerLines);
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += runner.push(chunk)));
-    child.stderr.on("end", () => (stderr += runner.flush()));
+    if (runner === null) {
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+    } else {
+      child.stderr
+        .setEncoding("utf8")
+        .on("data", (chunk: string) => (stderr += runner.push(chunk)));
+      child.stderr.on("end", () => (stderr += runner.flush()));
+    }
     child.on("error", (err) => fail(err.message));
     child.on("close", (code) => {
       if (code !== 0) {

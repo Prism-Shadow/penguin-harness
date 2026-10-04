@@ -148,14 +148,18 @@ export class ManagedSession {
     this.child.stdout?.on("data", (c: string) => this.handleData(c));
     // The runner's own report lines (ConfinedSpawn.runnerLines) are not the command's output.
     const runner = runnerLineFilter(confined.runnerLines);
-    this.child.stderr?.on("data", (c: string) => {
-      const out = runner.push(c);
-      if (out !== "") this.handleData(out);
-    });
-    this.child.stderr?.on("end", () => {
-      const out = runner.flush();
-      if (out !== "") this.handleData(out);
-    });
+    if (runner === null) {
+      this.child.stderr?.on("data", (c: string) => this.handleData(c));
+    } else {
+      this.child.stderr?.on("data", (c: string) => {
+        const out = runner.push(c);
+        if (out !== "") this.handleData(out);
+      });
+      this.child.stderr?.on("end", () => {
+        const out = runner.flush();
+        if (out !== "") this.handleData(out);
+      });
+    }
     // exit follows waitpid semantics: it fires as soon as bash exits, without waiting for
     // stdout/stderr pipe EOF — background child processes that inherit and hold the pipe open
     // won't hold up termination.

@@ -14,11 +14,15 @@ export interface RunnerLineFilter {
   flush(): string;
 }
 
-/** A filter for one stream; the identity when the runner names no lines. */
-export function runnerLineFilter(lines: readonly string[] | undefined): RunnerLineFilter {
+/**
+ * A filter for one stream; null when the runner names no lines, so callers keep their plain
+ * listener.
+ */
+export function runnerLineFilter(lines: readonly string[] | undefined): RunnerLineFilter | null {
+  if (lines === undefined || lines.length === 0) return null;
   // Matched by exact line, case-insensitively, as the runner contract states it.
-  const known = (lines ?? []).map((l) => l.toLowerCase());
-  let head = known.length > 0;
+  const known = lines.map((l) => l.toLowerCase());
+  let head = true;
   let held = "";
   // A held tail may already carry the CR of a CRLF line end.
   const startsOne = (partial: string) => {

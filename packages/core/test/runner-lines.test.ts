@@ -14,8 +14,8 @@ import { rmEventually } from "./rm-eventually.js";
 const LINE = "landlock-run: partial enforcement (older Landlock ABI)";
 
 describe("the runner-line filter on a stderr stream", () => {
-  const run = (lines: readonly string[] | undefined, chunks: readonly string[]) => {
-    const filter = runnerLineFilter(lines);
+  const run = (lines: readonly string[], chunks: readonly string[]) => {
+    const filter = runnerLineFilter(lines)!;
     return chunks.map((c) => filter.push(c)).join("") + filter.flush();
   };
 
@@ -32,8 +32,9 @@ describe("the runner-line filter on a stderr stream", () => {
     expect(run([LINE], chunks)).toBe(out);
   });
 
-  it("is the identity when the runner names no lines", () => {
-    expect(run(undefined, [`${LINE}\n`])).toBe(`${LINE}\n`);
+  it("is null when the runner names no lines, so the plain listener stays", () => {
+    expect(runnerLineFilter(undefined)).toBeNull();
+    expect(runnerLineFilter([])).toBeNull();
   });
 });
 
