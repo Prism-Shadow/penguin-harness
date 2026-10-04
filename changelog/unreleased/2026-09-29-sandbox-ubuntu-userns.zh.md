@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `plugins`, `docs`
+- **PR:** [#977](https://github.com/Prism-Shadow/penguin-harness/pull/977)
 
 [English](2026-09-29-sandbox-ubuntu-userns.md)
 
