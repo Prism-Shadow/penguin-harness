@@ -119,8 +119,8 @@ export function assertAclRunnerCanStart(
  * The host's plugin contract, named by a variable so this package's bundle leaves the import to
  * run time: tsup inlines `@prismshadow/penguin-core/plugin` for the decorators (a literal
  * specifier), and a second, bundled copy of the session shell would be this package's
- * resolution, not the harness's. Resolved where the plugin runs — from the installation, or
- * lent by the host to a plugin downloaded into the data root (the server's plugin/prefix.ts).
+ * resolution, not the harness's. Resolved where the plugin runs, from the installation; where
+ * the host's core cannot be reached the import fails and `hostSessionShell` returns `null`.
  */
 const HOST_CORE: string = "@prismshadow/penguin-core/plugin";
 
