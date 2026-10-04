@@ -318,6 +318,11 @@ export interface BootModulesOptions {
   resources: Resources;
   /** Parked documents from the previous generation, by module name. */
   parked?: Record<string, Json>;
+  /**
+   * Called after each module's create() returns, with how long it took (ms). A measurement
+   * seam for the host (the server's boot timings); the booter itself never reads it.
+   */
+  onCreated?: (module: string, ms: number) => void;
 }
 
 interface Flat {
@@ -596,8 +601,10 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
       // Effects registered while this module is being created are its own to release when
       // it fails — the outer cleanup only knows the modules that made it into `instances`.
       let inst: ModuleInstance;
+      const createdAt = opts.onCreated !== undefined ? performance.now() : 0;
       try {
         inst = await n.def.create(ctx, context);
+        opts.onCreated?.(mf.name, performance.now() - createdAt);
       } catch (err) {
         drain(disposers);
         throw err;

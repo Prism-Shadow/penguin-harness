@@ -188,6 +188,16 @@ export class FakeServer {
   ];
   /** The signed-in user behind the API token: what GET /api/me reports and whom a body-less write is attributed to. */
   userId = "admin";
+  /**
+   * What GET /api/telemetry answers: every view is served from these fixed lists (the fake
+   * does not summarize); `enabled` also backs the admin setting that PUT /api/admin/settings flips.
+   */
+  telemetry: { enabled: boolean; probes: Json[]; sessions: Json[]; samples: Json[] } = {
+    enabled: true,
+    probes: [],
+    sessions: [],
+    samples: [],
+  };
   /** Messages a task emits between running and idle (default: one assistant echo). */
   onTask: (session: FakeSessionState, body: Json) => unknown[] = () => [];
   /** Messages GET /messages returns. */
@@ -1697,6 +1707,31 @@ export class FakeServer {
         uploadLimits: {},
         companyMode: true,
       });
+    }
+
+    if (apiPath === "/api/telemetry") {
+      if (method === "DELETE") {
+        this.telemetry.samples = [];
+        return this.json({ ok: true });
+      }
+      const view = url.searchParams.get("view") ?? "probes";
+      const { enabled, probes, sessions, samples } = this.telemetry;
+      return this.json({
+        enabled,
+        view,
+        buffered: samples.length,
+        ...(enabled
+          ? view === "samples"
+            ? { samples }
+            : view === "sessions"
+              ? { sessions }
+              : { probes }
+          : {}),
+      });
+    }
+    if (apiPath === "/api/admin/settings" && method === "PUT") {
+      if (typeof body?.telemetry === "boolean") this.telemetry.enabled = body.telemetry;
+      return this.json({ settings: { telemetry: this.telemetry.enabled } });
     }
 
     m = /^\/api\/projects\/([^/]+)\/usage$/.exec(apiPath);

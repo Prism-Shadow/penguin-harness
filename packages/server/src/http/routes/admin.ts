@@ -17,6 +17,7 @@ import { adminPluginConfigRoutes } from "./admin-plugin-config.js";
 import { PluginConfigAdmin } from "../../plugin/config-page.js";
 import type { Admin } from "../../mechanisms/identity.js";
 import type { Settings } from "../../mechanisms/settings.js";
+import type { Telemetry } from "../../mechanisms/telemetry.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AdminRouteDeps {
@@ -92,6 +93,7 @@ export class AdminRoutes {
   @Use() private readonly proxy!: Proxy;
   @Use() private readonly settings!: Settings;
   @Use() private readonly pluginConfigAdmin!: PluginConfigAdmin;
+  @Use() private readonly telemetry!: Telemetry;
   @Bind("admin-api.users") usersRoutes!: Hono<AppEnv>;
   @Bind("admin-api.settings") settingsRoutes!: Hono<AppEnv>;
   @Bind("admin-api.plugin-config") pluginConfigRoutes!: Hono<AppEnv>;
@@ -104,6 +106,7 @@ export class AdminRoutes {
     this.settingsRoutes = adminSettingsRoutes({
       proxyControl: (settings) => this.proxy.apply(settings),
       serverSettingsRepo: this.settings,
+      telemetry: this.telemetry,
     });
   }
 }
