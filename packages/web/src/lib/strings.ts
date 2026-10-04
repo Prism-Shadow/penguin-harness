@@ -4293,7 +4293,7 @@ Benchmark：
       "（title、description、runs = 1；不记录被测智能体）、" +
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
-      "每一次试测都必须通过 `run_subagent` 派发子会话，并在子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
+      "每一次试测都使用带监管伴生者的 `agent-evaluation`，通过 `run_subagent` 或明确绑定的 server Session 委派；需要继续派发任务的 Builder 使用 server Session，不自行评分、不绕过技能；" +
       "逐题试测以校准难度，定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题分数。",
     // New Benchmark, manual mode: the form.
     manualCreateTitle: "手动创建 Benchmark",
@@ -4342,28 +4342,27 @@ Benchmark：
       "评估的是它当下的 Agent State；分数记在它名下，标签含其版本号、模型与思考等级",
     evaluatorAgent: "执行评估的智能体",
     evaluatorAgentHint:
-      "派发评测子会话、按评分细则打分并写入记分的一方；需要装有 agent-evaluation 技能",
+      "派发成对评估 worker 并记录完整合规结果的矩阵控制器；需要 agent-evaluation 技能",
     evaluatorMissingSkill:
       "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
     evaluateSessionModel: "评估会话使用的模型",
     evaluateSessionModelHint:
-      "派发与汇总评测的模型，缺省为 Project 默认模型；被测智能体用的是它自己配置的模型，不在这里改",
+      "控制器模型；未指定 Target 的完整模型组合时评估继承此 Runtime，thinking 取 Target State",
     evaluateRunsHint: "每道题跑几次取平均；缺省为 Benchmark 配置的次数",
     evaluateNoteField: "说明",
     evaluateNotePlaceholder: "例如：这一轮用来确认上次优化的效果，重点看引用规范那两道题",
     /** The fixed tail: the `agent-evaluation` inputs, the label check and the single append. */
     evaluateTail: (p: { targetAgentId: string; benchmarkId: string; runs: number }): string =>
-      "请使用 `agent-evaluation` Skill，在这套已冻结的 Benchmark 上评估被测智能体。\n\n" +
+      "请使用 `agent-evaluation` 的 matrix-controller reference，在这套已冻结的 Benchmark 上评估被测智能体。\n\n" +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
       `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
       `- runs：\`${p.runs}\`\n\n` +
-      "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的子会话（省略 `agent_id`），并在每个子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
-      "评测 Runtime 取被测智能体当前配置的模型与思考等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
-      "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
-      "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
-      "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题分数与本条记录的标签。",
+      "作为矩阵控制器，按完整 Case × runs 矩阵派发带伴生监管的 `agent-evaluation` 单题 worker，可用 `run_subagent` 或明确绑定的 server Session。模型使用用户指定的完整 provider/model pair，否则继承控制器 Environment；thinking 取 Target State。" +
+      "为 worker 填齐单题协议，不自行评分。校验 `agent_id`、`version`、`provider`、`model_id` 和 `thinking_level`，保持 Target 与 Benchmark 材料冻结。" +
+      "收齐伴生报告后，先平均各题 runs 再平均题目，只向 scoreboard.yaml 追加完整合规评估；补救、惩罚或不完整矩阵另存并附原因。" +
+      "结束时报告覆盖范围、分数、Runtime 标签和失败，不优化 Target。",
     // Optimize tab.
-    optimizeDescription: "AI 会按可证伪的假设修改被测智能体并重新评测，分数严格提升才保留新版本。",
+    optimizeDescription: "AI 按选定的 RSI 方法优化；默认 Penguin 方法只保留严格提分的版本。",
     optimizerAgent: "执行优化的智能体",
     optimizerAgentHint: "读分数与 Trace、修改被测智能体的一方；需要装有 agent-optimization 技能",
     optimizerMissingSkill:
@@ -4374,7 +4373,7 @@ Benchmark：
       "做分析与改动的模型，缺省为 Project 默认模型；评测被测智能体时沿用基线记录的模型，不在这里改",
     optimizeRunsHint: "每个候选版本每道题跑几次取平均",
     roundLimitField: "最多轮数",
-    roundLimitHint: "每轮一个改动；评测完整才算一轮",
+    roundLimitHint: "Penguin 的候选轮数上限；其他方法使用各自声明的训练预算",
     targetScoreField: "目标分数",
     targetScoreHint: "达到即提前结束；默认比当前基线高 10 分",
     focusField: "优化重点",
@@ -4396,10 +4395,10 @@ Benchmark：
       `- runs：\`${p.runs}\`\n` +
       `- desired_score：\`>=${p.targetScore}\`\n` +
       `- candidate_round_limit：\`${p.roundLimit}\`\n\n` +
-      "每轮从当前 Reference 出发提出一个可证伪的假设、只做一个有界改动；通过 `run_subagent` 评测完整的 Case × runs 矩阵，每个子会话的 prompt 里都写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
-      "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
-      "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
-      "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
+      "默认使用 Penguin，若优化重点明确指定其他方法则使用该方法。Penguin 按其 reference 解释 desired_score、candidate_round_limit 并只接受严格提分。" +
+      "其他方法遵循自身训练阶段、预算和选择规则，不能被这些 Penguin 表单默认值覆盖；运行前补齐缺失的方法参数。" +
+      "每次评估使用带伴生监管的 `agent-evaluation`，通过 `run_subagent` 或明确绑定的 server Session 委派。固定 Target Runtime，完整合规结果按 `agent_id`、`version`、`provider` / `model_id`、`thinking_level` 记录到 scoreboard.yaml。" +
+      "报告方法、前后分数、保留版本、适配差异与各次更新或失败决定。",
   },
 
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).

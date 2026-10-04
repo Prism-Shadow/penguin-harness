@@ -1,35 +1,36 @@
 ---
 title: 自我进化
-description: Skill 如何构建 Benchmark、给 Agent 打分，并只保留让分数提高的改动；每个版本都有快照，每个分数都能追溯。
+description: 用 Skill 构建或复现 Benchmark、评估 Target Agent，再按选定的 RSI 方法改进其 harness。
 ---
 
-PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在上面给 Agent 打分，修改 Agent，只有分数严格提升才保留改动。这个循环不额外引入任何运行机制，而是由 Skill 编排普通的 Agent 机制：评估是普通的 Session，优化是普通的文件编辑，每个结果都是 Project 里的文件。
+默认的 Penguin 优化方法是一个循环：为 Agent 构建 Benchmark，在上面给 Agent 打分，修改 Agent，只有分数严格提升才保留改动。这个循环不额外引入任何运行机制，而是由 Skill 编排普通的 Agent 机制：评估是普通的 Session，优化是普通的文件编辑，每个结果都是 Project 里的文件。
 
-构建 Benchmark 和优化 Agent 分别在两个独立的顶层 Session 中运行，每一次单独的评估则通过内置的 `run_subagent` 工具委派出去。顶层 Prompt 提供这次任务的设定：Agent、Benchmark、要考察的能力、分数和轮数。其余一切都由 Skill 负责：调用关系、校准、Freeze、结果协议、修复、回滚和汇报。
+Root Agent 通常由 Default Agent 担任。它每次委派一个执行阶段，都创建 Supervised Agent 和独立的 Supervisor 伴生者。五个任务 Skill 通过文件链接引用 `agent-supervision`；每个子任务由自己的父 Agent 创建伴生对并接收报告。
 
 ## 角色
 
-| 角色 | Skill | 运行方式 | 职责 |
-| --- | --- | --- | --- |
-| Builder | 先 `agent-initialization`，后 `benchmark-design` | 一个顶层 Session | 搭建 Agent，然后编写并校准一个包含多道题目的 Benchmark，记录基线 |
-| Target Agent | — | 每次运行一个全新的顶层 Session | 被评估或被优化的 Agent，只在自己隔离的 Workspace 里工作 |
-| Evaluator | `agent-evaluation` | 通过 `run_subagent` 创建的叶子子 Agent | 让 Target Agent 在一道题目上运行一次，并为这次运行打分 |
-| Optimizer | `agent-optimization` | 另一个独立的顶层 Session | 按可证伪的假设修改 Target Agent，分数严格提升才保留新版本 |
+| 角色 | 工作 |
+| --- | --- |
+| Root Agent | 创建伴生对、维护任务与尝试状态、停止异常执行并汇总报告 |
+| Builder | 初始化 Target，设计或复现 Benchmark |
+| Optimizer | 分析允许的训练轨迹，更新 Target Harness |
+| Evaluator | 执行一次 Target 尝试，私下评估保存的产物 |
+| Target Agent | 使用固定 harness 和干净上下文完成分配的题目 |
+| Supervisor Agent | 从放行到最终审计，独立观察一个指定执行会话 |
 
-没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill，四个 Skill 都随 `agent-tuning` 插件提供。在 Web App 界面里，Target Agent 叫作**被测智能体**。
+这些是工作流角色。Builder、Optimizer、Evaluator、Target 和 Reporter 都可以是 Supervised Agent；Supervisor 是叶子观察角色。六个 Skill 随 `agent-tuning` 提供。Target/Test Agent 指同一个做题角色，可执行训练或测试；Root 是委派者，与 Supervisor 分工不同。
 
-### 角色之间的调用
+### 伴生生命周期与恢复
 
-1. Builder 或 Optimizer 通过 `run_subagent` 并行下发完整的 Case × runs 矩阵：矩阵中的每一格对应一个 Evaluator，并要求它使用 `agent-evaluation`。
-2. 每个 Evaluator 用 Penguin CLI 启动一次 Target Agent：开一个全新的顶层 Session，在 Target Agent 的 `workspaces/` 目录下建一个专属 Workspace，并以绝对路径传入。启动时带上 `--source benchmark`，所以每个被测会话都会归入 Web App 会话列表的**评估任务**折叠夹，不会混进这个 Agent 的活跃对话。Evaluator 自己的 Session 是普通的子 Agent Session。
-3. Target Agent 运行结束后，Evaluator 按评分细则为这次运行打分，返回一条协议结果：分数、成本、耗时和被测会话 id。Evaluator 不改动任何 Agent 或 Benchmark，也从不写 `scoreboard.yaml`。
-4. 调用方核对完整的矩阵后写入 `scoreboard.yaml`。
+父 Agent 绑定双方 Session，等待 Supervisor 就绪，再放行任务。独立的 case 伴生对可在预算内并行。Penguin 工具子 Agent 目前最多一层；更深的逻辑委派使用明确登记的 server Session。CLI Target 在开始任务前以 source `benchmark` 创建，仍归入评估中心的会话分类。
 
-两种调用方都会先确认 Evaluator 的完整响应是纯协议 YAML，然后才读取其中的状态或分数。格式不合规时，由同一个 Evaluator 基于已有结果重发，不重新运行 Target Agent。
+伴生者核对实际指令与 trace 行为。发现异常后立即通知父 Agent，由父 Agent 停止执行并确认终止。确认作弊后，用新的一对伴生会话重做同一任务，只在 **user instruction** 中追加具体约束，不改 system prompt/config 或持久 State。首次执行加三次重跑为上限；正常低分不因此重跑。第四次仍作弊则记策略零分并附原因，原 grader 输出与全部尝试保留在私有记录中。
+
+Root 的任务表记录任务编号、双方 Session、尝试次数、状态与待处理告警。双方都结束后才关闭伴生对；trace 暂停增长需核对状态，证据缺失不等于合规。Evaluator 的 YAML 结果与审计报告分开传递，由调用方在单独报告中应用有原因的终止惩罚分，不写入普通基线记分板。惩罚分不能证明基线有效、用于算法学习或为受污染 harness 的发布背书；补救后成绩与 harness 学习收益分开报告。
 
 ## 信息隔离
 
-被测的 Agent 看不到评分方式，分数才有意义。因此每个角色读取的是 Benchmark 的不同部分：
+被测 Agent 不应看到私有评分信息。下表描述默认 Penguin 方法；其他 RSI 方法在各自 reference 中声明训练反馈权限。测试信息始终不进入 Optimizer 上下文。
 
 | 角色 | 读取 | 不读取 |
 | --- | --- | --- |
@@ -38,14 +39,14 @@ PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在
 | Optimizer | 公开的题干、记分板、与分数关联的被测 Trace，以及 Target Agent 的 State | 评分细则、Gold（标准答案）、私有评分条件、Evaluator 的 State、Workspace 或 Trace、其他 Agent，以及 Project 的密钥 |
 | Builder | 整个 Benchmark（包括它自己写的评分细则）、Target Agent 的 State，以及被测 Trace | Evaluator 的 State、Workspace 或 Trace、其他 Agent，以及 Project 的密钥 |
 
-Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和评分理由。新增或修改的题目下发之前，Builder 先做泄题检查：任何公开文件都不得泄露 Gold、私有评分条件，或能指向预期解法的提示。一旦私有的评估信息进入 Optimizer 的上下文，Optimizer 就回滚正在测试的 Candidate，并以「污染」为由停止。
+Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和评分理由。新增或修改的题目下发之前，Builder 先做泄题检查：任何公开文件都不得泄露 Gold、私有评分条件，或能指向预期解法的提示。一旦超出所选方法权限的信息进入 Optimizer 上下文，就恢复由它改动的当前候选版本，并以「污染」为由停止。
 
 > [!WARNING]
-> 信息隔离靠的是 Skill 指令和可审计的 Trace，不是沙箱。这里没有文件系统沙箱、文件权限或工具限制来阻止 Agent 读取评分细则：Target Agent 以 `--approve allow-all` 运行，只是它的 Workspace 里没有评分细则；其他角色能读什么，则由 Skill 规定。Agent 的每一次工具调用都记在它的 Trace 里，违规事后可以查出来。Project 成员也能在 Web App 里查看所有评分细则。
+> 角色隔离依赖 Skill 指令与轨迹审计；全新工作区本身不等于强制隔离。伴生会话继承父级实际 approval/sandbox 策略。如果该策略允许广泛访问，Target 工作区没有 Rubric 也不能阻止它从其他路径读取。报告需要说明实际隔离和观察边界；Project 成员也能在 Web App 查看 Rubric。
 
 ## 构建 Benchmark
 
-第一个顶层 Session 负责创建 Agent 和它的能力评估。Builder 先执行 `agent-initialization`，再执行 `benchmark-design`，拿到的输入是 Target Agent、要考察的能力、期望的基线分数和 Pilot 迭代上限。
+受监管的 Builder 阶段负责创建 Agent 和它的能力评估。Builder 先执行 `agent-initialization`，再执行 `benchmark-design`，拿到的输入是 Target Agent、要考察的能力、期望的基线分数和 Pilot 迭代上限。
 
 评估 Runtime 在第一次 Pilot 之前就固定下来。用户指定的 `(provider, model_id)` 模型对优先；没有指定时，沿用 Builder Session 的模型对。思考等级取自 Target Agent 的 `model.thinking_level`，字段缺失时为 `medium`。校准时每道题目总是只运行一次，所以 Builder 的 `runs` 固定为 1。
 
@@ -79,6 +80,22 @@ Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和
 最终的一致性检查通过后，Builder 把选中那次 Pilot 的单次运行结果直接记为 **Formal Baseline**（正式基线），不重跑，也不补跑其他运行。随后删掉临时副本和其他校准用的脚手架。
 
 没达到期望分数不会让 Benchmark 作废。发布门槛固定为 85 分：Formal Baseline 低于 85 就发布。只有两种情况 `benchmark-design` 才报告 `calibration_failed`：没有任何可冻结的有效 Pilot 结果，或者到了迭代上限，所有有效版本的得分仍不低于 85。
+
+## 复现已有 benchmark
+
+向 `benchmark-reproduction` 提供 GitHub URL、benchmark 名称或本地源码。
+命中 reference 时按对应配方构造；未命中时走通用流程，也可由用户给出自定义 prompt。
+原始 training/testing 划分生成 `<name>_train` 与 `<name>_test`。
+长程任务保留相同任务定义，通过明确的 trial／时间切点和环境状态交接分开执行。
+
+Skill 生成原生 Statement/Rubric，委派 `agent-evaluation` 跑少量完整冒烟测试，
+检查评估中心可见性，再询问是否跑全量。冒烟结果不算全量基线。
+复现保持原题难度，低于 85 分的校准门槛只适用于新建题目。
+数据和必要的适配器按需生成到 Project 中，不打包进 Penguin，也不设为默认 benchmark。
+
+`agent-optimization` 对 Target Agent 执行选定的 RSI 方法，默认使用 Penguin，
+其他方法由 reference 提供。在请求中指定方法名称，读取对应的更新与选择规则。
+输入、评估和输出格式写在 Skill 中。下文描述 Penguin 的严格提分策略。
 
 ## 优化 Agent
 
@@ -177,8 +194,10 @@ Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的
 
 | Skill | 用途 |
 | --- | --- |
+| `agent-supervision` | 为委派任务创建监管伴生者，及时告警并执行有界恢复 |
 | `agent-initialization` | 把需求变成可用的 Agent：编写它的 `AGENTS.md`，安装它需要的 Skill |
 | `benchmark-design` | 设计并校准包含多道题目的能力 Benchmark |
+| `benchmark-reproduction` | 复现已有 benchmark，先冒烟验证，再询问全量评估 |
 | `agent-evaluation` | 隔离地运行一道 Benchmark 题目一次，并为这次运行打分 |
 | `agent-optimization` | 根据 Benchmark 的结果改进 Agent |
 

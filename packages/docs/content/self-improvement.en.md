@@ -1,35 +1,59 @@
 ---
 title: Self-Improvement
-description: How Skills build a Benchmark, score an agent on it, and keep only the changes that raise its score, with every version snapshotted and every score traceable.
+description: Use Skills to create or reproduce benchmarks, evaluate a Target Agent, and improve its harness with an RSI method.
 ---
 
-Self-improvement in PenguinHarness is a loop: build a Benchmark for an agent, score the agent on it, change the agent, and keep a change only when the score strictly improves. The loop adds no runtime of its own. Skills orchestrate the ordinary agent machinery: evaluations are ordinary Sessions, optimization is ordinary file editing, and every result is a file in the Project.
+The default Penguin method is a loop: build a Benchmark for an agent, score the agent on it, change the agent, and keep a change only when the score strictly improves. The loop adds no runtime of its own. Skills orchestrate the ordinary agent machinery: evaluations are ordinary Sessions, optimization is ordinary file editing, and every result is a file in the Project.
 
-Building a Benchmark and optimizing an agent run in two independent top-level Sessions, and each single evaluation is delegated through the built-in `run_subagent` tool. The top-level prompt supplies the settings for the task: the agent, the Benchmark, the capability, the scores and the rounds. The Skills own everything else: call relationships, calibration, Freeze, the result protocol, repair, rollback and reporting.
+The Root Agent, usually Default Agent, delegates each phase to a Supervised Agent
+and creates its independent Supervisor companion. The five task Skills import
+`agent-supervision`; each task child gets its own companion and reports to its
+own parent.
 
 ## Roles
 
-| Role | Skill | Runs as | Responsibility |
-| --- | --- | --- | --- |
-| Builder | `agent-initialization`, then `benchmark-design` | A top-level Session | Sets up the agent, then writes and calibrates a multi-Case Benchmark and records its baseline |
-| Target Agent | — | A fresh top-level Session for every run | The agent being evaluated or improved; it works only inside its own isolated Workspace |
-| Evaluator | `agent-evaluation` | A leaf subagent created through `run_subagent` | Runs the Target Agent on one Case once and scores that run |
-| Optimizer | `agent-optimization` | A separate top-level Session | Changes the Target Agent under a falsifiable hypothesis and keeps a new version only when its score strictly improves |
+| Role | Work |
+| --- | --- |
+| Root Agent | Creates pairs, tracks task/attempt states, stops abnormal work and joins reports |
+| Builder | Initializes the Target and designs or reproduces its Benchmark |
+| Optimizer | Analyzes permitted training traces and updates the Target Harness |
+| Evaluator | Runs one Target attempt and privately scores its saved artifact |
+| Target Agent | Solves one assigned task with a fixed harness and fresh context |
+| Supervisor Agent | Observes one assigned execution from release through final audit |
 
-No built-in agent is reserved for a role: each role is a Skill, and all four Skills ship in the `agent-tuning` plugin. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
+These are workflow roles. Builder, Optimizer, Evaluator, Target and Reporter can
+all be Supervised Agents. Supervisors are leaf observers. Six Skills ship in
+`agent-tuning`; Target/Test Agent denotes the same task-solving role in either
+training or testing. Root is the delegating role, not another name for Supervisor.
 
-### How the roles call each other
+### Pair lifecycle and recovery
 
-1. The Builder or the Optimizer dispatches the full Case × runs matrix in parallel through `run_subagent`: one Evaluator per cell, each told to use `agent-evaluation`.
-2. Each Evaluator uses the Penguin CLI to launch the Target Agent once, in a fresh top-level Session and a unique Workspace under the Target Agent's `workspaces/` directory, given by its absolute path. The launch passes `--source benchmark`, so every Test Session lands in the **Evaluations** folder of the Web App's session list instead of among the agent's active conversations. The Evaluator's own Session is an ordinary subagent Session.
-3. When the Target Agent finishes, the Evaluator scores the run against the rubric and returns one protocol result: the score, cost, duration and Test Session id. It changes no agent or Benchmark, and never writes `scoreboard.yaml`.
-4. The caller checks the complete matrix and writes `scoreboard.yaml`.
+The parent binds both Sessions, waits for Supervisor readiness, then releases the
+task. Independent case pairs can run in parallel within the declared budget.
+A tool subagent is limited to one level; further logical delegation uses explicitly
+registered server Sessions. CLI Targets are created with source `benchmark` before
+starting work, so they still appear in the Evaluation Center's session folder.
 
-Both callers first check that each Evaluator's complete response is plain protocol YAML, and only then read its status or score. When the formatting is invalid, the same Evaluator resends its existing result; the Target Agent is not run again.
+The companion reads actual instructions and trace actions. On an anomaly it
+immediately alerts the parent, which stops the executor and confirms termination.
+For confirmed cheating, a new pair repeats the same work with specific corrective
+**user instructions**, without changing system prompt/config or persistent State.
+The first execution plus three retries is the limit; a clean low score is accepted
+without retry. Continued cheating on attempt 4 receives a policy zero and a reason,
+while raw grader output and all attempts remain available in private records.
+
+The Root's task list records work ID, both Sessions, attempt, status and pending
+alerts. Both members finish before the pair closes. No-growth traces require
+status checks; missing evidence is incomplete coverage, not a clean result.
+Evaluator result YAML remains separate from audit reports. The caller applies
+terminal penalty scores with an explicit reason in a separate report, not the
+ordinary baseline scoreboard; penalties cannot certify a
+Formal Baseline, train a method or validate a contaminated harness. A supervised
+recovery score is distinguished from an improvement learned in the harness.
 
 ## The information barrier
 
-A score is only meaningful while the agent under test cannot see how it is scored. Each role therefore reads a different part of a Benchmark:
+A score is only meaningful while the agent under test cannot see private scoring information. The following table describes the default Penguin method; other RSI methods declare their training feedback permissions in their references. Testing remains outside the Optimizer context.
 
 | Role | Reads | Does not read |
 | --- | --- | --- |
@@ -38,14 +62,14 @@ A score is only meaningful while the agent under test cannot see how it is score
 | Optimizer | Public statements, the Scoreboard, score-linked Test Traces, and the Target Agent's State | Rubrics, Gold answers, private scoring conditions, the Evaluator's State, Workspace or Trace, other agents, and Project secrets |
 | Builder | The whole Benchmark, including the rubrics it writes, the Target Agent's State, and the Test Traces | The Evaluator's State, Workspace or Trace, other agents, and Project secrets |
 
-The Evaluator keeps rubric contents, Gold answers, per-item scores and scoring rationale out of the result it returns. Before a new or changed Case is dispatched, the Builder runs a leak check: no public file may reveal Gold answers, private scoring conditions, or hints that identify the intended solution. If private evaluation information ever reaches the Optimizer's context, the Optimizer rolls back the active Candidate and stops as contaminated.
+The Evaluator keeps rubric contents, Gold answers, per-item scores and scoring rationale out of the result it returns. Before a new or changed Case is dispatched, the Builder runs a leak check: no public file may reveal Gold answers, private scoring conditions, or hints that identify the intended solution. If information outside the selected method's permissions reaches the Optimizer, it restores an active candidate it owns and stops as contaminated.
 
 > [!WARNING]
-> The barrier is enforced by Skill instructions and auditable Traces, not by a sandbox. No file-system sandbox, file permission or tool restriction stops an agent from reading a rubric: the Target Agent runs with `--approve allow-all`, its Workspace simply contains no rubric, and the Skills tell the other roles what they may read. Every tool call an agent makes is recorded in its Trace, so a breach can be found afterwards. Project members can also read every rubric in the Web App.
+> Role separation depends on Skill instructions and audited Traces; a fresh workspace alone is not enforced isolation. Companion Sessions preserve the parent’s effective approval and sandbox policy. When that policy permits broad access, the absent Rubric in the Target workspace does not prevent reading it elsewhere. Record actual confinement and observation limits. Project members can also read Rubrics in the Web App.
 
 ## Building a Benchmark
 
-The first top-level Session creates the agent and its capability evaluation. The Builder follows `agent-initialization`, then `benchmark-design`, and is given the Target Agent, the capability to measure, a desired baseline score and a Pilot iteration limit.
+A supervised Builder phase creates the agent and its capability evaluation. The Builder follows `agent-initialization`, then `benchmark-design`, and is given the Target Agent, the capability to measure, a desired baseline score and a Pilot iteration limit.
 
 The evaluation runtime is fixed before the first Pilot. A `(provider, model_id)` pair the user specifies takes priority; otherwise the pair is inherited from the Builder Session. The thinking level comes from the Target Agent's `model.thinking_level`, `medium` when the field is absent. Calibration always runs each Case once, so the Builder's `runs` is fixed at 1.
 
@@ -80,11 +104,32 @@ After a final consistency review, the Builder records the selected Pilot's one-r
 
 Missing the desired score does not invalidate a Benchmark. The publish gate is a fixed 85: a Formal Baseline below 85 is published. `benchmark-design` reports `calibration_failed` only when no valid Pilot result can be frozen, or when every valid revision still scores 85 or above at the iteration limit.
 
+## Reproduce an existing benchmark
+
+Use `benchmark-reproduction` with a GitHub URL, benchmark name or local checkout.
+It follows the matching benchmark reference, the generic construction rules,
+or a user-supplied construction prompt. Official training/testing
+splits become `<name>_train` and `<name>_test`. Long-running tasks keep identical
+task definitions and use an explicit trial/time boundary and environment handoff.
+
+The Skill builds native Statement/Rubric files, checks a few complete executions
+through `agent-evaluation`, verifies Evaluation Center visibility, then asks before
+running the full evaluation. Smoke results are development checks, not a full
+baseline. Existing task difficulty is preserved; the below-85 calibration gate
+applies only to newly designed benchmarks. Datasets and adapters are created on
+demand in the Project, not bundled into Penguin or installed as defaults.
+
+`agent-optimization` applies an RSI method to the Target Agent. It uses Penguin
+by default; other methods are defined in references. Specify the method in the
+request and read its recipe for the update and selection rules. Inputs, evaluation
+and output formats are defined in the Skill. The loop below describes Penguin's
+strict-improvement policy.
+
 ## Optimizing an agent
 
 After the user confirms that the first step is complete, they start a second top-level Session in a new conversation, and set the `runs` per Case for every Candidate, a target score and a round limit. The Optimizer checks that the Benchmark is `published` and has a complete Formal Baseline for the agent, and then follows `agent-optimization`. If a prerequisite is missing, it stops and explains.
 
-The **Reference** is the Agent State currently kept as best, together with its complete evaluation. Each round tests one **Candidate** built from it:
+For the default Penguin method, the **Reference** is the Agent State currently kept as best, together with its complete evaluation. Each round tests one **Candidate** built from it:
 
 1. Diagnose capability gaps from the per-Case scores and the score-linked Traces.
 2. State one falsifiable hypothesis and make one bounded change: behavioral guidance in `AGENTS.md`, a focused Skill of the agent's own, or safe `system_config.yaml` fields. The Candidate's version is the Reference version + 1, and a rejected version number is never reused.
@@ -177,8 +222,10 @@ Every score can be traced back to the run that produced it.
 
 | Skill | Purpose |
 | --- | --- |
+| `agent-supervision` | Pair delegated work with an independent companion, immediate alerts and bounded recovery |
 | `agent-initialization` | Turn a requirement into a working agent: write its `AGENTS.md` and install the Skills it needs |
 | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark |
+| `benchmark-reproduction` | Reproduce an existing benchmark and verify smoke runs before a full evaluation |
 | `agent-evaluation` | Run and score one isolated Benchmark Case run |
 | `agent-optimization` | Improve an agent from Benchmark results |
 

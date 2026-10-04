@@ -41,6 +41,12 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 每个 Project 都自带 `example-benchmark`，其中的示例评估测的是 `default_agent`，所以页面一开始就有数据。删掉之后，下次加载 `default_agent` 时它又会回来。
 
+## 从仓库复现 benchmark
+
+让装有 `benchmark-reproduction` 的 Agent 在当前 Project 中复现一个 GitHub benchmark。
+它保留原始协议，生成现有 benchmark 格式，跑冒烟检查并确认结果在评估中心可见，再询问全量评估。
+运行资源写在生成的 Rubric 中，后续从评估入口运行时也会按同一约定准备环境、评分和清理。
+
 ## 让 AI 创建 Benchmark
 
 AI 为一个 Agent 出题，逐题试测来校准难度，并记录这个 Agent 的第一个分数，也就是基线分。

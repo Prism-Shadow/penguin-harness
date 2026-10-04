@@ -5,19 +5,56 @@ description: Run one specified Test Agent on one specified Benchmark Case exactl
 
 # Agent Evaluation
 
-Handle one evaluation request from a `run_subagent` caller: run the specified Test Agent on one Benchmark Case once, score that execution privately, and return one protocol result.
+If an applicable reference conflicts with this SKILL.md, follow the reference
+because it is more specific. Within its scope, a method or benchmark recipe also
+takes precedence over Penguin defaults; user instructions take precedence over
+both. Read only applicable references, record overrides, and report any behavior
+that Penguin's actual interfaces cannot support.
 
-The top-level Benchmark Designer or Optimizer owns all Case and Run loops, concurrency, and follow-up handling. This worker handles no other Case or Run, launches no evaluator or subagent, modifies no Agent or Benchmark, and never writes `scoreboard.yaml`. Use the Penguin CLI only to launch the specified Test Agent; do not use it to create another phase, designer, optimizer, or evaluator.
+First distinguish the request: a complete-Benchmark request with `runs` uses the
+[matrix controller reference](references/matrix.md). An explicit `protocol_version`
+request uses the single-cell rules below; malformed cell fields do not become a
+matrix request. The controller delegates, while a cell Evaluator only executes
+and scores its assigned attempt.
 
-Operate silently. Call tools without progress messages. Across all streamed and final responses, the only worker-authored text must be the final plain protocol YAML. Emit no narration, headings, Markdown fences, summaries, private scoring details, or other text.
+Evaluate one Case × Run cell. The caller owns the case set, repeats, parallel
+`run_subagent` dispatch and result aggregation. Each Evaluator handles one cell
+in a separate context, launches the requested Target once, and privately scores
+that execution. Do not spawn another Evaluator or write `scoreboard.yaml`.
+
+During the released evaluation task, emit only one plain protocol YAML result.
+The companion bootstrap's WAITING acknowledgment is a separate control turn,
+not part of the evaluation response. Keep audit reports in their separate channel.
+No progress narration, Markdown fences or private scoring details enter the result.
+
+## Companion supervision
+
+Read and follow [Agent Supervision](../agent-supervision/SKILL.md) before work.
+Without an assigned pair, act as the delegating Root and start a Supervised Agent
+with its Supervisor companion. With a verified pair binding, execute this Skill;
+pair each new task child separately. Join both reports at the parent. Confirmed
+cheating permits at most three fresh retries with corrective user instructions;
+continued cheating on attempt 4 receives a policy zero and reason under that
+contract. This caller-owned recovery is separate from unstarted-launch repair.
 
 ## Before you start
 
-Use this Skill only for a complete request from a `run_subagent` caller. If the request is incomplete or inconsistent, return `invalid_request` through the protocol instead of asking the user a question.
+Read [Penguin](references/penguin.md) for platform paths, launch, Trace binding and
+default Rubric scoring. Also read an applicable benchmark recipe:
 
-## Contract
+| Benchmark | Reference |
+| --- | --- |
+| GDPevo / GDP EVO | [GDPevo](references/gdpevo.md) |
 
-Require exactly one value for every field below:
+Resolve benchmark identity from its config/provenance or the caller; do not infer
+it only from a directory name. Unknown benchmarks use Penguin plus their supplied
+Rubric and Runtime instructions. Preparation may be benchmark-specific, but
+construction and calibration belong to other Skills.
+
+## Request
+
+Use this Skill for one complete request from its delegating parent, through
+`run_subagent` or the explicitly bound companion server-Session transport:
 
 ```text
 protocol_version: 1
@@ -30,68 +67,106 @@ provider: <provider>
 model_id: <model_id>
 ```
 
-One request represents one Test Agent execution. The `run` value identifies that execution; it is not a repeat count. `provider` and `model_id` must both be non-empty and select that exact configured model. If a required field is missing, duplicated, or conflicting, return `invalid_request` without creating a Workspace or launching the Test Agent.
+Require exactly one value per field, positive integer run/version values, and a
+complete nonempty provider/model pair. `run` labels one execution, not a repeat
+count. Missing, duplicate or conflicting fields return `invalid_request` without
+creating a workspace or launching the Target. Do not ask the user to repair a
+worker request; the caller handles it. Without a valid request, return the failure
+before creating either member of a companion pair.
 
-Return a **scored result** when the Test Agent ran and the Rubric could be applied. Wrong, malformed, or missing Test Agent output is still a scored result. Return an **evaluation failure** when the request, Benchmark, launch, version check, Trace binding, or scoring process prevents a valid score.
+## Prepare and freeze
 
-Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent and Benchmark. Never read a Project configuration file, credential, or vault.
+Resolve the requested Target, Benchmark and Case from the Environment and recipe.
+Use only this cell's authorized inputs, State, runtime and execution evidence.
+Reject traversal or escaping paths. Never inspect credentials, other cases,
+unrelated traces or workspaces; pass injected authentication without displaying it.
 
-## Prepare
+Verify the expected State version and runtime before launch. Snapshot persistent
+State and Case materials, excluding secrets. Give the Target a fresh context and
+unique workspace containing only public task inputs; keep private Rubric, gold,
+scoring code and Evaluator reasoning outside that workspace. Keep each worker's
+scratch private and retain its exact paths across calls.
+Read-only access includes execution side effects: run graders without writing
+caches or logs into frozen Case materials. Use a private execution copy when a
+runtime cannot suppress those writes; do not hide them by widening hash exclusions.
 
-Use the `App Data Dir` from the Environment:
+Follow the Case's declared Runtime: check prerequisites, prepare and reset or
+restore the environment, verify readiness, and bind per-run values only in the
+copied task inputs. Preserve frozen Benchmark and State files. Record the prepared
+workspace as the launch baseline. Services must survive setup calls and remain
+usable through scoring; always clean up this cell's owned resources, including on
+failure. Follow declared temporal continuation rather than assuming every task
+starts from an empty environment. Missing infrastructure is `evaluation_failed`,
+never a silent environment substitution or Target score zero.
 
-```text
-TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
-BENCHMARK_DIR = <app_data_dir>/benchmarks/<benchmark_id>
-```
+## Execute and verify
 
-The Benchmark is Project-level and is not owned by the Test Agent: it sits beside `agents/` and may evaluate several Agents. `test_agent_id` names the Agent this request evaluates; return it as `agent_id`.
+Prepare a separate companion for the Target, then use the create-before-start
+procedure in Agent Supervision's Penguin reference. The ordinary evaluation
+recipe still defines Target/model/workspace, thinking and scoring. Include its
+allowed task files, public interfaces and scratch scope in the launch instruction.
+The Target solves its task without editing persistent harness state or reading
+private evaluation material. The Evaluator does not repair the Target's answer.
 
-Reject path traversal, symlink escape, or any resolved path outside the requested Test Agent and Benchmark. Inspect only the requested Agent State, Benchmark config and Case, isolated Test Workspace, and Traces needed to verify this execution. Do not inspect another Agent, Project secrets, hidden configuration, or unrelated Workspaces or Traces.
+Retry a failed launch only when workspace and trace evidence proves the Target
+never started, and each retry applies a new specific repair. Do not retry an
+unchanged launch or a started/completed/aborted Target. Return `evaluation_failed`
+if start status is uncertain, no safe repair remains, or external setup is needed.
+The caller owns any separately recorded replacement attempt.
+For confirmed cheating, return this attempt's failure and let that caller use the
+shared retry counter; do not launch a second Target inside this evaluation worker.
 
-Require `agent_state/system_config.yaml`, `benchmark_config.toml`, `<case_id>/statement/README.md`, and `<case_id>/rubric/README.md`. Return `benchmark_invalid` when `benchmark_config.toml` says `status = "failed"`: a Benchmark whose calibration failed is not evaluated. Treat `run` only as the caller-owned label for this evaluation and return it unchanged; do not read or validate the total Run count. The top-level Agent State `version`, defaulting to 1, must equal `expected_version`; otherwise return `version_changed`. Read and snapshot `model.thinking_level` from this Target Agent config, using the normal Agent-config default `medium` only when the field is absent. This configured value is the evaluation `thinking_level`; do not require or read thinking metadata from a Trace.
+After execution, verify unchanged State contents, version and thinking, and
+unchanged Case materials. State drift is `version_changed`; changed Case material
+is `benchmark_invalid`. Preserve evidence and leave restoration to the caller
+once all workers are idle. Bind exactly one execution to this cell through the
+recipe's identity checks; missing or ambiguous binding is `evaluation_failed`.
 
-Before launch, snapshot every file under the Case's `statement/` and `rubric/` directories. Require a usable Rubric whose scoring items total exactly 100 points. Create a unique Workspace under `<test_agent_dir>/workspaces/`, resolve it to an absolute canonical path, and verify that the resolved path remains under that directory. Copy only `statement/` into it. The Test Agent may see the Statement and its own State, but never the Rubric, Gold answers, scoring rules, or Evaluator reasoning.
+Check actual tool calls and matching outputs against the declared access boundary.
+Resolve relative paths using the workspace and shell working directory. A path
+mentioned in reasoning or an authored audit pattern is not a read; a clean keyword
+search is not proof of compliance. Include unsuccessful file/network operations
+when the declared boundary prohibits those attempts. Record what was checked.
+A confirmed violation, external abort or unresolved material access question is
+`evaluation_failed`, even when an artifact exists or a grader returns a score.
+Join the Target companion's final report before deciding. A cheating reason goes
+in its private audit record and redacted parent notification, not the raw failure
+YAML. The caller applies a terminal policy zero after the retry limit; this worker
+never reports that penalty as a grader score. Clean up owned resources and return
+your protocol result; the parent then joins your own companion's final audit.
+Do not wait for that audit before returning, since it requires your task-end event.
 
-## Run and verify
+## Declared training phases
 
-Use an existing verified Penguin CLI or repository-local launcher. Do not install or probe a launcher. Snapshot the isolated Workspace and record the existing Trace files.
+A selected method may explicitly request a training-only reflection/regeneration
+execution. Its caller supplies phase identity, training case and allowed feedback
+in the task instruction alongside the unchanged evaluation request. Stage only
+that declared reflection payload for the new Target; never open the Evaluator's
+private reasoning to assemble it. Save it in the attempt provenance. It must not
+reach a frozen baseline/final or testing execution. Each worker still launches
+one Target; the method controller, not this Evaluator, owns the training sequence.
+Classify these results as assisted training diagnostics, not benchmark test scores.
 
-Resolve `PROJECT_DIR`, then derive and verify `PROJECT_ID`, then derive and verify `PENGUIN_HOME`. Perform these as separate shell statements in this order. Never compress the assignments onto one command line, derive a value before its input exists, or substitute another Penguin home. Before launch, confirm that `PROJECT_ID` equals the basename of `PROJECT_DIR` and `PENGUIN_HOME` equals its dirname.
+## Score the saved execution
 
-Start one foreground execution with a fresh top-level Session. With an explicit pair, use:
+Use only this cell's artifact, bound execution and authorized scoring materials.
+Apply the declared Rubric or source grader without modifying either. Pass explicit
+artifact paths, preserve raw grader output and follow its score conversion and
+failure policy. Ordinary wrong, malformed or missing answers are scored behavior
+when the declared policy applies; infrastructure, binding and grading failures
+are not zeros. Keep gold, per-item feedback and scoring rationale private.
 
-```bash
-PROJECT_DIR="<app_data_dir>"   # the App Data Dir value from your Environment section is the project root
-PROJECT_ID="$(basename "$PROJECT_DIR")"
-PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
-export PENGUIN_HOME
-penguin run \
-  --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
-  --provider "<provider>" --model-id "<model_id>" --project-id "$PROJECT_ID" \
-  --agent-id "<test_agent_id>" --workspace "<absolute_unique_workspace_path>" \
-  --approve allow-all --source benchmark
-```
-
-`--source benchmark` files the Test Session under the Evaluations folder of the Web App's session list rather than the Test Agent's active conversations; never omit it.
-
-Use the exact requested Agent, Project, absolute Workspace path, and model pair. Never omit either model flag and never fall back to a Project default. If a launch fails, retry only when unchanged Workspace and Trace evidence proves that the Test Agent did not start. Every retry must follow a new diagnosis and apply a specific correction; never repeat an unchanged launch. Do not impose a numeric retry limit while distinct safe repairs remain. Return `evaluation_failed` when no new repair remains, external configuration is required, or it is unclear whether the Test Agent started.
-
-Verify after the run that the State version, configured `model.thinking_level`, and both directory snapshots are unchanged. Return `version_changed` when the State version or configured thinking level differs and `benchmark_invalid` when the Statement or Rubric differs.
-
-Inspect only new or changed Traces. Bind exactly one root Test Trace whose Workspace, Agent State path, provider, and model match this request. Ignore unrelated parallel Traces and exclude the root Trace's directly referenced child Sessions. Return `evaluation_failed` if there is no unique match. Read the actual non-empty `provider` and `model_id` from the bound root Trace's `session_meta`; return `evaluation_failed` if either is unavailable. Use the unchanged Target Agent configuration snapshot—not Trace metadata—for `thinking_level`.
-
-## Score
-
-Inspect only the isolated Workspace, the bound root Trace, its directly referenced child Traces, and the private Rubric. Apply every scoring item and allowed equivalent. Keep Rubric contents, Gold answers, per-item scoring, and scoring rationale private.
-
-A wrong answer, missing artifact, malformed output, or task failure attributable to the Test Agent is scored behavior and returns `status: ok`. A launcher, Trace-binding, or Evaluator failure is not scored. Return `benchmark_invalid` when the Rubric cannot be applied and `evaluation_failed` when the score is non-finite or outside `0..100`.
-
-Set `duration_ms` from the root Test Session. Compute cost only from reliable final cumulative usage or cost already recorded in that Session and directly referenced child Traces found in the same bounded pass. Never browse, query a pricing service, or infer cost from external model prices. If the required data is unavailable, return `cost: null`. Missing cost data must not invalidate a score.
-
-Round `score` to two decimal places. Preserve a non-null `cost` at the precision recorded in the Trace; do not round it. Write `duration_ms` as a non-negative integer rounded to the nearest millisecond.
+Return a finite score on `0..100`, rounded to two decimals. Keep recorded cost
+precision or return null when unknown; missing cost does not invalidate a score.
+Return duration as a nonnegative integer in milliseconds. Record actual runtime
+identity using the recipe, not assumptions about Project defaults.
 
 ## Return
+
+Resolve feedback visibility from the caller's role and declared phase, not the
+method name alone. A score-blind training Optimizer differs from an independent
+test Reporter authorized to receive scores. Follow any explicit routing contract
+without changing the saved grader result; never send testing feedback to training.
 
 Return the required YAML as the only worker-authored text. Do not wrap it in backticks or a Markdown fence.
 
@@ -134,7 +209,7 @@ Use four failure codes:
 
 - `invalid_request`: the request is incomplete or inconsistent.
 - `benchmark_invalid`: the Statement, Rubric, or scoring contract is invalid.
-- `version_changed`: the Test Agent version does not match the request or changed during evaluation.
+- `version_changed`: the Test Agent version does not match the request, or persistent State changed during evaluation.
 - `evaluation_failed`: launch could not be safely repaired, or Trace binding or scoring failed.
 
 Never include score, cost, duration, Session id, private data, or optimization advice on failure.

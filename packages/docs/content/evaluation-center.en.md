@@ -41,6 +41,14 @@ A Benchmark that is not finished is masked. Its card is dimmed under a notice, *
 
 Every Project comes with `example-benchmark`, whose sample evaluations test `default_agent`, so the page has data from the start. If you delete it, it comes back the next time `default_agent` loads.
 
+## Reproduce a benchmark from a repository
+
+Ask an Agent with `benchmark-reproduction` to reproduce a GitHub benchmark in
+this Project. It imports the source protocol, builds the normal benchmark files,
+runs smoke checks, and verifies that the result appears here before offering a
+full evaluation. Required runtime resources are described in each generated
+Rubric, so Evaluate can prepare, score and clean up the same way on later runs.
+
 ## Create a Benchmark with AI
 
 AI writes the cases for an agent, trial-runs each case to calibrate its difficulty, and records the agent's first score, the baseline.
