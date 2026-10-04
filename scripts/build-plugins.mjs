@@ -19,10 +19,14 @@
  * per-platform binaries cannot live inside a bundle, named in NATIVE_DEPENDENCIES — and a
  * package declaring anything else fails this build before anything is packed.
  *
+ * What npm installs for those dependencies is what pnpm-lock.yaml resolves, nothing newer: the
+ * prefix's manifest pins their whole locked closure as `overrides`, and a tree that differs from
+ * the lockfile by version or by tarball integrity fails the build (scripts/lib/locked-prefix.mjs).
+ *
  * Cached by content: the hash over every plugin's `src/`, `package.json`, `README.md` and
- * `tsup.config.ts` names a directory under `node_modules/.cache/penguin-plugins/`, and an
- * unchanged set is not built, packed or installed again — a push of an unrelated change costs
- * nothing here. Installing needs the registry (for the dependencies) the first time only.
+ * `tsup.config.ts`, and over the lockfile entries the prefix is pinned to, names a directory
+ * under `node_modules/.cache/penguin-plugins/`, and an unchanged set is not built, packed or
+ * installed again — a push of an unrelated change costs nothing here. Installing needs the registry (for the dependencies) the first time only.
  *
  * Usage (a library for deploy.mjs / desktop build-assets.mjs, and a CLI):
  *   node scripts/build-plugins.mjs --out <dir>      stage the prefix into <dir>
@@ -34,13 +38,20 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  integrityMismatches,
+  lockCacheInput,
+  lockedClosure,
+  platformSpecs,
+  readPnpmLock,
+} from "./lib/locked-prefix.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGINS_SRC = path.join(ROOT, "plugins");
 const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 13;
+const PACK_FORMAT = 14;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -74,34 +85,6 @@ const TARGET_PLATFORMS = [
   { os: "win32", cpu: "x64" },
   { os: "darwin", cpu: "arm64" },
 ];
-
-/**
- * The per-platform packages a native dependency declares as optional dependencies, as
- * `name@version` specifiers, for the targets above. A native module publishes one package per
- * `<os>-<cpu>` (koffi: `@koromix/koffi-win32-x64`) and depends on all of them optionally, so its
- * own manifest — installed above — is the list, and this build never hardcodes a platform triple.
- */
-async function platformPackagesOf(prefix) {
-  const wanted = TARGET_PLATFORMS.map(({ os: o, cpu }) => `${o}-${cpu}`);
-  const specs = [];
-  for (const dep of NATIVE_DEPENDENCIES.keys()) {
-    let manifest;
-    try {
-      manifest = JSON.parse(
-        await fsp.readFile(
-          path.join(prefix, "node_modules", ...dep.split("/"), "package.json"),
-          "utf8",
-        ),
-      );
-    } catch {
-      continue; // not installed: no plugin in this build declares it
-    }
-    for (const [name, version] of Object.entries(manifest.optionalDependencies ?? {})) {
-      if (wanted.some((triple) => name.endsWith(`-${triple}`))) specs.push(`${name}@${version}`);
-    }
-  }
-  return specs.sort();
-}
 
 /** What npm leaves in the prefix that is not a package: its hidden lockfile. Never shipped. */
 const NOT_SHIPPED = new Set(["node_modules/.package-lock.json"]);
@@ -209,7 +192,15 @@ async function pluginPackages() {
  */
 export async function buildBuiltinPlugins({ log = () => {} } = {}) {
   const plugins = await pluginPackages();
+  // A native module publishes one package per `<os>-<cpu>` (koffi: `@koromix/koffi-win32-x64`)
+  // and depends on all of them optionally; the lockfile names them, so the closure holds the
+  // ones for TARGET_PLATFORMS and this build never hardcodes a platform triple.
+  const lock = readPnpmLock(ROOT);
+  const importers = plugins.map((p) => path.relative(ROOT, p.dir).split(path.sep).join("/"));
+  const closure = lockedClosure(lock, importers, NATIVE_DEPENDENCIES, TARGET_PLATFORMS);
+  const builtinNames = new Set(plugins.map((p) => p.name));
   const h = createHash("sha256").update(`pack ${PACK_FORMAT}\0`);
+  h.update(lockCacheInput(lock, closure)).update("\0");
   for (const plugin of plugins) {
     h.update(plugin.name).update("\0");
     await sourceHash(plugin.dir, h);
@@ -238,10 +229,13 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
       }
       // The manifest names what is shipped — how the loader tells the plugins from what npm
       // installs beside them — and --no-save below keeps npm from rewriting it.
+      // `overrides` pins every package of the native closure, transitive ones included, to the
+      // version pnpm-lock.yaml resolves; without it npm resolves each `^` range afresh.
       const dependencies = Object.fromEntries(plugins.map((p) => [p.name, p.version]));
+      const overrides = Object.fromEntries(closure);
       await fsp.writeFile(
         path.join(out, "package.json"),
-        `${JSON.stringify({ ...PREFIX_MANIFEST, dependencies }, null, 2)}\n`,
+        `${JSON.stringify({ ...PREFIX_MANIFEST, dependencies, overrides }, null, 2)}\n`,
       );
       if (tarballs.length > 0) {
         // npm installs the packages and their dependencies into the prefix; --no-save keeps
@@ -265,7 +259,7 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
         // One call for every target: npm reconciles the tree on each install, so a second
         // install would prune the first target's package as extraneous. --force is what makes
         // npm accept a package whose `os`/`cpu` is not this machine's — the point of the call.
-        const platformPackages = await platformPackagesOf(out);
+        const platformPackages = platformSpecs(lock, closure);
         if (platformPackages.length > 0) {
           run(
             "npm",
@@ -287,6 +281,16 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
         if (platformPackages.length > 0) {
           log(`${platformPackages.length} per-platform native binaries: installed`);
         }
+        const npmLock = JSON.parse(
+          await fsp.readFile(path.join(out, "node_modules", ".package-lock.json"), "utf8"),
+        );
+        const drift = integrityMismatches(lock, closure, npmLock, builtinNames);
+        if (drift.length > 0) {
+          throw new Error(
+            `npm's tree in the builtin prefix differs from pnpm-lock.yaml:\n  ${drift.join("\n  ")}`,
+          );
+        }
+        log(`${closure.size} locked third-party packages: verified`);
       }
       // npm installs a package's files with the mode it pleases, and a vendored program
       // arrives without its exec bit — which no consumer of the prefix can guess back.
