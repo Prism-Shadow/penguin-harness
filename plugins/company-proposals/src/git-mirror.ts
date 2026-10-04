@@ -19,6 +19,8 @@ import type { GitMirror, RemoteRefs } from "./ports.js";
 export const REMOTE_TIMEOUT_MS = 60_000;
 /** Local questions of the mirror. */
 const LOCAL_TIMEOUT_MS = 10_000;
+/** The one walk over the commits the heads have beyond the base (a few thousand commits). */
+const WALK_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const SHA = /^[0-9a-f]{40}$/i;
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -256,6 +258,26 @@ export class LocalGitMirror implements GitMirror {
     );
     const [x, y] = out.trim().split("\n");
     return x !== undefined && x === y;
+  }
+
+  async commitsBeyond(
+    heads: readonly string[],
+    base: string,
+    signal?: AbortSignal,
+  ): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    const wanted = heads.filter((h) => SHA.test(h));
+    if (wanted.length === 0 || !SHA.test(base)) return out;
+    const listed = await this.ok(
+      this.git(["rev-list", "--parents", ...wanted, "--not", base]),
+      WALK_TIMEOUT_MS,
+      signal,
+    );
+    for (const line of listed.split("\n")) {
+      const [commit, ...parents] = line.trim().split(" ");
+      if (commit !== undefined && SHA.test(commit)) out.set(commit.toLowerCase(), parents);
+    }
+    return out;
   }
 
   async counts(from: string, to: string): Promise<{ ahead: number; behind: number }> {

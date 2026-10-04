@@ -7,6 +7,12 @@
  *    head branch of a merged PR — or of one closed without merging (1a) — the walk goes on from
  *    that PR's own base until it reaches the base branch or a node; the PRs walked through are
  *    the node's `via`, and a closed one is marked, since its commits are still in the node's layer.
+ * 1b. A declared base that is the base branch itself does not decide: branches are registered
+ *    against it whatever they are stacked on (every impl branch here, and open PRs alike). The
+ *    parent is then, among the other nodes, the one whose head is an ancestor of this head and
+ *    nearest to it — the fewest commits between (graph-lineage.ts) — and the base branch only
+ *    when there is none. The ancestry is read in the mirror at refresh time and stored with the
+ *    facts; a head it was not read for is `unread`. Rules 2 to 2b judge the parent chosen so.
  * 2. An edge holds by ancestry, not by `baseRefName`: the head contains its parent's head, or the
  *    commits it lacks carry no content (the parent's tree is the merge base's tree).
  * 2a. A head behind its parent still holds when it forked inside the parent's own layer — the
@@ -42,6 +48,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { placeDeployment, type DeploymentReading } from "./deployments.js";
 import { BASE_KEY, headsOf, pullKey, type GraphHead } from "./graph-heads.js";
+import { adoptNearest, type Lineage } from "./graph-lineage.js";
 
 export { pullKey };
 
@@ -302,6 +309,11 @@ export interface GraphInput {
   shut?: ShutBranches;
   /** The tip of each impl branch on the delivery repository (graph-heads.ts); absent or missing = not read. */
   tips?: ReadonlyMap<string, string>;
+  /**
+   * Which node heads contain which (graph-lineage.ts), for the nodes declared on the base branch
+   * (rule 1b). Absent: no ancestry is considered and the declared base decides alone.
+   */
+  lineage?: Lineage;
   /** A comparison read earlier; undefined when it was not (or could not be) read. */
   compare: (from: string, to: string) => Comparison | undefined;
   proposals: GraphProposal[];
@@ -313,7 +325,10 @@ export interface GraphInput {
   checkedAt: string;
 }
 
-/** The layout: parents through the declared bases, the chain from the base branch, forks, the top, the annotations. */
+/**
+ * The layout: parents through the declared bases or, declared on the base branch, the nearest
+ * ancestor (1b); the chain from the base branch, forks, the top, the annotations.
+ */
 export function buildGraph(input: GraphInput): ProposalGraphResponse {
   const repoKey = input.repo.toLowerCase();
   const { heads, unplaced: branchUnplaced } = headsOf({
@@ -324,6 +339,10 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
     tips: input.tips ?? new Map(),
   });
   const parents = parentsOf(heads, input.shut ?? new Map(), input.base.branch);
+  const unwalked =
+    input.lineage === undefined
+      ? new Set<string>()
+      : adoptNearest(parents, heads, input.base.branch, input.lineage);
   const byKey = new Map(heads.map((h) => [h.key, h]));
   const headOf = (k: string | null): string | null =>
     k === null ? null : k === BASE_KEY ? input.base.head : (byKey.get(k)?.head ?? null);
@@ -332,7 +351,11 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
   for (const head of heads) {
     const { parent, via } = parents.get(head.key)!;
     const parentHead = headOf(parent);
-    const cmp = parentHead === null ? undefined : input.compare(parentHead, head.head);
+    // A head whose ancestry was not read has no parent to compare with yet: `unread`.
+    const cmp =
+      parentHead === null || unwalked.has(head.key)
+        ? undefined
+        : input.compare(parentHead, head.head);
     const verdict =
       parent === null
         ? null

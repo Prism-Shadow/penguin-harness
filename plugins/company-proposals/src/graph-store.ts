@@ -1,9 +1,10 @@
 /**
  * GraphStore's SQLite adapter, over the same `company.db` connection as the proposal store: the
- * delivery repository's refs as the last probe read them, change request metadata as the last
- * forge read gave it, commit comparisons (immutable: two commits compare the same forever), the
- * laid-out snapshots by their input, the refresher's lease and schedule, and the PR status cache.
- * All of it is derived — the refresher rebuilds any of it.
+ * delivery repository's refs as the last probe read them and which of its heads contain which,
+ * change request metadata as the last forge read gave it, commit comparisons (immutable: two
+ * commits compare the same forever), the laid-out snapshots by their input, the refresher's
+ * lease and schedule, and the PR status cache. All of it is derived — the refresher rebuilds
+ * any of it.
  */
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { ProposalGraphResponse, ProposalPrStatus } from "@prismshadow/penguin-server/api";
@@ -118,6 +119,16 @@ export class SqliteGraphStore implements GraphStore {
           head: String(r.head),
           base: String(r.base),
         };
+  }
+
+  lineage(repo: string): Map<string, Map<string, number>> {
+    const out = new Map<string, Map<string, number>>();
+    for (const r of this.q(`SELECT head, ancestors FROM graph_lineage WHERE repo = ?`).all(
+      repo,
+    ) as Row[]) {
+      out.set(String(r.head), new Map(JSON.parse(String(r.ancestors)) as Array<[string, number]>));
+    }
+    return out;
   }
 
   comparisons(
@@ -264,6 +275,11 @@ export class SqliteGraphStore implements GraphStore {
       this.q(`DELETE FROM graph_refs WHERE repo = ?`).run(w.repo);
       const ref = this.q(`INSERT INTO graph_refs (repo, ref, oid, read_at) VALUES (?, ?, ?, ?)`);
       for (const [name, oid] of w.refs) ref.run(w.repo, name, oid, at);
+      this.q(`DELETE FROM graph_lineage WHERE repo = ?`).run(w.repo);
+      const lineage = this.q(`INSERT INTO graph_lineage (repo, head, ancestors) VALUES (?, ?, ?)`);
+      for (const [head, ancestors] of w.lineage) {
+        lineage.run(w.repo, head, JSON.stringify([...ancestors]));
+      }
       // An open list read whole replaces the open rows it covers: a PR missing from it is no
       // longer open (it is read again as merged or closed when the graph walks through it).
       for (const repo of w.openOf) {

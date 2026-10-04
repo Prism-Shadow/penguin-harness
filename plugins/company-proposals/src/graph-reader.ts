@@ -1,11 +1,13 @@
 /**
  * The PR graph's refresh reads (pr-graph.ts holds the facts and their layout): change request
  * metadata from the Forge, refs into the GitMirror — the base branch, every open PR's head, the
- * tip of every impl branch no PR is open on, the impl PRs' heads — and every comparison the
- * layout asks for, computed in that mirror: git ancestry, no GitHub compare.
+ * tip of every impl branch no PR is open on, the impl PRs' heads — which of the heads contain
+ * which (one walk), and every comparison the layout asks for, computed in that mirror: git
+ * ancestry, no GitHub compare.
  */
 import type { ProposalGraphResponse } from "@prismshadow/penguin-server/api";
 import { headsOf } from "./graph-heads.js";
+import { lineageOf } from "./graph-lineage.js";
 import {
   parentsOf,
   type Comparison,
@@ -73,6 +75,8 @@ export interface Collected {
   pulls: ChangeRequest[];
   openOf: string[];
   comparisons: Array<{ from: string; to: string; cmp: Comparison }>;
+  /** Which heads contain which, walked in the mirror (graph-lineage.ts). */
+  lineage: Map<string, Map<string, number>>;
   layout: Layout;
   inputs: GraphInputs;
   errors: string[];
@@ -214,6 +218,23 @@ export class PrGraphReader {
         );
     }
 
+    // Which heads contain which: one walk over the commits they have beyond the base tip, the
+    // reachability worked out in memory. A head the mirror lacks is not walked (`unread`).
+    let lineage = new Map<string, Map<string, number>>();
+    if (baseHead !== null) {
+      const shas = [...new Set(heads.map((h) => h.head))];
+      const absent = new Set(await mirror.missing([...shas, baseHead]));
+      const walkable = shas.filter((h) => !absent.has(h.toLowerCase()));
+      if (!absent.has(baseHead.toLowerCase()) && walkable.length > 0) {
+        try {
+          lineage = lineageOf(walkable, await mirror.commitsBeyond(walkable, baseHead, signal));
+        } catch (err) {
+          if (signal?.aborted === true) throw err;
+          errors.push(`${repo}: the heads' ancestry not read: ${reason(err)}`);
+        }
+      }
+    }
+
     // The facts as read, laid out; every comparison it asks for computed in the mirror, then
     // laid out again until nothing new is asked.
     const pullsRead = [...open, ...impl, ...[...originPulls.values()].flat()];
@@ -237,6 +258,7 @@ export class PrGraphReader {
           : { state: cr.state, branch: cr.branch, head: cr.head, base: cr.base };
       },
       compare: () => undefined,
+      lineage: () => lineage,
     };
     const inputs = inputsOf(facts, project, opts.proposals, opts.code);
     const known = new Map<string, Comparison>();
@@ -309,6 +331,7 @@ export class PrGraphReader {
       pulls: pullsRead,
       openOf: [repo, ...originPulls.keys()],
       comparisons: computed,
+      lineage,
       layout: laid,
       inputs,
       errors,

@@ -195,6 +195,14 @@ CREATE TABLE IF NOT EXISTS graph_comparisons (
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS graph_comparisons_to ON graph_comparisons (repo, to_sha);
 
+-- Which node heads contain which, as the last refresh walked them (graph-lineage.ts): one row
+-- per head walked, its ancestors among the heads as JSON [[sha, commits between], ...].
+CREATE TABLE IF NOT EXISTS graph_lineage (
+  repo TEXT NOT NULL, head TEXT NOT NULL,
+  ancestors TEXT NOT NULL,
+  PRIMARY KEY (repo, head)
+) WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS graph_snapshots (
   repo TEXT NOT NULL, base TEXT NOT NULL, input_key TEXT NOT NULL,
   built_at TEXT NOT NULL,

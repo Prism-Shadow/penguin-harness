@@ -31,6 +31,8 @@ company-proposals 与 company-roadmaps 两个插件不再整份重放只追加�
 - 未设置交付仓库时，共享工作区的 remotes 由刷新器按探测节奏读取，读图使用它找到的仓库；重启后第一次刷新之前，关系图只有栈底分支，并带 `refreshing`。
 - 各部署的服务器改为在每次刷新时探测，不再在每次读图时探测；重启后第一次刷新之前，部署的提交显示为尚未探测。
 - impl branch 成为关系图的节点：除开放 PR 外，存活提案已登记、head 在交付仓库上、且没有开放 PR 认领的 impl branch 也画上图，显示提案与阶段；它的 tip 取自探测时 `ls-remote` 读到的值（随其余 ref 一起 fetch 进 mirror），父节点与 PR 一样按祖系判定（登记的 base 若是另一节点的 head，就是那个节点）。分支上开出 PR 后，同一个节点带上 PR 号。节点以 head 分支为键：`ProposalGraphNode` 新增 `key`，`number` 与 `url` 可为 null，`parent`、`off.at`、`top`、`tops`（现总是存在）与部署的 `at` 都指节点的键，`""` 表示栈底分支。关系图页面与 `penguin org proposal graph` 以分支名显示分支节点，并带提案链接、阶段标记与部署菜单（从它部署时经由其提案部署分支的 tip）。未放置原因 `no-pr` 删除：impl branch 只在 `unread`（head 不在交付仓库上或读不到）与 `merged` 时列在图下。快照的输入键包含各 impl 的 base 分支与 head 的 tip。
+- 登记的 base 就是栈底分支的节点——以 `main` 为 base 登记的每个 impl branch，以及 base 声明为栈底、实际叠在别的节点上的开放 PR——以其余节点中 head 是它的祖先、且相隔提交最少的那一个为父节点，没有这样的节点才挂在栈底分支上；登记的 base 是另一节点的 head 时仍由它决定。刷新在 mirror 中对各 head 超出栈底 tip 的提交做一次遍历（`git rev-list --parents … --not <base>`），在内存中算出祖系，与其余事实一同存入新表 `graph_lineage`，并计入快照的输入键，读图仍不执行 git。祖系尚未读到的 head 在下一次刷新前为 `unread`。
+- 插件停止（部署、热更新）时若有关系图刷新在进行，会在关闭存储之前释放该刷新持有的租约，不再让它在过期之前挡住强制刷新。
 - PR 状态在存储中缓存 5 分钟，在后台以一次批量读取刷新；读提案不再等待 `gh`。报告 `merged` 仍立即询问 forge，并回写结果。
 
 ## 删除组织

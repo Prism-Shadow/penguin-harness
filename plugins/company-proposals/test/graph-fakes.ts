@@ -92,6 +92,10 @@ export class FakeMirror implements GitMirror {
   /** Bare commits a fetch can bring (a deployment's, pushed somewhere the remote has it). */
   readonly reachable = new Set<string>();
   failWith: string | null = null;
+  /** Each commit's parents, for the heads' ancestry walk; a commit not listed has none. */
+  readonly parents = new Map<string, string[]>();
+  /** The ancestry walks asked for. */
+  walks = 0;
 
   constructor(
     public refs: Map<string, string> = new Map(),
@@ -137,6 +141,25 @@ export class FakeMirror implements GitMirror {
 
   async treeEquals(a: string, b: string): Promise<boolean> {
     return a === b || this.comparisons.get(`${a}...${b}`)?.empty === true;
+  }
+
+  async commitsBeyond(heads: readonly string[], base: string): Promise<Map<string, string[]>> {
+    this.walks++;
+    const closure = (from: readonly string[]) => {
+      const seen = new Set<string>();
+      const todo = [...from];
+      while (todo.length > 0) {
+        const c = todo.pop()!;
+        if (seen.has(c)) continue;
+        seen.add(c);
+        todo.push(...(this.parents.get(c) ?? []));
+      }
+      return seen;
+    };
+    const inBase = closure([base]);
+    const out = new Map<string, string[]>();
+    for (const c of closure(heads)) if (!inBase.has(c)) out.set(c, this.parents.get(c) ?? []);
+    return out;
   }
 
   async counts(from: string, to: string): Promise<{ ahead: number; behind: number }> {

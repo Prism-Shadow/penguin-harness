@@ -98,6 +98,8 @@ interface OrgState {
   startedAt: number;
   /** The project the last refresh found, when no delivery repository is set; null before one ran. */
   discovered: { project: Project; errors: string[] } | null;
+  /** The lease the refresh in flight holds, until it releases it (or stop does). */
+  lease: { store: GraphStore; repo: string } | null;
 }
 
 /** A read waited for a refresh of an organization that was retired meanwhile (its store is closed). */
@@ -136,15 +138,29 @@ export class GraphRefresher {
         readings: new Map(),
         startedAt: 0,
         discovered: null,
+        lease: null,
       };
       this.orgs.set(key, s);
     }
     return s;
   }
 
-  /** Stops every refresh in flight (its git and gh children with it); the plugin is stopping. */
+  /**
+   * Stops every refresh in flight (its git and gh children with it); the plugin is stopping.
+   * The leases they hold are released here and now, while the stores are still open: the
+   * stopped refreshes end only after the stores close (the plugin's dispose cannot wait), and
+   * a lease left behind would keep the next instance's refreshes out until it expired.
+   */
   stop(): void {
     this.abort.abort();
+    for (const state of this.orgs.values()) this.releaseLease(state);
+  }
+
+  private releaseLease(state: OrgState): void {
+    const lease = state.lease;
+    if (lease === null) return;
+    state.lease = null;
+    lease.store.release(lease.repo, this.holder);
   }
 
   /**
@@ -285,6 +301,8 @@ export class GraphRefresher {
     state.startedAt = this.now();
     const run = this.refresh(ctx, state, force)
       .catch((err: unknown) => {
+        // Stopped with the plugin: its store may be closed already, nothing to say.
+        if (this.abort.signal.aborted) return;
         this.deps.log(
           `[company-proposals] ${ctx.key}: graph refresh failed: ${err instanceof Error ? err.message : String(err)}`,
         );
@@ -320,6 +338,7 @@ export class GraphRefresher {
       await probing;
       return;
     }
+    state.lease = { store, repo };
     try {
       const mirror = this.deps.mirrorFor(ctx.orgDir, repo);
       const remote = await mirror.lsRemote(signal);
@@ -333,6 +352,7 @@ export class GraphRefresher {
         previous.size !== remote.refs.size ||
         [...remote.refs].some(([ref, oid]) => previous.get(ref) !== oid);
       const readings = await probing;
+      signal.throwIfAborted();
       const commits = readings.flatMap((r) => (r.commit === null ? [] : [r.commit.toLowerCase()]));
       const latest = store.latestSnapshot(repo, base);
       const compared = store.comparisonsTo(repo, commits);
@@ -371,6 +391,8 @@ export class GraphRefresher {
         code: this.code(),
         signal,
       });
+      // Nothing is written once stopped: the lease is no longer this refresh's.
+      signal.throwIfAborted();
       store.write({
         repo,
         refs: remote.refs,
@@ -379,6 +401,7 @@ export class GraphRefresher {
         openOf: got.openOf,
         comparisons: got.comparisons,
         used: got.layout.used,
+        lineage: got.lineage,
         snapshot: {
           base,
           inputKey: got.inputs.inputKey,
@@ -388,11 +411,15 @@ export class GraphRefresher {
         unchanged: 0,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      store.failed(repo, message, new Date(this.now() + RETRY_MS).toISOString());
+      // Stopped with the plugin: the store may be closed by now, and nothing failed.
+      if (!this.abort.signal.aborted) {
+        const message = err instanceof Error ? err.message : String(err);
+        store.failed(repo, message, new Date(this.now() + RETRY_MS).toISOString());
+      }
       throw err;
     } finally {
-      store.release(repo, this.holder);
+      // stop() released it already when the plugin stopped meanwhile.
+      this.releaseLease(state);
     }
   }
 }

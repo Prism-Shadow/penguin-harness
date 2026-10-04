@@ -142,6 +142,7 @@ async function refresh(
     openOf: got.openOf,
     comparisons: got.comparisons,
     used: got.layout.used,
+    lineage: got.lineage,
     snapshot: null,
     nextProbeAt: "1970-01-01T00:05:00.000Z",
     unchanged: 0,

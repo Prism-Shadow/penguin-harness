@@ -2,8 +2,9 @@
  * The PR graph's facts and their layout. The facts are the delivery repository's base tip and
  * open change requests, the tips of the impl branches no PR is open on, the merged or closed
  * ones a declared base walks through, the impl PRs that are not open there, each origin's open
- * ones, and the comparisons between commits. A refresh (graph-reader.ts) reads them; a read
- * lays them out from the stored copy (storedFacts) with the same pure functions.
+ * ones, which heads contain which (graph-lineage.ts), and the comparisons between commits. A
+ * refresh (graph-reader.ts) reads them; a read lays them out from the stored copy (storedFacts)
+ * with the same pure functions.
  *
  * `inputKey` hashes everything the layout reads except the comparisons, which never change for
  * a pair of commits, together with the identity of the code that lays it out (layout-code.ts):
@@ -23,6 +24,7 @@ import {
   type ShutPull,
 } from "./pr-chain.js";
 import { headsOf, implBranchesOn } from "./graph-heads.js";
+import type { Lineage } from "./graph-lineage.js";
 import type { GraphStore } from "./ports.js";
 
 /** Rounds of looking up the merged or closed PRs a walk from a declared base passes through. */
@@ -44,6 +46,8 @@ export interface GraphFacts {
   shutOn(branch: string): ShutPull | null;
   pull(repo: string, number: number): ImplPull | null;
   compare(from: string, to: string): Comparison | undefined;
+  /** Which heads contain which, as the last walk read them (graph-lineage.ts). */
+  lineage(): Lineage;
 }
 
 /** The stored facts of a repository (GraphStore). */
@@ -56,6 +60,7 @@ export function storedFacts(store: GraphStore, project: GraphProject): GraphFact
     shutOn: (branch) => store.shutOn(project.repo, branch),
     pull: (repo, number) => store.pull(repo, number),
     compare: (from, to) => store.comparisons(project.repo, [[from, to]]).get(`${from}...${to}`),
+    lineage: () => store.lineage(project.repo),
   };
 }
 
@@ -70,6 +75,8 @@ export interface GraphInputs {
   implPulls: Map<string, ImplPull | null>;
   origins: Array<{ name: string; repo: string; pulls: OpenPull[] | null }>;
   proposals: GraphProposal[];
+  /** The lineage of the heads laid out, among themselves (in the key: it decides parents). */
+  lineage: Map<string, Map<string, number>>;
   inputKey: string;
 }
 
@@ -144,6 +151,19 @@ export function inputsOf(
   for (const pr of offGraphImplPrs(project, pulls, proposals)) {
     implPulls.set(pr.key, facts.pull(pr.repo, pr.number));
   }
+  // The ancestry of the heads drawn, among those heads alone: a stored head no node has any more
+  // moves no parent, so it stays out of the key.
+  const drawn = new Set(heads.map((h) => h.head));
+  const walked = facts.lineage();
+  const lineage = new Map<string, Map<string, number>>();
+  for (const head of [...drawn].sort()) {
+    const ancestors = walked.get(head);
+    if (ancestors === undefined) continue;
+    lineage.set(
+      head,
+      new Map([...ancestors].filter(([a]) => drawn.has(a)).sort(([a], [b]) => a.localeCompare(b))),
+    );
+  }
   const origins = project.origins.map((o) => ({
     ...o,
     pulls: o.repo.toLowerCase() === project.repo.toLowerCase() ? null : facts.openPulls(o.repo),
@@ -159,6 +179,7 @@ export function inputsOf(
     implPulls: [...implPulls].sort(([a], [b]) => a.localeCompare(b)),
     origins,
     proposals: [...proposals].sort((a, b) => a.number - b.number),
+    lineage: [...lineage].map(([head, ancestors]) => [head, [...ancestors]]),
   };
   const inputKey = createHash("sha256").update(JSON.stringify(keyed)).digest("hex");
   return {
@@ -170,6 +191,7 @@ export function inputsOf(
     implPulls,
     origins,
     proposals,
+    lineage,
     inputKey,
   };
 }
@@ -200,6 +222,7 @@ export function layout(
     origins: inputs.origins,
     shut: inputs.shut,
     tips: inputs.tips,
+    lineage: inputs.lineage,
     compare: (from, to) => {
       const found = compare(from, to);
       const key = `${from}...${to}`;

@@ -24,6 +24,7 @@ import type {
   ProposalTestEntry,
 } from "@prismshadow/penguin-server/api";
 import type { Comparison, ImplPull, OpenPull, ShutPull } from "./pr-chain.js";
+import type { Lineage } from "./graph-lineage.js";
 import type { Proposal, ProposalImpl, ProposalImplSide } from "./domain.js";
 
 // ---------------------------------------------------------------------------
@@ -208,6 +209,15 @@ export interface GitMirror {
   treeEquals(a: string, b: string): Promise<boolean>;
   /** Commits in `from` not in `to` (behind) and in `to` not in `from` (ahead). */
   counts(from: string, to: string): Promise<{ ahead: number; behind: number }>;
+  /**
+   * The commits these heads have that `base` lacks, each with its parents
+   * (`git rev-list --parents <heads> --not <base>`): one walk for the heads' ancestry.
+   */
+  commitsBeyond(
+    heads: readonly string[],
+    base: string,
+    signal?: AbortSignal,
+  ): Promise<Map<string, string[]>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +307,8 @@ export interface RefreshWrite {
   comparisons: Array<{ from: string; to: string; cmp: Comparison }>;
   /** The comparisons the layout used: kept from pruning. */
   used: ReadonlyArray<readonly [string, string]>;
+  /** Which of the heads contain which, as this refresh walked them (graph-lineage.ts); replaces the stored one. */
+  lineage: Lineage;
   /** The layout, keyed by its input; null when the forge was not read (a probe that found nothing changed). */
   snapshot: { base: string; inputKey: string; graph: ProposalGraphResponse } | null;
   nextProbeAt: string;
@@ -309,6 +321,8 @@ export interface GraphStore {
   /** The latest merged PR on a branch, else the latest closed one; null for none. */
   shutOn(repo: string, branch: string): ShutPull | null;
   pull(repo: string, number: number): ImplPull | null;
+  /** Which heads contain which, as the last refresh walked them (graph-lineage.ts). */
+  lineage(repo: string): Map<string, Map<string, number>>;
   /** The comparisons known among these pairs, by `from...to`. */
   comparisons(
     repo: string,

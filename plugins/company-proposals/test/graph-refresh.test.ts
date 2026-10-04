@@ -6,7 +6,9 @@
  * registered, the refresh button and a finished deploy each refresh at once; nobody reading
  * means no remote call at all; the lease keeps a second refresher out until it expires; a
  * failure waits a minute; a read during a refresh answers the stored graph at once; another
- * build of the layout code lays the same inputs out again, the same build answers its snapshot.
+ * build of the layout code lays the same inputs out again, the same build answers its snapshot;
+ * a PR declared on the base takes its parent from the stored ancestry; a refresher stopped
+ * mid-refresh releases its lease before the stores close.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -297,6 +299,55 @@ describe("GraphRefresher", () => {
     expect(w.mirror.lsRemoteCalls).toBe(1);
     // Released after it ran.
     expect(w.store.refreshState("acme/site").holder).toBeNull();
+  });
+
+  it("releases its lease when stopped mid-refresh, before the stores close", async () => {
+    const w = world();
+    // The probe hangs until the refresh is aborted, as a slow ls-remote at a deploy would.
+    let probing!: () => void;
+    const started = new Promise<void>((r) => {
+      probing = r;
+    });
+    w.mirror.lsRemote = (signal?: AbortSignal) =>
+      new Promise<never>((_, reject) => {
+        probing();
+        signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    const kicked = w.refresher.kick(w.ctx);
+    await started;
+    expect(w.store.refreshState("acme/site").holder).not.toBeNull();
+    w.refresher.stop();
+    // Released at once: the next instance's forced refresh is not kept out for five minutes.
+    expect(w.store.refreshState("acme/site").holder).toBeNull();
+    expect(
+      w.store.acquire("acme/site", "next-instance", new Date(w.now() + MIN).toISOString()),
+    ).toBe(true);
+    // The stores close right after (the plugin's dispose); the stopped refresh ends quietly.
+    w.db.close();
+    await expect(kicked).resolves.toBeUndefined();
+  });
+
+  it("takes the parent of a PR declared on the base from the ancestry the refresh stored, and lays it out again without git", async () => {
+    const w = world();
+    // #12 is stacked on #11 but declared on dev.
+    w.forge.pulls[1] = cr("acme/site", 12, { head: B1, branch: "feat/b", base: "dev" });
+    w.mirror.parents.set(A1, [D0]);
+    w.mirror.parents.set(B1, [A1]);
+    const g = await w.refresher.read(w.ctx, { refresh: true });
+    expect(g.nodes.map((n) => [n.number, n.base, n.parent, n.onChain])).toEqual([
+      [11, "dev", "", true],
+      [12, "dev", "feat/a", true],
+    ]);
+    expect(g.top).toBe("feat/b");
+    expect(w.mirror.walks).toBe(1);
+    // Another build lays the stored facts out again: the stored ancestry, no git, no forge.
+    const calls = { ls: w.mirror.lsRemoteCalls, walks: w.mirror.walks };
+    const relaid = await w.refresherFor("build-2").read(w.ctx);
+    expect(relaid.nodes.map((n) => [n.number, n.parent])).toEqual([
+      [11, ""],
+      [12, "feat/a"],
+    ]);
+    expect([w.mirror.lsRemoteCalls, w.mirror.walks]).toEqual([calls.ls, calls.walks]);
   });
 
   it("waits a minute after a failure, and keeps answering the stored graph with the reason", async () => {
