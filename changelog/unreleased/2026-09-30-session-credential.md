@@ -1,14 +1,14 @@
-# An agent's commands carry its session's own credential, and no admin token is left on disk
+# An agent's commands carry its session's own credential
 
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `server`, `cli`, `docs`, `scripts`
 - **PR:** [Myriad-Dreamin/penguin-harness#121](https://github.com/Myriad-Dreamin/penguin-harness/pull/121)
-- **Breaking:** yes — `<root>/api-token` is gone; a command line outside a session signs in instead
+- **Breaking:** yes — an agent's commands reach only its own sessions and the routes they call
 
 [中文版](2026-09-30-session-credential.zh.md)
 
-A server-driven session's tool subprocesses no longer get the admin's authority as `PENGUIN_API_TOKEN`. They get a credential of the session's own, signed with a key the server holds in memory, which dies at the next restart.
+A server-driven session's tool subprocesses no longer get the admin's authority as `PENGUIN_API_TOKEN`. They get a credential of the session's own, signed with a key derived from the boot token, which dies at the next restart.
 
 - The credential reaches what an agent's own commands call, and nothing else (`403 session_scope`):
   - the agent's own sessions and the ones it creates with `penguin run` — a session list keeps only these;
@@ -16,13 +16,14 @@ A server-driven session's tool subprocesses no longer get the admin's authority 
   - the Project's agent list and agent creation, its own schedules, the Project's usage;
   - telemetry, read with `session=` naming one of its own sessions.
 - Admin routes, hot updates (`/api/hmr`), machine proxies (`/server/…`), other Projects and every other route are refused.
-- The server no longer writes `<root>/api-token`, and removes one an older build left. The boot token only signs session credentials; it is no credential itself.
-- A person's sign-in token (`penguin auth login`, `penguin auth token`) is now accepted as `Authorization: Bearer`. Outside a session the CLI sends the sign-in stored on the data root; inside one it sends only the environment's credential and reads nothing off the disk.
-- `scripts/deploy.mjs` documents `PENGUIN_API_TOKEN=$(penguin auth token)`.
+- The server still writes the boot token to `<root>/api-token` (0600), and it is still an admin Bearer. Every App now writes the file when it starts, so a hot push restores a file that is missing (an earlier build of this change removed it). The boot token is never handed to a session.
+- A person's sign-in token (`penguin auth login`, `penguin auth token`) is now accepted as `Authorization: Bearer`. The CLI's order: `PENGUIN_API_TOKEN`; outside a session, for a server on this machine, the sign-in stored on the data root, else the `api-token` file; inside a session only the environment's credential, and nothing off the disk.
+- `scripts/deploy.mjs` documents `PENGUIN_API_TOKEN=$(penguin auth token)` beside `$(cat <root>/api-token)`.
 - Docs: CLI Reference (server connection), Server API (Bearer credentials, session credential), Security, and the `penguin-orchestration` skill.
 
 ## Compatibility
 
-- A command line that relied on the `api-token` file — the CLI outside a session, a script doing `$(cat <root>/api-token)` — gets `401` after the upgrade. Sign in once with `penguin auth login`, or `penguin auth token` on the machine that owns the data root (no password), or set `PENGUIN_API_TOKEN=$(penguin auth token)`.
-- A hot push takes the new rules at once: the file an older runtime wrote at its boot stops authenticating as a Bearer, but it is not spent. The boot token belongs to the runtime, which a hot push keeps, so the new build still derives its session-credential signing key from that same token — the one the older build also handed to every tool subprocess as `PENGUIN_API_TOKEN`. Until the next restart, whoever holds it can forge a session credential for any agent, session or organization. Only a restart replaces the key, and it removes the file.
+- A command line that relies on the `api-token` file — the CLI outside a session, a script doing `$(cat <root>/api-token)` — keeps working with no action. `penguin auth login` is an alternative.
+- The file is still an admin credential: whoever can read the data root is the admin. This change only takes it out of tool subprocesses. The session-credential signing key derives from the boot token, which a hot push keeps; only a restart replaces it.
+- Later: the file is to be removed by a separate change once the automation that reads it (agent sessions, roadmap scripts, deploy scripts) has moved to sign-ins or session credentials, `penguin auth token` is available on every machine, and the server has logged no caller presenting the file outside a session for two weeks.
 - An agent whose task reads other agents' sessions (`penguin ls` / `penguin logs` across the Project) now sees only its own agent's sessions.
