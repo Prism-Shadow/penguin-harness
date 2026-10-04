@@ -20,17 +20,9 @@ import { mustRun } from "../../../scripts/must-run.mjs";
 
 const win32 = process.platform === "win32";
 
-// Windows runs the probes through PowerShell, the shell DSH's ACL runner is built and tested
-// for. The harness's own Windows default, bash (Git for Windows, or the bundled MinGit), is
-// refused there by the adaptor before the runner — its load fails under a bash session shell,
-// and a bash command is refused — because the runner cannot start it, measured on
-// windows-latest: handed the bare name, the runner's CreateProcessAsUserW search reaches
-// System32's WSL launcher before PATH ("Bash/Service/CreateInstance/E_ACCESSDENIED"); handed
-// Git's bash.exe by path, the MSYS runtime aborts under the write-restricted token
-// ("CreateFileMapping S-1-5-21-…, Win32 error 5").
-// TODO(win32): so a bash session confined by DSH is not guaranteed on Windows; only PowerShell
-// is (pwsh, and 5.1 per windows-shells.test.ts), until the runner starts an MSYS bash. Set before the adaptor loads and before the first
-// spawn: core resolves the session shell once per process, and the load reads it.
+// Windows probes run through pwsh: the ACL runner cannot start the default bash (see
+// windows-shells.test.ts). Set before the adaptor loads: core resolves the shell once per process.
+// TODO(win32): a DSH-confined bash is not guaranteed on Windows until the runner starts an MSYS bash.
 if (win32) process.env.PENGUIN_SHELL = "pwsh";
 
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-dsh-live-"));
@@ -52,9 +44,7 @@ const cannotOpen =
     ? loadError
     : (() => {
         try {
-          // An absolute program: on Windows the adaptor resolves a bare name on PATH and refuses
-          // one PATH lacks (no `true.exe` there), which would fail this probe as if the host could
-          // not confine.
+          // An absolute program: on Windows a bare `true` is refused, as no PATH entry has it.
           provider.confine([process.execPath], { mode: "workspace-write", workspaceRoot: ws });
           return null;
         } catch (err) {
@@ -78,19 +68,14 @@ async function run(cmd: string): Promise<{ code: number | null; out: string }> {
   return { code: session.exit?.code ?? null, out };
 }
 
-/** A PowerShell single-quoted literal: nothing inside is expanded, `'` doubles. */
+/** A PowerShell single-quoted literal. */
 const ps = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
 /** A file outside the workspace every gated host can read (macOS has no /etc/hostname). */
 const readProbe = win32 ? process.execPath : "/etc/hosts";
 
-/**
- * One probe per test, in the session shell's dialect. Each Windows probe has the POSIX one's
- * effect: a failed write prints its error and the probe carries on, and the background probe
- * is a child process the confined shell starts, which inherits the restricted token. That
- * child writes a marker inside the Workspace before it tries outside, so a child that never
- * ran cannot pass for a confined one.
- */
+// One probe per test, in the session shell's dialect. The background child writes a marker
+// inside the Workspace first, so a child that never ran cannot pass for a confined one.
 const probes = win32
   ? {
       insideAndRead: `$ErrorActionPreference = 'Stop'; Set-Content -LiteralPath inside.txt -Value confined-ok; Get-Content -LiteralPath inside.txt; $null = Get-Content -AsByteStream -TotalCount 1 -LiteralPath ${ps(readProbe)}; 'READ_OK'`,
@@ -107,8 +92,7 @@ const probes = win32
       writeOutsideUnconfined: `echo unconfined > ${JSON.stringify(outsideProbe)}; echo exit=$?`,
     };
 
-// The session shell must be the one the probes are written for: a Windows host without pwsh
-// (PowerShell 7) cannot open the suite, which one unconfined probe decides.
+// A Windows host without pwsh (PowerShell 7) cannot run the probes, so cannot open the suite.
 const shellReady =
   !win32 || (await run("'pwsh-' + $PSVersionTable.PSEdition")).out.trim() === "pwsh-Core";
 
@@ -117,13 +101,8 @@ const usable = mustRun(
   cannotOpen ?? (shellReady ? null : "the session shell is not pwsh (PowerShell 7)"),
 );
 
-/**
- * The denial DIALECT depends on which rung the chain selected — EROFS text under
- * bwrap's read-only binds, EACCES under Landlock, EPERM under Seatbelt, and .NET's
- * "Access to the path '…' is denied." under the Windows ACL runner. That is exactly why
- * ConfinedArgv carries denialSignatures; assert the effect plus a denial in any dialect,
- * never one rung's.
- */
+// The denial dialect depends on the rung (EROFS, EACCES, EPERM, .NET's "Access to the path"):
+// assert the effect plus a denial in any dialect, never one rung's.
 const DENIED =
   /permission denied|read-only file system|operation not permitted|access is denied|access to the path .* is denied/i;
 
