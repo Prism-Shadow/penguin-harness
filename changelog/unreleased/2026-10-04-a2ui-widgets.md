@@ -3,6 +3,7 @@
 - **Date:** 2026-10-04
 - **Type:** feature
 - **Scope:** `core`, `ui`, `web`, `skills`
+- **PR:** [#983](https://github.com/Prism-Shadow/penguin-harness/pull/983)
 
 [中文版](2026-10-04-a2ui-widgets.zh.md)
 
