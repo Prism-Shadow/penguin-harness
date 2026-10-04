@@ -101,6 +101,14 @@ interface OrgState {
   discovered: { project: Project; errors: string[] } | null;
 }
 
+/** A read waited for a refresh of an organization that was retired meanwhile (its store is closed). */
+export class OrgRetiredError extends Error {
+  constructor(readonly key: string) {
+    super(`The organization was deleted while its graph was read: ${key}`);
+    this.name = "OrgRetiredError";
+  }
+}
+
 export class GraphRefresher {
   private readonly orgs = new Map<string, OrgState>();
   private readonly holder = randomUUID();
@@ -159,9 +167,17 @@ export class GraphRefresher {
     return this.start(ctx, force);
   }
 
-  /** The graph from the store; `refresh` waits for a forced refresh first (the page's button). */
+  /**
+   * The graph from the store; `refresh` waits for a forced refresh first (the page's button).
+   * When the organization is retired while the read waits, its store is closed by the time the
+   * wait ends: the read throws OrgRetiredError instead of reading it (the service answers 404).
+   */
   async read(ctx: GraphContext, opts: { refresh?: boolean } = {}): Promise<ProposalGraphResponse> {
-    if (opts.refresh === true) await this.start(ctx, true);
+    if (opts.refresh === true) {
+      const waited = this.org(ctx.key);
+      await this.start(ctx, true);
+      if (waited.abort.signal.aborted) throw new OrgRetiredError(ctx.key);
+    }
     const state = this.org(ctx.key);
     const set = ctx.settings();
     const found = set.repo === null ? state.discovered : null;
@@ -255,7 +271,11 @@ export class GraphRefresher {
   private start(ctx: GraphContext, force: boolean): Promise<void> {
     const state = this.org(ctx.key);
     if (state.running !== null) {
-      return force ? state.running.then(() => this.start(ctx, true)) : state.running;
+      // A forced refresh queued behind a running one does not start when the organization was
+      // retired meanwhile: its store is closed, and a new state would outlive the organization.
+      return force
+        ? state.running.then(() => (state.abort.signal.aborted ? undefined : this.start(ctx, true)))
+        : state.running;
     }
     state.startedAt = this.now();
     const run = this.refresh(ctx, state, force)

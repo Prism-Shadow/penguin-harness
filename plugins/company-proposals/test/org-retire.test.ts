@@ -247,6 +247,27 @@ describe("deleting an organization", () => {
     expect((await service.list(PROJECT, ACME, BOSS)).proposals).toEqual([]);
   });
 
+  it("answers a forced graph refresh in flight when the delete runs with 404 org_not_found", async () => {
+    await service.create(PROJECT, ACME, { author: `${ACME}_dev`, brief: "Work" }, BOSS);
+    // The refresh button: the read waits for a forced refresh, which waits in ls-remote.
+    const reading = service.graph(PROJECT, ACME, BOSS, { refresh: true });
+    const settled = reading.then(
+      () => null,
+      (err: unknown) => err,
+    );
+    await mirrors.get(ACME)!.entered;
+
+    await hostDelete(ACME, () => undefined);
+
+    expect(mirrors.get(ACME)!.aborted).toBe(true);
+    expect(await settled).toMatchObject({ status: 404, code: "org_not_found" });
+    // As every request after the delete.
+    await expect(service.graph(PROJECT, ACME, BOSS, { refresh: true })).rejects.toMatchObject({
+      status: 404,
+      code: "org_not_found",
+    });
+  });
+
   it("opens a retired organization again once the gateway finds it (a delete whose move failed)", async () => {
     await service.create(PROJECT, ACME, { author: `${ACME}_dev`, brief: "Work" }, BOSS);
     deleting.add(ACME);

@@ -86,7 +86,7 @@ import { DeploymentStore, deploymentsPath } from "./deploy-store.js";
 import { RetiredOrgs, retireOrg } from "./org-retire.js";
 import { GithubForge, NoForge } from "./forge.js";
 import { LocalGitMirror, githubUrl, mirrorDir } from "./git-mirror.js";
-import { GraphRefresher, type GraphContext } from "./graph-refresh.js";
+import { GraphRefresher, OrgRetiredError, type GraphContext } from "./graph-refresh.js";
 import {
   ImplBranchError,
   compareBranches,
@@ -1733,6 +1733,11 @@ export class ProposalService {
    * The PR graph of the delivery repository, annotated with the proposals and the origins, from
    * the store (graph-refresh.ts). Always drawn: with no delivery repository at all it is the
    * base branch alone, and `errors` says why. `refresh` waits for a forced refresh first.
+   *
+   * A read that was under way when the organization's delete began (a forced refresh waits
+   * for git and the forge) fails once the retirement aborts the refresh and closes the store:
+   * it answers 404 `org_not_found` like every request after the delete, not 500. Only a failure
+   * of a read whose stores were retired meanwhile is answered so; any other failure stays.
    */
   async graph(
     projectId: string,
@@ -1741,7 +1746,16 @@ export class ProposalService {
     opts: { refresh?: boolean } = {},
   ): Promise<ProposalGraphResponse> {
     const { org, stores } = await this.open(projectId, orgId, actor);
-    return this.graphs.read(this.graphContext(projectId, orgId, org, stores), opts);
+    try {
+      return await this.graphs.read(this.graphContext(projectId, orgId, org, stores), opts);
+    } catch (err) {
+      const retired =
+        err instanceof OrgRetiredError || this.stores.get(`${projectId}/${orgId}`) !== stores;
+      if (retired) {
+        throw new ProposalError(404, "org_not_found", `Organization does not exist: ${orgId}`);
+      }
+      throw err;
+    }
   }
 
   /** A deploy run ended: what the deployments run is read again, and the graph with it. */
