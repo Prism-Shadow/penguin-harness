@@ -185,10 +185,12 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 
 export const router = new Router();
 
-// The demo boots its own page table and has no server-side plugin contributions.
+// The demo boots its own page table and has no server-side plugin contributions: no pages,
+// no file renderers, and nothing removed.
 router.get("/api/contributions", (): ContributionsResponse => ({
   pages: [],
   fileRenderers: [],
+  pageRemovals: [],
   agentTabs: [],
   sessionTabs: [],
 }));
