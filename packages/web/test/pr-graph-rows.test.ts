@@ -3,7 +3,7 @@
  * (node env, no DOM): the rows listed under the graph carry the page's deploy menu when the page
  * hands its row wrapper in — every listed PR gets its own menu button — and stay bare without it.
  * A branch node (an impl branch no PR is open on) reads as its branch with its proposal and stage,
- * and keeps the deploy menu.
+ * and keeps the deploy menu. A stale bottom layer says how far the base branch moved on.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -143,5 +143,41 @@ describe("a branch node", () => {
       }),
     );
     expect(html).toContain(`aria-label="${menuLabel("impl/graph")}"`);
+  });
+});
+
+describe("a stale layer", () => {
+  const t = S.company.proposals.graph;
+  const stale = (parent: string): ProposalGraphNode => ({
+    ...node(5),
+    base: parent === "" ? "dev" : "b4",
+    parent,
+    relation: "diverged",
+    ahead: 2,
+    behind: 3,
+    stacked: true,
+    stale: true,
+    onChain: true,
+    off: null,
+  });
+  const row = (n: ProposalGraphNode) =>
+    renderToStaticMarkup(
+      createElement(NodeRow, {
+        graph: { ...graph, nodes: [n] },
+        node: n,
+        onOpenProposal: () => {},
+      }),
+    );
+
+  it("on the base branch says the base moved on by how many commits", () => {
+    const html = row(stale(""));
+    expect(html).toContain(`>${t.staleBase("dev", 3)}<`);
+    expect(html).not.toContain(`>${t.stale}<`);
+  });
+
+  it("above another layer keeps the plain stale mark", () => {
+    const html = row(stale("b4"));
+    expect(html).toContain(`>${t.stale}<`);
+    expect(html).not.toContain(t.staleBase("dev", 3));
   });
 });

@@ -1,7 +1,8 @@
 /**
  * The chain rules of the PR graph, without GitHub: buildGraph over plain data walks merged and
  * closed layers through (marking the closed ones), lets an edge whose missing commits carry no
- * content hold, keeps a layer that forked inside the moved-on layer below as stale, takes the
+ * content hold, keeps a layer that forked inside the moved-on layer below as stale — and the
+ * bottom layer once the base branch moved on, with the stack above it — takes the
  * branch that keeps going at a fork and leaves the record's forks undecided, and says why every
  * other node is off the chain — and why every impl PR that is not on the graph is not. An impl
  * branch no PR is open on is a node of its own, here also read end to end from a temporary
@@ -155,6 +156,42 @@ describe("buildGraph: the handbook's chain", () => {
     const n = new Map(g.nodes.map((x) => [x.number, x]));
     expect([n.get(2)!.stacked, n.get(2)!.stale]).toEqual([true, false]);
     expect([n.get(3)!.stacked, n.get(3)!.stale]).toEqual([true, true]);
+  });
+
+  it("keeps the bottom layer on the chain, stale, when the base moved on after the stack was built (2b)", () => {
+    const [h1, h2, h3, m] = [sha("1"), sha("2"), sha("3"), sha("m")];
+    const p = [pull(1, "dev", h1), pull(2, "b1", h2), pull(3, "b2", h3)];
+    const g = graph(p, {
+      // #1 forked at m on dev's history; dev gained four commits since.
+      [`${DEV}...${h1}`]: { relation: "diverged", ahead: 2, behind: 4, mergeBase: m, empty: false },
+      [`${h1}...${h2}`]: ahead(),
+      [`${h2}...${h3}`]: ahead(),
+    });
+    expect(chainOf(g)).toEqual([1, 2, 3]);
+    expect(topOf(g)).toBe(3);
+    const n = new Map(g.nodes.map((x) => [x.number, x]));
+    expect([n.get(1)!.stacked, n.get(1)!.stale, n.get(1)!.behind]).toEqual([true, true, 4]);
+    expect([n.get(2)!.stale, n.get(3)!.stale]).toEqual([false, false]);
+  });
+
+  it("puts a bottom layer with no fork point on the base's history on an old line, with the layers on it", () => {
+    const [h1, h2] = [sha("1"), sha("2")];
+    const p = [pull(1, "dev", h1), pull(2, "b1", h2)];
+    const g = graph(p, {
+      [`${DEV}...${h1}`]: {
+        relation: "diverged",
+        ahead: 3,
+        behind: 5,
+        mergeBase: null,
+        empty: false,
+      },
+      [`${h1}...${h2}`]: ahead(),
+    });
+    expect(chainOf(g)).toEqual([]);
+    expect(offOf(g)).toEqual({
+      1: { reason: "old-line", at: null },
+      2: { reason: "above", at: 1 },
+    });
   });
 
   it("puts a layer that forked below its parent's layer on an old line, and the layers on it above an off-chain one", () => {
@@ -524,5 +561,106 @@ describe("impl branch nodes, read from a repository", () => {
     // impl/three forked inside impl/two's layer, which moved on: stale, still stacked.
     const three = after.graph.nodes.find((n) => n.key === "impl/three")!;
     expect([three.number, three.stacked, three.stale]).toEqual([30, true, true]);
+  });
+});
+
+describe("the base branch moves on, read from a repository", () => {
+  let dir: string;
+  let origin: string;
+  const tip: Record<string, string> = {};
+
+  const git = (cwd: string, ...args: string[]): string =>
+    execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@example.com",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@example.com",
+      },
+    }).trim();
+  const commit = async (branch: string, file: string): Promise<void> => {
+    await fs.writeFile(path.join(origin, file), `${file} ${Date.now()} ${Math.random()}\n`);
+    git(origin, "add", "-A");
+    git(origin, "commit", "-q", "-m", file);
+    tip[branch] = git(origin, "rev-parse", "HEAD");
+  };
+
+  beforeAll(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "graph-base-moves-"));
+    origin = path.join(dir, "origin");
+    await fs.mkdir(origin);
+    git(origin, "init", "-q", "-b", "dev");
+    git(origin, "config", "uploadpack.allowFilter", "true");
+    await commit("dev", "base.txt");
+    // dev ─ impl/one ─ impl/two ─ impl/three, built while dev stood still.
+    git(origin, "checkout", "-q", "-b", "impl/one");
+    await commit("impl/one", "one.txt");
+    git(origin, "checkout", "-q", "-b", "impl/two");
+    await commit("impl/two", "two.txt");
+    git(origin, "checkout", "-q", "-b", "impl/three");
+    await commit("impl/three", "three.txt");
+    // A line with no fork point on dev's history, declared on dev, and a layer on it.
+    git(origin, "checkout", "-q", "--orphan", "impl/apart");
+    git(origin, "rm", "-rq", "--cached", ".");
+    await commit("impl/apart", "apart.txt");
+    git(origin, "checkout", "-q", "-b", "impl/apart-two");
+    await commit("impl/apart-two", "apart-two.txt");
+    // Then dev moves on by two commits.
+    git(origin, "checkout", "-q", "-f", "dev");
+    await commit("dev", "dev-1.txt");
+    await commit("dev", "dev-2.txt");
+  });
+  afterAll(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  const impl = (n: number, branch: string, base: string): GraphProposal => ({
+    number: n,
+    title: `P${n}`,
+    status: "drafting",
+    implPr: null,
+    implBranch: { label: `origin/${branch}`, repo: "acme/site", branch, base },
+  });
+
+  it("keeps the stack on the chain with its bottom stale by the commits dev gained, and puts a line off dev's history on an old line", async () => {
+    const mirror = new LocalGitMirror({ dir: path.join(dir, "mirror.git"), url: origin });
+    const store = new SqliteGraphStore(SqliteProposalStore.open(":memory:").db);
+    const remote = await mirror.lsRemote();
+    const got = await new PrGraphReader({ forge: new FakeForge([]), mirror, store }).collect({
+      project: { repo: "acme/site", base: "dev", origins: [] },
+      proposals: [
+        impl(1, "impl/one", "dev"),
+        impl(2, "impl/two", "impl/one"),
+        impl(3, "impl/three", "impl/two"),
+        impl(4, "impl/apart", "dev"),
+        impl(5, "impl/apart-two", "impl/apart"),
+      ],
+      refs: remote.refs,
+      deploymentCommits: [],
+      checkedAt: "2026-10-04T00:00:00.000Z",
+    });
+    expect(got.errors).toEqual([]);
+    const g = got.layout.graph;
+    const at = (key: string) => g.nodes.find((n) => n.key === key)!;
+    expect(g.nodes.filter((n) => n.onChain).map((n) => n.key)).toEqual([
+      "impl/one",
+      "impl/two",
+      "impl/three",
+    ]);
+    expect(g.top).toBe("impl/three");
+    const one = at("impl/one");
+    expect([one.relation, one.stacked, one.stale, one.ahead, one.behind]).toEqual([
+      "diverged",
+      true,
+      true,
+      1,
+      2,
+    ]);
+    expect([at("impl/two").stale, at("impl/three").stale]).toEqual([false, false]);
+    expect(at("impl/apart").off).toEqual({ reason: "old-line", at: null });
+    expect(at("impl/apart-two").off).toEqual({ reason: "above", at: "impl/apart" });
   });
 });

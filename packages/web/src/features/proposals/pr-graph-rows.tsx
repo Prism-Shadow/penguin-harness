@@ -146,11 +146,17 @@ export function NodeRow({
             {t.via(v.state, v.number)}
           </Mark>
         ))}
-        {node.stale && (
-          <Mark tone="attention" title={t.staleTitle(node.behind ?? 0)}>
-            {t.stale}
-          </Mark>
-        )}
+        {node.stale &&
+          (node.parent === "" ? (
+            // The bottom layer: the base branch itself moved on.
+            <Mark tone="attention" title={t.staleBaseTitle(graph.base.branch, node.behind ?? 0)}>
+              {t.staleBase(graph.base.branch, node.behind ?? 0)}
+            </Mark>
+          ) : (
+            <Mark tone="attention" title={t.staleTitle(node.behind ?? 0)}>
+              {t.stale}
+            </Mark>
+          ))}
         {node.off !== null && (
           <Mark tone={OFF_TONE[node.off.reason]}>{offReasonText(graph, node)}</Mark>
         )}

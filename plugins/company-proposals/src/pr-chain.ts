@@ -12,6 +12,11 @@
  * 2a. A head behind its parent still holds when it forked inside the parent's own layer — the
  *    grandparent's head is an ancestor of the merge base: the parent moved on and the node is
  *    `stale`, waiting for its restack. A fork point below the parent's layer is an old line.
+ * 2b. The bottom layer's parent is the base branch, whose own layer is its whole history: a head
+ *    behind the base tip still holds when its merge base with the tip is on that history — the
+ *    base moved on after the stack was built. The node is `stale`, its `behind` the commits the
+ *    base gained, and the layers above it stay on the chain: one move of the base does not scatter
+ *    the graph. Only a head with no fork point on the base's history (no merge base) is an old line.
  * 3. At a fork the chain takes the one branch that keeps going (a child with stacked children of
  *    its own); the others are off the chain. When none or several keep going, choosing takes the
  *    record — the roadmap's order — which this plugin does not read: the graph walks every branch,
@@ -118,16 +123,24 @@ export type EdgeVerdict =
   | { stacked: false; reason: Extract<ProposalGraphOffReason, "old-line" | "unread"> };
 
 /**
- * Whether an edge holds (rules 2 and 2a). `edge` compares the parent's head with the node's;
- * `inner` the grandparent's head with their merge base, asked only when the edge alone fails.
+ * Whether an edge holds (rules 2, 2a and 2b). `edge` compares the parent's head with the node's;
+ * `inner` the grandparent's head with their merge base, asked only when the edge alone fails and
+ * the parent is a node. For the base branch (`onBase`) the merge base itself decides: it is a
+ * commit of the base tip's history by definition, so having one is being forked on that history.
  */
 export function edgeVerdict(
   edge: Comparison | undefined,
   inner: () => Comparison | undefined,
+  onBase = false,
 ): EdgeVerdict {
   if (edge === undefined) return { stacked: false, reason: "unread" };
   if (edge.relation === "ahead" || edge.relation === "same") return { stacked: true, stale: false };
   if (edge.empty) return { stacked: true, stale: false };
+  if (onBase) {
+    return edge.mergeBase === null
+      ? { stacked: false, reason: "old-line" }
+      : { stacked: true, stale: true };
+  }
   const within = edge.mergeBase === null ? undefined : inner();
   if (within !== undefined && (within.relation === "ahead" || within.relation === "same")) {
     return { stacked: true, stale: true };
@@ -323,12 +336,16 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
     const verdict =
       parent === null
         ? null
-        : edgeVerdict(cmp, () => {
-            const grand = parent === BASE_KEY ? null : headOf(parents.get(parent)?.parent ?? null);
-            return grand === null || cmp?.mergeBase == null
-              ? undefined
-              : input.compare(grand, cmp.mergeBase);
-          });
+        : edgeVerdict(
+            cmp,
+            () => {
+              const grand = headOf(parents.get(parent)?.parent ?? null);
+              return grand === null || cmp?.mergeBase == null
+                ? undefined
+                : input.compare(grand, cmp.mergeBase);
+            },
+            parent === BASE_KEY,
+          );
     const { pull, proposal } = head;
     nodes.set(head.key, {
       key: head.key,

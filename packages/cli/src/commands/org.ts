@@ -624,7 +624,13 @@ function renderGraph(g: ProposalGraphResponse, t: Messages): string {
       ...(n.fork ? ["fork"] : []),
       ...(g.tops.includes(n.key) ? ["top"] : []),
       ...n.via.map((v) => `via ${v.state} #${v.number}`),
-      ...(n.stale ? ["stale, restack pending"] : []),
+      ...(n.stale
+        ? [
+            n.parent === ""
+              ? `stale, behind ${g.base.branch} by ${n.behind ?? 0}, restack pending`
+              : "stale, restack pending",
+          ]
+        : []),
       ...(n.off === null
         ? []
         : [

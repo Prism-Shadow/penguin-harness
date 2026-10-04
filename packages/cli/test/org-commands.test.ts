@@ -1893,6 +1893,10 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
           base: "dev",
           parent: "",
           ahead: 2,
+          // The base moved on after the stack was built: the bottom layer is stale against it.
+          behind: 3,
+          relation: "diverged",
+          stale: true,
           proposal: { number: 1, title: "A", status: "ready" },
           origins: [
             {
@@ -1963,7 +1967,7 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(out()).toBe(
       [
         "acme/site dev aaaaaaaaa",
-        "  #11 feat/a bbbbbbbbb +2  proposal #1 ready  origin #801 behind",
+        "  #11 feat/a bbbbbbbbb +2 -3  [stale, behind dev by 3, restack pending]  proposal #1 ready  origin #801 behind",
         `    #12 feat/b ccccccccc +1 -2  [top, via closed #9, stale, restack pending]  ${t.org.graphNoProposal()}`,
         "    branch impl/d eeeeeeeee +1  [top]  proposal #3 drafting",
         "",

@@ -6518,7 +6518,7 @@ Benchmark：
         open: "关系图",
         openTitle: "打开 PR 关系图",
         openForProposal: "在关系图里看这份提案",
-        info: "交付仓库上每张 open PR 的 head 是一个节点，按提交祖系从底座分支一层层叠上去，最新的在上。节点标出它是哪份提案的 impl PR、比下一层多几个提交，以及各 origin 上同名分支的 PR 与它的关系。链按手册的 stack 规则读：穿过已合并、已关闭的层，分叉点落在下一层内部的层仍在链上、标为待重排，分叉处取继续往上走的那一支。底座上可以并排起几个 stack，各自画成一条线，各自的最后一层标为链顶。要靠路线图位次才能决定的分叉，图只标出来、不给链顶。",
+        info: "交付仓库上每张 open PR 的 head 是一个节点，按提交祖系从底座分支一层层叠上去，最新的在上。节点标出它是哪份提案的 impl PR、比下一层多几个提交，以及各 origin 上同名分支的 PR 与它的关系。链按手册的 stack 规则读：穿过已合并、已关闭的层，分叉点落在下一层内部的层仍在链上、标为待重排（底座分支前进之后，最底一层同样如此），分叉处取继续往上走的那一支。底座上可以并排起几个 stack，各自画成一条线，各自的最后一层标为链顶。要靠路线图位次才能决定的分叉，图只标出来、不给链顶。",
         refresh: "刷新",
         loadFailed: "关系图读取失败",
         partial: "关系图不完整，以下各项没读到：",
@@ -6545,6 +6545,10 @@ Benchmark：
         stale: "待重排",
         staleTitle: (behind: number): string =>
           `下一层在这一层分出之后又前进了 ${behind} 个提交，分叉点在它自己那一层里：仍在链上，等重排。`,
+        staleBase: (base: string, behind: number): string =>
+          `落后 ${base} ${behind} 个提交，待重排`,
+        staleBaseTitle: (base: string, behind: number): string =>
+          `${base} 在这一串分出之后又前进了 ${behind} 个提交，分叉点在 ${base} 自己的历史上：整串仍在链上，等重排到 ${base} 的最新提交上。`,
         noProposal: "无提案",
         proposalRef: (n: number): string => `提案 #${n}`,
         ahead: (n: number): string => `+${n}`,

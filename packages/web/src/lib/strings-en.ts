@@ -6334,7 +6334,7 @@ Scenarios:
         open: "Graph",
         openTitle: "Open the PR graph",
         openForProposal: "See this proposal in the PR graph",
-        info: "Each open PR on the delivery repository is a node at its head, stacked layer by layer on the base branch by commit ancestry, newest on top. A node shows which proposal it is the impl PR of, how many commits it adds to the layer below, and the PRs the other origins have on the same branch. The chain is read by the handbook's stack rules: it passes through merged and closed layers, keeps a layer that forked inside the one below as stale, and at a fork takes the branch that keeps going. Several stacks may start on the base branch side by side; each is drawn as its own line and its last layer is marked top. Where a fork would need the roadmap's order to decide, the graph marks it and names no top.",
+        info: "Each open PR on the delivery repository is a node at its head, stacked layer by layer on the base branch by commit ancestry, newest on top. A node shows which proposal it is the impl PR of, how many commits it adds to the layer below, and the PRs the other origins have on the same branch. The chain is read by the handbook's stack rules: it passes through merged and closed layers, keeps a layer that forked inside the one below as stale (and the bottom layer, once the base branch moves on), and at a fork takes the branch that keeps going. Several stacks may start on the base branch side by side; each is drawn as its own line and its last layer is marked top. Where a fork would need the roadmap's order to decide, the graph marks it and names no top.",
         refresh: "Refresh",
         loadFailed: "Could not read the PR graph",
         partial: "The graph is partial; these could not be read:",
@@ -6360,6 +6360,10 @@ Scenarios:
         stale: "stale",
         staleTitle: (behind: number): string =>
           `The layer below moved on ${behind} commits after this one forked inside it: still on the chain, waiting for a restack.`,
+        staleBase: (base: string, behind: number): string =>
+          `behind ${base} by ${behind} — needs restack`,
+        staleBaseTitle: (base: string, behind: number): string =>
+          `${base} moved on ${behind} commit${behind === 1 ? "" : "s"} after this stack forked from its history: the whole stack is still on the chain, waiting for a restack onto ${base}'s tip.`,
         noProposal: "no proposal",
         proposalRef: (n: number): string => `proposal #${n}`,
         ahead: (n: number): string => `+${n}`,

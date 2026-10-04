@@ -6983,7 +6983,8 @@ export interface ProposalGraphVia {
 
 /**
  * Why a node is off the chain:
- * - `old-line`: its head neither contains its parent's head nor forked inside the parent's own layer;
+ * - `old-line`: its head neither contains its parent's head nor forked inside the parent's own layer
+ *   (for the bottom layer, whose parent is the base branch: no fork point on the base's history);
  * - `unread`: its edge could not be compared;
  * - `no-base`: its declared base is neither the base branch nor the head branch of a node or of a merged or closed PR, so it is not drawn;
  * - `not-taken`: it stacks on a fork (`at`, a node's key; `""` = the base branch) where another branch keeps going;
@@ -7029,10 +7030,14 @@ export interface ProposalGraphNode {
   behind: number | null;
   /**
    * The edge to the parent holds: the head contains the parent's, or the commits it lacks carry no
-   * content, or it forked inside the parent's own layer (then `stale`).
+   * content, or it forked inside the parent's own layer (then `stale`) — for the bottom layer, on
+   * the base branch's history (then `stale`, `behind` = the commits the base gained since).
    */
   stacked: boolean;
-  /** Stacked only because it forked inside the parent's own layer, which has moved on since: a restack is pending. */
+  /**
+   * Stacked only because it forked inside the parent's own layer, which has moved on since (for the
+   * bottom layer: the base branch moved on): a restack is pending.
+   */
   stale: boolean;
   /** On the chain: reached from the base branch through stacked edges, taking one branch at each fork. */
   onChain: boolean;
