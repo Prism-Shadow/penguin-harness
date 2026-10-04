@@ -89,7 +89,8 @@ instructions belong in the Rubric when the task needs them.
 
 ## Delegate evaluation
 
-Require `run_subagent` and an installed `agent-evaluation` Skill. Dispatch independent
+Require an installed `agent-evaluation` Skill and either `run_subagent` or the
+explicitly bound companion server-Session transport. Dispatch independent
 Case × Run cells in parallel up to available concurrency, each with a fresh worker:
 Reserve a Supervisor companion for each worker and its Target through the imported
 contract; the caller keeps one retry counter per logical cell.

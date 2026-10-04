@@ -2,183 +2,143 @@
 
 RSI method from a paper titled as Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models
 
-Follow the inputs, evaluation and output rules in `agent-optimization`.
-This reference defines optimization, rule format and paper differences;
-baseline setup is linked under Baseline artifact.
-This is offline FDE adaptation: fresh Target Agents generate traces, Reflectors extract
-lessons, a Curator consolidates deltas, and the Optimizer publishes between batches.
+Use Agent Optimization's I/O, supervision and version contract. This reference
+specifies the **sequential offline** training algorithm. Follow the pinned source
+before adapting its transport; do not substitute a whole-batch advice-writing loop
+and call it the original experiment.
 
-The imported Agent Supervision contract supplies caller-owned cheating recovery:
-logical method cells/rounds are unchanged, with up to four actual attempts per
-cell and a fresh companion for each. Reserve that overhead and both roles' costs
-within the declared budget. These retries are not extra optimization proposals;
-terminal penalties do not become learning evidence or a valid candidate measure.
+## Source and profile
 
-## Method settings
+Paper: arXiv:2510.04618v1, §3–4 and Appendix B.
+Reference implementation: `ace-agent/ace`, commit
+`82709de050e1db6e6ef2f07bcb0393560b94992a`, especially
+`ace/ace.py::_train_single_sample`, `_offline_train`, `ace/core/reflector.py`,
+`ace/core/curator.py`, `ace/prompts/`, and `playbook_utils.py`.
 
-| Setting | Default |
+The paper allows parallel delta merging, but its experiments use batch size 1
+and up to five epochs/refinement rounds. The released sequential implementation
+has these configurable defaults; record the chosen values before any run:
+
+| Setting | Default in this recipe |
 | --- | --- |
-| `rounds`, `runs`, `concurrency` | 3 updates, 1 run per case/version, up to 5 concurrent cells |
-| `training_feedback` | `score_only`, or `detailed` when requested |
-| `read_train_rubric`, `read_train_gold` | Both false; independently configurable |
-| `max_delta_entries` | 5 semantic rule changes per round |
-| `max_entries`, `max_playbook_chars` | 40 active entries, 16000 Unicode characters including instructions |
-| `wall_time_seconds` | 3600 for all roles and preparation |
+| `num_epochs` | 1 complete pass over the declared training order |
+| `max_num_rounds` | Up to 3 reflection/regeneration cycles per incorrect training sample |
+| `curator_frequency` | 1: curate after each sample |
+| `playbook_token_budget` | 80000, reduced only as a declared model/context constraint |
+| `use_bulletpoint_analyzer` | false, matching the implementation's optional analyzer default |
+| `read_train_gold`, `read_train_rubric` | false; independently declare an authorized supervised variant |
+| Final selection without validation | Final playbook, not training-score maximization |
 
-Counts/time limits are positive integers. Target score is optional and does not
-change the selection rule. Declare nonparametric Skill/context edits, offline
-batch updates by Optimizer, linear candidates and evidence/structure admission.
-Only `STATE/skills/ace-playbook/` is behaviorally writable; State version and
-snapshots are bookkeeping exceptions. Tools, hooks, model and reader remain fixed.
+`rounds` is not an alias for epochs or reflection cycles: ask to resolve an
+ambiguous legacy request. Freeze model, thinking, sample order and all budgets.
+A sequential run processes one sample at a time within a replica; independent
+replicas may run in parallel. Every execution and analysis worker has a companion.
 
-The logical cell cap is `(rounds + 1) × cases × runs`. Each update permits one Reflector
-per case (all repeats together), one Curator, and at most one detailed-feedback
-worker per consumed execution. Count all started/failed calls and keep within the
-declared resource budget.
+## Initialize and measure
 
-## Baseline and update
+Follow [ACE initialization](../../agent-initialization/references/ace.md) for the
+empty playbook and fixed reader before H1. Own only `skills/ace-playbook/` plus
+version/snapshot bookkeeping. Keep other State, model, tools and reader fixed.
 
-Create the empty playbook and fixed reader before baseline measurement. A Reader
-repair is a new baseline, not a learned gain. Require one enterprise's explicit
-training cases and a complete matching baseline at the same repeat count, or
-collect it through Agent Evaluation if absent. Reject unrelated/conflicting
-pre-existing playbook state; resume only from verified experiment records.
+Measure a full fixed-H1 training matrix separately when a baseline is requested.
+Do not call the evolving per-sample pre/post trajectory a fixed-version matrix.
+That trajectory uses different playbooks as training advances. Every saved
+version has its own immutable snapshot and evidence manifest.
 
-For each update:
+## Training loop
 
-1. Reflectors inspect successful and failed training traces, current rules and
-   only authorized feedback. Return observed behavior, evidence, responsible
-   decision, applicable conditions, proposed lessons and rule usefulness labels.
-   Unknown causes stay hypotheses; workers cannot edit Target Agent State.
-2. The Curator merges lessons, resolves contradictions by condition, preserves
-   supported behavior and proposes a bounded delta. It can inspect cited training
-   evidence and may consolidate duplicates; it cannot use testing or rewrite the
-   full playbook indiscriminately.
-   Check each proposed instruction against its evidence and unresolved hypotheses.
-   Keep a source-precedence rule scoped to the fields and records actually in
-   conflict; silence about another field does not make its known value invalid.
-   A missing policy definition is uncertainty, not evidence of a policy violation.
-3. The Optimizer validates parent version/hash, IDs, evidence, operations, limits
-   and write set. Reject unsupported procedures, answer tables and runtime edits.
-   Preserve unchanged rule text and feedback history. Publish the staged delta
-   using the common version/snapshot contract after all workers finish.
-4. Measure the candidate on the same full training matrix. If valid and complete,
-   retain it even when score falls, append its evaluation and use its new traces
-   next. ACE admits supported deltas, not only score improvements. Report score
-   change and whether the intended behavior changed.
+For every epoch, visit each training case in the declared order:
 
-Separate a trace-supported procedure from a proposed repair. For each new rule,
-name the decision it changes and evidence for its conditions and exceptions.
-Score-only feedback cannot identify the cause of an error. Keep an unverified
-business rule in OUT; an active diagnostic instruction must tell the Target what
-public evidence to check before applying it. Do not fill `max_delta_entries` as a
-quota or combine unrelated repairs merely to fit under it.
+1. **Generate.** Run a fresh Target/Generator with the current playbook and no
+   reflection. Save its actual trace, answer, used rule IDs and delegated
+   correctness feedback. Use the benchmark's correctness predicate; a partial
+   score is not automatically correct. The Generator never edits persistent State.
+2. **Reflect and regenerate.** If incorrect, a separate Reflector receives this
+   case, the observed Generator trace/prediction, current used bullets and only
+   authorized feedback. It returns error identification, root-cause hypothesis,
+   correct approach, reusable insight and helpful/harmful/neutral bullet tags.
+   Record one feedback event per tagged existing bullet and execution. Apply
+   helpful/harmful counter updates deterministically and publish the next State
+   revision at the idle boundary before regeneration; neutral leaves source
+   counters unchanged. The next Generator receives those updated counts.
+   Run a fresh Generator on the **same training case** with that reflection as
+   explicit training input, then check correctness. Stop on correctness or the
+   predeclared `max_num_rounds`; never extend it because scores are disappointing.
+   If the initial answer was already correct, still run one Reflector to obtain
+   lessons and bullet tags, without the error-correction regeneration loop.
+3. **Curate.** Pass the latest reflection, current playbook and question context
+   to the Curator. It proposes only missing reusable insights as structured ADD
+   operations (`section`, `content`). Apply them deterministically with fresh
+   monotonic IDs, preserving existing text and counters. An empty ADD list is
+   valid; continue to the next sample, not an early experiment stop.
+4. **Measure after curation.** Run this case again with the new playbook and
+   **without reflection**, as the released implementation does. Record this
+   post-curation observation; it is not a score gate for retaining the update.
+   Continue with the updated playbook for the next training case.
 
-An invalid proposal ends with the last measured version. A no-op or full capacity
-without supported consolidation also stops. Invalid candidate measurement uses
-the common stop/rollback rules. Do not extend rounds after disappointing results.
-Retain the latest valid measured playbook, its evidence and deltas; hand frozen
-initial/final versions to the independent Reporter without further learning.
+These algorithmic training generations are distinct from cheating retries.
+Give each `(replica, epoch, case, phase, refinement)` its own logical execution
+identity; its companion-recovery attempt counter is separate. Ordinary benchmark
+runs still execute once. The method supplies training reflection through explicit
+request metadata/task input; do not disguise it as a supervision repair or allow
+it into final testing. With no gold permission, reflection must not contain gold
+or private grader contents. A supervised variant must declare what reaches the
+Generator through reflection; a permission flag is not automatic disclosure.
 
-## Baseline artifact
+The maximum algorithmic Target calls are
+`num_epochs × cases × (2 + max_num_rounds)`, plus separately declared frozen
+baseline/final matrices. Budget Reflectors, Curators, optional refinement, both
+companion roles and bounded cheating recovery as well. Stop on budget or integrity
+failure with the last valid state; restore an owned unmeasured candidate once
+workers settle. Do not publish partial or contaminated learning as complete.
 
-Before H1, follow [the ACE initialization reference](../../agent-initialization/references/ace.md)
-for the empty method artifacts and fixed reader. Verify those artifacts when
-resuming; do not reinstall or change the reader during measured training.
+## Playbook and refinement
 
-Every execution must show actual file reads in its public trace. A claimed usage
-note alone is insufficient. With an empty playbook, a read followed by ordinary
-task solving is valid. Keep this reader identical for initial and final testing.
-Complete the reads before substantive business calls; do not batch those calls
-with loading the rules. For a claimed application, cite the matching condition,
-action and observed check. A loaded rule with no such evidence is application
-unverified, not automatically helpful.
+Keep the established itemized `rules.yaml` format from this adaptation: stable
+IDs, condition/instruction/exceptions and helpful/harmful counters. The existing
+neutral field stays zero for this source profile; neutral tags remain diagnostic
+events and do not increment a source counter. The fixed
+reader loads the complete playbook before substantive task actions. A successful
+file read proves loading, not correct use; cite actual actions for use claims.
+Record trace/answer provenance privately in OUT rather than embedding case IDs,
+customer answers, judge transcripts or test information in the playbook.
 
-## Rules and evidence
+A Curator proposal has `operations: [{type: ADD, section: ..., content: ...}]`.
+The deterministic publisher stores each bullet with `id`, `condition`,
+`instruction`, `exceptions`, `helpful`, `harmful`, and `neutral` (zero). Preserve
+Curator content verbatim as `instruction`; record explicit scope as condition,
+or use “when relevant to the current task” if the source provided none. Do not
+invent new restrictions while serializing. Initialize counters to zero.
 
-An active entry in the Target Agent's `rules.yaml` has:
+Map a source ADD's content into the public rule fields without a second LLM rewrite;
+retain its section in the evidence manifest. Each operation needs a reusable
+lesson from the latest reflection. Do not fill an arbitrary rule quota, invent
+policy premises, copy instance answers, or discard earlier useful content.
+Counters describe observed feedback for bullets actually present in that run,
+not retrospective credit for the traces that inspired a new rule.
 
-```yaml
-entries:
-  - id: ace-0001
-    condition: <business circumstances in which this applies>
-    instruction: <procedure, check, or domain rule>
-    exceptions: <known limits; empty string if none established>
-    helpful: 0
-    harmful: 0
-    neutral: 0
-```
+The paper's grow-and-refine uses semantic embeddings. The pinned release makes
+its BulletpointAnalyzer optional; the default ADD path does **not** implement
+UPDATE/MERGE/DELETE (those are TODOs in `playbook_utils.py`). With the analyzer
+explicitly enabled, use its actual embedding/cosine-similarity and merge procedure
+and record the model/threshold. Do not silently replace it with an LLM similarity
+judgment and claim the same algorithm. Without it, label deduplication disabled;
+keep Curator's avoid-redundancy instruction but make no embedding-pruning claim.
+Resource overflow stops the run or follows a declared source-supported profile,
+not an unrecorded whole-playbook compression.
 
-Keep case IDs, gold answers, judge text, trace paths and source sessions in Optimizer
-`OUT/evidence.yaml`, not in the Target Agent artifact. Evidence rows identify rule ID,
-measurement/version, case/run, Target Agent session, exact observation/artifact location,
-feedback visibility, claim and confidence. A single example can support a tentative
-rule; do not claim repeated validation without independent observations.
+## Freeze and report
 
-Business policy constants may be learned when authorized training evidence supports
-them. Label the policy's scope and effective date when relevant. Do not create
-tables keyed by benchmark case IDs, customer IDs or output hashes. Examples must
-illustrate a procedure without reproducing an answer to a held-out task.
+Save the final playbook after all declared training samples. If a separate
+validation split was explicitly provided, source-style best-validation selection
+is possible; testing never selects a version. With train/test only, use the final
+playbook: the pinned implementation's unupdated `best_playbook` when validation
+is absent is not an instruction to throw away learning.
 
-Reflector helpful/harmful/neutral labels are diagnostic feedback, not a causal
-proof. Count each `(measurement, case, run, rule_id)` at most once. Reuse of one
-trace by several Reflectors never multiplies its count. Keep feedback events in
-Optimizer records, derive cumulative counters from those events, and archive retired
-entries rather than reassigning their IDs.
-
-Only label rules present in the measured version and supported by an observed
-application. New rules start at zero; do not retroactively call their source
-traces evidence of usefulness. If the budget ends after candidate measurement,
-keep its diagnostics in OUT and report counters as not yet updated. Updating
-published counters changes State and belongs to the next version, not a silent
-edit of the measured snapshot. Reading a rule or obtaining a higher total score
-alone is not a helpful event.
-
-## Delta contract
-
-Curator output is a plain YAML artifact:
-
-```yaml
-parent_version: <integer>
-parent_hash: <State content hash>
-operations:
-  - op: add
-    id: ace-0001
-    condition: <condition>
-    instruction: <instruction>
-    exceptions: <limits>
-    evidence_ids: [<Optimizer evidence row ID>]
-```
-
-Support `add`, `revise`, and `retire`. `add` uses a never-used monotonic ID;
-`revise`/`retire` name an existing active ID. A revision supplies all textual fields
-and preserves previous feedback history. Retirement supplies evidence and a reason;
-it cannot silently discard a unique supported rule. Feedback-counter updates are
-derived separately and do not count as semantic rule edits. A truly unchanged delta
-has neither operations nor new feedback events.
-
-Resolve duplicate operations and contradictions before publication; do not guess
-merge order. No model directly rewrites the target file. The Optimizer uses parsed
-operations and a deterministic edit/serialization step, then checks that rule
-text outside the delta remains unchanged and counters match recorded feedback.
-Use ordinary Python or Node tools for this step; do not introduce an LLM-based second rewrite.
-
-Enforce both the entry count and the total character limit including frontmatter
-and stable instructions. Curator can inspect only training evidence. If a rule
-needs unavailable verification, keep it as an unresolved hypothesis in OUT rather
-than publishing it as an established business constraint.
-
-## Source and adaptations
-
-Source: [Agentic Context Engineering, arXiv:2510.04618v1](https://arxiv.org/html/2510.04618v1),
-sections 3–4. ACE separates Generator, Reflector and Curator; maintains itemized
-rules with feedback; applies localized deltas; and grows/refines the context.
-Its experiments include offline and online adaptation.
-
-This method uses offline enterprise training, a batch of fresh Target Agents, and one
-Optimizer publisher. It preserves trace reflection, successful and failed experience,
-rule IDs, feedback counters, incremental updates and redundancy control. It replaces
-embedding-based deduplication with Curator text comparison, moves the playbook into
-a Skill, and uses whole-training-batch updates rather than the paper's experimental
-batch size 1. Record these adaptations. There is no test-time memory update, Pareto
-search, or validation-score acceptance gate in this method.
+Measure frozen initial/final harnesses under matched runtime and repeats using
+independent Reporters. Report per-sample initial/refined/post-curation results
+separately from frozen matrices, counter events, operations, snapshots, costs,
+violations and every adaptation. Skill storage, clean-context Teacher/Student
+execution, new model/domain, no-validation final selection and companion recovery
+are Penguin/FDE adaptations. They are not a reproduction of ACE's published
+AppWorld/finance numbers. Keep source algorithm settings fixed regardless of gain.

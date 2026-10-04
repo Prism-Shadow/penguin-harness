@@ -147,9 +147,13 @@ Prefer configuring an agent the user already created. If the user requires a new
 After confirming that the target is absent, pick a short id using letters, digits, `_`, or `-`, copy the default Agent's `system_config.yaml` as the base, and create the layout described above:
 
 ```bash
-mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/hooks" "$TARGET/agent_state/memory" "$TARGET/agent_state/tools" "$TARGET/scratchpad"
+mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/hooks" "$TARGET/agent_state/memory/user" "$TARGET/agent_state/tools" "$TARGET/scratchpad"
 cp "$APP_DATA_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
+: > "$TARGET/agent_state/memory/user/MEMORY.md"
 ```
+
+Verify the empty `memory/user/MEMORY.md` exists before freezing the new State;
+otherwise the first Session creates it and changes the baseline file tree.
 
 Then set the top-level `name`, `description`, and `version: 1`, set `model.thinking_level` to the resolved value, write `agent_state/AGENTS.md` (it lives under `agent_state/`, not at the agent directory root), and install only the Skills and hook packages required by the user's requirement. Do not persist the resolved provider/model pair in the Agent State.
 

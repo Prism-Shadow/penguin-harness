@@ -28,6 +28,10 @@ this is not a filesystem enforcement claim. Copy no private manifest into a Targ
 workspace. A passed `pair_id` must resolve to an actual parent-created binding;
 the worker cannot exempt itself by inventing one.
 
+Choose a server Session pair for Builder, Optimizer, matrix controller or other
+roles that must delegate further. Reserve tool-subagent pairs for leaf work;
+do not consume the only tool depth and then require that child to spawn tools.
+
 ## Start a tool subagent pair
 
 1. Launch a Supervisor using `run_subagent` with its Agent ID, complete runtime,
@@ -133,6 +137,10 @@ shard and record cursors so repeated polls do not reread or count an action twic
 parse arguments and join results by `tool_call_id`. Inspect only assigned evidence,
 including child-pair reports when this worker delegates; each child has its own
 observer. Do not include private trace text in a parent-facing alert.
+The default system prompt requires intermediates in the worker's own Session
+scratchpad. Do not label that access a violation of a lower-priority workspace-only
+instruction. Check the actual prompt and exact Session path; shared `/tmp`, sibling
+scratchpads and private parent artifacts are different locations.
 
 Default polling interval is 30 seconds, with waits no longer than 30 seconds.
 Keep each tool wait at or below the chosen interval and return new records to

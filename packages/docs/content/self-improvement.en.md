@@ -46,7 +46,8 @@ The Root's task list records work ID, both Sessions, attempt, status and pending
 alerts. Both members finish before the pair closes. No-growth traces require
 status checks; missing evidence is incomplete coverage, not a clean result.
 Evaluator result YAML remains separate from audit reports. The caller applies
-terminal penalty scores with an explicit reason; penalties cannot certify a
+terminal penalty scores with an explicit reason in a separate report, not the
+ordinary baseline scoreboard; penalties cannot certify a
 Formal Baseline, train a method or validate a contaminated harness. A supervised
 recovery score is distinguished from an improvement learned in the harness.
 
@@ -64,7 +65,7 @@ A score is only meaningful while the agent under test cannot see private scoring
 The Evaluator keeps rubric contents, Gold answers, per-item scores and scoring rationale out of the result it returns. Before a new or changed Case is dispatched, the Builder runs a leak check: no public file may reveal Gold answers, private scoring conditions, or hints that identify the intended solution. If information outside the selected method's permissions reaches the Optimizer, it restores an active candidate it owns and stops as contaminated.
 
 > [!WARNING]
-> The barrier is enforced by Skill instructions and auditable Traces, not by a sandbox. No file-system sandbox, file permission or tool restriction stops an agent from reading a rubric: the Target Agent runs with `--approve allow-all`, its Workspace simply contains no rubric, and the Skills tell the other roles what they may read. Every tool call an agent makes is recorded in its Trace, so a breach can be found afterwards. Project members can also read every rubric in the Web App.
+> Role separation depends on Skill instructions and audited Traces; a fresh workspace alone is not enforced isolation. Companion Sessions preserve the parent’s effective approval and sandbox policy. When that policy permits broad access, the absent Rubric in the Target workspace does not prevent reading it elsewhere. Record actual confinement and observation limits. Project members can also read Rubrics in the Web App.
 
 ## Building a Benchmark
 

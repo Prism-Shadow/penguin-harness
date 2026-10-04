@@ -21,10 +21,10 @@ inline example must not substitute for reading the actual file.
 Use this fixed AGENTS.md instruction for both base and final harnesses:
 
 > Before substantive task actions, read the complete awm-index SKILL.md and
-> workflows.json. Read the complete SKILL.md of any workflow whose preconditions
-> match this task, including its dependencies, and bind its parameters to current
-> observations. Use ordinary tools to execute it and verify completion. Record
-> selected workflow IDs in a short task-workspace note, keeping the required final
+> workflows.json. Read the complete SKILL.md of every indexed workflow
+> and its dependencies before substantive task actions. Bind applicable workflow
+> parameters to current observations. Use ordinary tools to execute applicable steps
+> and verify completion. Record selected workflow IDs in a short task-workspace note, keeping the required final
 > answer format. If none applies, solve normally. Do not modify persistent State,
 > skills, memory, tools or hooks, and do not read experiment or private judge files.
 

@@ -63,6 +63,8 @@ Reporter + Supervisor：独立测试，汇总分数与异常
 
 一批 Target Agent 共用不可变的 `H_t`，全部结束后 Optimizer 才能发布 `H_(t+1)`。并发受模型和环境容量约束；逐题更新与整批更新可能产生不同结果，适配论文时明确说明。Optimizer 可以分组、检索或汇总大量轨迹，但结论要保留来源与反例。后续若研究 Optimizer Harness 的进化，单独定义实验，不混入本场景的 Target Agent 训练收益。
 
+算法有训练专用的反思重生成阶段时，由 Optimizer 将授权反馈作为显式训练输入交给新的 Target 上下文；Target 仍只做当前题、不修改持久 harness。此类调用与同题作弊重跑、正式指标重复分开编号，不能作为无反馈测试成绩。方法顺序、准入与预算按原论文／选定实现固定，不能为了分数更高临时换算法。
+
 ## 每次委派都有监管伴生者
 
 [Agent Supervision](../../../plugins/agent-tuning/skills/agent-supervision/SKILL.md) 是独立 Skill，由 Agent Tuning 的各入口通过相对文件链接引用。父 Agent 先创建并绑定执行与监管会话，监管就绪后才放行任务。执行结束后监管读完最后一段 trace，双方报告齐全后父 Agent 才接受结果并结束伴生对。“同生同灭”是共同管理的任务生命周期，保留轨迹，不要求物理同时删除会话。
@@ -73,7 +75,9 @@ Supervisor 读取所绑定会话实际收到的 system prompt、用户 query、�
 
 发现异常时，Supervisor 立即写证据并通知自己的父 Agent。父 Agent 及时停止该执行及受影响子任务，确认停止后，将异常转换成下一次 **user instruction** 的具体约束，再启动全新的伴生对。system prompt、system config、模型和持久 harness 保持不变；普通低分不触发这种重跑。
 
-同一任务编号最多首次执行加三次重跑。每次保存原始产物、双方会话 ID、追加指令、检测／通知／停止时间和原因。第四次仍确认作弊、没有可用结果时，该任务最终记 **策略零分**，附 `cheating_retry_exhausted` 和简短原因；原 grader 分数另存，不能把惩罚分称为原始评分。基础设施失败或较早耗尽预算不冒充四次作弊。未清除的作弊不能成为学习证据、合规基线或 harness 发布依据。
+同一任务编号最多首次执行加三次重跑。每次保存原始产物、双方会话 ID、追加指令、检测／通知／停止时间和原因。第四次仍确认作弊、没有可用结果时，该任务最终记 **策略零分**，附 `cheating_retry_exhausted` 和简短原因；原 grader 分数另存，不能把惩罚分称为原始评分。惩罚与追加指令恢复结果单独汇报，不放入会被界面自动选作基线的普通记分板。基础设施失败或较早耗尽预算不冒充四次作弊。未清除的作弊不能成为学习证据、合规基线或 harness 发布依据。
+
+父 Agent 被取消或失联时，各伴生者按预先声明的心跳／截止时间负责停止自己绑定的执行和登记的后代，完成有限的最终审计并标记 incomplete。不能要求已被取消的父任务自己执行清理。
 
 Root 维护任务表，记录编号、父节点、双方 Session、尝试次数及 waiting／running／anomaly_detected／stopping／retrying／success／cheating_exhausted／incomplete 状态；各父 Agent 管理自己的子任务并逐级汇报。监管报告只向接收者披露有权限的信息，测试答案、Rubric 和评分思考不能借告警回流给 Optimizer。
 

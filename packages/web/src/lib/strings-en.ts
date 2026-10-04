@@ -3997,7 +3997,7 @@ Scenarios:
       "`benchmark_config.toml` (title, description, runs = 1; it records no agent), " +
       "one `CASE-NNN-<slug>/` per case (`statement/README.md` is the statement, `rubric/README.md` the scoring rubric, 100 points per case, nothing from the rubric leaking into the statement) " +
       "and `scoreboard.yaml` (initially `evaluations: []`; every evaluation records the tested `agent_id`, its `version`, the paired `provider` / `model_id` and the `thinking_level`). " +
-      "Every trial evaluation goes through `run_subagent`, and the subagent's prompt must say to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
+      "Every trial evaluation uses a paired `agent-evaluation` worker through `run_subagent` or an explicitly bound server Session as Agent Supervision permits; choose a server Session for a Builder that must delegate further. Never score a run yourself or bypass the Skill; " +
       "calibrate difficulty case by case, " +
       "freeze the final revision, append the Formal Baseline to scoreboard.yaml, and finish by reporting the Benchmark id, the baseline score and the per-case scores.",
     manualCreateTitle: "Create a Benchmark manually",
@@ -4047,30 +4047,28 @@ Scenarios:
       "Evaluated as its Agent State stands right now; the score is recorded under it, labelled with its version, model and thinking level",
     evaluatorAgent: "Evaluator agent",
     evaluatorAgentHint:
-      "The one that spawns the evaluation subagents, scores against the rubric and writes the scoreboard; needs the agent-evaluation Skill",
+      "The matrix controller that delegates paired evaluation workers and writes complete clean results; needs the agent-evaluation Skill",
     evaluatorMissingSkill:
       "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
-      "The model that dispatches and totals the runs, the Project's default model unless changed; the tested agent uses the model it is configured with, which is not changed here",
+      "The controller model; absent an explicit Target model pair, its runtime is inherited for evaluation, while thinking comes from Target State",
     evaluateRunsHint:
       "How many times every case runs, averaged; defaults to the Benchmark's configured count",
     evaluateNoteField: "Note",
     evaluateNotePlaceholder:
       "e.g. This round checks what the last optimization actually changed; watch the two citation cases",
     evaluateTail: (p: { targetAgentId: string; benchmarkId: string; runs: number }): string =>
-      "Use the `agent-evaluation` Skill to evaluate the Test Agent on this frozen Benchmark.\n\n" +
+      "Use the `agent-evaluation` matrix-controller reference to evaluate the Test Agent on this frozen Benchmark.\n\n" +
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
       `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
       `- runs: \`${p.runs}\`\n\n` +
-      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned subagent per matrix cell (omit `agent_id`), and say in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
-      "the evaluation runtime is the model and thinking level that tested agent is configured with right now. Require every returned result to agree on " +
-      "`agent_id`, `provider`, `model_id` and `thinking_level`, and stop rather than merge two labels into one record. Average the runs per case and the cases " +
-      "per evaluation as the scoreboard contract specifies, then append exactly ONE evaluation to `scoreboard.yaml`, labelled with `agent_id`, `version`, " +
-      "`provider` / `model_id` and `thinking_level`. Change neither the tested agent nor the Benchmark. " +
-      "Finish by reporting the total score, the per-case scores and the label the evaluation was recorded under.",
+      "As matrix controller, evaluate the full Case × runs matrix with a paired `agent-evaluation` worker per cell, through `run_subagent` or explicitly bound server Sessions. Resolve a complete provider/model pair from an explicit request or the controller Environment, and thinking from Target State; " +
+      "send complete cell requests and never score tasks yourself. Require matching `agent_id`, `version`, `provider`, `model_id` and `thinking_level`; keep the Target and Benchmark materials frozen. " +
+      "Join companion reports, average runs per case then cases overall, and append one complete clean evaluation to scoreboard.yaml. Keep recovery/penalty or incomplete matrices in separate artifacts with reasons. " +
+      "Report coverage, scores, runtime labels and failures; do not optimize the Target.",
     optimizeDescription:
-      "AI changes the Test Agent under a falsifiable hypothesis and re-evaluates; a new version is kept only when the score strictly improves.",
+      "AI applies the selected RSI method; Penguin is the default and retains only strict score improvements.",
     optimizerAgent: "Optimizer agent",
     optimizerAgentHint:
       "The one that reads the scores and Traces and edits the Test Agent; needs the agent-optimization Skill",
@@ -4083,7 +4081,8 @@ Scenarios:
       "The model that analyzes and edits, the Project's default model unless changed; evaluations of the Test Agent keep the model the baseline recorded, which is not changed here",
     optimizeRunsHint: "How many times every case runs per candidate version, averaged",
     roundLimitField: "Round limit",
-    roundLimitHint: "One change per round; a round counts once its evaluation is complete",
+    roundLimitHint:
+      "Penguin candidate-round limit; other methods use their own declared training budgets",
     targetScoreField: "Target score",
     targetScoreHint: "Reaching it ends the loop early; defaults to ten points above the baseline",
     focusField: "Focus",
@@ -4106,10 +4105,10 @@ Scenarios:
       `- runs: \`${p.runs}\`\n` +
       `- desired_score: \`>=${p.targetScore}\`\n` +
       `- candidate_round_limit: \`${p.roundLimit}\`\n\n` +
-      "Each round, state one falsifiable hypothesis from the current Reference and make one bounded change; evaluate the full Case × runs matrix through `run_subagent`, saying in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
-      "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
-      "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
-      "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
+      "Use Penguin by default, or the method explicitly requested in Focus. For Penguin, interpret desired_score and candidate_round_limit using its reference and retain only strict improvements. " +
+      "For another method, use its declared training stages, budgets and selection rule; these Penguin form defaults must not override them. Resolve any missing method-specific input before running. " +
+      "Delegate each evaluation through a paired `agent-evaluation` worker using `run_subagent` or an explicitly bound server Session. Keep the Target runtime fixed; record complete clean results under `agent_id`, `version`, `provider` / `model_id` and `thinking_level` in scoreboard.yaml. " +
+      "Report the method, before/after scores, retained version, adaptations, and each update or failure decision.",
   },
 
   /** Company mode: the organization switcher and dialogs, and the six organization pages. */

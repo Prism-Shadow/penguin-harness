@@ -17,6 +17,10 @@ current Target Agent State, desired `target_score`, positive candidate `runs` an
 positive `rounds`. Read Target Agent runtime from that baseline; do not create a missing
 Agent, benchmark or baseline inside this method.
 
+The UI names these inputs `desired_score` (for example `>=85`) and
+`candidate_round_limit`; resolve them to `target_score` and `rounds` for Penguin
+only, rejecting conflicts. Other methods resolve their own budgets.
+
 Require a finite target in `0..100`. Use the baseline's complete case set, not a
 new subset, and verify its State/runtime before beginning. Existing prompts that
 describe a desired score and round limit without field names keep the same meaning.

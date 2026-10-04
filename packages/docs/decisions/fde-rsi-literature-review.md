@@ -16,12 +16,12 @@
 
 | 优先级 | 工作 | 核心修改对象 | 为什么值得做 | 第一版成本与限制 |
 | --- | --- | --- | --- | --- |
-| 首个实现 | ACE，2025 | 条目式 playbook／Skill | 明确区分生成、反思和整理；成功与失败都可学；有离线和金融任务实验；Stanford、SambaNova、UC Berkeley | 小；批量执行与文字去重需注明是适配 |
+| 首个实现 | ACE，2025 | 条目式 playbook／Skill | 明确区分生成、反思和整理；成功与失败都可学；有离线和金融任务实验；Stanford、SambaNova、UC Berkeley | 逐题反思重生成与 ADD／计数器；禁用可选 embedding analyzer 时明确说明 |
 | 下一批 | ProTeGi，2023 | 指令／Skill 中的规则 | Microsoft；从错误生成文字反馈，再改提示词；开发集与测试集分开 | 小到中；完整方法还有 beam 与 bandit，不能删掉后仍称完整复现 |
 | 下一批 | AgentOptimizer，2024 | 可调用函数／工具 | 把函数当可学习权重，输入训练执行历史，输出函数增删改；与 FDE 类比直接对应 | 中；需要工具执行验证与回滚 |
 | 下一批 | SkillOpt-Lite，2026 | Skill；扩展到 harness code | 文件系统 trace 检索、共性分析、局部修改；NTU MMLab、Microsoft 等作者机构 | 流程小；独立 validation gate 与当前只分 train/test 的约定不同 |
 | 下一批 | GEPA，2025 | 一个或多个 prompt | Berkeley、Stanford、MIT、Databricks 等；轨迹反思和 Pareto 搜索适合比较候选 | 中；必须保留候选谱系、开发评测预算和选择机制 |
-| 已适配 | AWM，2024 | 参数化工作流 | 论文同时研究离线与在线 workflow induction；Teacher 从成功训练经历提取子流程 | 小；Penguin 采用批量离线适配，保留准入信号与原论文差异说明 |
+| 已适配 | AWM，2024 | 参数化工作流 | 论文同时研究离线与在线 workflow induction；Teacher 从成功训练经历提取子流程 | 采用 online_train，逐题归纳并立即复用；规范 offline 与在线机制分开 |
 | 无标注分支 | ReasoningBank，2025 | 推理经验 memory | Google Cloud AI Research；从自判成功和失败中提炼经验 | 小到中；原生在线测试学习，要改为训练期学习、测试冻结 |
 
 ACE 作为第一版不代表它一定得分最高。它能用较少实现步骤检验本项目最关心的事：Teacher 是否能从业务 trace 中提取可复用规则。之后再比较更简单的“整段提示词重写”和更复杂的搜索／验证方法，才能判断 ACE 各部件的实际价值。
@@ -35,7 +35,7 @@ ACE 作为第一版不代表它一定得分最高。它能用较少实现步骤�
 | [OPRO](https://arxiv.org/abs/2309.03409)，摘要 | 优化器看到候选指令和分数历史；论文涉及 GSM8K、BBH | 容易做成 Teacher Skill；需要进一步核对完整划分、搜索预算与最终选择规则，不能用摘要推断隔离严格程度 |
 | [TextGrad](https://arxiv.org/abs/2406.07496)，摘要 | 用文字反馈反向传递到可优化变量，涉及 prompt、代码等任务 | 全局提示词训练可以适配；针对单道测试题修改答案／代码的实验只算 test-time refinement |
 | [GEPA](https://arxiv.org/abs/2507.19457)，全文，§3–4 | HotpotQA、IFBench、HoVer、PUPA；训练 trace 用于修改，validation 用于候选选择，test 报最终分；minibatch 3，比较 rollout 预算 | 与 FDE 高度契合，但 train 与 validation 的角色应保留。若合并到一个 training benchmark，需命名为两分法适配；不能读取 testing 做 Pareto 选择 |
-| [ACE](https://arxiv.org/abs/2510.04618)，全文，§3–4 | AppWorld 的 TGC/SGC；FiNER 与 Formula 的答案准确率；离线在 training 适配后测 test，在线则在 test 流上逐题更新 | 采用离线分支；原论文有 train/validation/test 数据，但 ACE 局部更新不依赖 SkillOpt 式严格验证 gate。首版可在训练组迭代后直接冻结 |
+| [ACE](https://arxiv.org/abs/2510.04618)，全文，§3–4 | AppWorld 的 TGC/SGC；FiNER 与 Formula 的答案准确率；离线在 training 适配后测 test，在线则在 test 流上逐题更新 | 采用离线逐题分支；原实现包含反思重生成、ADD 与计数器更新，可选 validation 选择 best。仅有 train/test 时冻结 final，明确与 validation 选择的区别 |
 | [Dynamic Cheatsheet](https://arxiv.org/abs/2504.07952)，全文 | 从持续出现的任务与自身输出更新 cheatsheet，研究 test-time learning | 适配时把可学习任务限定为 train stream；testing 不再更新。额外提供训练 gold 会改变原监督条件 |
 | [SePO](https://arxiv.org/abs/2606.04465)，索引 | 同时改 task prompt 和 prompt-optimizer 的 prompt；涉及 AIME、ARC、GPQA、MBPP、Sudoku | 有潜力研究 Teacher 自身优化；需要独立记录 Teacher 版本与训练边界，第一版不加入 |
 
@@ -47,7 +47,7 @@ APE、OPRO、ProTeGi 都说明简单文字优化应当保留为对照。技能�
 
 | 工作与证据 | 原始评测方式 | FDE 适配判断 |
 | --- | --- | --- |
-| [AWM](https://arxiv.org/abs/2409.07429)，全文，§2–3 | Mind2Web、WebArena；离线从训练示例归纳 workflow 后固定测试，在线从自判成功的测试轨迹继续学习 | Penguin 已采用离线批量适配。保留参数化子任务、前置条件和成功证据，避免把失败轨迹伪装成成功 recipe；自判与训练评分作为不同准入配置 |
+| [AWM](https://arxiv.org/abs/2409.07429)，全文，§2–3 | Mind2Web、WebArena；离线从训练示例归纳 workflow 后固定测试，在线从自判成功的测试轨迹继续学习 | Penguin 采用 online_train：将原在线成功判别／归纳／复用循环放在训练流，冻结后独立测试。offline 必须提供规范示范；两种模式不混用 |
 | [AutoManual](https://arxiv.org/abs/2405.16247)，全文，§3–4 | ALFWorld：36 个训练任务建 manual，134 个 unseen validation 环境充当测试；另有 MiniWoB++、WebArena 实验 | 非常符合“先学手册，再给新任务”的思路；Planner/Builder 的环境交互需适配为批次边界外更新 |
 | [SkillOpt](https://arxiv.org/abs/2605.23904)，全文，§3–4 | SearchQA、SpreadsheetBench、OfficeQA、DocVQA、LiveMathematicianBench、ALFWorld；train 产轨迹，selection gate 选 Skill，test 最终报告 | 很有潜力。保留 tree merging、文字编辑预算、拒绝记录、slow update 等机制才是完整方法；当前不宜全部搬入 |
 | [SkillOpt-Lite](https://arxiv.org/abs/2607.03451)，全文，§3–5 | 六类任务基本沿用 SkillOpt；文件化轨迹浏览、共性挖掘、最小编辑、独立验证；LiveMath/OfficeQA 划分从 2:1:7 改为 2:2:6 | 最接近“让 Agent 自己看 trace 改 Skill”的轻量流程；但去掉独立验证就改变关键机制，应明确命名适配版本 |

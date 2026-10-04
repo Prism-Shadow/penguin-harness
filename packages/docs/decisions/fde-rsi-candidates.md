@@ -60,7 +60,7 @@
 | [Dream-RSI · dream-rsi](https://dream-rsi.com/assets/dream-rsi.pdf) | Non-parametric, Harness code, Context, Memory | Online / Teacher / Combined metrics | 索引 | 邻近方向：历史搜索树回放；核实未见分支与线上转移评估。 |
 | [SkillAdam · 2609.08944](https://arxiv.org/abs/2609.08944) | Non-parametric, Context, Memory, Skill | Offline / Teacher / Combined metrics | 索引 | 优先补读：核实 train/test、反馈可见性及最终版本选择。 |
 | [SkillGLoW · 2609.02217](https://arxiv.org/abs/2609.02217) | Non-parametric, Context, Memory, Skill | Online, Offline / Teacher / Benchmark score | 索引 | 优先补读：核实 train/test、反馈可见性及最终版本选择。 |
-| [ACE · 2510.04618](https://arxiv.org/abs/2510.04618) | Non-parametric, Context, Memory, Skill | Offline, Online / Teacher / No validation | 全文 | 优先：采用离线分支；批量更新与 Skill 表达注明适配。 |
+| [ACE · 2510.04618](https://arxiv.org/abs/2510.04618) | Non-parametric, Context, Memory, Skill | Offline, Online / Teacher / No validation | 全文 | 采用原实现的逐题生成／反思重生成／整理／后测；Skill 表达与无 validation 的 final 选择注明适配。 |
 | [GEPA · 2507.19457](https://arxiv.org/abs/2507.19457) | Non-parametric, Context | Offline / Teacher / Benchmark score | 全文 | 优先：保留反思、候选前沿与选择预算；单一训练集改法需注明。 |
 | [Dynamic Cheatsheet · 2504.07952](https://arxiv.org/abs/2504.07952) | Non-parametric, Context, Memory, Skill | Online / Teacher / No validation | 全文 | 需改造：在线 test 学习改为 training 流，最终冻结。 |
 | [Hyperagents · 2603.19461](https://arxiv.org/abs/2603.19461) | Non-parametric, Harness code, Context, Memory | Offline / Teacher / Artifact validation, Benchmark score | 索引 | 后续候选：需要独立代码候选运行；原文 train/test 待核。 |
@@ -80,7 +80,7 @@
 | [Gödel Agent · 2410.04444](https://arxiv.org/abs/2410.04444) | Non-parametric, Harness code, Context | Offline / Self / Benchmark score | 索引 | 后续候选：需要独立代码候选运行；原文 train/test 待核。 |
 | [SEAL · 2506.10943](https://arxiv.org/abs/2506.10943) | Parametric | Offline / Self / Benchmark score | 索引 | 范围外初筛：权重更新路线；保留相关反馈与数据机制。 |
 | [DGM · 2505.22954](https://arxiv.org/abs/2505.22954) | Non-parametric, Harness code, Context | Offline / Joint / Combined metrics | 全文 | 后续：Teacher 修改独立代码候选，保留搜索，重新明确企业训练／测试。 |
-| [AWM · 2409.07429](https://arxiv.org/abs/2409.07429) | Non-parametric, Memory, Skill | Online, Offline, Offline → Online / Teacher / No validation | 全文 | 已做离线 FDE 适配：批量训练、Teacher 归纳成功经历、冻结测试；原文分类保持不变。 |
+| [AWM · 2409.07429](https://arxiv.org/abs/2409.07429) | Non-parametric, Memory, Skill | Online, Offline, Offline → Online / Teacher / No validation | 全文 | 采用 online_train：原论文逐题成功归纳机制运行于 training，随后冻结 testing；offline 仅用于已提供的规范示范轨迹。 |
 | [A-MEM · 2502.12110](https://arxiv.org/abs/2502.12110) | Non-parametric, Memory | Online / Teacher / No validation | 索引 | 需改造初筛：检查在线反馈边界，改为训练期更新／测试冻结。 |
 | [Cradle · 2403.03186](https://arxiv.org/abs/2403.03186) | Non-parametric, Context, Memory, Skill | Online / Joint / Instance result | 索引 | 需改造初筛：检查在线反馈边界，改为训练期更新／测试冻结。 |
 | [R-Few · 2512.02472](https://arxiv.org/abs/2512.02472) | Parametric | Offline / Joint / No validation | 索引 | 范围外初筛：权重更新路线；保留相关反馈与数据机制。 |

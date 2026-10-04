@@ -2,188 +2,135 @@
 
 RSI method from a paper titled as Agent Workflow Memory
 
-Follow the inputs, evaluation and output rules in `agent-optimization`.
-This reference defines optimization, workflow format and paper differences;
-baseline setup is linked under Fixed reader and public index.
-Offline AWM learns reusable parameterized subroutines from successful experiences,
-then freezes them for testing. Experience admission and batch collection here are
-declared adaptations, not a reproduction of the paper's numerical results.
+Use Agent Optimization's I/O, supervision and version rules. Keep offline and
+online AWM distinct; a public-judge batch over newly generated experiences is not
+the paper's canonical offline pipeline.
 
-The imported Agent Supervision contract supplies caller-owned cheating recovery:
-logical method cells/rounds are unchanged, with up to four actual attempts per
-cell and a fresh companion for each. Reserve that overhead and both roles' costs
-within the declared budget. These retries are not extra optimization proposals;
-terminal penalties do not become learning evidence or a valid candidate measure.
+## Sources and mode
 
-## Method settings
+Paper: arXiv:2409.07429v1, §2.1–2.3 and Appendix A.
+Official implementation: `zorazrw/agent-workflow-memory`, commit
+`8c0ff8cd11d648c8fceb99e4e42f37e3b75381b1`. Relevant paths:
+`mind2web/offline_induction.py`, `mind2web/memory.py`, `mind2web/prompt/`,
+`webarena/pipeline.py`, `webarena/induce_prompt.py`, `webarena/autoeval/`.
 
-| Setting | Default |
-| --- | --- |
-| `rounds`, `runs`, `concurrency` | 1 induction round, 1 run per case/version, up to 5 concurrent cells |
-| `success_signal` | `public_judge`, optionally `training_score` |
-| `success_score` | 100 when using `training_score` |
-| `read_train_rubric`, `read_train_gold` | Both false; independently configurable |
-| `max_new_workflows` | 5 per batch |
-| `workflow_limit`, `workflow_words` | 20 active workflows, 400 words per workflow body |
-| `wall_time_seconds` | 3600 including all roles and preparation |
+Select one mode before reading task evidence:
 
-Counts/time limits are positive integers; threshold is finite in `0..100`.
-A lower threshold admits partial successes and must be labelled. Extra rounds
-extend the paper-inspired offline pass. Do not switch admission signals after
-seeing which one admits more traces. Target score does not change this policy.
+- **`online_train` (FDE default):** use the paper's online induce/integrate/use
+  loop on the declared **training stream**, then freeze for independent testing.
+  This preserves the update mechanism while moving adaptation away from testing
+  to honor FDE's train/test separation. Declare this phase change explicitly.
+- **`offline`:** require supplied canonical training experiences (task plus
+  observed action/observation trajectories), annotated or model-synthesized with
+  recorded provenance. Concatenate the domain's experiences for one induction
+  before inference. Do not manufacture canonical success from arbitrary failed
+  Target runs or switch to an online judge without changing the declared mode.
 
-Declare nonparametric Skill/memory artifacts, offline batch Optimizer updates,
-linear candidates, successful-experience plus artifact-validity admission. Own
-`skills/awm-index/` and exactly the workflow directories in the experiment manifest.
-Allocate unused `awm-<number>` IDs; never overwrite an unrelated Skill. State
-version and snapshots are bookkeeping. Other State, tools, hooks and model stay fixed.
+Use one pass over the training stream and one execution per case by default.
+Independent replicas may run in parallel; queries within one online replica are
+sequential, since later tasks use memory learned from earlier ones. Extra passes
+are an explicitly requested extension, never a response to disappointing scores.
 
-Budget `(rounds + 1) × cases × runs` logical Target cells. Each consumed trace permits
-one public success judge if selected; each round permits one inducer and one
-consolidator. Extra workers/calls require a declared budget, not hidden retries.
+For online admission use the source's neural success evaluator on public task,
+trajectory and outputs. Its binary success signal is independent of private
+benchmark score. Insufficient evidence is non-success; do not admit uncertain
+execution merely because its JSON is valid. Source code also permits `criteria=gt`;
+when explicitly chosen, use the benchmark's success predicate, not a tuned partial
+score threshold. Record judge and inducer runtime separately from the Target.
 
-## Baseline and induction
+## Initialize
 
-Prepare the empty public workflow index and fixed reader before measuring H1.
-Use one enterprise's training cases. Collect a full baseline via Agent Evaluation
-unless an exact matching baseline already exists, with the same case set/repeats.
-Preserve previous experiment records; do not silently import an old learned
-library into an empty baseline or claim pre-reader scores tested this harness.
+Follow [AWM initialization](../../agent-initialization/references/awm.md) for the
+empty index and fixed full-memory reader before H1. Own the index and explicitly
+allocated workflow Skills only; keep other State/model/tools unchanged.
+Each work execution and analysis role gets an independent companion.
 
-For each round:
+A requested frozen H1 training baseline is a separate diagnostic matrix. Do not
+reuse it as a sequential online stream: the memory passed to later cases differs.
+Do not read unrelated experiments or accept their libraries as an empty baseline.
 
-1. Classify current batch experiences. A public judge sees only task, observed
-   trace and outputs, returning success/failure/uncertain with evidence. It never
-   sees private scores, rubric or gold. With `training_score`, use the declared
-   threshold on delegated results instead. Uncertain traces are not admitted.
-   Check substantive requirements against observed inputs and outputs, not just
-   schema validity, a self-check or the Target's completion claim. If an unresolved
-   conflict could change a required result, return uncertain. Distinguish harmless
-   wording freedom from uncertainty about the business decision.
-2. Give the inducer admitted successful traces, current workflows and explicitly
-   permitted training information. Gold/rubric can explain a success, but cannot
-   turn a failed execution into a claimed demonstrated workflow. Failed traces
-   remain in the report; they do not seed recipes.
-3. Extract at most `max_new_workflows` subroutines with inputs, preconditions,
-   observations, actions, checks and failure boundaries. Parameterize instance
-   IDs/paths/dates while preserving business policy scope. Every procedural claim
-   must be supported by a successful trace, not invented or copied from an answer.
-4. A consolidator verifies evidence, deduplicates, resolves dependencies and
-   proposes complete files plus an index. Revise existing workflows only with
-   supported successful evidence. Cycles, collisions, unsupported steps or size
-   overflow reject the proposal. Workers never publish.
-5. The Optimizer checks exact write sets, stages the valid library/index, and
-   publishes one new State version after all workers finish. Measure it on the
-   same full training matrix and verify actual workflow-file reads. Keep a valid
-   measured version even if its score falls; AWM has no strict-score gate.
+## Online training stream
 
-For every workflow step, keep its supporting trace action/output in OUT and check
-that its preconditions hold there. A successful task label does not validate every
-step in that trace. Do not generalize an unresolved assumption, a copied draft
-value or agreement with a supplied candidate answer into an authoritative rule.
-Omit unsupported steps; if the remaining subroutine has no demonstrated completion
-check, reject it. A public judge's verdict remains evidence under that signal,
-not a claim of gold correctness.
+For each training task, in the declared order:
 
-For `public_judge`, numeric scores may be collected for reporting, but must not
-reach the judge, inducer or consolidator or affect admission. Declare separately
-whether the Optimizer sees them; do not label the entire experiment score-blind
-when only the analysis workers are. If score-blind optimization is requested,
-follow the separate-controller handoff in the common Skill.
+1. Run a fresh Target with **all current workflow memory** available. Save its
+   actual task, action/observation trace and output. The Target does not alter
+   persistent memory or analyze other trajectories while solving.
+2. With neural admission, a separate success judge evaluates only that public
+   experience; private scores may be collected for reporting but do not enter
+   the judge/inducer or change admission. With explicitly selected `criteria=gt`,
+   use delegated benchmark correctness directly and do not also run a neural
+   admission vote. Freeze this choice and each role's visibility before execution.
+3. On success, an inducer extracts reusable subroutines from the observed
+   successful experience and current memory. Preserve the paper's granularity:
+   parameterize instance values, keep an intelligible goal/description and a
+   sequence of observations, decisions and available actions. A workflow has at
+   least two steps, following the official induction prompt. Unsupported steps,
+   unresolved assumptions and candidate-answer agreement are not demonstrated
+   procedures. Do not import failed trajectories as successful demonstrations.
+4. Integrate valid workflows before the **next** task. Avoid overlapping duplicates
+   and preserve usable existing memory. Publish at an idle boundary using the
+   common version/snapshot contract. A failed/non-success task leaves memory
+   unchanged; continue through the remaining training tasks.
 
-No successful/useful experience, no-op, capacity without supported refinement or
-invalid proposal ends with the last measured version. Invalid measurement uses
-the common recovery rules. Do not regenerate wrong answers to create success
-outside the declared matrix. Keep an empty learned library when that is the result.
-When admission is empty, skip induction and consolidation. Count trace-content
-reads separately from file-existence checks; neither an empty proposal nor a
-planned read proves a trace was inspected.
+For the paper's incremental profile, induce from the current successful experience
+and integrate into accumulated memory. The released WebArena pipeline instead
+re-induces from accumulated successful experiences, sampling at most one per
+provided template by default. If choosing that implementation profile, declare
+it, preserve its template sampling/seed and re-induction behavior, and do not invent
+missing template IDs. Do not silently mix these two profiles mid-run.
 
-Report admission signal, supervision, source experiences, learned/reused workflow
-IDs, actual reads, scores and regressions. Freeze the latest valid measured
-library and hand it to an independent Reporter; testing has no success judge,
-induction or persistent writes.
+There is no reflection-driven retry of wrong tasks in AWM, no Curator architecture
+from ACE, no best-training-score gate, and no fixed five-workflow quota. A
+format/ownership/dependency validator may reject malformed artifacts, but must
+not become an extra model that rewrites the algorithm's learned workflows.
+Budget one judge per experience and one induction per admitted experience, plus
+supervision and declared frozen evaluation matrices. End after the stream even
+when no experiences qualified; an empty final library is a valid no-learning
+outcome, not a reason to lower admission standards.
 
-## Workflow artifact
+## Canonical offline induction
 
-Each `STATE/skills/awm-<id>/SKILL.md` contains a concise, independently usable
-subroutine. This is an illustrative shape, not a script:
+Read all declared canonical experiences from one domain and induce workflows once,
+as in `mind2web/offline_induction.py`. The official prompts request common reusable
+subroutines across examples and no overlapping workflows. This phase needs no
+online success judge because its input pool is already canonical. Preserve the
+pool, exact prompt, generated memory and any formatting transformation. If context
+cannot hold it, stop or declare a chunked variant; do not silently summarize or
+sample based on test performance. Test all tasks with the same frozen library.
 
-```markdown
----
-name: awm-0001
-description: Reconcile keyed records from two public files when stable record IDs and a conflict rule are available.
-version: <YYYY.MM.DD.N>
----
+## Skill representation and loading
 
-# Reconcile keyed records
+Use `skills/awm-<id>/SKILL.md` for each workflow, with target-owned metadata,
+parameters, applicability, and observation/decision/action/check steps.
+`awm-index/workflows.json` lists IDs, descriptions, revisions, hashes, parameters
+and dependencies. Instance IDs, paths and dates are bound from current inputs;
+keep training case/session evidence in Optimizer OUT, not Target memory.
 
-Inputs: left_path, right_path, id_field, conflict_rule, output_path.
-Preconditions: both inputs can be parsed; id_field exists; the caller supplies the
-conflict rule. Ask for the rule when it is missing rather than inventing one.
+Load the **complete workflow library** in every Target execution, including
+all dependencies, as the paper incorporates all induced memory. Selecting which
+steps to execute is task-dependent; selective retrieval is a different variant.
+Keep the full-memory reader fixed for empty H1 and final testing. Validate actual
+file read outputs, not only usage notes. An index or directory list is not the
+workflow text. Record read-but-unused workflows honestly.
 
-1. Observe each input's fields and record IDs. Check uniqueness before selecting a
-   keyed merge; preserve duplicate records for explicit resolution.
-2. Bind the public conflict rule and merge corresponding records with ordinary
-   file tools. Do not assume that file order encodes recency.
-3. Write output_path and verify every output ID against the inputs and rule.
+Do not enforce an arbitrary count/word cap that truncates learned memory and
+still claim the original profile. Honor the declared model context/output budget,
+stop on overflow or report a separately named constrained variant. Existing
+public policy scope remains attached to workflows; do not replace it with a
+benchmark-case answer table.
 
-Completion: the requested output exists and the reconciliation checks are recorded.
-Failure boundary: missing IDs or an undefined conflict rule require clarification.
-```
+## Freeze and evaluate
 
-Only induce a workflow like this when its actual steps appear in a successful
-training trajectory. The example grants no evidence for installing it. Store
-case/session provenance in Optimizer OUT; keep only public descriptions, hashes and
-dependencies in the Target Agent's `awm-index/workflows.json`.
-For an observation/action workflow include, per step:
+After the full training stream or canonical induction, freeze final memory. An
+independent Reporter measures initial and final harnesses with no success judge,
+induction or persistent writes during testing. Report source mode/profile,
+admission verdicts, actual workflow additions/reuse/reads, immutable snapshots,
+per-task results, costs, failures and no-op outcomes. Supervision retries are
+separate from algorithmic executions and do not admit contaminated evidence.
 
-| Field | Required content |
-| --- | --- |
-| Observation | What the Target Agent can verify in the current environment. |
-| Decision | Why the next action follows from that observation, without invented hidden reasoning. |
-| Action | An available tool operation with parameter bindings. |
-| Check | Evidence needed before proceeding or declaring completion. |
-
-Keep parameters explicit; a path or selector from an old task is not a default for
-a new task. A workflow may compose an existing workflow by ID with explicit inputs
-and completion checks, but circular dependencies invalidate the proposal.
-
-## Fixed reader and public index
-
-Before H1, follow [the AWM initialization reference](../../agent-initialization/references/awm.md)
-for the empty method artifacts and fixed reader. Verify those artifacts when
-resuming; do not reinstall or change the reader during measured training.
-
-Require a trace-visible file read before claiming a workflow was used. An empty
-index or no matching workflow is valid. If the reader itself needs repair, start
-a new baseline rather than confounding a reader change with learned workflows.
-For claimed use, also cite an action and completion check using this task's
-parameters. Record read-but-unused workflows separately. A note saying a check
-passed is insufficient when its cited observations contradict it.
-
-## Source and adaptations
-
-Source: Zora Zhiruo Wang, Jiayuan Mao, Daniel Fried and Graham Neubig,
-**Agent Workflow Memory**, arXiv:2409.07429 (2024), subsequently ICML 2025.
-
-- Paper: <https://arxiv.org/abs/2409.07429>
-- Relevant passages: §2.1 experiences as instructions and observation/action traces;
-  §2.2 workflow description and trajectory; §2.3 induction and integration,
-  especially online neural success judgment; Appendix A for induction examples.
-
-Offline AWM induces workflows from canonical training experiences before test
-inference, then uses the same frozen memory on every test. That separation fits
-the enterprise Optimizer–Target Agent protocol. This method generates its experiences
-with a frozen Target Agent batch, admits successful traces using a declared signal,
-and lets a separate Optimizer publish the induced workflows. Generating the
-canonical experience pool this way is an adaptation. The default public success
-judge borrows the paper's online admission signal; `training_score` instead uses
-authorized supervised feedback and must be reported separately.
-
-Target-owned skills, a reader instruction and trace-verified loading implement the
-paper's integration into agent memory without executable workflow macros. This
-packaging, parallel batch collection, extra consolidation worker and workflow/word
-caps are harness adaptations. More than one induction round is also an extension.
-The paper studies web navigation; applying observation/action induction to other tasks should be
-reported as a domain adaptation, not an exact benchmark reproduction.
+The paper studies web navigation and its online mode learns on test queries.
+Business APIs, Skill-file storage, a separate Optimizer, moving the online loop
+onto a training split, and companion recovery are explicit FDE adaptations.
+Preserve the mechanism and disclose these changes; do not claim identical
+published benchmark results or present mixed offline/online behavior as original.

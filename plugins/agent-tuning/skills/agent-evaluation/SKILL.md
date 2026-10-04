@@ -11,6 +11,12 @@ takes precedence over Penguin defaults; user instructions take precedence over
 both. Read only applicable references, record overrides, and report any behavior
 that Penguin's actual interfaces cannot support.
 
+First distinguish the request: a complete-Benchmark request with `runs` uses the
+[matrix controller reference](references/matrix.md). An explicit `protocol_version`
+request uses the single-cell rules below; malformed cell fields do not become a
+matrix request. The controller delegates, while a cell Evaluator only executes
+and scores its assigned attempt.
+
 Evaluate one Case × Run cell. The caller owns the case set, repeats, parallel
 `run_subagent` dispatch and result aggregation. Each Evaluator handles one cell
 in a separate context, launches the requested Target once, and privately scores
@@ -47,7 +53,8 @@ construction and calibration belong to other Skills.
 
 ## Request
 
-Use this Skill for a complete request from a `run_subagent` caller:
+Use this Skill for one complete request from its delegating parent, through
+`run_subagent` or the explicitly bound companion server-Session transport:
 
 ```text
 protocol_version: 1
@@ -64,7 +71,8 @@ Require exactly one value per field, positive integer run/version values, and a
 complete nonempty provider/model pair. `run` labels one execution, not a repeat
 count. Missing, duplicate or conflicting fields return `invalid_request` without
 creating a workspace or launching the Target. Do not ask the user to repair a
-worker request; the caller handles it.
+worker request; the caller handles it. Without a valid request, return the failure
+before creating either member of a companion pair.
 
 ## Prepare and freeze
 
@@ -78,6 +86,9 @@ State and Case materials, excluding secrets. Give the Target a fresh context and
 unique workspace containing only public task inputs; keep private Rubric, gold,
 scoring code and Evaluator reasoning outside that workspace. Keep each worker's
 scratch private and retain its exact paths across calls.
+Read-only access includes execution side effects: run graders without writing
+caches or logs into frozen Case materials. Use a private execution copy when a
+runtime cannot suppress those writes; do not hide them by widening hash exclusions.
 
 Follow the Case's declared Runtime: check prerequisites, prepare and reset or
 restore the environment, verify readiness, and bind per-run values only in the
@@ -125,6 +136,17 @@ never reports that penalty as a grader score. Clean up owned resources and retur
 your protocol result; the parent then joins your own companion's final audit.
 Do not wait for that audit before returning, since it requires your task-end event.
 
+## Declared training phases
+
+A selected method may explicitly request a training-only reflection/regeneration
+execution. Its caller supplies phase identity, training case and allowed feedback
+in the task instruction alongside the unchanged evaluation request. Stage only
+that declared reflection payload for the new Target; never open the Evaluator's
+private reasoning to assemble it. Save it in the attempt provenance. It must not
+reach a frozen baseline/final or testing execution. Each worker still launches
+one Target; the method controller, not this Evaluator, owns the training sequence.
+Classify these results as assisted training diagnostics, not benchmark test scores.
+
 ## Score the saved execution
 
 Use only this cell's artifact, bound execution and authorized scoring materials.
@@ -140,6 +162,11 @@ Return duration as a nonnegative integer in milliseconds. Record actual runtime
 identity using the recipe, not assumptions about Project defaults.
 
 ## Return
+
+Resolve feedback visibility from the caller's role and declared phase, not the
+method name alone. A score-blind training Optimizer differs from an independent
+test Reporter authorized to receive scores. Follow any explicit routing contract
+without changing the saved grader result; never send testing feedback to training.
 
 Return the required YAML as the only worker-authored text. Do not wrap it in backticks or a Markdown fence.
 

@@ -25,21 +25,36 @@ remain alive through task execution and scoring, then stop and reap owned childr
 
 ## Public access and scoring
 
-The generated Statement supplies public route templates, parameters and discovery
-policy. Check actual requests against that policy, including failed probes; a
+The generated environment-access file supplies the source business route list
+and mechanical POST schema; it excludes health/reset/judge from solver access. Check actual requests against that policy, including failed probes; a
 404 does not authorize an off-list path. A missing public interface or private
 runtime dependency is a packaging issue, not permission for the Target to inspect
 server files, databases or process metadata.
 
 Score the explicit Target prediction path with this Case's upstream grader.
+Use `python -B` or `PYTHONDONTWRITEBYTECODE=1` when executing or importing its
+Python files, including authorized training diagnostics; keep other outputs in
+the cell's private directory. Bytecode written beside a shared grader changes
+frozen Case materials and can invalidate a concurrent replica.
 Several upstream wrappers default to gold when no argument is supplied. Read the
 whole documented output and preserve stdout/stderr. Score fields, scales and
 accepted exits vary by case and split; use this Case's recorded mapping, never
 assume `score * 100` for every group. A nonzero exit is scored behavior only when
 the contract explicitly permits it and returns a valid score.
 
-Keep raw score/scale separate from the converted `0..100` result. Apply declared
-missing/malformed-submission handling without masking a runtime or grader failure.
+Keep raw score/scale separate from the converted `0..100` result. The source
+metric protocol classifies missing or unparseable answer.json as a failed attempt,
+even when an individual grader returns zero for it. Preserve both the raw grader
+output and protocol failure; do not use that zero in acc@3. This benchmark-specific
+rule overrides generic missing-answer scoring. Ordinary parseable wrong answers
+retain their source partial score; do not mask runtime/grader failures.
 If referenced controls are needed but unavailable, report that packaging gap;
 do not fetch another split's verification records. Preserve artifacts and failure
 evidence for the caller and leave frozen benchmark files unchanged.
+
+Preserve the source solver prompt and staged input bytes, with only recorded
+Penguin transport substitutions. Raw source scoring excludes contaminated attempts;
+keep companion-instruction retries and penalty zeros in a separate recovery
+condition. Do not replace an invalid original cell with a prompted recovery score
+in a GDPevo acc@3 matrix. The independent Reporter follows the reproduction
+reference's three-replica and population-std aggregation contract.

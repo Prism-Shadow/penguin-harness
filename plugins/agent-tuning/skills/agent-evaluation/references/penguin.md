@@ -32,6 +32,10 @@ Rubric. Include memory, Skills, tools and hooks so unversioned writes are visibl
 Create a unique canonical Workspace under `<test_agent_dir>/workspaces/` and copy
 only `statement/` into it. Keep evaluator scratch and any runtime preparation in
 this cell's private directory outside the Test Workspace.
+Penguin's default system prompt puts intermediates in the current Session's
+scratchpad and final deliverables in the Workspace. Preserve that distinction in
+the task instruction; do not require workspace-only scratch against that system
+directive. A Session scratchpad does not authorize shared `/tmp` or another Session.
 
 ## Launch
 
@@ -61,7 +65,7 @@ test -n "$TEST_WORKSPACE"
 test -d "$TEST_WORKSPACE"
 test -f "$TEST_WORKSPACE/README.md"
 penguin run \
-  --message "Read README.md and complete the task. Use only this Workspace's task files, fixed Agent State and the declared public business interfaces. Keep all task scratch files in this Workspace. Do not inspect other workspaces, traces, benchmark sources, graders, private runtime files or process metadata. Do not modify persistent Agent State." \
+  --message "Read README.md and complete the task. Use only this Workspace's task files, fixed Agent State and the declared public business interfaces. Keep intermediates in this Session's scratchpad as the system prompt requires and final deliverables in this Workspace. Do not use shared temporary directories or inspect other workspaces, traces, benchmark sources, graders, private runtime files or process metadata. Do not modify persistent Agent State." \
   --provider "<provider>" --model-id "<model_id>" --project-id "$PROJECT_ID" \
   --agent-id "<test_agent_id>" --workspace "$TEST_WORKSPACE" \
   --thinking "<configured_thinking_level>" --approve allow-all --source benchmark
@@ -95,7 +99,9 @@ Parse a call's `arguments` JSON and pair its output by `tool_call_id`. Inspect t
 bound root and its linked children against the parent Skill's access rules.
 
 Return actual provider/model from the bound root's `session_meta`, thinking from
-the unchanged configuration snapshot, and duration from the root Session. Use
+the unchanged configuration snapshot. Measure duration from task start to terminal
+execution, excluding time a created Session waited for companion readiness; do
+not subtract Session creation time from lastActiveAt. Use
 only monetary cost reliably recorded for this Session and its linked children;
 otherwise return `cost: null`. Token counts alone do not establish dollars. Do not
 query pricing, platform databases or unrelated traces to fill the optional field.

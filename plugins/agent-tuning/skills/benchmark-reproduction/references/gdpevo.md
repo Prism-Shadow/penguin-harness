@@ -25,13 +25,19 @@ case membership or inventing another split.
 Copy `input/` under `statement/input/`, keeping `input/payloads/` references.
 Create the Statement README from `input/prompt.txt`, retaining the objective and
 output schema. Add one uniform `answer.json` delivery instruction if needed.
-Bind `<TASK_ENV_BASE_URL>` only in the execution's copied Statement after its
-business service is ready; never mutate the published benchmark per run.
+Bind `<TASK_ENV_BASE_URL>` only in the execution's copied Statement and environment
+access file after service readiness; never mutate the published benchmark per run.
+Preserve the original input/payload bytes and output schema. Penguin README may
+point to the original prompt and environment file; do not append business hints.
 
-Document public route templates, supported query parameters and pagination limits
-from the pinned service. State whether unknown-route discovery is allowed before
-freezing; a list declared exhaustive makes off-list probes a protocol violation
-even when they return 404. Do not broaden permissions afterward to validate a run.
+Follow the source staging protocol in `evaluation/eval_workspace/codex/guides/`.
+Write `environment_access.md` with base URL, required credentials and allowed
+business endpoint names. Copy GET entries as METHOD/path only, without explanatory
+hints or additional query/pagination coaching. For allowed POST routes include
+only verified mechanical request shape, headers and placeholder example.
+Exclude health, reset/reseed and judge routes from solver materials; health checks
+belong to the preparer. Judge access is train-only in the source reflect mode,
+never a test-time tool. Do not broaden endpoint permissions after a failed run.
 
 Keep gold, `eval/`, `notes/` and full `task_group.yaml` private. The group manifest
 contains test criteria too and must not be passed whole to a training Optimizer.
@@ -94,8 +100,11 @@ adapter that preserves all observable grading behavior. Retain the upstream lice
   legitimate score as scored behavior; distinguish it from interpreter failures
   or invalid grader output. An `evaluator_error` is not a Target Agent zero.
 - An empty object earns partial credit in at least one verified case. Preserve
-  that behavior. Missing/malformed predictions need an explicit policy consistent
-  with the task contract; do not make every nonzero process exit a score zero.
+  that behavior for a parseable answer. The official metric protocol treats a
+  missing or unparseable answer.json as a failed attempt, even if a task grader
+  emits zero. Record that raw output but exclude it from acc@3, retaining a null
+  cell until a valid source-protocol attempt exists. Do not turn a process error
+  or missing artifact into a valid zero to finish a matrix.
 - Run shell wrappers with their required interpreter; Bash syntax may fail under
   `sh`. Check all needed files remain available after copying, not just in the
   original checkout.
@@ -107,6 +116,39 @@ or environment above. Gold/control checks verify the adapter; complete Target Ag
 sessions verify reproduction. Include score, trace binding, actual service mode,
 database reset and cleanup evidence. Compare original and reproduced scoring on
 the same saved predictions where possible.
+
+## Full evaluation protocol
+
+A full selected-group comparison uses three independent harness-generation
+replicas, each with clean initial State and training context. Test replica r on
+all five official test tasks once with its own frozen library, and pair its H1
+baseline with the same runtime/task settings. This is three independent pipelines,
+not three reruns of one learned harness. For each task, `acc@3` is the arithmetic
+mean of its three scores and `std@3` is the population standard deviation (divide
+variance by 3). Overall acc and std are the means of those five per-task values.
+Never report pass@3, best-of-three, pooled standard deviation or sample std as the
+released metrics. Record incomplete replicas and missing cells explicitly.
+
+The source compares base/fewshot/self/reflect-3. ACE and AWM are additional named
+methods, not replacements silently labelled as those source modes. Keep the
+source tasks, grading and test protocol; state method-specific training settings
+and their evidence permissions separately. Solver cost/turns/tool calls exclude
+training, evaluators and supervision; report all-role overhead alongside them.
+Penguin trace token accounting differs from Codex/Claude block deduplication, so
+use Penguin's actual recorded usage and avoid double-counting nested sessions.
+
+The original solver prompt is in `guides/agent_prompts.md`. Preserve its task and
+staging restrictions when substituting Penguin and actual workspace/Skill paths;
+record these unavoidable transport edits. Do not add task-specific hints or
+private grading feedback. Local execution is a declared environment adaptation
+when Docker is unavailable, not a claim of container isolation.
+
+Companion retries and policy-zero penalties are Penguin recovery policy, not
+GDPevo's original score protocol. Keep raw valid first-condition results and the
+supervised recovery/penalty results in separate records and aggregates. A failed
+or contaminated original attempt cannot be replaced with a corrected-instruction
+score and still be called an untouched source-protocol result. Preserve null /
+incomplete raw matrices and report recovery coverage separately.
 
 The earlier 24-environment and 240-grader checks are historical evidence, not a
 substitute for this reproduction's smoke runs or proof of RSI gains. Do not

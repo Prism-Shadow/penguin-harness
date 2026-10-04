@@ -163,8 +163,9 @@ Require one plain protocol YAML response and matching case/run/Agent/version/run
 finite `0..100` score, nullable cost, duration and session ID. A formatting repair
 resends the saved result from the same worker without execution or rescoring.
 Wrong/missing answers are scored behavior; infrastructure failure is not zero.
-Require a nonempty unique case set and positive integer run/round/concurrency
-values after applying method defaults. Optimizer and Evaluator runtimes default to the
+Require a nonempty unique case set and validate positive integer budgets actually
+required by the selected method (runs, epochs, refinements, passes or concurrency)
+after resolving its defaults; do not invent a generic rounds field. Optimizer and Evaluator runtimes default to the
 controller unless explicitly overridden; record their requested and actual
 identity separately, not from the Target Agent fields in the evaluator result.
 Stop on `version_changed`, `benchmark_invalid`, runtime mismatch or unrepairable
@@ -178,6 +179,21 @@ If retries exhaust, report the cell's policy zero and reason; a matrix containin
 penalties cannot validate adoption of a new harness. Stop with the last clean
 measured version, restoring an owned active candidate after workers settle.
 
+## Algorithmic training executions
+
+Authorized training feedback access does not permit modifying shared Benchmark
+files. Run any permitted diagnostic code without source-tree side effects, or in
+a private copy; another replica may be evaluating the same frozen Case.
+
+A method reference may require reflection/regeneration or an ordered training
+stream. These are declared training phases with unique execution IDs and budgets,
+not evaluator retries of a completed scored cell. Keep each Target attempt fresh
+and fixed-State; stage any authorized training reflection explicitly and record
+its visibility. Do not send training feedback into formal baseline/final testing.
+The phase's Evaluator still runs the Target once; the method controller owns the
+sequence. Distinguish source-method executions, normal metric repeats and
+supervision-recovery attempts in artifacts and cost totals.
+
 ## Version and output contract
 
 Before changing a measured State, create or verify `snapshots/v<N>.tar.gz`, excluding
@@ -189,19 +205,22 @@ Record original bytes and created files, stage only allowed edits, publish while
 all workers are idle, and increment the integer State version. Custom Skills use
 `YYYY.MM.DD.N` versions as Agent Initialization specifies. Model settings stay fixed.
 
-Apply the reference's accept/retain rule. If rollback is required, restore only
-recorded files/version and remove only candidate-created files after workers stop.
-If another process changed State, stop without overwriting it. Keep proposals,
+Apply the reference's accept/retain rule. On rejected or incomplete/invalid
+candidate measurement, stop dependent workers and restore the last complete valid
+owned State: recorded files/version, removal of candidate-created files, then
+content-hash verification. Never leave an unmeasured candidate live while reporting
+an older valid version. If another process changed State, preserve that conflict
+instead of overwriting it.
+Keep proposals,
 raw cells, accepted/rejected versions, evidence, costs and failures in OUT.
 
 Append complete retained evaluations under `TRAIN/scoreboard.yaml`'s `evaluations`
 list using the established shape below. Partial/invalid or rejected matrices stay
 in OUT. Do not change the schema to carry method-specific fields.
-The supervision contract is the explicit exception for reporting a completed
-matrix with terminal policy zeros: label it as a penalized evaluation in the
-existing summary fields. It is not a retained clean measurement or a selectable
-baseline. Keep detailed reasons and attempt history in OUT, without changing the
-scoreboard schema or converting raw failure responses into fabricated successes.
+Policy penalties and prompted-recovery matrices remain in OUT with explicit
+reasons, outside the ordinary scoreboard whose rows are treated as baselines.
+Report those outcomes to the user without fabricating a clean measurement or
+changing the schema. Only complete comparable clean evaluations enter the board.
 Concurrent writers use the same `scoreboard.yaml.lock`: acquire it once, reread
 and parse the latest YAML, append the evaluation object, then atomically replace
 the file. Do not concatenate YAML text or nest a second lock on the same file.
@@ -260,6 +279,10 @@ Keep each replacement linked to its original logical cell, invalidated attempt,
 authorization and changed instructions. One retained score does not mean one
 Target start; report both counts. A replacement must pass the full applicable
 contract, not just the check that failed previously.
+
+At final handoff, create or verify the final measured snapshot even if no next
+mutation is planned. Hand off both archive hash and a named per-file content-hash
+algorithm, not a path to an archive that will only be created on a future change.
 
 For independent testing, hand initial/final snapshots and matched runtime/repeats
 to a separate Reporter. It restores each on an idle experimental Target Agent, runs
