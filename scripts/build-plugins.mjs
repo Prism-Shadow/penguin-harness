@@ -30,6 +30,12 @@
  * under `node_modules/.cache/penguin-plugins/`, and an unchanged set is not built, packed or
  * installed again — a push of an unrelated change costs nothing here. Installing needs the registry (for the dependencies) the first time only.
  *
+ * THE EXAMPLES ARE NOT BUILTIN. `plugins/example-*` are repository examples: left out of every
+ * build, unless `PENGUIN_PLUGIN_EXAMPLES=1` is set, which stages them beside the builtin ones.
+ * A plugin is loaded only by its package name, from a prefix like this one (the loader takes no
+ * path), so this is how the web e2e suite — or a dev build someone wants to try an example on —
+ * gets one to enable; the example is then installable, never enabled until a Project lists it.
+ *
  * Usage (a library for deploy.mjs / desktop build-assets.mjs, and a CLI):
  *   node scripts/build-plugins.mjs --out <dir>      stage the prefix into <dir>
  */
@@ -165,7 +171,7 @@ async function sourceHash(dir, into) {
   }
 }
 
-/** Every shipped plugin package under `plugins/`: a package.json with a code entry, not an example. */
+/** Every shipped plugin package under `plugins/`: a package.json with a code entry (examples aside). */
 async function pluginPackages() {
   const out = [];
   const entries = fs.existsSync(PLUGINS_SRC) ? await fsp.readdir(PLUGINS_SRC) : [];
@@ -176,10 +182,10 @@ async function pluginPackages() {
     const pkg = JSON.parse(await fsp.readFile(manifestFile, "utf8"));
     // A package with a code entry is built and packed; one without (skills, hooks) carries no code.
     if (pkg.main === undefined && pkg.exports === undefined) continue;
-    // A repository example (plugins/example-*) is never shipped. It is known by its directory,
-    // not by `private`: several shipped plugins (languages, the company plugins, claude-code,
-    // discord-bot) are private packages too, kept off npm, and are still builtin.
-    if (dirName.startsWith("example-")) continue;
+    // A repository example (plugins/example-*) is not shipped unless asked for (the header). It
+    // is known by its directory, not by `private`: several shipped plugins (languages, the
+    // company plugins, claude-code, discord-bot) are private packages too, kept off npm.
+    if (dirName.startsWith("example-") && process.env.PENGUIN_PLUGIN_EXAMPLES !== "1") continue;
     const unbundled = Object.keys(pkg.dependencies ?? {}).filter(
       (d) => !NATIVE_DEPENDENCIES.has(d),
     );

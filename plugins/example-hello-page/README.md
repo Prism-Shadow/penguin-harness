@@ -15,16 +15,21 @@ The smallest plugin that adds a page to the PenguinHarness web app. It demonstra
   so it follows light/dark mode and the accent colour.
 
 The package is private, so it is not published, and it is not shipped with the builtin plugins
-(`scripts/build-plugins.mjs` skips the `plugins/example-*` directories), so no install enables it.
+(`scripts/build-plugins.mjs` skips the `plugins/example-*` directories), so no install offers it.
 
 ## Enable it
 
-Build it (`pnpm --filter @penguinharness/example-hello-page build`), then list its entry file by
-absolute path in a Project's `.project_config.toml` and restart the server:
+A plugin is loaded by its package name only, from the bundled plugin directory a build stages.
+Stage the examples into it with the builtin plugins, then list the package in a Project's
+`.project_config.toml` and restart the server:
+
+```sh
+PENGUIN_PLUGIN_EXAMPLES=1 node scripts/build-plugins.mjs --out packages/server/plugins
+```
 
 ```toml
 [plugins]
-"/path/to/penguin-harness/plugins/example-hello-page/dist/index.js" = "*"
+"@penguinharness/example-hello-page" = "*"
 ```
 
 What a Project lists is loaded for the whole server, so every user sees the page. Reload the web
