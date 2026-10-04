@@ -13,4 +13,4 @@
 - Web 内置一个 renderer `audio`：以工作区文件 URL 为源的浏览器播放器（`preload="none"`），可访问名称含文件名；加载失败时变为一行说明文件无法播放。renderer 按名字登记在 chat 的槽位 `ChatModule.fileRenderers`；renderer 为 iframe 的规则被跳过。
 - UI 包的 Markdown 渲染新增 `ProseBlockTrailerProvider`：调用方可在 settled 渲染时，根据段落或列表项内的链接在其后追加内容。
 - 工作区中 `.mp3`、`.wav`、`.ogg`、`.m4a` 文件改以对应的音频 Content-Type 返回，而非 `application/octet-stream`。
-- `plugins/example-music`：示例插件，贡献 `mp3`/`wav`/`ogg`/`m4a` → `audio`，并附 `send-music` Skill，教 Agent 在工作区合成一段短曲并在回复中链接。Skill 需手工安装到 Agent（见插件 README）。private 包，不发布也不随构建内置；Web e2e 在运行时启用它。
+- `plugins/example-music`：示例插件，贡献 `mp3`/`wav`/`ogg`/`m4a` → `audio`，并附 `send-music` Skill，教 Agent 在工作区合成一段短曲并在回复中链接。Skill 需手工安装到 Agent（见插件 README）。它是 private 包，不会发布；作为 `plugins/example-*` 目录也不会随构建内置，除非设置 `PENGUIN_PLUGIN_EXAMPLES=1` 让构建把示例插件与内置插件一并放入插件目录，之后由项目按包名启用。Web e2e 在运行时两步都做。
