@@ -1,3 +1,5 @@
+import { PagesContext, type WebAppPagesValue } from "../lib/web-app-pages";
+
 import {
   useEffect,
   useMemo,
@@ -7,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
+import type { ContributionsResponse, RendererRef } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { useAuth } from "../state/auth";
 import { webAppDeps } from "./deps";
@@ -99,23 +101,29 @@ function framePageFor(src: string, title: string) {
   };
 }
 
-/** The component a contributed page's renderer resolves to; undefined when this build cannot draw it. */
-function componentOf(
-  renderer: unknown,
-  key: string,
-  renderers: ReadonlyMap<string, ComponentType>,
-): ComponentType | undefined {
-  const ref = renderer as { iframe?: { src?: unknown }; builtin?: unknown } | undefined;
-  if (typeof ref?.iframe?.src === "string") return framePageFor(ref.iframe.src, key);
-  if (typeof ref?.builtin === "string") return renderers.get(ref.builtin);
-  return undefined;
+/** The renderer an entry names, as this build reads it; null when it names none it could draw. */
+function rendererOf(raw: unknown): RendererRef | null {
+  const ref = raw as { iframe?: { src?: unknown; namespace?: unknown }; builtin?: unknown } | null;
+  const iframe = ref?.iframe;
+  if (typeof iframe?.src === "string") {
+    const namespace = typeof iframe.namespace === "string" ? iframe.namespace : "";
+    return { iframe: { src: iframe.src, namespace } };
+  }
+  if (typeof ref?.builtin === "string") return { builtin: ref.builtin };
+  return null;
 }
 
 /**
  * The compiled pages plus the contributed ones this build can draw, appended in the server's
- * order after the last compiled page. An entry is skipped when it lacks a key or a path, when
- * a compiled page (or an earlier entry) owns its key or path, or when its renderer is neither
- * an iframe with a `src` nor a `builtin` name in `renderers`.
+ * order after the last compiled page, each keeping the renderer it named. An entry is skipped
+ * when it lacks a key or a path, when a compiled page (or an earlier entry) owns its key or
+ * path, or when its renderer is neither an iframe with a `src` nor a `builtin` name in
+ * `renderers`.
+ *
+ * A company-mode page (`nav: "org"`) has a path relative to an organization: company mode
+ * mounts it under the organization layout (features/company/org-routes.tsx) and the router
+ * beside WebApp's own pages, from the root, so its path is kept without a leading slash and
+ * clashes as the rooted one. Any other page's path is absolute.
  */
 export function contributedPagesOf(
   compiled: readonly WebAppPage[],
@@ -128,10 +136,20 @@ export function contributedPagesOf(
   let order = compiled.reduce((last, p) => Math.max(last, p.order), 0);
   const out = [...compiled];
   for (const entry of answer.pages) {
-    const { key, path, nav, admin, renderer } = entry;
+    const { key, nav, admin, released } = entry;
     if (typeof key !== "string" || key === "" || keys.has(key)) continue;
-    if (typeof path !== "string" || !path.startsWith("/") || paths.has(path)) continue;
-    const Component = componentOf(renderer, key, renderers);
+    if (typeof entry.path !== "string") continue;
+    const org = nav === "org";
+    const path = org ? entry.path.replace(/^\/+/, "") : entry.path;
+    if (org ? path === "" : !path.startsWith("/")) continue;
+    const rooted = org ? `/${path}` : path;
+    if (paths.has(rooted)) continue;
+    const renderer = rendererOf(entry.renderer);
+    if (renderer === null) continue;
+    const Component =
+      "iframe" in renderer
+        ? framePageFor(renderer.iframe.src, key)
+        : renderers.get(renderer.builtin);
     if (Component === undefined) {
       console.warn(
         `Missing builtin renderer "${"builtin" in renderer ? renderer.builtin : ""}" for contributed page "${key}" (${path}); skipping page`,
@@ -139,16 +157,17 @@ export function contributedPagesOf(
       continue;
     }
     keys.add(key);
-    paths.add(path);
+    paths.add(rooted);
     out.push({
       id: entry.id,
       key,
       path,
       frame: "shell",
-      nav: nav === "main" ? "main" : "none",
+      nav: org ? "org" : nav === "main" ? "main" : "none",
       admin: admin === true,
-      released: true,
+      released: released !== false,
       order: ++order,
+      renderer,
       Component,
     });
   }
@@ -156,11 +175,6 @@ export function contributedPagesOf(
 }
 
 /** The answer's parts besides the pages, for the features that read them (web-app/index.ts). */
-export interface ContributionsValue {
-  /** The module plugins' quick starts; none until the server answers. */
-  quickStarts: ContributionsResponse["quickStarts"];
-  refresh: () => Promise<ContributionsResponse | null>;
-}
 
 /** Holds the signed-in user's contributions and the merged page table, for everything under the router. */
 export function WebAppPagesProvider({ children }: { children: ReactNode }) {
@@ -187,9 +201,5 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   return <PagesContext.Provider value={value}>{children}</PagesContext.Provider>;
 }
 
-/** The quick starts the server contributes, and the way to ask again. */
-export function useContributions(): ContributionsValue {
-  return usePagesValue();
-}
-import { PagesContext } from "../lib/local-web-app-pages";
-export { useWebAppPages, useWebAppPagesPending } from "../lib/local-web-app-pages";
+export { useContributions, useWebAppPages, useWebAppPagesPending } from "../lib/web-app-pages";
+export type { ContributionsValue } from "../lib/web-app-pages";

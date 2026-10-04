@@ -8,14 +8,11 @@
  *
  * After the organization's own pages come the company-mode pages a plugin contributes
  * (`nav: "org"`, use-org-pages.ts): their paths are relative to the organization, and the nav
- * row beside them is the sidebar's (company-nav.ts ORG_PAGE_RENDERERS). A builtin one is drawn
- * with the component this file names for it.
+ * row beside them is the sidebar's (company-nav.ts ORG_PAGE_RENDERERS). Each is drawn with the
+ * component the shell resolved its renderer to — an iframe, or the component a module
+ * contributed under its builtin name (`WebAppModule.pageRenderers`).
  */
-import type { ComponentType } from "react";
 import { Navigate, Route, Routes } from "react-router";
-import { ContributedPage } from "../../lib/local-contributed-page";
-import { orgPagesOf } from "../../lib/local-page-table";
-import type { OrgPageRenderer } from "../../lib/company-nav";
 import { OrgIndexRedirect, OrgLayout } from "./org-layout";
 import { OverviewPage } from "./overview-page";
 import { OrgChartPage } from "./org-chart-page";
@@ -27,11 +24,9 @@ import { HandbookPage } from "./handbook-page";
 import { useOrgPages } from "./use-org-pages";
 import { useCompany } from "./company-state";
 
-/** The component of each builtin renderer a contributed company-mode page may name. */
-const ORG_PAGE_COMPONENTS: Readonly<Record<OrgPageRenderer, ComponentType>> = {};
-
 export function OrgRoutes() {
-  const contributed = orgPagesOf(useOrgPages());
+  // Built but not yet offered: kept out of the organization layout.
+  const contributed = useOrgPages().filter((page) => page.released);
   const { homePath } = useCompany();
   return (
     <Routes>
@@ -45,12 +40,8 @@ export function OrgRoutes() {
         <Route path="finance" element={<FinancePage />} />
         <Route path="handbook" element={<HandbookPage />} />
         <Route path="channels/:channelId" element={<ChannelView />} />
-        {contributed.map((page) => (
-          <Route
-            key={page.id}
-            path={page.path}
-            element={<ContributedPage page={page} builtins={ORG_PAGE_COMPONENTS} />}
-          />
+        {contributed.map(({ id, path, Component }) => (
+          <Route key={id} path={path} element={<Component />} />
         ))}
         <Route path="*" element={<Navigate to="overview" replace />} />
       </Route>
