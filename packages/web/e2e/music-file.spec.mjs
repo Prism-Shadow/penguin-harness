@@ -8,6 +8,8 @@
  * links chime.ogg, which does not exist.
  *
  * - One player sits directly below each linking paragraph, one per file; the code span gets none.
+ *   It is the app's own card (a named play button, a seek bar) over an `<audio>` without the
+ *   browser's controls, and pressing play loads the file and reads its length into the card.
  * - The links stay links: same href, no new tab.
  * - The player's src is the Workspace file URL, answering 200 with an audio content type, and the
  *   browser decodes the file; the missing file's player turns into a line saying so.
@@ -88,9 +90,15 @@ test("music: a reply's link to an audio file gets a player below its paragraph",
   const below = first.locator("xpath=following-sibling::*[1]");
   await expect(below).toHaveAttribute("data-reply-files");
   await expect(below.locator("audio")).toHaveCount(1);
-  const player = below.getByLabel("播放 evening.wav");
-  await expect(player).toHaveAttribute("controls", "");
+  const player = below.locator("audio");
+  await expect(player).not.toHaveAttribute("controls");
   await expect(player).toHaveAttribute("preload", "none");
+  const play = below.getByRole("button", { name: "播放 evening.wav" });
+  await expect(play).toBeVisible();
+  // Nothing is fetched before play: the length is unknown and the seek bar is off.
+  const seek = below.getByRole("slider", { name: "evening.wav 的播放位置" });
+  await expect(seek).toBeDisabled();
+  await expect(below.locator("[data-audio-file]")).toContainText("0:00 / -:--");
 
   // The links are untouched: still links to the file, opening nothing in a new tab.
   const link = first.getByRole("link", { name: "Evening Theme" });
@@ -121,8 +129,19 @@ test("music: a reply's link to an audio file gets a player below its paragraph",
   );
   expect(duration).toBeCloseTo(0.25, 1);
 
+  // Pressing play loads the file into the card: its length arrives, the seek bar turns on, and the
+  // quarter-second tune ends back on a play button.
+  await play.click();
+  await expect(seek).toBeEnabled();
+  await expect(seek).toHaveAttribute("aria-valuetext", /，共 0:00$/);
+  await expect(below.locator('[data-audio-file="paused"]')).toBeVisible();
+  await expect(below.getByRole("button", { name: "播放 evening.wav" })).toBeVisible();
+
   // A missing file: once loading fails, the player says so instead.
-  await page.getByLabel("播放 chime.ogg").evaluate((el) => el.load());
+  await second
+    .locator("xpath=following-sibling::*[1]")
+    .locator("audio")
+    .evaluate((el) => el.load());
   await expect(page.getByRole("status").filter({ hasText: "无法播放 chime.ogg" })).toBeVisible();
 
   // Safe mode: the same reply, no player.
