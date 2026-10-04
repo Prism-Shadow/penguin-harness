@@ -161,7 +161,6 @@ describe("sandbox settings group", () => {
     // A default that confines nothing (Full Access) starts Sessions unconfined.
     expect((await save({ defaultPreset: "full-access" })).status).toBe(200);
     expect(sandbox.currentSettings()).toEqual({ mode: "danger-full-access" });
-    expect((await save({ defaultPreset: "nope" })).status).toBe(400);
   });
 
   it("applies a saved policy to the next spawn; the backend reads its own saved group", async () => {

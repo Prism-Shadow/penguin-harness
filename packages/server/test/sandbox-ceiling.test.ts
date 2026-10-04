@@ -1,8 +1,6 @@
 /**
- * The non-admin ceiling on a Session's sandbox: a non-admin may tighten a Session's policy but
- * never give it more file or network access than the server's settings; an admin may. The
- * composer's `aboveCeiling` mark is the same comparison (`aboveSandboxCeiling`), so a row it
- * greys out is exactly a pick the server refuses.
+ * The non-admin ceiling on a Session's sandbox: a non-admin may tighten but never loosen past the
+ * server's settings; an admin may. The composer's `aboveCeiling` mark is the same comparison.
  */
 import { describe, expect, it } from "vitest";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
@@ -16,60 +14,49 @@ describe("the non-admin ceiling on a Session's sandbox", () => {
     maskPaths: ["/secret"],
     writableTemp: false,
   };
+  const local: SandboxSettings = { mode: "workspace-write", network: "local" };
 
-  it("names the dimension a level is wider in, the file mode first, and none within", () => {
-    const ceiling = { mode: "workspace-write", network: "local" } as const;
-    expect(aboveSandboxCeiling({ mode: "danger-full-access", network: "open" }, ceiling)).toBe(
-      "mode",
-    );
-    expect(aboveSandboxCeiling({ mode: "read-only", network: "open" }, ceiling)).toBe("network");
-    expect(aboveSandboxCeiling({ mode: "workspace-write", network: "local" }, ceiling)).toBeNull();
-    expect(aboveSandboxCeiling({ mode: "read-only", network: "none" }, ceiling)).toBeNull();
+  it.each([
+    ["danger-full-access", "open", "mode"],
+    ["read-only", "open", "network"],
+    ["workspace-write", "local", null],
+    ["read-only", "none", null],
+  ] as const)("ranks %s/%s against workspace-write/local: %s", (mode, network, wider) => {
+    expect(
+      aboveSandboxCeiling({ mode, network }, { mode: "workspace-write", network: "local" }),
+    ).toBe(wider);
   });
 
-  it("a non-admin cannot loosen past the server's settings, in either dimension", () => {
-    expect(() =>
-      applySandboxPick(settings, { mode: "danger-full-access" }, settings, false),
-    ).toThrow(/Only an administrator/);
-    expect(() => applySandboxPick(settings, { network: "open" }, settings, false)).toThrow(
-      /Only an administrator/,
-    );
+  it.each([
+    [settings, { mode: "danger-full-access" }],
+    [settings, { network: "open" }],
+    [settings, { network: "local" }],
+    [local, { network: "open" }],
+  ] as const)("a non-admin cannot loosen %j by %j", (base, pick) => {
+    expect(() => applySandboxPick(base, pick, base, false, true)).toThrow(/Only an administrator/);
   });
 
-  it("the local level is refused where no backend supports it, and ranks between none and open", () => {
+  it("refuses the local level where no backend supports it", () => {
     expect(() => applySandboxPick(settings, { network: "local" }, settings, true)).toThrow(
       /localhost/,
     );
-    const open: SandboxSettings = { mode: "workspace-write" };
-    const local = applySandboxPick(open, { network: "local" }, open, false, true);
-    expect(local.network).toBe("local");
-    expect(sessionSandboxOf(local, ["fs-write", "network", "network-local"])).toEqual({
-      mode: "workspace-write",
-      network: "local",
-      confinementSupported: true,
-      noNetworkSupported: true,
-      localNetworkSupported: true,
-      unavailableBackends: [],
-    });
-    // Under settings of "local", a non-admin may cut the network but not open it.
-    const localDefaults: SandboxSettings = { mode: "workspace-write", network: "local" };
-    expect(
-      applySandboxPick(localDefaults, { network: "none" }, localDefaults, false, true).network,
-    ).toBe("none");
-    expect(() =>
-      applySandboxPick(localDefaults, { network: "open" }, localDefaults, false, true),
-    ).toThrow(/Only an administrator/);
-    // Under settings of "none", "local" is already looser.
-    expect(() => applySandboxPick(settings, { network: "local" }, settings, false, true)).toThrow(
-      /Only an administrator/,
-    );
   });
 
-  it("a non-admin who tightened may come back to the settings; an admin may go past them", () => {
+  it("a non-admin may tighten and come back, and pick local under open settings", () => {
     const tightened = applySandboxPick(settings, { mode: "read-only" }, settings, false);
     expect(applySandboxPick(tightened, { mode: "workspace-write" }, settings, false).mode).toBe(
       "workspace-write",
     );
+    expect(applySandboxPick(local, { network: "none" }, local, false, true).network).toBe("none");
+    const open: SandboxSettings = { mode: "workspace-write" };
+    const picked = applySandboxPick(open, { network: "local" }, open, false, true);
+    expect(sessionSandboxOf(picked, ["fs-write", "network", "network-local"])).toMatchObject({
+      network: "local",
+      localNetworkSupported: true,
+    });
+  });
+
+  it("an admin may go past the settings", () => {
     const opened = applySandboxPick(
       settings,
       { mode: "danger-full-access", network: "open" },

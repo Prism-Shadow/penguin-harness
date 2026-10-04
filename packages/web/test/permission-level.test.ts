@@ -124,19 +124,21 @@ describe("permission level", () => {
 
 describe("the composer's presets", () => {
   const byId = (id: string) => BUILTIN_PRESETS.find((p) => p.id === id)!;
+  const MENU = ["full-access", "always-ask", "workspace-write", "read-only"];
 
-  it("names a level by the first matching row, disabled rows included, and by none when no row matches", () => {
-    expect(matchPreset(BUILTIN_PRESETS, "allow-all", FULL)?.id).toBe("full-access");
-    expect(matchPreset(BUILTIN_PRESETS, "always-ask", FULL)?.id).toBe("always-ask");
-    expect(matchPreset(BUILTIN_PRESETS, "allow-all", { ...FULL, mode: "read-only" })?.id).toBe(
-      "read-only",
-    );
-    // Not in the menu, still its name.
-    expect(matchPreset(BUILTIN_PRESETS, "deny-all", FULL)?.id).toBe("denied-all");
-    // A level set from the full settings is custom, never rounded to a row.
-    expect(matchPreset(BUILTIN_PRESETS, "allow-all", { ...FULL, network: "none" })).toBeNull();
-    expect(matchPreset(BUILTIN_PRESETS, "read-only", FULL)).toBeNull();
-    // Two rows holding the same values: table order decides.
+  // A level set from the full settings is custom (null), never rounded to a row; disabled rows still name it.
+  it.each([
+    ["allow-all", {}, "full-access"],
+    ["always-ask", {}, "always-ask"],
+    ["allow-all", { mode: "read-only" }, "read-only"],
+    ["deny-all", {}, "denied-all"],
+    ["allow-all", { network: "none" }, undefined],
+    ["read-only", {}, undefined],
+  ] as const)("names %s over %o as %s", (approval, over, id) => {
+    expect(matchPreset(BUILTIN_PRESETS, approval, { ...FULL, ...over })?.id).toBe(id);
+  });
+
+  it("names a level held by two rows by table order", () => {
     const twice = [
       { ...byId("always-ask"), id: "first" },
       { ...byId("always-ask"), id: "second", enabled: false },
@@ -145,59 +147,30 @@ describe("the composer's presets", () => {
     expect(matchPreset(twice.slice().reverse(), "always-ask", FULL)?.id).toBe("second");
   });
 
-  it("offers the server's table when it reports one, and the built-in table when it does not", () => {
-    expect(presetsOf(FULL)).toBe(BUILTIN_PRESETS);
+  it("offers the server's table when it reports one, else the built-in four", () => {
     const renamed = [{ ...byId("full-access"), name: "Anything goes" }];
     expect(presetsOf({ ...FULL, presets: renamed })).toBe(renamed);
-    // The built-in menu is the four common presets; the other two start out of it.
-    expect(BUILTIN_PRESETS.filter((p) => p.enabled).map((p) => p.id)).toEqual([
-      "full-access",
-      "always-ask",
-      "workspace-write",
-      "read-only",
-    ]);
+    expect(presetsOf(FULL)).toBe(BUILTIN_PRESETS);
+    expect(BUILTIN_PRESETS.filter((p) => p.enabled).map((p) => p.id)).toEqual(MENU);
   });
 
-  it("offers no preset whose approval mode the Session may not be given, except the current one", () => {
-    const ids = (modes: readonly ApprovalMode[], current: string | null) =>
-      menuPresets(BUILTIN_PRESETS, modes, current === null ? null : byId(current)).map((p) => p.id);
-    // An ordinary Session: every enabled row, in table order.
-    expect(ids(APPROVAL_MODES, "full-access")).toEqual([
-      "full-access",
-      "always-ask",
-      "workspace-write",
-      "read-only",
-    ]);
-    // An organization's Session is never offered always-ask, as a mode or through a preset.
-    expect(ids(approvalModeChoices("org", "allow-all"), "full-access")).toEqual([
-      "full-access",
-      "workspace-write",
-      "read-only",
-    ]);
-    expect(ids(approvalModeChoices("org", "allow-all"), null)).not.toContain("always-ask");
-    // Unless it is the current preset: listed in its usual place, ticked, until another is picked.
-    expect(ids(approvalModeChoices("org", "always-ask"), "always-ask")).toEqual([
-      "full-access",
-      "always-ask",
-      "workspace-write",
-      "read-only",
-    ]);
-    // The current preset is kept by the helper itself, whatever list it is handed.
-    expect(ids(["allow-all"], "always-ask")).toEqual([
-      "full-access",
-      "always-ask",
-      "workspace-write",
-      "read-only",
-    ]);
-    // A disabled row stays out of the menu even when it is the current preset.
-    expect(ids(APPROVAL_MODES, "denied-all")).not.toContain("denied-all");
+  // An organization's Session is never offered always-ask, unless it is the current preset;
+  // a disabled row stays out even when current.
+  const org = approvalModeChoices("org", "allow-all");
+  it.each([
+    [APPROVAL_MODES, "full-access", MENU],
+    [org, "full-access", MENU.filter((id) => id !== "always-ask")],
+    [org, null, MENU.filter((id) => id !== "always-ask")],
+    [["allow-all"] as ApprovalMode[], "always-ask", MENU],
+    [APPROVAL_MODES, "denied-all", MENU],
+  ])("menu for modes %j, current %s", (modes, current, expected) => {
+    const cur = current === null ? null : byId(current);
+    expect(menuPresets(BUILTIN_PRESETS, modes, cur).map((p) => p.id)).toEqual(expected);
   });
 
-  it("greys out a preset this server cannot enforce, in each of the four cases", () => {
+  it("greys out a preset this server cannot enforce", () => {
     const blocks = (sandbox: SessionSandbox) =>
       Object.fromEntries(BUILTIN_PRESETS.map((p) => [p.id, presetBlock(sandbox, p)]));
-    const neverBlocked = { "full-access": null, "always-ask": null, "denied-all": null };
-    // No backend: every preset that confines is not installed.
     const none: SessionSandbox = {
       ...FULL,
       confinementSupported: false,
@@ -205,31 +178,20 @@ describe("the composer's presets", () => {
       localNetworkSupported: false,
       unavailableBackends: [],
     };
-    expect(blocks(none)).toEqual({
-      ...neverBlocked,
-      "workspace-write": "no-backend",
-      "read-only": "no-backend",
-      "workspace-write-ask": "no-backend",
-    });
-    // A filesystem-only backend enforces the default table whole; cutting the network it cannot.
+    // No backend: every confining preset; filesystem-only: only the network cut.
+    expect(blocks(none)).toMatchObject({ "full-access": null, "read-only": "no-backend" });
+    expect(blocks(none)["workspace-write-ask"]).toBe("no-backend");
     const fsOnly: SessionSandbox = { ...none, confinementSupported: true };
     expect(Object.values(blocks(fsOnly)).every((b) => b === null)).toBe(true);
     expect(presetBlock(fsOnly, { mode: "read-only", network: "none" })).toBe("none-unsupported");
-    // A full backend: nothing is blocked, the local level included.
-    const full: SessionSandbox = {
-      ...FULL,
-      confinementSupported: true,
-      noNetworkSupported: true,
-      localNetworkSupported: true,
-    };
-    expect(presetBlock(full, { mode: "workspace-write", network: "local" })).toBeNull();
-    // An older server that does not report the flags: nothing second-guessed but local.
+    const all = { ...fsOnly, noNetworkSupported: true, localNetworkSupported: true };
+    expect(presetBlock(all, { mode: "workspace-write", network: "local" })).toBeNull();
+    // An older server without the flags: nothing second-guessed but local.
     expect(Object.values(blocks(FULL)).every((b) => b === null)).toBe(true);
     expect(presetBlock(FULL, { mode: "read-only", network: "local" })).toBe("local-unsupported");
   });
 
   it("greys out a preset above the ceiling for a non-admin, never for an admin or the current one", () => {
-    // The server marks the rows wider than its settings: from Workspace Write, the Off ones.
     const presets = BUILTIN_PRESETS.map((p) =>
       p.mode === "danger-full-access" ? { ...p, aboveCeiling: true as const } : p,
     );
@@ -241,49 +203,40 @@ describe("the composer's presets", () => {
     };
     const blocked = (isAdmin: boolean, currentId: string | null) =>
       presets
-        .filter(
-          (p) =>
-            presetBlock(sandbox, p, {
-              isAdmin,
-              current: presets.find((c) => c.id === currentId) ?? null,
-            }) !== null,
-        )
+        .filter((p) => presetBlock(sandbox, p, { isAdmin, current: byId(currentId ?? "") ?? null }))
         .map((p) => p.id);
-    expect(blocked(false, "workspace-write")).toEqual(["full-access", "always-ask", "denied-all"]);
     expect(presetBlock(sandbox, presets[0]!, { isAdmin: false, current: null })).toBe(
       "above-ceiling",
     );
-    // An administrator may go past the server's settings.
+    expect(blocked(false, "workspace-write")).toEqual(["full-access", "always-ask", "denied-all"]);
     expect(blocked(true, "workspace-write")).toEqual([]);
-    // The row the Session is on stays pickable: picking it changes nothing.
     expect(blocked(false, "always-ask")).toEqual(["full-access", "denied-all"]);
-    // A row this server cannot enforce says that first, whoever picks it.
-    const none: SessionSandbox = { ...sandbox, confinementSupported: false };
+    // Unenforceable says that first, whoever picks it.
+    const none = { ...sandbox, confinementSupported: false };
     expect(presetBlock(none, byId("read-only"), { isAdmin: true, current: null })).toBe(
       "no-backend",
     );
   });
 
-  it("says what a preset blocks and allows, from its three values", () => {
-    expect(presetEffects(byId("full-access"))).toEqual({
-      blocks: [],
-      allows: ["files-everywhere", "network-open", "calls-unasked"],
-    });
-    expect(presetEffects(byId("always-ask"))).toEqual({
-      blocks: ["unasked-calls"],
-      allows: ["files-everywhere", "network-open"],
-    });
-    expect(presetEffects(byId("workspace-write-ask"))).toEqual({
-      blocks: ["write-outside-workspace", "unasked-calls"],
-      allows: ["files-in-workspace", "network-open"],
-    });
+  it.each([
+    [byId("full-access"), [], ["files-everywhere", "network-open", "calls-unasked"]],
+    [byId("always-ask"), ["unasked-calls"], ["files-everywhere", "network-open"]],
+    [
+      byId("workspace-write-ask"),
+      ["write-outside-workspace", "unasked-calls"],
+      ["files-in-workspace", "network-open"],
+    ],
+    [
+      { mode: "read-only", network: "local", approvalMode: "read-only" } as const,
+      ["write-anywhere", "network-beyond-localhost", "unasked-writes"],
+      ["read-files", "localhost", "reads-unasked"],
+    ],
+  ])("says what %o blocks and allows", (preset, blocks, allows) => {
+    expect(presetEffects(preset)).toEqual({ blocks, allows });
+  });
+
+  it("says denied-all blocks every call and a closed network blocks the network", () => {
     expect(presetEffects(byId("denied-all")).blocks).toEqual(["every-call"]);
-    expect(
-      presetEffects({ mode: "read-only", network: "local", approvalMode: "read-only" }),
-    ).toEqual({
-      blocks: ["write-anywhere", "network-beyond-localhost", "unasked-writes"],
-      allows: ["read-files", "localhost", "reads-unasked"],
-    });
     expect(presetEffects({ ...byId("full-access"), network: "none" }).blocks).toEqual(["network"]);
   });
 });

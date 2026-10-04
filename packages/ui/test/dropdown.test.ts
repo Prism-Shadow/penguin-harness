@@ -82,12 +82,8 @@ describe("Dropdown", () => {
     expect(source).toContain('${portal ? "z-[60]" : "z-40"}');
   });
 
-  // A source pin, not a behaviour test: this package tests without a DOM (no jsdom or
-  // happy-dom), so the focus effect cannot run here. It pins the effect's gate and deps — a
-  // reformat of these lines fails it without any change in behaviour.
+  // A source pin (no DOM here): a hidden, unplaced portaled panel cannot take focus.
   it("source pin: the first-item focus effect waits for a portaled panel to be placed", () => {
-    // Until placed, the portaled panel is `visibility: hidden`, which cannot take focus: a
-    // focus attempted then would leave the keyboard on the trigger with the menu open.
     const source = readFileSync(join(SRC_DIR, "components/overlays/dropdown/dropdown.tsx"), "utf8");
     expect(source).toContain("const placed = !portal || pos !== null;");
     expect(source).toMatch(

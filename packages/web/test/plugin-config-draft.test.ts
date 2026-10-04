@@ -1,12 +1,5 @@
-/**
- * A settings table's draft reads its stored value the way the server reads it (`resolveTable`):
- *
- * - A locked cell reads as declared whatever is stored (a hand-edited document cannot remap it),
- *   and so does a stored value its column does not accept.
- * - A malformed added row — an id that is no row id or a declared row's, a missing column, a
- *   value its column refuses — is dropped, so a save does not send it back; a well-formed one
- *   is kept with its columns only.
- */
+// A settings table's draft reads its stored value the way the server's `resolveTable` does:
+// locked or refused cells read as declared; malformed added rows are dropped.
 import { describe, expect, it } from "vitest";
 import type { PluginConfigField } from "@prismshadow/penguin-server/api";
 import { tableDraftOf } from "../src/features/settings/plugin-config-draft";
