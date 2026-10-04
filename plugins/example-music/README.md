@@ -16,8 +16,8 @@ a Skill that teaches the Agent to produce one. It demonstrates:
   Python's standard library (or convert it with `ffmpeg` when one is present) and to link it in the
   reply by its Workspace-relative path.
 
-The package is private: it is not published and not shipped with the builtin plugins
-(`scripts/build-plugins.mjs` skips private packages), so no install enables it.
+The package is private, so it is not published, and it is not shipped with the builtin plugins
+(`scripts/build-plugins.mjs` skips the `plugins/example-*` directories), so no install enables it.
 
 ## Enable the player
 
