@@ -362,8 +362,14 @@ export class AuthService implements Auth {
    * value never changes and there is no second identity to revoke. Only a session whose own
    * span reaches the renewal window slides — a one-hour minted token must expire at its hour,
    * not stretch by being used.
+   *
+   * `cli` says the row was minted from the data root by `penguin auth token` rather than
+   * signed in to — the session a hub presents when it reaches this machine over ssh
+   * (machines/remote-token.ts). Its holder has filesystem authority over this server.
    */
-  authenticateWithMeta(token: string): { user: UserRow; via: SessionVia; renewed: boolean } | null {
+  authenticateWithMeta(
+    token: string,
+  ): { user: UserRow; via: SessionVia; renewed: boolean; cli: boolean } | null {
     const tokenHash = sessionTokenHash(token);
     const session = this.authSessions.findByTokenHash(tokenHash);
     if (!session) return null;
@@ -389,7 +395,7 @@ export class AuthService implements Auth {
           : session.via === "setup"
             ? "setup"
             : "password";
-    return { user, via, renewed };
+    return { user, via, renewed, cli: session.via === "cli" };
   }
 
   /**

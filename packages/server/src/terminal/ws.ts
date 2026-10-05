@@ -18,6 +18,7 @@ import { WebSocketServer } from "ws";
 import { isOwnOrigin, parseCookieHeader, sessionCookies } from "../auth/middleware.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
+import { clientOrigin, forwardedHeaders } from "../http/forwarded.js";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
@@ -41,13 +42,15 @@ export interface TerminalWebSocketDeps {
   hmr: ServerHmrHost;
   authService: Auth;
   log: (line: string) => void;
+  /** PENGUIN_TRUST_PROXY: whether the upgrade's forwarded scheme and host name the browser's origin. */
+  trustProxy?: boolean;
 }
 
 export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSocketDeps): void {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
+    const url = upgradeUrl(req, deps.trustProxy === true);
     const match = STREAM_PATH.exec(url.pathname);
     // Not ours: leave the socket alone so another upgrade handler (or the default
     // "no handler -> destroy" behaviour) can deal with it.
@@ -89,6 +92,27 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
  */
 function isAllowedOrigin(req: IncomingMessage): boolean {
   return isOwnOrigin(req.headers.origin, req.headers.host);
+}
+
+/**
+ * The upgrade's URL as the browser addressed it — the origin every call on the API socket is
+ * then made under (hmr/platform.ts), so a route that names this server back to the browser (a
+ * provider's redirect, a preview link, the hub's forwarded host for a machine) names the host
+ * and port the page is on. `localhost` only when the handshake carried no usable Host.
+ */
+function upgradeUrl(req: IncomingMessage, trustProxy: boolean): URL {
+  const path = req.url ?? "/";
+  const host = req.headers.host;
+  if (host === undefined || host === "") return new URL(path, "http://localhost");
+  try {
+    const header = (name: string): string | undefined => {
+      const value = req.headers[name];
+      return Array.isArray(value) ? value[0] : value;
+    };
+    return new URL(path, clientOrigin(`http://${host}/`, forwardedHeaders(header), trustProxy));
+  } catch {
+    return new URL(path, "http://localhost");
+  }
 }
 
 function refuse(socket: Duplex, status: number, text: string): void {

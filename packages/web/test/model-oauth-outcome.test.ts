@@ -9,8 +9,8 @@
  *
  * Checked rather than remembered, because the regression is a one-line `toastSuccess` added
  * back into a success path by someone who never saw the dialog in another tab. This reads the
- * real source rather than rendering: the dialog is module-private, and exporting it purely so a
- * test could mount it would widen the module's surface to check a rule about its own text.
+ * real source rather than rendering (the suite has no DOM): the dialog's own module, and the
+ * Models page that opens it.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -18,8 +18,13 @@ import { fileURLToPath } from "node:url";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
+/** The Models page: the caller, which opens the dialog and decides what happens around it. */
 const SOURCE = readFileSync(
   fileURLToPath(new URL("../src/features/models/models-page.tsx", import.meta.url)),
+  "utf8",
+);
+const DIALOG_SOURCE = readFileSync(
+  fileURLToPath(new URL("../src/features/models/model-oauth-dialog.tsx", import.meta.url)),
   "utf8",
 );
 
@@ -31,9 +36,9 @@ const SOURCE = readFileSync(
  * fail for a reason that has nothing to do with this dialog.
  */
 function dialogSource(): string {
-  const start = SOURCE.indexOf("type OAuthPhase");
+  const start = DIALOG_SOURCE.indexOf("type OAuthPhase");
   expect(start).toBeGreaterThan(0);
-  const body = SOURCE.slice(start);
+  const body = DIALOG_SOURCE.slice(start);
   const end = body.indexOf("\nfunction ", body.indexOf("function ModelOAuthDialog"));
   return end === -1 ? body : body.slice(0, end);
 }

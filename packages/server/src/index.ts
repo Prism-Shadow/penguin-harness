@@ -513,6 +513,7 @@ class PenguinServer {
         return auth();
       },
       log: (line: string) => console.log(line),
+      trustProxy: this.config.trustProxy,
     };
   }
 

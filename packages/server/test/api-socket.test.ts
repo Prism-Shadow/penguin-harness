@@ -145,6 +145,30 @@ describe("calls", () => {
     s.ws.close();
   });
 
+  it("makes its calls under the host and port the page addressed, not a bare localhost", async () => {
+    // A route that names this server back to the browser — a provider's redirect, or the host
+    // the hub tells a machine it is forwarding for — reads the socket's own origin.
+    const s = await open({ cookie });
+    if (!("ws" in s)) throw new Error("handshake refused");
+    send(s.ws, {
+      id: 1,
+      call: {
+        method: "POST",
+        path: "/api/projects/default_project/model-oauth/start",
+        body: { provider: "tokendance" },
+      },
+    });
+    const frame = await s.next();
+    expect(frame.status).toBe(200);
+    const callback = new URL(
+      (frame.body as { authorizeUrl: string }).authorizeUrl,
+    ).searchParams.get("callback_url");
+    expect(callback?.startsWith(`http://localhost:${port}/api/projects/default_project/`)).toBe(
+      true,
+    );
+    s.ws.close();
+  });
+
   it("carries the endpoint's own error shape", async () => {
     const s = await open({ cookie });
     if (!("ws" in s)) throw new Error("handshake refused");

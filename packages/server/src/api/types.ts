@@ -1043,6 +1043,13 @@ export interface ModelOAuthStartRequest {
 export interface ModelOAuthStartResponse {
   flowId: string;
   authorizeUrl: string;
+  /**
+   * The mode the flow was opened in. `manual` where `callback` was asked for means the server
+   * could not name a callback the browser can reach (a machine behind a hub too old to say
+   * where the browser is), so the person carries the one-time code across instead. Absent
+   * from a server older than the field: read it as the mode that was asked for.
+   */
+  mode?: ModelOAuthMode;
 }
 
 /** Why a flow failed, as a code the frontend phrases; never carries a code, a verifier or a key. */

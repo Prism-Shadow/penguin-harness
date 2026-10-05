@@ -10,13 +10,23 @@
  * machine's admin: the ssh access that installed the program there is what authorizes it,
  * and the session presented to the machine is one this server mints over that access
  * (remote-token.ts). The browser's own cookies never travel, and the machine's never come
- * back — so this mounts INSIDE this server's auth middleware, for admins.
+ * back — so this mounts INSIDE this server's auth middleware, for admins. One path is the
+ * exception, the provider's redirect back into a key-minting flow on a machine
+ * (machinesServerProxyRoutes in service.ts), and it is forwarded as a bare GET.
+ *
+ * WHERE THE BROWSER IS. The machine sees `localhost:<its port>` — the Host the dial needs — so
+ * every forward also says where the browser actually addressed this server:
+ * `x-forwarded-host` / `-proto` (this server's own client-facing origin, read through its own
+ * trusted proxy chain when PENGUIN_TRUST_PROXY=1) and `x-forwarded-prefix: /server/<id>`. A
+ * caller's own values of these never cross; the machine believes them only from a session
+ * minted over its data root, which is the one this proxy presents (http/routes/model-oauth.ts).
  */
 import http from "node:http";
 import { Readable } from "node:stream";
 import type { MachineEventHub } from "./event-hub.js";
 import { MachineSocketRelay } from "./socket-relay.js";
 import type { MachineSockets } from "./machine-sockets.js";
+import { clientOrigin, forwardedHeaders, forwardedPrefix } from "../http/forwarded.js";
 
 /** Path prefix of the proxy: `/server/<id>/api/…`. */
 export const SERVER_PROXY_PREFIX = "/server/";
@@ -103,6 +113,7 @@ function proxyThroughSession(
   port: number,
   cookie: string,
   answerTimeoutMs: number,
+  trustProxy: boolean,
   report?: ProxyReport,
 ): Promise<Response> {
   // Given up on before it left: nothing to dial for.
@@ -115,6 +126,7 @@ function proxyThroughSession(
     });
     headers["host"] = `localhost:${port}`;
     headers["cookie"] = cookie;
+    Object.assign(headers, browserFacing(request, path.machineId, trustProxy));
 
     const upstream = http.request(
       {
@@ -207,6 +219,25 @@ function proxyThroughSession(
 }
 
 /**
+ * The forwarded headers a forward carries (see the module doc): this server's client-facing
+ * origin, and the prefix the machine is addressed under here — appended to any prefix this
+ * server itself sits behind, so a chain of hops composes. Set over whatever the caller sent.
+ */
+export function browserFacing(
+  request: Request,
+  machineId: string,
+  trustProxy: boolean,
+): { "x-forwarded-host": string; "x-forwarded-proto": string; "x-forwarded-prefix": string } {
+  const incoming = forwardedHeaders((name) => request.headers.get(name));
+  const origin = new URL(clientOrigin(request.url, incoming, trustProxy));
+  return {
+    "x-forwarded-host": origin.host,
+    "x-forwarded-proto": origin.protocol.replace(":", ""),
+    "x-forwarded-prefix": `${forwardedPrefix(incoming, trustProxy)}${SERVER_PROXY_PREFIX}${encodeURIComponent(machineId)}`,
+  };
+}
+
+/**
  * The seam handler: `/server/<id>/api/…` → that machine, or a clear answer when there is
  * nothing to forward to. `resolve` is the machines service's lookup: a dial through the
  * session, the port over there and a session cookie, or null when it is not connected.
@@ -227,8 +258,12 @@ export function machinesProxy(
   ) => Promise<{ agent: http.Agent; port: number; cookie: string; session: number } | null>,
   report?: ProxyReport,
   log: (line: string) => void = () => undefined,
-  /** The shared socket cache and event hub, so this generation's routes read the facts the relay writes. */
-  shared: { sockets?: MachineSockets; events?: MachineEventHub } = {},
+  /**
+   * The shared socket cache and event hub, so this generation's routes read the facts the relay
+   * writes; and whether this server trusts its own reverse proxy's forwarded headers
+   * (PENGUIN_TRUST_PROXY), which decides what it tells the machine about the browser.
+   */
+  shared: { sockets?: MachineSockets; events?: MachineEventHub; trustProxy?: boolean } = {},
   /** Test hook: how long a forwarded read may wait for its answer (FORWARD_ANSWER_TIMEOUT_MS). */
   options: { answerTimeoutMs?: number } = {},
 ): (request: Request) => Promise<Response | null> {
@@ -272,6 +307,7 @@ export function machinesProxy(
       target.port,
       target.cookie,
       answerTimeoutMs,
+      shared.trustProxy === true,
       report,
     );
   };

@@ -15,6 +15,7 @@
  * passing through the browser. A caller only ever holds an opaque flow id and a status.
  */
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type {
   ModelOAuthCodeResponse,
   ModelOAuthMode,
@@ -33,6 +34,8 @@ export interface ModelOauthRouteDeps extends ModelsRouteDeps {
   access: Access;
 }
 import { HttpError } from "../errors.js";
+import { clientOrigin, forwardedHeaders, forwardedPrefix } from "../forwarded.js";
+import type { ForwardedHeaders } from "../forwarded.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { modelConfigChanged } from "./models.js";
 import type { ModelsRouteDeps } from "./models.js";
@@ -49,27 +52,34 @@ const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const CODE_RE = /^[A-Za-z0-9._~-]{1,512}$/;
 
 /**
- * Origin the browser reached this server on, which is the origin the provider must redirect
- * back to. Taken from the request's own URL, so loopback, a LAN address and a custom port
- * all work without configuration.
+ * Where the browser reached this server — origin plus any path prefix — which is where the
+ * provider must redirect back to. Taken from the request's own URL, so loopback, a LAN
+ * address and a custom port all work without configuration.
  *
- * `x-forwarded-proto` / `x-forwarded-host` are caller-supplied and are honoured only when
- * the deployment says a reverse proxy sets them (PENGUIN_TRUST_PROXY=1) — the same opt-in
- * the hot-update network gate requires, and for the same reason: without it anyone who can
- * reach the bind could choose where the authorization lands.
+ * `x-forwarded-proto` / `-host` / `-prefix` are caller-supplied and are honoured only when
+ * `trusted`: the deployment says a reverse proxy sets them (PENGUIN_TRUST_PROXY=1, the same
+ * opt-in the hot-update network gate requires), or the request is a hub's forward of the
+ * browser's call (see {@link forwardTrusted}). Without that, anyone who can reach the bind
+ * could choose where the authorization lands.
  */
-export function requestOrigin(
-  url: string,
-  headers: { proto?: string; host?: string },
-  trustProxy: boolean,
-): string {
-  const own = new URL(url);
-  if (!trustProxy) return own.origin;
-  // A chain of proxies appends to these headers; the client-facing hop is the first value.
-  const proto = headers.proto?.split(",")[0]?.trim();
-  const host = headers.host?.split(",")[0]?.trim();
-  const scheme = proto === "http" || proto === "https" ? proto : own.protocol.replace(":", "");
-  return `${scheme}://${host !== undefined && host !== "" ? host : own.host}`;
+export function requestOrigin(url: string, headers: ForwardedHeaders, trusted: boolean): string {
+  return `${clientOrigin(url, headers, trusted)}${forwardedPrefix(headers, trusted)}`;
+}
+
+/**
+ * Whether this request's forwarded headers name where the browser is.
+ *
+ * Besides a configured reverse proxy, the one caller trusted with them is a hub forwarding
+ * the browser's call to this machine (machines/proxy.ts): it reaches the machine's loopback
+ * over ssh and signs in with a session minted from this data root (`cliSession`), so what
+ * arrives here says `localhost:<this port>` while the browser is on the hub's own origin under
+ * `/server/<this machine>`. Holding such a session already means holding this server's data
+ * root — every credential on it and its configuration, PENGUIN_TRUST_PROXY included — so
+ * believing its headers hands it nothing it did not have. A browser's own session (password,
+ * desktop) never makes them trusted.
+ */
+function forwardTrusted(c: Context<AppEnv>, trustProxy: boolean): boolean {
+  return trustProxy || c.var.cliSession === true;
 }
 
 /** Validates the optional `mode` field of a start request. */
@@ -217,7 +227,19 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
     const provider = requireString(body, "provider", { minLen: 1, maxLen: 64 });
-    const mode = parseMode(body.mode);
+    const asked = parseMode(body.mode);
+    const forwarded = forwardedHeaders((name) => c.req.header(name));
+    // A hub that forwards without naming the browser's host (one older than these headers)
+    // leaves this machine knowing only its own loopback, which the browser cannot reach: a
+    // redirect there would strand the person on a page that never loads. The flow is opened
+    // in manual mode instead, and the answer says so, so the dialog asks for the code.
+    const mode: ModelOAuthMode =
+      asked === "callback" &&
+      !deps.config.trustProxy &&
+      c.var.cliSession === true &&
+      forwarded.host === undefined
+        ? "manual"
+        : asked;
     const started = deps.modelOAuth.start({
       projectId,
       userId: c.var.user.userId,
@@ -225,18 +247,11 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
       mode,
       callbackOrigin: requestOrigin(
         c.req.url,
-        {
-          ...(c.req.header("x-forwarded-proto") !== undefined
-            ? { proto: c.req.header("x-forwarded-proto")! }
-            : {}),
-          ...(c.req.header("x-forwarded-host") !== undefined
-            ? { host: c.req.header("x-forwarded-host")! }
-            : {}),
-        },
-        deps.config.trustProxy,
+        forwarded,
+        forwardTrusted(c, deps.config.trustProxy),
       ),
     });
-    return c.json(started satisfies ModelOAuthStartResponse);
+    return c.json({ ...started, mode } satisfies ModelOAuthStartResponse);
   });
 
   // Manual counterpart of the callback: the user pastes the one-time code the authorization

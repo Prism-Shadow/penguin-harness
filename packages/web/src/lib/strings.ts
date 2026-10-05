@@ -2523,6 +2523,10 @@ export const zh = {
       `已完成授权：已为「${provider}」配置分组密钥（${n} 个模型使用），可以直接使用了。`,
     oauthManualSwitch: "授权页跳不回来？改为手动填写授权码",
     oauthCallbackSwitch: "改回自动跳转",
+    oauthCallbackUnreachable:
+      "授权页无法跳回这台机器，请打开授权页后粘贴页面上显示的一次性授权码。",
+    oauthStalled: "已从授权页返回，但还没收到授权结果。授权页可能没能跳回来。",
+    oauthStalledAction: "改为手动填写授权码",
     oauthManualHint: "先打开授权页，再把页面上显示的一次性授权码粘贴到这里。",
     oauthCodeLabel: "授权码",
     oauthSubmitCode: "提交授权码",

@@ -9,6 +9,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   SERVER_PROXY_PREFIX,
+  browserFacing,
   machinesProxy,
   parseProxyPath,
   rewriteLocation,
@@ -52,6 +53,44 @@ describe("rewriteLocation", () => {
 
   it("leaves an absolute URL alone — it is not ours to re-root", () => {
     expect(rewriteLocation("https://example.com/x", A)).toBe("https://example.com/x");
+  });
+});
+
+describe("where the browser is", () => {
+  it("tells the machine this server's origin and the prefix the machine sits under here", () => {
+    expect(
+      browserFacing(
+        new Request(`http://hub.example.test:53531${SERVER_PROXY_PREFIX}${A}/api/me`),
+        A,
+        false,
+      ),
+    ).toEqual({
+      "x-forwarded-host": "hub.example.test:53531",
+      "x-forwarded-proto": "http",
+      "x-forwarded-prefix": `/server/${A}`,
+    });
+  });
+
+  it("never passes a caller's own forwarded values on, unless this server trusts its proxy", () => {
+    const request = new Request(`http://hub.example.test:53531${SERVER_PROXY_PREFIX}${A}/api/me`, {
+      headers: {
+        "x-forwarded-host": "evil.example.test",
+        "x-forwarded-proto": "https",
+        "x-forwarded-prefix": "/elsewhere",
+      },
+    });
+    expect(browserFacing(request, A, false)).toEqual({
+      "x-forwarded-host": "hub.example.test:53531",
+      "x-forwarded-proto": "http",
+      "x-forwarded-prefix": `/server/${A}`,
+    });
+    // Behind a trusted reverse proxy, its client-facing hop is the browser's, and the prefix
+    // composes: the machine sits under this server's own prefix.
+    expect(browserFacing(request, A, true)).toEqual({
+      "x-forwarded-host": "evil.example.test",
+      "x-forwarded-proto": "https",
+      "x-forwarded-prefix": `/elsewhere/server/${A}`,
+    });
   });
 });
 
@@ -106,6 +145,11 @@ describe("the report", () => {
     expect(got).not.toBeNull();
     expect(got!.authorization).toBeUndefined();
     expect(got!.cookie).toBe("penguin_session=minted");
+    // Addressed as the machine's own loopback, told where the browser actually is.
+    expect(got!.host).toBe(`localhost:${port}`);
+    expect(got!["x-forwarded-host"]).toBe("app.local");
+    expect(got!["x-forwarded-proto"]).toBe("http");
+    expect(got!["x-forwarded-prefix"]).toBe(`/server/${A}`);
   });
 
   it("says the machine answered on any HTTP answer, refusals included", async () => {

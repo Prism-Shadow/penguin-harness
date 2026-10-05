@@ -2355,6 +2355,11 @@ export const en: Strings = {
       `Authorized. The ${provider} group key is set, and ${n === 1 ? "1 model uses" : `${n} models use`} it — ready to go.`,
     oauthManualSwitch: "Page can't redirect back? Enter the code by hand",
     oauthCallbackSwitch: "Go back to the automatic redirect",
+    oauthCallbackUnreachable:
+      "The authorization page can't redirect back to this machine. Open it, then paste the one-time code it shows you.",
+    oauthStalled:
+      "You're back, but the authorization hasn't arrived. The page may not have been able to redirect here.",
+    oauthStalledAction: "Enter the code by hand",
     oauthManualHint: "Open the authorization page, then paste the one-time code it shows you here.",
     oauthCodeLabel: "Authorization code",
     oauthSubmitCode: "Submit code",
