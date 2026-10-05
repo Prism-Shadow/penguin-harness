@@ -2248,7 +2248,8 @@ function implPrOf(
 /**
  * A stored side as the API shows it, with its branch page. The workspace remote it is looked up
  * in is the one registration read (`git remote -v` of the proposal's repository, stored as
- * `repo`), so a view never runs git; an `origins` line of the same name takes precedence.
+ * `repo`), so a view never runs git; an `origins` line of the same name answers only when
+ * registration recorded no repository, so the link and the patch view name the same one.
  */
 function declaredSide(
   side: ProposalImplSide | null,

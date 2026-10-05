@@ -114,9 +114,13 @@ export function branchLinkOf(
   origins: ReadonlyArray<{ name: string; repo: string }>,
   remotes: ReadonlyArray<{ name: string; repo: string }>,
 ): { url: string; unresolved: null } | { url: null; unresolved: string } {
+  // The repository the branch was registered against wins (the patch view reads that one too);
+  // the origins setting only answers for a remote that registration recorded no repository for.
   const repo = isRepoRemote(ref.remote)
     ? ref.remote
-    : (origins.find((o) => o.name === ref.remote)?.repo ?? repoOfRemote(ref.remote, remotes));
+    : (repoOfRemote(ref.remote, remotes) ??
+      origins.find((o) => o.name === ref.remote)?.repo ??
+      null);
   if (repo === null) {
     return {
       url: null,

@@ -296,8 +296,13 @@ describe("a side's branch page", () => {
     );
   });
 
-  it("takes the origins setting before the workspace's remote of the same name", () => {
+  it("takes the recorded repository first, the origins setting only when none was recorded", () => {
+    // Recorded at registration: the link names the repository the patch view reads.
     expect(branchLinkOf({ remote: "origin", branch: "main" }, ORIGINS, REMOTES).url).toBe(
+      "https://github.com/acme/site/tree/main",
+    );
+    // Nothing recorded: the origins setting answers.
+    expect(branchLinkOf({ remote: "origin", branch: "main" }, ORIGINS, []).url).toBe(
       "https://github.com/acme/site-mirror/tree/main",
     );
     // owner/repo written out is never looked up.
