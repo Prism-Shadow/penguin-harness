@@ -10,6 +10,7 @@
  *   GET    /deployments              the deployment registry: the deployments registered, none by default (deployments.ts)
  *   GET    /:number                  the proposal
  *   GET    /:number/impl/diff        the impl branch's patch: merge base of base and head, up to head (read from GitHub)
+ *   GET    /:number/impl/changes[?w=1]  the same diff file by file with hunks, from the mirror or else GitHub (impl-diff.ts); w=1 ignores whitespace
  *   GET    /:number/revisions        every revision published: { revisions: [{ revision, by, at }] }
  *   GET    /:number/revisions/:rev   one revision as published (title, scope, sections)
  *   GET    /:number/file?path=       one file under the proposal's base, read-only (the page's file panel)
@@ -70,6 +71,18 @@ export function proposalRoutes(service: ProposalService): Hono {
         param(c, "projectId"),
         param(c, "orgId"),
         numberParam(c),
+        actorOfQuery(c),
+      ),
+    ),
+  );
+
+  app.get("/:number/impl/changes", async (c) =>
+    c.json(
+      await service.implChanges(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        { ignoreWhitespace: c.req.query("w") === "1" },
         actorOfQuery(c),
       ),
     ),

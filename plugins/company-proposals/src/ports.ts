@@ -244,6 +244,60 @@ export interface GitMirror {
   ): Promise<Map<string, string[]>>;
 }
 
+/** One file between two commits, as the mirror's tree diff (rename-detected) and numstat read it. */
+export interface MirrorDiffEntry {
+  status: "added" | "deleted" | "modified" | "renamed";
+  path: string;
+  /** The path before a rename; null otherwise. */
+  oldPath: string | null;
+  /** The blobs on each side; null on the side where the file does not exist. */
+  oldOid: string | null;
+  newOid: string | null;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+}
+
+/**
+ * The mirror read for an impl branch's diff (impl-diff.ts). The mirror holds commits and trees,
+ * no blobs: a diff names the blobs it reads (`changedBlobs`), fetches the missing ones by id, and
+ * only then reads counts and patch text. Nothing here writes a ref.
+ */
+export interface DiffMirror {
+  /** The mirror is on disk (a graph refresh built it); a diff never builds it. */
+  exists(): boolean;
+  /** The commits of these the mirror does not have. */
+  missing(oids: readonly string[]): Promise<string[]>;
+  /** Fetches the given refs or commits; `from` another repository (`owner/repo`) when given. */
+  fetch(refs: readonly string[], opts?: { from?: string; signal?: AbortSignal }): Promise<void>;
+  mergeBase(a: string, b: string): Promise<string | null>;
+  /** The blobs a diff between the two commits reads, from the trees alone. */
+  changedBlobs(from: string, to: string, signal?: AbortSignal): Promise<string[]>;
+  /** Fetches these objects by id, writing no ref; `from` another repository when given. */
+  fetchObjects(
+    oids: readonly string[],
+    opts?: { from?: string; signal?: AbortSignal },
+  ): Promise<void>;
+  /** Each object's size in bytes, null when the mirror lacks it. */
+  objectSizes(oids: readonly string[]): Promise<Map<string, number | null>>;
+  diffStat(
+    from: string,
+    to: string,
+    opts: { ignoreWhitespace: boolean; signal?: AbortSignal },
+  ): Promise<MirrorDiffEntry[]>;
+  /** The patch text, `exclude` paths left out, read up to `maxBytes` (`cut` when it stopped there). */
+  patch(
+    from: string,
+    to: string,
+    opts: {
+      ignoreWhitespace: boolean;
+      exclude: readonly string[];
+      maxBytes: number;
+      signal?: AbortSignal;
+    },
+  ): Promise<{ text: string; cut: boolean }>;
+}
+
 // ---------------------------------------------------------------------------
 // Forge
 // ---------------------------------------------------------------------------

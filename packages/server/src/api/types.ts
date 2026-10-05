@@ -6971,6 +6971,70 @@ export interface ProposalImplDiff {
   pr: string | null;
 }
 
+/** One line of a hunk: added, deleted, or context on both sides. */
+export interface ProposalImplDiffLine {
+  kind: "add" | "del" | "context";
+  text: string;
+}
+
+/** One hunk of a file's diff: where it starts on each side and how many lines it spans there. */
+export interface ProposalImplHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  /** The text after the second `@@` (the enclosing function, when git found one); empty otherwise. */
+  section: string;
+  lines: ProposalImplDiffLine[];
+}
+
+/** One file of an impl branch's structured diff. */
+export interface ProposalImplChangedFile {
+  path: string;
+  /** The path before a rename; null otherwise. */
+  oldPath: string | null;
+  status: "added" | "deleted" | "modified" | "renamed";
+  additions: number;
+  deletions: number;
+  /** A binary file: counts are zero and there are no hunks. */
+  binary: boolean;
+  /**
+   * Why the hunks are left out while the counts stay: `tooLarge` — the file is over the per-file
+   * cap; `diffLimit` — the whole diff reached its cap before this file; `noPatch` — GitHub sent
+   * no patch for it (a binary file or one too large, which GitHub does not tell apart). Null when
+   * the hunks are given.
+   */
+  omitted: "tooLarge" | "diffLimit" | "noPatch" | null;
+  hunks: ProposalImplHunk[];
+}
+
+/**
+ * `GET …/:number/impl/changes[?w=1]`: the impl branch's diff, file by file with hunks — the merge
+ * base of base and head, up to head. Read from the delivery repository's mirror, or, when the
+ * mirror cannot answer, parsed from GitHub's comparison (`source: "github"`).
+ */
+export interface ProposalImplChanges {
+  head: ProposalResolvedBranch;
+  base: ProposalResolvedBranch;
+  headSha: string;
+  baseSha: string;
+  mergeBase: string | null;
+  source: "mirror" | "github";
+  /** Why the mirror did not answer; null when it did. */
+  fallbackReason: string | null;
+  /** Whether whitespace changes were ignored: asked for and honoured (GitHub's comparison cannot). */
+  ignoreWhitespace: boolean;
+  files: ProposalImplChangedFile[];
+  /** The sums over `files`. */
+  additions: number;
+  deletions: number;
+  /** GitHub lists at most 300 files of a comparison: true when there were more (`source: "github"` only). */
+  truncated: boolean;
+  /** The caps the hunks were read under, in bytes: one file's content, and the whole diff's text. */
+  limits: { fileBytes: number; diffBytes: number };
+  compareUrl: string;
+}
+
 /** How one head stands against another: `ahead` = it contains the other and more. */
 export type ProposalGraphRelation = "same" | "ahead" | "behind" | "diverged" | "unknown";
 

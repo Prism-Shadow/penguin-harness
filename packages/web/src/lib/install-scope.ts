@@ -121,6 +121,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.proposals.diffLayout",
+    scope: "browser",
+    why: "Whether an impl branch's diff is drawn unified or split; a view preference of this browser.",
+  },
+  {
+    kind: "exact",
     key: "penguin.textSize",
     scope: "browser",
     why: "Root text size (five steps) — a readability preference of this display.",

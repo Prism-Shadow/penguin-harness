@@ -6230,6 +6230,42 @@ Scenarios:
           `GitHub lists at most ${n} files of a comparison; the rest are not shown.`,
         renamed: (from: string): string => `renamed from ${from}`,
       },
+      /** The impl branch's diff view: a changed-files tree and each file's hunks. */
+      implDiff: {
+        open: "View diff",
+        close: "Hide diff",
+        title: "Changes",
+        files: "Changed files",
+        loading: "Reading the diff…",
+        loadFailed: "Could not read the diff",
+        retry: "Retry",
+        empty: "The head has nothing past its base.",
+        emptyWhitespace: "Nothing changes once whitespace is ignored.",
+        totals: (files: number, additions: number, deletions: number): string =>
+          `${files} file${files === 1 ? "" : "s"}, +${additions} −${deletions}`,
+        layout: "Layout",
+        unified: "Unified",
+        split: "Split",
+        ignoreWhitespace: "Ignore whitespace",
+        rootDir: "(root)",
+        status: {
+          added: "Added",
+          deleted: "Deleted",
+          modified: "Modified",
+          renamed: "Renamed",
+        } as Record<"added" | "deleted" | "modified" | "renamed", string>,
+        renamedFrom: (from: string): string => `renamed from ${from}`,
+        binary: "Binary file; its content is not shown.",
+        tooLarge: (kib: number): string => `Over ${kib} KiB: counts only.`,
+        diffLimit: (mib: number): string =>
+          `The whole diff reached its ${mib} MiB cap before this file: counts only.`,
+        noPatch: "GitHub sent no patch for this file: it is binary, or too large.",
+        noContent: "No content changes.",
+        fromGithub: (reason: string): string =>
+          `The mirror could not answer (${reason}), so this is GitHub's comparison: at most 300 files, no patch for a binary or large file, and whitespace cannot be ignored.`,
+        truncated: (n: number): string =>
+          `GitHub lists at most ${n} files of a comparison; the rest are not shown.`,
+      },
       materialKind: {
         pr: "PR",
         issue: "Issue",

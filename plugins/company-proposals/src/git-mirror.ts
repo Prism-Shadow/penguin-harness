@@ -4,16 +4,22 @@
  * Ancestry, merge bases and "the commits it lacks carry no content" need commits and trees,
  * never file contents, so the mirror holds no blob it was not asked for.
  *
+ * An impl branch's diff (DiffMirror, impl-diff.ts) is the one reader that asks for blobs: it
+ * names the blobs of the changed paths from the trees, fetches those by id in one explicit
+ * fetch — lazy fetch stays off for every command — and reads the counts and patch text after.
+ *
  * Remote access borrows the machine's `gh` as a credential helper (`gh auth git-credential`):
  * nothing is stored here, and a public repository reads anonymously when `gh` is absent. The
- * mirror serves the PR graph only — it is no workspace and writes no workspace's refs. Every
+ * mirror serves the PR graph and the impl diff — it is no workspace and writes no workspace's refs. Every
  * command runs as an argument vector (no shell), bounded in time and stopped by the signal.
  */
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import type { GitMirror, RemoteRefs } from "./ports.js";
+import { parseRawNumstat } from "./git-diff-output.js";
+import { spawnGit } from "./git-spawn.js";
+import type { DiffMirror, GitMirror, MirrorDiffEntry, RemoteRefs } from "./ports.js";
 
 /** ls-remote and fetch reach the network: a minute. */
 export const REMOTE_TIMEOUT_MS = 60_000;
@@ -24,6 +30,7 @@ const WALK_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const SHA = /^[0-9a-f]{40}$/i;
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const ZERO = /^0+$/;
 
 /**
  * The environment of every git run: no prompt, C messages, and no lazy fetch — a question about
@@ -66,7 +73,7 @@ export interface LocalGitMirrorOptions {
   git?: string;
 }
 
-export class LocalGitMirror implements GitMirror {
+export class LocalGitMirror implements GitMirror, DiffMirror {
   private ready: Promise<void> | null = null;
 
   constructor(private readonly opts: LocalGitMirrorOptions) {}
@@ -118,7 +125,9 @@ export class LocalGitMirror implements GitMirror {
     const r = await this.run(args, timeoutMs, signal);
     if (r.code !== 0) {
       const line = r.stderr.trim().split(/\r?\n/).at(-1) ?? "";
-      throw new Error(`git ${args[0]} failed: ${line || `exit ${r.code}`}`);
+      // The subcommand names the failure, past a leading `-C <dir>`.
+      const verb = args[0] === "-C" ? args[2] : args[0];
+      throw new Error(`git ${verb} failed: ${line || `exit ${r.code}`}`);
     }
     return r.stdout;
   }
@@ -233,6 +242,151 @@ export class LocalGitMirror implements GitMirror {
     });
   }
 
+  exists(): boolean {
+    return existsSync(path.join(this.opts.dir, "HEAD"));
+  }
+
+  async changedBlobs(from: string, to: string, signal?: AbortSignal): Promise<string[]> {
+    // Plumbing without rename detection: a tree walk, which reads no blob.
+    const out = await this.ok(
+      this.git(["diff-tree", "-r", "-z", "--raw", "--no-renames", "--no-abbrev", from, to]),
+      WALK_TIMEOUT_MS,
+      signal,
+    );
+    const oids = new Set<string>();
+    for (const token of out.split("\0")) {
+      if (!token.startsWith(":")) continue;
+      const [oldMode, newMode, oldOid, newOid] = token.slice(1).split(" ");
+      // A submodule's entry (160000) names a commit of another repository, never a blob here.
+      if (oldMode !== "160000" && oldOid !== undefined && !ZERO.test(oldOid)) oids.add(oldOid);
+      if (newMode !== "160000" && newOid !== undefined && !ZERO.test(newOid)) oids.add(newOid);
+    }
+    return [...oids];
+  }
+
+  async fetchObjects(
+    oids: readonly string[],
+    opts: { from?: string; signal?: AbortSignal } = {},
+  ): Promise<void> {
+    const wanted = oids.filter((o) => SHA.test(o));
+    if (wanted.length === 0) return;
+    const url = opts.from === undefined ? "origin" : (this.opts.urlOf ?? githubUrl)(opts.from);
+    // What a lazy fetch runs, made explicit and bounded: these objects by id, nothing negotiated,
+    // no ref written. The pack lands as a promisor pack, so the mirror stays a partial clone.
+    const r = await spawnGit(
+      this.opts.git ?? "git",
+      GIT_ENV,
+      this.git([
+        "-c",
+        "credential.helper=",
+        "-c",
+        "credential.helper=!gh auth git-credential",
+        "-c",
+        "fetch.negotiationAlgorithm=noop",
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--no-write-fetch-head",
+        "--recurse-submodules=no",
+        "--filter=blob:none",
+        url,
+        "--stdin",
+      ]),
+      {
+        input: wanted.map((o) => `${o}\n`).join(""),
+        timeoutMs: REMOTE_TIMEOUT_MS,
+        maxBytes: MAX_OUTPUT_BYTES,
+        ...signalOf(opts.signal),
+      },
+    );
+    if (r.code !== 0) {
+      const line = r.stderr.trim().split(/\r?\n/).at(-1) ?? "";
+      throw new Error(`git fetch failed: ${line || `exit ${r.code}`}`);
+    }
+  }
+
+  async objectSizes(oids: readonly string[]): Promise<Map<string, number | null>> {
+    const wanted = [...new Set(oids.map((o) => o.toLowerCase()))];
+    const out = new Map<string, number | null>();
+    if (wanted.length === 0) return out;
+    const r = await spawnGit(
+      this.opts.git ?? "git",
+      GIT_ENV,
+      this.git(["cat-file", "--batch-check"]),
+      {
+        input: wanted.map((o) => `${o}\n`).join(""),
+        timeoutMs: LOCAL_TIMEOUT_MS,
+        maxBytes: MAX_OUTPUT_BYTES,
+      },
+    );
+    const lines = r.stdout.split("\n");
+    wanted.forEach((oid, i) => {
+      const [, type, size] = (lines[i] ?? "").split(" ");
+      out.set(oid, type === "missing" || size === undefined ? null : Number(size));
+    });
+    return out;
+  }
+
+  async diffStat(
+    from: string,
+    to: string,
+    opts: { ignoreWhitespace: boolean; signal?: AbortSignal },
+  ): Promise<MirrorDiffEntry[]> {
+    const out = await this.ok(
+      this.git([
+        "diff-tree",
+        "-r",
+        "-z",
+        "-M",
+        "--raw",
+        "--numstat",
+        "--no-abbrev",
+        ...(opts.ignoreWhitespace ? ["-w"] : []),
+        from,
+        to,
+      ]),
+      WALK_TIMEOUT_MS,
+      opts.signal,
+    );
+    return parseRawNumstat(out);
+  }
+
+  async patch(
+    from: string,
+    to: string,
+    opts: {
+      ignoreWhitespace: boolean;
+      exclude: readonly string[];
+      maxBytes: number;
+      signal?: AbortSignal;
+    },
+  ): Promise<{ text: string; cut: boolean }> {
+    const r = await spawnGit(
+      this.opts.git ?? "git",
+      GIT_ENV,
+      this.git([
+        "-c",
+        "core.quotePath=false",
+        "diff-tree",
+        "-r",
+        "-p",
+        "-M",
+        "--no-abbrev",
+        ...(opts.ignoreWhitespace ? ["-w"] : []),
+        from,
+        to,
+        "--",
+        ...opts.exclude.map((p) => `:(exclude,literal)${p}`),
+      ]),
+      { timeoutMs: WALK_TIMEOUT_MS, maxBytes: opts.maxBytes, ...signalOf(opts.signal) },
+    );
+    if (r.code !== 0) {
+      const line = r.stderr.trim().split(/\r?\n/).at(-1) ?? "";
+      throw new Error(`git diff-tree failed: ${line || `exit ${r.code}`}`);
+    }
+    return { text: r.stdout, cut: r.cut };
+  }
+
   async isAncestor(ancestor: string, descendant: string): Promise<boolean> {
     const r = await this.run(
       this.git(["merge-base", "--is-ancestor", ancestor, descendant]),
@@ -288,4 +442,8 @@ export class LocalGitMirror implements GitMirror {
     const [behind, ahead] = out.trim().split(/\s+/).map(Number);
     return { ahead: ahead ?? 0, behind: behind ?? 0 };
   }
+}
+
+function signalOf(signal: AbortSignal | undefined): { signal?: AbortSignal } {
+  return signal === undefined ? {} : { signal };
 }

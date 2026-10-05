@@ -153,6 +153,7 @@ import type {
   ProposalFileResponse,
   ProposalFeedbackRequest,
   ProposalGraphResponse,
+  ProposalImplChanges,
   ProposalImplDiff,
   ProposalImplementRequest,
   ProposalItem,
@@ -3120,6 +3121,17 @@ export const getOrgProposal = (projectId: string, orgId: string, number: number)
 /** The impl branch's patch — the merge base of base and head, up to head — read from GitHub by the server. */
 export const getOrgProposalImplDiff = (projectId: string, orgId: string, number: number) =>
   apiFetch<ProposalImplDiff>(`${proposalBase(projectId, orgId, number)}/impl/diff`);
+
+/** The impl branch's diff file by file with hunks; `ignoreWhitespace` is git's `-w`. */
+export const getOrgProposalImplChanges = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  ignoreWhitespace: boolean,
+) =>
+  apiFetch<ProposalImplChanges>(
+    `${proposalBase(projectId, orgId, number)}/impl/changes${ignoreWhitespace ? "?w=1" : ""}`,
+  );
 
 /** One revision as it was published — what the page diffs the head against after an approval. */
 export const getOrgProposalRevision = (

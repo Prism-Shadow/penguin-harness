@@ -255,6 +255,11 @@ function headSpec(base: ProposalResolvedBranch, head: ProposalResolvedBranch): s
     : `${head.repo.split("/")[0]!}:${pathOf(head.branch)}`;
 }
 
+/** The comparison's page on GitHub: `compare/<base>...<head>` on the base repository. */
+export function compareUrlOf(base: ProposalResolvedBranch, head: ProposalResolvedBranch): string {
+  return `https://github.com/${base.repo}/compare/${pathOf(base.branch)}...${headSpec(base, head)}`;
+}
+
 function pathOf(branch: string): string {
   return branch.split("/").map(encodeURIComponent).join("/");
 }
@@ -319,10 +324,7 @@ export async function compareBranches(
     behind: typeof body.behind === "number" ? body.behind : 0,
     files,
     truncated: files.length >= COMPARE_FILE_LIMIT,
-    compareUrl:
-      typeof body.url === "string"
-        ? body.url
-        : `https://github.com/${base.repo}/compare/${pathOf(base.branch)}...${headSpec(base, head)}`,
+    compareUrl: typeof body.url === "string" ? body.url : compareUrlOf(base, head),
     pr,
   };
 }

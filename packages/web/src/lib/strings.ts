@@ -6410,6 +6410,41 @@ Benchmark：
         truncated: (n: number): string => `GitHub 一次比较最多列 ${n} 个文件，其余未列出。`,
         renamed: (from: string): string => `由 ${from} 改名`,
       },
+      /** The impl branch's diff view: a changed-files tree and each file's hunks. */
+      implDiff: {
+        open: "查看 diff",
+        close: "收起 diff",
+        title: "改动",
+        files: "改动的文件",
+        loading: "正在读取 diff…",
+        loadFailed: "没能读到 diff",
+        retry: "重试",
+        empty: "head 上没有超出 base 的改动。",
+        emptyWhitespace: "忽略空白后没有改动。",
+        totals: (files: number, additions: number, deletions: number): string =>
+          `${files} 个文件，+${additions} −${deletions}`,
+        layout: "排版",
+        unified: "统一",
+        split: "并排",
+        ignoreWhitespace: "忽略空白",
+        rootDir: "（根目录）",
+        status: {
+          added: "新增",
+          deleted: "删除",
+          modified: "修改",
+          renamed: "改名",
+        } as Record<"added" | "deleted" | "modified" | "renamed", string>,
+        renamedFrom: (from: string): string => `由 ${from} 改名`,
+        binary: "二进制文件，不显示内容。",
+        tooLarge: (kib: number): string => `文件超过 ${kib} KiB，只给增删数。`,
+        diffLimit: (mib: number): string =>
+          `整个 diff 已到 ${mib} MiB 的上限，这个文件只给增删数。`,
+        noPatch: "GitHub 没有给出这个文件的补丁：它是二进制文件，或者太大。",
+        noContent: "没有内容改动。",
+        fromGithub: (reason: string): string =>
+          `镜像暂时答不出（${reason}），这里是 GitHub 比较给的补丁：最多列 300 个文件，二进制或过大的文件没有补丁，也不能忽略空白。`,
+        truncated: (n: number): string => `GitHub 一次比较最多列 ${n} 个文件，其余未列出。`,
+      },
       materialKind: {
         pr: "PR",
         issue: "Issue",

@@ -33,6 +33,7 @@ import type {
   ProposalDetail,
   ProposalFileResponse,
   ProposalGraphResponse,
+  ProposalImplChanges,
   ProposalImplDiff,
   ProposalImplRequest,
   ProposalBranchRef,
@@ -92,7 +93,14 @@ import {
 import { noticeFailures, parseSubject, type NoticeResult, type Subject } from "./action-model.js";
 import { ProposalDesk } from "./desk.js";
 import type { HeadScope } from "./heads.js";
-import type { Forge, GitMirror, ProposalFacts, RoadmapModeratorOf, Viewer } from "./ports.js";
+import type {
+  DiffMirror,
+  Forge,
+  GitMirror,
+  ProposalFacts,
+  RoadmapModeratorOf,
+  Viewer,
+} from "./ports.js";
 import { changeAuthor, type AuthorHost } from "./author.js";
 import { SqliteProposalStore } from "./store-write.js";
 import { SqliteGraphStore } from "./graph-store.js";
@@ -102,6 +110,7 @@ import { RetiredOrgs, retireOrg } from "./org-retire.js";
 import { GithubForge, NoForge } from "./forge.js";
 import { LocalGitMirror, githubUrl, mirrorDir } from "./git-mirror.js";
 import { GraphRefresher, OrgRetiredError, type GraphContext } from "./graph-refresh.js";
+import { ImplChangesCache, implChanges } from "./impl-diff.js";
 import {
   ImplBranchError,
   branchLinkOf,
@@ -163,6 +172,8 @@ export interface ServiceDeps {
   forge?: Forge;
   /** The delivery repository's mirror; a blobless bare repository under the organization by default. */
   mirrorFor?: (orgDir: string, repo: string) => GitMirror;
+  /** The same mirror as an impl diff reads it (impl-diff.ts); the blobless bare repository by default. */
+  diffMirrorFor?: (orgDir: string, repo: string) => DiffMirror;
 }
 
 /** One organization's stores: `company.db` (proposals, graph), and the deployment registry's file. */
@@ -225,6 +236,8 @@ export class ProposalService {
   private readonly prStatus: PrStatusReader;
   /** The PR graph's read path and refresher (graph-refresh.ts). */
   private readonly graphs: GraphRefresher;
+  /** Impl diffs read from the mirror, by head and base commit. */
+  private readonly changes = new ImplChangesCache();
   /** Organizations being (or already) deleted, whose stores may not open again (org-retire.ts). */
   private readonly retired = new RetiredOrgs();
   /** How the plugin speaks to employees: the notices of its writes (desk.ts). */
@@ -1638,6 +1651,39 @@ export class ProposalService {
     const resolved = await this.resolvedImpl(p);
     if (resolved === null) throw noImpl(number);
     return liftAsync(() => compareBranches(this.gh(), resolved.base, resolved.head, resolved.pr));
+  }
+
+  /**
+   * The impl branch's diff file by file, with hunks (impl-diff.ts): read from the base
+   * repository's mirror, or parsed from GitHub's comparison when the mirror cannot answer.
+   */
+  async implChanges(
+    projectId: string,
+    orgId: string,
+    number: number,
+    opts: { ignoreWhitespace: boolean },
+    actor: OrgActor,
+  ): Promise<ProposalImplChanges> {
+    const { store } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(store, number);
+    const resolved = await this.resolvedImpl(p);
+    if (resolved === null) throw noImpl(number);
+    const orgDir = path.join(this.deps.root, projectId, "organizations", orgId);
+    const repo = resolved.base.repo;
+    const mirror =
+      this.deps.diffMirrorFor?.(orgDir, repo) ??
+      new LocalGitMirror({ dir: mirrorDir(orgDir, repo), url: githubUrl(repo) });
+    return liftAsync(() =>
+      implChanges(
+        {
+          gh: this.gh(),
+          mirror,
+          cache: this.changes,
+          log: (line) => this.deps.log.line(line),
+        },
+        { ...resolved, ignoreWhitespace: opts.ignoreWhitespace },
+      ),
+    );
   }
 
   /**

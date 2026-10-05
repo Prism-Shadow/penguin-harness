@@ -2,7 +2,7 @@
  * The proposal page's Implementation section: the impl branch — the head the proposal is
  * implemented on and the base it is measured against — the PR opened for the head, if any, and,
  * on request, the patch's files with their added and deleted lines and a link to the comparison
- * on GitHub.
+ * on GitHub — and, beside the `+N/−M`, the diff view itself (proposal-diff.tsx).
  *
  * The patch is read only when asked for: the server reads it from GitHub on every request, so a
  * page view must not cost a comparison. An impl registered as a PR alone has no declared pair;
@@ -26,6 +26,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { OrgEmptyLine, useOrg } from "../company/org-layout";
+import { ProposalDiff } from "./proposal-diff";
 
 const refLabel = (ref: ProposalBranchRef): string => `${ref.remote}/${ref.branch}`;
 const resolvedLabel = (ref: ProposalResolvedBranch): string =>
@@ -54,6 +55,7 @@ export function ImplSection({ detail }: { detail: ProposalDetail }) {
           at: detail.implPr.at,
         });
   const [open, setOpen] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false);
   const [state, setState] = useState<DiffState>({ kind: "idle" });
   // A newer request, or a changed impl, makes an answer in flight stale.
   const ticket = useRef(0);
@@ -65,6 +67,7 @@ export function ImplSection({ detail }: { detail: ProposalDetail }) {
   useEffect(() => {
     ticket.current += 1;
     setOpen(false);
+    setDiffOpen(false);
     setState({ kind: "idle" });
   }, [detail.number, implKey]);
 
@@ -114,7 +117,15 @@ export function ImplSection({ detail }: { detail: ProposalDetail }) {
             </a>
           )}
         </div>
-        {open && <DiffFiles state={state} onRetry={() => void load()} />}
+        {open && (
+          <DiffFiles
+            state={state}
+            onRetry={() => void load()}
+            diffOpen={diffOpen}
+            onDiff={() => setDiffOpen((v) => !v)}
+            number={detail.number}
+          />
+        )}
       </div>
     </RuledSection>
   );
@@ -185,7 +196,19 @@ function BranchSide({ side }: { side: ProposalImplBranchSide }) {
   );
 }
 
-function DiffFiles({ state, onRetry }: { state: DiffState; onRetry: () => void }) {
+function DiffFiles({
+  state,
+  onRetry,
+  diffOpen,
+  onDiff,
+  number,
+}: {
+  state: DiffState;
+  onRetry: () => void;
+  diffOpen: boolean;
+  onDiff: () => void;
+  number: number;
+}) {
   const t = S.company.proposals.impl;
   if (state.kind === "idle" || state.kind === "loading") {
     return (
@@ -213,27 +236,36 @@ function DiffFiles({ state, onRetry }: { state: DiffState; onRetry: () => void }
   const deletions = diff.files.reduce((n, f) => n + f.deletions, 0);
   return (
     <div className="space-y-1">
-      <div className="text-gray-500 dark:text-gray-400">
-        {t.summary(diff.files.length, additions, deletions, diff.ahead, diff.behind)}
+      <div className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
+        <span className="text-gray-500 dark:text-gray-400">
+          {t.summary(diff.files.length, additions, deletions, diff.ahead, diff.behind)}
+        </span>
+        <Button size="sm" variant="secondary" aria-expanded={diffOpen} onClick={onDiff}>
+          {diffOpen ? S.company.proposals.implDiff.close : S.company.proposals.implDiff.open}
+        </Button>
       </div>
-      <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-        {diff.files.map((f) => (
-          <li key={f.path} className={`flex items-center ${ICON_GAP.row} py-1`}>
-            <span className={`w-12 shrink-0 text-right font-mono ${toneInk.success}`}>
-              +{f.additions}
-            </span>
-            <span className={`w-12 shrink-0 font-mono ${toneInk.danger}`}>−{f.deletions}</span>
-            <span className="min-w-0 truncate font-mono" data-tooltip={f.path}>
-              {f.path}
-            </span>
-            {f.from !== null && (
-              <span className="shrink-0 truncate text-gray-400 dark:text-gray-500">
-                {t.renamed(f.from)}
+      {diffOpen ? (
+        <ProposalDiff number={number} />
+      ) : (
+        <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+          {diff.files.map((f) => (
+            <li key={f.path} className={`flex items-center ${ICON_GAP.row} py-1`}>
+              <span className={`w-12 shrink-0 text-right font-mono ${toneInk.success}`}>
+                +{f.additions}
               </span>
-            )}
-          </li>
-        ))}
-      </ul>
+              <span className={`w-12 shrink-0 font-mono ${toneInk.danger}`}>−{f.deletions}</span>
+              <span className="min-w-0 truncate font-mono" data-tooltip={f.path}>
+                {f.path}
+              </span>
+              {f.from !== null && (
+                <span className="shrink-0 truncate text-gray-400 dark:text-gray-500">
+                  {t.renamed(f.from)}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       {diff.truncated && <div className={toneInk.attention}>{t.truncated(diff.files.length)}</div>}
     </div>
   );
