@@ -12,7 +12,7 @@ import { ImplBranchLine } from "../src/features/proposals/proposal-impl";
 const PR = "https://github.com/acme/site/pull/7";
 
 const render = (impl: ProposalImplBranch) =>
-  renderToStaticMarkup(createElement(ImplBranchLine, { impl, diff: null }));
+  renderToStaticMarkup(createElement(ImplBranchLine, { impl, resolved: null }));
 
 const impl = (overrides: Partial<ProposalImplBranch>): ProposalImplBranch => ({
   head: {

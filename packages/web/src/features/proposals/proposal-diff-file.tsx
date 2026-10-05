@@ -1,23 +1,21 @@
 /**
  * The two panes of an impl branch's diff view: the changed-files tree (files under their
  * directory, each with its status and counts, a click jumps to it) and one file's block (a header
- * that folds it, then its hunks through the shared DiffViewer, or the note that stands in for
- * them). Both draw from props alone; proposal-diff.tsx holds the state.
+ * that folds it and takes a comment on the file, then its hunks — lines a reader can select and
+ * comment on, proposal-diff-lines.tsx — or the note that stands in for them, then the comments on
+ * its lines). Both draw from props and the page's comments context; proposal-diff.tsx holds the
+ * state.
  */
 import type { ProposalImplChangedFile, ProposalImplChanges } from "@prismshadow/penguin-server/api";
-import {
-  Chevron,
-  DiffViewer,
-  ICON_GAP,
-  ICON_SIZE,
-  languageForFileName,
-} from "@prismshadow/penguin-ui";
+import { Chevron, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
+import { fileComments, type DiffCommits } from "./proposal-comment-targets";
+import { CommentableDiff } from "./proposal-diff-lines";
+import { CommentList, useProposalComments, useTargetComments } from "./proposal-target-comments";
 import {
   baseName,
   fileNote,
-  patchOf,
   type DiffLayout,
   type DirectoryGroup,
   type FileNote,
@@ -116,13 +114,14 @@ function noteText(note: FileNote): string {
   }
 }
 
-/** One file: a header that folds it, then its hunks or the note in their place. */
+/** One file: a header that folds it (and takes a comment on the file), then its hunks or the note in their place, then the comments on its lines. */
 export function DiffFileBlock({
   file,
   anchorId,
   open,
   layout,
   limits,
+  commits,
   onToggle,
 }: {
   file: ProposalImplChangedFile;
@@ -130,45 +129,59 @@ export function DiffFileBlock({
   open: boolean;
   layout: DiffLayout;
   limits: ProposalImplChanges["limits"];
+  /** The commits the diff was read at: what a comment on it records. */
+  commits: DiffCommits;
   onToggle: () => void;
 }) {
   const t = S.company.proposals.implDiff;
+  const ctx = useProposalComments();
   const note = fileNote(file, limits);
   const bodyId = `${anchorId}-body`;
+  const all = ctx === null ? [] : fileComments(ctx.comments, file.path);
+  const comments = useTargetComments(
+    { kind: "change-file", path: file.path, ...commits },
+    all.filter((c) => c.target?.kind === "change-file"),
+    S.company.proposals.targets.commentFile,
+    file.path,
+  );
+  const onLines = all.filter((c) => c.target?.kind === "change-lines");
   return (
     <section id={anchorId} aria-label={file.path} className="scroll-mt-2 space-y-1">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={onToggle}
-        className={`flex w-full items-center text-left ${ICON_GAP.row}`}
-      >
-        <Chevron open={open} size={ICON_SIZE.chevron} className="text-gray-400" />
-        <StatusMark status={file.status} />
-        <span className="min-w-0 truncate font-mono font-medium" data-tooltip={file.path}>
-          {file.path}
-        </span>
-        {file.oldPath !== null && (
-          <span className="min-w-0 shrink truncate text-gray-400 dark:text-gray-500">
-            {t.renamedFrom(file.oldPath)}
+      <div className={`flex items-center ${ICON_GAP.row}`}>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={onToggle}
+          className={`flex min-w-0 flex-1 items-center text-left ${ICON_GAP.row}`}
+        >
+          <Chevron open={open} size={ICON_SIZE.chevron} className="text-gray-400" />
+          <StatusMark status={file.status} />
+          <span className="min-w-0 truncate font-mono font-medium" data-tooltip={file.path}>
+            {file.path}
           </span>
-        )}
-        <span className="ml-auto" />
-        <Counts file={file} />
-      </button>
+          {file.oldPath !== null && (
+            <span className="min-w-0 shrink truncate text-gray-400 dark:text-gray-500">
+              {t.renamedFrom(file.oldPath)}
+            </span>
+          )}
+          <span className="ml-auto" />
+          <Counts file={file} />
+        </button>
+        {comments.button}
+      </div>
+      {comments.body}
       <div id={bodyId} hidden={!open}>
-        {open &&
-          (note !== null ? (
-            <p className="py-1 text-gray-500 dark:text-gray-400">{noteText(note)}</p>
-          ) : (
-            <DiffViewer
-              patch={patchOf(file.hunks)}
-              mode={layout}
-              language={languageForFileName(baseName(file.path))}
-              label={`${t.title}: ${file.path}`}
-            />
-          ))}
+        {open && (
+          <>
+            {note !== null ? (
+              <p className="py-1 text-gray-500 dark:text-gray-400">{noteText(note)}</p>
+            ) : (
+              <CommentableDiff file={file} layout={layout} commits={commits} />
+            )}
+            {ctx !== null && onLines.length > 0 && <CommentList comments={onLines} ctx={ctx} />}
+          </>
+        )}
       </div>
     </section>
   );

@@ -31,6 +31,10 @@
  * one batch. Approving requests the merge; rejecting asks for a one-line reason. Opening a
  * proposal marks everything on it read, which is what clears its badge.
  *
+ * A comment can also be on a TARGET: a scope or test entry, a changed file or changed lines of
+ * the impl's diff. Those places take their comment controls from one context this page provides
+ * (proposal-target-comments.tsx); the diff is in the dialog the impl section opens.
+ *
  * A `proposal:<n>#<pattern>` capsule lands here with the pattern in the hash (`#p=…`); once the
  * proposal is loaded the pattern is matched against its headings and paragraph first lines
  * and the page scrolls to the hit, marking it for a moment.
@@ -40,6 +44,7 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import type {
   ProposalComment,
+  ProposalCommentTarget,
   ProposalDetail,
   ProposalItem,
   ProposalMaterial,
@@ -100,6 +105,13 @@ import {
 import { PROPOSAL_COMPONENTS, PROPOSAL_REMARK_PLUGINS } from "./proposal-links";
 import { ProposalFilePanel, useFilePanelWidth } from "./proposal-file-panel";
 import { ImplSection } from "./proposal-impl";
+import { CommentComposer, CommentLine } from "./proposal-comment-line";
+import { isOutdated } from "./proposal-comment-targets";
+import {
+  ProposalCommentsProvider,
+  useScopeEntryComments,
+  useTestEntryComments,
+} from "./proposal-target-comments";
 import { GraphPage } from "./pr-graph-page";
 import { ActivityPage, SubjectActivity } from "./activity-view";
 import { useAllowedActions } from "./use-allowed-actions";
@@ -744,6 +756,15 @@ function DetailPage({ number }: { number: number }) {
     );
   };
 
+  /** A comment on a target: a scope or test entry, a changed file, changed lines. */
+  const commentOnTarget = (target: ProposalCommentTarget, text: string): Promise<boolean> =>
+    detail === null
+      ? Promise.resolve(false)
+      : write(
+          () => api.commentOrgProposal(projectId, orgId, detail.number, { target, text }),
+          t.commentAdded,
+        );
+
   /**
    * A scope or test file opens in the panel beside the proposal; the page never navigates for
    * it. The open file is in the query (`?file=`, with the row's `name=` pattern), so a reload
@@ -888,6 +909,7 @@ function DetailPage({ number }: { number: number }) {
               highlightId={highlightId}
               busy={busy}
               onComment={addComment}
+              onCommentTarget={commentOnTarget}
               onOpenSession={(sessionId) => navigate(`/chat/${sessionId}`)}
               onOpenTicket={(ticketId) => company.openTicket(projectId, orgId, ticketId)}
               onOpenFile={openScopeFile}
@@ -1045,6 +1067,7 @@ function ProposalView({
   highlightId,
   busy,
   onComment,
+  onCommentTarget,
   onOpenSession,
   onOpenTicket,
   onOpenFile,
@@ -1069,6 +1092,7 @@ function ProposalView({
     text: string,
     whole?: boolean,
   ) => Promise<boolean>;
+  onCommentTarget: (target: ProposalCommentTarget, text: string) => Promise<boolean>;
   onOpenSession: (sessionId: string) => void;
   onOpenTicket: (ticketId: string) => void;
   /** A scope file: opened in the Files tab of a session that has it (the implementation's, else the author's desk). */
@@ -1102,254 +1126,274 @@ function ProposalView({
       changes === null ? unchangedEntries(detail.tests) : diffTests(changes.tests, detail.tests),
     [changes, detail.tests],
   );
+  // What every comment place beside the body needs: scope and test rows, the diff dialog.
+  const stat = detail.implStat;
+  const current = stat?.state === "ready" ? { headSha: stat.headSha, baseSha: stat.baseSha } : null;
+  const commentsValue = {
+    comments: detail.comments,
+    revision: detail.revision,
+    names,
+    locale,
+    me,
+    busy,
+    closed,
+    current,
+    onTarget: onCommentTarget,
+    onEdit: onEditComment,
+    onDelete: onDeleteComment,
+  };
   return (
-    <div className="space-y-6">
-      <header>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="font-mono text-xs text-gray-400 dark:text-gray-500">
-            #{detail.number}
-          </span>
-          <ProposalStatusPill status={detail.status} />
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {detail.revision === 0 ? t.noRevision : t.revision(detail.revision)}
-          </span>
-        </div>
-        <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-          <Meta label={t.author}>
-            <PrincipalChip principal={`agent:${detail.author}`} names={names} />
-          </Meta>
-          <Meta label={t.implementer}>
-            {detail.implementer === null ? (
-              <span>{t.noImplementer}</span>
-            ) : (
-              <PrincipalChip principal={`agent:${detail.implementer}`} names={names} />
-            )}
-          </Meta>
-          <Meta label={t.delegatedBy}>
-            <PrincipalChip principal={detail.delegatedBy} names={names} />
-          </Meta>
-          <Meta label={S.common.created}>
-            <span data-tooltip={formatDateTime(detail.createdAt)}>
-              {formatRelativeShort(detail.createdAt, locale)}
+    <ProposalCommentsProvider value={commentsValue}>
+      <div className="space-y-6">
+        <header>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-mono text-xs text-gray-400 dark:text-gray-500">
+              #{detail.number}
             </span>
-          </Meta>
-        </dl>
-      </header>
+            <ProposalStatusPill status={detail.status} />
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {detail.revision === 0 ? t.noRevision : t.revision(detail.revision)}
+            </span>
+          </div>
+          <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+            <Meta label={t.author}>
+              <PrincipalChip principal={`agent:${detail.author}`} names={names} />
+            </Meta>
+            <Meta label={t.implementer}>
+              {detail.implementer === null ? (
+                <span>{t.noImplementer}</span>
+              ) : (
+                <PrincipalChip principal={`agent:${detail.implementer}`} names={names} />
+              )}
+            </Meta>
+            <Meta label={t.delegatedBy}>
+              <PrincipalChip principal={detail.delegatedBy} names={names} />
+            </Meta>
+            <Meta label={S.common.created}>
+              <span data-tooltip={formatDateTime(detail.createdAt)}>
+                {formatRelativeShort(detail.createdAt, locale)}
+              </span>
+            </Meta>
+          </dl>
+        </header>
 
-      {revisedAfterApproval(detail) && detail.approvedRevision !== null && (
-        <ChangesBar
-          detail={detail}
-          approvedRevision={detail.approvedRevision}
-          error={approved.error}
-          names={names}
-          view={view}
-          onView={onView}
-        />
-      )}
-
-      <RuledSection title={t.briefSection}>
-        <div className="md-body md-compact text-sm text-gray-800 dark:text-gray-100">
-          <Md
-            text={detail.brief}
-            extraPlugins={PROPOSAL_REMARK_PLUGINS}
-            components={PROPOSAL_COMPONENTS}
+        {revisedAfterApproval(detail) && detail.approvedRevision !== null && (
+          <ChangesBar
+            detail={detail}
+            approvedRevision={detail.approvedRevision}
+            error={approved.error}
+            names={names}
+            view={view}
+            onView={onView}
           />
-        </div>
-      </RuledSection>
-
-      <ImplSection detail={detail} />
-
-      <RuledSection title={t.materials} count={detail.materials.length}>
-        {detail.materials.length === 0 ? (
-          <OrgEmptyLine>{t.materialsEmpty}</OrgEmptyLine>
-        ) : (
-          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-            {detail.materials.map((m) => (
-              <MaterialRow key={`${m.kind}:${m.url}`} material={m} onOpenTicket={onOpenTicket} />
-            ))}
-          </ul>
         )}
-      </RuledSection>
 
-      <RuledSection title={t.scope} count={detail.scope.length}>
-        {detail.root !== "" && (
-          <p className="mb-1 font-mono text-xs text-gray-500 dark:text-gray-400">
-            <span className="mr-1 text-xs">{t.scopeRoot}</span>
-            {detail.root}
-          </p>
-        )}
-        {scopeRows.length === 0 ? (
-          <OrgEmptyLine>{t.scopeEmpty}</OrgEmptyLine>
-        ) : (
-          <ul className="divide-y divide-gray-100 text-xs dark:divide-gray-800">
-            {scopeRows.map((row, i) => (
-              <ScopeRow
-                key={`${row.change}-${row.entry.file}-${i}`}
-                row={row}
-                root={detail.root}
-                onOpenFile={onOpenFile}
-              />
-            ))}
-          </ul>
-        )}
-      </RuledSection>
-
-      <RuledSection title={t.sections}>
-        {detail.sections.length === 0 ? (
-          <OrgEmptyLine>{t.sectionsEmpty}</OrgEmptyLine>
-        ) : (
-          <>
-            {!closed && (
-              <p className="mb-3 text-xs text-gray-400 dark:text-gray-500">{t.selectionHint}</p>
-            )}
-            <ProposalBody
-              detail={detail}
-              names={names}
-              locale={locale}
-              highlightId={highlightId}
-              busy={busy}
-              closed={closed}
-              onComment={onComment}
-              me={me}
-              onEditComment={onEditComment}
-              onDeleteComment={onDeleteComment}
-              changes={changes}
+        <RuledSection title={t.briefSection}>
+          <div className="md-body md-compact text-sm text-gray-800 dark:text-gray-100">
+            <Md
+              text={detail.brief}
+              extraPlugins={PROPOSAL_REMARK_PLUGINS}
+              components={PROPOSAL_COMPONENTS}
             />
-          </>
-        )}
-        {stale.length > 0 && (
-          <div className="mt-5">
-            <h4 className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-              {t.staleComments}
-            </h4>
-            <div className="space-y-2">
-              {stale.map((c) => (
-                <CommentLine
-                  key={c.id}
-                  comment={c}
-                  names={names}
-                  locale={locale}
-                  stale
-                  mine={me !== null && c.by === me}
-                  busy={busy}
-                  onEdit={onEditComment}
-                  onDelete={onDeleteComment}
+          </div>
+        </RuledSection>
+
+        <ImplSection detail={detail} />
+
+        <RuledSection title={t.materials} count={detail.materials.length}>
+          {detail.materials.length === 0 ? (
+            <OrgEmptyLine>{t.materialsEmpty}</OrgEmptyLine>
+          ) : (
+            <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+              {detail.materials.map((m) => (
+                <MaterialRow key={`${m.kind}:${m.url}`} material={m} onOpenTicket={onOpenTicket} />
+              ))}
+            </ul>
+          )}
+        </RuledSection>
+
+        <RuledSection title={t.scope} count={detail.scope.length}>
+          {detail.root !== "" && (
+            <p className="mb-1 font-mono text-xs text-gray-500 dark:text-gray-400">
+              <span className="mr-1 text-xs">{t.scopeRoot}</span>
+              {detail.root}
+            </p>
+          )}
+          {scopeRows.length === 0 ? (
+            <OrgEmptyLine>{t.scopeEmpty}</OrgEmptyLine>
+          ) : (
+            <ul className="divide-y divide-gray-100 text-xs dark:divide-gray-800">
+              {scopeRows.map((row, i) => (
+                <ScopeRow
+                  key={`${row.change}-${row.entry.file}-${i}`}
+                  row={row}
+                  root={detail.root}
+                  onOpenFile={onOpenFile}
                 />
               ))}
+            </ul>
+          )}
+        </RuledSection>
+
+        <RuledSection title={t.sections}>
+          {detail.sections.length === 0 ? (
+            <OrgEmptyLine>{t.sectionsEmpty}</OrgEmptyLine>
+          ) : (
+            <>
+              {!closed && (
+                <p className="mb-3 text-xs text-gray-400 dark:text-gray-500">{t.selectionHint}</p>
+              )}
+              <ProposalBody
+                detail={detail}
+                names={names}
+                locale={locale}
+                highlightId={highlightId}
+                busy={busy}
+                closed={closed}
+                onComment={onComment}
+                me={me}
+                onEditComment={onEditComment}
+                onDeleteComment={onDeleteComment}
+                changes={changes}
+              />
+            </>
+          )}
+          {stale.length > 0 && (
+            <div className="mt-5">
+              <h4 className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                {t.staleComments}
+              </h4>
+              <div className="space-y-2">
+                {stale.map((c) => (
+                  <CommentLine
+                    key={c.id}
+                    comment={c}
+                    names={names}
+                    locale={locale}
+                    stale
+                    showTarget
+                    outdated={isOutdated(c, current)}
+                    mine={me !== null && c.by === me}
+                    busy={busy}
+                    onEdit={onEditComment}
+                    onDelete={onDeleteComment}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </RuledSection>
-
-      <RuledSection title={t.tests} count={detail.tests.length}>
-        {testRows.length === 0 ? (
-          <OrgEmptyLine>{t.testsEmpty}</OrgEmptyLine>
-        ) : (
-          <TestGroups
-            groups={groupTests(testRows, (row) => row.entry.group, detail.testGroups)}
-            root={detail.root}
-            onOpenFile={onOpenFile}
-          />
-        )}
-      </RuledSection>
-
-      {detail.sessions.length > 0 && (
-        <RuledSection title={t.sessions} count={detail.sessions.length}>
-          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-            {detail.sessions.map((sessionId) => (
-              <li
-                key={sessionId}
-                className="flex items-center justify-between gap-2 py-1.5 text-xs"
-              >
-                <span className="truncate font-mono text-gray-600 dark:text-gray-300">
-                  {sessionId}
-                </span>
-                <JumpButton label={t.openSession} onClick={() => onOpenSession(sessionId)} />
-              </li>
-            ))}
-          </ul>
+          )}
         </RuledSection>
-      )}
 
-      {detail.discussions.length > 0 && (
-        <RuledSection title={t.discussions} count={detail.discussions.length}>
-          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-            {detail.discussions.map((d) => (
-              <li
-                key={d.sessionId}
-                className="flex items-center justify-between gap-2 py-1.5 text-xs"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <PrincipalChip principal={`agent:${d.agentId}`} names={names} />
-                  <span className="text-gray-500 dark:text-gray-400">
-                    {d.concluded === null ? t.discussionOpen : t.discussionConcluded}
-                  </span>
-                  <span className="truncate font-mono text-gray-600 dark:text-gray-300">
-                    {d.sessionId}
-                  </span>
-                </span>
-                <JumpButton label={t.openSession} onClick={() => onOpenSession(d.sessionId)} />
-              </li>
-            ))}
-          </ul>
+        <RuledSection title={t.tests} count={detail.tests.length}>
+          {testRows.length === 0 ? (
+            <OrgEmptyLine>{t.testsEmpty}</OrgEmptyLine>
+          ) : (
+            <TestGroups
+              groups={groupTests(testRows, (row) => row.entry.group, detail.testGroups)}
+              root={detail.root}
+              onOpenFile={onOpenFile}
+            />
+          )}
         </RuledSection>
-      )}
 
-      <RuledSection title={t.events} count={events.length}>
-        <ol className="space-y-2">
-          {events.map((ev) => {
-            const more = eventDetail(ev);
-            return (
-              <li key={ev.seq} className="flex items-start gap-2 text-xs">
-                <span
-                  className="w-14 shrink-0 tabular-nums text-gray-400 dark:text-gray-500"
-                  data-tooltip={formatDateTime(ev.at)}
+        {detail.sessions.length > 0 && (
+          <RuledSection title={t.sessions} count={detail.sessions.length}>
+            <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+              {detail.sessions.map((sessionId) => (
+                <li
+                  key={sessionId}
+                  className="flex items-center justify-between gap-2 py-1.5 text-xs"
                 >
-                  {formatRelativeShort(ev.at, locale)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-1.5">
-                    <PrincipalChip principal={ev.by} names={names} />
-                    {ev.url !== undefined ? (
-                      <a
-                        href={ev.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        data-tooltip={ev.url}
-                        className="text-gray-600 hover:underline dark:text-gray-300"
-                      >
-                        {eventLine(ev, names)}
-                      </a>
-                    ) : (
-                      <span className="text-gray-600 dark:text-gray-300">
-                        {eventLine(ev, names)}
-                      </span>
+                  <span className="truncate font-mono text-gray-600 dark:text-gray-300">
+                    {sessionId}
+                  </span>
+                  <JumpButton label={t.openSession} onClick={() => onOpenSession(sessionId)} />
+                </li>
+              ))}
+            </ul>
+          </RuledSection>
+        )}
+
+        {detail.discussions.length > 0 && (
+          <RuledSection title={t.discussions} count={detail.discussions.length}>
+            <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+              {detail.discussions.map((d) => (
+                <li
+                  key={d.sessionId}
+                  className="flex items-center justify-between gap-2 py-1.5 text-xs"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <PrincipalChip principal={`agent:${d.agentId}`} names={names} />
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {d.concluded === null ? t.discussionOpen : t.discussionConcluded}
+                    </span>
+                    <span className="truncate font-mono text-gray-600 dark:text-gray-300">
+                      {d.sessionId}
+                    </span>
+                  </span>
+                  <JumpButton label={t.openSession} onClick={() => onOpenSession(d.sessionId)} />
+                </li>
+              ))}
+            </ul>
+          </RuledSection>
+        )}
+
+        <RuledSection title={t.events} count={events.length}>
+          <ol className="space-y-2">
+            {events.map((ev) => {
+              const more = eventDetail(ev);
+              return (
+                <li key={ev.seq} className="flex items-start gap-2 text-xs">
+                  <span
+                    className="w-14 shrink-0 tabular-nums text-gray-400 dark:text-gray-500"
+                    data-tooltip={formatDateTime(ev.at)}
+                  >
+                    {formatRelativeShort(ev.at, locale)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-1.5">
+                      <PrincipalChip principal={ev.by} names={names} />
+                      {ev.url !== undefined ? (
+                        <a
+                          href={ev.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          data-tooltip={ev.url}
+                          className="text-gray-600 hover:underline dark:text-gray-300"
+                        >
+                          {eventLine(ev, names)}
+                        </a>
+                      ) : (
+                        <span className="text-gray-600 dark:text-gray-300">
+                          {eventLine(ev, names)}
+                        </span>
+                      )}
+                    </div>
+                    {more !== null && (
+                      <div className="md-body md-compact mt-0.5 text-gray-700 dark:text-gray-200">
+                        <Md
+                          text={more}
+                          extraPlugins={PROPOSAL_REMARK_PLUGINS}
+                          components={PROPOSAL_COMPONENTS}
+                        />
+                      </div>
                     )}
                   </div>
-                  {more !== null && (
-                    <div className="md-body md-compact mt-0.5 text-gray-700 dark:text-gray-200">
-                      <Md
-                        text={more}
-                        extraPlugins={PROPOSAL_REMARK_PLUGINS}
-                        components={PROPOSAL_COMPONENTS}
-                      />
-                    </div>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-      </RuledSection>
+                </li>
+              );
+            })}
+          </ol>
+        </RuledSection>
 
-      {/* The action bar sits at the foot of the page and stays in view while the body
+        {/* The action bar sits at the foot of the page and stays in view while the body
           scrolls under it: the decision is taken after reading, so it waits at the end. */}
-      {actions !== null && (
-        <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 bg-white/95 px-1 py-3 dark:border-gray-800 dark:bg-gray-950/95">
-          {actions}
-        </div>
-      )}
-    </div>
+        {actions !== null && (
+          <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 bg-white/95 px-1 py-3 dark:border-gray-800 dark:bg-gray-950/95">
+            {actions}
+          </div>
+        )}
+      </div>
+    </ProposalCommentsProvider>
   );
 }
 
@@ -1511,7 +1555,7 @@ function ChangeLabel({ change }: { change: EntryChange<unknown>["change"] }) {
  * squeezing the file column to a character a line. While changes show, the row carries its
  * mark in place; a removed entry is text, never a link.
  */
-function ScopeRow({
+export function ScopeRow({
   row,
   root,
   onOpenFile,
@@ -1525,6 +1569,7 @@ function ScopeRow({
   const before = row.change === "changed" ? row.before : null;
   const removed = row.change === "removed";
   const edge = CHANGE_EDGE[row.change];
+  const comments = useScopeEntryComments(entry);
   const kindTag = (kind: ProposalScopeKind) => (
     <span
       className={`shrink-0 rounded-sm px-1 font-sans text-xs ${toneSurface[SCOPE_KIND_TONE[kind]]}`}
@@ -1576,7 +1621,9 @@ function ScopeRow({
             {t.scopeState[entry.state]}
           </span>
         )}
+        {!removed && comments.button}
       </div>
+      {!removed && comments.body}
       {(entry.name !== undefined || before?.name !== undefined) && (
         <div className="mt-0.5 font-mono whitespace-pre-wrap break-all text-gray-500 dark:text-gray-400">
           <span className="mr-1 text-xs">{t.scopePattern}</span>
@@ -1716,7 +1763,7 @@ const TEST_KIND_TONE: Record<ProposalTestEntry["kind"], "muted" | "success" | "d
 };
 
 /** One test: its kind, its file (a link while the file is there), its name pattern, and what it tests. */
-function TestRow({
+export function TestRow({
   row,
   root,
   onOpenFile,
@@ -1730,6 +1777,7 @@ function TestRow({
   const before = row.change === "changed" ? row.before : null;
   const removed = row.change === "removed";
   const edge = CHANGE_EDGE[row.change];
+  const comments = useTestEntryComments(entry);
   const kindTag = (kind: ProposalTestEntry["kind"]) => (
     <span
       className={`shrink-0 rounded-sm px-1 font-sans text-xs ${toneSurface[TEST_KIND_TONE[kind]]}`}
@@ -1771,6 +1819,7 @@ function TestRow({
             {t.testMissing}
           </span>
         )}
+        {!removed && comments.button}
       </div>
       {entry.name !== undefined && (
         <div className="mt-0.5 font-mono whitespace-pre-wrap break-all text-gray-500 dark:text-gray-400">
@@ -1784,6 +1833,7 @@ function TestRow({
           entry.description
         )}
       </p>
+      {!removed && comments.body}
     </li>
   );
 }
@@ -2271,194 +2321,6 @@ function ProposalBody({
             <span className="ml-1">{t.commentSelection}</span>
           </Button>
         </div>
-      )}
-    </div>
-  );
-}
-
-/** The composer under a section: the passage as a quote, the text, Add / Cancel; Ctrl/Cmd+Enter adds. */
-function CommentComposer({
-  quote,
-  busy,
-  onCancel,
-  onSubmit,
-}: {
-  quote: string;
-  busy: boolean;
-  onCancel: () => void;
-  onSubmit: (text: string) => Promise<boolean>;
-}) {
-  const t = S.company.proposals;
-  const [text, setText] = useState("");
-  const submit = async () => {
-    const value = text.trim();
-    if (value === "") return;
-    if (await onSubmit(value)) setText("");
-  };
-  return (
-    <div className="mt-2 space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
-      <div className="text-xs text-gray-500 dark:text-gray-400">{t.selectedText}</div>
-      <blockquote className="border-l-2 border-gray-300 pl-2 text-xs text-gray-700 whitespace-pre-wrap dark:border-gray-600 dark:text-gray-200">
-        {quote}
-      </blockquote>
-      <Textarea
-        size="sm"
-        rows={3}
-        aria-label={t.addComment}
-        placeholder={t.commentPlaceholder}
-        value={text}
-        autoFocus
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (isSubmitChord(e)) void submit();
-          if (e.key === "Escape") onCancel();
-        }}
-      />
-      <div className="flex justify-end gap-2">
-        <Button size="sm" onClick={onCancel} disabled={busy}>
-          {S.common.cancel}
-        </Button>
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={busy || text.trim() === ""}
-          onClick={() => void submit()}
-        >
-          {t.addComment}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** One comment: the passage it is on, who, when, the text; its pending tag; and the resolution folded under it when there is one. */
-function CommentLine({
-  comment,
-  names,
-  locale,
-  focused = false,
-  stale = false,
-  mine = false,
-  busy = false,
-  onEdit,
-  onDelete,
-}: {
-  comment: ProposalComment;
-  names: ReadonlyMap<string, string>;
-  locale: "zh" | "en";
-  /** Named by a click on its mark. */
-  focused?: boolean;
-  /** Its passage is not in the current revision. */
-  stale?: boolean;
-  /** Written by the signed-in person: pending, it can still be reworded or withdrawn. */
-  mine?: boolean;
-  busy?: boolean;
-  onEdit?: (commentId: string, text: string) => Promise<boolean>;
-  onDelete?: (commentId: string) => Promise<boolean>;
-}) {
-  const t = S.company.proposals;
-  const [showResolved, setShowResolved] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
-  // Only a pending comment is still the writer's own; sent, it stands as the author read it.
-  const editable =
-    mine && comment.batchId === null && onEdit !== undefined && onDelete !== undefined;
-  const saveEdit = async () => {
-    if (editing === null || onEdit === undefined) return;
-    const next = editing.trim();
-    if (next === "" || next === comment.text) {
-      setEditing(null);
-      return;
-    }
-    if (await onEdit(comment.id, next)) setEditing(null);
-  };
-  return (
-    <div
-      id={`comment-${comment.id}`}
-      className={`rounded px-1 text-xs transition-colors duration-150 ${
-        focused ? toneSurface.attention : ""
-      }`}
-    >
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-gray-500 dark:text-gray-400">
-        <span className="font-medium text-gray-700 dark:text-gray-200">
-          {principalLabel(comment.by, names)}
-        </span>
-        <span data-tooltip={formatDateTime(comment.at)}>
-          {formatRelativeShort(comment.at, locale)}
-        </span>
-        {comment.batchId === null && <Badge tone="attention">{t.pending}</Badge>}
-        {editable && editing === null && (
-          <>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setEditing(comment.text)}
-              className="rounded px-1 text-gray-500 underline-offset-2 hover:underline disabled:opacity-50 dark:text-gray-400"
-            >
-              {S.common.edit}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void onDelete?.(comment.id)}
-              className={`rounded px-1 underline-offset-2 hover:underline disabled:opacity-50 ${toneInk.danger}`}
-            >
-              {S.common.delete}
-            </button>
-          </>
-        )}
-        {stale && <span>{t.fromRevision(comment.revision)}</span>}
-        {comment.resolved !== undefined && (
-          <button
-            type="button"
-            aria-expanded={showResolved}
-            onClick={() => setShowResolved(!showResolved)}
-            className={`rounded px-1 ${toneSurface.success}`}
-          >
-            {t.resolved}
-          </button>
-        )}
-      </div>
-      {(stale || focused) && comment.quote !== "" && (
-        <blockquote className="mt-0.5 line-clamp-2 border-l-2 border-gray-300 pl-2 text-gray-600 dark:border-gray-600 dark:text-gray-300">
-          {comment.quote}
-        </blockquote>
-      )}
-      {editing !== null ? (
-        <div className="mt-1 flex items-end gap-2">
-          <div className="min-w-0 flex-1">
-            <Textarea
-              size="sm"
-              rows={2}
-              aria-label={S.common.edit}
-              value={editing}
-              autoFocus
-              onChange={(e) => setEditing(e.target.value)}
-              onKeyDown={(e) => {
-                if (isSubmitChord(e)) void saveEdit();
-                if (e.key === "Escape") setEditing(null);
-              }}
-            />
-          </div>
-          <Button
-            size="sm"
-            disabled={busy || editing.trim() === ""}
-            onClick={() => void saveEdit()}
-          >
-            {S.common.save}
-          </Button>
-          <Button size="sm" variant="secondary" disabled={busy} onClick={() => setEditing(null)}>
-            {S.common.cancel}
-          </Button>
-        </div>
-      ) : (
-        <p className="mt-0.5 whitespace-pre-wrap text-gray-800 dark:text-gray-100">
-          {comment.text}
-        </p>
-      )}
-      {comment.resolved !== undefined && showResolved && (
-        <p className="mt-1 text-gray-600 dark:text-gray-300">
-          {t.resolvedNote(comment.resolved.text)} · {principalLabel(comment.resolved.by, names)}
-        </p>
       )}
     </div>
   );

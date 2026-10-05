@@ -33,8 +33,10 @@ import type {
   ProposalDetail,
   ProposalFileResponse,
   ProposalGraphResponse,
+  ProposalCommentTarget,
   ProposalImplChanges,
   ProposalImplDiff,
+  ProposalImplStat,
   ProposalImplRequest,
   ProposalBranchRef,
   ProposalImplBranchSide,
@@ -111,6 +113,8 @@ import { GithubForge, NoForge } from "./forge.js";
 import { LocalGitMirror, githubUrl, mirrorDir } from "./git-mirror.js";
 import { GraphRefresher, OrgRetiredError, type GraphContext } from "./graph-refresh.js";
 import { ImplChangesCache, implChanges } from "./impl-diff.js";
+import { ImplStats, statOf } from "./impl-stat.js";
+import { checkDocTarget, diffTargetQuote } from "./comment-targets.js";
 import {
   ImplBranchError,
   branchLinkOf,
@@ -238,6 +242,8 @@ export class ProposalService {
   private readonly graphs: GraphRefresher;
   /** Impl diffs read from the mirror, by head and base commit. */
   private readonly changes = new ImplChangesCache();
+  /** Each impl's `+N/−M`, computed off the read path from the same diffs. */
+  private readonly stats = new ImplStats();
   /** Organizations being (or already) deleted, whose stores may not open again (org-retire.ts). */
   private readonly retired = new RetiredOrgs();
   /** How the plugin speaks to employees: the notices of its writes (desk.ts). */
@@ -667,10 +673,12 @@ export class ProposalService {
     const { org, store, stores, caller } = await this.open(projectId, orgId, actor);
     const p = this.requireProposal(store, number);
     const detail = await this.withScope(org, this.detail(store, p, caller));
+    const implStat = this.implStatOf(org, p);
     return {
       ...detail,
       materials: this.withPrStatus(`${projectId}/${orgId}`, stores, detail.materials).materials,
       testGroups: this.testGroups(),
+      ...(implStat !== undefined ? { implStat } : {}),
     };
   }
 
@@ -1665,9 +1673,18 @@ export class ProposalService {
     actor: OrgActor,
   ): Promise<ProposalImplChanges> {
     const { store } = await this.open(projectId, orgId, actor);
-    const p = this.requireProposal(store, number);
+    return this.changesOf(projectId, orgId, this.requireProposal(store, number), opts);
+  }
+
+  /** The impl's structured diff, through the cache the diff view and `+N/−M` share. */
+  private async changesOf(
+    projectId: string,
+    orgId: string,
+    p: Proposal,
+    opts: { ignoreWhitespace: boolean },
+  ): Promise<ProposalImplChanges> {
     const resolved = await this.resolvedImpl(p);
-    if (resolved === null) throw noImpl(number);
+    if (resolved === null) throw noImpl(p.number);
     const orgDir = path.join(this.deps.root, projectId, "organizations", orgId);
     const repo = resolved.base.repo;
     const mirror =
@@ -1683,6 +1700,24 @@ export class ProposalService {
         },
         { ...resolved, ignoreWhitespace: opts.ignoreWhitespace },
       ),
+    );
+  }
+
+  /**
+   * The impl's `+N/−M` as known now (impl-stat.ts): never waits — a missing or stale answer is
+   * computed in the background, and a changed one is announced with an `impl_stat` event.
+   */
+  private implStatOf(org: OrgView, p: Proposal): ProposalImplStat | undefined {
+    if (p.impl === null) return undefined;
+    const i = p.impl;
+    const side = (r: { remote: string; repo: string; branch: string } | null) =>
+      r === null ? "" : `${r.repo}:${r.branch}`;
+    return this.stats.read(
+      `${org.projectId}/${org.orgId}#${p.number}`,
+      `${side(i.head)}|${side(i.base)}|${i.pr?.url ?? ""}`,
+      async () =>
+        statOf(await this.changesOf(org.projectId, org.orgId, p, { ignoreWhitespace: false })),
+      () => this.notify(org, p.number, p.seq, "impl_stat"),
     );
   }
 
@@ -2049,50 +2084,71 @@ export class ProposalService {
     };
   }
 
-  /** A comment on `[start, end)` of a section's source: the slice must be the quote, so a stale page cannot anchor a comment to the wrong words. */
+  /**
+   * A comment on `[start, end)` of a section's source — the slice must be the quote, so a stale
+   * page cannot anchor a comment to the wrong words — or on a target (comment-targets.ts), which
+   * must stand in the current revision or the diff as it reads now.
+   */
   async comment(
     projectId: string,
     orgId: string,
     number: number,
-    req: { sectionId: string; start: number; end: number; quote: string; text: string },
+    req:
+      | { sectionId: string; start: number; end: number; quote: string; text: string }
+      | { target: ProposalCommentTarget; text: string },
     actor: OrgActor,
     act?: WriteAct,
   ): Promise<ProposalDetail> {
     const { org, store, caller } = await this.open(projectId, orgId, actor, act);
     const a = act ?? defaultAct("proposal.comment", caller, proposalSubject(number));
-    a.check(this.requireProposal(store, number));
+    const current = this.requireProposal(store, number);
+    a.check(current);
     const text = req.text.trim();
     if (text === "") throw badRequest("text must not be empty.");
+    const target = "target" in req ? req.target : null;
+    // The diff is read before the write: no await inside the transaction.
+    const diffQuote =
+      target === null || target.kind === "scope" || target.kind === "test"
+        ? null
+        : await diffTargetQuote(target, (ignoreWhitespace) =>
+            this.changesOf(projectId, orgId, current, { ignoreWhitespace }),
+          );
     const written = store.addComment(number, (p, tx) => {
       a.check(p, { tx });
-      const section = p.sections.find((s) => s.id === req.sectionId);
+      const id = `c${p.comments.length + 1}-${Math.random().toString(36).slice(2, 8)}`;
+      const common = { id, revision: p.revision, text, by: caller.principal };
+      if (target !== null) {
+        checkDocTarget(target, p);
+        const quote =
+          diffQuote ?? (target.kind === "scope" || target.kind === "test" ? target.file : "");
+        return { ...common, target, sectionId: "", range: { start: 0, end: 0 }, quote };
+      }
+      const r = req as Exclude<typeof req, { target: ProposalCommentTarget }>;
+      const section = p.sections.find((s) => s.id === r.sectionId);
       if (section === undefined) {
-        throw badRequest(`No section ${req.sectionId} in revision ${p.revision}.`);
+        throw badRequest(`No section ${r.sectionId} in revision ${p.revision}.`);
       }
       const source = sectionSource(section);
       const inRange =
-        Number.isInteger(req.start) &&
-        Number.isInteger(req.end) &&
-        req.start >= 0 &&
-        req.start < req.end &&
-        req.end <= source.length;
-      if (!inRange || source.slice(req.start, req.end) !== req.quote) {
+        Number.isInteger(r.start) &&
+        Number.isInteger(r.end) &&
+        r.start >= 0 &&
+        r.start < r.end &&
+        r.end <= source.length;
+      if (!inRange || source.slice(r.start, r.end) !== r.quote) {
         throw new ProposalError(
           400,
           "comment_range",
-          `The range [${req.start}, ${req.end}) of section ${req.sectionId} does not read as quoted in revision ${p.revision}; reload the proposal and select again.`,
+          `The range [${r.start}, ${r.end}) of section ${r.sectionId} does not read as quoted in revision ${p.revision}; reload the proposal and select again.`,
         );
       }
-      const paragraphId = paragraphAtOffset(section, req.start);
+      const paragraphId = paragraphAtOffset(section, r.start);
       return {
-        id: `c${p.comments.length + 1}-${Math.random().toString(36).slice(2, 8)}`,
-        sectionId: req.sectionId,
-        range: { start: req.start, end: req.end },
-        quote: req.quote,
+        ...common,
+        sectionId: r.sectionId,
+        range: { start: r.start, end: r.end },
+        quote: r.quote,
         ...(paragraphId !== null ? { paragraphId } : {}),
-        revision: p.revision,
-        text,
-        by: caller.principal,
       };
     });
     this.notify(org, number, written.seq, "comment");

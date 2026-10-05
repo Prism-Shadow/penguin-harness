@@ -4,12 +4,20 @@
  * folding on its own, unified and split layouts (and the remembered choice), a jump opening the
  * file it goes to, the ignore-whitespace toggle, the notes for a binary, too large or capped file
  * and for GitHub's comparison, totals that are the `+N/−M` sums, and the loading, empty and
- * error-with-retry states.
+ * error-with-retry states; the impl section's +N/−M (computing, unavailable, the totals) that opens the
+ * diff in a dialog framed like Settings; and, inside the page, a comment button on each file, line
+ * numbers to select lines by, and the comments on a file's lines, outdated ones marked.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { ProposalImplChangedFile, ProposalImplChanges } from "@prismshadow/penguin-server/api";
+import type {
+  ProposalComment,
+  ProposalDetail,
+  ProposalImplChangedFile,
+  ProposalImplChanges,
+  ProposalImplStat,
+} from "@prismshadow/penguin-server/api";
 import {
   DiffView,
   type ChangesState,
@@ -27,6 +35,13 @@ import {
   totalsOf,
   writeDiffLayout,
 } from "../src/features/proposals/proposal-diff-model";
+import { ImplSection, ImplStatLine } from "../src/features/proposals/proposal-impl";
+import { DiffDialogShell } from "../src/features/proposals/proposal-diff-dialog";
+import { rangeText } from "../src/features/proposals/proposal-diff-lines";
+import {
+  ProposalCommentsProvider,
+  type ProposalCommentsValue,
+} from "../src/features/proposals/proposal-target-comments";
 import { scopeOfKey } from "../src/lib/install-scope";
 import { S } from "../src/lib/strings";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
@@ -195,10 +210,13 @@ describe("the diff view", () => {
     const html = render(ready());
     const { additions, deletions } = totalsOf(FILES);
     expect(html).toContain(escape(t.totals(FILES.length, additions, deletions)));
-    expect(S.company.proposals.impl.summary(FILES.length, additions, deletions, 1, 0)).toContain(
-      `+${additions} −${deletions}`,
-    );
     expect(html).toContain(`+${additions} −${deletions}`);
+    // The impl section's +N/−M for the same diff says the same numbers.
+    const stat = renderToStaticMarkup(
+      createElement(ImplStatLine, { stat: statOf(changes()), onOpen: noop }),
+    );
+    expect(stat).toContain(`>+${additions}</span>`);
+    expect(stat).toContain(`>−${deletions}</span>`);
   });
 
   it("draws each open file's hunks unified, or split", () => {
@@ -261,5 +279,170 @@ describe("the diff view", () => {
     expect(error).toContain(escape(t.loadFailed));
     expect(error).toContain("HTTP 502");
     expect(error).toContain(`>${escape(t.retry)}</button>`);
+  });
+});
+
+/** The detail's `implStat` for a diff, as the server derives it. */
+const statOf = (c: ProposalImplChanges): ProposalImplStat => ({
+  state: "ready",
+  head: c.head,
+  base: c.base,
+  headSha: c.headSha,
+  baseSha: c.baseSha,
+  files: c.files.length,
+  additions: c.additions,
+  deletions: c.deletions,
+  compareUrl: c.compareUrl,
+});
+
+describe("the impl's +N/−M and the diff dialog", () => {
+  const t = S.company.proposals.impl;
+  const line = (stat: ProposalImplStat | undefined) =>
+    renderToStaticMarkup(createElement(ImplStatLine, { stat, onOpen: noop }));
+
+  it("shows the totals on open as the button that opens the dialog, with the comparison beside", () => {
+    const html = line(statOf(changes()));
+    expect(html).toMatch(/<button type="button" aria-haspopup="dialog" data-tooltip="[^"]*"/);
+    expect(html).toContain(escape(t.statOpen));
+    expect(html).toContain(escape(t.statFiles(FILES.length)));
+    expect(html).toContain('href="https://github.com/acme/site/compare/main...feat"');
+  });
+
+  it("says it is counting, or why it cannot, and still opens the diff", () => {
+    const computing = line({ state: "computing" });
+    expect(computing).toContain('role="status"');
+    expect(computing).toContain(escape(t.statComputing));
+    expect(computing).toContain('aria-haspopup="dialog"');
+    const unavailable = line({ state: "unavailable", reason: "HTTP 503" });
+    expect(unavailable).toContain(escape(t.statUnavailable("HTTP 503")));
+    expect(unavailable).toContain(`>${escape(S.company.proposals.implDiff.open)}</button>`);
+    // A server older than the totals: a plain button.
+    expect(line(undefined)).toContain(`>${escape(S.company.proposals.implDiff.open)}</button>`);
+  });
+
+  it("renders the section with the dialog closed, the head and base from the totals for a PR-only impl", () => {
+    const detail = {
+      number: 7,
+      impl: { head: null, base: null, pr: "https://github.com/acme/site/pull/7", by: "x", at: "" },
+      implStat: statOf(changes()),
+    } as unknown as ProposalDetail;
+    const html = renderToStaticMarkup(createElement(ImplSection, { detail }));
+    expect(html).toContain("origin/feat ← origin/main");
+    expect(html).not.toContain('role="dialog"');
+  });
+
+  it("frames the dialog like Settings: a heading with what it is of, a close cross, the body", () => {
+    const html = renderToStaticMarkup(
+      createElement(DiffDialogShell, {
+        title: "Changes",
+        subtitle: "fork/feat ← origin/main",
+        onClose: noop,
+        children: createElement("p", null, "body"),
+      }),
+    );
+    expect(html).toMatch(
+      /<h2[^>]*><span class="shrink-0">Changes<\/span><span[^>]*>fork\/feat ← origin\/main<\/span><\/h2>/,
+    );
+    expect(html).toContain(`aria-label="${escape(S.common.close)}"`);
+    expect(html).toContain("<p>body</p>");
+  });
+});
+
+describe("comments in the diff", () => {
+  const tt = S.company.proposals.targets;
+  const A = "a".repeat(40);
+  const B = "b".repeat(40);
+  const on = (id: string, target: ProposalComment["target"], quote = ""): ProposalComment => ({
+    id,
+    ...(target !== undefined ? { target } : {}),
+    sectionId: "",
+    range: { start: 0, end: 0 },
+    quote,
+    revision: 1,
+    text: `text of ${id}`,
+    by: "user:boss",
+    at: "2026-10-05T00:00:00Z",
+    batchId: "b1",
+  });
+  const lines = (headSha: string) =>
+    on(
+      `l-${headSha[0]}`,
+      { kind: "change-lines", path: KEEP.path, side: "new", start: 3, end: 4, headSha, baseSha: B },
+      "const a = 1;\nconst b = 3;",
+    );
+  const ctx = (over: Partial<ProposalCommentsValue> = {}): ProposalCommentsValue => ({
+    comments: [
+      on("f", { kind: "change-file", path: KEEP.path, headSha: A, baseSha: B }),
+      lines(A),
+      lines("e".repeat(40)),
+    ],
+    revision: 1,
+    names: new Map(),
+    locale: "en",
+    me: null,
+    busy: false,
+    closed: false,
+    // The detail's commits: the dialog reads its own diff's instead.
+    current: null,
+    onTarget: async () => true,
+    onEdit: async () => true,
+    onDelete: async () => true,
+    ...over,
+  });
+  const inPage = (value: ProposalCommentsValue) =>
+    renderToStaticMarkup(
+      createElement(ProposalCommentsProvider, {
+        value,
+        children: createElement(DiffView, {
+          state: ready({ files: [KEEP] }),
+          layout: "unified",
+          ignoreWhitespace: false,
+          flipped: new Set<string>(),
+          onLayout: noop,
+          onIgnoreWhitespace: noop,
+          onToggle: noop,
+          onJump: noop,
+          onRetry: noop,
+        }),
+      }),
+    );
+
+  it("puts a comment button on each file header, with the count of the file's comments", () => {
+    const html = inPage(ctx());
+    expect(html).toContain(`aria-label="${escape(tt.commentFile)}"`);
+    expect(html).toContain(`>${tt.count(1)}</button>`);
+    // Not inside the header's fold button: a button in a button is not a button.
+    expect(html).not.toMatch(
+      /<button[^>]*aria-controls="impl-diff-file-0-body"[^>]*>(?:(?!<\/button>).)*<button/,
+    );
+  });
+
+  it("makes the line numbers selectable and says how, inside the page only", () => {
+    const html = inPage(ctx());
+    expect(html).toContain(escape(tt.hint));
+    expect(html).toContain('data-gutter="new"');
+    const pointer = "cursor-pointer hover:text-fg";
+    expect(html).toContain(pointer);
+    const outside = render(ready({ files: [KEEP] }));
+    expect(outside).not.toContain(pointer);
+    expect(outside).not.toContain(escape(tt.hint));
+    expect(outside).not.toContain(escape(tt.commentFile));
+    const closed = inPage(ctx({ closed: true }));
+    expect(closed).not.toContain(pointer);
+    expect(closed).not.toContain(escape(tt.commentFile));
+  });
+
+  it("lists the comments on the file's lines under it, outdated when written at other commits", () => {
+    const html = inPage(ctx());
+    expect(html).toContain("text of l-a");
+    expect(html).toContain("text of l-e");
+    // Only the one written at another head is outdated, against the diff on screen.
+    expect(html.match(new RegExp(`>${tt.outdated}</span>`, "g"))).toHaveLength(1);
+    expect(html).toContain(escape(`${tt.lines("new", 3, 4)} · ${KEEP.path}`));
+  });
+
+  it("quotes the selected lines from the hunks, by side", () => {
+    expect(rangeText(KEEP, { side: "new", start: 3, end: 4 })).toBe("const a = 1;\nconst b = 3;");
+    expect(rangeText(KEEP, { side: "old", start: 4, end: 4 })).toBe("const b = 2;");
   });
 });

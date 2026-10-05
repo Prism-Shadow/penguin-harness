@@ -1,7 +1,9 @@
 /**
- * An impl branch's diff view, opened from the impl section's `+N/−M`: the changed-files tree on
- * the left, each file's diff on the right, unified or split (remembered per browser), whitespace
- * ignored on request. A click on a file in the tree opens it and scrolls to it.
+ * An impl branch's diff view, in the dialog the impl section's `+N/−M` opens
+ * (proposal-diff-dialog.tsx): the changed-files tree on the left, each file's diff on the right,
+ * unified or split (remembered per browser), whitespace ignored on request. A click on a file in
+ * the tree opens it and scrolls to it. Inside the page's comments provider, a file and a range of
+ * its lines take comments, recorded against the commits this diff was read at.
  *
  * The server reads the diff from the delivery repository's mirror, or — when the mirror cannot
  * answer — from GitHub's comparison; the view says when it is the latter and what that leaves
@@ -20,6 +22,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { OrgEmptyLine, useOrg } from "../company/org-layout";
 import { DiffFileBlock, DiffTree } from "./proposal-diff-file";
+import { ProposalCommentsProvider, useProposalComments } from "./proposal-target-comments";
 import {
   browserStorage,
   fileAnchorId,
@@ -121,7 +124,7 @@ export function DiffView(props: DiffViewProps) {
       ? { files: state.changes.files.length, ...totalsOf(state.changes.files) }
       : null;
   return (
-    <section aria-label={t.title} className="space-y-2">
+    <section aria-label={t.title} className="flex h-full min-h-0 flex-col gap-2">
       <div className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
         {totals !== null && (
           <span className="tabular-nums text-gray-500 dark:text-gray-400">
@@ -160,6 +163,7 @@ function DiffBody({
   onRetry,
 }: DiffViewProps) {
   const t = S.company.proposals.implDiff;
+  const ctx = useProposalComments();
   const changes = state.kind === "ready" ? state.changes : null;
   // The tree's order is the pane's order, so reading down one reads down the other.
   const groups = useMemo(() => groupByDirectory(changes?.files ?? []), [changes]);
@@ -202,30 +206,45 @@ function DiffBody({
     );
   }
   const ordered = groups.flatMap((g) => g.files);
+  const commits = { headSha: c.headSha, baseSha: c.baseSha };
+  const files = (
+    <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[minmax(10rem,16rem)_minmax(0,1fr)]">
+      <nav aria-label={t.files} className="max-h-40 min-h-0 overflow-y-auto md:max-h-none">
+        <DiffTree
+          groups={groups}
+          onJump={(path) => onJump(path, fileAnchorId(ordered.findIndex((f) => f.path === path)))}
+        />
+      </nav>
+      <div className="min-h-0 min-w-0 space-y-3 overflow-y-auto">
+        {ordered.map((file, i) => (
+          <DiffFileBlock
+            key={file.path}
+            file={file}
+            anchorId={fileAnchorId(i)}
+            open={isOpen(file.path, ordered.length, flipped)}
+            layout={layout}
+            limits={c.limits}
+            commits={commits}
+            onToggle={() => onToggle(file.path)}
+          />
+        ))}
+      </div>
+    </div>
+  );
   return (
     <>
       {notes}
-      <div className="grid gap-3 md:grid-cols-[minmax(10rem,16rem)_minmax(0,1fr)]">
-        <nav aria-label={t.files} className="max-h-[70vh] overflow-y-auto">
-          <DiffTree
-            groups={groups}
-            onJump={(path) => onJump(path, fileAnchorId(ordered.findIndex((f) => f.path === path)))}
-          />
-        </nav>
-        <div className="max-h-[70vh] min-w-0 space-y-3 overflow-y-auto">
-          {ordered.map((file, i) => (
-            <DiffFileBlock
-              key={file.path}
-              file={file}
-              anchorId={fileAnchorId(i)}
-              open={isOpen(file.path, ordered.length, flipped)}
-              layout={layout}
-              limits={c.limits}
-              onToggle={() => onToggle(file.path)}
-            />
-          ))}
-        </div>
-      </div>
+      {ctx === null ? (
+        files
+      ) : (
+        // A comment here is current against the diff on screen, whatever the detail last said.
+        <ProposalCommentsProvider value={{ ...ctx, current: commits }}>
+          {!ctx.closed && (
+            <p className="text-gray-400 dark:text-gray-500">{S.company.proposals.targets.hint}</p>
+          )}
+          {files}
+        </ProposalCommentsProvider>
+      )}
     </>
   );
 }

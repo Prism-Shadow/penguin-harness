@@ -6,11 +6,13 @@
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type {
   ProposalComment,
+  ProposalCommentTarget,
   ProposalDiscussion,
   ProposalEvent,
   ProposalMaterial,
   ProposalMaterialKind,
   ProposalRevision,
+  ProposalScopeKind,
   ProposalStatus,
 } from "@prismshadow/penguin-server/api";
 import type { Proposal, ProposalImpl } from "./domain.js";
@@ -65,9 +67,36 @@ function eventOf(row: Row): ProposalEvent {
   };
 }
 
+/** The target columns of a `proposal_comments` row; undefined for a comment on a passage. */
+function targetOf(row: Row): ProposalCommentTarget | undefined {
+  const kind = strOrNull(row.target_kind);
+  if (kind === null) return undefined;
+  const path = str(row.target_path);
+  switch (kind) {
+    case "scope":
+      return { kind, file: path, scopeKind: str(row.target_scope_kind) as ProposalScopeKind };
+    case "test":
+      return { kind, file: path };
+    case "change-file":
+      return { kind, path, headSha: str(row.target_head), baseSha: str(row.target_base) };
+    default:
+      return {
+        kind: "change-lines",
+        path,
+        side: str(row.target_side) === "old" ? "old" : "new",
+        start: num(row.target_start),
+        end: num(row.target_end),
+        headSha: str(row.target_head),
+        baseSha: str(row.target_base),
+      };
+  }
+}
+
 export function commentOf(row: Row): ProposalComment {
+  const target = targetOf(row);
   return {
     id: str(row.id),
+    ...(target !== undefined ? { target } : {}),
     sectionId: str(row.section_id),
     range: { start: num(row.range_start), end: num(row.range_end) },
     quote: str(row.quote),

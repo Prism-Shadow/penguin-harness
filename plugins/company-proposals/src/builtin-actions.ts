@@ -18,6 +18,7 @@ import {
   type RunContext,
   type SubjectCode,
 } from "./action-model.js";
+import { targetParam } from "./comment-targets.js";
 import { proposalGuards, type WriteAct } from "./guards.js";
 import { branchCommit, changeRequestHead, proposalHead } from "./heads.js";
 import { branchRefOf } from "./impl-branch.js";
@@ -224,6 +225,21 @@ const RUNS: Record<ProposalActionKey, Run> = {
       act,
     ),
   "proposal.comment": (s, ctx, act) => {
+    if (ctx.params.target !== undefined) {
+      for (const name of ["sectionId", "start", "end", "quote"]) {
+        if (ctx.params[name] !== undefined) {
+          throw badRequest(`${name} is a passage's; a comment on a target takes target and text.`);
+        }
+      }
+      return s.comment(
+        ctx.org.projectId,
+        ctx.org.orgId,
+        subjectNumber(ctx.subject),
+        { target: targetParam(ctx.params.target), text: text(ctx.params, "text") },
+        ctx.actor,
+        act,
+      );
+    }
     const offset = (name: "start" | "end"): number => {
       const v = ctx.params[name];
       if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {

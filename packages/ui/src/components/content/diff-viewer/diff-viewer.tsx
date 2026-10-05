@@ -42,6 +42,25 @@ interface DiffViewerBase {
   /** The table's accessible name ("Changes to app.ts"). */
   label?: string;
   className?: string;
+  /**
+   * Lines to mark as selected (their line numbers take the selection wash): a range on the old
+   * side (context and removed lines) or the new (context and added lines).
+   */
+  selected?: DiffLineRange | null;
+  /** Line numbers look clickable: the caller listens on an ancestor (see the data attributes). */
+  selectable?: boolean;
+}
+
+/**
+ * A range of lines on one side of a diff, inclusive. Every row carries `data-old-line` and/or
+ * `data-new-line` (a split row: each side's cells their own), and every line-number cell
+ * `data-gutter="old" | "new"`, so a caller can name the lines a click or a text selection lies
+ * on without the viewer knowing what the selection is for.
+ */
+export interface DiffLineRange {
+  side: "old" | "new";
+  start: number;
+  end: number;
 }
 
 export type DiffViewerProps = DiffViewerBase &
@@ -72,6 +91,48 @@ const SIGN: Record<DiffLine["kind"], string> = { context: " ", add: "+", del: "-
 const NUMBER_CELL =
   "w-px select-none whitespace-nowrap px-2 text-right align-top text-[var(--ui-code-gutter)]";
 const SIGN_CELL = "w-px select-none pl-2 align-top text-fg-subtle";
+const SELECTED_NUMBER = "bg-[var(--ui-diff-hunk-bg)] font-semibold text-fg";
+
+const within = (range: DiffLineRange | null | undefined, side: "old" | "new", n: number | null) =>
+  range != null && n !== null && range.side === side && n >= range.start && n <= range.end;
+
+/** The line attributes of a row (unified) or one side's cells (split). */
+const lineAttrs = (oldNo: number | null, newNo: number | null) => ({
+  ...(oldNo !== null ? { "data-old-line": oldNo } : {}),
+  ...(newNo !== null ? { "data-new-line": newNo } : {}),
+});
+
+/** A line-number cell: its side for a caller's click, the selection wash when selected. */
+function NumberCell({
+  side,
+  number,
+  selected,
+  selectable,
+  extra = "",
+}: {
+  side: "old" | "new";
+  number: number | null;
+  selected: boolean;
+  selectable: boolean;
+  extra?: string;
+}) {
+  return (
+    <td
+      data-gutter={side}
+      className={[
+        NUMBER_CELL,
+        selected ? SELECTED_NUMBER : "",
+        selectable && number !== null ? "cursor-pointer hover:text-fg" : "",
+        extra,
+      ]
+        .filter((c) => c !== "")
+        .join(" ")}
+      {...(side === "old" ? lineAttrs(number, null) : lineAttrs(null, number))}
+    >
+      {number ?? ""}
+    </td>
+  );
+}
 
 /** A line's text with its changed words wrapped, for the unhighlighted rendering. */
 function plainWords(text: string, words: readonly WordRange[]): ReactNode {
@@ -118,6 +179,8 @@ export function DiffViewer(props: DiffViewerProps) {
     highlight = true,
     label,
     className = "",
+    selected = null,
+    selectable = false,
   } = props;
   const { before, after, patch, context } = props;
   const model = useMemo(
@@ -190,18 +253,35 @@ export function DiffViewer(props: DiffViewerProps) {
                           <SplitCells
                             key={side}
                             line={line}
-                            number={side === 0 ? line.oldNo : line.newNo}
+                            side={side === 0 ? "old" : "new"}
                             markup={current}
                             code={code}
+                            selected={selected}
+                            selectable={selectable}
                           />
                         ),
                       )}
                     </tr>
                   ))
                 : hunk.lines.map((line, l) => (
-                    <tr key={l} data-kind={line.kind} className={ROW[line.kind]}>
-                      <td className={NUMBER_CELL}>{line.oldNo ?? ""}</td>
-                      <td className={NUMBER_CELL}>{line.newNo ?? ""}</td>
+                    <tr
+                      key={l}
+                      data-kind={line.kind}
+                      className={ROW[line.kind]}
+                      {...lineAttrs(line.oldNo, line.newNo)}
+                    >
+                      <NumberCell
+                        side="old"
+                        number={line.oldNo}
+                        selected={within(selected, "old", line.oldNo)}
+                        selectable={selectable}
+                      />
+                      <NumberCell
+                        side="new"
+                        number={line.newNo}
+                        selected={within(selected, "new", line.newNo)}
+                        selectable={selectable}
+                      />
                       <td className={SIGN_CELL}>{SIGN[line.kind]}</td>
                       <td className={`w-full pr-3 pl-1 ${code}`}>
                         <LineCode line={line} markup={current} />
@@ -219,25 +299,36 @@ export function DiffViewer(props: DiffViewerProps) {
 /** One side of a split row: its number, sign and code, on its own wash. */
 function SplitCells({
   line,
-  number,
+  side,
   markup,
   code,
+  selected,
+  selectable,
 }: {
   line: DiffLine;
-  number: number | null;
+  side: "old" | "new";
   markup: SideMarkup | null;
   code: string;
+  selected: DiffLineRange | null;
+  selectable: boolean;
 }) {
   const wash = ROW[line.kind];
+  const number = side === "old" ? line.oldNo : line.newNo;
+  // Each side's cells name only that side's line: a split row holds two different lines.
+  const attrs = side === "old" ? lineAttrs(number, null) : lineAttrs(null, number);
   return (
     <>
-      <td data-kind={line.kind} className={`${NUMBER_CELL} ${wash}`}>
-        {number ?? ""}
-      </td>
-      <td data-kind={line.kind} className={`${SIGN_CELL} ${wash}`}>
+      <NumberCell
+        side={side}
+        number={number}
+        selected={within(selected, side, number)}
+        selectable={selectable}
+        extra={wash}
+      />
+      <td data-kind={line.kind} className={`${SIGN_CELL} ${wash}`} {...attrs}>
         {SIGN[line.kind]}
       </td>
-      <td data-kind={line.kind} className={`w-1/2 pr-3 pl-1 ${code} ${wash}`}>
+      <td data-kind={line.kind} className={`w-1/2 pr-3 pl-1 ${code} ${wash}`} {...attrs}>
         <LineCode line={line} markup={markup} />
       </td>
     </>

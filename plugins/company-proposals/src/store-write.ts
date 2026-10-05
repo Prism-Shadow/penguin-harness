@@ -14,6 +14,7 @@ import type {
   ProposalMaterialKind,
   ProposalSection,
 } from "@prismshadow/penguin-server/api";
+import { targetColumns, targetKept } from "./comment-targets.js";
 import { locateQuote, paragraphAtOffset, sectionSource } from "./comments.js";
 import { ProposalError, type Proposal } from "./domain.js";
 import { refKey } from "./impl-branch.js";
@@ -30,7 +31,7 @@ import type {
   StatusPlan,
   Written,
 } from "./ports.js";
-import { GRAPH_SCHEMA, immediate, openCompanyDb, PROPOSAL_SCHEMA } from "./schema.js";
+import { immediate, openProposalDb } from "./schema.js";
 import { ProposalReads } from "./store.js";
 
 const notFound = (number: number): ProposalError =>
@@ -73,7 +74,7 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
    * proposals' and the graph's (graph-store.ts shares the connection).
    */
   static open(file: string, now?: () => number): SqliteProposalStore {
-    return new SqliteProposalStore(openCompanyDb(file, PROPOSAL_SCHEMA + GRAPH_SCHEMA), now);
+    return new SqliteProposalStore(openProposalDb(file), now);
   }
 
   close(): void {
@@ -196,7 +197,17 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
       );
       // Every comment follows its passage into the new text; one whose passage is gone keeps
       // the revision it was last found in and is listed as a comment on that revision.
-      for (const c of p.comments) this.reanchor(number, c, r.sections, r.revision);
+      for (const c of p.comments) {
+        if (c.target === undefined) this.reanchor(number, c, r.sections, r.revision);
+        // A targeted comment moves to the new revision while its target stands (targetKept).
+        else if (targetKept(c.target, r)) {
+          this.q(`UPDATE proposal_comments SET revision = ? WHERE number = ? AND id = ?`).run(
+            r.revision,
+            number,
+            c.id,
+          );
+        }
+      }
       this.event(number, seq, at, {
         kind: "revised",
         by: r.by,
@@ -400,8 +411,9 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
     return this.must(number, plan, (_p, c, seq, at) => {
       this.q(
         `INSERT INTO proposal_comments (number, id, ord, by, at, section_id, range_start,
-           range_end, revision, paragraph_id, quote, text)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           range_end, revision, paragraph_id, quote, text, target_kind, target_path,
+           target_scope_kind, target_side, target_start, target_end, target_head, target_base)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         number,
         c.id,
@@ -415,6 +427,7 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
         c.paragraphId ?? null,
         c.quote,
         c.text,
+        ...targetColumns(c.target),
       );
     });
   }

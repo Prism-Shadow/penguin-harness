@@ -242,9 +242,38 @@ describe("DiffViewer", () => {
     expect(html).toContain(
       `<ins>const total = price * <span class="${DIFF_WORD_CLASS}">quantity</span>;</ins>`,
     );
-    expect(html).toMatch(/<tr data-kind="del" class="bg-\[var\(--ui-diff-del-bg\)\]">/);
-    expect(html).toMatch(/<tr data-kind="add" class="bg-\[var\(--ui-diff-add-bg\)\]">/);
-    expect(html).toMatch(/<tr data-kind="context"/);
+    expect(html).toMatch(
+      /<tr data-kind="del" class="bg-\[var\(--ui-diff-del-bg\)\]" data-old-line="1">/,
+    );
+    expect(html).toMatch(
+      /<tr data-kind="add" class="bg-\[var\(--ui-diff-add-bg\)\]" data-new-line="1">/,
+    );
+    expect(html).toMatch(/<tr data-kind="context" class="" data-old-line="2" data-new-line="2">/);
+  });
+
+  it("names each line by side for a caller, and marks a selected range's numbers", () => {
+    const html = renderStatic(
+      createElement(DiffViewer, {
+        before: BEFORE,
+        after: AFTER,
+        selectable: true,
+        selected: { side: "new", start: 1, end: 2 },
+      }),
+    );
+    expect(html.match(/data-gutter="old"/g)).toHaveLength(3);
+    expect(html.match(/data-gutter="new"/g)).toHaveLength(3);
+    // The new side's 1 and 2 are selected; the old side's numbers are not.
+    expect(html.match(/data-gutter="new" class="[^"]*font-semibold[^"]*"/g)).toHaveLength(2);
+    expect(html).not.toMatch(/data-gutter="old" class="[^"]*font-semibold/);
+    expect(html).toContain("cursor-pointer");
+
+    const split = renderStatic(
+      createElement(DiffViewer, { before: BEFORE, after: AFTER, mode: "split" }),
+    );
+    // A split row's halves are different lines: each side's cells carry only their own number.
+    expect(split).toMatch(/<td data-kind="del" class="[^"]*" data-old-line="1">/);
+    expect(split).toMatch(/<td data-kind="add" class="[^"]*" data-new-line="1">/);
+    expect(split).not.toContain("cursor-pointer");
   });
 
   it("draws the sides next to each other in split mode", () => {

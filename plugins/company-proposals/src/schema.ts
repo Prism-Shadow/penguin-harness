@@ -30,6 +30,23 @@ CREATE TRIGGER IF NOT EXISTS ${table}_no_update BEFORE UPDATE ON ${table}
 CREATE TRIGGER IF NOT EXISTS ${table}_no_delete BEFORE DELETE ON ${table}
   BEGIN SELECT RAISE(ABORT, 'history_append_only'); END;`;
 
+/**
+ * A comment's target (null on every column for a comment on a section's passage): its kind; the
+ * file or path; a scope entry's kind; a line range's side, first and last line; and the head and
+ * base commits a comment on the diff was written at. One list for the table's definition and for
+ * {@link addCommentTargets}, so the two cannot drift.
+ */
+const COMMENT_TARGET_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ["target_kind", "TEXT CHECK (target_kind IN ('scope','test','change-file','change-lines'))"],
+  ["target_path", "TEXT"],
+  ["target_scope_kind", "TEXT"],
+  ["target_side", "TEXT CHECK (target_side IN ('old','new'))"],
+  ["target_start", "INTEGER"],
+  ["target_end", "INTEGER"],
+  ["target_head", "TEXT"],
+  ["target_base", "TEXT"],
+];
+
 /** The proposal tables. Large text columns come last, so a query of the small ones never reads overflow pages. */
 export const PROPOSAL_SCHEMA = `
 CREATE TABLE IF NOT EXISTS proposal_seq (
@@ -153,6 +170,7 @@ CREATE TABLE IF NOT EXISTS proposal_comments (
   quote         TEXT NOT NULL,
   resolved_by   TEXT, resolved_at TEXT, resolved_text TEXT,
   text          TEXT NOT NULL,
+  ${COMMENT_TARGET_COLUMNS.map(([name, decl]) => `${name} ${decl},`).join("\n  ")}
   PRIMARY KEY (number, id),
   FOREIGN KEY (number, batch_id) REFERENCES proposal_batches(number, id)
 );
@@ -246,6 +264,13 @@ export function openCompanyDb(file: string, schema: string): DatabaseSync {
   return db;
 }
 
+/** This plugin's connection to `company.db`: the proposal and graph tables, the comment target columns added when missing. */
+export function openProposalDb(file: string): DatabaseSync {
+  const db = openCompanyDb(file, PROPOSAL_SCHEMA + GRAPH_SCHEMA);
+  addCommentTargets(db);
+  return db;
+}
+
 /**
  * Runs `fn` as one write transaction (`BEGIN IMMEDIATE`): committed when it returns, rolled back
  * when it throws. `fn` is synchronous — no `await` inside a transaction — so two connections of
@@ -261,4 +286,32 @@ export function immediate<T>(db: DatabaseSync, fn: () => T): T {
     db.exec("ROLLBACK");
     throw err;
   }
+}
+
+/**
+ * The comment target columns on a `proposal_comments` table created before they existed: added
+ * once, nullable, so every comment already there reads as one on a section's passage, exactly as
+ * before. Checked again inside the write transaction, since another process may open the same
+ * file at the same time. An older build selects the columns it knows by name and ignores these,
+ * so nothing needs undoing on a rollback (it would not show a targeted comment's target).
+ *
+ * TODO(proposal-comment-targets): remove once no `company.db` written before 2026-10-05 can be
+ * opened any more: at the latest when the first release that includes roadmap Actions ships,
+ * leaving the columns in the table's definition. The company-proposals maintainers own it.
+ */
+export function addCommentTargets(db: DatabaseSync): void {
+  const missing = (): Array<readonly [string, string]> => {
+    const have = new Set(
+      (db.prepare(`PRAGMA table_info(proposal_comments)`).all() as Array<{ name: string }>).map(
+        (c) => c.name,
+      ),
+    );
+    return COMMENT_TARGET_COLUMNS.filter(([name]) => !have.has(name));
+  };
+  if (missing().length === 0) return;
+  immediate(db, () => {
+    for (const [name, decl] of missing()) {
+      db.exec(`ALTER TABLE proposal_comments ADD COLUMN ${name} ${decl}`);
+    }
+  });
 }

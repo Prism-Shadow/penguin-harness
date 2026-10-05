@@ -154,7 +154,6 @@ import type {
   ProposalFeedbackRequest,
   ProposalGraphResponse,
   ProposalImplChanges,
-  ProposalImplDiff,
   ProposalImplementRequest,
   ProposalItem,
   ProposalMaterialRequest,
@@ -3118,10 +3117,6 @@ export const createOrgProposal = (projectId: string, orgId: string, body: Propos
 export const getOrgProposal = (projectId: string, orgId: string, number: number) =>
   apiFetch<ProposalDetail>(proposalBase(projectId, orgId, number));
 
-/** The impl branch's patch — the merge base of base and head, up to head — read from GitHub by the server. */
-export const getOrgProposalImplDiff = (projectId: string, orgId: string, number: number) =>
-  apiFetch<ProposalImplDiff>(`${proposalBase(projectId, orgId, number)}/impl/diff`);
-
 /** The impl branch's diff file by file with hunks; `ignoreWhitespace` is git's `-w`. */
 export const getOrgProposalImplChanges = (
   projectId: string,
@@ -3225,20 +3220,31 @@ export const sendOrgProposalFeedback = (
     ...(body.runtime !== undefined ? { runtime: body.runtime } : {}),
   });
 
-/** A comment on one paragraph; pending (the commenter's own) until `requestOrgProposalChanges` batches it. */
+/**
+ * A comment on a passage of a section, or on a target (a scope or test entry, a changed file,
+ * changed lines); pending (the commenter's own) until `requestOrgProposalChanges` batches it.
+ */
 export const commentOrgProposal = (
   projectId: string,
   orgId: string,
   number: number,
   body: ProposalCommentRequest,
 ) =>
-  actionResult<ProposalDetail>(projectId, orgId, "proposal.comment", proposalSubject(number), {
-    sectionId: body.sectionId,
-    start: body.start,
-    end: body.end,
-    quote: body.quote,
-    text: body.text,
-  });
+  actionResult<ProposalDetail>(
+    projectId,
+    orgId,
+    "proposal.comment",
+    proposalSubject(number),
+    "target" in body
+      ? { target: body.target, text: body.text }
+      : {
+          sectionId: body.sectionId,
+          start: body.start,
+          end: body.end,
+          quote: body.quote,
+          text: body.text,
+        },
+  );
 
 /** Every pending comment of the caller becomes one batch, and the author is told. */
 export const requestOrgProposalChanges = (projectId: string, orgId: string, number: number) =>

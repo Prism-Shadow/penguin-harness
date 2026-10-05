@@ -1,47 +1,44 @@
 /**
  * The proposal page's Implementation section: the impl branch — the head the proposal is
- * implemented on and the base it is measured against — the PR opened for the head, if any, and,
- * on request, the patch's files with their added and deleted lines and a link to the comparison
- * on GitHub — and, beside the `+N/−M`, the diff view itself (proposal-diff.tsx).
+ * implemented on and the base it is measured against — the PR opened for the head, if any, and
+ * the patch's `+N/−M`, shown as soon as the page opens.
  *
- * The patch is read only when asked for: the server reads it from GitHub on every request, so a
- * page view must not cost a comparison. An impl registered as a PR alone has no declared pair;
- * its head and base appear once the comparison (which reads them off the PR) has loaded.
+ * The totals come with the proposal's detail (`implStat`): the server computes them in the
+ * background, cached by the head and base commits, and says so with a plugin event the page
+ * already re-reads on. Until then the line says it is counting; when they cannot be counted it
+ * says why. A click on `+N/−M` opens the diff itself in a large dialog
+ * (proposal-diff-dialog.tsx); closing it returns to the page where it was.
  *
- * A declared side the server resolved to a GitHub repository is a link to its branch page; one
- * it could not resolve stays text, with the reason on hover.
+ * An impl registered as a PR alone has no declared pair; its head and base appear once the totals
+ * (which read them off the PR) are known. A declared side the server resolved to a GitHub
+ * repository is a link to its branch page; one it could not resolve stays text, with the reason
+ * on hover.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type {
   ProposalBranchRef,
   ProposalDetail,
   ProposalImplBranch,
   ProposalImplBranchSide,
-  ProposalImplDiff,
+  ProposalImplStat,
   ProposalResolvedBranch,
 } from "@prismshadow/penguin-server/api";
-import { Button, ICON_GAP, RuledSection, Skeleton } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
+import { Button, ICON_GAP, RuledSection } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { OrgEmptyLine, useOrg } from "../company/org-layout";
-import { ProposalDiff } from "./proposal-diff";
+import { OrgEmptyLine } from "../company/org-layout";
+import { ProposalDiffDialog } from "./proposal-diff-dialog";
 
 const refLabel = (ref: ProposalBranchRef): string => `${ref.remote}/${ref.branch}`;
 const resolvedLabel = (ref: ProposalResolvedBranch): string =>
   ref.remote === null ? `${ref.repo}:${ref.branch}` : `${ref.remote}/${ref.branch}`;
 const shortPr = (url: string): string => url.replace(/^https?:\/\/github\.com\//, "");
 
-type DiffState =
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "ready"; diff: ProposalImplDiff };
+/** The head and base as GitHub names them, once the totals read them. */
+type Resolved = { head: ProposalResolvedBranch; base: ProposalResolvedBranch };
 
 export function ImplSection({ detail }: { detail: ProposalDetail }) {
   const t = S.company.proposals.impl;
-  const { projectId, orgId } = useOrg();
   // A server older than impl branches sends no `impl`: fall back to the impl PR alone.
   const impl =
     detail.impl ??
@@ -54,39 +51,7 @@ export function ImplSection({ detail }: { detail: ProposalDetail }) {
           by: detail.implPr.by,
           at: detail.implPr.at,
         });
-  const [open, setOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
-  const [state, setState] = useState<DiffState>({ kind: "idle" });
-  // A newer request, or a changed impl, makes an answer in flight stale.
-  const ticket = useRef(0);
-  const implKey =
-    impl === null
-      ? ""
-      : `${impl.head === null ? "" : refLabel(impl.head)}|${impl.base === null ? "" : refLabel(impl.base)}|${impl.pr ?? ""}`;
-
-  useEffect(() => {
-    ticket.current += 1;
-    setOpen(false);
-    setDiffOpen(false);
-    setState({ kind: "idle" });
-  }, [detail.number, implKey]);
-
-  const load = useCallback(async () => {
-    const mine = ++ticket.current;
-    setState({ kind: "loading" });
-    try {
-      const diff = await api.getOrgProposalImplDiff(projectId, orgId, detail.number);
-      if (ticket.current === mine) setState({ kind: "ready", diff });
-    } catch (err) {
-      if (ticket.current === mine) setState({ kind: "error", message: apiErrorText(err) });
-    }
-  }, [projectId, orgId, detail.number]);
-
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    if (next && (state.kind === "idle" || state.kind === "error")) void load();
-  };
 
   if (impl === null) {
     return (
@@ -96,48 +61,104 @@ export function ImplSection({ detail }: { detail: ProposalDetail }) {
     );
   }
 
-  const diff = state.kind === "ready" ? state.diff : null;
-
+  const stat = detail.implStat;
+  const resolved = stat?.state === "ready" ? stat : null;
+  const pair =
+    impl.head !== null && impl.base !== null
+      ? `${refLabel(impl.head)} ← ${refLabel(impl.base)}`
+      : resolved !== null
+        ? `${resolvedLabel(resolved.head)} ← ${resolvedLabel(resolved.base)}`
+        : "";
   return (
     <RuledSection title={t.title} info={t.info}>
       <div className="space-y-2 text-xs">
-        <ImplBranchLine impl={impl} diff={diff} />
-        <div className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
-          <Button size="sm" variant="secondary" aria-expanded={open} onClick={toggle}>
-            {open ? t.hideFiles : t.showFiles}
-          </Button>
-          {diff !== null && (
-            <a
-              href={diff.compareUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-gray-500 hover:underline dark:text-gray-400"
-            >
-              {t.compare}
-            </a>
-          )}
-        </div>
-        {open && (
-          <DiffFiles
-            state={state}
-            onRetry={() => void load()}
-            diffOpen={diffOpen}
-            onDiff={() => setDiffOpen((v) => !v)}
-            number={detail.number}
-          />
-        )}
+        <ImplBranchLine impl={impl} resolved={resolved} />
+        <ImplStatLine stat={stat} onOpen={() => setDiffOpen(true)} />
       </div>
+      <ProposalDiffDialog
+        open={diffOpen}
+        number={detail.number}
+        subtitle={pair}
+        onClose={() => setDiffOpen(false)}
+      />
     </RuledSection>
+  );
+}
+
+/**
+ * The totals line: `+N −M · K files` as the button that opens the diff, with the comparison on
+ * GitHub beside it; "counting" while the server has no answer yet; the reason when it has none to
+ * give (the diff can still be opened: it says what went wrong, and retries). A server older than
+ * the totals sends none: the diff opens from a plain button.
+ */
+export function ImplStatLine({
+  stat,
+  onOpen,
+}: {
+  stat: ProposalImplStat | undefined;
+  onOpen: () => void;
+}) {
+  const t = S.company.proposals.impl;
+  const open = (
+    <Button size="sm" variant="secondary" aria-haspopup="dialog" onClick={onOpen}>
+      {S.company.proposals.implDiff.open}
+    </Button>
+  );
+  if (stat === undefined) {
+    return <div className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>{open}</div>;
+  }
+  if (stat.state === "computing") {
+    return (
+      <div className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
+        <span role="status" aria-busy="true" className="text-gray-500 dark:text-gray-400">
+          {t.statComputing}
+        </span>
+        {open}
+      </div>
+    );
+  }
+  if (stat.state === "unavailable") {
+    return (
+      <div className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
+        <span className={toneInk.attention}>{t.statUnavailable(stat.reason)}</span>
+        {open}
+      </div>
+    );
+  }
+  return (
+    <div className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        data-tooltip={t.statOpen}
+        onClick={onOpen}
+        className={`inline-flex items-center rounded border border-gray-200 px-2 py-0.5 font-mono tabular-nums transition-[background-color] hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800 ${ICON_GAP.tight}`}
+      >
+        <span className={toneInk.success}>+{stat.additions}</span>
+        <span className={toneInk.danger}>−{stat.deletions}</span>
+        <span className="font-sans text-gray-500 dark:text-gray-400">
+          · {t.statFiles(stat.files)}
+        </span>
+      </button>
+      <a
+        href={stat.compareUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="text-gray-500 hover:underline dark:text-gray-400"
+      >
+        {t.compare}
+      </a>
+    </div>
   );
 }
 
 /** The branch pair (each side a link to its GitHub branch page when the server named one) and the PR. */
 export function ImplBranchLine({
   impl,
-  diff,
+  resolved,
 }: {
   impl: ProposalImplBranch;
-  diff: ProposalImplDiff | null;
+  resolved: Resolved | null;
 }) {
   const t = S.company.proposals.impl;
   const mono = "font-mono text-gray-800 dark:text-gray-100";
@@ -146,8 +167,10 @@ export function ImplBranchLine({
       <span className={mono}>
         <BranchSide side={impl.head} /> ← <BranchSide side={impl.base} />
       </span>
-    ) : diff !== null ? (
-      <span className={mono}>{`${resolvedLabel(diff.head)} ← ${resolvedLabel(diff.base)}`}</span>
+    ) : resolved !== null ? (
+      <span
+        className={mono}
+      >{`${resolvedLabel(resolved.head)} ← ${resolvedLabel(resolved.base)}`}</span>
     ) : null;
   return (
     <div className={`flex flex-wrap items-center ${ICON_GAP.row}`}>
@@ -193,80 +216,5 @@ function BranchSide({ side }: { side: ProposalImplBranchSide }) {
     <span>{label}</span>
   ) : (
     <span data-tooltip={S.company.proposals.impl.noBranchLink(reason)}>{label}</span>
-  );
-}
-
-function DiffFiles({
-  state,
-  onRetry,
-  diffOpen,
-  onDiff,
-  number,
-}: {
-  state: DiffState;
-  onRetry: () => void;
-  diffOpen: boolean;
-  onDiff: () => void;
-  number: number;
-}) {
-  const t = S.company.proposals.impl;
-  if (state.kind === "idle" || state.kind === "loading") {
-    return (
-      <div aria-busy="true" aria-label={t.loading} className="space-y-1">
-        <Skeleton className="h-4" />
-        <Skeleton className="h-4" />
-      </div>
-    );
-  }
-  if (state.kind === "error") {
-    return (
-      <div role="alert" className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
-        <span className={toneInk.danger}>
-          {t.loadFailed}: {state.message}
-        </span>
-        <Button size="sm" variant="secondary" onClick={onRetry}>
-          {t.retry}
-        </Button>
-      </div>
-    );
-  }
-  const { diff } = state;
-  if (diff.files.length === 0) return <OrgEmptyLine>{t.noFiles}</OrgEmptyLine>;
-  const additions = diff.files.reduce((n, f) => n + f.additions, 0);
-  const deletions = diff.files.reduce((n, f) => n + f.deletions, 0);
-  return (
-    <div className="space-y-1">
-      <div className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
-        <span className="text-gray-500 dark:text-gray-400">
-          {t.summary(diff.files.length, additions, deletions, diff.ahead, diff.behind)}
-        </span>
-        <Button size="sm" variant="secondary" aria-expanded={diffOpen} onClick={onDiff}>
-          {diffOpen ? S.company.proposals.implDiff.close : S.company.proposals.implDiff.open}
-        </Button>
-      </div>
-      {diffOpen ? (
-        <ProposalDiff number={number} />
-      ) : (
-        <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-          {diff.files.map((f) => (
-            <li key={f.path} className={`flex items-center ${ICON_GAP.row} py-1`}>
-              <span className={`w-12 shrink-0 text-right font-mono ${toneInk.success}`}>
-                +{f.additions}
-              </span>
-              <span className={`w-12 shrink-0 font-mono ${toneInk.danger}`}>−{f.deletions}</span>
-              <span className="min-w-0 truncate font-mono" data-tooltip={f.path}>
-                {f.path}
-              </span>
-              {f.from !== null && (
-                <span className="shrink-0 truncate text-gray-400 dark:text-gray-500">
-                  {t.renamed(f.from)}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {diff.truncated && <div className={toneInk.attention}>{t.truncated(diff.files.length)}</div>}
-    </div>
   );
 }

@@ -1,4 +1,4 @@
-# Backward compatibility: `action_runs` without the `notify` origin, `roadmaps` without `moderator`
+# Backward compatibility: `action_runs` without the `notify` origin, `roadmaps` without `moderator`, `proposal_comments` without target columns
 
 - **Date:** 2026-10-04
 - **Type:** process
@@ -22,8 +22,18 @@ Chosen: **add the column once, in place.** When the roadmap plugin opens an orga
 
 **A user is not required to do anything.**
 
+## The old shape: `proposal_comments` without target columns
+
+[A comment can be on a target](2026-10-05-impl-diff-view.md) — a scope or test entry, a changed file, changed lines — and stores it in eight nullable `target_*` columns of `proposal_comments`. A table created in `company.db` before that change has none of them.
+
+Chosen: **add the columns once, in place.** When the proposals plugin opens an organization's `company.db` and the table lacks any of them, it adds the missing ones (`ALTER TABLE … ADD COLUMN`) in one write transaction. Every existing comment reads null in all of them, which is how a comment on a section's passage reads, so it is shown and listed exactly as before. An older build selects the columns it knows by name and ignores these, so a rollback needs nothing undone; it would show a targeted comment written meanwhile without its target.
+
+**A user is not required to do anything.**
+
 ## When this can be removed
 
 The rebuild (`widenRunVia` in `plugins/company-proposals/src/action-store.ts`) stays while a `company.db` written before 2026-10-04 may still be opened. No released build wrote `action_runs`, so it can be removed at the latest when the first release that includes the Action registry ships. The company-proposals plugin maintainers own the removal.
 
 The column check (`addRoadmapModerator` in `plugins/company-roadmaps/src/schema.ts`) stays on the same terms: no released build wrote the `roadmaps` table, so it can be removed, leaving the column in the table's definition, at the latest when the first release that includes roadmap Actions ships. The company-roadmaps plugin maintainers own the removal.
+
+The column check (`addCommentTargets` in `plugins/company-proposals/src/schema.ts`, marked `TODO(proposal-comment-targets)`) stays while a `company.db` written before 2026-10-05 may still be opened; it can be removed, leaving the columns in the table's definition, at the latest when the first release that includes roadmap Actions ships. The company-proposals plugin maintainers own the removal.

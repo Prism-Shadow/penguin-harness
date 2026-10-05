@@ -6211,29 +6211,15 @@ Scenarios:
         noBranchLink: (reason: string) => `No GitHub link for this branch: ${reason}`,
         pr: "PR",
         noPr: "No PR opened yet",
-        showFiles: "Show changed files",
-        hideFiles: "Hide changed files",
-        loading: "Reading the comparison from GitHub…",
-        loadFailed: "Could not read the comparison",
-        retry: "Retry",
+        statComputing: "Counting the changes…",
+        statUnavailable: (reason: string): string => `The changes could not be counted: ${reason}`,
+        statOpen: "Open the diff",
+        statFiles: (n: number): string => `${n} file${n === 1 ? "" : "s"}`,
         compare: "Compare on GitHub",
-        noFiles: "The head has nothing past its base.",
-        summary: (
-          files: number,
-          additions: number,
-          deletions: number,
-          ahead: number,
-          behind: number,
-        ): string =>
-          `${files} file${files === 1 ? "" : "s"}, +${additions} −${deletions} · ${ahead} commit${ahead === 1 ? "" : "s"} ahead, ${behind} behind`,
-        truncated: (n: number): string =>
-          `GitHub lists at most ${n} files of a comparison; the rest are not shown.`,
-        renamed: (from: string): string => `renamed from ${from}`,
       },
       /** The impl branch's diff view: a changed-files tree and each file's hunks. */
       implDiff: {
         open: "View diff",
-        close: "Hide diff",
         title: "Changes",
         files: "Changed files",
         loading: "Reading the diff…",
@@ -6265,6 +6251,28 @@ Scenarios:
           `The mirror could not answer (${reason}), so this is GitHub's comparison: at most 300 files, no patch for a binary or large file, and whitespace cannot be ignored.`,
         truncated: (n: number): string =>
           `GitHub lists at most ${n} files of a comparison; the rest are not shown.`,
+      },
+      /** Comments on a scope or test entry, a changed file, or changed lines. */
+      targets: {
+        commentScope: "Comment on this scope entry",
+        commentTest: "Comment on this test",
+        commentFile: "Comment on this file",
+        commentLines: "Comment on these lines",
+        commentingOn: "Commenting on",
+        clearSelection: "Clear selection",
+        hint: "Click a line number, then Shift-click another, or drag across lines, to comment on them.",
+        oneSide: "Select lines on one side: removed lines and added lines are different files.",
+        count: (n: number): string => `${n} comment${n === 1 ? "" : "s"}`,
+        lines: (side: "old" | "new", start: number, end: number): string =>
+          `${start === end ? `Line ${start}` : `Lines ${start}–${end}`} (${side === "old" ? "before" : "after"})`,
+        onScope: (kind: string, file: string): string => `Scope · ${kind} ${file}`,
+        onTest: (file: string): string => `Tests · ${file}`,
+        onFile: (path: string): string => `Changed file · ${path}`,
+        onRevision: (n: number): string => `On revision ${n}`,
+        outdated: "Outdated",
+        outdatedHint: "Written on an earlier head or base; the branches have moved since.",
+        showLines: "Show the lines",
+        hideLines: "Hide the lines",
       },
       materialKind: {
         pr: "PR",

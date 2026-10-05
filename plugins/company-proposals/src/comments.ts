@@ -13,9 +13,11 @@
  * A revision moves text; the ledger re-anchors every comment by its `quote` (see
  * {@link locateQuote}): the first exact occurrence in the new source, else the first
  * occurrence with whitespace collapsed. A passage that is gone stays a comment "on revision
- * N" — listed, never lost.
+ * N" — listed, never lost. A comment on a target (comment-targets.ts) is listed with its target
+ * named, and a line comment with its lines.
  */
 import type { ProposalComment, ProposalSection } from "@prismshadow/penguin-server/api";
+import { describeTarget } from "./comment-targets.js";
 
 /** The separator between a section's paragraphs in its source. */
 export const PARAGRAPH_GAP = "\n\n";
@@ -124,11 +126,18 @@ export function renderForAgent(
           : c.batchId === null
             ? "pending"
             : "open";
+      const elsewhere = c.revision === proposal.revision ? "" : `, revision ${c.revision}`;
       const where =
-        c.revision === proposal.revision
-          ? ""
-          : ` (on revision ${c.revision}: "${collapse(c.quote)}")`;
+        c.target !== undefined
+          ? ` (on ${describeTarget(c.target)}${elsewhere})`
+          : c.revision === proposal.revision
+            ? ""
+            : ` (on revision ${c.revision}: "${collapse(c.quote)}")`;
       out.push(`⟦${c.id}⟧ ${c.by} (${state})${where}: ${c.text}`);
+      // The lines a line comment is on, as they read when it was written.
+      if (c.target?.kind === "change-lines") {
+        for (const line of c.quote.split("\n")) out.push(`    | ${line}`);
+      }
     }
     const open = comments.filter((c) => c.resolved === undefined && c.batchId !== null);
     if (open.length > 0 && opts.resolveCommand !== undefined) {

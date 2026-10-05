@@ -182,14 +182,17 @@ export const PAGE_ID = "company-proposals.page";
         kind: "action",
         key: "proposal.comment",
         subjects: ["proposal"],
+        // A passage (sectionId, start, end, quote) or a target (comment-targets.ts), never both.
         params: {
-          sectionId: "string",
-          start: "number.integer",
-          end: "number.integer",
-          quote: "string",
+          "sectionId?": "string",
+          "start?": "number.integer",
+          "end?": "number.integer",
+          "quote?": "string",
+          "target?": "object",
           text: "string",
         },
-        description: "Comment on a passage of a proposal (pending until sent).",
+        description:
+          "Comment on a passage of a proposal, a scope or test entry, a changed file or changed lines (pending until sent).",
       },
       {
         id: "company-proposals.action.comment-edit",
