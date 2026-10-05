@@ -43,6 +43,11 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 ## 从仓库复现 benchmark
 
+选择右上角的**复现 Benchmark**，会打开已选中 `benchmark-reproduction` 的新对话。
+发送草稿后，Agent 列出 benchmark 标识、论文完整标题和 arXiv／GitHub 链接，等待选择。
+已明确指定的来源会直接沿用；没有匹配配方时，先询问是否对同一个 benchmark 使用通用流程。
+来源和实际读取的 reference 版本保存在 `reproduction.yaml`，旧记录缺失的字段留空。
+
 让装有 `benchmark-reproduction` 的 Agent 在当前 Project 中复现一个 GitHub benchmark。
 它保留原始协议，生成现有 benchmark 格式，跑冒烟检查并确认结果在评估中心可见，再询问全量评估。
 运行资源写在生成的 Rubric 中，后续从评估入口运行时也会按同一约定准备环境、评分和清理。
@@ -151,6 +156,12 @@ Builder 试测题目和记录基线分时，都用这个新对话的模型来运
 评估会话，以及它启动的每个被测会话，都归入会话列表的**评估任务**折叠夹。评估完成后，会成为这个 Benchmark **评估明细**表的最新一行。
 
 ## 优化 Agent
+
+要在对话中选择 RSI 方法，点击优化标签页中的**在对话中选择 RSI 方法**。
+这个独立入口携带已选的被测 Agent、Benchmark、执行 Agent、会话模型和优化重点，
+不带入表单中的每题次数、最多轮数和目标分数。Agent 列出方法标识、论文完整标题和
+arXiv／GitHub 链接，等待选择后再确定参数和初始化要求。来源和实际读取的 reference
+版本保存在 `experiment.yaml`。下文的原有表单流程仍可使用。
 
 优化每次按一个假设改动 Agent，分数严格提高才保留新版本。比较的起点是这个 Agent 在当前 Benchmark 上的基线分。
 

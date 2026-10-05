@@ -18,6 +18,9 @@ Project; do not bundle them into Penguin or make them default benchmarks.
 
 ## Companion supervision
 
+First follow [benchmark selection](references/selection.md), including its source
+recording. Resolve the source and recipe choice before construction or dispatch.
+
 Read and follow [Agent Supervision](../agent-supervision/SKILL.md) before work.
 Without an assigned pair, act as the delegating Root and start a Supervised Agent
 with its Supervisor companion. With a verified pair binding, execute this Skill;
@@ -43,14 +46,15 @@ Choose the recipe:
 2. Match the canonical repository/name below and read its reference. Ignore case,
    `.git`, trailing `/` and `tree/<ref>` when matching; retain the requested ref
    for checkout. Verify compatibility for a fork or a newer revision.
-3. Otherwise follow the generic construction rules in this Skill.
+3. Otherwise ask whether to use the generic construction rules for the same
+   benchmark, as the selection reference requires, and wait for agreement.
 
-Available benchmark recipes are indexed below; unknown sources use the generic
-rules that follow.
+Available benchmark recipes are indexed below; unknown sources can use the generic
+rules after the user agrees.
 
 | Repository / names | Recipe |
 | --- | --- |
-| `Prism-Shadow/GDPevo`, `GDPevo`, `GDP EVO` | [GDPevo](references/gdpevo.md) |
+| `Prism-Shadow/GDPevo`, `GDPevo`, `GDP EVO` | [GDPevo](references/gdpevo.md) · [GDPevo: Evaluating Agent Self-Evolution on Real Business Tasks](https://arxiv.org/abs/2608.03764) · [GitHub](https://github.com/Prism-Shadow/GDPevo) |
 
 Resolve an ambiguous name to a repository before proceeding. A custom recipe can
 change the construction choices but must still produce valid Penguin formats

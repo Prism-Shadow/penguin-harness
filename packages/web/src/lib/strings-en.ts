@@ -7,8 +7,10 @@
  */
 import type { PeakWindows } from "../features/models/model-grouping";
 import type { Strings } from "./strings";
+import { tuningChatEn } from "../features/benchmark/tuning-chat-strings-en";
 
 export const en: Strings = {
+  tuningChat: tuningChatEn,
   appName: "PenguinHarness",
 
   nav: {

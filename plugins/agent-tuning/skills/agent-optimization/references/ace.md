@@ -1,6 +1,8 @@
 # ACE
 
-RSI method from a paper titled as Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models
+RSI method from a paper titled as [Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models](https://arxiv.org/abs/2510.04618).
+
+GitHub: [ace-agent/ace](https://github.com/ace-agent/ace).
 
 Use Agent Optimization's I/O, supervision and version contract. This reference
 specifies the **sequential offline** training algorithm. Follow the pinned source
@@ -9,7 +11,7 @@ and call it the original experiment.
 
 ## Source and profile
 
-Paper: arXiv:2510.04618v1, §3–4 and Appendix B.
+Paper: [arXiv:2510.04618v1](https://arxiv.org/abs/2510.04618v1), §3–4 and Appendix B.
 Reference implementation: `ace-agent/ace`, commit
 `82709de050e1db6e6ef2f07bcb0393560b94992a`, especially
 `ace/ace.py::_train_single_sample`, `_offline_train`, `ace/core/reflector.py`,

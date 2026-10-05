@@ -17,6 +17,10 @@ Initialization creates the baseline; evaluation and optimization are separate.
 
 ## Companion supervision
 
+For an RSI task, first follow [method selection](../agent-optimization/references/selection.md)
+and reuse the user's choice for initialization and its source-record handoff.
+Resolve a missing choice before creating companions or changing State.
+
 Read and follow [Agent Supervision](../agent-supervision/SKILL.md) before work.
 Without an assigned pair, act as the delegating Root and start a Supervised Agent
 with its Supervisor companion. With a verified pair binding, execute this Skill;

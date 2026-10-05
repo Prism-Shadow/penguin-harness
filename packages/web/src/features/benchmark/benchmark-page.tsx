@@ -58,6 +58,7 @@ import { benchmarkRoute } from "./benchmark-route";
 import { fetchBenchmarks } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
+import { TuningChatButton } from "./tuning-chat-button";
 
 /** The Skills a design conversation is opened with (see the create modal below). */
 const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];
@@ -513,6 +514,9 @@ export function BenchmarkPage() {
                 isOwner={isOwner}
                 onAi={openAi}
                 onManual={() => setManualOpen(true)}
+              />
+              <TuningChatButton
+                task={{ action: "reproduce", targetAgentId: filterAgentId ?? fallbackAgent }}
               />
             </>
           }

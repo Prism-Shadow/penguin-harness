@@ -46,6 +46,7 @@ import { ModelCatalogSelect } from "../chat/model-select";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import { MAX_RUNS, evaluateTail, optimizeTail } from "./benchmark-prompts";
 import type { EvaluateParams, OptimizeParams } from "./benchmark-prompts";
+import { TuningChatButton } from "./tuning-chat-button";
 
 /** The Skill the evaluator agent must carry; the dialog warns when the chosen agent lacks it. */
 const EVALUATION_SKILL = "agent-evaluation";
@@ -333,6 +334,17 @@ export function UseBenchmarkModal({
               {modelField(S.benchmark.sessionModel, S.benchmark.sessionModelHint)}
             </div>
             {missingSkillStrip(optimizerMissingSkill, S.benchmark.optimizerMissingSkill)}
+            <TuningChatButton
+              task={{
+                action: "optimize",
+                targetAgentId: testAgentId,
+                benchmarkId: benchmark.id,
+                note: focus,
+              }}
+              agentId={optimizerId}
+              modelRef={modelRef}
+              onOpen={onClose}
+            />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {runsInput(S.benchmark.optimizeRunsHint)}
               <Input

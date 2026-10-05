@@ -13,8 +13,8 @@ that Penguin's actual interfaces cannot support.
 
 Act as the Optimizer: analyze training traces and improve the Target Agent
 using the selected RSI method. This Skill specifies inputs, evaluation, versions
-and output formats; each reference supplies a method recipe. Use Penguin by
-default or select another recipe. Read only the selected method and keep its
+and output formats; each reference supplies a method recipe. Offer Penguin as
+the default option or select another recipe. Read only the selected method and keep its
 selection policy intact.
 
 The Target Agent is also called the Test Agent in Agent Tuning. The Optimizer
@@ -22,6 +22,9 @@ performs optimization; the Evaluator runs and scores each case. These are roles,
 not dedicated built-in Agent identities.
 
 ## Companion supervision
+
+First follow [method selection](references/selection.md), including its source
+recording and initialization handoff. Resolve any missing choice before dispatch.
 
 Read and follow [Agent Supervision](../agent-supervision/SKILL.md) before work.
 Without an assigned pair, act as the delegating Root and start a Supervised Agent
@@ -35,17 +38,17 @@ contract. This caller-owned recovery is separate from unstarted-launch repair.
 
 Resolve an existing Test Agent, a published frozen training Benchmark and the
 method. Ask for missing required inputs; do not ask again for information already
-provided. With no method specified, use Penguin, preserving the ordinary
-optimization entry point. Select names case-insensitively.
+provided. With no method specified, ask as the selection reference requires;
+an explicit default request selects Penguin. Select names case-insensitively.
 
 Available recipes are indexed below; this list can grow without changing the
 evaluation protocol.
 
 | Method | Reference | Source |
 | --- | --- | --- |
-| Penguin (default) | [penguin.md](references/penguin.md) | Penguin's existing optimization method |
-| ACE | [ace.md](references/ace.md) | RSI method from a paper titled as Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models |
-| AWM | [awm.md](references/awm.md) | RSI method from a paper titled as Agent Workflow Memory |
+| Penguin (default) | [penguin.md](references/penguin.md) | [Penguin's existing optimization method](https://github.com/Prism-Shadow/penguin-harness) |
+| ACE | [ace.md](references/ace.md) | RSI method from a paper titled as [Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models](https://arxiv.org/abs/2510.04618) · [GitHub](https://github.com/ace-agent/ace) |
+| AWM | [awm.md](references/awm.md) | RSI method from a paper titled as [Agent Workflow Memory](https://arxiv.org/abs/2409.07429) · [GitHub](https://github.com/zorazrw/agent-workflow-memory) |
 
 If another method is requested, resolve its supplied instructions or ask which
 method to implement; do not silently substitute Penguin. Method-specific inputs
@@ -60,7 +63,7 @@ perform them first only when requested and allowed by the selected method.
 | `test_agent_id` | Experimental Target Agent whose Harness is optimized |
 | `benchmark_id` | Frozen training Benchmark; `train_benchmark_id` is an accepted alias, conflicting values are invalid |
 | `case_ids` | Explicit training subset, or all cases; `train_case_ids` is an accepted alias |
-| `method` | Penguin by default; otherwise the named reference/instructions |
+| `method` | User-selected method; an explicit default request selects Penguin |
 | `runs`, `rounds`, `target_score` | Values required or defaulted by the method; record its baseline repeat policy too |
 | Runtime | Complete Target Agent provider/model pair and configured thinking; Optimizer/Evaluator settings recorded separately |
 | Test handoff | Optional separate testing Benchmark/cases for an independent Reporter after final freeze |

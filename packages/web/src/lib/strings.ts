@@ -12,8 +12,10 @@
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
 import type { PeakWindows } from "../features/models/model-grouping";
+import { tuningChatZh } from "../features/benchmark/tuning-chat-strings";
 
 export const zh = {
+  tuningChat: tuningChatZh,
   appName: "PenguinHarness",
 
   nav: {

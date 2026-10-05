@@ -1,6 +1,8 @@
 # AWM
 
-RSI method from a paper titled as Agent Workflow Memory
+RSI method from a paper titled as [Agent Workflow Memory](https://arxiv.org/abs/2409.07429).
+
+GitHub: [zorazrw/agent-workflow-memory](https://github.com/zorazrw/agent-workflow-memory).
 
 Use Agent Optimization's I/O, supervision and version rules. Keep offline and
 online AWM distinct; a public-judge batch over newly generated experiences is not
@@ -8,7 +10,7 @@ the paper's canonical offline pipeline.
 
 ## Sources and mode
 
-Paper: arXiv:2409.07429v1, §2.1–2.3 and Appendix A.
+Paper: [arXiv:2409.07429v1](https://arxiv.org/abs/2409.07429v1), §2.1–2.3 and Appendix A.
 Official implementation: `zorazrw/agent-workflow-memory`, commit
 `8c0ff8cd11d648c8fceb99e4e42f37e3b75381b1`. Relevant paths:
 `mind2web/offline_induction.py`, `mind2web/memory.py`, `mind2web/prompt/`,

@@ -39,6 +39,11 @@ pair binding performs the requested work itself; it does not delegate merely
 because it read the same import. New subtasks still receive their own companions.
 A Markdown link is an instruction to read a file, not an automatic runtime hook.
 
+The delegating parent may first ask the user to choose a benchmark, reproduction
+recipe or RSI method as the task Skill requires. These selection turns start no
+execution and need no companion. Once the choice and required inputs are resolved,
+apply this contract before initialization, construction, evaluation or training.
+
 Before work, the parent records a private pair directory outside Target State and
 task workspaces. Give every unit a stable `work_id` and each pair a `pair_id`.
 For evaluation, `work_id` binds Benchmark, case, logical run and harness version;

@@ -43,6 +43,13 @@ Every Project comes with `example-benchmark`, whose sample evaluations test `def
 
 ## Reproduce a benchmark from a repository
 
+Select **Reproduce Benchmark** at the top right to open a new conversation with
+`benchmark-reproduction` selected. Send the draft, then choose from the benchmark
+identifiers, full paper titles and arXiv/GitHub links shown by the Agent. An explicit
+source is reused. If no recipe matches, the Agent asks before using the generic
+workflow for the same benchmark. Sources and loaded reference versions are saved
+in `reproduction.yaml`; unavailable historical fields stay unset.
+
 Ask an Agent with `benchmark-reproduction` to reproduce a GitHub benchmark in
 this Project. It imports the source protocol, builds the normal benchmark files,
 runs smoke checks, and verifies that the result appears here before offering a
@@ -153,6 +160,14 @@ The dialog has no field for the model or thinking level the tested agent runs on
 The evaluation conversation, and every Test Session it starts, is filed under the **Evaluations** folder of the session list. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
 
 ## Optimize an agent
+
+To select an RSI method in conversation, use **Choose an RSI method in chat** in
+the Optimize tab. This separate entry carries the selected Target, Benchmark,
+optimizer, conversation model and Focus text; it does not copy the form's runs,
+round limit or target score. The Agent lists method identifiers with full paper
+titles and arXiv/GitHub links, waits for a choice, then resolves the selected
+method's parameters and initialization. Sources and loaded reference versions
+are saved in `experiment.yaml`. The form workflow below remains available.
 
 Optimization changes an agent one hypothesis at a time and keeps a new version only when its score strictly improves. It measures against the agent's baseline on this Benchmark.
 

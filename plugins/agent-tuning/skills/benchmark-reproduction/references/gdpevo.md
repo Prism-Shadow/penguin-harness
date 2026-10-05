@@ -1,7 +1,8 @@
 # GDPevo reproduction recipe
 
 Matches `Prism-Shadow/GDPevo`, `GDPevo` and `GDP EVO`.
-Source: https://github.com/Prism-Shadow/GDPevo.
+Paper: [GDPevo: Evaluating Agent Self-Evolution on Real Business Tasks](https://arxiv.org/abs/2608.03764).
+GitHub: [Prism-Shadow/GDPevo](https://github.com/Prism-Shadow/GDPevo).
 
 The verified source revision is
 `56d60ae4ae5e067d1ec0ee1f850622e69f422179`: 24 task groups, each with 5 training
