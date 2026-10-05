@@ -4,7 +4,7 @@ starts_from: install/from-ref
 inputs:
   ref: the same ref install/from-ref installed
   handover: <RUN>/install/from-ref/handover.md
-  changelog_plan: <RUN>/changelog/verify/plan.md, produced as described under Prepare
+  changelog_plan: <RUN>/usability/changed-feature/plan.md, produced as described under Prepare
 cost: 60
 platforms: [linux, macos, windows]
 ---
@@ -17,7 +17,7 @@ promised change is present.
 
 ## Prepare
 
-Before the run, write the changelog plan to `<RUN>/changelog/verify/plan.md`, for review with the
+Before the run, write the changelog plan to `<RUN>/usability/changed-feature/plan.md`, for review with the
 rest of the run's plan.
 
 1. **Get the changelog as published.**
@@ -57,7 +57,7 @@ Read `handover.md` first and sign in to the server it names. Keep `oplog.md` fro
 
 ## Record
 
-In `<RUN>/changelog/verify/`: `report.html` with one table row per changelog entry (entry,
+In `<RUN>/usability/changed-feature/`: `report.html` with one table row per changelog entry (entry,
 surface, verdict, evidence, notes), `shots/`, `oplog.md`, `issues.md`, next to the `plan.md` and
 `changelog.md` prepared before the run.
 

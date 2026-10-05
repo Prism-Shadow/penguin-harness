@@ -12,14 +12,16 @@ what the product showed.
 
 ## Tasks
 
-| Task                                                   | Starts from        | Cost (min) | What it answers                                               |
-| ------------------------------------------------------ | ------------------ | ---------- | ------------------------------------------------------------- |
-| [`install/from-ref`](install/from-ref/TASK.md)         | `scratch`          | 30         | Does the given release, tag or revision install from nothing? |
-| [`first-run/walkthrough`](first-run/walkthrough/TASK.md) | `install/from-ref` | 45         | Can a new user find their way through the Web App?            |
-| [`changelog/verify`](changelog/verify/TASK.md)         | `install/from-ref` | 60         | Is every change the changelog promises really there?          |
+| Task                                                         | Starts from        | Cost (min) | What it answers                                               |
+| ------------------------------------------------------------ | ------------------ | ---------- | ------------------------------------------------------------- |
+| [`install/from-ref`](install/from-ref/TASK.md)               | `scratch`          | 30         | Does the given release, tag or revision install from nothing? |
+| [`usability/use-ui`](usability/use-ui/TASK.md)               | `install/from-ref` | 45         | Can a new user find their way through the Web App?            |
+| [`usability/use-cli`](usability/use-cli/TASK.md)             | `install/from-ref` | 30         | Can a new user get work done from the terminal?               |
+| [`usability/changed-feature`](usability/changed-feature/TASK.md) | `install/from-ref` | 60         | Is every change the changelog promises really there?          |
 
-A group names one question about the product (installing it, a first run, a release's changelog),
-not a part of it: a group named after a surface such as "ui" would end up holding every task.
+A group names one question about the product (can it be installed, is it usable), not a part of
+it: a group named after a surface such as "ui" would end up holding every task. The surfaces and
+the release's changes are tasks inside `usability`.
 
 A run need not take every task. Pick the ones the budget allows; a task whose `starts_from` names
 another task needs that task's end state (see [Handover](#handover)).
