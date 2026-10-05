@@ -2,16 +2,24 @@
 
 Each directory `tests/scenarios/<group>/<task>/` holds one QA task. Its `TASK.md` is the prompt a QA
 Agent is given: what to do, what to record, and when the task is done. These are not automated
-tests. They describe exploratory checks of a built product, run by an Agent against a real install,
-with screenshots and log lines as evidence.
+tests. They check a built product the way its users meet it, run by an Agent against a real
+install, with screenshots and log lines as evidence.
+
+QA measures usability: whether a person can install the product, find their way, and get what the
+release promises. It does not measure how capable the Agent running the task is. Where a step is
+mechanical, a script does it (see [Scripts](#scripts)), and the Agent spends its effort on judging
+what the product showed.
 
 ## Tasks
 
-| Task                                         | Starts from        | Cost (min) | What it answers                                      |
-| -------------------------------------------- | ------------------ | ---------- | ---------------------------------------------------- |
-| [`install/from-ref`](install/from-ref/TASK.md) | `scratch`          | 30         | Does the given release, tag or revision install from nothing? |
-| [`ui/explore`](ui/explore/TASK.md)             | `install/from-ref` | 45         | Can a new user find their way through the UI?        |
-| [`ui/changelog`](ui/changelog/TASK.md)         | `install/from-ref` | 60         | Is every change the changelog promises really there? |
+| Task                                                   | Starts from        | Cost (min) | What it answers                                               |
+| ------------------------------------------------------ | ------------------ | ---------- | ------------------------------------------------------------- |
+| [`install/from-ref`](install/from-ref/TASK.md)         | `scratch`          | 30         | Does the given release, tag or revision install from nothing? |
+| [`first-run/walkthrough`](first-run/walkthrough/TASK.md) | `install/from-ref` | 45         | Can a new user find their way through the Web App?            |
+| [`changelog/verify`](changelog/verify/TASK.md)         | `install/from-ref` | 60         | Is every change the changelog promises really there?          |
+
+A group names one question about the product (installing it, a first run, a release's changelog),
+not a part of it: a group named after a surface such as "ui" would end up holding every task.
 
 A run need not take every task. Pick the ones the budget allows; a task whose `starts_from` names
 another task needs that task's end state (see [Handover](#handover)).
@@ -24,16 +32,19 @@ Frontmatter:
 ---
 title: One sentence naming the task
 starts_from: scratch # or <group>/<task>: continue from where that task left the environment
-inputs:
-  ref: what the task is given, one key per input
+inputs: # every value the task needs, all fixed in the run's plan before the run starts
+  ref: what it is
 cost: 30 # estimated minutes, used to choose tasks within a budget
 platforms: [linux, macos, windows]
 ---
 ```
 
-Body, always these five sections in this order:
+Body, in this order:
 
 - `## Goal` — what the task establishes, in two or three sentences.
+- `## Prepare` — only for a task with an input that takes work to produce (such as the list of
+  changelog entries and how to check each). It says how to produce that input before the run, and
+  what it must contain.
 - `## Steps` — numbered steps. Each gives the command or the clicks, what to observe, the
   screenshot to take, and the counter-example: what this step looks like when it has found a
   problem.
@@ -43,10 +54,25 @@ Body, always these five sections in this order:
 
 Platform differences go inside the step that differs, not into a second copy of the task.
 
+## Plan
+
+Every input is decided before the run starts, never while it runs. The person who starts a run
+names an output directory `<RUN>` outside this repository and writes `<RUN>/plan.md`: the tasks
+chosen, and for each the value of every input in its frontmatter. An input with a `## Prepare`
+section is produced then, written to the path the task names under `<RUN>`, and reviewed with the
+rest of the plan. A task does not start while one of its inputs is missing from the plan.
+
+## Scripts
+
+A task may carry scripts next to its `TASK.md`, in `scripts/`, for steps that are pure operation:
+driving the browser along a fixed path with Playwright, taking the screenshots, collecting logs.
+Use one whenever the step checks something other than the Agent itself (the installer, the
+sandbox, a settings page), so that every run operates the product the same way. The step then
+says which script to run and what to judge in its output; the verdict stays with the Agent.
+
 ## Output
 
-The person who starts a run names an output directory `<RUN>` outside this repository; results are
-never committed. Each task writes to `<RUN>/<group>/<task>/`:
+Results are never committed. Each task writes to `<RUN>/<group>/<task>/`:
 
 - `report.html` — one self-contained file: styles inline, no external references in the body,
   screenshots and evidence linked by relative path. Every screenshot has a caption naming its step
@@ -58,8 +84,8 @@ never committed. Each task writes to `<RUN>/<group>/<task>/`:
 - `issues.md` — one entry per problem: what was seen, how to reproduce it, the evidence (a
   screenshot or a quoted log line), and the cause if it is known. Mark each entry `product` or
   `environment`; only product problems are reported further.
-- `oplog.md` — for UI tasks, the operation log: one line per action, with the time, what was
-  clicked or typed, and what the screen showed.
+- `oplog.md` — for tasks that operate the UI, the operation log: one line per action, with the
+  time, what was clicked or typed, and what the screen showed.
 
 ## Handover
 
