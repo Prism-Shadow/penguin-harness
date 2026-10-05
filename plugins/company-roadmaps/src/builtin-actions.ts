@@ -28,6 +28,7 @@ export const ROADMAP_ACTION_IDS = {
   "roadmap.reopen": "company-roadmaps.action.reopen",
   "roadmap.rename": "company-roadmaps.action.rename",
   "roadmap.room": "company-roadmaps.action.room",
+  "roadmap.members": "company-roadmaps.action.members",
 } as const;
 
 export type RoadmapActionKey = keyof typeof ROADMAP_ACTION_IDS;
@@ -140,6 +141,15 @@ const RUNS: Record<RoadmapActionKey, Run> = {
       ctx.org.orgId,
       subjectNumber(ctx.subject),
       ctx.params.channelId,
+      ctx.actor,
+      act,
+    ),
+  "roadmap.members": (s, ctx, act) =>
+    s.members(
+      ctx.org.projectId,
+      ctx.org.orgId,
+      subjectNumber(ctx.subject),
+      { employees: ctx.params.employees, moderator: ctx.params.moderator },
       ctx.actor,
       act,
     ),

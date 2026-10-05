@@ -145,6 +145,9 @@ class FakeGateway implements OrgGateway {
   async openRoom(args: { channelId: string }) {
     return { channelId: args.channelId };
   }
+  async changeRoomMembers() {
+    return { added: [], removed: [] };
+  }
 }
 
 /** The Agent lifecycle as the service uses it: which employees carry the skills plugin, and the installs it asked for. */

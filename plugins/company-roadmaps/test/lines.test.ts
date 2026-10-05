@@ -14,6 +14,7 @@ const roadmap: Roadmap = {
   brief: "",
   channelId: "roadmap_3",
   employees: ["acme_ceo", "acme_dev"],
+  explicitModerator: null,
   parent: null,
   parentItem: null,
   status: "discussing",

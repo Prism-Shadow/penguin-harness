@@ -64,6 +64,9 @@ export class FakeOrgGateway implements OrgGateway {
   async openRoom(args: { channelId: string }) {
     return { channelId: args.channelId };
   }
+  async changeRoomMembers() {
+    return { added: [], removed: [] };
+  }
   notifyProject(_p: string, event: ServerEvent): void {
     this.events.push(event);
   }

@@ -5,8 +5,9 @@
  * which status takes which step, which roles approve an item's brief, that an approval counts
  * only for the brief it was given on — are defaults.
  *
- * The defaults do not tell a person from an employee. An item's brief is approved in the
- * moderator's role and any other member's; a company workflow that replaces the guard of
+ * The defaults do not tell a person from an employee, but for `roadmap.members`: a roadmap's
+ * members and moderator are changed by a person or its moderator. An item's brief is approved in
+ * the moderator's role and any other member's; a company workflow that replaces the guard of
  * `roadmap.item.approve` names other roles by handing them to the default it wraps
  * ({@link withApprovalRoles}), and the guard's verdict carries the roles to the write. The
  * approval that fills the last role creates the item's proposal.
@@ -37,8 +38,13 @@ export interface Caller {
   agentId: string | null;
 }
 
-/** The employee who moderates: the first of the opening employees with an open room session, else the first opener, else the earliest open session. */
+/**
+ * The employee who moderates: the one a `members` write named, once one did; until then the
+ * first of the members with an open room session, else the first member, else the earliest open
+ * session.
+ */
 export function moderatorOf(r: Roadmap): string | null {
+  if (r.explicitModerator !== null) return r.explicitModerator;
   const open = r.clones.filter((c) => c.closedAt === undefined).map((c) => c.agentId);
   return r.employees.find((e) => open.includes(e)) ?? open[0] ?? r.employees[0] ?? null;
 }
@@ -224,6 +230,20 @@ export const roadmapGuards: Record<string, Guard> = {
   "roadmap.reopen": onRoadmap((r) => requireStatus(r, "established")),
   "roadmap.rename": allow,
   "roadmap.room": onRoadmap((r) => requireStatus(r, "awaiting_room")),
+
+  /**
+   * A person, or the roadmap's moderator as it stands (the one a departed moderator would be
+   * replaced by is named by a person). In any status.
+   */
+  "roadmap.members": onRoadmap((r, { caller }) => {
+    const moderator = moderatorOf(r);
+    if (caller.agentId === null || caller.agentId === moderator) return;
+    throw new RoadmapError(
+      403,
+      "not_moderator",
+      `Roadmap #${r.number}'s members are changed by a person or its moderator (${moderator ?? "none"}).`,
+    );
+  }),
 };
 
 /**

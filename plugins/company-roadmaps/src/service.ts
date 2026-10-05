@@ -2,7 +2,8 @@
  * The roadmap state machine, the room relay and the desk deliveries.
  *
  * A roadmap is opened by a person or an employee over an organization channel (its room) with one
- * or more employees, the first of whom moderates. For every employee in the room the relay
+ * or more employees, the first of whom moderates (until `roadmap.members` names a moderator:
+ * members.ts). For every employee in the room the relay
  * opens a room session — the employee's desk cloned for this discussion — through the
  * organization gateway, and puts every later room message into those sessions through the
  * session runtime — steered into the Task a session is running, else started as its next
@@ -65,6 +66,7 @@ import {
   roomRequestLine,
 } from "./lines.js";
 import { planRelay } from "./relay.js";
+import { changeMembers, type MembersRequest } from "./members.js";
 import {
   CHANNEL_ID,
   agentMembers,
@@ -97,6 +99,7 @@ export interface ServiceDeps {
     | "deliverToDesk"
     | "openEmployeeSession"
     | "openRoom"
+    | "changeRoomMembers"
   >;
   /**
    * The session runtime's input: a later room message into an existing room session — into
@@ -1195,6 +1198,26 @@ export class RoadmapService {
     return { roadmap: await this.get(projectId, orgId, number, actor), hints };
   }
 
+  /** A person or the moderator replaces the members and names the moderator (members.ts). */
+  members(
+    projectId: string,
+    orgId: string,
+    number: number,
+    req: MembersRequest,
+    actor: OrgActor,
+    act?: WriteAct,
+  ): Promise<WriteResult> {
+    const host = {
+      gateway: this.deps.gateway,
+      notices: this.notices,
+      withLock: this.withLock.bind(this),
+      open: this.open.bind(this),
+      get: this.get.bind(this),
+      relayRoadmap: this.relayRoadmap.bind(this),
+    };
+    return changeMembers(host, projectId, orgId, number, req, actor, act);
+  }
+
   async rename(
     projectId: string,
     orgId: string,
@@ -1314,7 +1337,10 @@ export class RoadmapService {
       const recent = await recentMessages(orgDir, r.channelId, RECENT_CONTEXT);
       for (const agentId of missing) {
         const current = this.require(store, number);
-        const moderator = current.employees.find((e) => inRoom.includes(e)) ?? order[0]!;
+        const moderator =
+          current.explicitModerator ??
+          current.employees.find((e) => inRoom.includes(e)) ??
+          order[0]!;
         try {
           const opened = await this.deps.gateway.openEmployeeSession({
             projectId,

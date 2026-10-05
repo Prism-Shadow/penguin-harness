@@ -21,7 +21,7 @@
   - `guard`：替换某个 Action 的 guard，并收到缺省 guard 作为基础；
   - `hook`：在 Action 之前或之后执行，键可以以 `.*` 结尾；
   - `subject`：读取对象的状态，对象有提交时一并读取提交。
-- 两个插件各自贡献内置 Action：company-proposals 贡献 20 个 Action（`proposal.*` 与 `target.register`），company-roadmaps 贡献 9 个 `roadmap.*` Action。
+- 两个插件各自贡献内置 Action：company-proposals 贡献 20 个 Action（`proposal.*` 与 `target.register`），company-roadmaps 贡献 10 个 `roadmap.*` Action。
 - 同一个键有两份同级的贡献（两份 company workflow 的，或两份内置的）时，只在调用该键时以 409 `action_ambiguous` 拒绝，两份 action 与两份 guard 的拒绝同形。拒绝中列出每份贡献的精确调用方式，且不记为运行。按 id 调用一份 `action` 贡献时，其 guard 照常按键解析；按 id 调用一份 `guard` 贡献时，运行该键的 Action，只由这份 guard 判定。
 - 运行的开始行写在它的第一个写事务里，运行与其写入一同提交。被拒绝和失败的尝试同样留下记录。执行体抛出带 4xx 状态的领域错误时记为 `refused` 并答该状态与错误码；其余错误记为 `failed`：带 5xx 状态的（如 502 `branch_unreadable`）答该状态与错误码，其他答 500。
 - 带相同 `requestId` 的重试答第一次的运行。
@@ -45,6 +45,15 @@
 - 已读位置对人与员工都记录。
 - roadmap 条目缺省由主持人一份、主持人以外任一成员一份批准。替换 `roadmap.item.approve` guard 的 company workflow 把角色交给缺省 guard 即可改所需角色（company-roadmaps 的 `withApprovalRoles`）。每个主体只批准一次，补齐最后一个角色的那次批准建出提案。
 - 仍是 brief 的条目，除其负责人外任何人都可以链接。
+
+## Roadmap 成员
+
+- 新增 `roadmap.members`，对象 `roadmap:<n>`，参数 `{ employees, moderator }`：替换 roadmap 的成员并指定主持人。`employees` 为非空、不重复的在职员工列表（否则 400 `bad_request`；不是员工或已离职为 `not_an_employee`），`moderator` 须在其中（400 `moderator_not_member`）。离职员工不会自动移出成员，由该 Action 移除。
+- 每次运行追加一条 `members` 事件，其备注记下改动前后的成员与主持人。指定的主持人记入新增的可空列 `roadmaps.moderator`；该列为空时——即从未这样改过的 roadmap——主持人照旧推算（见[向后兼容](2026-10-04-backward-compatibility-notify-actions.zh.md)）。
+- 条目的 `moderator` 批准只认当前的主持人；改动之前已给出的批准仍然有效。
+- roadmap 有讨论室时，新增的员工加入其频道、移出的员工离开，每次变更在频道里留一条系统消息；讨论室无法随之变更时，本次运行被拒绝。roadmap 正在讨论时，新成员像开房时一样得到讨论室会话，并经 `notify.roadmap.room_joined` 得知；移出成员的讨论室会话被关闭。其他阶段只改频道成员。
+- 其缺省 guard 放行人与 roadmap 当前的主持人，拒绝其他员工（403 `not_moderator`）。
+- 服务端的 `OrgGateway` 新增 `changeRoomMembers`：为拥有频道的工作把员工加入或移出该频道，不动其中的人。
 
 ## 部署
 

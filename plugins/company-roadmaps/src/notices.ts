@@ -7,7 +7,8 @@
  * delivered before notices existed: a line on a desk, `notify_failed` recorded when it could not
  * be; or, for the approval request and the reopening, a line into room sessions.
  *
- *   room_joined         each opening employee's desk: the room it is in, its room session
+ *   room_joined         each opening employee's desk, and each member a change of members adds
+ *                       while the room discusses: the room it is in, its room session
  *   derived             a derived roadmap's moderator's desk: its room is open, or to open one
  *   approval_requested  the moderator's room session: approve the briefs
  *   item_approved       an item's owner's desk: its proposal was created (or rewritten)

@@ -50,6 +50,8 @@ function noteOf(w: RoadmapWrite): string | undefined {
       return w.reason;
     case "renamed":
       return w.name;
+    case "members":
+      return `${membersNote(w.before.employees, w.before.moderator)} → ${membersNote(w.employees, w.moderator)}`;
     case "clone":
     case "clone_closed":
       return `${w.agentId} ${w.sessionId}`;
@@ -58,6 +60,11 @@ function noteOf(w: RoadmapWrite): string | undefined {
     default:
       return undefined;
   }
+}
+
+/** A member list with its moderator, as a `members` event's note spells each side. */
+function membersNote(employees: readonly string[], moderator: string | null): string {
+  return `${employees.join(", ")} (moderator ${moderator ?? "none"})`;
 }
 
 function itemOf(r: Row): DraftItem {
@@ -226,6 +233,7 @@ export class SqliteRoadmapStore implements RoadmapStore {
         brief: String(h.brief),
         channelId: strOrNull(h.channel_id),
         employees: JSON.parse(String(h.employees)) as string[],
+        explicitModerator: strOrNull(h.moderator),
         parent: h.parent === null ? null : Number(h.parent),
         parentItem: strOrNull(h.parent_item),
         status: String(h.status) as RoadmapStatus,
@@ -350,6 +358,13 @@ export class SqliteRoadmapStore implements RoadmapStore {
         return;
       case "renamed":
         this.q(`UPDATE roadmaps SET name = ? WHERE number = ?`).run(w.name, w.number);
+        return;
+      case "members":
+        this.q(`UPDATE roadmaps SET employees = ?, moderator = ? WHERE number = ?`).run(
+          JSON.stringify(w.employees),
+          w.moderator,
+          w.number,
+        );
         return;
       case "delegated":
       case "briefed": {

@@ -301,6 +301,9 @@ class Gateway implements OrgGateway {
   async openRoom(args: { channelId: string }) {
     return { channelId: args.channelId };
   }
+  async changeRoomMembers() {
+    return { added: [], removed: [] };
+  }
   notifyProject(_projectId: string, _event: ServerEvent): void {}
 }
 

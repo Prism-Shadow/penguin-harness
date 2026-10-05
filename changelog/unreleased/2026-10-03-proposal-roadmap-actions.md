@@ -21,7 +21,7 @@ Every write to an organization's proposals and roadmaps became an Action: a key,
   - `guard`: replaces an Action's guard, and is handed the default guard to build on;
   - `hook`: runs before or after an Action, and a key may end in `.*`;
   - `subject`: reads a subject's state, and its commit when it has one.
-- Both plugins contribute their built-in Actions: 20 Actions from company-proposals (`proposal.*` and `target.register`), and 9 `roadmap.*` Actions from company-roadmaps.
+- Both plugins contribute their built-in Actions: 20 Actions from company-proposals (`proposal.*` and `target.register`), and 10 `roadmap.*` Actions from company-roadmaps.
 - A key answered by two contributions of the same standing (two company workflows', or two built-in ones) is refused with 409 `action_ambiguous` only when it is invoked, in the same shape for two actions and for two guards. The refusal names each contribution's exact invocation, and is not recorded as a run. Run by its id, an `action` contribution has its guard resolved by key as usual; a `guard` contribution runs its key's Action, judged by that guard alone.
 - A run's start row is written inside its first write transaction, so the run commits with its write. Refused and failed attempts are recorded too. A domain error with a 4xx status that a run throws is recorded `refused` with its status and code; anything else a run throws is `failed`, answered with its own status and code when that status is a 5xx (502 `branch_unreadable`), else 500.
 - A retry with the same `requestId` answers the first run.
@@ -45,6 +45,15 @@ Every write to an organization's proposals and roadmaps became an Action: a key,
 - Read positions are kept for employees as well as people.
 - A roadmap item is approved by default in the moderator's role and one other member's. A company workflow that replaces the guard of `roadmap.item.approve` sets other roles by handing them to the default (`withApprovalRoles` in company-roadmaps). A principal approves once, and the approval that fills the last role creates the proposal.
 - An item that is still a brief may be linked by anyone but its own owner.
+
+## Roadmap members
+
+- Added `roadmap.members` on `roadmap:<n>`, with `{ employees, moderator }`: it replaces the roadmap's members and names its moderator. `employees` is a non-empty list of distinct current employees (400 `bad_request`, or `not_an_employee` for one that is not or has left), and `moderator` is one of them (400 `moderator_not_member`). A member who left the organization stays a member until this Action removes it.
+- Each run appends a `members` event whose note records the members and moderator before and after. The moderator it names is stored in the new nullable column `roadmaps.moderator`. While that column is null — on every roadmap never changed this way — the moderator is derived as before (see [backward compatibility](2026-10-04-backward-compatibility-notify-actions.md)).
+- The `moderator` approval of an item is taken only from the moderator in force; approvals given before a change stay.
+- When the roadmap has a room, the employees added join its channel and the ones removed leave it, each a system line in the channel; a room that cannot follow refuses the run. While the roadmap is discussing, a new member gets a room session as at the opening and is told through `notify.roadmap.room_joined`, and a removed member's room session is closed. In any other status only the channel changes.
+- Its default guard lets a person and the roadmap's current moderator run it and refuses any other employee (403 `not_moderator`).
+- The server's `OrgGateway` gained `changeRoomMembers`: employees into and out of a channel, for the work that owns it, people untouched.
 
 ## Deploys
 

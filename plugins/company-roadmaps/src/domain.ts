@@ -119,8 +119,16 @@ export interface Roadmap {
   name: string;
   brief: string;
   channelId: string | null;
-  /** The employees it was opened with, in order: the first moderates. */
+  /**
+   * Its members, in order: the employees it was opened with, or the list a `members` write
+   * last replaced them with.
+   */
   employees: string[];
+  /**
+   * The moderator a `members` write named; null until one did, and the moderator is derived
+   * from the members and their room sessions (guards.ts's moderatorOf).
+   */
+  explicitModerator: string | null;
   parent: number | null;
   parentItem: string | null;
   status: RoadmapStatus;
@@ -195,6 +203,15 @@ export type RoadmapWrite =
   | { kind: "adopted"; number: number; item: ProposalItem; by: string }
   | { kind: "reopened"; number: number; reason: string; by: string }
   | { kind: "renamed"; number: number; name: string; by: string }
+  /** The members replaced and the moderator named; `before` is what they were, for the event. */
+  | {
+      kind: "members";
+      number: number;
+      employees: string[];
+      moderator: string;
+      before: { employees: string[]; moderator: string | null };
+      by: string;
+    }
   | { kind: "clone"; number: number; agentId: string; sessionId: string; by: string }
   | {
       kind: "clone_closed";

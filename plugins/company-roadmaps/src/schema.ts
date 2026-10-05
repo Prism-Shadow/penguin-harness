@@ -8,7 +8,8 @@
  * The store guarantees the data itself — keys, types, value domains, NOT NULL — and an
  * append-only history: a draft, an approval, an event is a new row, and the triggers refuse to
  * rewrite or delete one. The process rules are in guards.ts. Tables are created at open with IF
- * NOT EXISTS; there is no migration runner.
+ * NOT EXISTS; there is no migration runner: a column added later is added at open as well, when
+ * the table lacks it ({@link addRoadmapModerator}).
  */
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -45,7 +46,8 @@ CREATE TABLE IF NOT EXISTS roadmaps (
   seq         INTEGER NOT NULL,
   brief       TEXT NOT NULL,
   record      TEXT NOT NULL DEFAULT '',
-  body        TEXT NOT NULL DEFAULT ''
+  body        TEXT NOT NULL DEFAULT '',
+  moderator   TEXT
 );
 CREATE INDEX IF NOT EXISTS roadmaps_by_channel ON roadmaps (channel_id, status, number) WHERE channel_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS roadmaps_by_status ON roadmaps (status, number);
@@ -145,7 +147,30 @@ export function openCompanyDb(file: string): DatabaseSync {
   db.exec("PRAGMA busy_timeout = 5000;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(ROADMAP_SCHEMA);
+  addRoadmapModerator(db);
   return db;
+}
+
+/**
+ * `roadmaps.moderator` (the moderator a `members` write named) on a table created before the
+ * column existed: added once, nullable, so every row already there reads null — its moderator
+ * stays derived, as it was. Checked again inside the write transaction, since another process
+ * may open the same file at the same time. An older build reads the table as before (it selects
+ * by name and ignores the column), so nothing needs undoing on a rollback.
+ *
+ * TODO(roadmap-moderator-column): remove once no `company.db` written before 2026-10-04 can be
+ * opened any more — at the latest when the first release that includes roadmap Actions ships,
+ * since no released build wrote the `roadmaps` table.
+ */
+export function addRoadmapModerator(db: DatabaseSync): void {
+  const has = (): boolean =>
+    (db.prepare(`PRAGMA table_info(roadmaps)`).all() as Array<{ name: string }>).some(
+      (c) => c.name === "moderator",
+    );
+  if (has()) return;
+  immediate(db, () => {
+    if (!has()) db.exec(`ALTER TABLE roadmaps ADD COLUMN moderator TEXT`);
+  });
 }
 
 /** Opens an existing `company.db` read-only (the channel claim's question); throws when there is none. */

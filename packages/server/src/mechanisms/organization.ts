@@ -62,9 +62,11 @@ export interface OrgView {
  * OrgGateway: what a plugin may do with an organization without holding the organization
  * service — read it, attribute a write, put a line of work on an employee's desk (in nobody's
  * name), open a session for an employee the way a ticket session is opened, open an unlisted
- * room for a piece of work, and notify the Project's people. Every method but `openRoom` is a
- * narrowing of OrganizationService with no behaviour the routes do not have; `openRoom` is
- * the routes' channel creation with one difference, the channel is left out of the listing.
+ * room for a piece of work and change who is in it, and notify the Project's people. Every
+ * method but `openRoom` and `changeRoomMembers` is a narrowing of OrganizationService with no
+ * behaviour the routes do not have; `openRoom` is the routes' channel creation with one
+ * difference, the channel is left out of the listing, and `changeRoomMembers` is the routes'
+ * invite and remove for employees, made by the work that owns the room rather than by a member.
  */
 export abstract class OrgGateway extends Interface<{
   /** The admin master switch: every company-mode surface answers 404 while it is off. */
@@ -115,6 +117,26 @@ export abstract class OrgGateway extends Interface<{
     by: string;
     agentIds: string[];
   }): Promise<{ channelId: string }>;
+  /**
+   * Employees in and out of a channel, for the work that owns it (a room it opened, or a channel
+   * it was given): each of `add` joins (an employee only), each of `remove` leaves, and each
+   * change is a system line in the channel attributed to `by`, as an invitation or a removal
+   * is. People in the channel stay. Answers the employees that actually joined and left — one
+   * already in (or already out) changes nothing. 404 `channel_not_found`; 400 for the all-hands
+   * channel, a `by` that is not a principal, an Agent in both lists or an Agent in `add` that
+   * is not an employee; 409
+   * `channel_archived`, and `org_runs_elsewhere` for an organization that runs on another
+   * machine. A plugin checks it is there before calling it: a server older than this method
+   * has none.
+   */
+  changeRoomMembers(args: {
+    projectId: string;
+    orgId: string;
+    channelId: string;
+    by: string;
+    add: string[];
+    remove: string[];
+  }): Promise<{ added: string[]; removed: string[] }>;
   /** A user-level event to everyone with access to the Project. */
   notifyProject(projectId: string, event: ServerEvent): void;
 }>() {}

@@ -145,6 +145,8 @@ import {
 } from "./notices.js";
 import { appendChannelMessage, listTickets, syncApprovalMode, syncCaches } from "./reconcile.js";
 import type { LoadedTicket } from "./reconcile.js";
+import { changeRoomMembers } from "./room-members.js";
+import type { RoomMembersChange } from "./room-members.js";
 import { rotaWarnings } from "./rota.js";
 import { OrganizationScheduler } from "./scheduler.js";
 import { dispatchToDesk, ensureDesk, openTicketSession } from "./triggers.js";
@@ -2840,6 +2842,18 @@ export class OrganizationService {
     return { channelId };
   }
 
+  /** OrgGateway.changeRoomMembers (room-members.ts), under the organization's lock. */
+  async gatewayChangeRoomMembers(
+    args: RoomMembersChange & { projectId: string; orgId: string },
+  ): Promise<{ added: string[]; removed: string[] }> {
+    const { projectId, orgId } = args;
+    const out = await this.scheduler.withLock(projectId, orgId, async () =>
+      changeRoomMembers(this.deps, await this.requireOrg(projectId, orgId), args),
+    );
+    await this.scheduler.reconcile(projectId, orgId);
+    return out;
+  }
+
   /** {@link openTicketSession} without the ticket: the session is the employee's, marked as the organization's, and started on `body`. */
   async gatewayOpenSession(args: {
     projectId: string;
@@ -3371,6 +3385,7 @@ export class OrganizationModule {
         orgService.gatewayDeliverToDesk(projectId, orgId, agentId, text),
       openEmployeeSession: (args) => orgService.gatewayOpenSession(args),
       openRoom: (args) => orgService.gatewayOpenRoom(args),
+      changeRoomMembers: (args) => orgService.gatewayChangeRoomMembers(args),
       notifyProject: deps.notifyProject,
     };
     // Only active while this App is; the successor's start() reconciles from the files.

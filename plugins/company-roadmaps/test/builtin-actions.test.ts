@@ -1,6 +1,6 @@
 /**
- * The built-in roadmap Actions: each default guard answers a person and an employee alike for
- * the same state; the roles an item's brief is approved in are the default ones until a company
+ * The built-in roadmap Actions: each default guard but `roadmap.members`'s answers a person and
+ * an employee alike for the same state; the roles an item's brief is approved in are the default ones until a company
  * workflow replaces the guard of `roadmap.item.approve` and hands the default other roles; an
  * approval counts only on the brief it was read on; and the manifest declares exactly the Actions builtin-actions.ts implements.
  */
@@ -93,8 +93,10 @@ describe("the default guards", () => {
       ["roadmap.rename", open, `roadmap:${open.number}`],
       ["roadmap.room", open, `roadmap:${open.number}`],
     ];
+    // `roadmap.members` is the one default that tells them apart: a person or the moderator
+    // (members.test.ts).
     for (const key of Object.keys(ROADMAP_ACTION_IDS)) {
-      expect(cases.some(([k]) => k === key)).toBe(true);
+      expect(key === "roadmap.members" || cases.some(([k]) => k === key)).toBe(true);
     }
     for (const [key, state, subject] of cases) {
       const person = answer(key, state, subject, null);

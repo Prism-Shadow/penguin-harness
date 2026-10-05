@@ -1,5 +1,6 @@
 /**
- * The roadmap notices (notices.ts): an opening tells each employee's desk where it is, an
+ * The roadmap notices (notices.ts): an opening tells each employee's desk where it is (and a
+ * change of members each new member of a discussing room), an
  * establishment tells a derived roadmap's moderator and asks the moderator's room session for
  * its approvals, an item's last approval tells its owner (and the owners stacked on it learn the
  * proposal's number), a reopening tells every open room session why — each through its notify
@@ -393,6 +394,62 @@ describe("roadmap notices", () => {
     await post(w.root, "room_a", "user:boss", "after the reopening");
     await service.relayOnce();
     expect(w.runner.to("room-1").at(-1)).toContain("after the reopening");
+  });
+
+  it("a member added to a discussing room is told its room and room session through room_joined, as the members run", async () => {
+    app();
+    const r = await discussing();
+    const mark = w.gateway.desks.length;
+    const ran = await a.run("roadmap.members", `roadmap:${r.number}`, {
+      employees: ["acme_dev", "acme_web", "acme_qa"],
+      moderator: "acme_dev",
+    });
+    expect(ran.status).toBe(200);
+    const sender = ran.body.run as RunView;
+    expect(sender.hookErrors).toEqual([]);
+    expect(await sentBy("room_joined", sender)).toMatchObject([
+      {
+        contribution: ROADMAP_NOTICE_IDS.room_joined,
+        subject: `roadmap:${r.number}`,
+        by: "user:boss",
+        via: "notify",
+        outcome: "succeeded",
+        params: { to: ["acme_qa"] },
+      },
+    ]);
+    expect(w.gateway.desks.slice(mark)).toEqual([
+      {
+        agentId: "acme_qa",
+        text: "[roadmap #1 «Queue»] user:boss made you a member of this roadmap, in its room `room_a` (acme_dev moderates). Your room session `room-3` takes part; nothing is needed from this desk, and do not speak in the room from here.",
+      },
+    ]);
+  });
+
+  it("a company workflow's room_joined replaces the built-in one for an added member too", async () => {
+    const seen: string[] = [];
+    app([
+      quiet("notify.roadmap.room_joined", ["roadmap"], NOTICE_PARAMS, seen, {
+        delivered: [],
+        failed: [],
+      }),
+    ]);
+    const r = await discussing();
+    seen.length = 0;
+    const mark = w.gateway.desks.length;
+    const ran = await a.run("roadmap.members", `roadmap:${r.number}`, {
+      employees: ["acme_web", "acme_qa"],
+      moderator: "acme_qa",
+    });
+    expect(ran.status).toBe(200);
+    expect(ran.body.run).toMatchObject({ outcome: "succeeded", hookErrors: [] });
+    expect(seen).toEqual([`notify.roadmap.room_joined roadmap:${r.number} acme_qa`]);
+    expect(w.gateway.desks).toHaveLength(mark);
+    // The room session opened all the same: the notice is what was replaced, not the session.
+    const after = (ran.body.result as { roadmap: Roadmap }).roadmap;
+    expect(after.clones.filter((c) => c.closedAt === undefined).map((c) => c.agentId)).toEqual([
+      "acme_web",
+      "acme_qa",
+    ]);
   });
 
   it("the manifest declares the six notices, each run only as a write's notice", async () => {

@@ -434,6 +434,9 @@ export function replacementsFor(o: TestAppOptions): Replacements {
           openRoom: async () => {
             throw new Error("no organization in this suite");
           },
+          changeRoomMembers: async () => {
+            throw new Error("no organization in this suite");
+          },
           notifyProject: () => {},
         },
       },

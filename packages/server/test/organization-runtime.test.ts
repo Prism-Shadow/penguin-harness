@@ -2384,6 +2384,47 @@ describe("organization runtime", () => {
       });
     });
 
+    it("changes a room's employees for the work that owns it, people untouched, each change a system line", async () => {
+      const change = (add: string[], remove: string[], channelId = "roadmap_4") =>
+        service.gatewayChangeRoomMembers({
+          projectId: P,
+          orgId: ORG,
+          channelId,
+          by: "user:alice",
+          add,
+          remove,
+        });
+      await service.gatewayOpenRoom({
+        projectId: P,
+        orgId: ORG,
+        channelId: "roadmap_4",
+        name: "Room",
+        purpose: "",
+        by: "user:alice",
+        agentIds: [HR],
+      });
+      expect(await change([CEO], [HR])).toEqual({ added: [CEO], removed: [HR] });
+      const detail = await service.channel(P, ORG, "roadmap_4", alice);
+      expect(detail.members.map((m) => m.principal)).toEqual(["user:alice", `agent:${CEO}`]);
+      const lines = (await service.channelMessages(P, ORG, alice, "roadmap_4", {})).messages.map(
+        (m) => m.text,
+      );
+      expect(lines).toContain(`user:alice removed agent:${HR} from the channel.`);
+      expect(lines).toContain(`user:alice invited agent:${CEO} to the channel.`);
+      // Nothing to change changes nothing.
+      expect(await change([CEO], [HR])).toEqual({ added: [], removed: [] });
+      await expect(change([HR], [HR])).rejects.toMatchObject({ status: 400 });
+      await expect(change(["stranger"], [])).rejects.toMatchObject({
+        status: 400,
+        code: "not_an_employee",
+      });
+      await expect(change([HR], [], "no_such_room")).rejects.toMatchObject({
+        status: 404,
+        code: "channel_not_found",
+      });
+      await expect(change([HR], [], DEFAULT_CHANNEL_ID)).rejects.toMatchObject({ status: 400 });
+    });
+
     it("a new channel holds only its creator; the all-hands channel holds everyone", async () => {
       const site = await service.createChannel(
         P,

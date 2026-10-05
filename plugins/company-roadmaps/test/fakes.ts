@@ -8,7 +8,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { OrgActor, OrgGateway, OrgView } from "@prismshadow/penguin-server/plugin";
-import { RoadmapService, orgDirOf, type ProposalCreator } from "../src/index.js";
+import {
+  RoadmapService,
+  agentMembers,
+  orgDirOf,
+  readRoom,
+  type ProposalCreator,
+} from "../src/index.js";
 
 export const PROJECT = "proj";
 export const ORG = "acme";
@@ -27,6 +33,7 @@ export class FakeGateway implements Pick<
   | "deliverToDesk"
   | "openEmployeeSession"
   | "openRoom"
+  | "changeRoomMembers"
 > {
   enabled = true;
   /** Where the organization's files are: a room is written there, the way the server writes one. */
@@ -39,6 +46,10 @@ export class FakeGateway implements Pick<
     by: string;
     agentIds: string[];
   }> = [];
+  /** Every change of a room's employees, in order. */
+  memberChanges: Array<{ channelId: string; by: string; add: string[]; remove: string[] }> = [];
+  /** Set by a test to make changing a room's members fail. */
+  refuseMemberChanges: string | null = null;
   /** Set by a test to make opening a room fail (not a taken id). */
   refuseRooms: string | null = null;
   org: OrgView = {
@@ -123,6 +134,54 @@ export class FakeGateway implements Pick<
     );
     return { channelId: args.channelId };
   }
+  async changeRoomMembers(args: {
+    channelId: string;
+    by: string;
+    add: string[];
+    remove: string[];
+  }): Promise<{ added: string[]; removed: string[] }> {
+    if (this.refuseMemberChanges !== null) {
+      throw Object.assign(new Error(this.refuseMemberChanges), {
+        status: 409,
+        code: "org_runs_elsewhere",
+      });
+    }
+    this.memberChanges.push({
+      channelId: args.channelId,
+      by: args.by,
+      add: [...args.add],
+      remove: [...args.remove],
+    });
+    return changeChannel(this.root, args);
+  }
+}
+
+/** The employees of a channel changed on disk, as the server changes them: people stay, the archived and unlisted flags too. */
+async function changeChannel(
+  root: string,
+  args: { channelId: string; add: string[]; remove: string[] },
+): Promise<{ added: string[]; removed: string[] }> {
+  const dir = path.join(orgDir(root), "channels", args.channelId);
+  const room = await readRoom(orgDir(root), args.channelId);
+  if (room === null) {
+    throw Object.assign(new Error(`No channel ${args.channelId}`), {
+      status: 404,
+      code: "channel_not_found",
+    });
+  }
+  const unlisted = (await fs.readFile(path.join(dir, "channel.toml"), "utf8")).includes(
+    "unlisted = true",
+  );
+  const before = agentMembers(room);
+  const removed = before.filter((a) => args.remove.includes(a));
+  const added = args.add.filter((a) => !before.includes(a));
+  const leaving = new Set(args.remove.map((a) => `agent:${a}`));
+  const members = [
+    ...room.members.filter((m) => !leaving.has(m)),
+    ...added.map((a) => `agent:${a}`),
+  ];
+  await writeChannel(root, args.channelId, members, { archived: room.archived, unlisted });
+  return { added, removed };
 }
 
 /**

@@ -128,14 +128,16 @@ export function cloneBrief(args: {
 }
 
 /**
- * The line an employee's desk gets when a roadmap's opener puts it in its room: where it is, who
- * moderates, and that the room session — not this desk — takes part.
+ * The line an employee's desk gets when a roadmap's opener puts it in its room — or, with
+ * `addedBy`, when a change of members does: where it is, who moderates, and that the room
+ * session — not this desk — takes part.
  */
 export function roomJoinedLine(args: {
   roadmap: Roadmap;
   agentId: string;
   moderator: string;
   sessionId: string | null;
+  addedBy?: string;
 }): string {
   const { roadmap: r, agentId, moderator } = args;
   const role = agentId === moderator ? "you moderate" : `${moderator} moderates`;
@@ -143,7 +145,11 @@ export function roomJoinedLine(args: {
     args.sessionId === null
       ? "Your room session opens at the plugin's next pass"
       : `Your room session \`${args.sessionId}\` takes part`;
-  return `${tag(r)} ${r.createdBy} opened this roadmap and put you in its room \`${r.channelId ?? ""}\` (${role}). ${session}; nothing is needed from this desk, and do not speak in the room from here.`;
+  const how =
+    args.addedBy === undefined
+      ? `${r.createdBy} opened this roadmap and put you in its room`
+      : `${args.addedBy} made you a member of this roadmap, in its room`;
+  return `${tag(r)} ${how} \`${r.channelId ?? ""}\` (${role}). ${session}; nothing is needed from this desk, and do not speak in the room from here.`;
 }
 
 /** One room message, relayed into a room session. */
