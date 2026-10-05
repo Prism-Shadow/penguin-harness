@@ -158,9 +158,9 @@ describe("matching", () => {
     }
   });
 
-  it("lists the hits in drawing order, the nodes the own view leaves out among them", () => {
+  it("lists the hits in drawing order, base first, the nodes the own view leaves out among them", () => {
     expect(searchHits(rows, nodes, "fix")).toEqual(["fix/docs"]);
-    expect(searchHits(rows, nodes, "search")).toEqual(["impl/next", "feat/graph-search"]);
+    expect(searchHits(rows, nodes, "search")).toEqual(["feat/graph-search", "impl/next"]);
   });
 
   it("goes round the hits with Enter and Shift+Enter", () => {

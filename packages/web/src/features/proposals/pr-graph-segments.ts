@@ -1,17 +1,22 @@
 /**
- * The PR graph's rows as the page draws them: the server's rows (`graph.rows`, Sapling's
- * smartlog shape — newest on top, a line forking off a node drawn right above it in the column
- * to its right, joining back with `├─╯`, the base branch last) grouped by segment, with a roadmap
- * row heading each and a segment folded into one line on request.
+ * The PR graph's rows in the order the page draws them. The server lays the rows out in Sapling's
+ * smartlog shape (`graph.rows`: newest on top, a line forking off a node drawn right above it in
+ * the column to its right, joining back with `├─╯`, the base branch last); the page draws them
+ * the other way up — the base branch on top, each PR under the one it stacks on — so the list
+ * built here runs from the server's last row to its first. Each row keeps the server's cells, and
+ * GraphCells (pr-graph-lanes.tsx) mirrors them vertically, so `├─╯` is drawn as `├─╮`.
  *
- * A segment is the run of PRs from a head up to the next fork: a head is a PR hanging straight
- * from the base branch or from a fork (a PR more than one PR stacks on), and the segment goes on
- * through every PR that is its parent's only child, ending at a fork or a top. In the smartlog
- * order a run is contiguous — an only child is drawn right above its parent — so its rows are
- * one block, the run's top first and its head last.
+ * Rows are grouped by segment, a roadmap row heading each, and a segment folds into one line on
+ * request. A segment is the run of PRs from a head up to the next fork: a head is a PR hanging
+ * straight from the base branch or from a fork (a PR more than one PR stacks on), and the segment
+ * goes on through every PR that is its parent's only child, ending at a fork or a top. In the
+ * smartlog order a run is contiguous — an only child is drawn right above its parent — so its
+ * rows are one block, the run's top first and its head last; drawn, the head comes first.
  *
- * The heading sits right above the run's top. Folding a segment (by clicking its heading) draws
- * the run as one line in the run's column; the lines in the other columns go on through it.
+ * The heading sits right above the run's head as drawn, between the head and the row the server
+ * put under it, and carries the lines that pass that boundary. Folding a segment (by clicking its
+ * heading) draws the run as one line in the run's column; the lines in the other columns go on
+ * through it.
  */
 import type { ProposalGraphNode, ProposalGraphRow } from "@prismshadow/penguin-server/api";
 
@@ -45,17 +50,24 @@ export function cellsOf(d: DisplayRow): string[] {
   return d.kind === "row" ? d.row.cells : d.cells;
 }
 
-/** Whether a cell's line goes on into the row below: a line, a node, a join's `├`, the fold. */
+/**
+ * Whether a cell's line goes on to the next older row (the row below in the server's layout,
+ * above it as drawn): a line, a node, a join's `├`, the fold.
+ */
 export function connectsDown(cell: string | undefined): boolean {
   const g = cell?.[0];
   return g !== undefined && g !== " " && g !== "╯" && g !== "~";
 }
 
-/** For each display row and column, whether a line comes into it from the row above. */
-export function linesFromAbove(rows: readonly DisplayRow[]): boolean[][] {
+/**
+ * For each display row (in drawn order) and column, whether a line comes into it from the next
+ * newer row — the row drawn right below it, above it in the server's layout. GraphCells draws
+ * that line on the row's newer side.
+ */
+export function linesFromNewer(rows: readonly DisplayRow[]): boolean[][] {
   return rows.map((d, i) => {
-    const above = i === 0 ? [] : cellsOf(rows[i - 1]!);
-    return cellsOf(d).map((_, c) => connectsDown(above[c]));
+    const newer = i === rows.length - 1 ? [] : cellsOf(rows[i + 1]!);
+    return cellsOf(d).map((_, c) => connectsDown(newer[c]));
   });
 }
 
@@ -96,9 +108,10 @@ export function segments(
 }
 
 /**
- * The rows to draw: the server's rows, each segment headed by its roadmap row and a folded one
- * drawn as a single line. `roadmapsOf` names the roadmaps of a segment's head node; `folded`
- * holds the head node keys of the folded segments.
+ * The rows to draw, base on top: the server's rows from its last to its first, each segment
+ * headed by its roadmap row right above the segment's head and a folded one drawn as a single
+ * line. `roadmapsOf` names the roadmaps of a segment's head node; `folded` holds the head node
+ * keys of the folded segments.
  */
 export function displayRows(
   rows: readonly ProposalGraphRow[],
@@ -107,20 +120,22 @@ export function displayRows(
   folded: ReadonlySet<string>,
 ): DisplayRow[] {
   const byKey = new Map(nodes.map((n) => [n.key, n]));
-  const runs = segments(rows, nodes);
+  // The runs by their head's row index: walking the rows base first, the head is a run's start.
+  const byHead = new Map<number, number[]>();
+  for (const run of segments(rows, nodes).values()) byHead.set(run[run.length - 1]!, run);
   const out: DisplayRow[] = [];
-  for (let i = 0; i < rows.length; i++) {
-    const run = runs.get(i);
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const run = byHead.get(i);
     if (run === undefined) {
       out.push({ kind: "row", row: rows[i]! });
       continue;
     }
-    const head = rows[run[run.length - 1]!]!;
+    const head = rows[i]!;
     const segment = head.key;
     const isFolded = folded.has(segment);
-    // The heading carries on the lines that come down into the run's top, and nothing else.
-    const above = out.length === 0 ? [] : cellsOf(out[out.length - 1]!);
-    const cells = rows[i]!.cells.map((_, c) => (connectsDown(above[c]) ? "│ " : "  "));
+    // Between the head and the older row drawn above it pass exactly the lines the head carries
+    // on toward the base: its own line down to its parent and the other columns' lines.
+    const cells = head.cells.map((cell) => (connectsDown(cell) ? "│ " : "  "));
     out.push({
       kind: "roadmap",
       segment,
@@ -130,7 +145,7 @@ export function displayRows(
       cells,
     });
     if (!isFolded) {
-      out.push({ kind: "row", row: rows[i]! });
+      out.push({ kind: "row", row: head });
       continue;
     }
     const col = head.cells.length - 1;
@@ -140,8 +155,8 @@ export function displayRows(
       count: run.length,
       cells: head.cells.map((cell, c) => (c === col ? `${FOLDED_GLYPH} ` : cell)),
     });
-    // A run is contiguous; the loop resumes after its head.
-    i = run[run.length - 1]!;
+    // A run is contiguous; the loop resumes past its top.
+    i = run[0]!;
   }
   return out;
 }

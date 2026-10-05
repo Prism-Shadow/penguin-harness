@@ -1,8 +1,10 @@
 /**
  * The PR graph page (`proposals/graph`): the delivery repository's open PRs as a commit graph,
- * drawn the way Sapling's smartlog draws a stack — newest on top, a line forking off a node right
- * above it in the column to its right, joining back with `├─╯`, the base branch last — from the
- * rows the server laid out (the same ones the CLI prints). Each row is one
+ * from the rows the server laid out in Sapling's smartlog shape (the same ones the CLI prints),
+ * drawn base on top: the base branch first, each PR under the one it stacks on, a line forking
+ * off a node right below it in the column to its right and joining back with `├─╮`. Each
+ * segment's roadmap heading sits right above the segment's first PR (pr-graph-segments.ts). Each
+ * row is one
  * PR at its head — its number (to GitHub), the proposal it is the impl PR of (to that proposal's
  * page), its title and branch, how many commits it adds to the layer below, the marks the server
  * gave it (top, fork, the closed PRs its base led through, stale, off the chain and why) and the PRs
@@ -51,7 +53,7 @@ import {
   useRootFontPx,
 } from "./pr-graph-lanes";
 import { useProposalRoadmaps } from "./pr-graph-roadmaps";
-import { displayRows, linesFromAbove } from "./pr-graph-segments";
+import { displayRows, linesFromNewer } from "./pr-graph-segments";
 import { GraphSearchBox } from "./pr-graph-search-box";
 import { useGraphView } from "./use-graph-view";
 
@@ -166,7 +168,7 @@ export function GraphPage() {
           ),
     [graph, view.rows, roadmapsByProposal, folded],
   );
-  const up = useMemo(() => (display === null ? [] : linesFromAbove(display)), [display]);
+  const up = useMemo(() => (display === null ? [] : linesFromNewer(display)), [display]);
   // The row under the pointer; its lanes' dot and edge light up with it.
   const [hovered, setHovered] = useState<number | null>(null);
   const focusNode = graph === null || focus === null ? null : nodeOfProposal(graph.nodes, focus);
@@ -329,80 +331,77 @@ export function GraphPage() {
           <div ref={listRef} className="overflow-x-auto">
             {display !== null && (
               <ol>
-                {/* Base on top: the rows are laid out newest-first (smartlog) and drawn reversed,
-                    each row keeping its index for hover, focus and search; GraphCells mirrors its lanes. */}
-                {display
-                  .map((d, i) => [d, i] as const)
-                  .reverse()
-                  .map(([d, i]) => {
-                    const heading = d.kind === "roadmap" || d.kind === "folded";
-                    const node =
-                      d.kind === "row" && d.row.kind === "node"
-                        ? (byKey.get(d.row.key) ?? null)
-                        : null;
-                    const height = geo.height(d);
-                    const isTarget = node !== null && node.key === target;
-                    const connector = d.kind === "row" && d.row.connector;
-                    return (
-                      <li
-                        key={
-                          d.kind === "row"
-                            ? `${d.row.kind}${i}:${d.row.key}`
-                            : `${d.kind}${d.segment}`
-                        }
-                        data-focus={i === focusRow ? "true" : undefined}
-                        data-search-target={isTarget ? "true" : undefined}
-                        style={{ height }}
-                        onMouseEnter={() => setHovered(i)}
-                        onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
-                        onClick={heading ? () => toggleFold(d.segment) : undefined}
-                        // A hairline under each node's row: its two lines read as one block. A
-                        // roadmap heading or a folded run folds its segment on a click.
-                        className={`flex items-center pr-3 transition-colors duration-150 ${
-                          node !== null ? "border-b border-line-muted" : ""
-                        } ${heading ? "cursor-pointer select-none" : ""} ${
-                          i === focusRow || isTarget
-                            ? FOCUS_WASH
-                            : i === hovered
-                              ? "bg-surface-muted"
-                              : ""
-                        } ${isTarget ? "ring-2 ring-blue-400 ring-inset" : ""}`}
+                {/* The display rows are already in drawn order, base on top, so an index is the
+                    row's place on screen for hover, focus and search alike. */}
+                {display.map((d, i) => {
+                  const heading = d.kind === "roadmap" || d.kind === "folded";
+                  const node =
+                    d.kind === "row" && d.row.kind === "node"
+                      ? (byKey.get(d.row.key) ?? null)
+                      : null;
+                  const height = geo.height(d);
+                  const isTarget = node !== null && node.key === target;
+                  const connector = d.kind === "row" && d.row.connector;
+                  return (
+                    <li
+                      key={
+                        d.kind === "row"
+                          ? `${d.row.kind}${i}:${d.row.key}`
+                          : `${d.kind}${d.segment}`
+                      }
+                      data-focus={i === focusRow ? "true" : undefined}
+                      data-search-target={isTarget ? "true" : undefined}
+                      style={{ height }}
+                      onMouseEnter={() => setHovered(i)}
+                      onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
+                      onClick={heading ? () => toggleFold(d.segment) : undefined}
+                      // A hairline under each node's row: its two lines read as one block. A
+                      // roadmap heading or a folded run folds its segment on a click.
+                      className={`flex items-center pr-3 transition-colors duration-150 ${
+                        node !== null ? "border-b border-line-muted" : ""
+                      } ${heading ? "cursor-pointer select-none" : ""} ${
+                        i === focusRow || isTarget
+                          ? FOCUS_WASH
+                          : i === hovered
+                            ? "bg-surface-muted"
+                            : ""
+                      } ${isTarget ? "ring-2 ring-blue-400 ring-inset" : ""}`}
+                    >
+                      <GraphCells
+                        cells={d.kind === "row" ? d.row.cells : d.cells}
+                        up={up[i] ?? []}
+                        node={node}
+                        height={height}
+                        hovered={i === hovered}
+                        geo={geo}
+                      />
+                      <div
+                        className={`flex min-w-0 flex-1 items-center ${connector ? "opacity-60" : ""}`}
+                        style={{ paddingLeft: geo.textGap }}
+                        data-tooltip={connector ? t.connector : undefined}
                       >
-                        <GraphCells
-                          cells={d.kind === "row" ? d.row.cells : d.cells}
-                          up={up[i] ?? []}
-                          node={node}
-                          height={height}
-                          hovered={i === hovered}
-                          geo={geo}
-                        />
-                        <div
-                          className={`flex min-w-0 flex-1 items-center ${connector ? "opacity-60" : ""}`}
-                          style={{ paddingLeft: geo.textGap }}
-                          data-tooltip={connector ? t.connector : undefined}
-                        >
-                          {d.kind === "roadmap" ? (
-                            <RoadmapHeading
-                              projectId={projectId}
-                              orgId={orgId}
-                              roadmaps={d.roadmaps}
-                              count={d.count}
-                              folded={d.folded}
-                            />
-                          ) : d.kind === "folded" ? (
-                            <FoldedLine count={d.count} />
-                          ) : d.row.kind === "base" ? (
-                            <BaseRow graph={graph} behind={d.row.behind} />
-                          ) : node !== null ? (
-                            deployable(
-                              node,
-                              <NodeRow graph={graph} node={node} onOpenProposal={openProposal} />,
-                            )
-                          ) : null}
-                        </div>
-                      </li>
-                    );
-                  })}
+                        {d.kind === "roadmap" ? (
+                          <RoadmapHeading
+                            projectId={projectId}
+                            orgId={orgId}
+                            roadmaps={d.roadmaps}
+                            count={d.count}
+                            folded={d.folded}
+                          />
+                        ) : d.kind === "folded" ? (
+                          <FoldedLine count={d.count} />
+                        ) : d.row.kind === "base" ? (
+                          <BaseRow graph={graph} behind={d.row.behind} />
+                        ) : node !== null ? (
+                          deployable(
+                            node,
+                            <NodeRow graph={graph} node={node} onOpenProposal={openProposal} />,
+                          )
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </div>

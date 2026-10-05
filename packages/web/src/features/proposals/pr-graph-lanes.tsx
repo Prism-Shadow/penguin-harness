@@ -3,9 +3,12 @@
  * the server laid out — two characters per column, the same ones `penguin org proposal graph`
  * prints — and the page draws them in a fixed-width grid beside the row's text. A text glyph
  * cannot stretch to a row two lines tall, so each cell is drawn as a few strokes instead: `│` a
- * line through, a node a dot with its line down to its parent, `├─╯` a line joining back into
- * the node below, `~` the base branch. A line into a cell from above is drawn when the cell
- * above goes on down, so the strokes meet across rows of different heights.
+ * line through, a node a dot with its line to its parent, `├─╯` a line joining back into the
+ * parent, `~` the base branch. The cells keep the server's orientation (newest on top) and each
+ * row's drawing is mirrored vertically, because the page draws the rows base on top: a node's
+ * line to its parent goes up, and `├─╯` reads `├─╮`. A line into a cell from the newer row is
+ * drawn when that row's cell goes on toward the base, so the strokes meet across rows of
+ * different heights.
  *
  * Also here: the two row kinds segmenting adds — a segment's roadmap heading and a folded run.
  */
@@ -72,7 +75,10 @@ const vline = (x: number, y1: number, y2: number): string => `M${x} ${y1}V${y2}`
 const joinUp = (from: number, to: number, mid: number, bend: number): string =>
   `M${from} ${mid}H${to - bend}Q${to} ${mid} ${to} ${mid - bend}V0`;
 
-/** One row's cells. `up[c]`: a line comes into column c from the row above. */
+/**
+ * One row's cells. `up[c]`: a line comes into column c from the newer row — above it in the
+ * server's layout, which the mirrored drawing puts below it on screen.
+ */
 export function GraphCells({
   cells,
   up,
@@ -163,7 +169,7 @@ export function GraphCells({
       stroke="currentColor"
       strokeWidth={stroke}
       className="pointer-events-none shrink-0"
-      // The page draws the rows reversed (base on top): mirroring each row turns `├─╯` into `├─╮`.
+      // The page draws the rows base on top: mirroring each row turns `├─╯` into `├─╮`.
       style={{ transform: "scaleY(-1)" }}
     >
       {parts}

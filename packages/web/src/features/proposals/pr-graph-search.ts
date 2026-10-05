@@ -4,9 +4,9 @@
  *
  * A query matches a PR number (`#213`, or `213` alone), a proposal number (`proposal 194`,
  * `p194`, or `194` alone), or — as text, ignoring case — a branch name, a PR title or a proposal
- * title. The hits come in the order the full graph draws them, top to bottom, and include the
- * nodes the default view leaves out: jumping to one draws the whole graph for as long as it is the
- * target.
+ * title. The hits come in the order the full graph draws them, top (the base) to bottom (the
+ * newest PRs) — the server's rows from last to first — and include the nodes the default view
+ * leaves out: jumping to one draws the whole graph for as long as it is the target.
  *
  * The page opens the search on the `graph.search` command (Ctrl+F, ⌘F on macOS, rebindable),
  * instead of the browser's find; the command declines while the search box already has focus, so
@@ -35,7 +35,7 @@ export function nodeMatches(node: Searched, query: string): boolean {
   );
 }
 
-/** The keys of the matching nodes the graph draws, in the full drawing's order. */
+/** The keys of the matching nodes the graph draws, in the full drawing's order, base first. */
 export function searchHits(
   rows: readonly ProposalGraphRow[],
   nodes: readonly Searched[],
@@ -44,6 +44,7 @@ export function searchHits(
   const byKey = new Map(nodes.map((n) => [n.key, n]));
   return rows
     .filter((r) => r.kind === "node")
+    .reverse()
     .map((r) => r.key)
     .filter((key) => {
       const node = byKey.get(key);
