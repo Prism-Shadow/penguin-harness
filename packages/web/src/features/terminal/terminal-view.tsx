@@ -238,6 +238,8 @@ export interface TerminalViewProps {
    * kill-then-close-window; with no handler the key goes to the shell like any other.
    */
   onCloseRequest?: () => void;
+  /** The xterm font size in px, read once at mount; 13 unless a host draws the terminal larger. */
+  fontSize?: number;
   className?: string;
 }
 
@@ -247,6 +249,7 @@ export function TerminalView({
   onInfo,
   onTitle,
   onCloseRequest,
+  fontSize = 13,
   className,
 }: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -321,7 +324,7 @@ export function TerminalView({
         cursorBlink: true,
         fontFamily:
           '"JetBrains Mono", "Fira Code", Menlo, Monaco, "DejaVu Sans Mono", Consolas, monospace',
-        fontSize: 13,
+        fontSize,
         lineHeight: 1.2,
         scrollback: 5000,
         theme: terminalTheme(darkRef.current),
