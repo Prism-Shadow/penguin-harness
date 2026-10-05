@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   COMPARE_FILE_LIMIT,
   ImplBranchError,
+  branchLinkOf,
   branchRefOf,
   branchTip,
   compareBranches,
@@ -16,6 +17,7 @@ import {
   sameRef,
 } from "../src/impl-branch.js";
 import type { RunGh } from "../src/pr-status.js";
+import { remotesOf } from "../src/config.js";
 
 const REMOTES = [
   { name: "origin", repo: "acme/site" },
@@ -266,5 +268,50 @@ describe("reading GitHub", () => {
       status: 502,
       code: "compare_unreadable",
     });
+  });
+});
+
+describe("a side's branch page", () => {
+  const ORIGINS = [{ name: "origin", repo: "acme/site-mirror" }];
+
+  it("links owner/repo as written, with each branch segment encoded", () => {
+    expect(branchLinkOf({ remote: "me/site", branch: "feat/a#b" }, [], [])).toEqual({
+      url: "https://github.com/me/site/tree/feat/a%23b",
+      unresolved: null,
+    });
+  });
+
+  it("resolves a remote name through the workspace's GitHub remotes, https or ssh", () => {
+    const remotes = remotesOf(
+      [
+        "origin\thttps://github.com/acme/site.git (fetch)",
+        "fork\tgit@github.com:me/site.git (fetch)",
+      ].join("\n"),
+    );
+    expect(branchLinkOf({ remote: "origin", branch: "main" }, [], remotes).url).toBe(
+      "https://github.com/acme/site/tree/main",
+    );
+    expect(branchLinkOf({ remote: "fork", branch: "feat/x" }, [], remotes).url).toBe(
+      "https://github.com/me/site/tree/feat/x",
+    );
+  });
+
+  it("takes the origins setting before the workspace's remote of the same name", () => {
+    expect(branchLinkOf({ remote: "origin", branch: "main" }, ORIGINS, REMOTES).url).toBe(
+      "https://github.com/acme/site-mirror/tree/main",
+    );
+    // owner/repo written out is never looked up.
+    expect(branchLinkOf({ remote: "acme/site", branch: "main" }, ORIGINS, []).url).toBe(
+      "https://github.com/acme/site/tree/main",
+    );
+  });
+
+  it("gives a reason, not a link, for an unknown remote or one off GitHub", () => {
+    const unknown = branchLinkOf({ remote: "upstream", branch: "main" }, ORIGINS, REMOTES);
+    expect(unknown.url).toBeNull();
+    expect(unknown.unresolved).toContain("upstream");
+    const offGithub = remotesOf("gl\thttps://gitlab.com/acme/site.git (fetch)");
+    const gitlab = branchLinkOf({ remote: "gl", branch: "main" }, [], offGithub);
+    expect(gitlab).toEqual({ url: null, unresolved: expect.stringContaining("GitHub") });
   });
 });

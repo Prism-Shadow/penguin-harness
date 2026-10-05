@@ -195,8 +195,13 @@ describe("graph reads spawn nothing", () => {
 
   it("stores the repository a declared side resolved to, and answers the side as declared", async () => {
     const p = await service.get(PROJECT, ORG, 1, BOSS);
-    // The API names the side as declared; the repository stays the plugin's.
-    expect(p.impl?.head).toEqual({ remote: "origin", branch: "feat/a" });
+    // The API names the side as declared, with its branch page; the repository stays the plugin's.
+    expect(p.impl?.head).toEqual({
+      remote: "origin",
+      branch: "feat/a",
+      url: "https://github.com/acme/site/tree/feat/a",
+      unresolved: null,
+    });
     const store = SqliteProposalStore.open(companyDbPath(root, PROJECT, ORG));
     try {
       expect(store.facts().find((f) => f.number === 1)?.impl?.head).toMatchObject({

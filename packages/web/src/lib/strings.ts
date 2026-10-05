@@ -6388,6 +6388,8 @@ Benchmark：
         info: "提案实现所在的 head 分支，以及衡量它的 base 分支。patch 是两条分支分叉（merge-base）以来 head 上的全部改动；之后为 head 开出的 PR 挂在这里。",
         empty: "还没有登记实现。",
         branchOfPr: "这张 PR 的分支",
+        openBranch: "在 GitHub 上打开这条分支",
+        noBranchLink: (reason: string) => `这条分支没有 GitHub 链接：${reason}`,
         pr: "PR",
         noPr: "尚未开 PR",
         showFiles: "展开改动的文件",

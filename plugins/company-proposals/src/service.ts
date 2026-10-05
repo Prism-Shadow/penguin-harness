@@ -36,6 +36,7 @@ import type {
   ProposalImplDiff,
   ProposalImplRequest,
   ProposalBranchRef,
+  ProposalImplBranchSide,
   ProposalItem,
   ProposalResolvedBranch,
   ProposalMaterial,
@@ -103,6 +104,7 @@ import { LocalGitMirror, githubUrl, mirrorDir } from "./git-mirror.js";
 import { GraphRefresher, OrgRetiredError, type GraphContext } from "./graph-refresh.js";
 import {
   ImplBranchError,
+  branchLinkOf,
   compareBranches,
   readPullBranches,
   refLabel,
@@ -544,6 +546,8 @@ export class ProposalService {
     unread: number,
     pendingComments: number,
   ): ProposalItem {
+    // The origins setting is an in-memory config read, so a list row costs no git and no request.
+    const origins = p.impl === null ? [] : this.graphConfig().origins;
     return {
       number: p.number,
       title: p.title,
@@ -562,9 +566,9 @@ export class ProposalService {
         p.impl === null
           ? null
           : {
-              // As declared: the stored repositories are the plugin's, not the API's.
-              head: declaredSide(p.impl.head),
-              base: declaredSide(p.impl.base),
+              // As declared, with each side's GitHub page: the stored repositories stay the plugin's.
+              head: declaredSide(p.impl.head, origins),
+              base: declaredSide(p.impl.base, origins),
               pr: p.impl.pr?.url ?? null,
               by: p.impl.by,
               at: p.impl.at,
@@ -2241,8 +2245,19 @@ function implPrOf(
   return impl?.pr == null ? null : { ...impl.pr, by: impl.by, at: impl.at };
 }
 
-function declaredSide(side: ProposalImplSide | null): ProposalBranchRef | null {
-  return side === null ? null : { remote: side.remote, branch: side.branch };
+/**
+ * A stored side as the API shows it, with its branch page. The workspace remote it is looked up
+ * in is the one registration read (`git remote -v` of the proposal's repository, stored as
+ * `repo`), so a view never runs git; an `origins` line of the same name takes precedence.
+ */
+function declaredSide(
+  side: ProposalImplSide | null,
+  origins: ReadonlyArray<{ name: string; repo: string }>,
+): ProposalImplBranchSide | null {
+  if (side === null) return null;
+  const ref = { remote: side.remote, branch: side.branch };
+  const remotes = side.repo === "" ? [] : [{ name: side.remote, repo: side.repo }];
+  return { ...ref, ...branchLinkOf(ref, origins, remotes) };
 }
 
 /** Two stored sides are the same: the same branch, resolved to the same repository. */

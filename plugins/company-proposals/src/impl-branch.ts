@@ -103,6 +103,29 @@ export function repoOfRemote(
   return remotes.find((r) => r.name === remote)?.repo ?? null;
 }
 
+/**
+ * A declared side's page on GitHub, for the views: `owner/repo` written out is used as it is;
+ * a remote name is looked up in the `origins` setting first, then in `remotes` — the shared
+ * workspace's GitHub remotes (remotesOf, which keeps only github.com URLs). A remote neither
+ * names has no page, and the reason says so.
+ */
+export function branchLinkOf(
+  ref: ProposalBranchRef,
+  origins: ReadonlyArray<{ name: string; repo: string }>,
+  remotes: ReadonlyArray<{ name: string; repo: string }>,
+): { url: string; unresolved: null } | { url: null; unresolved: string } {
+  const repo = isRepoRemote(ref.remote)
+    ? ref.remote
+    : (origins.find((o) => o.name === ref.remote)?.repo ?? repoOfRemote(ref.remote, remotes));
+  if (repo === null) {
+    return {
+      url: null,
+      unresolved: `Remote ${ref.remote} names no GitHub repository: it is not in the origins setting, and not a GitHub remote of the shared workspace.`,
+    };
+  }
+  return { url: `https://github.com/${repo}/tree/${pathOf(ref.branch)}`, unresolved: null };
+}
+
 /** A declared side resolved; throws 400 `impl_remote_unknown` when the remote names no GitHub repository. */
 export function resolveRef(
   ref: ProposalBranchRef,

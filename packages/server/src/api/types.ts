@@ -6864,14 +6864,27 @@ export interface ProposalBranchRef {
 }
 
 /**
+ * A declared side as the proposal views show it: the branch's page on GitHub
+ * (`https://github.com/<owner>/<repo>/tree/<branch>`), or why the server cannot name one — the
+ * remote is not in the plugin's `origins` setting and not a GitHub remote of the shared
+ * workspace. Computed for the view on every read; the registration itself is unchanged. Absent
+ * from a server older than branch links.
+ */
+export interface ProposalImplBranchSide extends ProposalBranchRef {
+  url?: string | null;
+  /** Why `url` is null; null when there is one. */
+  unresolved?: string | null;
+}
+
+/**
  * A proposal's implementation: a head branch and the base it is measured against — the patch
  * is the merge base of the two up to the head — and the PR opened for the head, once one is.
  * A registration that named only a PR has `head` and `base` null: they are that PR's, read
  * from GitHub where they are needed.
  */
 export interface ProposalImplBranch {
-  head: ProposalBranchRef | null;
-  base: ProposalBranchRef | null;
+  head: ProposalImplBranchSide | null;
+  base: ProposalImplBranchSide | null;
   /** The PR's URL, null until one is registered. */
   pr: string | null;
   /** `agent:<id>` or `user:<id>`: who registered the latest of it. */

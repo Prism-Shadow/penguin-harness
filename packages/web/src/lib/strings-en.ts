@@ -6207,6 +6207,8 @@ Scenarios:
         info: "The head branch the proposal is implemented on and the base it is measured against. The patch is everything on the head since the two branches last met (their merge base); a PR opened for the head attaches here later.",
         empty: "No implementation registered yet.",
         branchOfPr: "The branches of this PR",
+        openBranch: "Open this branch on GitHub",
+        noBranchLink: (reason: string) => `No GitHub link for this branch: ${reason}`,
         pr: "PR",
         noPr: "No PR opened yet",
         showFiles: "Show changed files",
