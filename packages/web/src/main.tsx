@@ -28,6 +28,7 @@ import { hasEscLayers } from "@prismshadow/penguin-ui";
 import { App } from "./app";
 import { bootInstallScope, watchInstallScope } from "./lib/install-scope";
 import { prefetchMe } from "./state/auth";
+import { watchStaleBuild } from "./lib/stale-build";
 // The global shortcut dispatcher installs itself at module evaluation (a React effect would
 // leave a post-paint window where a chord is dead); the import is what evaluates it.
 import { setShortcutBlocker } from "./lib/shortcuts/dispatcher";
@@ -51,6 +52,11 @@ function mount(): void {
     </StrictMode>,
   );
 }
+
+// A tab opened before a web push asks for chunk names the new dist no longer has; the first
+// such failure reloads it onto the current build (lib/stale-build.ts). This module's own URL
+// is the entry chunk's, which names the build.
+watchStaleBuild(import.meta.url);
 
 // A second tab can recognise a replaced root while this one is open, leaving everything on
 // screen here pointing at a data root that is gone.

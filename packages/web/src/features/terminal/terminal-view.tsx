@@ -293,11 +293,21 @@ export function TerminalView({
     // means the throwaway mount never opens a terminal at all.
     const startTimer = setTimeout(() => {
       if (cancelled) return;
-      void startTerminal(host).then((dispose) => {
-        // The lazy xterm load can outlive a quick unmount: dispose immediately then.
-        if (cancelled) dispose();
-        else teardown = dispose;
-      });
+      startTerminal(host).then(
+        (dispose) => {
+          // The lazy xterm load can outlive a quick unmount: dispose immediately then.
+          if (cancelled) dispose();
+          else teardown = dispose;
+        },
+        (err: unknown) => {
+          // Most often xterm's chunk is gone from a dist pushed after this tab loaded
+          // (lib/stale-build.ts reloads the tab for that). Whatever it was, say so: a
+          // rejection left unhandled here kept the pane on "connecting" forever.
+          if (!cancelled) {
+            callbacks.current.onStatus?.("error", err instanceof Error ? err.message : String(err));
+          }
+        },
+      );
     }, 0);
 
     return () => {
