@@ -15,7 +15,7 @@
  * moderator's notes and stays in the plugin's answer, but the column does not draw it.
  *
  * The column is one of the app's own scrollers, so the app's thin scrollbar applies. The roadmap
- * is read again every {@link DETAIL_POLL_MS}, and the state is replaced only when the answer
+ * is read again {@link DETAIL_POLL_MS} after the last read ended, and the state is replaced only when the answer
  * changed, so the draft follows the discussion without the column redrawing under the reader.
  * Under the body, the roadmap's Activity: the Action runs on it.
  */
@@ -98,9 +98,20 @@ export function RoadmapDetail({
     drawn.current = "";
     setRoadmap(null);
     setError(null);
-    void load();
-    const timer = window.setInterval(() => void load(), DETAIL_POLL_MS);
-    return () => window.clearInterval(timer);
+    // The next read is timed from the end of the last one, never from its start: on a slow link
+    // to the organization's machine a fixed interval stacked reads of the whole roadmap behind
+    // one another, each slower than the last, and everything else on that link waited behind them.
+    let live = true;
+    let timer: number | undefined;
+    const poll = async () => {
+      await load();
+      if (live) timer = window.setTimeout(() => void poll(), DETAIL_POLL_MS);
+    };
+    void poll();
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
   }, [load]);
 
   // Which briefs the caller may approve: asked of the guard per brief whenever the answer changes
