@@ -18,10 +18,8 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { userText } from "@prismshadow/penguin-core/omnimessage";
 import type {
   Log,
-  MessagingTaskRunner,
   OrgActor,
   OrgGateway,
   OrgView,
@@ -48,8 +46,10 @@ import {
   type Caller,
   type WriteAct,
 } from "./guards.js";
-import type { NoticeResult, Subject } from "./action-shapes.js";
+import type { Subject } from "./action-shapes.js";
 import { sendNotice } from "./notices.js";
+import { NoticeDelivery } from "./notice-delivery.js";
+import { tellSession, type SessionRunner } from "./session-tell.js";
 import type { RoadmapStore } from "./ports.js";
 import { COMPANY_DB, companyDbPath } from "./schema.js";
 import { SqliteRoadmapStore } from "./store.js";
@@ -102,7 +102,7 @@ export interface ServiceDeps {
    * The session runtime's input: a later room message into an existing room session — into
    * the Task it is running when it runs one, else as its next Task.
    */
-  runner: Pick<MessagingTaskRunner, "statusOf" | "steer" | "startTask">;
+  runner: SessionRunner;
   /** Whether a room session still exists. */
   sessions: Pick<SessionIndex, "findById">;
   /** company-proposals' creation: what an item's second approval calls. */
@@ -294,7 +294,17 @@ export class RoadmapService {
   /** Organizations being (or already) deleted, whose store may not open again (org-retire.ts). */
   private readonly retired = new RetiredOrgs();
 
-  constructor(private readonly deps: ServiceDeps) {}
+  /** What the built-in notices do: the desk lines and the room-session lines (notice-delivery.ts). */
+  readonly notices: NoticeDelivery;
+
+  constructor(private readonly deps: ServiceDeps) {
+    this.notices = new NoticeDelivery({
+      gateway: deps.gateway,
+      runner: deps.runner,
+      recordFailed: (projectId, orgId, number, agentId, error, by) =>
+        this.store(projectId, orgId).write({ kind: "notify_failed", number, agentId, error, by }),
+    });
+  }
 
   private now(): number {
     return this.deps.now?.() ?? Date.now();
@@ -419,64 +429,6 @@ export class RoadmapService {
     return list;
   }
 
-  /** One line on an employee's desk; a failure is recorded and returned as a hint rather than thrown. */
-  private async deliver(
-    projectId: string,
-    orgId: string,
-    store: RoadmapStore,
-    number: number,
-    agentId: string,
-    line: string,
-    by: string,
-    hints: string[],
-  ): Promise<{ delivered: boolean; error?: string }> {
-    try {
-      await this.deps.gateway.deliverToDesk(projectId, orgId, agentId, line);
-      return { delivered: true };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      store.write({ kind: "notify_failed", number, agentId, error, by });
-      hints.push(`${agentId} was not told: ${error}`);
-      return { delivered: false, error };
-    }
-  }
-
-  /**
-   * What the built-in desk notices do (notices.ts): `line` on each desk of `to`; a desk that
-   * cannot take it recorded as `notify_failed` on roadmap `number`, under `by`.
-   */
-  async deliverNotice(
-    projectId: string,
-    orgId: string,
-    number: number,
-    to: readonly string[],
-    line: string,
-    by: string,
-  ): Promise<NoticeResult> {
-    const store = this.store(projectId, orgId);
-    const out: NoticeResult = { delivered: [], failed: [] };
-    for (const agentId of to) {
-      const hints: string[] = [];
-      const res = await this.deliver(projectId, orgId, store, number, agentId, line, by, hints);
-      if (res.delivered) out.delivered.push(agentId);
-      else out.failed.push({ agentId, error: res.error ?? "" });
-    }
-    return out;
-  }
-
-  /** What the built-in approval request does: `line` into room session `sessionId` of `agentId`. */
-  async noticeInSession(sessionId: string, agentId: string, line: string): Promise<NoticeResult> {
-    try {
-      await this.tell(sessionId, line);
-      return { delivered: [agentId], failed: [] };
-    } catch (err) {
-      return {
-        delivered: [],
-        failed: [{ agentId, error: err instanceof Error ? err.message : String(err) }],
-      };
-    }
-  }
-
   // -------------------------------------------------------------------------
   // Reads
   // -------------------------------------------------------------------------
@@ -561,12 +513,20 @@ export class RoadmapService {
     // The room sessions open now, before the answer — the moderator's first — and every
     // employee's desk is told where it is.
     const hints = await this.relayRoadmap(projectId, orgId, result);
-    hints.push(...(await this.announce(projectId, orgId, result)));
+    hints.push(...(await this.announce(projectId, orgId, result, act)));
     return { roadmap: await this.get(projectId, orgId, result, actor), hints };
   }
 
-  /** One line on each opening employee's desk: the room it is in, and the session that takes part there. */
-  private announce(projectId: string, orgId: string, number: number): Promise<string[]> {
+  /**
+   * One line on each opening employee's desk: the room it is in, and the session that takes part
+   * there — each the notice `notify.roadmap.room_joined` of the opening (`act`).
+   */
+  private announce(
+    projectId: string,
+    orgId: string,
+    number: number,
+    act: WriteAct | undefined,
+  ): Promise<string[]> {
     return this.withLock(projectId, orgId, async () => {
       const hints: string[] = [];
       const store = this.store(projectId, orgId);
@@ -581,7 +541,15 @@ export class RoadmapService {
           moderator,
           sessionId: clone?.sessionId ?? null,
         });
-        await this.deliver(projectId, orgId, store, number, agentId, line, r.createdBy, hints);
+        await sendNotice(
+          act,
+          "room_joined",
+          roadmapSubject(number).text,
+          { to: [agentId], text: line },
+          () => this.notices.desk(projectId, orgId, number, [agentId], line, r.createdBy),
+          hints,
+          notTold,
+        );
       }
       return hints;
     });
@@ -784,17 +752,20 @@ export class RoadmapService {
           if (room !== null) discussing.push(child);
           const moderator = item.employees[0]!;
           const derived = this.require(store, child);
-          const res = await this.deliver(
-            projectId,
-            orgId,
-            store,
-            child,
-            moderator,
+          // The derived roadmap is the notice's subject: a desk that cannot take it is recorded
+          // there, where the moderator works it.
+          const line =
             room !== null
               ? roomOpenedLine({ parent: r, child: derived })
-              : roomRequestLine({ parent: r, child: derived }),
-            caller.principal,
+              : roomRequestLine({ parent: r, child: derived });
+          const res = await sendNotice(
+            a,
+            "derived",
+            roadmapSubject(child).text,
+            { to: [moderator], text: line },
+            () => this.notices.desk(projectId, orgId, child, [moderator], line, caller.principal),
             hints,
+            notTold,
           );
           store.write({
             kind: "delegated",
@@ -828,7 +799,7 @@ export class RoadmapService {
             "approval_requested",
             roadmapSubject(number).text,
             { to: [clone.agentId], text, sessionId: clone.sessionId },
-            () => this.noticeInSession(clone.sessionId, clone.agentId, text),
+            () => this.notices.inSession(clone.sessionId, clone.agentId, text),
             hints,
             (f) => `The moderator's room session was not asked for its approvals: ${f.error}`,
           );
@@ -969,7 +940,7 @@ export class RoadmapService {
           "item_approved",
           itemSubject(number, key).text,
           { to: [item.owner], text: line },
-          () => this.deliverNotice(projectId, orgId, number, [item.owner], line, caller.principal),
+          () => this.notices.desk(projectId, orgId, number, [item.owner], line, caller.principal),
           hints,
           notTold,
         );
@@ -1061,7 +1032,7 @@ export class RoadmapService {
         "base_linked",
         itemSubject(r.number, item.key).text,
         { to: [depOwner], text },
-        () => this.deliverNotice(projectId, orgId, r.number, [depOwner], text, caller.principal),
+        () => this.notices.desk(projectId, orgId, r.number, [depOwner], text, caller.principal),
         hints,
         notTold,
       );
@@ -1166,15 +1137,25 @@ export class RoadmapService {
       const out: string[] = [];
       const relay = await this.readRelay(projectId, orgId);
       const room = relay[String(number)] ?? { cursor: null, depths: {} };
-      for (const clone of reopened.clones.filter((c) => c.closedAt === undefined)) {
-        try {
-          await this.tell(clone.sessionId, line);
-          room.depths[clone.agentId] = 0;
-        } catch (err) {
-          out.push(
-            `${clone.agentId}'s room session was not told: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
+      const open = reopened.clones.filter((c) => c.closedAt === undefined);
+      if (open.length > 0) {
+        const to = open.map((c) => c.agentId);
+        const sessionIds = open.map((c) => c.sessionId);
+        const sent = await sendNotice(
+          a,
+          "reopened",
+          roadmapSubject(number).text,
+          { to, text: line, sessionIds },
+          () => this.notices.inSessions(to, sessionIds, line),
+          out,
+          (f) => `${f.agentId}'s room session was not told: ${f.error}`,
+        );
+        // The reopening starts the room's discussion again: every room session's relay depth
+        // starts over, but one the notice reports it failed to reach (its depth is left as it
+        // was, as when the line could not be told). A replacement that tells the sessions
+        // nothing still reopens the discussion.
+        const failed = new Set(sent.failed.map((f) => f.agentId));
+        for (const agentId of to) if (!failed.has(agentId)) room.depths[agentId] = 0;
       }
       // What the room said while the roadmap stood established was never relayed and is not now:
       // the reopening, not the backlog, is what the room sessions answer.
@@ -1270,30 +1251,6 @@ export class RoadmapService {
         return [`The room was not relayed this time: ${error}`];
       }),
     );
-  }
-
-  /**
-   * One line into a room session. A session that is running a Task takes it into that Task,
-   * between its steps: a queued line would wait for the Task to end, and a room session that
-   * works one long Task (waiting on the room in a loop of its own) then hears nothing. One that
-   * is not running — or whose Task ends before the line lands — gets it as its next Task.
-   * A server older than `MessagingTaskRunner.steer` has none to offer: every line is started,
-   * as before, rather than lost to the call that is not there.
-   */
-  private async tell(sessionId: string, text: string): Promise<void> {
-    const input = [userText(text, "server")];
-    if (
-      typeof this.deps.runner.steer === "function" &&
-      this.deps.runner.statusOf(sessionId) === "running"
-    ) {
-      try {
-        this.deps.runner.steer(sessionId, input, { text, images: [], files: [] });
-        return;
-      } catch {
-        // Not running any more: the line starts its next Task instead.
-      }
-    }
-    await this.deps.runner.startTask(sessionId, input, { queueIfBusy: true });
   }
 
   /**
@@ -1402,7 +1359,7 @@ export class RoadmapService {
         for (const agentId of plan.to) {
           const clone = open.find((c) => c.agentId === agentId)!;
           try {
-            await this.tell(clone.sessionId, relayLine(current, msg));
+            await tellSession(this.deps.runner, clone.sessionId, relayLine(current, msg));
           } catch (err) {
             // Closed now, reopened on the next pass (with the room so far as its context).
             const error = err instanceof Error ? err.message : String(err);
