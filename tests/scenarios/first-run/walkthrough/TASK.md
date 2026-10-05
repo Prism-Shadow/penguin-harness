@@ -47,7 +47,7 @@ is.
 
 ## Record
 
-In `<RUN>/ui/explore/`: `report.html` (the fixed path first, step by step, then the free
+In `<RUN>/first-run/walkthrough/`: `report.html` (the fixed path first, step by step, then the free
 exploration), `shots/`, `oplog.md`, `issues.md`.
 
 ## Done when
