@@ -3,6 +3,7 @@ title: Walk the Web App as a new user, along a fixed path and then freely
 starts_from: install/from-ref
 inputs:
   handover: <RUN>/install/from-ref/handover.md
+  model_credential: a model provider and key the run may use, or "none"
 cost: 45
 platforms: [linux, macos, windows]
 ---
@@ -25,8 +26,8 @@ absent, and take one screenshot per step (`s<nn>-01-<what>.png`):
 1. **First page after sign-in.** Notices shown, the sidebar, the Project switcher.
 2. **Project switcher.** Open it; list the entries and actions.
 3. **New Session.** Start one and look at the composer. Sending needs a model credential; when
-   none is configured, record the message the product gives, then set one under Models (any key
-   the run was given; an invalid key is enough to get a Session created) and record what happens.
+   none is configured, record the message the product gives, then set the one from the plan under
+   Models (an invalid key is enough to get a Session created) and record what happens.
    When choosing a working directory, confirm the typed path (Enter) before using it, and record
    whether the chosen directory is the one the Session got.
 4. **System settings.** Open every page, in both groups, and record each page's controls.
@@ -47,7 +48,7 @@ is.
 
 ## Record
 
-In `<RUN>/first-run/walkthrough/`: `report.html` (the fixed path first, step by step, then the free
+In `<RUN>/usability/use-ui/`: `report.html` (the fixed path first, step by step, then the free
 exploration), `shots/`, `oplog.md`, `issues.md`.
 
 ## Done when
@@ -58,7 +59,7 @@ used its share of the budget, and every finding is in `issues.md`.
 ## Never
 
 - Change the server's sign-in, users or permissions beyond what a step asks for.
-- Enter real credentials of anyone into the product; use only keys the run was given.
+- Enter real credentials of anyone into the product; use only the credential the plan gives.
 - Stop the server or edit the data root by hand; leave the environment as `handover.md` describes
   it, plus what the steps created through the UI.
 - Report "looks fine" for a step without a screenshot that shows it.
