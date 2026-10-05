@@ -433,8 +433,12 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       const root = resolveRootOption(opts.root);
       // --model-id takes the upstream id, paired with the required --provider as a
       // reference; the group is never guessed, so --api-key can only ever land on the
-      // vendor the user named. No concatenation is performed.
-      const modelId: string = opts.modelId;
+      // vendor the user named. No concatenation is performed. The id is normalized once
+      // here, at this command's single ingestion point: the gates below judge the
+      // trimmed id (unaddableModel / unroutableVendorModel trim), while the existed
+      // check and the stored model_id compare it verbatim, so a padded spelling would
+      // pass as "new" and store an unroutable near-duplicate of the row it names.
+      const modelId: string = opts.modelId.trim();
       const provider: string = opts.provider;
       const ref: ModelRef = { provider, model_id: modelId };
       const before = await loadProjectConfig(root, opts.projectId);
