@@ -368,8 +368,10 @@ async function packedIntegrities(dir) {
   const out = new Map();
   for (const file of (await fsp.readdir(dir)).filter((f) => f.endsWith(".tgz")).sort()) {
     const abs = path.join(dir, file);
+    // Run in the tarball's directory and name it bare: GNU tar (Git Bash on Windows) reads the
+    // `D:` of an absolute Windows path as a remote host.
     const manifest = JSON.parse(
-      execFileSync("tar", ["-xzOf", abs, "package/package.json"], { encoding: "utf8" }),
+      execFileSync("tar", ["-xzOf", file, "package/package.json"], { encoding: "utf8", cwd: dir }),
     );
     out.set(manifest.name, await tarballIntegrity(abs));
   }
