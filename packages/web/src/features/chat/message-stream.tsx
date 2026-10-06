@@ -325,6 +325,21 @@ export function MessageStream({
   olderRef.current = older;
   const lastPrependedRef = useRef(older?.prependedCount ?? 0);
   const lastHeightRef = useRef(0);
+  /**
+   * Where the oldest loaded prompt sat in the viewport at the last scroll or commit: what
+   * a prepend restores. A window landing above pushes it down by the window's height, and
+   * the browser's own scroll anchoring may or may not have compensated already (it does
+   * away from the top, never at scroll offset 0), so the correction is measured on the
+   * node itself rather than assumed from the height delta — which would apply it twice.
+   */
+  const anchorRef = useRef<{ id: string; top: number } | null>(null);
+  const recordAnchor = (el: HTMLDivElement) => {
+    const node = el.querySelector<HTMLElement>("[data-outline-anchor]");
+    anchorRef.current =
+      node === null
+        ? null
+        : { id: node.dataset.outlineAnchor ?? "", top: node.getBoundingClientRect().top };
+  };
 
   /** Near the top of loaded history: fetch the previous window (loading/error states gate re-triggering; the retry row is click-driven). */
   const maybeLoadOlder = (el: HTMLDivElement) => {
@@ -348,6 +363,7 @@ export function MessageStream({
       clientHeight: el.clientHeight,
     });
     maybeLoadOlder(el);
+    recordAnchor(el);
     syncJump();
   };
 
@@ -379,8 +395,9 @@ export function MessageStream({
   useLayoutEffect(() => {
     const el = scrollRef.current;
     // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
-    // message the user was reading exactly where it was by offsetting scrollTop by the
-    // content growth (same pre-paint timing as the stick snap, so nothing flashes).
+    // message the user was reading exactly where it was by moving scrollTop by however far
+    // the recorded prompt was displaced (same pre-paint timing as the stick snap, so
+    // nothing flashes); the content growth stands in when that prompt is gone.
     // Keyed on the prepend count — ordinary streaming growth at the bottom must not
     // shift the view. lastHeightRef is refreshed every commit, so at the prepend commit
     // it still holds the pre-prepend height. Skipped while the snap below owns the
@@ -388,11 +405,20 @@ export function MessageStream({
     // anchored like any other, since nothing snaps it.
     const prepended = older?.prependedCount ?? 0;
     if (el && prepended > lastPrependedRef.current && !follow.snaps && !returningRef.current) {
-      el.scrollTop += el.scrollHeight - lastHeightRef.current;
+      const a = anchorRef.current;
+      const node =
+        a === null
+          ? null
+          : el.querySelector<HTMLElement>(`[data-outline-anchor="${CSS.escape(a.id)}"]`);
+      el.scrollTop +=
+        a !== null && node !== null
+          ? node.getBoundingClientRect().top - a.top
+          : el.scrollHeight - lastHeightRef.current;
     }
     lastPrependedRef.current = prepended;
     if (el) lastHeightRef.current = el.scrollHeight;
     if (el && follow.snaps && !returningRef.current) stickToBottom(el, follow);
+    if (el) recordAnchor(el);
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -499,9 +525,12 @@ export function MessageStream({
           {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
               row after a failure, and — once at least one window was backfilled — a quiet
               beginning-of-conversation marker when there is nothing older. Idle-with-more shows
-              nothing: scrolling near the top triggers the fetch by itself. */}
-          {older && items.length > 0 && (
-            <div className="flex justify-center pb-2">
+              nothing — scrolling near the top triggers the fetch by itself — but the row keeps
+              its height the moment there IS history above: a spinner that took space only
+              while spinning pushed the transcript down by its own height, and the prepend's
+              anchoring could not give that back. */}
+          {older && items.length > 0 && (older.hasMore || older.prependedCount > 0) && (
+            <div className="flex h-7 items-center justify-center">
               {older.loading ? (
                 <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
                   <Spinner size="sm" label={S.common.loading} />

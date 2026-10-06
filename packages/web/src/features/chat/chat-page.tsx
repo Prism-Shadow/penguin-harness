@@ -557,14 +557,18 @@ export function ChatPage() {
   } = useSessionDraft(selected?.sessionId ?? null);
 
   // The rendered transcript: backfilled older windows (frozen items, negative ids) ahead
-  // of the live tail model's items. Version keys the memo — a prepend bumps it.
+  // of the live tail model's items. Keyed on the prefix's identity as well as the stream
+  // version: the controller prepends synchronously and its repaint signal is throttled, so
+  // a render forced by anything else in between must not pair the NEW prepend count (read
+  // live below) with the OLD item list — the stream would anchor against a layout that has
+  // not changed yet and leave the commit that does change it unanchored.
   const allItems = useMemo(
     () =>
       stream.prefixItems.length > 0
         ? [...stream.prefixItems, ...stream.model.items]
         : stream.model.items,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stream.version, routeSessionId],
+    [stream.version, stream.prefixItems, routeSessionId],
   );
   // Derivations over the stream items (the model mutates in place, so `version` — its own
   // repaint signal — keys the memos; the session id covers a switch racing a same-valued
