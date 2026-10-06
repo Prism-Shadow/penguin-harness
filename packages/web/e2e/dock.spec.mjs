@@ -539,7 +539,12 @@ test("Detach hands the terminal to /terminal?id=… and its tab leaves the strip
   const note = dockAt(page, "bottom").getByTestId("terminal-sandbox-note");
   await expect(note).toHaveText("不受沙盒约束");
   await note.getByRole("button").click();
-  await expect(page.getByText(/从不约束此终端/)).toBeVisible();
+  const explanation = page.getByRole("tooltip").filter({ hasText: /从不约束此终端/ });
+  await expect(explanation).toBeVisible();
+  // The note sits at the dock's right edge: its panel must be pulled back inside the viewport
+  // by its rendered width, which a theme's spacing unit scales past the estimate it opened with.
+  const box = await explanation.boundingBox();
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize().width);
   await page.keyboard.press("Escape");
 
   const popupPromise = context.waitForEvent("page");

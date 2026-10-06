@@ -57,6 +57,15 @@ export function scrollMovesAnchor(target: Node | null, owner: Node | null): bool
   return typeof target.contains === "function" ? target.contains(owner) : true;
 }
 
+/**
+ * The left edge that keeps a panel of `width` px inside a viewport `viewportWidth` px wide: as
+ * far right as `preferred` asks, never past the right margin, and never past the left margin
+ * either — a panel wider than the viewport pins to the left margin and lets its right side go.
+ */
+export function clampPanelLeft(preferred: number, width: number, viewportWidth: number): number {
+  return Math.max(VIEWPORT_MARGIN, Math.min(preferred, viewportWidth - width - VIEWPORT_MARGIN));
+}
+
 export function usePortalPanel({
   open,
   onClose,
@@ -86,17 +95,25 @@ export function usePortalPanel({
     const height = Math.min(estimatedHeight, window.innerHeight * 0.7);
     const openUpward = spaceBelow < height && spaceAbove > spaceBelow;
     const width = panelWidth ?? rect.width;
-    const left = Math.max(
-      VIEWPORT_MARGIN,
-      Math.min(rect.left, window.innerWidth - width - VIEWPORT_MARGIN),
-    );
     setPosition({
       topPx: openUpward ? undefined : rect.bottom + PANEL_GAP,
       bottomPx: openUpward ? window.innerHeight - rect.top + PANEL_GAP : undefined,
-      left,
+      left: clampPanelLeft(rect.left, width, window.innerWidth),
       triggerWidth: rect.width,
     });
   }, [open, estimatedHeight, panelWidth]);
+
+  // `panelWidth` is only the caller's estimate: a panel sized in spacing units (`w-72`) scales
+  // with the theme's --ui-space-unit, so under a theme whose unit is not 4px the mounted panel is
+  // wider than the number it was clamped by, and one opened near the right edge ran off the
+  // screen. Once the panel is in the DOM its own width re-clamps it — still before paint, and the
+  // second pass finds the left edge already in range, so this settles in one extra render.
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (position === null || panel === null) return;
+    const left = clampPanelLeft(position.left, panel.offsetWidth, window.innerWidth);
+    if (left !== position.left) setPosition({ ...position, left });
+  }, [position]);
 
   useEffect(() => {
     if (!open) return;

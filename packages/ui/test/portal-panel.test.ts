@@ -11,7 +11,10 @@
  * pinned by the web app's `portal-panel-dismiss.test.ts`, which scans both roots.
  */
 import { describe, expect, it } from "vitest";
-import { scrollMovesAnchor } from "../src/components/overlays/portal-panel/use-portal-panel";
+import {
+  clampPanelLeft,
+  scrollMovesAnchor,
+} from "../src/components/overlays/portal-panel/use-portal-panel";
 
 describe("scrollMovesAnchor", () => {
   /** A stand-in for a DOM node, implementing the containment the rule reads off one. */
@@ -59,5 +62,28 @@ describe("scrollMovesAnchor", () => {
 
   it("dismisses on any scroll when the caller names no owner, as anchored panels always did", () => {
     expect(scrollMovesAnchor(asNode(messageList), null)).toBe(true);
+  });
+});
+
+describe("clampPanelLeft", () => {
+  // A 1440px viewport and the 16px margin the hook keeps on both sides.
+  it("keeps the trigger's left edge when the panel fits there", () => {
+    expect(clampPanelLeft(400, 288, 1440)).toBe(400);
+  });
+
+  it("pulls a panel back from the right edge by its real width, not the estimate", () => {
+    // A `w-72` panel under a 0.28rem spacing unit is 322.5px, not the 288 it was estimated at.
+    expect(clampPanelLeft(1256, 288, 1440)).toBe(1136);
+    expect(clampPanelLeft(1136, 322.5, 1440)).toBe(1101.5);
+  });
+
+  it("settles: a left edge already clamped by the real width stays put", () => {
+    const left = clampPanelLeft(1136, 322.5, 1440);
+    expect(clampPanelLeft(left, 322.5, 1440)).toBe(left);
+  });
+
+  it("pins a panel wider than the viewport to the left margin", () => {
+    expect(clampPanelLeft(200, 400, 360)).toBe(16);
+    expect(clampPanelLeft(16, 400, 360)).toBe(16);
   });
 });
