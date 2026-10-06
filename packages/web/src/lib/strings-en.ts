@@ -2250,6 +2250,35 @@ export const en: Strings = {
       "Ships with this build: installing it downloads nothing, and it loads only once you install it.",
     installedRestart: "restart to load",
     stateFailed: "failed to load",
+    /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
+    stateDisabled: "disabled on this build",
+    /** Under a running row: this build has no slot for part of what the plugin contributes. */
+    runsPartly: (reason: string) => `Part of it is not in use on this build: ${reason}`,
+    /** Page notice while this build cannot fully run a listed plugin. */
+    unsatisfiedNotice: (n: number) =>
+      n === 1
+        ? "This build cannot fully run 1 installed plugin. Its row says why."
+        : `This build cannot fully run ${n} installed plugins. Their rows say why.`,
+    /** The notice's action: filters the list down to those rows. */
+    unsatisfiedShow: "Show",
+    repair: "Fix with AI",
+    repairTitle: (name: string) => `Fix ${name} with AI?`,
+    repairBody: (name: string) =>
+      `A new chat opens in a temporary workspace, with a prompt to repair ${name} already written. Nothing is sent until you send it.`,
+    repairOpen: "Open the chat",
+    repairNoAgent: "This Project has no Agent to hand the repair to.",
+    /** The repair prompt written into the new chat's composer; the user reads and sends it. */
+    repairPrompt: (name: string, disabled: boolean, reason: string) =>
+      [
+        `The plugin \`${name}\` is installed on this server, but the running build cannot ${
+          disabled
+            ? "run it: it is disabled."
+            : "fully run it: part of what it contributes is not in use."
+        }`,
+        `The platform's reason:\n${reason}`,
+        "Find out why this build and the plugin disagree, then fix it. Installed plugins are under the server's data root in `plugins/node_modules/`; a plugin that ships with the build is under the build's own `plugins/` directory. The usual fixes are installing a version of the plugin that matches this build, or changing the plugin so it no longer needs what this build lacks. If only a newer build of the server can fix it, say so and change nothing.",
+        "Tell me what you intend to change before you change an installed plugin.",
+      ].join("\n\n"),
     replacesLabel: "replaces",
     restartPending:
       "A listed plugin is not running and this server could not apply it without a restart: restart the server to load it.",
@@ -2299,6 +2328,7 @@ export const en: Strings = {
       running: "Running",
       restart: "Restart to load",
       failed: "Failed to load",
+      incompatible: "Incompatible",
     },
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */

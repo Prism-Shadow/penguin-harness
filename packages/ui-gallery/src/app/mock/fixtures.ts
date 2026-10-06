@@ -829,6 +829,22 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         machines: ["gpu-box-a8f3c2"],
         here: false,
       },
+      // A plugin the running build cannot run: loaded, left out, with the platform's reason.
+      {
+        specifier: "@penguinharness/claude-code",
+        active: false,
+        builtin: false,
+        modules: ["ClaudeCode"],
+        replaces: [],
+        unsatisfied: {
+          disabled: true,
+          reason:
+            "/PlatformModule/ClaudeCode: requires.surfaces from 'SessionSurfacesModule': no such module",
+        },
+        everywhere: true,
+        machines: [],
+        here: true,
+      },
     ],
     shipped: ["@penguinharness/sandbox-bwrap", "@penguinharness/sandbox-seatbelt"],
     file: ".project_config.toml",

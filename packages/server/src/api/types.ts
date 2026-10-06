@@ -5735,6 +5735,20 @@ export interface PluginConfigUpdateRequest {
   values: Record<string, unknown>;
 }
 
+/**
+ * An installed plugin the running build cannot fully run (plugin/unsatisfied.ts): it
+ * contributes to a slot, or wires to a module or interface, that this build does not have.
+ * Also what a refused push names (`plugins_unsatisfied`) and a confirmed one reports.
+ */
+export interface UnsatisfiedPlugin {
+  /** The package specifier, as the installed-plugins list spells it. */
+  specifier: string;
+  /** True when the whole plugin is left out of this generation; false when only the contributions this build has no slot for were dropped and the rest of it runs. */
+  disabled: boolean;
+  /** What this build lacks, in the platform's own words. */
+  reason: string;
+}
+
 /** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
 export interface InstalledPlugin {
   /** The package specifier as written in the file. */
@@ -5757,6 +5771,13 @@ export interface InstalledPlugin {
    * reported for a plugin this server is asked to run (`here`).
    */
   error?: string;
+  /**
+   * Present when this build cannot fully run the package (see {@link UnsatisfiedPlugin}).
+   * With `disabled`, `active` is false and a restart would not load it; without, the package
+   * runs minus the contributions this build has no slot for. Only reported for a plugin this
+   * server is asked to run (`here`).
+   */
+  unsatisfied?: Pick<UnsatisfiedPlugin, "disabled" | "reason">;
   /** Listed in the shared `[plugins]` table: every machine runs it. */
   everywhere: boolean;
   /** The machines whose own `[plugins.<machineId>]` table lists it, by machine id. */
@@ -5780,7 +5801,7 @@ export interface InstalledPluginsResponse {
   file: string;
   /** This server's own machine id — the key of its `[plugins.<machineId>]` table. */
   machineId: string;
-  /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
+  /** A listed plugin neither runs, nor failed to load, nor is one this build cannot run: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
 }
 

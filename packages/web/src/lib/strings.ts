@@ -2333,6 +2333,30 @@ export const zh = {
     builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
     installedRestart: "待重启",
     stateFailed: "加载失败",
+    /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
+    stateDisabled: "此构建上已停用",
+    /** Under a running row: this build has no slot for part of what the plugin contributes. */
+    runsPartly: (reason: string) => `此构建上有一部分未生效：${reason}`,
+    /** Page notice while this build cannot fully run a listed plugin. */
+    unsatisfiedNotice: (n: number) => `当前构建无法完整运行 ${n} 个已装插件，原因见各自的条目。`,
+    /** The notice's action: filters the list down to those rows. */
+    unsatisfiedShow: "查看",
+    repair: "用 AI 修复",
+    repairTitle: (name: string) => `用 AI 修复 ${name}？`,
+    repairBody: (name: string) =>
+      `将打开一个使用临时 Workspace 的新对话，输入框里已写好修复 ${name} 的提示词；在你发送之前不会执行任何操作。`,
+    repairOpen: "打开对话",
+    repairNoAgent: "当前 Project 没有可以接手修复的 Agent。",
+    /** The repair prompt written into the new chat's composer; the user reads and sends it. */
+    repairPrompt: (name: string, disabled: boolean, reason: string) =>
+      [
+        `这台服务器上装着插件 \`${name}\`，但当前运行的构建${
+          disabled ? "无法运行它：它已被停用。" : "无法完整运行它：它的一部分贡献没有生效。"
+        }`,
+        `平台给出的原因：\n${reason}`,
+        "请查明这份构建与插件为什么对不上，然后修复。已安装的插件在服务器数据根目录的 `plugins/node_modules/` 下；随构建自带的插件在构建自己的 `plugins/` 目录下。常见的修法是安装与这份构建匹配的插件版本，或修改插件，使它不再依赖这份构建没有的东西。如果只有更新服务器的构建才能解决，请直接说明，不要改动任何东西。",
+        "改动已安装的插件之前，先告诉我你打算改什么。",
+      ].join("\n\n"),
     replacesLabel: "替换",
     restartPending: "有已列出但未运行的插件，且本服务器无法免重启应用：重启服务器后加载。",
     uninstall: "移除",
@@ -2380,6 +2404,7 @@ export const zh = {
       running: "运行中",
       restart: "待重启",
       failed: "加载失败",
+      incompatible: "不兼容",
     },
     noMatch: "没有匹配的插件。",
     /** The description of a shipped package the registry has no entry for. */

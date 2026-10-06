@@ -24,6 +24,7 @@ import {
   outdatedAgentIds,
   pluginInstalled,
   pluginUpdatePlan,
+  rowFacets,
   type AgentInstalls,
   type PluginParts,
   type PluginView,
@@ -92,6 +93,64 @@ describe("plugin rows per machine", () => {
       ["@acme/shared", "unsynced", false],
       ["@acme/gpu-only", "failed", true],
     ]);
+  });
+});
+
+describe("a plugin the running build cannot fully run", () => {
+  const view: PluginView = { machineId: SELF, remote: null, nameOf };
+  const here = { everywhere: true, machines: [], here: true };
+  const states = (plugins: InstalledPluginsResponse["plugins"]) =>
+    modules(installedPluginRows([], "en", { ...deployment, plugins }, [], view)).map((r) => [
+      r.specifier,
+      r.state,
+      r.unsatisfied,
+    ]);
+
+  it("is disabled, with the build's reason — not waiting for a restart", () => {
+    const unmet = {
+      ...row("@acme/unmet", here, false),
+      unsatisfied: { disabled: true, reason: "names interface 'Nope'" },
+    };
+    expect(states([unmet])).toEqual([["@acme/unmet", "disabled", "names interface 'Nope'"]]);
+    const facets = rowFacets(
+      installedPluginRows([], "en", { ...deployment, plugins: [unmet] }, [], view)[0]!,
+    );
+    expect(facets.states).toEqual(["installed", "incompatible"]);
+  });
+
+  it("still runs when only a contribution has no slot, and carries the reason", () => {
+    const partial = {
+      ...row("@acme/partial", here, true),
+      unsatisfied: { disabled: false, reason: "contributes to 'nowhere.slot'" },
+    };
+    expect(states([partial])).toEqual([
+      ["@acme/partial", "active", "contributes to 'nowhere.slot'"],
+    ]);
+    // Found by the same filter as a disabled one: both are what the build cannot fully run.
+    const facets = rowFacets(
+      installedPluginRows([], "en", { ...deployment, plugins: [partial] }, [], view)[0]!,
+    );
+    expect(facets.states).toEqual(["installed", "running", "incompatible"]);
+  });
+
+  it("on another machine, reads that machine's own report", () => {
+    const remote: InstalledPluginsResponse = {
+      ...deployment,
+      machineId: GPU,
+      plugins: [
+        {
+          ...row("@acme/gpu-only", here, false),
+          unsatisfied: { disabled: true, reason: "names interface 'Nope'" },
+        },
+      ],
+    };
+    const rows = modules(
+      installedPluginRows([], "en", deployment, [], { machineId: GPU, remote, nameOf }),
+    );
+    expect(rows.find((r) => r.specifier === "@acme/gpu-only")).toMatchObject({
+      state: "disabled",
+      unsatisfied: "names interface 'Nope'",
+    });
   });
 });
 

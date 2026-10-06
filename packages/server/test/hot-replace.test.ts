@@ -108,18 +108,14 @@ describe("hot replacement by a plugin", () => {
     ).rejects.toThrow(/SettingsModule: exports 'Settings' but no child provides it/);
   });
 
-  it("a stand-in naming an interface the table does not carry is refused", async () => {
-    await expect(
-      createTestApp({
-        plugins: hostWith(
-          replacing(
-            "ServerSettingsRepo",
-            { Settings: `${PKG}#Nope` },
-            { Settings: memorySettings() },
-          ),
-        ),
-      }),
-    ).rejects.toThrow(/Nope/);
+  it("a stand-in naming an interface the table does not carry is left out; the platform's own runs", async () => {
+    const stand = memorySettings(9);
+    t = await createTestApp({
+      plugins: hostWith(
+        replacing("ServerSettingsRepo", { Settings: `${PKG}#Nope` }, { Settings: stand }),
+      ),
+    });
+    expect(t.deps.tree.api("ServerSettingsRepo", "Settings")).not.toBe(stand);
   });
 
   it("a whole group is replaced with a subtree of its own, exporting the same interfaces", async () => {

@@ -11,9 +11,15 @@
  * secret is readable by everything running as this user, agent shells included, which makes
  * the file itself the vulnerability.
  *
+ * A target refuses a build that cannot run every plugin installed there, naming them. In a
+ * terminal the script then asks whether to push anyway; anywhere else it stops, and
+ * `--force` is how a run that cannot be asked says yes up front. Pushed that way, the target
+ * runs without those plugins and says so on its Plugins page, where they can be repaired.
+ *
  * Usage:
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531 --skip-web-build
+ *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531 --force
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs https://box.example.com
  */
 import { createRequire } from "node:module";
@@ -24,9 +30,19 @@ import http from "node:http";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
+import {
+  LEAVE_OUT,
+  UNSATISFIED_PLUGINS_HEADER,
+  leftOutPlugins,
+  pluginLines,
+  refusalStep,
+  refusedPlugins,
+  saidYes,
+} from "./deploy-unsatisfied-plugins.mjs";
 import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
@@ -66,16 +82,19 @@ function pushSource() {
 function usage(problem) {
   console.error(
     `${problem}\n\n` +
-      "Usage: PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs <port|url> [--skip-web-build]\n" +
+      "Usage: PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs <port|url> [--skip-web-build] [--force]\n" +
       "       PENGUIN_API_TOKEN=$(cat <root>/api-token) node scripts/deploy.mjs <port|url>\n" +
       "  <port>  a port on this machine (an ssh -L tunnel to the target runtime, or a local server)\n" +
-      "  <url>   a full origin, when the target is not reached over loopback\n",
+      "  <url>   a full origin, when the target is not reached over loopback\n" +
+      "  --force push even when the target has plugins this build cannot run; it runs without them\n",
   );
   process.exit(1);
 }
 
 const args = process.argv.slice(2);
 const skipWebBuild = args.includes("--skip-web-build");
+/** Push even when the target has plugins this build cannot run; it then runs without them. */
+const force = args.includes("--force");
 const target = args.find((a) => !a.startsWith("--"));
 if (target === undefined) usage("[deploy] no target given.");
 // Two credentials, either one: the admin password (exchanged for a cookie), or the
@@ -298,6 +317,22 @@ async function readNativeAssets() {
   return { files, exec };
 }
 
+/** One line from the terminal; a closed input (Ctrl-C, Ctrl-D) reads as an empty answer. */
+function ask(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    let answered = false;
+    rl.on("close", () => {
+      if (!answered) resolve("");
+    });
+    rl.question(question, (answer) => {
+      answered = true;
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
 async function main() {
   if (skipWebBuild) {
     if (!fs.existsSync(path.join(WEB_DIST, "index.html"))) {
@@ -371,14 +406,46 @@ async function main() {
     `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB body) to ${baseUrl}…`,
   );
 
-  const started = Date.now();
-  const res = await request(`${baseUrl}/api/hmr/upgrade`, {
-    method: "POST",
-    headers: { "content-type": "application/gzip", ...auth },
-    body: gz,
-  });
+  let started = Date.now();
+  const send = (leaveOut) =>
+    request(`${baseUrl}/api/hmr/upgrade`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/gzip",
+        ...(leaveOut ? { [UNSATISFIED_PLUGINS_HEADER]: LEAVE_OUT } : {}),
+        ...auth,
+      },
+      body: gz,
+    });
+  let res = await send(force);
+  let text = res.body.toString("utf8");
+  const refused = refusedPlugins(res.status, text);
+  if (refused !== null) {
+    // Not an error yet: the target kept its version and is asking. Only a person may say
+    // yes — here at the prompt, or beforehand with --force.
+    log(
+      "the target kept its current version: this build cannot fully run plugins installed there.",
+    );
+    for (const line of pluginLines(refused)) console.error(line);
+    if (
+      refusalStep(process.stdin.isTTY === true && process.stdout.isTTY === true) === "needs-force"
+    ) {
+      console.error(
+        "[deploy] not pushed. Run again with --force to push anyway; the target then runs without them.",
+      );
+      process.exitCode = 1;
+      return;
+    }
+    if (!saidYes(await ask("[deploy] Push anyway and run without them? [y/N] "))) {
+      log("not pushed.");
+      process.exitCode = 1;
+      return;
+    }
+    started = Date.now();
+    res = await send(true);
+    text = res.body.toString("utf8");
+  }
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
-  const text = res.body.toString("utf8");
   if (res.status < 200 || res.status >= 300) {
     throw new Error(`/api/hmr/upgrade → ${res.status}: ${text}`);
   }
@@ -394,6 +461,16 @@ async function main() {
   log(
     `ok in ${seconds}s — impl ${outcome.impl}, mode ${outcome.mode}, web rev ${outcome.web?.rev}`,
   );
+  const leftOut = leftOutPlugins(outcome);
+  if (leftOut.length > 0) {
+    console.warn("[deploy] the target runs this build without plugins installed there:");
+    for (const line of pluginLines(leftOut, true)) console.warn(line);
+    console.warn(
+      // The App answers under `localhost` by name (see hostOverride), so that is the link to open.
+      `[deploy] Repair them from ${baseUrl.replace("//127.0.0.1", "//localhost")}/plugins ("Fix with AI" on each plugin's row), or leave ` +
+        "them as they are: they stay installed and run again on a build that has what they need.",
+    );
+  }
   if (outcome.persisted === false) {
     // The live swap took effect, but the server could not write it to disk (see
     // host.ts's persistVersion) — a restart on the target reverts to the previously

@@ -27,6 +27,8 @@ export interface MachineApi {
     contentType: string,
     body: Buffer,
     timeoutMs: number,
+    /** Request headers beyond the ones every call carries. */
+    headers?: Record<string, string>,
   ): Promise<{ status: number; text: string }>;
 }
 
@@ -39,6 +41,7 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
     payload: Buffer | null,
     contentType: string,
     timeoutMs: number,
+    extra: Record<string, string> = {},
   ): Promise<{ status: number; text: string }> =>
     new Promise((resolve, reject) => {
       const req = http.request(
@@ -49,6 +52,7 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
           path,
           method,
           headers: {
+            ...extra,
             host: `localhost:${port}`,
             cookie,
             ...(payload === null
@@ -95,7 +99,7 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
         "application/json",
         30_000,
       ),
-    postBytes: (path, contentType, body, timeoutMs) =>
-      send("POST", path, body, contentType, timeoutMs),
+    postBytes: (path, contentType, body, timeoutMs, headers) =>
+      send("POST", path, body, contentType, timeoutMs, headers),
   };
 }

@@ -468,7 +468,7 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 - 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`。条目的 `name` 就是 Project 列表里使用的包名。索引合并两个来源：内嵌在 server 包中的那份，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让那份索引整体失败。`PENGUIN_PLUGIN_INDEX=off` 关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。注册表只用于发现，从不导入插件代码。
 - `GET …/readme` 返回包自带的 `README.md`，从本机上的副本读取；没有时 `readme` 为 `null`。索引未列出的名称返回 `404` `not_found`，缺少 `name` 的请求返回 `400` `bad_request`。
-- `GET …/installed` 对该 Project 的任何成员开放。`plugins` 的每个元素是 `{specifier, active, builtin, modules, replaces, error?}`：`active` 表示进程已加载这个包，`builtin` 表示它随本次构建发布，`modules` 和 `replaces` 是其生成的 `ifaces.json` 声明的节点，`error` 说明它为什么没有运行，例如本机上没有这个包，或加载失败。`shipped` 列出构建发布的全部插件包，无论是否被要求。`file` 是保存列表的文件名。已列出的插件既没有运行、也没有加载失败时，`restartPending` 为 true，重启服务器即可解决。Project 的 `.project_config.toml` 无法读取时返回 `400` `invalid_plugins_file`。
+- `GET …/installed` 对该 Project 的任何成员开放。`plugins` 的每个元素是 `{specifier, active, builtin, modules, replaces, error?, unsatisfied?}`：`active` 表示进程已加载并运行这个包，`builtin` 表示它随本次构建发布，`modules` 和 `replaces` 是其生成的 `ifaces.json` 声明的节点，`error` 说明它为什么没有运行，例如本机上没有这个包，或加载失败。运行中的构建缺少这个包所依赖的槽位、模块或接口，因而无法完整运行它时，`unsatisfied` 为 `{disabled, reason}`：`disabled` 为 true 表示整个包被停用，此时 `active` 为 false；为 false 表示包仍在运行，只是这份构建没有槽位可接的那部分贡献没有生效。`shipped` 列出构建发布的全部插件包，无论是否被要求。`file` 是保存列表的文件名。已列出的插件既没有运行、也没有加载失败、也不属于 `unsatisfied` 时，`restartPending` 为 true，重启服务器即可解决。Project 的 `.project_config.toml` 无法读取时返回 `400` `invalid_plugins_file`。
 - 写操作返回与 GET 相同的响应体。specifier 必须是包名，不能是路径、URL 或版本范围（`400` `bad_request`）。加入列表的名称必须是构建发布的包，否则路由返回 `400` `plugin_not_shipped`：不会下载任何东西。`PUT` 只发送名称，留在列表中的名称保留文件为它记录的要求。`DELETE` 只修改列表，不删除磁盘上的任何东西。
 - 写操作无需重启即可生效：App 围绕新列表[自行重组](/server-boot#重组)，效果与热替换相同。所有 Project 中正在进行的 Agent 运行都会被中止，因为所有 Project 共用同一棵模块树。新 App 启动失败时，改动会被撤销，之前的 App 随之恢复。
 - 列表就是 Project 的 `.project_config.toml` 中的 `[plugins]` 表（见 [Project 配置](/configuration#project-配置)）。进程加载所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
@@ -1120,7 +1120,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | POST | `/api/desktop/privacy-settings` | 请 shell 打开 macOS「隐私与安全性」的某个面板：`{pane}`（`files` 或 `fullDisk`）→ 202 |
 | POST | `/api/hmr/assets/probe` | 热更新：报告存储缺少哪些 blob |
 | PUT | `/api/hmr/blobs/:sha` | 热更新：按 sha256 上传一个 blob |
-| POST | `/api/hmr/upgrade` | 热更新：把 platform、CLI 和 web bundle 一并升到新版本 |
+| POST | `/api/hmr/upgrade` | 热更新：把 platform、CLI 和 web bundle 一并升到新版本。构建无法完整运行全部已装插件时返回 `409` `plugins_unsatisfied`，`error.plugins` 逐个列出 `{specifier, disabled, reason}`；带上请求头 `x-penguin-unsatisfied-plugins: leave-out` 重发，推送照常完成，应答里以 `unsatisfiedPlugins` 附上同一份清单 |
 | GET | `/api/contributions` | 以数据形式返回服务器模块和插件贡献给 Web App 的页面和标签页 |
 
 - 非桌面模式下，桌面路由返回 `404` `not_found`。

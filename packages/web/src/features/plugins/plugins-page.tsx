@@ -90,6 +90,7 @@ import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { localizedShortText, localizedText } from "../chat/skill-use";
 import { PluginDetailModal } from "./plugin-detail";
+import { usePluginRepair } from "./plugin-repair";
 import { SettingsDialog } from "../settings/settings-dialog";
 import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
@@ -228,6 +229,7 @@ export function PluginsPage() {
   const { user } = useAuth();
   const userId = user?.userId ?? null;
   const { currentProject, agents, currentAgent, setCurrentAgentId, reloadAgents } = useProject();
+  const { repair, modal: repairModal } = usePluginRepair(agents);
   const projectId = currentProject?.projectId ?? null;
 
   /** The plugins trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
@@ -645,6 +647,10 @@ export function PluginsPage() {
   const keep = (row: PluginRow) => rowMatches(row, query, picked);
   const installedRows = allInstalled.filter(keep);
   const availableRows = allAvailable.filter(keep);
+  // Counted over every installed row, not the filtered ones: the notice is about the build.
+  const unsatisfiedCount = allInstalled.filter(
+    (row) => row.kind === "module" && row.unsatisfied !== undefined,
+  ).length;
   const toggle = <T,>(set: ReadonlySet<T>, value: T): Set<T> => {
     const next = new Set(set);
     if (next.has(value)) next.delete(value);
@@ -714,6 +720,19 @@ export function PluginsPage() {
               {S.plugins.restartPending}
             </Notice>
           )}
+          {unsatisfiedCount > 0 && (
+            <Notice
+              tone="attention"
+              className="mt-4"
+              // The installed list starts folded; the filter is what opens it on these rows.
+              action={{
+                label: S.plugins.unsatisfiedShow,
+                onClick: () => setPickedStates(new Set<PluginState>(["incompatible"])),
+              }}
+            >
+              {S.plugins.unsatisfiedNotice(unsatisfiedCount)}
+            </Notice>
+          )}
         </PageHeader>
       </div>
       <SettingsDialog
@@ -771,6 +790,7 @@ export function PluginsPage() {
                     entry={row.entry}
                     state={row.state}
                     error={row.error}
+                    unsatisfied={row.unsatisfied}
                     shipped={row.shipped}
                     onlyOn={row.onlyOn}
                     removeBlocked={row.removeBlocked}
@@ -780,6 +800,16 @@ export function PluginsPage() {
                     onRemove={
                       isAdmin
                         ? () => setPendingApply({ specifier: row.specifier, install: false })
+                        : null
+                    }
+                    onRepair={
+                      isAdmin && row.unsatisfied !== undefined
+                        ? () =>
+                            repair({
+                              specifier: row.specifier,
+                              disabled: row.state === "disabled",
+                              reason: row.unsatisfied ?? "",
+                            })
                         : null
                     }
                   />
@@ -855,6 +885,7 @@ export function PluginsPage() {
           <p>{S.plugins.applyConfirmBody}</p>
         </ConfirmModal>
       )}
+      {repairModal}
       {/* A library plugin's quick start on an Agent that lacks it: installing comes first, and is asked. */}
       {pendingQuickStart !== null && currentAgent && (
         <ConfirmModal
@@ -914,6 +945,8 @@ interface ModulePluginRow {
   state: ModuleState;
   /** Why the process could not load it, when `state` is `failed`. */
   error?: string;
+  /** What the running build lacks for it: all of it when `state` is `disabled`, part of it when `active`. */
+  unsatisfied?: string;
   shipped: boolean;
   /** The machines it is listed for, by name, when the shared table does not list it. */
   onlyOn?: string[];
@@ -925,9 +958,12 @@ interface ModulePluginRow {
  * can re-assemble (`pending`); FAILED — the process tried and could not load it, for the
  * reason the server sends, which no restart would change; `elsewhere` — the all-machines view
  * of a plugin listed only for other machines, which this server neither installs nor loads;
- * or `unsynced` — listed for a machine that has not reported running it.
+ * or `unsynced` — listed for a machine that has not reported running it. DISABLED is the
+ * running build's doing: the plugin loaded, but the build lacks a module or interface it
+ * needs, so it is left out until a build that has them — a restart changes nothing. A plugin
+ * that only lost contributions this build has no slot for stays `active`, with the reason.
  */
-type ModuleState = "none" | "pending" | "active" | "failed" | "elsewhere" | "unsynced";
+type ModuleState = "none" | "pending" | "active" | "failed" | "disabled" | "elsewhere" | "unsynced";
 
 /**
  * Which machine the page shows: `machineId` null for all machines (the shared table), or a
@@ -1011,13 +1047,18 @@ function stateIn(
   listed: InstalledPluginsResponse["plugins"][number],
   view: PluginView,
   selfId: string | undefined,
-): { state: ModuleState; error?: string } {
-  const local = (row: InstalledPluginsResponse["plugins"][number]) =>
-    row.active
-      ? { state: "active" as const }
-      : row.error !== undefined
-        ? { state: "failed" as const, error: row.error }
-        : { state: "pending" as const };
+): { state: ModuleState; error?: string; unsatisfied?: string } {
+  const local = (row: InstalledPluginsResponse["plugins"][number]) => {
+    const unsatisfied =
+      row.unsatisfied !== undefined ? { unsatisfied: row.unsatisfied.reason } : {};
+    return row.active
+      ? { state: "active" as const, ...unsatisfied }
+      : row.unsatisfied?.disabled === true
+        ? { state: "disabled" as const, ...unsatisfied }
+        : row.error !== undefined
+          ? { state: "failed" as const, error: row.error }
+          : { state: "pending" as const };
+  };
   if (view.machineId === null)
     return listed.here === false ? { state: "elsewhere" } : local(listed);
   if (view.machineId === selfId) return local(listed);
@@ -1133,7 +1174,8 @@ function PluginList({
 /** What a plugin carries: the payload kinds a row is filtered by. */
 export type PluginKind = "skills" | "hooks" | "modules";
 /** What a plugin is for this deployment. */
-export type PluginState = "installed" | "available" | "running" | "restart" | "failed";
+export type PluginState =
+  "installed" | "available" | "running" | "restart" | "failed" | "incompatible";
 export const PLUGIN_KINDS: readonly PluginKind[] = ["skills", "hooks", "modules"];
 export const PLUGIN_STATES: readonly PluginState[] = [
   "installed",
@@ -1141,6 +1183,7 @@ export const PLUGIN_STATES: readonly PluginState[] = [
   "running",
   "restart",
   "failed",
+  "incompatible",
 ];
 
 /** The category a row belongs to, what it carries and what it is here — the three facets the filter column offers. */
@@ -1165,6 +1208,8 @@ export function rowFacets(row: PluginRow): {
           : row.state === "none"
             ? ["available"]
             : ["installed"];
+  // Either way the running build cannot fully run it: left out, or running minus a part.
+  if (row.unsatisfied !== undefined) states.push("incompatible");
   return { categories: row.entry?.categories ?? [], kinds: ["modules"], states };
 }
 
@@ -1676,6 +1721,7 @@ export function ModuleRow({
   entry,
   state,
   error,
+  unsatisfied,
   shipped,
   onlyOn,
   removeBlocked,
@@ -1683,12 +1729,15 @@ export function ModuleRow({
   blocked,
   onInstall,
   onRemove,
+  onRepair = null,
 }: {
   specifier: string;
   entry: PluginIndexEntry | undefined;
   state: ModuleState;
   /** Why it failed to load, when it did. */
   error?: string;
+  /** What the running build lacks for it, when it cannot fully run it. */
+  unsatisfied?: string;
   /** The build carries this one: installing it copies nothing over the network. */
   shipped: boolean;
   /** The machines it is listed for, by name, when not every machine runs it. */
@@ -1701,6 +1750,8 @@ export function ModuleRow({
   blocked: boolean;
   onInstall: (() => void) | null;
   onRemove: (() => void) | null;
+  /** Hands the plugin to an Agent to repair (plugin-repair.tsx); offered only where the build cannot fully run it. */
+  onRepair?: (() => void) | null;
 }) {
   const { locale } = useLocale();
   const stateText =
@@ -1710,11 +1761,13 @@ export function ModuleRow({
         ? S.plugins.installedRestart
         : state === "failed"
           ? S.plugins.stateFailed
-          : state === "unsynced"
-            ? S.plugins.notSynced
-            : state === "elsewhere"
-              ? S.plugins.notHere
-              : S.plugins.notInstalled;
+          : state === "disabled"
+            ? S.plugins.stateDisabled
+            : state === "unsynced"
+              ? S.plugins.notSynced
+              : state === "elsewhere"
+                ? S.plugins.notHere
+                : S.plugins.notInstalled;
   // Metadata line, the library card's shape: version · updated · what it is here.
   const updated =
     entry?.updatedAt === undefined
@@ -1756,7 +1809,7 @@ export function ModuleRow({
           className={
             state === "active"
               ? toneInk.success
-              : state === "pending" || state === "unsynced"
+              : state === "pending" || state === "unsynced" || state === "disabled"
                 ? toneInk.attention
                 : state === "failed"
                   ? toneInk.danger
@@ -1773,6 +1826,15 @@ export function ModuleRow({
           data-tooltip-content="text"
         >
           {error}
+        </p>
+      )}
+      {unsatisfied !== undefined && (state === "disabled" || state === "active") && (
+        <p
+          className={`mt-1 truncate text-xs ${toneInk.attention}`}
+          data-tooltip={unsatisfied}
+          data-tooltip-content="text"
+        >
+          {state === "disabled" ? unsatisfied : S.plugins.runsPartly(unsatisfied)}
         </p>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
@@ -1802,6 +1864,19 @@ export function ModuleRow({
           beside it once the row is wide enough (@3xl), aria-label and title naming it either
           way. While it runs, a spinner stands in for the glyph. */}
       <div className="flex shrink-0 items-center justify-center gap-1.5">
+        {unsatisfied !== undefined && onRepair !== null && (
+          <Button
+            size="sm"
+            className="h-8 shrink-0"
+            aria-label={`${S.plugins.repair} ${specifier}`}
+            title={S.plugins.repair}
+            disabled={busy || blocked}
+            onClick={onRepair}
+          >
+            <GlyphIcon d={ICONS.wand} size={ICON_SIZE.iconButton} />
+            <span className="hidden @3xl:inline">{S.plugins.repair}</span>
+          </Button>
+        )}
         {state === "none"
           ? onInstall !== null && (
               <Button

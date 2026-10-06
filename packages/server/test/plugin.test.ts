@@ -125,7 +125,7 @@ describe("plugin modules on the real platform", () => {
     b.dispose();
   });
 
-  it("a contribution to a slot no module declares refuses the boot, naming it", async () => {
+  it("a contribution to a slot no module declares is dropped, and the tree boots", async () => {
     const stray: ModuleDef = {
       manifest: parseManifest({
         name: "ext-stray",
@@ -136,6 +136,8 @@ describe("plugin modules on the real platform", () => {
       }),
       create: () => ({ api: {} }),
     };
-    await expect(bootWith([stray])).rejects.toThrow(/contributes to 'nowhere.slot'/);
+    const inst = await bootWith([stray]);
+    expect(inst.api.info()).toMatchObject({ impl: "packaged" });
+    inst.dispose();
   });
 });

@@ -14,6 +14,7 @@
 import http from "node:http";
 import { machineApi } from "./machine-api.js";
 import { readPushedBuild } from "../hmr/pushed-build.js";
+import { LEAVE_OUT, UNSATISFIED_PLUGINS_HEADER } from "../hmr/push-plugins.js";
 
 // The body a hand-over forwards is read by the same helper the harness history keeps its
 // rollback copies with; re-exported so this module stays the machines' one import for it.
@@ -76,6 +77,10 @@ export async function upgradeRemote(opts: {
       "application/gzip",
       payload,
       APPLY_TIMEOUT_MS,
+      // Whether to run this build was decided on this server; the machine follows it, and
+      // is not left on another build for a plugin of its own that this one cannot run. What
+      // it runs without is said on the machine: its installed-plugins page and error record.
+      { [UNSATISFIED_PLUGINS_HEADER]: LEAVE_OUT },
     );
   } catch (err) {
     return {

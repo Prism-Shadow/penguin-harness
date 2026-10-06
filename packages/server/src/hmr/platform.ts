@@ -71,6 +71,12 @@ import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost } from "../plugin/loader.js";
 import { usePushedPluginLibrary } from "@prismshadow/penguin-core";
 import { pushedLibraryDir } from "./asset-archives.js";
+import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsatisfied.js";
+import type { PluginSelection } from "../plugin/unsatisfied.js";
+import { takePushSlip } from "./push-plugins.js";
+import type { PushSlip } from "./push-plugins.js";
+import type { Errors } from "../mechanisms/observability.js";
+import type { UnsatisfiedPlugin } from "../api/types.js";
 import { migrate } from "../db/migrations.js";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
@@ -246,6 +252,8 @@ async function createInner(
   ctx: CreateCtx,
   context: PlatformCtx,
   reassemble: (change?: ReassemblyChange) => Promise<boolean>,
+  /** The slip of the push this boot belongs to (push-plugins.ts); null for every other boot. */
+  push: PushSlip | null = null,
 ): Promise<PlatformApi> {
   // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
   // throw — what each outcome means and why lives on HmrClaim (capabilities.ts).
@@ -321,6 +329,29 @@ async function createInner(
     for (const entry of injected.entries().values()) plugins.use(entry);
   }
 
+  // Installed plugins this platform cannot satisfy are left out of this generation
+  // (plugin/unsatisfied.ts); the host keeps them for the next one. Whether to boot that way
+  // is asked of a person only where one is waiting: a push whose pusher has not accepted it
+  // is refused with the list written back for them (push-plugins.ts); every other boot — a
+  // cold start, a re-assembly, a restore — goes ahead, since refusing would keep the server
+  // down with nobody to answer.
+  const loaded = [...plugins.entries().values()];
+  const bootKept = async (boot: (kept: PluginSelection) => Promise<ModuleTree>) => {
+    try {
+      return await bootWithoutUnsatisfied(
+        loaded,
+        boot,
+        push !== null && !push.leaveOut ? "refuse" : "leave-out",
+      );
+    } catch (err) {
+      if (push !== null && err instanceof UnsatisfiedPluginsError) {
+        push.refused = true;
+        push.unsatisfied = err.plugins;
+      }
+      throw err;
+    }
+  };
+  let unsatisfied: UnsatisfiedPlugin[];
   let tree: ModuleTree;
   let business: ModuleTree | null = null;
   let terminals: TerminalManager;
@@ -331,27 +362,49 @@ async function createInner(
     console.warn("[platform] bare kernel: terminals only, no business surface");
     terminals = new TerminalManager(ctx.resources, { assets: () => null });
     terminals.adopt(adoptable("TerminalModule") ? (context.terminals ?? []) : []);
-    tree = await bootModules(bareTree([...plugins.modules()], plugins.replacements()), {
-      ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
-      resources: ctx.resources,
-      parked: parkedModules(context),
-    });
+    ({ tree, unsatisfied } = await bootKept((kept) =>
+      bootModules(bareTree(kept.modules, kept.replacements), {
+        ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
+        resources: ctx.resources,
+        parked: parkedModules(context),
+      }),
+    ));
   } else {
     // THE MODULE TREE (see ../platform.ts): every business service, every route
     // group and the terminal manager are modules wired by their manifests — checked as
     // data before any create() runs, created in dependency order. Sandbox backends the
     // plugin host registered enter the same tree as one contributing module.
-    tree = await bootModules(
-      platformDef(caps, adoptable, [...plugins.modules()], plugins.replacements(), reassemble),
-      {
+    ({ tree, unsatisfied } = await bootKept((kept) =>
+      bootModules(platformDef(caps, adoptable, kept.modules, kept.replacements, reassemble), {
         ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
         resources: ctx.resources,
         parked: parkedModules(context),
-      },
-    );
+      }),
+    ));
     business = tree;
     terminals = tree.api<TerminalManager>("TerminalModule", "terminals");
   }
+  // Said in the three places someone looks: the log, the error record an admin sees in every
+  // Project's Cost Center (a bare kernel has none), and — through the host — the plugin's own
+  // row on the installed-plugins page. One record per plugin: the code carries the specifier,
+  // or the recorder's short-window dedup would keep only the first of a boot.
+  const errors = business?.api<Errors>("ObservabilityModule", "Errors") ?? null;
+  for (const { specifier, disabled, reason } of unsatisfied) {
+    const what = disabled
+      ? `left out of this generation: ${reason}`
+      : `runs without the contributions this platform has no slot for: ${reason}`;
+    console.warn(`[platform] plugin '${specifier}' ${what}`);
+    errors?.record({
+      source: "plugin",
+      code: `unsatisfied:${specifier}`,
+      kind: "unexpected",
+      err: disabled
+        ? `Disabled on this build: ${reason}`
+        : `Runs without part of itself on this build: ${reason}`,
+    });
+  }
+  // A host from a generation older than this record (a bare kernel keeps the one it was handed) has nowhere to put it.
+  if (typeof plugins.setUnsatisfied === "function") plugins.setUnsatisfied(unsatisfied);
   // Ordinary code over this App's own auth: the same object the business routes
   // authenticate with. A bare kernel has none — terminals stay fail-closed.
   const auth = business?.api<Auth>("IdentityModule", "Auth") ?? null;
@@ -419,6 +472,8 @@ async function createInner(
   // The imported plugin objects, handed to whoever boots next — parked state, registered
   // at the commit so a create() that threw leaves the previous App's host in place.
   ctx.resources.register(PLUGINS_RESOURCE_ID, plugins);
+  // What an accepted push ran without, for its answer.
+  if (push !== null) push.unsatisfied = unsatisfied;
 
   const httpApi = business?.api<{ fetch(request: Request): Promise<Response> }>(
     "HttpModule",
@@ -490,8 +545,15 @@ async function createInner(
  */
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
+    // Taken HERE, once: this create() is what a push boots, and only its first inner boot is
+    // the push's. A re-assembly later boots the same inner impl with nobody waiting on it.
+    let push = takePushSlip(ctx.resources);
     const innerImpl: Impl<PlatformApi, PlatformCtx> = {
-      create: (innerCtx, innerContext) => createInner(innerCtx, innerContext, reassemble),
+      create: (innerCtx, innerContext) => {
+        const slip = push;
+        push = null;
+        return createInner(innerCtx, innerContext, reassemble, slip);
+      },
     };
     let inner: Instance<PlatformApi>;
     let op: Promise<unknown> = Promise.resolve();

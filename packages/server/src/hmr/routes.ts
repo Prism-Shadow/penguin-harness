@@ -17,7 +17,9 @@ import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Auth } from "../mechanisms/identity.js";
 import { HttpError } from "../http/errors.js";
-import { Channels, Config, HmrControl } from "./capabilities.js";
+import { Channels, Config, Hmr, HmrControl } from "./capabilities.js";
+import { acceptsLeavingOut, answerPush, openPushSlip } from "./push-plugins.js";
+import type { Resources } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "../config.js";
 import type { ChannelHub } from "../runtime/channel.js";
 import type { HmrControlApi } from "./capabilities.js";
@@ -31,6 +33,8 @@ export interface HmrRouteDeps {
   auth: Auth;
   config: Pick<ServerConfig, "host" | "trustProxy">;
   channels: Pick<ChannelHub, "broadcast">;
+  /** Where a push's slip is registered for the generation it boots (push-plugins.ts). */
+  resources: Resources;
 }
 
 export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
@@ -83,15 +87,30 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
   // route that updates any of the three alone. The body and the answer are the mechanism's
   // (packages/hmr); live clients (browser tabs AND the desktop window) are told to reload
   // once a version actually lands.
-  routes.post("/upgrade", (c) =>
-    deps.control.endpoint(c.req.raw, (outcome) =>
-      deps.channels.broadcast(
-        "user:",
-        { type: "web_updated", rev: outcome.web.rev },
-        "server_event",
-      ),
-    ),
-  );
+  //
+  // A build that cannot run every installed plugin is refused unless the pusher accepted that
+  // (push-plugins.ts). Pushes are taken one at a time here: the slip is one registry entry,
+  // and a second push registering over the first would hand its answer to the wrong boot.
+  let pushes: Promise<unknown> = Promise.resolve();
+  routes.post("/upgrade", (c) => {
+    const push = pushes.then(async () => {
+      const { slip, close } = openPushSlip(deps.resources, acceptsLeavingOut(c.req.raw));
+      try {
+        const answered = await deps.control.endpoint(c.req.raw, (outcome) =>
+          deps.channels.broadcast(
+            "user:",
+            { type: "web_updated", rev: outcome.web.rev },
+            "server_event",
+          ),
+        );
+        return await answerPush(slip, answered);
+      } finally {
+        close();
+      }
+    });
+    pushes = push.catch(() => undefined);
+    return push;
+  });
 
   return routes;
 }
@@ -111,6 +130,7 @@ export class HmrRoutes {
   @Use() private readonly auth!: Auth;
   @Use() private readonly config!: Config;
   @Use() private readonly channels!: Channels;
+  @Use() private readonly hmr!: Hmr;
   @Bind("HmrRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = hmrRoutes({
@@ -119,6 +139,7 @@ export class HmrRoutes {
       auth: this.auth,
       config: this.config,
       channels: this.channels,
+      resources: this.hmr.resources,
     });
   }
 }

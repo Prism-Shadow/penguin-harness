@@ -71,7 +71,8 @@ export type ErrorSource =
   | "process"
   | "schedule"
   | "messaging"
-  | "id_suggest";
+  | "id_suggest"
+  | "plugin";
 
 /** Error classification: see file header — the criterion is "does a human need to step in". */
 export type ErrorKind = "expected" | "unexpected";

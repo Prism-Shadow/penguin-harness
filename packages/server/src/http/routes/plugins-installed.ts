@@ -36,7 +36,11 @@
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { InstalledPlugin, InstalledPluginsResponse } from "../../api/types.js";
+import type {
+  InstalledPlugin,
+  InstalledPluginsResponse,
+  UnsatisfiedPlugin,
+} from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
 import type { DatabaseSync } from "node:sqlite";
@@ -72,7 +76,12 @@ export interface InstalledPluginsDeps {
   /** The current version's assets, where the builtin plugins a push carried live. */
   assetsDir: () => string | null;
   /** What the process's plugin host holds, by specifier, and what it could not load, with why. */
-  running: () => { loaded: ReadonlySet<string>; skipped: ReadonlyMap<string, string> };
+  running: () => {
+    loaded: ReadonlySet<string>;
+    skipped: ReadonlyMap<string, string>;
+    /** Loaded plugins the running build cannot fully run, by specifier. */
+    unsatisfied: ReadonlyMap<string, UnsatisfiedPlugin>;
+  };
   projectConfig: ProjectConfigStore;
   access: Access;
   /**
@@ -123,7 +132,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         ...Object.values(tables.machines).flatMap((t) => Object.keys(t)),
       ]),
     ];
-    const { loaded, skipped } = deps.running();
+    const { loaded, skipped, unsatisfied } = deps.running();
     const bases = pluginBases(deps.root, deps.assetsDir());
     // `builtin` on a row is where the package CAME FROM, a tag, not a second way of being
     // asked for. What the package declares is read from its files; whether the process holds
@@ -152,7 +161,10 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         });
         continue;
       }
-      const active = where.here && loaded.has(specifier);
+      // Loaded, yet this build cannot fully run it (plugin/unsatisfied.ts): left out of the
+      // tree, or in it minus the contributions this build has no slot for.
+      const unmet = where.here ? unsatisfied.get(specifier) : undefined;
+      const active = where.here && loaded.has(specifier) && unmet?.disabled !== true;
       const failure = where.here ? skipped.get(specifier) : undefined;
       plugins.push({
         specifier,
@@ -161,6 +173,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         modules: declared.modules,
         replaces: declared.replaces,
         ...(!active && failure !== undefined ? { error: failure } : {}),
+        ...(unmet !== undefined
+          ? { unsatisfied: { disabled: unmet.disabled, reason: unmet.reason } }
+          : {}),
         ...where,
       });
     }
@@ -172,8 +187,11 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       file: PLUGINS_FILE,
       machineId: deps.machineId,
       // A plugin this server is asked to run that neither runs nor failed is waiting for a
-      // runtime that can re-assemble the App — otherwise applying already loaded it.
-      restartPending: plugins.some((p) => p.here && !p.active && p.error === undefined),
+      // runtime that can re-assemble the App — otherwise applying already loaded it. One
+      // this build cannot run is not waiting: a restart boots the same build.
+      restartPending: plugins.some(
+        (p) => p.here && !p.active && p.error === undefined && p.unsatisfied === undefined,
+      ),
     };
   };
 
@@ -403,7 +421,12 @@ export class InstalledPluginRoutes {
       // swap hands the same one to the next platform.
       running: () => {
         const host = pluginHostFrom(hmr.resources);
-        return { loaded: new Set(host.entries().keys()), skipped: host.skipped() };
+        return {
+          loaded: new Set(host.entries().keys()),
+          skipped: host.skipped(),
+          // A host registered by a generation older than this record has none to give.
+          unsatisfied: typeof host.unsatisfied === "function" ? host.unsatisfied() : new Map(),
+        };
       },
       projectConfig: this.projectConfig,
       access: this.access,
