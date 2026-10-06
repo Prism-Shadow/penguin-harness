@@ -159,6 +159,8 @@ export function registerProposalImpl(proposal: Command, t: Messages, kit: Deploy
             ),
           );
         else kit.print(t.org.proposalImplSet(detail.number, detail.implPr?.url ?? rawUrl ?? ""));
+        if (opts.json !== true)
+          for (const hint of detail.hints ?? []) kit.print(t.org.proposalHint(hint));
       },
     );
 

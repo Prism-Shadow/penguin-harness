@@ -3,7 +3,8 @@
  * A guard answers whether a run may go ahead, in which state, with which parameters; a company
  * module may replace any of them (a `guard` contribution, handed the default to build on). The
  * store guarantees only the data itself and an append-only history, so everything here —
- * revision numbers, terminal states, what an approval covers, one impl per PR and per head,
+ * revision numbers, terminal states, what an approval covers, one impl per PR and per head, an
+ * impl's base on the PR graph and a merged PR kept off a branch others stack on,
  * comments frozen once sent, an idempotent creation from a roadmap item and the rewrite of its
  * proposal's brief while that one is open — is a default, not a constraint.
  *
@@ -25,6 +26,12 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Act, ActionCaller, Guard, GuardInput, Subject } from "./action-model.js";
 import { ProposalError, type Proposal } from "./domain.js";
 import { refKey, refLabel } from "./impl-branch.js";
+import {
+  requireBaseOnGraph,
+  requireMergedPrNotABase,
+  type ImplGraphFacts,
+  type PlannedImpl,
+} from "./impl-on-graph.js";
 import type { ProposalTx } from "./ports.js";
 
 /** The caller, resolved: the principal a write is recorded under, and the person behind it. */
@@ -135,18 +142,21 @@ function implUnique(
   }
 }
 
-/** The impl a write is about to register, as the service hands it to the guard inside the write. */
-export interface PlannedImpl {
-  head: ProposalBranchRef | null;
-  pr: { key: string; label: string } | null;
-}
-
 const allow: Guard = () => undefined;
 
-/** Inside a write registering an impl (`params.planned`): it is no other proposal's. */
+/**
+ * Inside a write registering an impl (`params.planned`): it is no other proposal's, and — with
+ * the facts the service read for it (`params.facts`, impl-on-graph.ts) — it stays on the graph.
+ */
 const implNotTaken: Guard = onProposal((p, { params, tx }) => {
   const planned = params.planned as PlannedImpl | undefined;
-  if (planned !== undefined && tx !== undefined) implUnique(p.number, planned, tx as ProposalTx);
+  if (planned === undefined || tx === undefined) return;
+  const lookups = tx as ProposalTx;
+  implUnique(p.number, planned, lookups);
+  const facts = params.facts as ImplGraphFacts | undefined;
+  if (facts === undefined) return;
+  requireBaseOnGraph(p, planned, facts, lookups);
+  requireMergedPrNotABase(p, planned, facts, lookups);
 });
 
 /** The default guard of each built-in proposal Action, by key. */
@@ -258,7 +268,7 @@ export const proposalGuards: Record<string, Guard> = {
     requireRevision(p, ": publish it first");
   }),
 
-  /** Inside the write: the impl about to be registered is no other proposal's. */
+  /** Inside the write: the impl about to be registered is no other proposal's, and stays drawable. */
   "proposal.impl": implNotTaken,
 
   /** The adoption registers impls the same way: each inside its write, none another's. */

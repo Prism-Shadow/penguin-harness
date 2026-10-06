@@ -5834,6 +5834,10 @@ Benchmark：
             above: `叠在链外的 ${at} 上`,
             cycle: "声明的 base 互相成环",
           })[reason] ?? reason,
+        offMissing: (base: string, proposal: number | null): string =>
+          `${proposal === null ? `base ${base}` : `#${proposal} 登记的 base ${base}`} 既不是任何提案的 impl 分支，也不是任何 open PR 的 head：先为它登记提案或开 PR。`,
+        offClaimed: (base: string, proposal: number, pr: string): string =>
+          `#${proposal} 登记了已合并的 ${pr}，base ${base} 因此离开了图：改为在 #${proposal} 上登记仍在链上的分支。`,
         via: (state: string, n: number): string =>
           state === "closed" ? `经已关闭的 #${n}` : `经已合并的 #${n}`,
         viaClosedTitle: (n: number): string =>

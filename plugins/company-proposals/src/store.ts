@@ -154,6 +154,10 @@ export const READS = {
   implByPr: `SELECT number FROM proposal_impls WHERE pr_key = ?`,
   implByHead: `SELECT i.number, p.status FROM proposal_impls i JOIN proposals p ON p.number = i.number
      WHERE i.head_key = ?`,
+  implOnHeadBranch: `SELECT i.number, p.status, i.head_repo AS repo FROM proposal_impls i
+     JOIN proposals p ON p.number = i.number WHERE i.head_branch = ?`,
+  implOnBaseBranch: `SELECT i.number, p.status, i.base_repo AS repo FROM proposal_impls i
+     JOIN proposals p ON p.number = i.number WHERE i.base_branch = ?`,
 } as const;
 
 /** The statements of the read paths, prepared once per connection. */
@@ -336,6 +340,16 @@ export class ProposalReads {
         (this.q(READS.implByHead).all(headKey) as Row[]).map((r) => ({
           number: num(r.number),
           status: str(r.status) as ProposalStatus,
+        })),
+      implsOnBranch: (side, branch) =>
+        (
+          this.q(side === "head" ? READS.implOnHeadBranch : READS.implOnBaseBranch).all(
+            branch,
+          ) as Row[]
+        ).map((r) => ({
+          number: num(r.number),
+          status: str(r.status) as ProposalStatus,
+          repo: str(r.repo),
         })),
     };
   }

@@ -1,11 +1,12 @@
 /**
  * The PR graph page's rows and the three lists under the graph. A node row carries the marks the
  * server gave it — top, fork, the merged or closed PRs its base led through, stale, the reason
- * it is off the chain — and the registered deployments whose commit sits on it. Under the
- * graph, three lists answer three different questions and are named apart: the nodes drawn but
- * off the chain, the nodes the graph cannot draw at all, and the proposals whose impl is on no
- * node — each row with its reason. A node is an open PR, or an impl branch no PR is open on yet
- * (a branch node: no number, its proposal always named).
+ * it is off the chain and, when its base names no node, what fixing that takes — and the
+ * registered deployments whose commit sits on it. Under the graph, three lists answer three
+ * different questions and are named apart: the nodes drawn but off the chain, the nodes the
+ * graph cannot draw at all, and the proposals whose impl is on no node — each row with its
+ * reason. A node is an open PR, or an impl branch no PR is open on yet (a branch node: no
+ * number, its proposal always named).
  */
 import type { ReactNode } from "react";
 import type {
@@ -86,6 +87,25 @@ export function offReasonText(graph: ProposalGraphResponse, node: ProposalGraphN
   );
 }
 
+/** A PR's URL as the rows name it, `owner/repo#n`; any other URL as it is. */
+function prLabel(url: string): string {
+  const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url);
+  return m === null ? url : `${m[1]}#${m[2]}`;
+}
+
+/**
+ * What fixing an off-chain node takes, when its base names no node: the merged PR that claimed
+ * the base branch away, or the base nothing registers. Empty when the server says nothing more.
+ */
+export function offDetailText(node: ProposalGraphNode): string {
+  const off = node.off;
+  if (off === null || off.missing === undefined) return "";
+  const t = S.company.proposals.graph;
+  if (off.by?.pr !== undefined)
+    return t.offClaimed(off.missing, off.by.proposal, prLabel(off.by.pr));
+  return t.offMissing(off.missing, off.by?.proposal ?? null);
+}
+
 export function NodeRow({
   graph,
   node,
@@ -97,6 +117,7 @@ export function NodeRow({
 }) {
   const t = S.company.proposals.graph;
   const relationWord = (r: ProposalGraphRelation) => t.relation[r] ?? r;
+  const detail = offDetailText(node);
   return (
     <div className="flex min-w-0 flex-1 flex-col justify-center gap-0">
       <div className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs`}>
@@ -190,6 +211,11 @@ export function NodeRow({
             {o.origin}#{o.number} {relationWord(o.relation)}
           </a>
         ))}
+        {detail !== "" && (
+          <span className={`min-w-0 truncate ${toneInk.attention}`} data-tooltip={detail}>
+            {detail}
+          </span>
+        )}
       </div>
     </div>
   );

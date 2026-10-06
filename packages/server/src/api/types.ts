@@ -6246,6 +6246,20 @@ export type ProposalGraphOffReason =
   "old-line" | "unread" | "no-base" | "not-taken" | "above" | "cycle";
 
 /**
+ * Why a node is off the chain (`reason`, and the node `at` it names), with what fixing it takes:
+ * `missing` is a declared base the graph draws no node for, and `by` the proposal behind it — for
+ * `no-base`, the proposal that registered that base; when a merged PR claimed the base branch
+ * away (a proposal whose impl head it is registered that PR, so the branch is no node), that
+ * proposal and its PR (`pr`). Both absent when there is nothing more to say.
+ */
+export interface ProposalGraphOff {
+  reason: ProposalGraphOffReason;
+  at: string | null;
+  missing?: string;
+  by?: { proposal: number; pr?: string };
+}
+
+/**
  * A commit in the graph: an open PR on the delivery repository, or a proposal's impl branch on it
  * that no open PR claims yet (a branch node: `number` and `url` are null). Once a PR is opened on
  * the branch, the same node carries its number.
@@ -6293,7 +6307,7 @@ export interface ProposalGraphNode {
   /** On the chain: reached from the base branch through stacked edges, taking one branch at each fork. */
   onChain: boolean;
   /** Why the node is off the chain; null when it is on it. */
-  off: { reason: ProposalGraphOffReason; at: string | null } | null;
+  off: ProposalGraphOff | null;
   /** More than one stacked child: the chain forks here. */
   fork: boolean;
   /** The proposal whose impl this is; null for a PR no proposal registered (never for a branch node). */
@@ -6622,7 +6636,11 @@ export interface ProposalDetail extends ProposalItem {
   root: string;
   /** The absolute directory the scope resolves under, on the server that owns the organization — present on a read and on a publish answer. */
   base?: string;
-  /** Notes on the scope a publish accepted but that deserve a look (a `new` file that already exists, a rename target already there) — on the publish answer only. */
+  /**
+   * Notes on what a write accepted but that deserve a look — on the publish answer, the scope (a
+   * `new` file that already exists, a rename target already there); on the impl answer, a base
+   * judged before the PR graph was read, so without its open PRs.
+   */
   hints?: string[];
   scope: ProposalScopeEntry[];
   /** The tests that bear on the change, existing and new; `[]` on a revision written before tests existed. */

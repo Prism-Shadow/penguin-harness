@@ -3,7 +3,8 @@
  * (node env, no DOM): the rows listed under the graph carry the page's deploy menu when the page
  * hands its row wrapper in — every listed PR gets its own menu button — and stay bare without it.
  * A branch node (an impl branch no PR is open on) reads as its branch with its proposal and stage,
- * and keeps the deploy menu. A stale bottom layer says how far the base branch moved on.
+ * and keeps the deploy menu. A stale bottom layer says how far the base branch moved on. An
+ * off-chain node whose base names no node says what fixing it takes.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -181,5 +182,45 @@ describe("a stale layer", () => {
     const html = row(stale("b4"));
     expect(html).toContain(`>${t.stale}<`);
     expect(html).not.toContain(t.staleBase("dev", 3));
+  });
+});
+
+describe("an off-chain node's detail", () => {
+  const t = S.company.proposals.graph;
+  /** A sentence as static markup spells it (React escapes the apostrophe). */
+  const markup = (text: string) => text.replace(/'/g, "&#x27;");
+  const row = (n: ProposalGraphNode) =>
+    renderToStaticMarkup(
+      createElement(NodeRow, {
+        graph: { ...graph, nodes: [n] },
+        node: n,
+        onOpenProposal: () => {},
+      }),
+    );
+
+  it("names a base nothing registers, and the proposal that registered it", () => {
+    const html = row({
+      ...node(7),
+      off: { reason: "no-base", at: null, missing: "gone", by: { proposal: 184 } },
+    });
+    expect(html).toContain(markup(t.offMissing("gone", 184)));
+  });
+
+  it("names the proposal whose merged PR took the base off the graph, and the PR", () => {
+    const html = row({
+      ...node(7),
+      off: {
+        reason: "unread",
+        at: null,
+        missing: "feat/a",
+        by: { proposal: 12, pr: "https://github.com/acme/app/pull/20" },
+      },
+    });
+    expect(html).toContain(markup(t.offClaimed("feat/a", 12, "acme/app#20")));
+  });
+
+  it("says nothing more when the server gives no detail", () => {
+    const html = row(node(7));
+    expect(html).not.toContain(markup(t.offMissing("gone", null)));
   });
 });

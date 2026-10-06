@@ -17,6 +17,7 @@ import {
   proposalGuards,
   type Caller,
   type Guard,
+  type ImplGraphFacts,
   type Proposal,
   type Subject,
 } from "../src/index.js";
@@ -166,6 +167,7 @@ describe("the default rules", () => {
     ): ProposalTx => ({
       implsByPr: () => byPr,
       implsByHead: () => byHead,
+      implsOnBranch: () => [],
     });
     const head = { remote: "acme/site", branch: "feat" };
     const pr = { key: "acme/site#1", label: "acme/site#1" };
@@ -184,6 +186,124 @@ describe("the default rules", () => {
         ask("proposal.impl", proposal(), other, { params: { planned: { head: null, pr } } }),
       ),
     ).toBeNull();
+  });
+
+  describe("keep an impl drawable on the PR graph", () => {
+    type Impl = { number: number; status: Proposal["status"]; repo: string };
+    /** The other impls on each branch, by side. */
+    const tx = (heads: Record<string, Impl[]>, bases: Record<string, Impl[]> = {}): ProposalTx => ({
+      implsByPr: () => [],
+      implsByHead: () => [],
+      implsOnBranch: (side, branch) => (side === "head" ? heads : bases)[branch] ?? [],
+    });
+    const facts = (over: Partial<ImplGraphFacts> = {}): ImplGraphFacts => ({
+      baseBranch: "dev",
+      repos: ["acme/site", "me/site"],
+      openHeads: ["feat/open"],
+      declaredBase: true,
+      pr: null,
+      ...over,
+    });
+    const head = { remote: "fork", branch: "feat/x" };
+    const base = (branch: string, repo = "acme/site") => ({ remote: "origin", repo, branch });
+    const register = (
+      planned: Record<string, unknown>,
+      f: ImplGraphFacts,
+      t: ProposalTx,
+      state = proposal(),
+    ) =>
+      refusal(() => ask("proposal.impl", state, other, { params: { planned, facts: f }, tx: t }));
+    const live = (number: number, status: Proposal["status"] = "ready"): Impl => ({
+      number,
+      status,
+      repo: "acme/site",
+    });
+
+    it("take a base that is the base branch, a live impl head or an open PR's head", () => {
+      const pr = null;
+      expect(register({ head, base: base("dev"), pr }, facts(), tx({}))).toBeNull();
+      expect(
+        register({ head, base: base("feat/a"), pr }, facts(), tx({ "feat/a": [live(3)] })),
+      ).toBeNull();
+      expect(register({ head, base: base("feat/open"), pr }, facts(), tx({}))).toBeNull();
+    });
+
+    it("refuse any other base, a merged or rejected impl's head, or one on another repository", () => {
+      const pr = null;
+      const notOnGraph = { status: 400, code: "base_not_on_graph" };
+      expect(register({ head, base: base("gone"), pr }, facts(), tx({}))).toEqual(notOnGraph);
+      for (const status of ["merged", "rejected"] as const) {
+        expect(
+          register(
+            { head, base: base("feat/a"), pr },
+            facts(),
+            tx({ "feat/a": [live(3, status)] }),
+          ),
+        ).toEqual(notOnGraph);
+      }
+      // Its own head is not a base it stacks on.
+      expect(
+        register({ head, base: base("feat/a"), pr }, facts(), tx({ "feat/a": [live(7)] })),
+      ).toEqual(notOnGraph);
+      expect(register({ head, base: base("dev", "else/where"), pr }, facts(), tx({}))).toEqual(
+        notOnGraph,
+      );
+    });
+
+    it("judge only a base the request names and that changes", () => {
+      const pr = null;
+      // A base GitHub reported for the PR is the PR's fact.
+      expect(
+        register({ head, base: base("gone"), pr }, facts({ declaredBase: false }), tx({})),
+      ).toBeNull();
+      // The base already registered is not judged again.
+      const standing = proposal({
+        impl: { head: { ...head, repo: "me/site" }, base: base("gone"), pr: null, by: "", at: "" },
+      });
+      expect(register({ head, base: base("gone"), pr }, facts(), tx({}), standing)).toBeNull();
+      // Without the facts (an adoption, a direct use case) the rule is not asked.
+      expect(
+        refusal(() =>
+          ask("proposal.impl", proposal(), other, {
+            params: { planned: { head, base: base("gone"), pr } },
+            tx: tx({}),
+          }),
+        ),
+      ).toBeNull();
+    });
+
+    it("without a graph read yet, judge by the base branch and the impl heads alone", () => {
+      const pr = null;
+      const unread = facts({ openHeads: null });
+      expect(register({ head, base: base("feat/open"), pr }, unread, tx({}))).toEqual({
+        status: 400,
+        code: "base_not_on_graph",
+      });
+      expect(register({ head, base: base("dev"), pr }, unread, tx({}))).toBeNull();
+      expect(
+        register({ head, base: base("feat/a"), pr }, unread, tx({ "feat/a": [live(3)] })),
+      ).toBeNull();
+    });
+
+    it("refuse a merged PR whose head branch a live proposal still stacks on", () => {
+      const pr = { key: "acme/site#20", label: "acme/site#20" };
+      const planned = { head, base: base("dev"), pr };
+      const merged = facts({ pr: { status: "merged", branch: "feat/x" } });
+      const bases = { "feat/x": [live(8), live(9, "merged")] };
+      expect(register(planned, merged, tx({}, bases))).toEqual({
+        status: 409,
+        code: "base_in_use",
+      });
+      // Nobody live stacks on it, the PR is open, or its status or branch is unknown: allowed.
+      expect(register(planned, merged, tx({}, { "feat/x": [live(9, "rejected")] }))).toBeNull();
+      for (const known of [
+        { status: "open" as const, branch: "feat/x" },
+        { status: null, branch: "feat/x" },
+        { status: "merged" as const, branch: null },
+      ]) {
+        expect(register(planned, facts({ pr: known }), tx({}, bases))).toBeNull();
+      }
+    });
   });
 
   it("freeze a comment once it is sent, keep a pending one its writer's, and resolve once", () => {

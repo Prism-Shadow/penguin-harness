@@ -65,6 +65,8 @@ import { paragraphAtOffset, renderForAgent, sectionSource } from "./comments.js"
 import { readBaseFile } from "./files.js";
 import { PrStatusReader, ghRunner, parsePullUrl, type RunGh } from "./pr-status.js";
 import { pullKey, type GraphProposal } from "./pr-chain.js";
+import { declaredHeads } from "./graph-heads.js";
+import { OPEN_PRS_UNCHECKED, implGraphFacts } from "./impl-on-graph.js";
 import {
   deploymentIdOf,
   DeploymentRegistryError,
@@ -1516,6 +1518,10 @@ export class ProposalService {
    *   head (this request's or the standing one) GitHub is asked for the PR: its head must be
    *   that head, and its base becomes the impl's base — a PR is its head and its base. Without
    *   a declared head the impl is named by the PR alone.
+   * - A base the request names must be on the PR graph, and a merged PR may not take a branch
+   *   other proposals still stack on off it (impl-on-graph.ts): judged inside the write, over the
+   *   graph and PR statuses as cached; with no graph laid out yet, the answer's `hints` say the
+   *   open PRs were not consulted.
    *
    * A registration refreshes the PR graph at once.
    */
@@ -1629,6 +1635,9 @@ export class ProposalService {
       pr: pr === null || prKey === null ? null : { ...pr, key: prKey },
       by: caller.principal,
     };
+    const cached = this.graphs.cached(this.graphContext(projectId, orgId, org, stores));
+    const declaredBase = req.base !== undefined;
+    const facts = implGraphFacts({ cached, store: stores.graph, planned: plan, declaredBase });
     const written = store.setImpl(number, (now, tx) => {
       const current = now.impl;
       const unchanged =
@@ -1638,13 +1647,17 @@ export class ProposalService {
         sameSide(current.head, plan.head) &&
         sameSide(current.base, plan.base);
       if (unchanged) return null;
-      a.check(now, { tx, params: { planned: plan } });
+      a.check(now, { tx, params: { planned: plan, facts } });
       return plan;
     });
     if (written === null) return this.view(store, number, caller);
     this.notify(org, number, written.seq, "material_added");
     void this.graphs.kick(this.graphContext(projectId, orgId, org, stores));
-    return this.view(store, number, caller);
+    // The note only where a base was judged without the open PRs (impl-on-graph.ts).
+    const skipped =
+      declaredBase && !sameSide(standing?.base ?? null, plan.base) && facts.openHeads === null;
+    const detail = this.view(store, number, caller);
+    return skipped ? { ...detail, hints: [OPEN_PRS_UNCHECKED] } : detail;
   }
 
   /** The impl branch's patch — the merge base of base and head, up to head — read from GitHub now. */
@@ -1915,7 +1928,7 @@ export class ProposalService {
       },
       proposals: () => {
         const facts = stores.proposals.facts();
-        const heads = this.declaredHeads(facts);
+        const heads = declaredHeads(facts);
         return facts.map((p): GraphProposal => ({
           number: p.number,
           title: p.title,
@@ -1972,27 +1985,6 @@ export class ProposalService {
     while (this.graphs.refreshing(`${projectId}/${orgId}`)) {
       await new Promise((r) => setTimeout(r, 5));
     }
-  }
-
-  /** Each live proposal's declared impl head, with the repository stored when it was registered. */
-  private declaredHeads(
-    proposals: ProposalFacts[],
-  ): Map<number, { label: string; repo: string; branch: string; base: string | null }> {
-    const out = new Map<
-      number,
-      { label: string; repo: string; branch: string; base: string | null }
-    >();
-    for (const p of proposals) {
-      const head = p.impl?.head;
-      if (p.status === "rejected" || head == null) continue;
-      out.set(p.number, {
-        label: refLabel(head),
-        repo: head.repo,
-        branch: head.branch,
-        base: p.impl?.base?.branch ?? null,
-      });
-    }
-    return out;
   }
 
   /**

@@ -52,7 +52,8 @@ export {
   proposalGuards,
   rebriefFromRoadmap,
 } from "./guards.js";
-export type { Caller, PlannedImpl, WriteAct } from "./guards.js";
+export type { Caller, WriteAct } from "./guards.js";
+export type { ImplGraphFacts, PlannedImpl } from "./impl-on-graph.js";
 export * from "./action-model.js";
 export { ActionIndex, WORKFLOW_KEYS, execForms, hookCovers } from "./action-index.js";
 export type { Conflict, Contributed, Indexed } from "./action-index.js";

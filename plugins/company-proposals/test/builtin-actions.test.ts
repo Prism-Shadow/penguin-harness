@@ -193,6 +193,7 @@ describe("the default guards", () => {
     const tx: ProposalTx = {
       implsByPr: () => [3],
       implsByHead: () => [{ number: 3, status: "ready" }],
+      implsOnBranch: () => [],
     };
     let refusals = 0;
     for (const key of Object.keys(PROPOSAL_ACTION_IDS)) {
@@ -226,6 +227,7 @@ describe("the default guards", () => {
     const tx: ProposalTx = {
       implsByPr: () => [3],
       implsByHead: () => [{ number: 3, status: "ready" }],
+      implsOnBranch: () => [],
     };
     for (const key of Object.keys(PROPOSAL_ACTION_IDS)) {
       for (const state of STATES) {

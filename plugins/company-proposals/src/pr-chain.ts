@@ -36,7 +36,8 @@
  * lays out what it read — each node with its parent, edge and chain verdict, the proposal whose
  * impl it is and the PR every other origin has on the same branch, each proposal whose impl is
  * not on the graph with the reason why, each registered deployment on the layer its commit
- * sits on (deployments.ts), and the rows the graph is drawn in (smartlog.ts).
+ * sits on (deployments.ts), and the rows the graph is drawn in (smartlog.ts). An off-chain node
+ * whose base names no node also says what fixing it takes (off-detail.ts).
  */
 import type {
   ProposalGraphNode,
@@ -52,6 +53,7 @@ import { placeDeployment, type DeploymentReading } from "./deployments.js";
 import { BASE_KEY, headsOf, pullKey, type GraphHead } from "./graph-heads.js";
 import { WALK_CAP, walkChain } from "./chain-walk.js";
 import { adoptNearest, type Lineage } from "./graph-lineage.js";
+import { addOffDetails } from "./off-detail.js";
 import { ownRows, smartlogRows } from "./smartlog.js";
 
 export { pullKey };
@@ -369,6 +371,9 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
       };
     });
 
+  const allUnplaced = [...unplaced, ...branchUnplaced].sort((a, b) => a.number - b.number);
+  addOffDetails(drawn, input.base.branch, input.proposals, allUnplaced);
+
   return {
     repo: input.repo,
     base: {
@@ -382,7 +387,7 @@ export function buildGraph(input: GraphInput): ProposalGraphResponse {
     tops: chain.tops,
     rows: smartlogRows(drawn, chain.top),
     ownRows: ownRows(drawn, chain.top),
-    unplaced: [...unplaced, ...branchUnplaced].sort((a, b) => a.number - b.number),
+    unplaced: allUnplaced,
     errors: input.errors,
     checkedAt: input.checkedAt,
     deployments: input.deployments.map((deployment) =>

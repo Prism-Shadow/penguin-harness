@@ -181,6 +181,27 @@ export class GraphRefresher {
     return this.orgs.get(key)?.running != null;
   }
 
+  /**
+   * The graph as last laid out, from the store — no git, no network: what a write's default
+   * rules judge a registration by (impl-on-graph.ts). `graph` is null when none was laid out
+   * yet; `base` is the branch the graph stacks on as far as is known without a read, and `repos`
+   * the delivery repository and its origins (empty when no delivery repository is known).
+   */
+  cached(ctx: GraphContext): {
+    graph: ProposalGraphResponse | null;
+    base: string;
+    repos: string[];
+  } {
+    const set = ctx.settings();
+    const project = set.repo === null ? (this.orgs.get(ctx.key)?.discovered?.project ?? set) : set;
+    if (project.repo === null) return { graph: null, base: project.base, repos: [] };
+    const repos = [project.repo, ...project.origins.map((o) => o.repo)];
+    const stored = ctx.store.refreshState(project.repo).defaultBranch;
+    const base = project.baseDeclared ? project.base : (stored ?? project.base);
+    const graph = ctx.store.latestSnapshot(project.repo, base)?.graph ?? null;
+    return { graph, base, repos };
+  }
+
   /** Refreshes now, not waiting for the window (an impl registered, a deploy run ended). */
   kick(ctx: GraphContext, force = true): Promise<void> {
     return this.start(ctx, force);

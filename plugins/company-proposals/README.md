@@ -69,6 +69,13 @@ penguin org proposal deploy <n> --to <id> [--head <sha>] [-- <extra args...>]   
 
 A proposal's implementation is its **impl branch**: a head and the base it is measured against, each a `<remote, branch>` pair, where the remote is a git remote of the proposal's repository that points at GitHub (or `owner/repo` written out). Its patch is the merge base of base and head up to head — GitHub's `compare/<base>...<head>`. The proposal page, the PR graph and `deploy` read the implementation from this pair; a PR is optional and attaches later, and registering a PR is registering its head and base. On the PR graph, an impl branch with no PR claims the open PR whose head branch it is on the delivery repository; with none, the branch is a node of its own (keyed by its head branch, its tip as `ls-remote` reads it, its parent decided by ancestry like a PR's), and the node carries the PR once one is opened on the branch. An impl branch whose head is not on the delivery repository, or could not be read there, is listed apart as `unread`. An impl registered as a PR alone is read as the impl branch that PR names; its head and base are read off the PR when needed. Reporting `merged` still checks the PR's merge, so a branch-only impl needs its PR attached first.
 
+Two default rules keep a registration drawable on the PR graph; both are judged inside the write and never rewrite what is registered:
+
+- **`base_not_on_graph` (400)** — a base the request names must be the graph's base branch, the impl head of another proposal that is not merged or rejected, or the head of an open PR on the delivery repository in the graph as last read. A base nothing draws would leave the node `no-base` and everything stacked on it off the chain: register a proposal for that branch, or open a PR for it, first. With no graph read yet, only the first two are checked and the answer's `hints` say so. A base GitHub reports for a PR, and a base already registered, are not judged again.
+- **`base_in_use` (409)** — a PR whose cached status is merged cannot be registered when its head branch is still the registered base of another proposal that is not merged or rejected: the merged PR would claim the branch, the node would leave the graph, and the proposals stacked on it with it. The refusal lists those proposals; keep the branch that is still on the chain as the impl instead. An unknown status is not refused.
+
+On the graph page, an off-chain node whose base names no node says why and what fixes it: the base nothing registers (and the proposal that registered it), or the proposal whose merged PR took the base branch off the graph.
+
 The document a revision sends:
 
 ```markdown

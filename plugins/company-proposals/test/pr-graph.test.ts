@@ -194,7 +194,7 @@ describe("PrGraphReader", () => {
     const byNumber = new Map(g.nodes.map((n) => [n.number, n]));
     expect(byNumber.get(16)!.via).toEqual([{ number: 21, state: "closed" }]);
     expect(byNumber.get(14)!.off).toEqual({ reason: "old-line", at: null });
-    expect(byNumber.get(15)!.off).toEqual({ reason: "no-base", at: null });
+    expect(byNumber.get(15)!.off).toEqual({ reason: "no-base", at: null, missing: "feat/gone" });
     expect(g.nodes.find((n) => n.number === 13)?.draft).toBe(true);
     expect(g.errors).toEqual([]);
     expect(g.checkedAt).toBe("1970-01-01T00:00:00.000Z");

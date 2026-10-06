@@ -73,6 +73,14 @@ export interface ProposalTx {
   implsByPr(prKey: string): number[];
   /** The proposals whose impl head is this key (headKey), with their status. */
   implsByHead(headKey: string): Array<{ number: number; status: ProposalStatus }>;
+  /**
+   * The proposals whose impl head (or base) is a branch of this name, on any repository: their
+   * status and the repository that side resolved to when it was registered.
+   */
+  implsOnBranch(
+    side: "head" | "base",
+    branch: string,
+  ): Array<{ number: number; status: ProposalStatus; repo: string }>;
 }
 
 /** A plan: called inside the transaction with the proposal as it stands, answers what to write or throws. */

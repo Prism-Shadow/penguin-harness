@@ -17,6 +17,8 @@
  * no network.
  */
 import type { ProposalGraphUnplaced } from "@prismshadow/penguin-server/api";
+import { refLabel } from "./impl-branch.js";
+import type { ProposalFacts } from "./ports.js";
 import type { GraphProposal, OpenPull } from "./pr-chain.js";
 import { parsePullUrl } from "./pr-status.js";
 
@@ -144,4 +146,25 @@ export function headsOf(input: {
 export function pullKey(url: string): string | null {
   const ref = parsePullUrl(url);
   return ref === null ? null : `${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}#${ref.number}`;
+}
+
+/** Each live proposal's declared impl head, with the repository stored when it was registered. */
+export function declaredHeads(
+  proposals: readonly ProposalFacts[],
+): Map<number, { label: string; repo: string; branch: string; base: string | null }> {
+  const out = new Map<
+    number,
+    { label: string; repo: string; branch: string; base: string | null }
+  >();
+  for (const p of proposals) {
+    const head = p.impl?.head;
+    if (p.status === "rejected" || head == null) continue;
+    out.set(p.number, {
+      label: refLabel(head),
+      repo: head.repo,
+      branch: head.branch,
+      base: p.impl?.base?.branch ?? null,
+    });
+  }
+  return out;
 }

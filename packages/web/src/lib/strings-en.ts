@@ -5781,6 +5781,10 @@ Scenarios:
             above: `on off-chain ${at}`,
             cycle: "declared bases form a cycle",
           })[reason] ?? reason,
+        offMissing: (base: string, proposal: number | null): string =>
+          `${proposal === null ? `Base ${base}` : `Base ${base}, registered by #${proposal},`} is no proposal's impl branch and no open PR's head: register a proposal for it or open a PR from it first.`,
+        offClaimed: (base: string, proposal: number, pr: string): string =>
+          `Base ${base} left the graph when #${proposal} registered merged ${pr}: register on #${proposal} the branch still on the chain instead.`,
         via: (state: string, n: number): string => `via ${state} #${n}`,
         viaClosedTitle: (n: number): string =>
           `The declared base is the branch of #${n}, closed without merging: this layer still carries #${n}'s commits, and a restack onto the layer below drops them.`,

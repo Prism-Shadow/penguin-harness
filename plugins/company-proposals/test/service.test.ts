@@ -484,6 +484,8 @@ describe("ProposalService", () => {
       root,
       log,
       gh,
+      // The graph stacks on main: the impl bases below are on it (impl-on-graph.ts).
+      pluginConfig: { get: () => ({ deliveryBase: "main" }) },
       git: async () =>
         [
           "origin\thttps://github.com/acme/site.git (fetch)",
@@ -574,7 +576,7 @@ describe("ProposalService", () => {
       PROJECT,
       ORG,
       second,
-      { head: { remote: "origin", branch: "other" }, base: { remote: "origin", branch: "dev" } },
+      { head: { remote: "origin", branch: "other" }, base: { remote: "origin", branch: "main" } },
       author,
     );
     expect(declared.impl).toMatchObject({
@@ -586,7 +588,7 @@ describe("ProposalService", () => {
       PROJECT,
       ORG,
       second,
-      { head: { remote: "origin", branch: "moved" }, base: { remote: "origin", branch: "dev" } },
+      { head: { remote: "origin", branch: "moved" }, base: { remote: "origin", branch: "main" } },
       author,
     );
     expect(moved.impl).toMatchObject({ pr: null });

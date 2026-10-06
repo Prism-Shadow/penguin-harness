@@ -102,6 +102,8 @@ function open(): ProposalService {
     // No mirror built: the diff is GitHub's comparison, the path a fresh organization takes.
     diffMirrorFor: () => ({ exists: () => false }) as unknown as DiffMirror,
     gh,
+    // The graph stacks on main, the impl base registered below (impl-on-graph.ts).
+    pluginConfig: { get: () => ({ deliveryBase: "main" }) },
     git: async () =>
       [
         "origin\thttps://github.com/acme/site.git (fetch)",
