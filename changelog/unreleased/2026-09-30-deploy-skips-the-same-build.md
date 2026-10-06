@@ -3,7 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `tooling`, `server`, `core`
-- **PR:** [Myriad-Dreamin/penguin-harness#113](https://github.com/Myriad-Dreamin/penguin-harness/pull/113)
+- **PR:** [#990](https://github.com/Prism-Shadow/penguin-harness/pull/990)
 
 [中文版](2026-09-30-deploy-skips-the-same-build.zh.md)
 
