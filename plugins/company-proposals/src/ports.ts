@@ -23,6 +23,7 @@ import type {
   ProposalStatus,
   ProposalTestEntry,
 } from "@prismshadow/penguin-server/api";
+import type { OrgActor } from "@prismshadow/penguin-server/plugin";
 import type { Comparison, ImplPull, OpenPull, ShutPull } from "./pr-chain.js";
 import type { Lineage } from "./graph-lineage.js";
 import type { Proposal, ProposalImpl, ProposalImplSide } from "./domain.js";
@@ -145,6 +146,8 @@ export interface ProposalStore {
   publish(number: number, plan: Plan<Proposal, PublishPlan>): Written;
   setStatus(number: number, plan: Plan<Proposal, StatusPlan>): Written;
   editBrief(number: number, plan: Plan<Proposal, { brief: string; by: string }>): Written;
+  /** The author replaced: the header's author and an `author` event naming both, in one transaction. */
+  setAuthor(number: number, plan: Plan<Proposal, { author: string; by: string }>): Written;
   startImplementation(
     number: number,
     plan: Plan<Proposal, { implementer: string; sessionId: string; by: string }>,
@@ -180,6 +183,28 @@ export interface ProposalStore {
   markRead(userId: string, number: number, seq: number): void;
   close(): void;
 }
+
+// ---------------------------------------------------------------------------
+// RoadmapModeratorOf
+// ---------------------------------------------------------------------------
+
+/**
+ * Who moderates roadmap `number` now, as `actor` reads it — null when it has none or does not
+ * exist — asked of the plugin that owns roadmaps (company-roadmaps): the default guard of
+ * `proposal.author` lets the moderator of the roadmap that created a proposal hand it to another
+ * author. This plugin knows nothing of roadmaps beyond the number a proposal records; the
+ * roadmaps plugin provides the port through this plugin's module
+ * (CompanyProposalsPlugin.provideRoadmapModerators) while its App runs. It is a function, not
+ * an interface, so the module tree compares it across the two packages by its signature.
+ * Without it — the roadmaps plugin not installed — no roadmap has a moderator here, and only a
+ * person passes.
+ */
+export type RoadmapModeratorOf = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  actor: OrgActor,
+) => Promise<string | null>;
 
 // ---------------------------------------------------------------------------
 // GitMirror

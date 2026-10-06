@@ -218,6 +218,11 @@ export function eventLine(ev: ProposalEvent, names: ReadonlyMap<string, string>)
       return t.notify_failed;
     case "brief_edited":
       return t.brief_edited;
+    case "author": {
+      // The text is `<before> → <after>`, two agent ids (the plugin's store).
+      const [from = "", to = ""] = (ev.text ?? "").split(" → ");
+      return t.author(names.get(from) ?? from, names.get(to) ?? to);
+    }
     case "discussion_started":
       return t.discussion_started(ev.text === undefined ? "" : (names.get(ev.text) ?? ev.text));
     case "discussion_concluded":

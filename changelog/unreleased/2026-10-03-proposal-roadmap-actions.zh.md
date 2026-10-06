@@ -21,7 +21,7 @@
   - `guard`：替换某个 Action 的 guard，并收到缺省 guard 作为基础；
   - `hook`：在 Action 之前或之后执行，键可以以 `.*` 结尾；
   - `subject`：读取对象的状态，对象有提交时一并读取提交。
-- 两个插件各自贡献内置 Action：company-proposals 贡献 20 个 Action（`proposal.*` 与 `target.register`），company-roadmaps 贡献 10 个 `roadmap.*` Action。
+- 两个插件各自贡献内置 Action：company-proposals 贡献 21 个 Action（`proposal.*` 与 `target.register`），company-roadmaps 贡献 10 个 `roadmap.*` Action。
 - 同一个键有两份同级的贡献（两份 company workflow 的，或两份内置的）时，只在调用该键时以 409 `action_ambiguous` 拒绝，两份 action 与两份 guard 的拒绝同形。拒绝中列出每份贡献的精确调用方式，且不记为运行。按 id 调用一份 `action` 贡献时，其 guard 照常按键解析；按 id 调用一份 `guard` 贡献时，运行该键的 Action，只由这份 guard 判定。
 - 运行的开始行写在它的第一个写事务里，运行与其写入一同提交。被拒绝和失败的尝试同样留下记录。执行体抛出带 4xx 状态的领域错误时记为 `refused` 并答该状态与错误码；其余错误记为 `failed`：带 5xx 状态的（如 502 `branch_unreadable`）答该状态与错误码，其他答 500。
 - 带相同 `requestId` 的重试答第一次的运行。
@@ -54,6 +54,12 @@
 - roadmap 有讨论室时，新增的员工加入其频道、移出的员工离开，每次变更在频道里留一条系统消息；讨论室无法随之变更时，本次运行被拒绝。roadmap 正在讨论时，新成员像开房时一样得到讨论室会话，并经 `notify.roadmap.room_joined` 得知；移出成员的讨论室会话被关闭。其他阶段只改频道成员。
 - 其缺省 guard 放行人与 roadmap 当前的主持人，拒绝其他员工（403 `not_moderator`）。
 - 服务端的 `OrgGateway` 新增 `changeRoomMembers`：为拥有频道的工作把员工加入或移出该频道，不动其中的人。
+
+## 提案作者
+
+- 新增 `proposal.author`，对象 `proposal:<n>`，参数 `{ author }`：把提案交给另一位作者，须是在职员工（否则 400 `bad_request`；与现任作者相同时 409 `author_unchanged`）。每次运行追加一条 `author` 事件，其文字记下改动前后的作者，时间线上可见。修订、评论与批准保持不变。
+- 此后只针对作者的规则都认新作者：标 ready 前须答复所请求的修改、改写 brief 或反馈时的工位通知、缺省的实施者。
+- 其缺省 guard 放行人，以及建出该提案的 roadmap 的主持人；拒绝其他员工（403 `not_moderator`）。该主持人由 company-roadmaps 在其 App 运行期间经 company-proposals 的模块提供；未提供时只有人能执行。
 
 ## 部署
 

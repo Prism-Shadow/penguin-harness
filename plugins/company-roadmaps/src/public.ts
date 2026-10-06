@@ -75,7 +75,8 @@ export {
   pageRoutes,
 } from "./page.js";
 export { claimListeners, discussingRoomOf, roomClaim } from "./claim.js";
-export { ProposalCreator } from "./proposals.js";
+export { ModeratorRegistration, ProposalCreator, roadmapModerators } from "./proposals.js";
+export type { RoadmapModeratorOf } from "./proposals.js";
 export * from "./notices.js";
 export { RetiredOrgs, retireListeners, retireRegistered } from "./org-retire.js";
 export type { OrgRef, RetireListener } from "./org-retire.js";

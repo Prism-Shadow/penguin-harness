@@ -15,6 +15,7 @@ import {
   companyDbPath,
   readRoom,
   roadmapGuards,
+  roadmapModerators,
   type Roadmap,
   type RoadmapService,
 } from "../src/index.js";
@@ -344,5 +345,16 @@ describe("the default guard of roadmap.members", () => {
       moderator: "acme_dev",
     });
     expect([bad.status, codeOf(bad)]).toEqual([400, "bad_request"]);
+  });
+});
+
+describe("the moderators company-proposals asks for", () => {
+  it("answer the moderator a roadmap has now, derived or named, and null for no roadmap", async () => {
+    const moderatorOf = roadmapModerators(service);
+    const r = await opened();
+    expect(await moderatorOf(PROJECT, ORG, r.number, BOSS)).toBe("acme_dev");
+    await members(r.number, ["acme_dev", "acme_web"], "acme_web");
+    expect(await moderatorOf(PROJECT, ORG, r.number, BOSS)).toBe("acme_web");
+    expect(await moderatorOf(PROJECT, ORG, 99, BOSS)).toBeNull();
   });
 });

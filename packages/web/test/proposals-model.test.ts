@@ -407,8 +407,14 @@ describe("eventLine", () => {
     expect(eventLine(ev({ kind: "discussion_concluded", text: "Keep it." }), names)).toBe(
       "sent the discussion's conclusion to the owner's desk",
     );
+    expect(eventLine(ev({ kind: "author", text: "acme_impl → acme_qa" }), names)).toBe(
+      "handed it from Impl to acme_qa",
+    );
     setActiveStrings(zh);
     expect(eventLine(ev({ kind: "approved" }), names)).toBe("认可并请求合并");
+    expect(eventLine(ev({ kind: "author", text: "acme_impl → acme_qa" }), names)).toBe(
+      "把作者从 Impl 换成了 acme_qa",
+    );
     expect(eventLine(ev({ kind: "brief_edited" }), names)).toBe("改写了简介");
     expect(eventLine(ev({ kind: "discussion_started", text: "acme_impl" }), names)).toBe(
       "开了与 Impl 的讨论",
@@ -428,6 +434,7 @@ describe("eventLine", () => {
     // The owner is named on the line itself.
     expect(eventDetail(ev({ kind: "discussion_started", text: "acme_impl" }))).toBeNull();
     expect(eventDetail(ev({ kind: "material_added", text: "PR #5" }))).toBeNull();
+    expect(eventDetail(ev({ kind: "author", text: "acme_impl → acme_qa" }))).toBeNull();
     expect(eventDetail(ev({ kind: "feedback" }))).toBeNull();
   });
 });

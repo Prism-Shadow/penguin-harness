@@ -91,7 +91,8 @@ import {
 import { noticeFailures, parseSubject, type NoticeResult, type Subject } from "./action-model.js";
 import { ProposalDesk } from "./desk.js";
 import type { HeadScope } from "./heads.js";
-import type { Forge, GitMirror, ProposalFacts, Viewer } from "./ports.js";
+import type { Forge, GitMirror, ProposalFacts, RoadmapModeratorOf, Viewer } from "./ports.js";
+import { changeAuthor, type AuthorHost } from "./author.js";
 import { SqliteProposalStore } from "./store-write.js";
 import { SqliteGraphStore } from "./graph-store.js";
 import { companyDbPath } from "./schema.js";
@@ -226,6 +227,8 @@ export class ProposalService {
   private readonly retired = new RetiredOrgs();
   /** How the plugin speaks to employees: the notices of its writes (desk.ts). */
   private readonly desk: ProposalDesk;
+  /** Who moderates a roadmap, while the roadmaps plugin provides it (provideRoadmapModerators). */
+  private moderatorOf: RoadmapModeratorOf | null = null;
 
   constructor(private readonly deps: ServiceDeps) {
     this.desk = new ProposalDesk({
@@ -989,6 +992,36 @@ export class ProposalService {
       );
     }
     return this.answer(delivery, this.view(store, number, caller));
+  }
+
+  /** `proposal.author`: the proposal handed to another author (author.ts). */
+  changeAuthor(
+    projectId: string,
+    orgId: string,
+    number: number,
+    author: string,
+    actor: OrgActor,
+    act?: WriteAct,
+  ): Promise<ProposalDetail> {
+    const host: AuthorHost = {
+      open: this.open.bind(this),
+      moderatorOf: () => this.moderatorOf,
+      notify: this.notify.bind(this),
+      ensureSkills: this.ensureSkills.bind(this),
+      view: this.view.bind(this),
+    };
+    return changeAuthor(host, projectId, orgId, number, author, actor, act);
+  }
+
+  /**
+   * The roadmaps plugin's moderators, provided while its App runs (RoadmapModeratorOf); answers
+   * how to withdraw them, which leaves a later provider in place.
+   */
+  provideRoadmapModerators(moderatorOf: RoadmapModeratorOf): () => void {
+    this.moderatorOf = moderatorOf;
+    return () => {
+      if (this.moderatorOf === moderatorOf) this.moderatorOf = null;
+    };
   }
 
   async publish(

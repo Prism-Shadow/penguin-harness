@@ -243,6 +243,10 @@ describe("the default guards", () => {
     }
     const author: Caller = { principal: "agent:acme_dev", agentId: "acme_dev", userId: "boss" };
     codes.add(answer("proposal.ready", author, STATES[2]!, "proposal:7", {}));
+    codes.add(answer("proposal.author", person, STATES[1]!, "proposal:7", { author: "acme_dev" }));
+    // The one default that tells a person from an employee: an author is changed by a person or
+    // by the moderator of the roadmap that created the proposal (author.ts).
+    codes.add(answer("proposal.author", employee, STATES[1]!, "proposal:7", { moderator: null }));
     expect([...codes].sort()).toEqual(
       [
         "409 revision_conflict",
@@ -250,6 +254,8 @@ describe("the default guards", () => {
         "409 proposal_closed",
         "409 proposal_empty",
         "409 brief_unchanged",
+        "409 author_unchanged",
+        "403 not_moderator",
         "409 changes_pending",
         "409 comment_sent",
         "403 not_commenter",

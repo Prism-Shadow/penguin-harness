@@ -30,7 +30,7 @@ import type {
   SessionIndex,
 } from "@prismshadow/penguin-server/plugin";
 import { RoadmapService } from "./service.js";
-import { ProposalCreator } from "./proposals.js";
+import { ModeratorRegistration, ProposalCreator, roadmapModerators } from "./proposals.js";
 import { ROUTES_ID, roadmapRoutes } from "./routes.js";
 import { roadmapCode } from "./builtin-actions.js";
 import { ROADMAP_NOTICE_IDS } from "./notices.js";
@@ -303,6 +303,7 @@ export class CompanyRoadmapsPlugin {
   @Use("RuntimeModule") private readonly log!: Log;
   @Use("PluginConfigModule") private readonly pluginConfig!: PluginConfig;
   @Use("CompanyProposalsPlugin") private readonly proposals!: ProposalCreator;
+  @Use("CompanyProposalsPlugin") private readonly moderatorSeat!: ModeratorRegistration;
   @Bind(ROUTES_ID) routes!: Hono;
   @Bind(PAGE_ROUTES_ID) page!: Hono;
   // The code halves of the contributions to CompanyActionRegistry.actions (builtin-actions.ts).
@@ -358,6 +359,8 @@ export class CompanyRoadmapsPlugin {
     this.baseLinkedNotice = code[ROADMAP_NOTICE_IDS.base_linked];
     this.approvalRequestedNotice = code[ROADMAP_NOTICE_IDS.approval_requested];
     this.reopenedNotice = code[ROADMAP_NOTICE_IDS.reopened];
+    // company-proposals asks who moderates a roadmap (the default guard of `proposal.author`).
+    effect(this.moderatorSeat.provideRoadmapModerators(roadmapModerators(service)));
     // What the claim node claims is relayed at once, not at the next poll (claim.ts).
     const listener: ClaimListener = (channel, number) => {
       setImmediate(() => {

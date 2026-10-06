@@ -6529,6 +6529,7 @@ Benchmark：
         merged: "报告已合并",
         rejected: "拒绝了提案",
         brief_edited: "改写了简介",
+        author: (from: string, to: string): string => `把作者从 ${from} 换成了 ${to}`,
         discussion_started: (who: string): string => `开了与 ${who} 的讨论`,
         discussion_concluded: "把讨论的结论送到了负责人的工位",
       },

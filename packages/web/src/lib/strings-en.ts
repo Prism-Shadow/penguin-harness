@@ -6350,6 +6350,7 @@ Scenarios:
         merged: "reported it merged",
         rejected: "rejected the proposal",
         brief_edited: "rewrote the brief",
+        author: (from: string, to: string): string => `handed it from ${from} to ${to}`,
         discussion_started: (who: string): string => `opened a discussion with ${who}`,
         discussion_concluded: "sent the discussion's conclusion to the owner's desk",
       },

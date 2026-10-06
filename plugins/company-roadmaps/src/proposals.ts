@@ -5,7 +5,10 @@
  * index.ts wires it, by name, to the company-proposals module.
  */
 import { Interface } from "@prismshadow/penguin-core/plugin";
+import type { OrgActor } from "@prismshadow/penguin-server/plugin";
+import { RoadmapError } from "./domain.js";
 import type { WriteAct } from "./guards.js";
+import type { RoadmapView } from "./service.js";
 
 @Interface()
 export abstract class ProposalCreator {
@@ -84,4 +87,39 @@ export async function proposalOfApproval(
     ...rest,
   });
   return { number, rebriefed: false };
+}
+
+/**
+ * Who moderates roadmap `number` now, as company-proposals asks it (its RoadmapModeratorOf, the
+ * same signature): the default guard of `proposal.author` lets the moderator of the roadmap that
+ * created a proposal hand it to another author. Null for a roadmap that does not exist.
+ */
+export type RoadmapModeratorOf = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  actor: OrgActor,
+) => Promise<string | null>;
+
+/**
+ * What this plugin provides to company-proposals while its App runs: the moderators, through
+ * that plugin's module, by name (index.ts). Answers how to withdraw them.
+ */
+@Interface()
+export abstract class ModeratorRegistration {
+  abstract provideRoadmapModerators(moderatorOf: RoadmapModeratorOf): () => void;
+}
+
+/** The moderators the roadmaps' reads answer. */
+export function roadmapModerators(roadmaps: {
+  get(projectId: string, orgId: string, number: number, actor: OrgActor): Promise<RoadmapView>;
+}): RoadmapModeratorOf {
+  return async (projectId, orgId, number, actor) => {
+    try {
+      return (await roadmaps.get(projectId, orgId, number, actor)).moderator;
+    } catch (err) {
+      if (err instanceof RoadmapError && err.code === "roadmap_not_found") return null;
+      throw err;
+    }
+  };
 }

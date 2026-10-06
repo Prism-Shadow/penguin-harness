@@ -6807,6 +6807,8 @@ export type ProposalEventKind =
   | "notify_failed"
   /** The brief was rewritten (the text is the new brief); the revisions are untouched. */
   | "brief_edited"
+  /** The author was replaced (the text is `<before> → <after>`, both agent ids); revisions, comments and approvals are untouched. */
+  | "author"
   /** A person opened a discussion with the owner (the text is the owner's agent id). */
   | "discussion_started"
   /** A discussion's conclusion reached the owner's desk (the text is the conclusion). */

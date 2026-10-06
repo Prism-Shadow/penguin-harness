@@ -8,7 +8,8 @@
  * proposal's brief while that one is open — is a default, not a constraint.
  *
  * The defaults do not tell a person from an employee: whatever a person may do, an employee may
- * do, approvals included. Narrowing that is left to a permission system.
+ * do, approvals included. Narrowing that is left to a permission system — save the author of a
+ * proposal, which a person changes, or the moderator of the roadmap that created it.
  *
  * Every guard is synchronous and pure over its input; a write asks it again inside its
  * transaction, with the proposal as it stands there and the transaction's lookups (`tx`), so
@@ -180,6 +181,32 @@ export const proposalGuards: Record<string, Guard> = {
     }
     requireRevision(p, ": publish it first");
     if (caller.agentId !== null && caller.agentId === p.author) answeredBatches(p);
+  }),
+
+  /**
+   * A person, or the moderator of the roadmap that created the proposal, hands it to another
+   * author. The use case learns that moderator from the roadmaps plugin (RoadmapModeratorOf) and
+   * passes it as `params.moderator` (null: none); the registry's check before the run has no
+   * such parameter — a caller cannot send one, it is not declared — so an employee is judged
+   * by the use case's checks, before and inside the write.
+   */
+  "proposal.author": onProposal((p, { caller, params }) => {
+    const author = typeof params.author === "string" ? params.author.trim() : undefined;
+    if (author === p.author) {
+      throw conflict(
+        "author_unchanged",
+        `${author} is already the author of proposal #${p.number}.`,
+      );
+    }
+    if (caller.agentId === null || !("moderator" in params)) return;
+    if (params.moderator !== caller.agentId) {
+      throw forbidden(
+        "not_moderator",
+        p.roadmap === null
+          ? `Proposal #${p.number} was not created by a roadmap: only a person can change its author.`
+          : `Only a person or the moderator of roadmap #${p.roadmap.number} can change the author of proposal #${p.number}.`,
+      );
+    }
   }),
 
   "proposal.comment": allow,

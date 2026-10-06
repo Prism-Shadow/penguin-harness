@@ -21,7 +21,7 @@ Every write to an organization's proposals and roadmaps became an Action: a key,
   - `guard`: replaces an Action's guard, and is handed the default guard to build on;
   - `hook`: runs before or after an Action, and a key may end in `.*`;
   - `subject`: reads a subject's state, and its commit when it has one.
-- Both plugins contribute their built-in Actions: 20 Actions from company-proposals (`proposal.*` and `target.register`), and 10 `roadmap.*` Actions from company-roadmaps.
+- Both plugins contribute their built-in Actions: 21 Actions from company-proposals (`proposal.*` and `target.register`), and 10 `roadmap.*` Actions from company-roadmaps.
 - A key answered by two contributions of the same standing (two company workflows', or two built-in ones) is refused with 409 `action_ambiguous` only when it is invoked, in the same shape for two actions and for two guards. The refusal names each contribution's exact invocation, and is not recorded as a run. Run by its id, an `action` contribution has its guard resolved by key as usual; a `guard` contribution runs its key's Action, judged by that guard alone.
 - A run's start row is written inside its first write transaction, so the run commits with its write. Refused and failed attempts are recorded too. A domain error with a 4xx status that a run throws is recorded `refused` with its status and code; anything else a run throws is `failed`, answered with its own status and code when that status is a 5xx (502 `branch_unreadable`), else 500.
 - A retry with the same `requestId` answers the first run.
@@ -54,6 +54,12 @@ Every write to an organization's proposals and roadmaps became an Action: a key,
 - When the roadmap has a room, the employees added join its channel and the ones removed leave it, each a system line in the channel; a room that cannot follow refuses the run. While the roadmap is discussing, a new member gets a room session as at the opening and is told through `notify.roadmap.room_joined`, and a removed member's room session is closed. In any other status only the channel changes.
 - Its default guard lets a person and the roadmap's current moderator run it and refuses any other employee (403 `not_moderator`).
 - The server's `OrgGateway` gained `changeRoomMembers`: employees into and out of a channel, for the work that owns it, people untouched.
+
+## Proposal author
+
+- Added `proposal.author` on `proposal:<n>`, with `{ author }`: it hands the proposal to another author, a current employee (400 `bad_request` otherwise; 409 `author_unchanged` for the author it already has). Each run appends an `author` event whose text names the author before and after, and the timeline shows it. The revisions, comments and approvals stay as they were.
+- From then on, what only the author is held to follows the new author: the ready check of requested changes, the desk lines of a rewritten brief or a feedback, and the default implementer.
+- Its default guard lets a person run it, and the moderator of the roadmap that created the proposal; any other employee is refused (403 `not_moderator`). company-roadmaps provides that moderator to company-proposals through the latter's module while its App runs; without it, only a person passes.
 
 ## Deploys
 

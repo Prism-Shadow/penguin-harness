@@ -66,6 +66,7 @@ export const PROPOSAL_ACTION_IDS = {
   "proposal.publish": "company-proposals.action.publish",
   "proposal.brief": "company-proposals.action.brief",
   "proposal.ready": "company-proposals.action.ready",
+  "proposal.author": "company-proposals.action.author",
   "proposal.approve": "company-proposals.action.approve",
   "proposal.reject": "company-proposals.action.reject",
   "proposal.merged": "company-proposals.action.merged",
@@ -121,6 +122,15 @@ const RUNS: Record<ProposalActionKey, Run> = {
       ctx.org.orgId,
       subjectNumber(ctx.subject),
       text(ctx.params, "brief"),
+      ctx.actor,
+      act,
+    ),
+  "proposal.author": (s, ctx, act) =>
+    s.changeAuthor(
+      ctx.org.projectId,
+      ctx.org.orgId,
+      subjectNumber(ctx.subject),
+      text(ctx.params, "author", 64),
       ctx.actor,
       act,
     ),

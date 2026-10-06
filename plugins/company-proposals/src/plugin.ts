@@ -20,6 +20,7 @@ import { ROUTES_ID, proposalRoutes } from "./routes.js";
 import { proposalCode } from "./builtin-actions.js";
 import { retireListeners, type RetireListener } from "./org-retire.js";
 import type { Act, NoticeResult } from "./action-model.js";
+import type { RoadmapModeratorOf } from "./ports.js";
 
 /** The page contribution's id, as the manifest names it. */
 export const PAGE_ID = "company-proposals.page";
@@ -71,6 +72,14 @@ export const PAGE_ID = "company-proposals.page";
         key: "proposal.ready",
         subjects: ["proposal"],
         description: "Mark a proposal ready to be read.",
+      },
+      {
+        id: "company-proposals.action.author",
+        kind: "action",
+        key: "proposal.author",
+        subjects: ["proposal"],
+        params: { author: "string" },
+        description: "Hand a proposal to another author; revisions, comments and approvals stand.",
       },
       {
         id: "company-proposals.action.approve",
@@ -365,6 +374,7 @@ export class CompanyProposalsPlugin {
   @Bind("company-proposals.action.publish") publishAction!: unknown;
   @Bind("company-proposals.action.brief") briefAction!: unknown;
   @Bind("company-proposals.action.ready") readyAction!: unknown;
+  @Bind("company-proposals.action.author") authorAction!: unknown;
   @Bind("company-proposals.action.approve") approveAction!: unknown;
   @Bind("company-proposals.action.reject") rejectAction!: unknown;
   @Bind("company-proposals.action.merged") mergedAction!: unknown;
@@ -410,6 +420,7 @@ export class CompanyProposalsPlugin {
     this.publishAction = code["company-proposals.action.publish"];
     this.briefAction = code["company-proposals.action.brief"];
     this.readyAction = code["company-proposals.action.ready"];
+    this.authorAction = code["company-proposals.action.author"];
     this.approveAction = code["company-proposals.action.approve"];
     this.rejectAction = code["company-proposals.action.reject"];
     this.mergedAction = code["company-proposals.action.merged"];
@@ -468,6 +479,11 @@ export class CompanyProposalsPlugin {
     notify?: Act["notify"],
   ): Promise<boolean> {
     return this.service.rebriefFromRoadmap(projectId, orgId, number, req, notify);
+  }
+
+  /** Who moderates a roadmap, provided by company-roadmaps while its App runs (ports.ts); answers the withdrawal. */
+  provideRoadmapModerators(moderatorOf: RoadmapModeratorOf): () => void {
+    return this.service.provideRoadmapModerators(moderatorOf);
   }
 
   /** What the built-in proposal notices deliver (notify-actions.ts, ProposalService.deliverNotice). */

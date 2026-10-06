@@ -268,6 +268,13 @@ export class SqliteProposalStore extends ProposalReads implements ProposalStore 
     });
   }
 
+  setAuthor(number: number, plan: Plan<Proposal, { author: string; by: string }>): Written {
+    return this.must(number, plan, (p, a, seq, at) => {
+      this.q(`UPDATE proposals SET author = ? WHERE number = ?`).run(a.author, number);
+      this.event(number, seq, at, { kind: "author", by: a.by, text: `${p.author} → ${a.author}` });
+    });
+  }
+
   startImplementation(
     number: number,
     plan: Plan<Proposal, { implementer: string; sessionId: string; by: string }>,
