@@ -165,10 +165,12 @@ export function remoteFor(
 export interface PullBranches {
   head: { repo: string; branch: string; sha: string };
   base: { repo: string; branch: string };
+  /** Whether it is merged, as GitHub answered; absent when the answer did not say. */
+  merged?: boolean;
 }
 
 const PULL_BRANCHES_JQ =
-  "{head_repo: .head.repo.full_name, head: .head.ref, sha: .head.sha, base_repo: .base.repo.full_name, base: .base.ref}";
+  "{head_repo: .head.repo.full_name, head: .head.ref, sha: .head.sha, base_repo: .base.repo.full_name, base: .base.ref, merged: .merged}";
 
 /** Reads a PR's head and base; throws 400 for a URL that is not a GitHub PR, 502 when GitHub does not answer. */
 export async function readPullBranches(gh: RunGh, url: string): Promise<PullBranches> {
@@ -183,6 +185,7 @@ export async function readPullBranches(gh: RunGh, url: string): Promise<PullBran
     sha?: unknown;
     base_repo?: unknown;
     base?: unknown;
+    merged?: unknown;
   };
   try {
     body = JSON.parse(
@@ -198,7 +201,7 @@ export async function readPullBranches(gh: RunGh, url: string): Promise<PullBran
       `${label} could not be read from GitHub: ${reason(err)}`,
     );
   }
-  const { head_repo, head, sha, base_repo, base } = body;
+  const { head_repo, head, sha, base_repo, base, merged } = body;
   if (
     typeof head_repo !== "string" ||
     typeof head !== "string" ||
@@ -215,6 +218,7 @@ export async function readPullBranches(gh: RunGh, url: string): Promise<PullBran
   return {
     head: { repo: head_repo, branch: head, sha: sha.toLowerCase() },
     base: { repo: base_repo, branch: base },
+    ...(typeof merged === "boolean" ? { merged } : {}),
   };
 }
 

@@ -288,7 +288,7 @@ describe("the default rules", () => {
     it("refuse a merged PR whose head branch a live proposal still stacks on", () => {
       const pr = { key: "acme/site#20", label: "acme/site#20" };
       const planned = { head, base: base("dev"), pr };
-      const merged = facts({ pr: { status: "merged", branch: "feat/x" } });
+      const merged = facts({ pr: { merged: true, branch: "feat/x" } });
       const bases = { "feat/x": [live(8), live(9, "merged")] };
       expect(register(planned, merged, tx({}, bases))).toEqual({
         status: 409,
@@ -297,9 +297,9 @@ describe("the default rules", () => {
       // Nobody live stacks on it, the PR is open, or its status or branch is unknown: allowed.
       expect(register(planned, merged, tx({}, { "feat/x": [live(9, "rejected")] }))).toBeNull();
       for (const known of [
-        { status: "open" as const, branch: "feat/x" },
-        { status: null, branch: "feat/x" },
-        { status: "merged" as const, branch: null },
+        { merged: false, branch: "feat/x" },
+        { merged: null, branch: "feat/x" },
+        { merged: true, branch: null },
       ]) {
         expect(register(planned, facts({ pr: known }), tx({}, bases))).toBeNull();
       }

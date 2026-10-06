@@ -12,8 +12,9 @@
  * - `base_in_use` (409): a registered PR that is merged must not have as its head branch the
  *   registered base of another proposal that is not merged or rejected.
  *
- * The rules are pure: what they need from outside the store — the cached graph, the cached PR
- * status — the service reads before the write (ImplGraphFacts) and hands in as `params.facts`;
+ * The rules are pure: what they need from outside the store — the cached graph, the PR's merged
+ * state (the write's own read of the PR, else the cached status; unknown is never refused) — the
+ * service reads before the write (ImplGraphFacts) and hands in as `params.facts`;
  * the other proposals' impls are looked up inside the write (`tx`), so no writer slips between.
  */
 import type {
@@ -42,8 +43,8 @@ export interface ImplGraphFacts {
   openHeads: string[] | null;
   /** The request names the base: only such a base is judged. */
   declaredBase: boolean;
-  /** The registered PR as the caches know it: its status (null: unknown) and head branch (null: unknown). */
-  pr: { status: ProposalPrStatus | null; branch: string | null } | null;
+  /** The registered PR: whether it is merged and its head branch, each null when unknown. */
+  pr: { merged: boolean | null; branch: string | null } | null;
 }
 
 /** The note on a registration whose base was judged with no graph laid out yet. */
@@ -82,7 +83,7 @@ export function requireBaseOnGraph(
   throw new ProposalError(
     400,
     "base_not_on_graph",
-    `The base branch ${base.remote}/${base.branch} is not on the PR graph: it is not ${facts.baseBranch}, no open proposal's impl head${facts.openHeads === null ? "" : " and no open PR's head"}. Register a proposal whose impl head is ${base.branch}, or open a PR for it, first.`,
+    `The base branch ${base.remote}/${base.branch} is not on the PR graph. Register a proposal whose impl head is ${base.branch}, or open a PR for it, first. A base is accepted when it is ${facts.baseBranch} (the graph's base branch; the plugin's deliveryBase setting names it), the impl head of a proposal that is not merged or rejected, or the head of an open PR on the delivery repository${facts.openHeads === null ? " (not checked: the PR graph has not been read yet)" : ""}.`,
   );
 }
 
@@ -94,7 +95,7 @@ export function requireMergedPrNotABase(
   tx: ProposalTx,
 ): void {
   const pr = facts.pr;
-  if (planned.pr === null || pr === null || pr.status !== "merged" || pr.branch === null) return;
+  if (planned.pr === null || pr === null || pr.merged !== true || pr.branch === null) return;
   const branch = pr.branch;
   const above = tx
     .implsOnBranch("base", branch)
@@ -110,7 +111,8 @@ export function requireMergedPrNotABase(
 
 /**
  * The facts for a registration, from what is cached: the last graph laid out (GraphRefresher
- * `cached`), the PR statuses the views keep, and the merged or closed PRs a refresh read. A PR's
+ * `cached`), the PR statuses the views keep, and the merged or closed PRs a refresh read — a PR's
+ * merged state as GitHub answered the write's own read of it first. A PR's
  * head branch is the impl head when one is declared (its PR was checked against it).
  */
 export function implGraphFacts(input: {
@@ -118,6 +120,8 @@ export function implGraphFacts(input: {
   store: Pick<GraphStore, "prStatuses" | "pull">;
   planned: PlannedImpl;
   declaredBase: boolean;
+  /** Whether the PR is merged, as GitHub answered the read this write made of it; absent: not read. */
+  merged?: boolean;
 }): ImplGraphFacts {
   const { graph } = input.cached;
   const repos =
@@ -128,7 +132,8 @@ export function implGraphFacts(input: {
     const at = key.lastIndexOf("#");
     const read = input.store.pull(key.slice(0, at), Number(key.slice(at + 1)));
     pr = {
-      status: input.store.prStatuses([key]).get(key)?.status ?? read?.state ?? null,
+      merged:
+        input.merged ?? mergedOf(input.store.prStatuses([key]).get(key)?.status ?? read?.state),
       branch: input.planned.head?.branch ?? read?.branch ?? null,
     };
   }
@@ -140,4 +145,9 @@ export function implGraphFacts(input: {
     declaredBase: input.declaredBase,
     pr,
   };
+}
+
+/** Whether a cached status says merged; null when nothing is cached. */
+function mergedOf(status: ProposalPrStatus | undefined): boolean | null {
+  return status === undefined ? null : status === "merged";
 }

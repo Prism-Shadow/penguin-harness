@@ -19,19 +19,20 @@ import { actionApp, proposalContributions, type ActionApp } from "./action-harne
 const sha = (c: string): string => c.repeat(40);
 const D = sha("0");
 const OPEN = sha("1");
+/** Merged PRs from origin's feat/a into dev: GitHub says so for 20, its answer for 21 does not. */
 const MERGED_URL = "https://github.com/acme/site/pull/20";
+const CACHED_URL = "https://github.com/acme/site/pull/21";
 
-/** `gh`: PR 20 is from origin's feat/a, into dev. */
 const gh: RunGh = async (args) => {
-  if (args[1] === "repos/acme/site/pulls/20") {
-    return JSON.stringify({
-      head_repo: "acme/site",
-      head: "feat/a",
-      sha: sha("a"),
-      base_repo: "acme/site",
-      base: "dev",
-    });
-  }
+  const sides = {
+    head_repo: "acme/site",
+    head: "feat/a",
+    sha: sha("a"),
+    base_repo: "acme/site",
+    base: "dev",
+  };
+  if (args[1] === "repos/acme/site/pulls/20") return JSON.stringify({ ...sides, merged: true });
+  if (args[1] === "repos/acme/site/pulls/21") return JSON.stringify(sides);
   throw new Error(`HTTP 404: ${args[1]}`);
 };
 
@@ -49,6 +50,7 @@ describe("proposal.impl keeps the impl on the PR graph", () => {
     const forge = new FakeForge([
       cr("acme/site", 11, { head: OPEN, branch: "feat/open" }),
       cr("acme/site", 20, { head: sha("a"), branch: "feat/a", state: "merged" }),
+      cr("acme/site", 21, { head: sha("a"), branch: "feat/a", state: "merged" }),
     ]);
     const mirror = new FakeMirror(
       new Map([
@@ -143,12 +145,13 @@ describe("proposal.impl keeps the impl on the PR graph", () => {
       base: branch("nowhere"),
     });
     expect(gone).toMatchObject({ status: 400, code: "base_not_on_graph" });
+    expect(gone.message).toContain("accepted when it is dev");
 
-    // PR 20 is known merged (the proposal page read its status); #second stacks on feat/a.
-    await service.addMaterial(PROJECT, ORG, first, { kind: "pr", url: MERGED_URL }, DEV);
+    // GitHub's answer for PR 21 does not say merged; the status the proposal page read does.
+    await service.addMaterial(PROJECT, ORG, first, { kind: "pr", url: CACHED_URL }, DEV);
     await service.get(PROJECT, ORG, first, BOSS);
     await service.prStatusSettled(PROJECT, ORG, first);
-    const merged = await impl(first, { url: MERGED_URL });
+    const merged = await impl(first, { url: CACHED_URL });
     expect(merged).toMatchObject({ status: 409, code: "base_in_use" });
     expect(merged.message).toContain(`#${second}`);
     // Nothing was rewritten: the impl stands as registered.
@@ -157,5 +160,18 @@ describe("proposal.impl keeps the impl on the PR graph", () => {
       base: branch("dev"),
       pr: null,
     });
+  });
+
+  it("refuses a merged PR attached fresh, nothing cached, whose head another proposal stacks on", async () => {
+    const first = await proposal();
+    const second = await proposal();
+    expect((await impl(first, { head: branch("feat/a"), base: branch("dev") })).status).toBe(200);
+    expect((await impl(second, { head: branch("feat/b"), base: branch("feat/a") })).status).toBe(
+      200,
+    );
+    // No pr_status row and no stored PR: GitHub's answer to the write's own read decides.
+    const merged = await impl(first, { url: MERGED_URL });
+    expect(merged).toMatchObject({ status: 409, code: "base_in_use" });
+    expect(merged.message).toContain(`#${second}`);
   });
 });

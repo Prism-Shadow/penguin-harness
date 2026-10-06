@@ -1558,6 +1558,8 @@ export class ProposalService {
     // A new head drops the PR of the old one; the same head keeps it. A PR registered alone
     // (no declared head) is kept only when GitHub confirms its head is the one declared now.
     let confirmCarried = false;
+    // Whether the PR is merged, as this write's own read of it answered (impl-on-graph.ts).
+    let merged: boolean | undefined;
     if (pr === null && standing?.pr != null) {
       if (req.head === undefined || (standing.head !== null && sameRef(standing.head, req.head))) {
         pr = standing.pr;
@@ -1586,11 +1588,12 @@ export class ProposalService {
         if (!matches) {
           pr = null;
           prKey = null;
-        }
+        } else merged = pull.merged;
       }
       // A PR named in this request is checked against the head; a carried one was checked when it was named.
       if (pr !== null && url !== "") {
         const pull = await liftAsync(() => readPullBranches(this.gh(), pr!.url));
+        merged = pull.merged;
         if (
           pull.head.repo.toLowerCase() !== resolvedHead.repo.toLowerCase() ||
           pull.head.branch !== resolvedHead.branch
@@ -1637,7 +1640,13 @@ export class ProposalService {
     };
     const cached = this.graphs.cached(this.graphContext(projectId, orgId, org, stores));
     const declaredBase = req.base !== undefined;
-    const facts = implGraphFacts({ cached, store: stores.graph, planned: plan, declaredBase });
+    const facts = implGraphFacts({
+      cached,
+      store: stores.graph,
+      planned: plan,
+      declaredBase,
+      ...(merged !== undefined ? { merged } : {}),
+    });
     const written = store.setImpl(number, (now, tx) => {
       const current = now.impl;
       const unchanged =
