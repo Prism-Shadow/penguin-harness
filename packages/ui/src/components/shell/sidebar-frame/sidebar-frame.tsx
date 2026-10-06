@@ -108,7 +108,10 @@ export function SidebarFrame({
       ) : (
         <div className="shrink-0 px-2 pb-2 pt-2">{pinned}</div>
       )}
-      <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2">
+      <div
+        data-find-region="sessions"
+        className="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2"
+      >
         {children}
       </div>
       <div className="shrink-0 border-t border-line p-2">{account}</div>

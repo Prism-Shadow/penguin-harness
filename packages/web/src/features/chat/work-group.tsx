@@ -12,9 +12,11 @@
  * - A pending approval anywhere in the group forces it open: the approval buttons live inside.
  * - The duration is `summarizeWork`'s span; it ticks only while an item is in flight.
  */
+import { useSyncExternalStore } from "react";
 import { ActivityGroup } from "@prismshadow/penguin-ui";
 import type { ActivityGroupProps } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { readFindActive, subscribeFindActive } from "../../lib/find-expand";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import { MessageItem } from "./message-item";
@@ -57,6 +59,12 @@ export function useWorkGroupState(
   // Last segment + Task running = the model might still call another tool → Running, even with
   // no active item right now.
   const running = (isLast && ctx.taskRunning) || stepRunning;
+  // Two things force the body open regardless of the reader's own collapsed state, both because
+  // the rows inside are UNMOUNTED while it is closed: a pending approval (its buttons would be
+  // unreachable) and a running find (a match inside this run would be reported as no match at
+  // all — lib/find-expand.ts). Neither touches the group's own open state, so the reader's
+  // choice is remembered for when the reason goes away.
+  const findActive = useSyncExternalStore(subscribeFindActive, readFindActive);
   const { steps, durationMs, startMs } = summarizeWork(items);
   return {
     state: running ? "running" : "done",
@@ -69,7 +77,7 @@ export function useWorkGroupState(
     ...(steps > 0 ? { count: S.chat.workGroupSteps(steps) } : {}),
     ...(startMs !== undefined ? { startMs } : {}),
     durationMs,
-    pending: hasPendingApproval(items, ctx),
+    pending: hasPendingApproval(items, ctx) || findActive,
   };
 }
 

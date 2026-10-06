@@ -1,13 +1,14 @@
 /**
  * General page of the Settings dialog: per-account preferences that are neither appearance nor
  * credentials. Everything applies the moment it is touched — the stores persist each value
- * (language, currency and task-completion notifications per browser) — so the page carries
+ * (language, currency and system notifications per browser) — so the page carries
  * no Save button and no draft state to lose.
  *
- * The notification row is the one that reaches outside the app: turning it on asks the
- * platform for permission then and there (lib/notification-pref explains why the prompt
- * hangs off this switch rather than off a page load), so it settles on whatever that
- * request answered rather than on what was clicked.
+ * The notification row is the one that reaches outside the app: it covers every notice the app
+ * shows (a Task finishing, a question waiting, a retry ladder starting — lib/system-notify.ts),
+ * and turning it on asks the platform for permission then and there (lib/notification-pref
+ * explains why the prompt hangs off this switch rather than off a page load), so it settles on
+ * whatever that request answered rather than on what was clicked.
  */
 import { useState, useSyncExternalStore } from "react";
 import { PrefRow, Segmented, SettingsGroup, ToggleRow } from "@prismshadow/penguin-ui";

@@ -280,6 +280,37 @@
 .dark .outline-flash {
   animation-name: outline-flash-dark;
 }
+/* Question-card reveal: clicking a question notification lands on a card the user asked to
+   see, and the card's own opaque background would swallow the outline's wash above — so this
+   one is drawn as a ring. Applied by use-ask-notifications.ts via classList, for the same
+   reason as the outline's flash. */
+@keyframes ask-card-flash {
+  from {
+    box-shadow: 0 0 0 3px var(--color-brand-400);
+  }
+  to {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+.ask-card-flash {
+  animation: ask-card-flash 1200ms ease-out both;
+}
+/* Find-in-page highlights (lib/find-dom.ts): the CSS Custom Highlight API, so a search paints
+   ranges without wrapping them in elements — nothing in the DOM changes, which is what lets
+   React re-render a streaming transcript without noticing or fighting the paint. Two names:
+   every hit, and the one hit the bar is currently on. Only `background-color` and `color` are
+   allowed in `::highlight()`, and both rules must stand alone (no selector lists, no nesting).
+   The wash is deliberately translucent so the text under it keeps its own weight; `color:
+   inherit` is spelled out because a highlight otherwise inherits the highlight pseudo's own
+   (user-agent) colour. Theme-independent: the same blue reads on white and on black. */
+::highlight(penguin-find) {
+  background-color: color-mix(in srgb, var(--color-brand-500) 32%, transparent);
+  color: inherit;
+}
+::highlight(penguin-find-current) {
+  background-color: color-mix(in srgb, var(--color-brand-500) 70%, transparent);
+  color: inherit;
+}
 /* Drawer slide-in. */
 .anim-drawer-left {
   animation: drawer-in-left 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;

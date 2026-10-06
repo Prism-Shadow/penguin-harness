@@ -40,11 +40,19 @@ const SUBAGENT_FAIL_PROMPT = "Fail the TODO count on purpose";
 
 const PORT = Number(process.env.MOCK_PORT || 8931);
 
+/** Titles of the three question cards ask-card.spec walks through; the mock keys its later turns on them. */
+const ASK_CARD_TITLE_1 = "How should we proceed?";
+const ASK_CARD_TITLE_2 = "Which parts should ship?";
+const ASK_CARD_TITLE_3 = "Anything else before I start?";
+
 /** Count of non-replay requests seen in the "bad stream" conversation: the 1st is cut off (malformed), later ones are retries that get a full tool call. */
 let malformedTurns = 0;
 
 /** Count of requests seen in the "quota retry" conversation: the first 5 are rejected 403 (insufficient_user_quota), the 6th streams normally. */
 let quotaTurns = 0;
+
+/** Count of requests seen in the "notify retry" conversation: the first 2 answer with a truncated stream (retryable), the 3rd streams normally. */
+let notifyRetryTurns = 0;
 
 function sse(res, event, data) {
   res.write(`event: ${event}\n`);
@@ -109,7 +117,11 @@ const server = http.createServer((req, res) => {
     } catch {}
     const messages = json.messages || [];
     const flat = JSON.stringify(messages);
-    const isTitle = flat.includes("concise title");
+    // The title request is one out-of-band one-shot whose material is the run's own user text,
+    // so it is identified by the wording of core's title Prompt (buildTitlePrompt), not by the
+    // conversation content — probing for user text would let a title request read as a normal
+    // turn and hand the mock's answer back as the Session's title.
+    const isTitle = flat.includes("You are a title generator.");
     // After compaction the new context has only the summary left, so the message count drops
     // sharply -> reported usage drops along with it, letting compaction converge.
     const msgCount = messages.length;
@@ -216,6 +228,52 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // Transcript-notification fixture (transcript-notify.spec): the run's first TWO requests are
+    // answered with a cleanly truncated stream — headers, one delta, then `res.end()` with no
+    // message_delta/message_stop — so AgentHub's final-event validation fails and GenerativeModel
+    // classifies the request `retryable` (errorCode "malformed"), sending the engine into its
+    // reconnect ladder while nobody is watching; the third answers, so the ladder ends by itself.
+    //
+    // Truncation and not an HTTP rejection, though a 429 is the one status the engine would also
+    // retry: the SDK under AgentHub retries 408/409/429/5xx by itself before it ever throws, so a
+    // rejected status never reaches the engine as a failure — the run would come back a clean
+    // success with no ladder at all (verified: the mock's two 429s were swallowed and the answer
+    // arrived as attempt 1). A truncated body is the one retryable failure the SDK hands up
+    // untouched. Two failures, not one: each announced wait is 2s→4s (reconnectDelayMs doubles
+    // from its 2s base), which puts ~6s of ladder in front of the spec, so the waiting row — and
+    // the announcement made from it — cannot be missed between repaints.
+    //
+    // Counted per request: only that spec sends the phrase, and one mock process serves a whole
+    // run. Gated on !isTitle for the same reason the other fixtures are — a title request carries
+    // the user's own words, so it would otherwise consume a failure.
+    if (flat.includes("notify retry test") && !isTitle) {
+      notifyRetryTurns += 1;
+      if (notifyRetryTurns <= 2) {
+        res.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+        });
+        messageStart(res, msgCount);
+        block(res, 0, { type: "text", text: "" }, [
+          { type: "text_delta", text: "Attempt cut short." },
+        ]);
+        res.end(); // truncated: no message_delta/message_stop -> AgentHub reports an incomplete stream
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      messageStart(res, msgCount);
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Recovered after the retries." },
+      ]);
+      messageStop(res, "end_turn", 9);
+      return;
+    }
+
     res.writeHead(200, {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
@@ -235,6 +293,58 @@ const server = http.createServer((req, res) => {
         },
       ]);
       messageStop(res, "end_turn", 8);
+      return;
+    }
+
+    // Question cards (ask-card.spec): turn 1 answers with two ```ask blocks — one single-select
+    // carrying a recommendation, one multi-select. The turn after the composed answer hands back
+    // one more multi-select card, so Skip can be exercised on a card nobody has touched; the turn
+    // after THAT acknowledges in plain text, with no card at all. Keyed on the LAST message alone
+    // ("ask card test" stays in the history forever, so the whole-history probe can only select
+    // turn 1).
+    if (flat.includes("ask card test")) {
+      const lastAsk = JSON.stringify(messages[messages.length - 1] ?? {});
+      if (lastAsk.includes(ASK_CARD_TITLE_3)) {
+        block(res, 0, { type: "text", text: "" }, [
+          { type: "text_delta", text: "Acknowledged; nothing else to ask." },
+        ]);
+        messageStop(res, "end_turn", 12);
+        return;
+      }
+      if (lastAsk.includes(ASK_CARD_TITLE_2)) {
+        block(res, 0, { type: "text", text: "" }, [
+          { type: "text_delta", text: "Thanks — one last thing.\n\n" },
+          {
+            type: "text_delta",
+            text: `\`\`\`ask\ntitle: ${ASK_CARD_TITLE_3}\nselect: multi\n1. Tighten the wording\n2. Add a test\n\`\`\`\n`,
+          },
+        ]);
+        messageStop(res, "end_turn", 40);
+        return;
+      }
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Before I start, two questions.\n\n" },
+        {
+          type: "text_delta",
+          text: `\`\`\`ask\ntitle: ${ASK_CARD_TITLE_1}\nselect: single\nrecommend: 2\n1. Ship it now\n2. Wait for review\n\`\`\`\n\n`,
+        },
+        {
+          type: "text_delta",
+          text: `\`\`\`ask\ntitle: ${ASK_CARD_TITLE_2}\nselect: multi\n1. Web\n2. Desktop\n3. CLI\n\`\`\`\n`,
+        },
+      ]);
+      messageStop(res, "end_turn", 60);
+      return;
+    }
+
+    // Find-bar fixture (find.spec): one settled reply whose body repeats a token nobody else in
+    // the app writes, so the hit count is exact without depending on the app's own copy.
+    if (flat.includes("find marker test")) {
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "findmarker one, findmarker two, and findmarker three.\n\n" },
+        { type: "text_delta", text: "A second paragraph also says findmarker.\n" },
+      ]);
+      messageStop(res, "end_turn", 30);
       return;
     }
 

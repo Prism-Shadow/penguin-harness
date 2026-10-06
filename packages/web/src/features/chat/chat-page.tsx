@@ -60,6 +60,7 @@ import { apiErrorText } from "../../lib/api-error";
 import type { PermissionPick } from "../../lib/permission-level";
 import { configuredCompactionLimit } from "../../lib/context";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { useTranscriptNotifications } from "./use-transcript-notifications";
 import {
   formatDateTime,
   humanizeDuration,
@@ -976,6 +977,17 @@ export function ChatPage() {
     if (stream.taskState !== "idle") return; // Still working: nothing settled to have read yet.
     noteSessionSeen(projectId, selectedSessionId, selectedLastActiveAt);
   }, [projectId, selectedSessionId, selectedLastActiveAt, stream.taskState]);
+
+  // News the open transcript has for someone who walked away from the window: a question card
+  // that arrived, a retry ladder that started waiting. One system notification each, whose click
+  // brings the window back to what it is about (see the hook).
+  useTranscriptNotifications({
+    sessionId: selected?.sessionId ?? null,
+    title: selected?.title ?? null,
+    items: stream.model.items,
+    version: stream.version,
+    loading: stream.loading,
+  });
 
   // Positive-only existence cache for file summary cards (session-level): normalized relative
   // path -> true, or the shared in-flight lookup. Missing files aren't retained — a later Task may
@@ -1946,6 +1958,7 @@ export function ChatPage() {
     workspace: selected?.workspace ?? null,
     statFiles,
     onFork,
+    onAnswerQuestions: (text) => onSend([{ type: "text", text }], null),
     a2uiActions,
   };
 

@@ -625,9 +625,9 @@ export const en: Strings = {
     toolAliases: "Tool short names",
     toolAliasesInfo:
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
-    notifications: "Task completion notifications",
+    notifications: "System notifications",
     notificationsInfo:
-      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
+      "Shows a system notification when a Task finishes, a question is waiting for your answer, or a failed request is being retried — while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
     notificationsDenied:
       "The system has denied notifications for this app. Allow them in your system notification settings, then turn this on again.",
     notificationsDismissed:
@@ -935,11 +935,77 @@ export const en: Strings = {
     listSeparator: ", ",
   },
 
-  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
+  /** System notifications, all of them (window unfocused; opt-in, see lib/system-notify.ts). */
   notify: {
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
+    /** Title of the question-card notification (see features/chat/ask-notify.ts). */
+    askTitle: "A question is waiting for you",
+    /** `session` is the Session title (defaultSessionTitle when unnamed), `count` the cards that arrived. */
+    askBody: (session: string, count: number): string =>
+      count === 1
+        ? `"${session}" has 1 question to answer — click to view`
+        : `"${session}" has ${count} questions to answer — click to view`,
+    /** Title of the retry notification (see features/chat/retry-notify.ts). */
+    retryTitle: "Request failed — retrying",
+    /**
+     * `session` is the Session title (defaultSessionTitle when unnamed), `attempt` the retry
+     * ordinal, `seconds` the wait the engine announced — absent when it announced none, which is
+     * why the wording survives without a countdown.
+     */
+    retryBody: (session: string, attempt: number, seconds?: number): string =>
+      seconds === undefined
+        ? `"${session}" is on retry #${attempt}`
+        : `"${session}" is on retry #${attempt} — next attempt in ${seconds}s`,
+  },
+
+  ask: {
+    /** Badge on a card's header when more than one option may be picked. */
+    multiSelect: "Multi-select",
+    /** Marks the option the author suggests — a hint, never pre-selected. */
+    recommended: "Recommended",
+    /** The free-text row every card carries; the same words the author was told never to write. */
+    other: "Other (write your answer)",
+    otherPlaceholder: "Type your answer…",
+    skip: "Skip",
+    submit: "Submit",
+    /** Sends every left-unanswered card of one message as a single reply. */
+    submitAll: "Submit all",
+    /** `pending` of `total` cards in this message are still unanswered. */
+    pendingCount: (pending: number, total: number): string => `${pending} of ${total} unanswered`,
+    /** Shown when Submit is pressed with nothing chosen: Skip is the deliberate way to pass. */
+    needChoice: "Pick an option first, or press Skip",
+    reanswer: "Answer again",
+    /** Free-text row's label inside the composed user message (separator included). */
+    answerOther: "Other: ",
+    /** What a skipped question says inside the composed user message. */
+    answerSkipped: "Skipped, not answered",
+  },
+
+  find: {
+    placeholder: "Find in this area…",
+    next: "Next match",
+    prev: "Previous match",
+    close: "Close",
+    caseSensitive: "Match case",
+    /** Counter line when the query matches nothing. */
+    noResults: "No results",
+    regionConversation: "Conversation",
+    regionSubagent: "Subagent",
+    regionSessions: "Sessions",
+    regionFiles: "Files",
+    /** Scope button while the search is limited to one region: widen it to everything on screen. */
+    scopeAll: "All areas",
+    /** Scope button while searching everything: narrow it back to `region`. */
+    scopeThisRegion: (region: string): string => `Only ${region}`,
+    /** The region's own notice that it holds content this search could not reach. */
+    loadMore: "Earlier content is not loaded",
+    loadMoreAction: "Load and keep searching",
+    /** `count` hits past the rows the result list shows. */
+    moreRows: (count: number): string => `${count} more not shown`,
+    /** Name of the aggregated result list (read out when it is announced). */
+    resultsLabel: "Find results",
   },
 
   common: {
