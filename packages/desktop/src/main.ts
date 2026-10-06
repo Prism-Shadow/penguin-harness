@@ -207,6 +207,9 @@ function fatal(context: string, err: unknown): void {
  */
 function hideMenuBar(target: BrowserWindow): void {
   if (process.platform === "darwin") return;
+  // Both: a window opened with autoHideMenuBar (a page's window.open, an older option set)
+  // would otherwise bring the bar back on a lone Alt.
+  target.setAutoHideMenuBar(false);
   target.setMenuBarVisibility(false);
   target.webContents.on("before-input-event", (event, input) => {
     if (isMenuBarKey(input)) {
@@ -247,7 +250,8 @@ function createWindow(url: string): void {
     width: 1280,
     height: 860,
     show: false,
-    autoHideMenuBar: true,
+    // Hidden outright by hideMenuBar, never auto-hidden: an auto-hidden bar comes up on Alt.
+    autoHideMenuBar: false,
     ...(iconPath !== null ? { icon: iconPath } : {}),
     webPreferences: {
       // The window is a plain browser: no Node, no preload — the minimal attack surface.

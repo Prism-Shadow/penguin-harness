@@ -168,7 +168,9 @@ export const APP_WINDOW_OPTIONS = {
   focusable: true,
   hiddenInMissionControl: false,
   enableLargerThanScreen: false,
-  autoHideMenuBar: true,
+  // Not auto-hidden: Electron shows an auto-hidden bar on a lone Alt, which would take the
+  // keyboard from the page. The bar is hidden outright instead (hideMenuBar in main.ts).
+  autoHideMenuBar: false,
 } as const;
 
 /**
