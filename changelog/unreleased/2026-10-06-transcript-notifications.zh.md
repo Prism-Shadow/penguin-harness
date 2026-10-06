@@ -3,6 +3,7 @@
 - **Date:** 2026-10-06
 - **Type:** feature
 - **Scope:** `web`, `desktop`
+- **PR:** [#992](https://github.com/Prism-Shadow/penguin-harness/pull/992)
 - **Issue:** [#991](https://github.com/Prism-Shadow/penguin-harness/issues/991)
 
 [English](2026-10-06-transcript-notifications.md)
