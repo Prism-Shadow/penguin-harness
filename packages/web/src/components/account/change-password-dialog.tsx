@@ -2,6 +2,10 @@
  * Change password dialog: validates the old password and that
  * the two new-password entries match; refreshes /api/me on success. The initial-password
  * notice banner disappears once passwordIsInitial clears. Shared by the sidebar user menu and the notice banner.
+ *
+ * A failed save is shown where it belongs (lib/account-menu.ts passwordErrorPlace): under the
+ * field it is about, or on the dialog's own line when it is about none — a session that sets
+ * its password without the old one has no old-password field to hang an error on.
  */
 import { useEffect, useState } from "react";
 import { Button, Modal, PasswordInput } from "@prismshadow/penguin-ui";
@@ -10,7 +14,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
-import { omitsOldPassword } from "../../lib/account-menu";
+import { omitsOldPassword, passwordErrorPlace } from "../../lib/account-menu";
 
 export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { refresh, desktopMode, sessionVia } = useAuth();
@@ -22,9 +26,14 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [errors, setErrors] = useState<{ old?: string; new?: string; confirm?: string }>({});
+  const [errors, setErrors] = useState<{
+    old?: string;
+    new?: string;
+    confirm?: string;
+    form?: string;
+  }>({});
   const [busy, setBusy] = useState(false);
-  const clearErrors = () => setErrors((p) => (p.old || p.new || p.confirm ? {} : p));
+  const clearErrors = () => setErrors((p) => (p.old || p.new || p.confirm || p.form ? {} : p));
 
   useEffect(() => {
     if (!open) return;
@@ -51,13 +60,8 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
       await refresh();
       onClose();
     } catch (e) {
-      // Route by error code: invalid_password is about the NEW password's strength;
-      // password_mismatch (and anything unrecognized) is about the current one.
-      if (e instanceof ApiError && e.code === "invalid_password") {
-        setErrors({ new: apiErrorText(e) });
-      } else {
-        setErrors({ old: apiErrorText(e) });
-      }
+      const place = passwordErrorPlace(e instanceof ApiError ? e.code : undefined, !noOldPassword);
+      setErrors({ [place]: apiErrorText(e) });
     } finally {
       setBusy(false);
     }
@@ -123,6 +127,11 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
           error={errors.confirm}
           autoComplete="new-password"
         />
+        {errors.form && (
+          <p role="alert" className="text-xs text-tone-danger-fg">
+            {errors.form}
+          </p>
+        )}
       </div>
     </Modal>
   );
