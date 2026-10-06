@@ -3,6 +3,7 @@
 - **Date:** 2026-10-05
 - **Type:** process
 - **Scope:** `tests`
+- **PR:** [#988](https://github.com/Prism-Shadow/penguin-harness/pull/988)
 
 [English](2026-10-05-qa-scenarios.md)
 
