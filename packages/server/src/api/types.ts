@@ -6024,6 +6024,19 @@ export interface ProposalItem {
   implPr?: ProposalImplPr | null;
   /** The branch pair the proposal is implemented on; null until registered, absent from a server older than impl branches. */
   impl?: ProposalImplBranch | null;
+  /**
+   * The roadmaps whose items lead to it — an item's approval created it, or the item adopted or
+   * linked it — in roadmap order; `[]` without the roadmaps plugin. Present on the reads (the
+   * queue's list, a proposal's detail); a write's answer leaves it out.
+   */
+  roadmaps?: ProposalRoadmapRef[];
+}
+
+/** A roadmap a proposal belongs to, and the key of the item that leads to it there. */
+export interface ProposalRoadmapRef {
+  number: number;
+  name: string;
+  itemKey: string;
 }
 
 /**

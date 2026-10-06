@@ -5488,7 +5488,7 @@ Scenarios:
       created: (n: number): string => `Proposal #${n} created`,
       queue: "Queue",
       search: "Search proposals",
-      searchPlaceholder: "Search: is:open author:… text",
+      searchPlaceholder: "Search: is:open author:… roadmap:… text",
       /** The filter chips under the search box: lifecycle states, all, and the unread toggle. */
       chip: {
         group: "Filter by state",
@@ -5534,6 +5534,14 @@ Scenarios:
         removedLabel: "Removed",
         changedLabel: "Changed",
         loadFailed: "Could not read the approved revision",
+      },
+      /** Under a proposal's title: the roadmaps whose items lead to it. */
+      roadmaps: {
+        label: "Roadmaps",
+        roadmap: (n: number, name: string): string => `Roadmap #${n} «${name}»`,
+        item: "item",
+        open: "Open the roadmap",
+        filter: "its proposals",
       },
       noRevision: "Not published yet",
       implementer: "Implementer",

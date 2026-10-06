@@ -215,6 +215,24 @@ export type RoadmapModeratorOf = (
 ) => Promise<string | null>;
 
 // ---------------------------------------------------------------------------
+// ProposalRoadmapLinks
+// ---------------------------------------------------------------------------
+
+/**
+ * Every proposal a roadmap's items lead to in one organization, as `actor` reads the roadmaps:
+ * one row per (roadmap, item) whose delegation carries a proposal number — the item's approval
+ * created it, or the item adopted or linked it. Asked of company-roadmaps, which provides it
+ * through this plugin's module (CompanyProposalsPlugin.provideProposalRoadmaps) while its App
+ * runs; a function, like RoadmapModeratorOf, so the two packages meet by signature. Without
+ * it, no proposal belongs to a roadmap.
+ */
+export type ProposalRoadmapLinks = (
+  projectId: string,
+  orgId: string,
+  actor: OrgActor,
+) => Promise<{ proposal: number; number: number; name: string; itemKey: string }[]>;
+
+// ---------------------------------------------------------------------------
 // GitMirror
 // ---------------------------------------------------------------------------
 

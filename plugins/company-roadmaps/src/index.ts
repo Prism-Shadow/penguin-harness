@@ -22,7 +22,13 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/plugin";
 import type { ClassCtx, Plugin } from "@prismshadow/penguin-core/plugin";
 import type { OrgGateway, Paths } from "@prismshadow/penguin-server/plugin";
 import { RoadmapService } from "./service.js";
-import { ModeratorRegistration, ProposalCreator, roadmapModerators } from "./proposals.js";
+import {
+  ModeratorRegistration,
+  ProposalCreator,
+  ProposalRoadmapsRegistration,
+  proposalRoadmapLinks,
+  roadmapModerators,
+} from "./proposals.js";
 import { ROUTES_ID, roadmapRoutes } from "./routes.js";
 import { roadmapCode } from "./builtin-actions.js";
 import { ROADMAP_NOTICE_IDS } from "./notices.js";
@@ -251,6 +257,7 @@ export class CompanyRoadmapsPlugin {
   @Use("RuntimeModule") private readonly paths!: Paths;
   @Use("CompanyProposalsPlugin") private readonly proposals!: ProposalCreator;
   @Use("CompanyProposalsPlugin") private readonly moderatorSeat!: ModeratorRegistration;
+  @Use("CompanyProposalsPlugin") private readonly linksSeat!: ProposalRoadmapsRegistration;
   @Bind(ROUTES_ID) routes!: Hono;
   @Bind(PAGE_ROUTES_ID) page!: Hono;
   // The code halves of the contributions to CompanyActionRegistry.actions (builtin-actions.ts).
@@ -303,6 +310,8 @@ export class CompanyRoadmapsPlugin {
     this.reopenedNotice = code[ROADMAP_NOTICE_IDS.reopened];
     // company-proposals asks who moderates a roadmap (the default guard of `proposal.author`).
     effect(this.moderatorSeat.provideRoadmapModerators(roadmapModerators(service)));
+    // company-proposals asks which roadmaps each proposal belongs to (ProposalItem.roadmaps).
+    effect(this.linksSeat.provideProposalRoadmaps(proposalRoadmapLinks(service)));
     // An organization being deleted: its writes awaited, its connection closed (org-retire.ts).
     const retire: RetireListener = (org) => service.retire(org.projectId, org.orgId);
     retireListeners.add(retire);

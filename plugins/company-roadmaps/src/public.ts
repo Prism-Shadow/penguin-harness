@@ -53,8 +53,14 @@ export {
   pageHtml,
   pageRoutes,
 } from "./page.js";
-export { ModeratorRegistration, ProposalCreator, roadmapModerators } from "./proposals.js";
-export type { RoadmapModeratorOf } from "./proposals.js";
+export {
+  ModeratorRegistration,
+  ProposalCreator,
+  ProposalRoadmapsRegistration,
+  proposalRoadmapLinks,
+  roadmapModerators,
+} from "./proposals.js";
+export type { ProposalRoadmapLinks, RoadmapModeratorOf } from "./proposals.js";
 export * from "./notices.js";
 export { RetiredOrgs, retireListeners, retireRegistered } from "./org-retire.js";
 export type { OrgRef, RetireListener } from "./org-retire.js";

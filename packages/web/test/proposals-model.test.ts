@@ -357,6 +357,25 @@ describe("the queue's search grammar", () => {
     expect(numbers("no:implementer")).toEqual([12, 9]);
   });
 
+  it("filters by roadmap: the proposals an item of that roadmap leads to", () => {
+    const onRoadmaps = [
+      item({ number: 4, roadmaps: [{ number: 2, name: "Queue", itemKey: "ledger" }] }),
+      item({
+        number: 5,
+        roadmaps: [
+          { number: 2, name: "Queue", itemKey: "panel" },
+          { number: 6, name: "Later", itemKey: "pages" },
+        ],
+      }),
+      item({ number: 8 }),
+    ];
+    const on = (q: string) => filterProposals(onRoadmaps, q).map((p) => p.number);
+    expect(on("roadmap:2")).toEqual([4, 5]);
+    expect(on("roadmap:#6")).toEqual([5]);
+    expect(on("-roadmap:2")).toEqual([8]);
+    expect(on("roadmap:9")).toEqual([]);
+  });
+
   it("matches free text against the number and the title, case-insensitively", () => {
     expect(numbers("#12")).toEqual([12]);
     expect(numbers("RENAME")).toEqual([3]);

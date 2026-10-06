@@ -5545,7 +5545,7 @@ Benchmark：
       created: (n: number): string => `提案 #${n} 已创建`,
       queue: "队列",
       search: "搜索提案",
-      searchPlaceholder: "搜索：is:open author:… 关键词",
+      searchPlaceholder: "搜索：is:open author:… roadmap:… 关键词",
       /** The filter chips under the search box: lifecycle states, all, and the unread toggle. */
       chip: {
         group: "按状态筛选",
@@ -5591,6 +5591,14 @@ Benchmark：
         removedLabel: "已删去",
         changedLabel: "有改动",
         loadFailed: "读取认可的修订失败",
+      },
+      /** Under a proposal's title: the roadmaps whose items lead to it. */
+      roadmaps: {
+        label: "路线图",
+        roadmap: (n: number, name: string): string => `路线图 #${n} «${name}»`,
+        item: "条目",
+        open: "打开路线图",
+        filter: "它的全部提案",
       },
       noRevision: "尚未发布",
       implementer: "实施者",

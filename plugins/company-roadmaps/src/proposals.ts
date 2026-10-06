@@ -123,3 +123,46 @@ export function roadmapModerators(roadmaps: {
     }
   };
 }
+
+/**
+ * Every proposal this organization's roadmap items lead to, as company-proposals asks it (its
+ * ProposalRoadmapLinks, the same signature): one row per item whose delegation carries a
+ * proposal number — created by the item's approval, adopted, or linked.
+ */
+export type ProposalRoadmapLinks = (
+  projectId: string,
+  orgId: string,
+  actor: OrgActor,
+) => Promise<{ proposal: number; number: number; name: string; itemKey: string }[]>;
+
+/**
+ * What this plugin provides to company-proposals while its App runs: the roadmaps each proposal
+ * belongs to, through that plugin's module, by name (index.ts). Answers how to withdraw them.
+ */
+@Interface()
+export abstract class ProposalRoadmapsRegistration {
+  abstract provideProposalRoadmaps(links: ProposalRoadmapLinks): () => void;
+}
+
+/** The links the roadmaps' reads answer: every delegation that names a proposal, in roadmap and item order. */
+export function proposalRoadmapLinks(roadmaps: {
+  list(projectId: string, orgId: string, actor: OrgActor): Promise<{ roadmaps: RoadmapView[] }>;
+}): ProposalRoadmapLinks {
+  return async (projectId, orgId, actor) => {
+    const { roadmaps: all } = await roadmaps.list(projectId, orgId, actor);
+    const out: { proposal: number; number: number; name: string; itemKey: string }[] = [];
+    for (const r of all) {
+      // In the draft's item order; a delegation whose item a later draft dropped comes last.
+      const keys = [
+        ...r.items.map((i) => i.key),
+        ...Object.keys(r.delegations).filter((k) => !r.items.some((i) => i.key === k)),
+      ];
+      for (const key of keys) {
+        const d = r.delegations[key];
+        if (d?.proposal === undefined) continue;
+        out.push({ proposal: d.proposal, number: r.number, name: r.name, itemKey: key });
+      }
+    }
+    return out;
+  };
+}

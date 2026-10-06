@@ -103,6 +103,7 @@ import {
   principalLabel,
 } from "../company/shared";
 import { PROPOSAL_COMPONENTS, PROPOSAL_REMARK_PLUGINS } from "./proposal-links";
+import { ProposalRoadmaps, keepRoadmaps } from "./proposal-roadmaps";
 import { ProposalFilePanel, useFilePanelWidth } from "./proposal-file-panel";
 import { ImplSection } from "./proposal-impl";
 import { CommentComposer, CommentLine } from "./proposal-comment-line";
@@ -682,7 +683,7 @@ function DetailPage({ number }: { number: number }) {
     setBusy(true);
     try {
       const next = await run();
-      setDetail(next);
+      setDetail((prev) => keepRoadmaps(prev, next));
       company.proposalsChanged();
       toastSuccess(done);
       // A write that could not reach an employee says so: its desk is the only way there.
@@ -819,7 +820,7 @@ function DetailPage({ number }: { number: number }) {
     setBusy(true);
     try {
       const next = await api.discussOrgProposal(projectId, orgId, number);
-      setDetail(next);
+      setDetail((prev) => keepRoadmaps(prev, next));
       company.proposalsChanged();
       toastSuccess(t.discussOpened);
       navigate(`/chat/${next.sessionId}`);
@@ -1155,6 +1156,7 @@ function ProposalView({
               {detail.revision === 0 ? t.noRevision : t.revision(detail.revision)}
             </span>
           </div>
+          <ProposalRoadmaps roadmaps={detail.roadmaps} />
           <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
             <Meta label={t.author}>
               <PrincipalChip principal={`agent:${detail.author}`} names={names} />

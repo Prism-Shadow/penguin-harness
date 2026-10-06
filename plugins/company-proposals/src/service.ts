@@ -106,6 +106,7 @@ import type {
   Viewer,
 } from "./ports.js";
 import { changeAuthor, type AuthorHost } from "./author.js";
+import { RoadmapLinks } from "./roadmap-links.js";
 import { SqliteProposalStore } from "./store-write.js";
 import { SqliteGraphStore } from "./graph-store.js";
 import { companyDbPath } from "./schema.js";
@@ -252,6 +253,8 @@ export class ProposalService {
   private readonly desk: ProposalDesk;
   /** Who moderates a roadmap, while the roadmaps plugin provides it (provideRoadmapModerators). */
   private moderatorOf: RoadmapModeratorOf | null = null;
+  /** The roadmaps each proposal belongs to, while the roadmaps plugin provides them (roadmap-links.ts). */
+  readonly roadmapLinks = new RoadmapLinks();
 
   constructor(private readonly deps: ServiceDeps) {
     this.desk = new ProposalDesk({
@@ -659,10 +662,12 @@ export class ProposalService {
 
   async list(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalsResponse> {
     const { store, caller } = await this.open(projectId, orgId, actor);
+    const roadmaps = await this.roadmapLinks.byProposal(projectId, orgId, actor);
     return {
-      proposals: store
-        .list(this.viewer(caller))
-        .map((s) => this.item(s, s.unread, s.pendingComments)),
+      proposals: store.list(this.viewer(caller)).map((s) => ({
+        ...this.item(s, s.unread, s.pendingComments),
+        roadmaps: roadmaps.get(s.number) ?? [],
+      })),
     };
   }
 
@@ -676,8 +681,10 @@ export class ProposalService {
     const p = this.requireProposal(store, number);
     const detail = await this.withScope(org, this.detail(store, p, caller));
     const implStat = this.implStatOf(org, p);
+    const roadmaps = await this.roadmapLinks.byProposal(projectId, orgId, actor);
     return {
       ...detail,
+      roadmaps: roadmaps.get(number) ?? [],
       materials: this.withPrStatus(`${projectId}/${orgId}`, stores, detail.materials).materials,
       testGroups: this.testGroups(),
       ...(implStat !== undefined ? { implStat } : {}),

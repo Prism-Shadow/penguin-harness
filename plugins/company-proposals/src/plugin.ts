@@ -20,7 +20,7 @@ import { ROUTES_ID, proposalRoutes } from "./routes.js";
 import { proposalCode } from "./builtin-actions.js";
 import { retireListeners, type RetireListener } from "./org-retire.js";
 import type { Act, NoticeResult } from "./action-model.js";
-import type { RoadmapModeratorOf } from "./ports.js";
+import type { ProposalRoadmapLinks, RoadmapModeratorOf } from "./ports.js";
 
 /** The page contribution's id, as the manifest names it. */
 export const PAGE_ID = "company-proposals.page";
@@ -487,6 +487,11 @@ export class CompanyProposalsPlugin {
   /** Who moderates a roadmap, provided by company-roadmaps while its App runs (ports.ts); answers the withdrawal. */
   provideRoadmapModerators(moderatorOf: RoadmapModeratorOf): () => void {
     return this.service.provideRoadmapModerators(moderatorOf);
+  }
+
+  /** Which roadmaps each proposal belongs to, provided by company-roadmaps while its App runs (ports.ts). */
+  provideProposalRoadmaps(links: ProposalRoadmapLinks): () => void {
+    return this.service.roadmapLinks.provide(links);
   }
 
   /** What the built-in proposal notices deliver (notify-actions.ts, ProposalService.deliverNotice). */

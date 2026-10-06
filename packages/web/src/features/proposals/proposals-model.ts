@@ -445,7 +445,7 @@ export function proposalsRoute(
 export const DEFAULT_PROPOSAL_QUERY = "is:open";
 
 /** The keys a token may carry; `status` is spelled the GitHub way too. */
-export type ProposalQueryKey = "is" | "author" | "implementer" | "by" | "unread" | "no";
+export type ProposalQueryKey = "is" | "author" | "implementer" | "by" | "unread" | "no" | "roadmap";
 
 const QUERY_KEYS: ReadonlySet<string> = new Set([
   "is",
@@ -455,6 +455,7 @@ const QUERY_KEYS: ReadonlySet<string> = new Set([
   "by",
   "unread",
   "no",
+  "roadmap",
 ]);
 
 export interface ProposalQueryToken {
@@ -537,6 +538,9 @@ function tokenMatches(item: ProposalItem, token: ProposalQueryToken): boolean {
       return v === "yes" || v === "true" ? item.unread > 0 : item.unread === 0;
     case "no":
       return v === "implementer" ? item.implementer === null : false;
+    // `roadmap:3` (or `roadmap:#3`): the proposals an item of roadmap #3 leads to.
+    case "roadmap":
+      return (item.roadmaps ?? []).some((r) => `${r.number}` === v.replace(/^#/, ""));
   }
 }
 
