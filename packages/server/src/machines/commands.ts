@@ -242,8 +242,14 @@ export function unpackStoreCommand(platform: RemotePlatform, layout: RemoteLayou
 
 /**
  * Starts the installed server in the background and returns at once; readiness is the
- * caller's probe. `nohup` and the redirections are what let it outlive the shell that ran it,
- * and the log is the far side's own words when it comes up and dies.
+ * caller's probe. `setsid` (where the host has it — Linux does, macOS does not) puts the server
+ * in a session of its own: started from this side's ssh session it would otherwise belong to
+ * that session, and when the connection drops — the hub's laptop sleeps, the network blips —
+ * sshd hangs the session up and the server dies with it, taking every program it runs along.
+ * `nohup` alone does not cover that: the server's own child resets SIGHUP. In a backgrounded
+ * job `setsid` execs in place (the job is no process group leader), so `$!` is still the
+ * server's pid. `nohup` and the redirections cover the rest, and the log is the far side's own
+ * words when it comes up and dies.
  *
  * Prints the launched process's pid (`$!`) as its only output, so the caller can tell a
  * server that is still coming up from one that already died (launchedPid, isAliveCommand).
@@ -255,7 +261,7 @@ export function startServerCommand(port: number, layout: RemoteLayout): string {
   // it is omitted, so a login shell carrying HOST=0.0.0.0 would put that machine's server on
   // every interface. This side only ever reaches it as a channel inside the ssh session, at
   // loopback on the far end, so binding wider is exposure with nothing asking for it.
-  return `mkdir -p "${root}" && nohup ${remotePenguin("linux", layout)} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null & echo $!`;
+  return `mkdir -p "${root}" && PENGUIN_SETSID=$(command -v setsid || true); $PENGUIN_SETSID nohup ${remotePenguin("linux", layout)} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null & echo $!`;
 }
 
 /** The pid startServerCommand printed; null when the output holds none. */

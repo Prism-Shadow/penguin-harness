@@ -5,6 +5,7 @@
  * server's own pushable image, and the exact ssh/scp commands all of that turns into.
  * No network, no ssh binary.
  */
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import zlib from "node:zlib";
@@ -821,6 +822,34 @@ describe("startServerCommand", () => {
     expect(command).not.toMatch(/nohup PENGUIN_HOME=/);
     expect(command).toContain("server --host 127.0.0.1 --port 7371");
     expect(command).toContain('"$HOME/.penguin-dev/data/server.log"');
+  });
+
+  it("starts the server in a session of its own where setsid exists, so a dropped ssh session does not hang it up", () => {
+    const command = startServerCommand(7371, DEV);
+    expect(command).toContain(
+      "PENGUIN_SETSID=$(command -v setsid || true); $PENGUIN_SETSID nohup env ",
+    );
+  });
+
+  it("the launched process leads its own session, and $! is its pid (Linux)", () => {
+    if (process.platform !== "linux") return;
+    // The command's shape with a stand-in program: it must print the pid of a process that is
+    // its own session leader (setsid), not a member of the shell's session.
+    const shape = startServerCommand(7371, DEV)
+      .replace(/^mkdir -p "[^"]*" && /, "")
+      .replace(/nohup env .*? >> "[^"]*"/, "nohup sleep 5 >> /dev/null");
+    const out = execFileSync("sh", ["-c", shape], { encoding: "utf8" });
+    const pid = launchedPid(out);
+    expect(pid).not.toBeNull();
+    // The shell returns as soon as the job is started; setsid() runs a moment later.
+    const sessionOf = () => {
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+      return Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[3]); // field 6: session id
+    };
+    const until = Date.now() + 2000;
+    while (sessionOf() !== pid && Date.now() < until) execFileSync("sleep", ["0.05"]);
+    expect(sessionOf()).toBe(pid);
+    process.kill(pid!);
   });
 
   it("prints the launched pid, and nothing else reads as one", () => {
