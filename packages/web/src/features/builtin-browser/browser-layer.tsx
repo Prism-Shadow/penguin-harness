@@ -46,8 +46,9 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
 } from "react";
-import type { CSSProperties } from "react";
+
 import type { BuiltinBrowserLoadWarning } from "@prismshadow/penguin-server/api";
 import { DOCK_FULLSCREEN_Z, toastAttention } from "@prismshadow/penguin-ui";
 import { toneInk } from "../../lib/tone";

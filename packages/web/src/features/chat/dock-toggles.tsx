@@ -14,8 +14,8 @@
  * Workspace pill.
  */
 import { useSyncExternalStore } from "react";
-import { ICONS, PanelsToolbar } from "@prismshadow/penguin-ui";
-import type { PanelsToolbarToggle } from "@prismshadow/penguin-ui";
+import { ICONS, PanelsToolbar, type PanelsToolbarToggle } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import {

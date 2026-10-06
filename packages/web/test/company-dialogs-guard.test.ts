@@ -24,8 +24,8 @@
  *   Esc asks before a typed name is dropped.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement as h, Fragment } from "react";
-import type { ReactElement } from "react";
+import { createElement as h, Fragment, type ReactElement } from "react";
+
 import { MemoryRouter } from "react-router";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import type { OrgEmployeeItem, OrganizationSettings } from "@prismshadow/penguin-server/api";
@@ -51,8 +51,8 @@ import { SessionsProvider } from "../src/state/sessions";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { buttonIn, topDialog } from "./helpers/agent-app";
 import { PROJECT } from "./helpers/project-settings";
-import { apiError, json, stubFetch } from "./helpers/fetch";
-import type { FakeFetch } from "./helpers/fetch";
+import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
+
 import {
   button,
   click,

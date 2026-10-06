@@ -31,8 +31,8 @@ import { describe, expect, it } from "vitest";
 import type { ServerEvent, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
 import { subscribeMachinesChanged } from "../src/state/machines";
-import { isSessionUnread, markSessionSeen } from "../src/lib/session-seen";
-import type { SessionSeenState } from "../src/lib/session-seen";
+import { isSessionUnread, markSessionSeen, type SessionSeenState } from "../src/lib/session-seen";
+
 import { sessionBackgroundTasks, sessionRowActivity } from "../src/lib/session-activity";
 
 const CREATED = "2026-08-19T09:00:00.000Z";
@@ -523,7 +523,13 @@ describe("a machine's events, delivered on the aggregate", () => {
         adopted.push([sessionId, source]);
       },
     });
-    applyUserEvent(store, [], stateEvent("new", "running", STARTED), neverReload, "gpu-box");
+    applyUserEvent(
+      store,
+      [],
+      stateEvent("new", "running", STARTED),
+      neverReload,
+      "gpu-box",
+    );
     expect(adopted).toEqual([["new", "gpu-box"]]);
   });
 

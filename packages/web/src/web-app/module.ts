@@ -12,15 +12,22 @@
  * the same split as the server's `HttpModule.routes` and `HttpSlots`.
  */
 import type { ComponentType, ReactNode } from "react";
-import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx, Contributed, Slot } from "@prismshadow/penguin-core/kernel";
+import {
+  Interface,
+  Module,
+  Provide,
+  Use,
+  type ClassCtx,
+  type Contributed,
+  type Slot,
+} from "@prismshadow/penguin-core/kernel";
+
 import type { UserEventHandlers } from "../state/user-events";
-import { webAppDeps } from "./deps";
-import type { WebAppLayer, WebAppSessionProvider } from "./deps";
-import { pageTableOf } from "./page-table";
-import type { PageData } from "./page-table";
-import { AppRouter } from "./router";
-import type { AppRouterProps } from "./router";
+import { webAppDeps, type WebAppLayer, type WebAppSessionProvider } from "./deps";
+
+import { pageTableOf, type PageData } from "./page-table";
+
+import { AppRouter, type AppRouterProps } from "./router";
 
 @Interface()
 export abstract class WebApp {

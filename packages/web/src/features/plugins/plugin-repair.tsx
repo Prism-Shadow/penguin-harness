@@ -5,11 +5,12 @@
  * prompt in its composer, never sent on the user's behalf. The repair may change an
  * installed plugin, so reading the prompt and pressing send stays the user's step.
  */
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { ConfirmModal, ICONS, toastError } from "@prismshadow/penguin-ui";
 import { useAiBridge, type AiChatRequest, pickDefaultAgent } from "../ai-create";
+
 import { S } from "../../lib/strings";
 
 /** The plugin to repair, as its row has it. */

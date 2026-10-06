@@ -2,8 +2,8 @@
  * The shell's public face: the page table and the layers, for whatever renders under the
  * shell's root, and how a server-contributed page is drawn.
  */
-import { webAppDeps } from "./deps";
-import type { WebAppLayer } from "./deps";
+import { webAppDeps, type WebAppLayer } from "./deps";
+
 import type { WebAppPage } from "./page-table";
 
 export type { PageData, PageEntry, WebAppPage } from "./page-table";

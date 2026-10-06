@@ -15,15 +15,23 @@
  * does nothing until it answers; an instant control's write holds nothing.
  */
 import { useEffect, useState } from "react";
-import { ICONS, PagedDialog, guardLeave, useGuardedClose } from "@prismshadow/penguin-ui";
-import type { PagedDialogGroup } from "@prismshadow/penguin-ui";
+import {
+  ICONS,
+  PagedDialog,
+  guardLeave,
+  useGuardedClose,
+  type PagedDialogGroup,
+} from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import {
   resolveSettingsSection,
   settingsGroups,
   visibleSettingsSections,
+  type SettingsGroupKey,
+  type SettingsSectionKey,
 } from "../../lib/settings-sections";
-import type { SettingsGroupKey, SettingsSectionKey } from "../../lib/settings-sections";
+
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { useAuth } from "../../state/auth";
 import { ProfileSection } from "./profile-section";

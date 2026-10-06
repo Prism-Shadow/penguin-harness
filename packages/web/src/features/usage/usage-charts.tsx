@@ -56,8 +56,11 @@ import {
   seriesPoints,
   stackSegments,
   useChartWidth,
+  type ChartPaint,
+  type LegendItem,
+  type TokenBucketKey,
 } from "@prismshadow/penguin-ui";
-import type { ChartPaint, LegendItem, TokenBucketKey } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { NEUTRAL_SERIES } from "../../lib/category-colors";

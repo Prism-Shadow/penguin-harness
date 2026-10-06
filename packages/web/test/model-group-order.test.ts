@@ -22,15 +22,16 @@ import {
   modelGroupOrderKey,
   orderModelGroups,
   saveModelGroupOrder,
+  type ModelGroupOrderStorage,
 } from "../src/features/models/model-group-order";
-import type { ModelGroupOrderStorage } from "../src/features/models/model-group-order";
+
 import {
   allGroupKeys,
   groupModelRows,
   orderModelsLikeLibrary,
   visibleChatModels,
+  type ModelRowLike,
 } from "../src/features/models/model-grouping";
-import type { ModelRowLike } from "../src/features/models/model-grouping";
 
 /** In-memory storage (vitest runs in a Node environment, no localStorage; group-order.test.ts convention). */
 function memStorage(): ModelGroupOrderStorage & { map: Map<string, string> } {

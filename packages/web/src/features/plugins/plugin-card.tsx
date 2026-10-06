@@ -32,8 +32,8 @@
  * the status and "used by" on the metadata line are fixed-width placeholders, so the first answer
  * replaces a bar rather than a word.
  */
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+
 import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,

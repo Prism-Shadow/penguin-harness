@@ -1,5 +1,3 @@
-
-
 /**
  * Company-mode page entries, in rendered order: each key names its route segment, its S.nav
  * label (`S.nav.org.<key>`) and its NAV_ICONS glyph (`NAV_ICONS.org<Key>`). Channels are not

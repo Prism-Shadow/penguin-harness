@@ -11,11 +11,18 @@
  * entry bundle.
  */
 import type { ComponentType } from "react";
-import { bootModules, Module, moduleDefOf } from "@prismshadow/penguin-core/kernel";
-import type { IfaceTable, ManifestTable, Resources } from "@prismshadow/penguin-core/kernel";
+import {
+  bootModules,
+  Module,
+  moduleDefOf,
+  type IfaceTable,
+  type ManifestTable,
+  type Resources,
+} from "@prismshadow/penguin-core/kernel";
+
 import table from "./ifaces.json";
-import { WebAppModule } from "./web-app/module";
-import type { WebApp } from "./web-app/module";
+import { WebAppModule, type WebApp } from "./web-app/module";
+
 import type { AppRouterProps } from "./web-app/router";
 import { SessionsModule } from "./state/sessions.module";
 import { ChatModule } from "./features/chat/module";

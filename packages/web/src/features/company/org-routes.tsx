@@ -26,8 +26,7 @@ import { useOrgPages } from "./use-org-pages";
 import { useCompany } from "./company-state";
 
 /** The component of each builtin renderer a contributed company-mode page may name. */
-const ORG_PAGE_COMPONENTS: Readonly<Record<string, ComponentType>> = {
-};
+const ORG_PAGE_COMPONENTS: Readonly<Record<string, ComponentType>> = {};
 
 export function OrgRoutes() {
   const contributed = orgPagesOf(useOrgPages());

@@ -59,8 +59,16 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
 import { ModelCatalogSelect } from "../chat";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
-import { MAX_RUNS, evaluateTail, optimizeTail, rsiOptimizeTail } from "./benchmark-prompts";
-import type { EvaluateParams, OptimizeParams, RsiOptimizeParams } from "./benchmark-prompts";
+import {
+  MAX_RUNS,
+  evaluateTail,
+  optimizeTail,
+  rsiOptimizeTail,
+  type EvaluateParams,
+  type OptimizeParams,
+  type RsiOptimizeParams,
+} from "./benchmark-prompts";
+
 import {
   DEFAULT_TOOLKIT_PLUGIN,
   EVALUATION_SKILL,

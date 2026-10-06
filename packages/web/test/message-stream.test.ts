@@ -25,8 +25,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MessageStream } from "../src/features/chat/message-stream";
-import type { A2uiActions, StreamRenderContext } from "../src/features/chat/message-stream";
+import {
+  MessageStream,
+  type A2uiActions,
+  type StreamRenderContext,
+} from "../src/features/chat/message-stream";
+
 import type { ChatItem } from "../src/lib/amsp/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
 import { S, setActiveStrings, zh } from "../src/lib/strings";

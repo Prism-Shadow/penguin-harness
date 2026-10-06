@@ -1,4 +1,3 @@
-
 export { openPanel } from "./dock-state";
 
 export { currentDockScope } from "./dock-state";

@@ -21,14 +21,20 @@ import { builtinBrowserUserEvents } from "../src/features/builtin-browser/browse
 import { AppPalette } from "../src/features/palette/app-palette";
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import type { UserEventHandler } from "../src/state/user-events";
-import { bootModules, moduleDefOf } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx, IfaceTable, ManifestTable } from "@prismshadow/penguin-core/kernel";
+import {
+  bootModules,
+  moduleDefOf,
+  type ClassCtx,
+  type IfaceTable,
+  type ManifestTable,
+} from "@prismshadow/penguin-core/kernel";
+
 import { beforeAll, describe, expect, it } from "vitest";
 import table from "../src/ifaces.json";
 import { bootWeb, WebRoot } from "../src/web-root";
 import { WebAppModule } from "../src/web-app/module";
-import { navPagesOf } from "../src/web-app";
-import type { WebAppPage } from "../src/web-app";
+import { navPagesOf, type WebAppPage } from "../src/web-app";
+
 import { contributedPages, orgPagesOf, pageTableOf } from "../src/web-app/page-table";
 import { navKeysFor } from "../src/lib/nav-group-collapse";
 import { zh } from "../src/lib/strings";

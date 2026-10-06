@@ -8,8 +8,7 @@
  * `UserEventHandlers`); a contribution names the module: `"SessionsModule.userEvents"`.
  */
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { Opaque, Slot } from "@prismshadow/penguin-core/kernel";
+import { Interface, type Opaque, type Slot } from "@prismshadow/penguin-core/kernel";
 
 /** A feature's share of the user event stream. */
 export interface UserEventHandler {

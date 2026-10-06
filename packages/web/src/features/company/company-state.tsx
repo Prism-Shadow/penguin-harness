@@ -45,8 +45,8 @@
  * State lives in a zustand vanilla store (one instance per Provider mount) like the Project
  * and Session stores; the Provider is the lifecycle component that hydrates it.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+
 import type {
   CompanyServerEvent,
   MessagingChannel,
@@ -66,8 +66,8 @@ import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { markBetaNoticeShown, shouldShowBetaNotice } from "./company-beta";
 import { channelBadgeCounts } from "./channel-list";
-import { homePath, orgKey, parseOrgKey } from "../../lib/company-nav";
-import type { WorkMode } from "../../lib/company-nav";
+import { homePath, orgKey, parseOrgKey, type WorkMode } from "../../lib/company-nav";
+
 import { withDeskMessagingChannel } from "./org-sessions";
 import {
   clearLastOrgKey,
@@ -819,7 +819,12 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
 }
 
-import { CompanyContext } from "../../lib/company-context";
-import type { CompanyContextValue, CompanyVersions, TicketDialogTarget } from "../../lib/company-context";
+import {
+  CompanyContext,
+  type CompanyContextValue,
+  type CompanyVersions,
+  type TicketDialogTarget,
+} from "../../lib/company-context";
+
 export { useCompany } from "../../lib/company-context";
 export type { CompanyVersions, TicketDialogTarget } from "../../lib/company-context";

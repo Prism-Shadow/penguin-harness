@@ -3,8 +3,8 @@
  * It provides the contributed handlers in `order`; the shell hands them to `SessionsProvider`,
  * whose store dispatches every event it does not keep to itself through them.
  */
-import { Module, Provide } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Module, Provide, type ClassCtx } from "@prismshadow/penguin-core/kernel";
+
 import type { UserEventHandler, UserEventHandlers, UserEventsData } from "./user-events";
 
 @Module()

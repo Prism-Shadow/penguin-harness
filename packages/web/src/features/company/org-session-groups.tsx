@@ -66,21 +66,29 @@ import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,
   SessionRowMenuRows,
+  type SessionRowAction,
+  type SessionRowState,
 } from "../../components/ui/session-row-menu";
-import type { SessionRowAction, SessionRowState } from "../../components/ui/session-row-menu";
+
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging";
 import { orgKey } from "../../lib/company-nav";
 import { INVALID_ICON } from "./shared";
-import { deskRowLabel, deskRows, orgRowActivity, ticketSessionTitles } from "./org-sessions";
-import type { OrgDeskRow } from "./org-sessions";
+import {
+  deskRowLabel,
+  deskRows,
+  orgRowActivity,
+  ticketSessionTitles,
+  type OrgDeskRow,
+} from "./org-sessions";
+
 import {
   dismissAllTempSessions,
   dismissTempSession,
   tempSessionRows,
   useTempSessions,
+  type TempSessionRow,
 } from "./temp-session";
-import type { TempSessionRow } from "./temp-session";
 
 /**
  * The row's surface — the hover and active fill — on the wrapper rather than on the button,

@@ -27,6 +27,7 @@ import {
   watchTerminals,
   type TerminalInfo,
 } from "../terminal";
+
 import { rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   currentDockScope,

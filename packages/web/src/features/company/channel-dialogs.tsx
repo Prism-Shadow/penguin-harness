@@ -28,8 +28,8 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { channelIdProblem } from "./channel-list";
-import type { ChannelIdProblem } from "./channel-list";
+import { channelIdProblem, type ChannelIdProblem } from "./channel-list";
+
 import { SemanticIdField } from "../semantic-id";
 import { ErrorLine } from "./shared";
 

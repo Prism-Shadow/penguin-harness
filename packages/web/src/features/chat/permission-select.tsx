@@ -59,8 +59,11 @@ import {
   presetPick,
   presetsOf,
   sandboxSwitchOff,
+  type PermissionLevel,
+  type PermissionPick,
+  type PresetBlock,
 } from "../../lib/permission-level";
-import type { PermissionLevel, PermissionPick, PresetBlock } from "../../lib/permission-level";
+
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { localizedText } from "../../lib/skill-use";

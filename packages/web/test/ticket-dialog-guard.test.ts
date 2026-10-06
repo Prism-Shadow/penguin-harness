@@ -22,8 +22,8 @@ import { ProjectProvider } from "../src/state/project";
 import { ThemeProvider } from "../src/state/theme";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { PROJECT } from "./helpers/project-settings";
-import { apiError, json, stubFetch } from "./helpers/fetch";
-import type { FakeFetch } from "./helpers/fetch";
+import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
+
 import {
   button,
   click,

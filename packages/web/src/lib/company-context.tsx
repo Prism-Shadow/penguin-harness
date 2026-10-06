@@ -1,6 +1,12 @@
 /** Shared read contract only. Company owns its original store, hydration and provider. */
 import { createContext, useContext } from "react";
-import type { MessagingChannel, OrgChannelItem, OrgChartResponse, OrgSessionsResponse, OrganizationSummary } from "@prismshadow/penguin-server/api";
+import type {
+  MessagingChannel,
+  OrgChannelItem,
+  OrgChartResponse,
+  OrgSessionsResponse,
+  OrganizationSummary,
+} from "@prismshadow/penguin-server/api";
 export type WorkMode = "dev" | "company";
 export interface TicketDialogTarget {
   projectId: string;

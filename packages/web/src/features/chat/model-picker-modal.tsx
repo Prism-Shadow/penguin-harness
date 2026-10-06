@@ -33,8 +33,16 @@
  * the rail and list, the foot — laid straight into the dialog, so a theme's dialog recipe finds
  * its head and foot the way it finds Modal's own.
  */
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import {
   Pill,
@@ -51,6 +59,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { hasConfiguredKey, sameModelRef, loadModelGroupOrder } from "../models";
+
 import { useProject } from "../../state/project";
 import {
   entryRow,
@@ -63,8 +72,10 @@ import {
   pickerRowTags,
   searchPickerGroups,
   stepIndex,
+  type PickerGroup,
+  type PickerNavKey,
+  type PickerRegion,
 } from "./model-picker-logic";
-import type { PickerGroup, PickerNavKey, PickerRegion } from "./model-picker-logic";
 
 const NAV_KEYS: Record<string, PickerNavKey> = {
   ArrowUp: "up",

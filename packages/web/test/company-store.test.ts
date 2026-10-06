@@ -467,5 +467,3 @@ describe("applyUserEvent forwarding", () => {
     }
   });
 });
-
-

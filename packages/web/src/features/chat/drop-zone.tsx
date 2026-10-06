@@ -36,8 +36,8 @@
  * while non-file drags keep their native behavior. Both orders of the two window listeners
  * converge on the same outcome, so mount order cannot matter.
  */
-import { createContext, useContext, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+
 import { createPortal } from "react-dom";
 import { DropOverlay, ICONS } from "@prismshadow/penguin-ui";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";

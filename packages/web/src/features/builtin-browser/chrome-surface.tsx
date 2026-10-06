@@ -17,8 +17,8 @@
  * or Settings › Browser behind it (chrome-status-row.tsx). Switching back to the built-in browser
  * is done in Settings › Browser.
  */
-import { useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
+
 import {
   WallpaperSurface,
   Button,

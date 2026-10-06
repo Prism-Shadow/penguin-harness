@@ -9,8 +9,8 @@
  */
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { composeAiPrompt, pickDefaultAgent } from "../ai-create";
-import type { AiChatRequest } from "../ai-create";
+import { composeAiPrompt, pickDefaultAgent, type AiChatRequest } from "../ai-create";
+
 import { classifyImportSource } from "../agents";
 
 /** What the pasted source is, as far as the prompt's lead sentence cares. */

@@ -49,7 +49,6 @@ export function NewTabPage({ onOpen }: { onOpen: (url: string) => void }) {
 }
 
 export { START_PAGE_SITES } from "../../lib/browser-start-sites";
-import { START_PAGE_SITES } from "../../lib/browser-start-sites";
+import { START_PAGE_SITES, type StartPageSiteId } from "../../lib/browser-start-sites";
 
 export type { StartPageSiteId } from "../../lib/browser-start-sites";
-import type { StartPageSiteId } from "../../lib/browser-start-sites";

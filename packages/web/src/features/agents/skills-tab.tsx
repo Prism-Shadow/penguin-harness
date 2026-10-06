@@ -23,8 +23,8 @@
  * {{SKILLS}}-placeholder alert (with legacy-template migration) and the editable
  * skills.prompt section, mirroring the Memory tab.
  */
-import { useCallback, useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
