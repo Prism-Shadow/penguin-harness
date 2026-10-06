@@ -88,3 +88,23 @@ export function nagsAboutInitialPassword(session: AccountMenuSession): boolean {
 export function omitsOldPassword(session: AccountMenuSession): boolean {
   return isDesktopShellWindow(session) || session.sessionVia === "setup";
 }
+
+/** Where the change-password dialog shows a failed save. */
+export type PasswordErrorPlace = "new" | "old" | "form";
+
+/**
+ * Which part of the change-password dialog a failed save belongs to, by the server's error
+ * code: `invalid_password` is about the new password's strength, `password_mismatch` about the
+ * current one. Everything else — a refused request, a failed network call, a server error —
+ * belongs to no field and goes on the dialog's own line, as does `password_mismatch` when the
+ * old-password field is not shown ({@link omitsOldPassword}): an error placed under a field
+ * that is not rendered is an error nobody sees.
+ */
+export function passwordErrorPlace(
+  code: string | undefined,
+  oldPasswordShown: boolean,
+): PasswordErrorPlace {
+  if (code === "invalid_password") return "new";
+  if (code === "password_mismatch" && oldPasswordShown) return "old";
+  return "form";
+}

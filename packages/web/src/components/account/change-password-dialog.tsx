@@ -8,6 +8,10 @@
  * it is typed), and closing the dialog — Cancel, Esc, the × or a press outside it — with
  * anything typed asks before the typing is thrown away. The form is mounted only while the
  * dialog is open, so every opening starts empty.
+ *
+ * A failed save is shown where it belongs (lib/account-menu.ts passwordErrorPlace): under the
+ * field it is about, or on the dialog's own line when it is about none — a session that sets
+ * its password without the old one has no old-password field to hang an error on.
  */
 import { useState } from "react";
 import {
@@ -23,7 +27,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
-import { omitsOldPassword } from "../../lib/account-menu";
+import { omitsOldPassword, passwordErrorPlace } from "../../lib/account-menu";
 
 export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return open ? <ChangePasswordForm onClose={onClose} /> : null;
@@ -41,7 +45,7 @@ function ChangePasswordForm({ onClose }: { onClose: () => void }) {
   const form = useFormDraft(EMPTY);
   const { oldPassword, newPassword, confirmPassword } = form.draft;
   /** What the server refused, on the field it is about. Cleared by the next keystroke. */
-  const [refused, setRefused] = useState<{ old?: string; new?: string }>({});
+  const [refused, setRefused] = useState<{ old?: string; new?: string; form?: string }>({});
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
@@ -67,13 +71,11 @@ function ChangePasswordForm({ onClose }: { onClose: () => void }) {
       await refresh();
       onClose();
     } catch (e) {
-      // Route by error code: invalid_password is about the NEW password's strength;
-      // password_mismatch (and anything unrecognized) is about the current one.
-      if (e instanceof ApiError && e.code === "invalid_password") {
-        setRefused({ new: apiErrorText(e) });
-      } else {
-        setRefused({ old: apiErrorText(e) });
-      }
+      // Shown where it belongs (lib/account-menu.ts passwordErrorPlace): under the field the
+      // server's code is about, or on the dialog's own line when it is about none — including
+      // everything the form does not name, which the old-password field would have swallowed.
+      const place = passwordErrorPlace(e instanceof ApiError ? e.code : undefined, !noOldPassword);
+      setRefused({ [place]: apiErrorText(e) });
     } finally {
       setBusy(false);
     }
@@ -135,6 +137,11 @@ function ChangePasswordForm({ onClose }: { onClose: () => void }) {
           error={mismatch ? S.account.passwordMismatch : undefined}
           autoComplete="new-password"
         />
+        {refused.form && (
+          <p role="alert" className="text-xs text-tone-danger-fg">
+            {refused.form}
+          </p>
+        )}
       </div>
     </Modal>
   );
