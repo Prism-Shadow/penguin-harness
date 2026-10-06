@@ -4,25 +4,42 @@
  * A hot push replaces the platform but leaves the installed plugins where they are, so a
  * platform can meet a plugin built against slots or interfaces it does not carry (a plugin
  * from a newer line contributing to a module this build lacks, say). Rejecting the whole
- * tree for that would let one plugin refuse every push; instead a contribution to a slot this
+ * tree for that would let one plugin refuse every boot; instead a contribution to a slot this
  * platform lacks is dropped (the plugin stays), the plugins any other problem is traced to are
- * left out of this generation, both are named in the log, and the rest boots. The
- * plugin host is not changed: the next generation tries the same plugins again, so a build
- * that carries their slots runs them as before. Any problem that is not traced to a plugin
- * still rejects the tree as it always did.
+ * left out of this generation, and the rest boots. What was left out or dropped is RETURNED,
+ * per plugin and with its reason — the caller says it where people look (the log, the error
+ * record, the installed-plugins page). The plugin host is not changed: the next generation
+ * tries the same plugins again, so a build that carries their slots runs them as before. Any
+ * problem that is not traced to a plugin still rejects the tree as it always did.
+ *
+ * Whether to boot without them at all is the caller's to decide: a push by someone who has
+ * not said so is refused instead, with the same list (`refuse`), so they can be asked first.
  */
 import {
   ModuleBootError,
+  describeProblem,
   type ModuleDef,
   type ModuleTree,
   type Problem,
 } from "@prismshadow/penguin-core/kernel";
+import type { UnsatisfiedPlugin } from "../api/types.js";
 import type { LoadedPlugin } from "./host.js";
 
 /** What `boot` is given: the plugin modules and stand-ins left in. */
 export interface PluginSelection {
   modules: ModuleDef[];
   replacements: ReadonlyMap<string, ModuleDef>;
+}
+
+/** A boot refused because it would have to run without these plugins, or without part of them. */
+export class UnsatisfiedPluginsError extends Error {
+  constructor(readonly plugins: UnsatisfiedPlugin[]) {
+    super(
+      `this build cannot fully run ${plugins.length === 1 ? "an installed plugin" : `${plugins.length} installed plugins`}: ` +
+        plugins.map((p) => `'${p.specifier}' (${p.reason})`).join("; "),
+    );
+    this.name = "UnsatisfiedPluginsError";
+  }
 }
 
 /**
@@ -67,19 +84,41 @@ function stripped(def: ModuleDef, drop: ReadonlyMap<string, ReadonlySet<string>>
   return { ...def, manifest: { ...def.manifest, contributes }, ...(children ? { children } : {}) };
 }
 
+/** The reasons collected per plugin, in the plugins' own order; left out wins over dropped. */
+function listed(
+  plugins: readonly LoadedPlugin[],
+  left: ReadonlyMap<string, string[]>,
+  dropped: ReadonlyMap<string, string[]>,
+): UnsatisfiedPlugin[] {
+  const out: UnsatisfiedPlugin[] = [];
+  for (const { specifier } of plugins) {
+    const reasons = left.get(specifier) ?? dropped.get(specifier);
+    if (reasons === undefined) continue;
+    out.push({ specifier, disabled: left.has(specifier), reason: reasons.join("; ") });
+  }
+  return out;
+}
+
 /**
  * `boot` with every plugin, then — while it is rejected for problems that are all traced to
  * plugins — again: a contribution to a slot this platform does not declare (or of a shape it
  * does not take) is dropped, since nothing here would consume it, and the plugin stays; any
- * other problem leaves the whole plugin out. Returns the tree and the plugins left out, each
- * with the rejection that named it; dropped contributions are logged.
+ * other problem leaves the whole plugin out. Returns the tree and what it runs without.
+ *
+ * With `refuse`, the first such rejection is final: nothing is retried, and what the tree
+ * would have had to run without is thrown as an {@link UnsatisfiedPluginsError}. The check
+ * that rejects a tree runs before any module is created, so a refusal builds nothing.
  */
 export async function bootWithoutUnsatisfied(
   plugins: readonly LoadedPlugin[],
   boot: (selection: PluginSelection) => Promise<ModuleTree>,
-): Promise<{ tree: ModuleTree; left: Map<string, string> }> {
-  const left = new Map<string, string>();
+  mode: "leave-out" | "refuse" = "leave-out",
+): Promise<{ tree: ModuleTree; unsatisfied: UnsatisfiedPlugin[] }> {
+  const left = new Map<string, string[]>();
+  const dropped = new Map<string, string[]>();
   const drop = new Map<string, Set<string>>();
+  const note = (into: Map<string, string[]>, specifier: string, reason: string) =>
+    into.set(specifier, [...(into.get(specifier) ?? []), reason]);
   for (;;) {
     const kept = plugins.filter((p) => !left.has(p.specifier));
     try {
@@ -89,40 +128,36 @@ export async function bootWithoutUnsatisfied(
           kept.flatMap((p) => p.replaces.map((m) => [m.manifest.name, stripped(m, drop)])),
         ),
       });
-      for (const [module, slots] of drop) {
-        console.warn(
-          `[platform] plugin module '${module}': contributions to ${[...slots].join(", ")} dropped — this platform does not declare those slots`,
-        );
-      }
-      return { tree, left };
+      return { tree, unsatisfied: listed(plugins, left, dropped) };
     } catch (err) {
       if (!(err instanceof ModuleBootError)) throw err;
       if (pluginsBehind(err.problems, kept) === null) throw err;
       let progressed = false;
       for (const problem of err.problems) {
+        const behind = [...(pluginsBehind([problem], kept) ?? [])];
         const module =
           problem.path
             .split("/")
             .filter((s) => s !== "")
             .at(-1) ?? "";
         if (CONTRIBUTION_KINDS.has(problem.kind) && "slotKey" in problem) {
-          const isPlugin = pluginsBehind([problem], kept) !== null;
           const slots = drop.get(module) ?? new Set<string>();
-          if (isPlugin && !slots.has(problem.slotKey)) {
+          if (!slots.has(problem.slotKey)) {
             slots.add(problem.slotKey);
             drop.set(module, slots);
+            for (const specifier of behind) note(dropped, specifier, describeProblem(problem));
             progressed = true;
             continue;
           }
         }
-        for (const specifier of pluginsBehind([problem], kept) ?? []) {
-          if (!left.has(specifier)) {
-            left.set(specifier, err.message);
-            progressed = true;
-          }
+        // `kept` holds no plugin already left out, so every one named here is newly leaving.
+        for (const specifier of behind) {
+          note(left, specifier, describeProblem(problem));
+          progressed = true;
         }
       }
       if (!progressed) throw err;
+      if (mode === "refuse") throw new UnsatisfiedPluginsError(listed(plugins, left, dropped));
     }
   }
 }

@@ -30,6 +30,8 @@ export interface ModulePart {
   state: ModuleState;
   /** Why the process could not load it, when `state` is `failed`. */
   error?: string;
+  /** What the current build cannot run, wholly or in part. */
+  unsatisfied?: string;
   /** The build ships it: installing it downloads nothing. */
   shipped: boolean;
   /** The machines it is listed for, by name, when the shared table does not list it. */
@@ -86,13 +88,18 @@ function stateIn(
   listed: InstalledPluginsResponse["plugins"][number],
   view: PluginView,
   selfId: string | undefined,
-): { state: ModuleState; error?: string } {
-  const local = (row: InstalledPluginsResponse["plugins"][number]) =>
-    row.active
-      ? { state: "active" as const }
-      : row.error !== undefined
-        ? { state: "failed" as const, error: row.error }
-        : { state: "pending" as const };
+): { state: ModuleState; error?: string; unsatisfied?: string } {
+  const local = (row: InstalledPluginsResponse["plugins"][number]) => {
+    const unsatisfied =
+      row.unsatisfied !== undefined ? { unsatisfied: row.unsatisfied.reason } : {};
+    return row.active
+      ? { state: "active" as const, ...unsatisfied }
+      : row.unsatisfied?.disabled === true
+        ? { state: "disabled" as const, ...unsatisfied }
+        : row.error !== undefined
+          ? { state: "failed" as const, error: row.error }
+          : { state: "pending" as const };
+  };
   if (view.machineId === null)
     return listed.here === false ? { state: "elsewhere" } : local(listed);
   if (view.machineId === selfId) return local(listed);
