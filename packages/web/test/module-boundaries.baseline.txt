@@ -183,6 +183,7 @@ features/company/org-dialogs.tsx -> features/chat/workspace-select.tsx
 features/company/org-dialogs.tsx -> features/models/model-grouping.ts
 features/company/org-dialogs.tsx -> features/semantic-id/semantic-id-field.tsx
 features/company/org-session-groups.tsx -> features/messaging/messaging-binding-modal.tsx
+features/company/use-org-pages.ts -> web-app/page-table.ts
 features/dock/dock-drag.tsx -> features/chat/use-panel-width.ts
 features/dock/dock-panel.tsx -> features/builtin-browser/slot-registry.ts
 features/dock/dock-panel.tsx -> features/chat/use-panel-width.ts
