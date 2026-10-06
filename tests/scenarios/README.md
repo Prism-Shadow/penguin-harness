@@ -64,6 +64,9 @@ chosen, and for each the value of every input in its frontmatter. An input with 
 section is produced then, written to the path the task names under `<RUN>`, and reviewed with the
 rest of the plan. A task does not start while one of its inputs is missing from the plan.
 
+How to choose the tasks within a budget, and the whole round from plan to delivery, is the
+[`penguin-harness-qa`](../../.agents/skills/penguin-harness-qa/SKILL.md) skill.
+
 ## Scripts
 
 A task may carry scripts next to its `TASK.md`, in `scripts/`, for steps that are pure operation:
