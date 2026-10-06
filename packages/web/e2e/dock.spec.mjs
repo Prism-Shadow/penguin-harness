@@ -534,6 +534,13 @@ test("Detach hands the terminal to /terminal?id=… and its tab leaves the strip
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
   await waitForShell(page, "DETACH_ME");
+  // The Session page shows its permissions beside this shell, so the dock says the shell is
+  // outside them: a visible label, and a "?" that explains which commands the policy covers.
+  const note = dockAt(page, "bottom").getByTestId("terminal-sandbox-note");
+  await expect(note).toHaveText("不受沙盒约束");
+  await note.getByRole("button").click();
+  await expect(page.getByText(/从不约束此终端/)).toBeVisible();
+  await page.keyboard.press("Escape");
 
   const popupPromise = context.waitForEvent("page");
   await dockAt(page, "bottom").getByTestId("dock-detach").click();
@@ -543,6 +550,7 @@ test("Detach hands the terminal to /terminal?id=… and its tab leaves the strip
   await expect
     .poll(() => popup.locator(".xterm-rows").innerText(), { timeout: 20000 })
     .toContain("DETACH_ME");
+  await expect(popup.getByTestId("terminal-sandbox-note")).toHaveText("不受沙盒约束");
   // The dock let go: no terminal tab left (the dock hid with its last tab gone).
   await expect(anyDock(page)).toHaveCount(0);
   // Closing the window hands the shell BACK: its tab returns to the dock it left.

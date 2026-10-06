@@ -213,6 +213,13 @@ export const en: Strings = {
       "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
+    /**
+     * Beside a shown terminal: the shell is the person's own, outside every Session's sandbox
+     * policy, which confines only the agent's commands and hook scripts.
+     */
+    unsandboxed: "Not sandboxed",
+    unsandboxedInfo:
+      "This terminal is your own shell: it runs as the account it was opened under on its machine and can read and write anything that account can. A Session's permissions (such as Workspace write) and the sandbox confine the agent's commands and hook scripts only, never this terminal.",
     status: {
       connecting: "connecting",
       ready: "ready",

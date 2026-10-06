@@ -78,6 +78,7 @@ import { chordKeys } from "../../components/ui/chord-kbd";
 import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { useTerminalChrome } from "../terminal/terminal-appearance";
+import { TerminalSandboxNote } from "../terminal/terminal-sandbox-note";
 import {
   displayTitle,
   killTerminal,
@@ -856,14 +857,17 @@ export function DockPanel({
       actions={
         <>
           {activeTab?.kind === "terminal" && (
-            <DockHeaderButton
-              label={S.terminal.detach}
-              coarse={coarsePointer}
-              data-testid="dock-detach"
-              onClick={detach}
-            >
-              <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.rowLead} />
-            </DockHeaderButton>
+            <>
+              <TerminalSandboxNote className="text-gray-500 dark:text-gray-400" />
+              <DockHeaderButton
+                label={S.terminal.detach}
+                coarse={coarsePointer}
+                data-testid="dock-detach"
+                onClick={detach}
+              >
+                <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.rowLead} />
+              </DockHeaderButton>
+            </>
           )}
           {addMenu}
           {!merged && !fullscreen && tabs.length > 0 && (

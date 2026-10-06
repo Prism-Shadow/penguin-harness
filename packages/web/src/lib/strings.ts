@@ -228,6 +228,13 @@ export const zh = {
       "该服务端没有终端接口：运行中的 runtime 早于该功能。热更新只替换平台与前端，终端接口属于 runtime，需更新 runtime 本身（重启无效）",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "在新窗口打开",
+    /**
+     * Beside a shown terminal: the shell is the person's own, outside every Session's sandbox
+     * policy, which confines only the agent's commands and hook scripts.
+     */
+    unsandboxed: "不受沙盒约束",
+    unsandboxedInfo:
+      "这个终端是你自己的 Shell：它以所在机器上打开它的账户身份运行，能读写该账户可访问的一切。Session 的权限（如「仅工作区可写」）与沙盒只约束 Agent 执行的命令和 Hook 脚本，从不约束此终端。",
     status: {
       connecting: "连接中",
       ready: "已连接",

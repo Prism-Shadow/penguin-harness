@@ -29,6 +29,7 @@ import { S } from "../../lib/strings";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { useVisualViewportHeight } from "../../lib/use-visual-viewport-height";
 import { useTerminalChrome } from "./terminal-appearance";
+import { TerminalSandboxNote } from "./terminal-sandbox-note";
 import { killTerminal } from "./terminal-list";
 import {
   TerminalView,
@@ -198,6 +199,7 @@ export function TerminalPage() {
       >
         <span className="hidden shrink-0 font-medium sm:inline">{S.terminal.title}</span>
         <span className={`min-w-0 flex-1 truncate ${chrome.muted}`}>{info?.cwd ?? params.cwd}</span>
+        <TerminalSandboxNote className={chrome.muted} />
         <span
           data-testid="terminal-status"
           data-status={status}
