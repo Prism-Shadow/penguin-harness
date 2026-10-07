@@ -54,7 +54,7 @@ An API conversation's sandbox comes from the server's new-chat defaults, as for 
 
 ### Keys
 
-- A key is `pha_` followed by 43 characters. It is shown once, when it is created; the server stores only its SHA-256.
+- A key is `penguin_` followed by 43 characters. It is shown once, when it is created; the server stores only its SHA-256.
 - An agent can have several keys, each with a name. The list shows each key's name, its first characters, when it was created and when it was last used (**never** until its first run).
 - Deleting a key revokes it: the next request that presents it is refused with `401`.
 - A key belongs to one agent. It runs that agent and reads, aborts and answers the approvals of that agent's API conversations, and opens nothing else on the server. A key of another agent is refused with `404` `agent_not_found`.

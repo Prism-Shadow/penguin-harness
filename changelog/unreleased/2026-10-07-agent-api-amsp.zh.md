@@ -11,7 +11,7 @@ Project 所有者可以把某一个 Agent 开放给 PenguinHarness 之外的程�
 ## Agent API
 
 - 每个 Agent 有自己的开关（缺省关闭）、可选的**无密钥访问**开关（同样缺省关闭）和 **API 审批模式**（缺省 `allow-all`）。它们保存在服务器数据库新增的 `agent_api` 与 `agent_api_keys` 表中，不在 Agent 的状态里，也不在 Project 文件里，因此 Agent 既不能自行对外开放，也不能放宽自己的审批。
-- 密钥按 Agent 签发，各有名字，只显示一次：`pha_` 加 43 个 base64url 字符，以 SHA-256 保存。密钥只能运行它所属的 Agent，并读取、中止该 Agent 的 API 会话、回答其审批，此外不能访问任何东西。每次出示密钥的运行都会记下它的最近使用时间。
+- 密钥按 Agent 签发，各有名字，只显示一次：`penguin_` 加 43 个 base64url 字符，以 SHA-256 保存。密钥只能运行它所属的 Agent，并读取、中止该 Agent 的 API 会话、回答其审批，此外不能访问任何东西。每次出示密钥的运行都会记下它的最近使用时间。
 - 公开路由位于 `/api/amsp/v1` 之下，不经登录 Cookie：`GET /agents/:projectId/:agentId`、`POST /agents/:projectId/:agentId/runs`、`GET /sessions/:sessionId`、`POST /sessions/:sessionId/abort` 和 `POST /sessions/:sessionId/approvals/:toolCallId`。该前缀下的其他路径返回 JSON 形式的 `404` `not_found`。密钥和各项开关在读取请求体之前检查。
 - 不带 `session_id` 的运行会新建一个会话，其 `session_meta.source` 为 `api`、索引行的 `client` 为 `api`，使用 Project 的默认模型、服务器的新对话沙箱和该 Agent 的 API 审批模式（在会话创建时复制到会话上）。`session_id` 延续同一个 Agent 的 API 会话；其他 id 返回 `404` `session_not_found`。
 - 审批模式需要询问时，确认请求以 `approval.requested` 流向调用方，Web App 中的该会话也能回答，以先回答的为准。调用方断开连接即中止其运行，待审批的调用被拒绝。`POST …/abort` 中止运行，同时保持事件流打开，以送出最后的 `run.done`。
