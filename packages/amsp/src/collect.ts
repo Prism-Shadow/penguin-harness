@@ -23,7 +23,11 @@ export interface RunResult {
   sessionId: string;
   /** The main Session's assistant `text.done` items, joined with a blank line. */
   text: string;
-  /** Every event but the `.delta` fragments, in stream order: complete items and run, request, approval and compaction events alike. */
+  /**
+   * Every event but the `.delta` fragments, in stream order: complete items and run, request,
+   * approval and compaction events alike. A compaction summary the engine streamed has no
+   * `summary.done` and so leaves no item here; the fragments are never rebuilt into one.
+   */
   items: AmspEvent[];
   /** `run.done.usage`: the tokens every Request of this run counted. */
   usage: TokenCounts;
@@ -84,9 +88,11 @@ export class RunCollector {
 }
 
 /**
- * A tool call's arguments as an object. AMSP carries them as the JSON string the model wrote;
- * an empty string is a call without arguments (`{}`), and anything that does not parse to a
- * JSON object is `null`.
+ * A tool call's arguments as an object. AMSP carries them as a JSON string: for a completed call
+ * the engine's serialization of the parsed arguments, which the streamed fragments need not match
+ * character for character but parse to the same object; for a call cut short, the text received
+ * so far. An empty string is a call without arguments (`{}`), and anything that does not parse to
+ * a JSON object is `null`.
  */
 export function parseArguments(
   item: ToolCallDone | ApprovalRequested["tool_call"],
