@@ -30,7 +30,10 @@ created.
   PenguinHarness Benchmark Sec A to Sec E; each description opened with the original benchmark
   ("Sec A is rag-bench-essential (Data Analysis Bench): …"). Each was written with `runs = 1`,
   `status = "published"`, no evaluations and ten cases: the final 50 tasks of the benchmark
-  repository's `selection.json` files. The definitions were data in
+  repository's `selection.json` files. The sets were calibrated on the measured model: Sec A–C
+  swapped the tasks it passed in every attempt for harder ones, and Sec D was chosen anew, with
+  caps of 40 minutes and 320 turns and a launch that told the agent its time budget in one
+  sentence before the task's instruction. The definitions were data in
   `packages/core/src/state/builtin-benchmarks-data.ts`, where a case's number followed its row. A
   case directory was `CASE-NNN-<Harbor task>`. Its statement gave a short description, the task
   folder's link in the repository at a pinned commit, the provenance and the container's
