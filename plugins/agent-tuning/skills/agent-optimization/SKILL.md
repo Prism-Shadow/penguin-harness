@@ -49,6 +49,8 @@ evaluation protocol.
 | Penguin (default) | [penguin.md](references/penguin.md) | [Penguin's existing optimization method](https://github.com/Prism-Shadow/penguin-harness) |
 | ACE | [ace.md](references/ace.md) | RSI method from a paper titled as [Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models](https://arxiv.org/abs/2510.04618) · [GitHub](https://github.com/ace-agent/ace) |
 | AWM | [awm.md](references/awm.md) | RSI method from a paper titled as [Agent Workflow Memory](https://arxiv.org/abs/2409.07429) · [GitHub](https://github.com/zorazrw/agent-workflow-memory) |
+| OPRO | [opro.md](references/opro.md) | RSI method from a paper titled as [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409) · [GitHub](https://github.com/google-deepmind/opro) |
+| APE | [ape.md](references/ape.md) | RSI method from a paper titled as [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910) · [GitHub](https://github.com/keirp/automatic_prompt_engineer) |
 
 If another method is requested, resolve its supplied instructions or ask which
 method to implement; do not silently substitute Penguin. Method-specific inputs

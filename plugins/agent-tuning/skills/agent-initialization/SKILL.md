@@ -36,6 +36,8 @@ contract. This caller-owned recovery is separate from unstarted-launch repair.
 | [Penguin](references/penguin.md) | Always for Penguin layout, runtime, configuration, Skills and hooks; the default recipe |
 | [ACE](references/ace.md) | Preparing the empty playbook and fixed reader for ACE |
 | [AWM](references/awm.md) | Preparing the empty workflow index and fixed reader for AWM |
+| [OPRO](references/opro.md) | Preparing the initial instruction and fixed reader for prompt optimization |
+| [APE](references/ape.md) | Preparing the empty instruction slot and fixed reader for prompt induction |
 
 Use Penguin when no method is requested. Add the selected method's initialization
 reference; do not load every method or install other methods' artifacts. A method
