@@ -3,6 +3,7 @@
 - **Date:** 2026-10-07
 - **Type:** feature
 - **Scope:** `cli`, `docs`
+- **PR:** [#1003](https://github.com/Prism-Shadow/penguin-harness/pull/1003)
 
 [中文版](2026-10-07-chat-prompt-marks.zh.md)
 
