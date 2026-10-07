@@ -9,11 +9,9 @@
  *   POST /sessions/:sessionId/approvals/:toolCallId   answer a pending approval
  *   *    anything else                                404 not_found (JSON, never the SPA)
  *
- * CORS: a preflight is always answered; `Access-Control-Allow-Origin: *` goes only on requests
- * that carry `Authorization`. A keyless request gets no CORS header, so a page on another origin
- * cannot drive an open Agent from a visitor's browser (on a loopback server, the drive-by that
- * keyless access would otherwise invite). The `/api/*` CSRF guard (JSON-only writes) stays in
- * force; nothing here reads a cookie.
+ * CORS (cors.ts): a preflight is always answered; `Access-Control-Allow-Origin: *` goes only on
+ * requests that carry `Authorization`, the global 413/415 refusals included. The `/api/*` CSRF
+ * guard (JSON-only writes) stays in force; nothing here reads a cookie.
  */
 import { Hono } from "hono";
 import type { AgentResponse, SessionResponse } from "@prismshadow/amsp";
@@ -22,13 +20,11 @@ import { HttpError } from "../http/errors.js";
 import { readJson, requireEnum } from "../http/validate.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Settings } from "../mechanisms/settings.js";
+import { AMSP_PREFIX, amspCors } from "./cors.js";
 import { amspGate } from "./gate.js";
 import type { AmspEnv, AmspGateDeps } from "./gate.js";
 import { runStream } from "./run-stream.js";
 import type { RunStreamDeps } from "./run-stream.js";
-
-/** Where the group is mounted; the wire version is in the path. */
-export const AMSP_PREFIX = "/api/amsp/v1";
 
 export interface AmspRouteDeps
   extends
@@ -41,22 +37,10 @@ export interface AmspRouteDeps
   };
 }
 
-const PREFLIGHT_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
-  "Access-Control-Max-Age": "600",
-};
-
 export function amspRoutes(deps: AmspRouteDeps): Hono<AppEnv> {
   const app = new Hono<AmspEnv>();
 
-  app.use("*", async (c, next) => {
-    if (c.req.method === "OPTIONS") return c.body(null, 204, PREFLIGHT_HEADERS);
-    // Set before the handler runs, so a streamed response and an error answer carry it too.
-    if (c.req.header("authorization") !== undefined) c.header("Access-Control-Allow-Origin", "*");
-    await next();
-  });
+  app.use("*", amspCors);
 
   app.use("*", amspGate(AMSP_PREFIX, deps));
 

@@ -16,6 +16,9 @@
  *   Access-Control-Allow-Origin; with keyless access off it is 401.
  * - Given a key, every response carries Access-Control-Allow-Origin *, errors included; a
  *   preflight is answered without one.
+ * - Given a body the server-wide checks refuse before the group is reached (over the body cap:
+ *   413; not JSON: 415), a keyed request still carries Access-Control-Allow-Origin *, so a
+ *   browser reads the code rather than a CORS failure; a keyless one carries none.
  * - Given an unknown path under the prefix, the answer is a JSON 404 — not the SPA, not a 401.
  *
  * Scenarios — runs:
@@ -59,6 +62,7 @@ import { readSse } from "@prismshadow/amsp";
 import type { AmspEvent } from "@prismshadow/amsp";
 import type { AgentApiKeyCreateResponse, ApprovalMode, SessionResponse } from "../src/api/types.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
+import { bodyLimitBytes } from "../src/services/attachment-limits.js";
 import { apiClient, createTestApp, loginAdmin, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
@@ -365,6 +369,33 @@ describe("Agent API: the gate", () => {
       "Authorization, Content-Type",
     );
     expect(preflight.headers.get("access-control-max-age")).toBe("600");
+  });
+
+  it("a keyed request the server-wide body checks refuse still carries Access-Control-Allow-Origin *", async () => {
+    const cap = bodyLimitBytes(t.deps.serverSettingsRepo.getAttachmentLimitsMb());
+    const oversized = (headers: Record<string, string>) =>
+      t.app.request(`${PREFIX}/agents/${P}/${A}/runs`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json", "content-length": `${cap + 1}` },
+        body: JSON.stringify({ input: "small" }),
+      });
+    const notJson = (headers: Record<string, string>) =>
+      t.app.request(`${PREFIX}/agents/${P}/${A}/runs`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "text/plain" },
+        body: "hello",
+      });
+    for (const [send, status, code] of [
+      [oversized, 413, "payload_too_large"],
+      [notJson, 415, "unsupported_media_type"],
+    ] as const) {
+      const keyed = await send({ authorization: `Bearer ${key}` });
+      expect(keyed.headers.get("access-control-allow-origin")).toBe("*");
+      expect(await errorOf(keyed)).toMatchObject({ status, code });
+      const keyless = await send({});
+      expect(keyless.headers.get("access-control-allow-origin")).toBeNull();
+      expect(await errorOf(keyless)).toMatchObject({ status, code });
+    }
   });
 
   it("an unknown path under the prefix is a JSON 404, not the SPA and not a 401", async () => {
