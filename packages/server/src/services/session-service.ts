@@ -646,17 +646,18 @@ export class SessionService {
     isAdmin?: boolean;
     /**
      * What kind of conversation this is, recorded in the Session's session_meta: `schedule`
-     * from the scheduler, `cli` from `penguin run` (the only source a request may name);
-     * absent means `user`, a person's conversation.
+     * from the scheduler, `cli` from `penguin run` (the only source a request may name), `api`
+     * from an Agent API run; absent means `user`, a person's conversation.
      */
     source?: SessionSource;
     /**
      * Creating-client hint stored on the index row (`POST .../sessions` body `client`):
-     * "cli" from the CLI, defaulting to "web". "org" is not accepted over HTTP — the
-     * organization runtime calls this method directly and is the only caller that passes
-     * it, so no request can claim an organization's provenance for itself.
+     * "cli" from the CLI, defaulting to "web". "org" and "api" are not accepted over HTTP —
+     * the organization runtime and the Agent API's run handler call this method directly and
+     * are the only callers that pass them, so no request can claim either provenance for
+     * itself ("api" is what lets the Agent API continue a Session).
      */
-    client?: "web" | "cli" | "org";
+    client?: "web" | "cli" | "org" | "api";
   }): Promise<SessionInfo> {
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(
@@ -733,8 +734,9 @@ export class SessionService {
       sandbox,
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,
-      // "org" when the organization runtime opened a desk or a ticket session, otherwise
-      // "web" (schedule runs included). NULL means a legacy row, treated as web.
+      // "org" when the organization runtime opened a desk or a ticket session, "api" when an
+      // Agent API run did, otherwise "web" (schedule runs included). NULL means a legacy row,
+      // treated as web.
       client: args.client ?? "web",
       // Creation is the first activity; the first driven run advances it (see SessionManager.drive).
       lastActiveAt: createdAt,
