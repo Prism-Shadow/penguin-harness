@@ -51,6 +51,13 @@ function dropBrowserExtensions(db: DatabaseSync): void {
   db.exec("DROP TABLE IF EXISTS browser_extensions");
 }
 
+/** Migration 14's two tables and index: a database stamped before it had none of them. */
+function dropAgentApi(db: DatabaseSync): void {
+  db.exec("DROP INDEX IF EXISTS idx_agent_api_keys_agent");
+  db.exec("DROP TABLE IF EXISTS agent_api_keys");
+  db.exec("DROP TABLE IF EXISTS agent_api");
+}
+
 /** Every company-mode table the migrations add: a database from before them had none. */
 function dropCompanyModeTables(db: DatabaseSync): void {
   for (const table of [
@@ -77,6 +84,7 @@ function open024(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
+  dropAgentApi(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   dropCompanyModeTables(db);
   db.exec("DROP TABLE messaging_bindings");
@@ -120,6 +128,7 @@ function open6(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
+  dropAgentApi(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(PRE_CHANNEL_CHAT_DDL);
   // SCHEMA_SQL declares the CURRENT shape; migration 8's queue came after 6.
@@ -135,6 +144,7 @@ function open7(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
+  dropAgentApi(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec("PRAGMA user_version = 7");
   return db;
@@ -146,6 +156,7 @@ function open8(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
+  dropAgentApi(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec("PRAGMA user_version = 8");
   return db;
@@ -157,6 +168,7 @@ function open9(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
+  dropAgentApi(db);
   db.exec("PRAGMA user_version = 9");
   return db;
 }
@@ -167,6 +179,7 @@ function open029(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
+  dropAgentApi(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
@@ -189,6 +202,7 @@ function openPreProfile(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
+  dropAgentApi(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   dropProfileColumns(db);
   // Version 4 predates company mode as well: its three migrations (6–8) come after the
@@ -588,8 +602,9 @@ describe("migration 8 → current: model-promotions", () => {
         "sessions-sandbox",
         "machines-columns",
         "browser-extensions",
+        "agent-api",
       ]);
-      expect(schemaVersion(db)).toBe(13);
+      expect(schemaVersion(db)).toBe(14);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -611,8 +626,9 @@ describe("migration 8 → current: model-promotions", () => {
         "sessions-sandbox",
         "machines-columns",
         "browser-extensions",
+        "agent-api",
       ]);
-      expect(schemaVersion(db)).toBe(13);
+      expect(schemaVersion(db)).toBe(14);
     } finally {
       db.close();
     }
@@ -634,8 +650,9 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         "sessions-sandbox",
         "machines-columns",
         "browser-extensions",
+        "agent-api",
       ]);
-      expect(schemaVersion(db)).toBe(13);
+      expect(schemaVersion(db)).toBe(14);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -667,6 +684,7 @@ function open12(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   dropBrowserExtensions(db);
+  dropAgentApi(db);
   db.exec("PRAGMA user_version = 12");
   return db;
 }
@@ -675,8 +693,8 @@ describe("migration 12 → current: browser-extensions", () => {
   it("creates the pairings table, which holds one row per token and cascades with its user", () => {
     const db = open12();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["browser-extensions"]);
-      expect(schemaVersion(db)).toBe(13);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["browser-extensions", "agent-api"]);
+      expect(schemaVersion(db)).toBe(14);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -714,6 +732,88 @@ describe("migration 12 → current: browser-extensions", () => {
       expect(tableExists()).toEqual({ "1": 1 });
     } finally {
       db.close();
+    }
+  });
+});
+
+/** A database stamped at migration 13: everything before the Agent API. */
+function open13(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  dropAgentApi(db);
+  db.exec("PRAGMA user_version = 13");
+  return db;
+}
+
+describe("migration 13 → current: agent-api", () => {
+  it("creates the settings table while a pushed platform boots: one row per Agent, keyed and allow-all unless set", () => {
+    const db = open13();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["agent-api"]);
+      expect(schemaVersion(db)).toBe(14);
+      const enable = () =>
+        db
+          .prepare(
+            "INSERT INTO agent_api (project_id, agent_id, enabled, updated_at)" +
+              " VALUES ('p1', 'coder', 1, '2026-10-07T00:00:00.000Z')",
+          )
+          .run();
+      enable();
+      expect(db.prepare("SELECT enabled, open, approval_mode FROM agent_api").all()).toEqual([
+        { enabled: 1, open: 0, approval_mode: "allow-all" },
+      ]);
+      // The (project, agent) pair is the key: a second row for the same Agent is refused.
+      expect(enable).toThrow(/UNIQUE/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("creates the keys table, which holds one key per token hash and only keys a user created", () => {
+    const db = open13();
+    try {
+      migrate(db);
+      db.exec("PRAGMA foreign_keys = ON");
+      db.exec(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
+          " VALUES ('alice', 'hash', 0, '2026-10-07T00:00:00.000Z')",
+      );
+      const insert = (keyId: string, hash: string, createdBy: string) =>
+        db
+          .prepare(
+            "INSERT INTO agent_api_keys (key_id, project_id, agent_id, token_hash, prefix, name, created_by, created_at)" +
+              " VALUES (?, 'p1', 'coder', ?, 'pha_abcdefgh', 'ci', ?, '2026-10-07T00:00:00.000Z')",
+          )
+          .run(keyId, hash, createdBy);
+      insert("k1", "h1", "alice");
+      // A token hash names one key, so the lookup by hash is never ambiguous.
+      expect(() => insert("k2", "h1", "alice")).toThrow(/UNIQUE/);
+      expect(() => insert("k3", "h3", "ghost")).toThrow(/FOREIGN KEY/);
+      expect(db.prepare("SELECT key_id, last_used_at FROM agent_api_keys").all()).toEqual([
+        { key_id: "k1", last_used_at: null },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down drops the settings and every key, and a second up recreates both empty", () => {
+    const db = open13();
+    const at13 = open13();
+    try {
+      migrate(db);
+      db.exec(
+        "INSERT INTO agent_api (project_id, agent_id, enabled, updated_at)" +
+          " VALUES ('p1', 'coder', 1, '2026-10-07T00:00:00.000Z')",
+      );
+      rollbackTo(db, 13);
+      expect(schemaVersion(db)).toBe(13);
+      expect(shape(db)).toBe(shape(at13));
+      migrate(db);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM agent_api").get()).toEqual({ n: 0 });
+    } finally {
+      db.close();
+      at13.close();
     }
   });
 });
