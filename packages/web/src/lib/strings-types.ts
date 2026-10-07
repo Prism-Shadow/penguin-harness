@@ -928,6 +928,37 @@ export type Strings = {
       openInChat: string;
       noRun: string;
     };
+    /** The Activity Spec editor: the specification JSON, with a diff against the last save. */
+    studioSpec: {
+      title: (subject: string) => string;
+      editor: string;
+      savedSide: string;
+      diff: string;
+      diffHelp: string;
+      diffHint: string;
+      save: string;
+      toolbar: string;
+      base: string;
+      changes: string;
+      stats: (added: number, removed: number, regions: number) => string;
+      previous: string;
+      previousHelp: string;
+      next: string;
+      nextHelp: string;
+      counter: (current: number, total: number) => string;
+      inline: string;
+      inlineHelp: string;
+      sideBySide: string;
+      sideBySideHelp: string;
+      sideBySideLabel: string;
+      revertAll: string;
+      revertAllHelp: string;
+      minimap: string;
+      jump: (n: number) => string;
+      empty: string;
+      notObject: string;
+      invalid: (reason: string) => string;
+    };
     /** The Activity Script editor: scenes that fold, media tags, and a diff against a base. */
     studioScript: {
       label: string;
@@ -1213,8 +1244,6 @@ export type Strings = {
       "ready" | "generating" | "failed" | "missing" | "scriptMissing" | "scriptTooLong",
       string
     >;
-    diffShow: string;
-    diffHide: string;
     diffTitle: string;
     diffHelp: string;
     diffNone: string;
@@ -1509,9 +1538,6 @@ export type Strings = {
     imageCandidates: string;
     acceptImage: string;
     olderImage: string;
-    noScenes: string;
-    sceneReview: string;
-    advancedSpec: string;
     advancedMedia: string;
     audioRun: string;
     imageRun: string;
@@ -1603,8 +1629,6 @@ export type Strings = {
     unavailable: string;
     description: string;
     saveDescription: string;
-    spec: string;
-    saveSpec: string;
     generate: string;
     agent: string;
     penguinAgents: string;

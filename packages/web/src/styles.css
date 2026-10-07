@@ -917,6 +917,45 @@ html.dark .shiki span {
 .script-editor .cm-editor .cm-media-tag {
   @apply text-brand-700 dark:text-brand-300;
 }
+/* The Activity Spec editor's JSON (spec-editor.tsx), in the github-light / github-dark colours
+   the app's other code views use (features/chat/highlighter-core.ts). */
+.script-editor .cm-editor .cm-json-key,
+.script-editor .cm-editor .cm-json-literal {
+  color: #005cc5;
+}
+.script-editor .cm-editor .cm-json-string {
+  color: #032f62;
+}
+.script-editor .cm-editor .cm-json-punctuation {
+  color: #24292e;
+}
+html.dark .script-editor .cm-editor .cm-json-key,
+html.dark .script-editor .cm-editor .cm-json-literal {
+  color: #79b8ff;
+}
+html.dark .script-editor .cm-editor .cm-json-string {
+  color: #9ecbff;
+}
+html.dark .script-editor .cm-editor .cm-json-punctuation {
+  color: #e1e4e8;
+}
+/* The Activity Spec's side-by-side diff: the pair scrolls as one, so its editors grow to their
+   text instead of filling the pane, and the saved side marks its lines as removed. */
+.spec-merge .cm-mergeView {
+  height: 100%;
+}
+.script-editor.spec-merge .cm-editor {
+  height: auto;
+}
+.script-editor.spec-merge .cm-merge-a .cm-changedLine {
+  @apply bg-rose-50 dark:bg-rose-950/40;
+}
+.script-editor.spec-merge .cm-merge-a .cm-changedText {
+  @apply bg-rose-100 dark:bg-rose-900/50;
+}
+.script-editor.spec-merge .cm-merge-a .cm-changedLineGutter {
+  @apply bg-rose-500;
+}
 .script-editor .cm-editor .cm-proposed-hint {
   margin-left: 0.75rem;
   font-weight: 400;

@@ -663,7 +663,7 @@ async function planMedia(page) {
 
 /** Switching sections unmounts the pane, so its disclosures reopen each time. */
 async function openManifest(page) {
-  await openSection(page, "Specification");
+  await openSection(page, "Media library");
   const summary = page.getByText("Advanced: asset manifest JSON", { exact: true });
   // The disclosure keeps its state across sections, so only open it when it is shut.
   if (
@@ -696,7 +696,6 @@ async function create(page, { activityType = "standard" } = {}) {
     page.getByRole("button", { name: "Generate specification", exact: true }),
   ).toBeEnabled();
   await openSection(page, "Specification");
-  await page.getByText("Advanced: specification JSON", { exact: true }).click();
 }
 
 test("plans media, preserves unsaved bindings on navigation, and saves paths for assembly", async ({
@@ -721,7 +720,7 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(withMedia));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await plan.click();
   await openManifest(page);
@@ -740,7 +739,7 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
     .getByRole("dialog", { name: "Discard unsaved changes?" })
     .getByRole("button", { name: "Cancel" })
     .click();
-  await openSection(page, "Specification");
+  await openSection(page, "Media library");
   await expect(editor).toHaveValue(JSON.stringify(manifest));
   const request = page.waitForRequest(
     (request) => request.url().endsWith("/media") && request.method() === "PUT",
@@ -767,11 +766,16 @@ test("reviews specification edits against the saved specification before saving"
   const editor = page.getByRole("textbox", { name: "Specification JSON", exact: true });
   await openSection(page, "Specification");
   await editor.fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
 
-  // Nothing edited yet, so there is nothing to review.
-  const show = page.getByRole("button", { name: "Show changes", exact: true });
-  await expect(show).toBeDisabled();
+  // Nothing edited yet, so there is nothing to review or save.
+  const save = page.getByRole("button", { name: "Save Spec", exact: true });
+  await expect(save).toBeDisabled();
+  const diff = page.getByRole("button", { name: "Diff", exact: true });
+  await diff.click();
+  await expect(page.getByText("No changes", { exact: true })).toBeVisible();
+  // The diff folds unchanged lines away; edits go in with it shut.
+  await diff.click();
 
   const edited = {
     ...spec,
@@ -782,23 +786,43 @@ test("reviews specification edits against the saved specification before saving"
     ],
   };
   await editor.fill(JSON.stringify(edited, null, 2));
-  await show.click();
+  await expect(save).toBeEnabled();
+  await expect(diff).toHaveAttribute("title", /^Unsaved changes/);
 
-  // The scenes that moved are named, and both layouts render the same change.
-  await expect(page.getByRole("button", { name: /^intro · changed/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^quiz · added/ })).toBeVisible();
-  await expect(page.getByText("Choose a different word", { exact: false }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Side by side", exact: true }).click();
-  const diff = page.getByLabel("Changes since the last save", { exact: true });
-  await expect(diff.getByText("Saved specification", { exact: true })).toBeVisible();
-  await expect(diff.getByText("Your edit", { exact: true })).toBeVisible();
+  // Loom's diff toolbar: counts with regions, previous and next, and an overview.
+  await diff.click();
+  const toolbar = page.getByRole("toolbar", { name: "Diff controls", exact: true });
+  await expect(toolbar.getByText(/^\+\d+ −\d+ · \d+ regions?$/)).toBeVisible();
+  await expect(toolbar.getByText(/^– \/ \d+$/)).toBeVisible();
+  await toolbar.getByRole("button", { name: "Go to the next change", exact: true }).click();
+  await expect(toolbar.getByText(/^1 \/ \d+$/)).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: "Change overview", exact: true }).getByRole("button").first(),
+  ).toBeVisible();
 
-  // Reverting is confirmed, and puts the saved specification back in the box.
-  await page.getByRole("button", { name: "Revert all changes", exact: true }).click();
-  await expect(page.getByText(/Discard every edit/)).toBeVisible();
-  await page.getByRole("button", { name: "Revert all changes", exact: true }).last().click();
-  await expect(editor).toHaveValue(JSON.stringify(spec, null, 2));
-  await expect(page.getByText("No changes since the last save.")).toBeVisible();
+  // Side by side shows the saved text next to the edit, and the choice is remembered.
+  await toolbar.getByRole("button", { name: "Side by side", exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Saved specification", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await openSection(page, "Specification");
+  await expect(save).toBeDisabled();
+  await editor.fill(JSON.stringify(edited, null, 2));
+  await diff.click();
+  await expect(toolbar.getByRole("button", { name: "Inline", exact: true })).toBeVisible();
+  await toolbar.getByRole("button", { name: "Inline", exact: true }).click();
+
+  // Revert all puts the saved specification back.
+  await toolbar.getByRole("button", { name: "Revert all", exact: true }).click();
+  await expect(toolbar.getByText("No changes", { exact: true })).toBeVisible();
+  await expect(save).toBeDisabled();
+  await diff.click();
+
+  // Text that is not a JSON object cannot be saved, and says why.
+  await editor.fill("{ not json");
+  await expect(page.getByText(/^This is not valid JSON/)).toBeVisible();
+  await expect(save).toBeDisabled();
   expect(f.errors).toEqual([]);
 });
 
@@ -809,7 +833,7 @@ test("reports speech coverage and generates every missing narration at once", as
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
 
@@ -909,7 +933,7 @@ test("chooses a narration's voice from the picker and applies one voice to every
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   const usages = (key) => [
@@ -1010,7 +1034,7 @@ test("uploads media into the ref's uploads and binds it from the library", async
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
 
@@ -1060,7 +1084,7 @@ test("uploads media into the ref's uploads and binds it from the library", async
   await expect(page.getByText("Stored with this activity.")).toBeVisible();
 
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
-  await openSection(page, "Specification");
+  await openSection(page, "Media library");
   await expect(page.getByText(/1 assets, 1 paths assigned, 0 unbound/)).toBeVisible();
 
   // The library lists the plan and the uploads together, and what connects them.
@@ -1100,7 +1124,7 @@ test("previews only saved images and resets previews across edits and failures",
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await expect(page.getByText("Assign and save a media path to preview this image.")).toBeVisible();
@@ -1158,7 +1182,7 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Module preview");
   await expect(assemble).toBeEnabled();
   // The checkout is the server's WAF workspace, not something an author types.
@@ -1216,7 +1240,7 @@ test("requires an explicit reading mode for book assembly and sends it per run",
     }),
   );
   await openSection(page, "Specification");
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   const assemble = page.getByRole("button", { name: "Assemble WAF module", exact: true });
   await openSection(page, "Module preview");
   await expect(assemble).toBeDisabled();
@@ -1253,7 +1277,7 @@ test("edits scripts and explicitly accepts speech while regeneration keeps the a
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await openManifest(page);
@@ -1324,7 +1348,7 @@ test("edits image descriptions and explicitly accepts images while failed regene
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await openManifest(page);
@@ -1413,7 +1437,7 @@ test("reviews and accepts an improved image prompt without changing its saved me
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await openManifest(page);
@@ -1486,7 +1510,7 @@ test("reviews narration suggestions, preserves existing audio provenance, and bl
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await openManifest(page);
@@ -1549,7 +1573,7 @@ test("members cannot edit media text", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await openManifest(page);
@@ -1591,7 +1615,7 @@ test("image candidates from a conflicting run remain view-only", async ({ page }
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await openManifest(page);
@@ -1642,9 +1666,9 @@ test("create, save, generate, leave and reopen a completed specification", async
   await expect(page.getByText("Running", { exact: true })).toBeVisible();
   f.complete();
   await openSection(page, "Specification");
-  await page.getByText("Advanced: specification JSON", { exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "Specification JSON", exact: true })).toHaveValue(
-    JSON.stringify(spec, null, 2),
+  // CodeMirror draws each line as its own element, so its text runs the lines together.
+  await expect(page.getByRole("textbox", { name: "Specification JSON", exact: true })).toHaveText(
+    JSON.stringify(spec, null, 2).replaceAll("\n", ""),
   );
   await page.reload();
   await openSection(page, "Description");
@@ -1693,7 +1717,7 @@ test("polling preserves unsaved edits and exposes conflicting output for review"
   await page.getByText("View candidate JSON", { exact: true }).click();
   await page.getByRole("button", { name: "Copy candidate into editor" }).click();
   await openSection(page, "Specification");
-  await page.getByRole("button", { name: "Validate and save" }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await expect(page.getByText("Validated", { exact: true })).toBeVisible();
   expect(f.errors).toEqual([]);
 });
@@ -2410,7 +2434,7 @@ test("the storyboard shows every scene, and walks into its media scene by scene"
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(withScenes));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   // This fixture plans media from a manifest the request carries, so plan this spec's.
   const asset = (key, sceneId) => ({
     key,
@@ -2543,7 +2567,7 @@ test("the player draws the module's behavior map and follows the phase it report
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify({ ...spec, scenes: [{ id: "rocks", description: "Find d" }] }));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await page.getByRole("button", { name: "Player", exact: true }).click();
   const panel = page.getByRole("complementary", { name: "Player", exact: true });
   await panel.getByRole("button", { name: "Play", exact: true }).click();
@@ -2652,7 +2676,7 @@ test("lists the live tap targets on the current state and resizes the map", asyn
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify({ ...spec, scenes: [{ id: "rocks", description: "Find d" }] }));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   const play = async () => {
     await openSection(page, "Module preview");
     await page.getByRole("button", { name: "Play", exact: true }).click();
@@ -2753,7 +2777,7 @@ test("the Build stage lists what stands between the draft and a module", async (
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Module preview");
   const checks = page.getByRole("list", { name: "Build", exact: true });
   await expect(
@@ -2871,7 +2895,7 @@ test("edits the module's configuration, saves it, and discards the edit", async 
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await page.reload();
   detail = await page.evaluate((url) => fetch(url).then((r) => r.json()), `${base}/act_test`);
   revision = detail.draft.contentRevision;
@@ -2981,7 +3005,7 @@ test("shows the shared assessment read-only on a ref that is not canonical", asy
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await page.reload();
   await openSection(page, "Assessment Data");
   await expect(page.getByText("Shared by every ref. Edit it on ref 3.")).toBeVisible();
@@ -3123,7 +3147,7 @@ test("generates an assessment, accepts it, and edits a question and its correct 
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify({ ...spec, runtime: { ...spec.runtime, usesAssessment: true } }));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await page.reload();
   detail = await page.evaluate((url) => fetch(url).then((r) => r.json()), `${base}/act_test`);
   const saved = detail.draft.contentRevision;
@@ -3240,7 +3264,7 @@ test("speech coverage says what failed, filters the list, and tries one again", 
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   // The history was read before the stub above; read it again.
@@ -3508,7 +3532,7 @@ test("trims a stretch out of a narration and binds the shorter clip", async ({ p
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await page.getByRole("button", { name: "Show waveform", exact: true }).click();
@@ -3679,7 +3703,7 @@ test("shows a narration's file details", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   const details = page.getByRole("region", { name: "File details", exact: true });
@@ -3746,7 +3770,7 @@ test("Activity Stats counts and weighs the media plan by type and language", asy
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await openSection(page, "Activity Stats");
@@ -3919,7 +3943,7 @@ test("adds a language, translates a narration into it, and translates the rest a
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await page.reload();
@@ -3991,7 +4015,7 @@ test("a narration shows every language's script, and opens another language from
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   const languages = page.getByRole("region", { name: "In every language" });
@@ -4020,7 +4044,9 @@ test("the open section is in the address, so a link or a reload lands on it", as
   await create(page);
   await expect(page).toHaveURL(/section=specification/);
   await page.reload();
-  await expect(page.getByText("Advanced: specification JSON", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Specification JSON", exact: true }),
+  ).toBeVisible();
   await page.goto(`${origin}/activities/act_test?section=nonsense`);
   await expect(page.getByRole("textbox", { name: "Activity Script", exact: true })).toBeVisible();
 });
@@ -4034,7 +4060,7 @@ test("marks an audio asset as music or a sound effect, with how the module plays
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await openManifest(page);
@@ -4102,7 +4128,7 @@ test("filters narration by instruction type, as main instructions or scaffolding
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
 
@@ -4182,7 +4208,7 @@ test("opens an image full size and closes it with Escape", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await page.getByRole("textbox", { name: /^Media path/ }).fill("media/images/cat.png");
@@ -4603,7 +4629,7 @@ test("picks a file uploaded to another activity", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   const binding = page.getByRole("textbox", { name: /^Media path/ });
@@ -5354,7 +5380,7 @@ test("checks quality and lists what must be fixed", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
 
   // Without the test browser, Check quality is not offered, and the page says why.
   await openSection(page, "Module preview");
@@ -5500,7 +5526,7 @@ test("runs the tests and lists each criterion's result", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify({ ...spec, acceptance_criterias: criteria }));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
 
   // Without the test browser, Run tests is not offered, and the page says why.
   await openSection(page, "Module preview");
@@ -5687,7 +5713,7 @@ test("writes a prompt for a sound effect, generates it, and keeps the new clip",
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
 
@@ -5856,7 +5882,7 @@ test("lists the model hub as a sound provider, disabled until it offers a model"
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
 
@@ -6021,7 +6047,7 @@ test("generates the missing sounds from Audios", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await page.reload();
@@ -6234,7 +6260,7 @@ test("speaks a narration with ElevenLabs and keeps its word timings", async ({ p
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   // The editor asks which providers the chosen agent can use.
@@ -6500,7 +6526,7 @@ test("refreshes a decodable book's words and corrects one word's sounds", async 
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(bookSpec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await openSection(page, "Speech coverage");
@@ -6735,7 +6761,7 @@ test("records a decodable book's words and shows each word's sounds in time", as
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(bookSpec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await openSection(page, "Speech coverage");
@@ -8055,7 +8081,7 @@ test("composes a scene from its storyboard when the experiment is on", async ({ 
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   // Videos is a closed group of the scene until it is opened.
@@ -8175,7 +8201,7 @@ test("shows nothing of scene videos while the experiment is off", async ({ page 
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await expect(page.getByRole("heading", { name: "intro-video", exact: true })).toBeVisible();
@@ -8344,7 +8370,7 @@ test("records a composed scene and keeps it as the scene's video", async ({ page
   await page
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await page.getByRole("treeitem", { name: "Videos", exact: true, level: 3 }).click();

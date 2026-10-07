@@ -189,9 +189,9 @@ function common() {
 const STALE = "\u0000stale";
 
 /** Unchanged stretches longer than this fold away in a diff, leaving a few lines of context. */
-const COLLAPSE = { margin: 3, minSize: 8 };
+export const COLLAPSE = { margin: 3, minSize: 8 };
 
-function savedDiff(saved: string, editable: boolean) {
+export function savedDiff(saved: string, editable: boolean) {
   return unifiedMergeView({
     original: saved,
     gutter: true,

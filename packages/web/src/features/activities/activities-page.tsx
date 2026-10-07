@@ -97,8 +97,7 @@ import { runTitle, SessionsPanel } from "./sessions-panel";
 import { ModulePreview } from "./module-preview";
 import { SandboxPanel } from "./sandbox-panel";
 import { sandboxHasModule, type SandboxStatusLike } from "./sandbox";
-import { SceneReview } from "./scene-review";
-import { SpecDiffView } from "./spec-diff-view";
+import { SpecEditor } from "./spec-editor";
 import { latestModuleRun } from "./preview";
 import { ActivityList } from "./activity-list";
 import { ProjectMediaView } from "./project-media-view";
@@ -411,7 +410,6 @@ function ActivityEditor({
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
   const [description, setDescription] = useState("");
   const [spec, setSpec] = useState("");
-  const [specOpen, setSpecOpen] = useState(false);
   // The open section is mirrored into ?section= so a link can land on it; an unknown or
   // not-yet-available one falls back like any other choice.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -435,8 +433,7 @@ function ActivityEditor({
   const [languageChoice, setLanguage] = useState("");
   const [kind, setKind] = useState<SceneAssetType | "all">("all");
   const [selected, setSelected] = useState<SceneAssetSelection | null>(null);
-  const [diffOpen, setDiffOpen] = useState(false);
-  // Controlled like the specification's, so moving between sections does not close it.
+  // Controlled, so moving between sections does not close it.
   const [mediaOpen, setMediaOpen] = useState(false);
   const [media, setMedia] = useState("");
   const [runs, setRuns] = useState<ActivityRunSummary[]>([]);
@@ -1680,65 +1677,23 @@ function ActivityEditor({
               </div>
             )}
           </section>
+        ) : section === "specification" ? (
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <SpecEditor
+              subject={`${detail.title} - ${detail.productCode} [${detail.refNum}]`}
+              value={spec}
+              saved={pretty(detail.draft.spec)}
+              editable={editable && available}
+              readOnly={!available}
+              busy={busy}
+              onChange={setSpec}
+              onSave={() => void save("spec")}
+            />
+          </section>
         ) : (
           <section className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="mx-auto max-w-4xl space-y-5">
-                {section === "specification" && (
-                  <>
-                    <section className="space-y-3">
-                      <h3 className="text-sm font-semibold">{S.activities.sceneReview}</h3>
-                      <SceneReview spec={detail.draft.spec} />
-                    </section>
-                    <details
-                      className="space-y-2"
-                      open={specOpen}
-                      onToggle={(event) => setSpecOpen(event.currentTarget.open)}
-                    >
-                      <summary className="cursor-pointer text-xs font-medium">
-                        {S.activities.advancedSpec}
-                      </summary>
-                      <Textarea
-                        size="sm"
-                        label={S.activities.spec}
-                        rows={15}
-                        className="font-mono"
-                        value={spec}
-                        onChange={(e) => setSpec(e.target.value)}
-                        disabled={available && (!editable || busy)}
-                        readOnly={!available}
-                        spellCheck={false}
-                      />
-                      <div className="flex flex-wrap items-center gap-2">
-                        {editable && (
-                          <Button
-                            size="sm"
-                            disabled={busy || !spec.trim() || spec === pretty(detail.draft.spec)}
-                            onClick={() => void save("spec")}
-                          >
-                            {S.activities.saveSpec}
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          disabled={spec === pretty(detail.draft.spec)}
-                          onClick={() => setDiffOpen((value) => !value)}
-                        >
-                          {diffOpen ? S.activities.diffHide : S.activities.diffShow}
-                        </Button>
-                      </div>
-                      {diffOpen && (
-                        <SpecDiffView
-                          saved={pretty(detail.draft.spec)}
-                          edited={spec}
-                          onRevert={
-                            editable && !busy ? () => setSpec(pretty(detail.draft.spec)) : undefined
-                          }
-                        />
-                      )}
-                    </details>
-                  </>
-                )}
                 {section === "scenes" && (
                   <>
                     <section className="space-y-3">
@@ -2278,12 +2233,12 @@ function ActivityEditor({
                     onUseCandidate={(candidate) =>
                       discard.ask(() => {
                         setSpec(candidate);
-                        setSpecOpen(true);
+                        setSection("specification");
                       })
                     }
                   />
                 )}
-                {section === "specification" && editedManifest && detail.draft.mediaPlan && (
+                {section === "library" && editedManifest && detail.draft.mediaPlan && (
                   <>
                     <ul className="space-y-1 text-xs">
                       {Object.entries(detail.draft.mediaPlan?.manifest.assets).map(
