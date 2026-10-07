@@ -7,7 +7,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  DEFAULT_ACTIVITY_DATA_REMOTE,
   DEPLOY_SECRETS_FILE,
   defaultDeploySettings,
   mergeSecrets,
@@ -42,7 +41,8 @@ describe("deploy settings", () => {
     });
     expect(settings.qa).toMatchObject({ tier: "qa", environment: "loom" });
     expect(settings.prod).toMatchObject({ tier: "prod", environment: "DEFAULT" });
-    expect(settings.repos.activityDataRemote).toBe(DEFAULT_ACTIVITY_DATA_REMOTE);
+    // The activity-data and media remotes are the WAF workspace's now.
+    expect(settings.repos).toEqual({ mediaPublicBase: "{{MEDIA}}/" });
     expect(settings.timeouts).toEqual({ buildMinutes: 30, deployMinutes: 30 });
   });
 
@@ -73,29 +73,6 @@ describe("deploy settings", () => {
       "qa.activityBaseUrl",
     );
     expect(rejectedField({ qa: { jenkinsUrl: "jenkins" } })).toBe("qa.jenkinsUrl");
-  });
-
-  it("accepts SSH and https git remotes, and refuses one carrying a password", () => {
-    const { settings } = normalizeDeploySettings(
-      {
-        repos: {
-          activityDataRemote: "ssh://git@github.com/org/data.git",
-          mediaRemote: "git@github.com:org/media.git",
-        },
-      },
-      defaultDeploySettings(),
-    );
-    expect(settings.repos).toEqual({
-      activityDataRemote: "ssh://git@github.com/org/data.git",
-      mediaRemote: "git@github.com:org/media.git",
-      mediaPublicBase: "{{MEDIA}}/",
-    });
-    expect(
-      rejectedField({ repos: { mediaRemote: "https://me:pw@github.com/org/media.git" } }),
-    ).toBe("repos.mediaRemote");
-    expect(rejectedField({ repos: { mediaRemote: "file:///tmp/media" } })).toBe(
-      "repos.mediaRemote",
-    );
   });
 
   it("keeps where deployed media is found: a path, a web address or the framework's token", () => {
@@ -209,7 +186,6 @@ describe("deploy settings", () => {
       "qa.token",
       "qa.frameworkVersion",
       "qa.activityBaseUrl",
-      "repos.mediaRemote",
       "git.userName",
       "git.userEmail",
     ]);

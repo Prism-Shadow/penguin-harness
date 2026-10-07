@@ -37,7 +37,13 @@ import {
 import { soundStatuses, soundTally, type SoundState } from "./bulk-sound";
 import { providerLabel } from "./sound-model";
 import { mixedVoice } from "./voice-catalogue";
-import { SPEECH_PROVIDERS, providerStatus, sharedProvider, voicesFor } from "./speech-provider";
+import {
+  SPEECH_PROVIDERS,
+  providerStatus,
+  sharedProvider,
+  supportsSpeechLanguage,
+  voicesFor,
+} from "./speech-provider";
 import { VoicePicker } from "./voice-picker";
 
 const STATE_TONE: Record<SpeechState, Tone | null> = {
@@ -189,7 +195,13 @@ export function SpeechCoverage({
   // The provider the narrations share picks the voices offered; with several, every voice.
   const provider = sharedProvider(assets);
   const bulkVoices =
-    provider && provider !== "mixed" ? voicesFor(voices, provider, assets) : voices;
+    provider && provider !== "mixed"
+      ? voicesFor(voices, provider, assets).filter(
+          (voice) => provider !== "kokoro" || voice.languages.includes(language),
+        )
+      : voices.filter(
+          (voice) => voice.providerId !== "kokoro" || voice.languages.includes(language),
+        );
   const sounds = (
     <SoundCoverage
       assets={assets}
@@ -260,17 +272,20 @@ export function SpeechCoverage({
                     <option value="">{S.activities.speechProvider.mixed}</option>
                   )}
                   {SPEECH_PROVIDERS.map((id) => {
+                    const supported = supportsSpeechLanguage(voices, id, language);
                     const status = providerStatus(speechProviders, id);
                     const name = S.activities.speechProvider[id];
                     return (
                       <option
                         key={id}
                         value={id}
-                        disabled={!!status && !status.available && id !== provider}
+                        disabled={!supported || (!!status && !status.available && id !== provider)}
                       >
-                        {status && !status.available
-                          ? `${name} (${S.activities.speechProvider.keyMissing(status.credential)})`
-                          : name}
+                        {!supported
+                          ? `${name} (${S.activities.speechProvider.languageUnsupported})`
+                          : status && !status.available
+                            ? `${name} (${status.problem === "runtime_missing" ? S.activities.speechProvider.runtimeMissing : S.activities.speechProvider.keyMissing(status.credential)})`
+                            : name}
                       </option>
                     );
                   })}

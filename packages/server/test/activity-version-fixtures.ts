@@ -1,7 +1,7 @@
 /**
  * An activity with versions to compare and restore: an app with one owner, an activity, and
  * helpers to read the draft, save a version, and give the draft generated, uploaded and
- * checkout media.
+ * checkout media. Its media are in the test's WAF checkout, in the ref's media folder.
  */
 import path from "node:path";
 import { expect } from "vitest";
@@ -10,15 +10,18 @@ import type { ActivityDetail, ActivityDraft } from "../src/activities/domain.js"
 import type { VersionSaveResult, VersionSummary } from "../src/activities/version-types.js";
 import type { ActivityAuthoring } from "../src/mechanisms/activities.js";
 import { activitySpec } from "./activity-fixtures.js";
-import { speechWave } from "./audio-fixtures.js";
+import { fakeMp3Encoding, mp3OfWave, speechWave } from "./audio-fixtures.js";
 import { imagePng } from "./image-fixtures.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 
 export const AUDIO_RUN = `run_${"a".repeat(32)}`;
 export const IMAGE_RUN = `run_${"c".repeat(32)}`;
+/** Where the accepted narration and image are, relative to the WAF root. */
+export const HELLO = "media/loom/words/words-1/audios/english/hello.mp3";
+export const CAT = "media/loom/words/words-1/images/english/cat.png";
 
 export async function versionsApp(project: string, cleanups: (() => Promise<void>)[]) {
-  const t = await createTestApp();
+  const t = await createTestApp(fakeMp3Encoding);
   cleanups.push(t.cleanup);
   const owner = await provisionUser(t.app, "versions");
   const client = apiClient(t.app, owner.cookie);
@@ -50,7 +53,8 @@ export async function versionsApp(project: string, cleanups: (() => Promise<void
     "activities",
     activity.id,
   );
-  const workspace = path.join(activityDir, "drafts", activity.draft.draftId);
+  /** The WAF root, which a version's media paths are relative to. */
+  const workspace = path.join(t.root, "waf-checkout");
   return {
     t,
     client,
@@ -98,12 +102,14 @@ export async function withMedia(s: VersionsApp) {
     expectedRevision: specced.contentRevision,
   });
   expect(planned.status, await planned.clone().text()).toBe(200);
-  const wave = speechWave();
+  const speech = speechWave();
+  // The narration as it is kept: MP3, made from the speech's WAV.
+  const wave = mp3OfWave(speech);
   let draft = await authoring.applyAudio(
     project,
     activity.id,
     { language: "en-US", assetKey: "hello", script: "Hello", voice: "Kore", model: "m" },
-    await authoring.storeAudio(project, activity.id, AUDIO_RUN, wave),
+    await authoring.storeAudio(project, activity.id, AUDIO_RUN, speech),
     ((await planned.json()) as ActivityDraft).contentRevision,
   );
   const png = imagePng(2, 2);
@@ -133,14 +139,18 @@ export async function withMedia(s: VersionsApp) {
   return { wave, png, uploadBytes, dogPath };
 }
 
-/** The narration generated again, under a new run, with different audio. */
+/**
+ * The narration generated again, under a new run, with different audio; accepting it replaces
+ * the narration's file. `wave` is the file as kept (MP3).
+ */
 export async function regenerateNarration(s: VersionsApp, runId: string, samples = 96) {
-  const wave = speechWave(samples);
+  const speech = speechWave(samples);
+  const wave = mp3OfWave(speech);
   const draft = await s.authoring.applyAudio(
     s.project,
     s.activity.id,
     { language: "en-US", assetKey: "hello", script: "Hello", voice: "Kore", model: "m" },
-    await s.authoring.storeAudio(s.project, s.activity.id, runId, wave),
+    await s.authoring.storeAudio(s.project, s.activity.id, runId, speech),
     (await s.read()).draft.contentRevision,
   );
   return { wave, draft };

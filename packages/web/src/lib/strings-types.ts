@@ -160,7 +160,6 @@ export type Strings = {
       renumbered: (from: number, to: number) => string;
       reassemble: string;
       renumberErrors: {
-        checkout_ref: string;
         draft_conflict: string;
         run_active: string;
         pipeline_running: string;
@@ -494,10 +493,6 @@ export type Strings = {
       checkRemote: string;
       checkingRemote: string;
       remoteChecked: string;
-      /** A clone failed: the repository and the end of git's own output ("" when none). */
-      cloneFailed: (repo: string, output: string) => string;
-      /** A clone ran past its time limit. */
-      cloneTimedOut: (repo: string) => string;
       /** The long name of each setting, by its dotted path. */
       fields: Record<string, string>;
       repos: { module: string; activityData: string; media: string };
@@ -545,7 +540,7 @@ export type Strings = {
       };
       problems: {
         settings_missing: (field: string) => string;
-        module_remote_missing: string;
+        workspace_not_ready: string;
         module_remote_invalid: string;
         clone_missing: (repo: string) => string;
         clone_unknown: (repo: string, what: "status" | "upstream" | "branch" | "sparse") => string;
@@ -685,6 +680,7 @@ export type Strings = {
       /** Why a stage ended badly. */
       errors: {
         command_failed: (command: string, exitCode: number | null) => string;
+        module_repository_missing: (remote: string) => string;
         command_timed_out: (command: string) => string;
         command_missing: (command: string) => string;
         jenkins_failed: (status: number) => string;
@@ -1329,6 +1325,10 @@ export type Strings = {
       label: string;
       gemini: string;
       elevenlabs: string;
+      kokoro: string;
+      localInfo: string;
+      runtimeMissing: string;
+      languageUnsupported: string;
       /** An option the chosen agent cannot use, naming the Vault key it lacks. */
       keyMissing: (key: string) => string;
       /** The accepted clip's word timings, as the highlighting preview shows them. */
@@ -1359,16 +1359,18 @@ export type Strings = {
       prompt: string;
       promptHint: string;
       length: string;
-      lengthHint: string;
-      lengthInvalid: string;
+      lengthHint: (max: number, local: boolean) => string;
+      lengthInvalid: (max: number) => string;
       provider: string;
       /** The model picker shown when a provider offers several models for the kind. */
       model: string;
       generate: string;
       regenerate: string;
       generating: string;
-      providers: Record<"elevenlabs" | "agenthub", string>;
+      providers: Record<"elevenlabs" | "agenthub" | "musicgen" | "audiogen" | "audioldm", string>;
+      localInfo: string;
       problems: {
+        runtime_missing: string;
         credential_missing: (key: string) => string;
         kind_unsupported: string;
         provider_unknown: string;
@@ -1538,8 +1540,6 @@ export type Strings = {
     mediaPathHint: string;
     saveMedia: string;
     mediaCounts: (total: number, bound: number) => string;
-    wafRoot: string;
-    wafRootHint: string;
     readingMode: string;
     readingModeHint: string;
     readingModeHelp: string;
@@ -1576,17 +1576,17 @@ export type Strings = {
     previewResolutionLabel: string;
     previewResolutionOwn: (dimensions: string) => string;
     newActivity: string;
-    importFromLoom: string;
-    importHelp: string;
-    importLoading: string;
-    importNoCheckout: string;
-    importEmpty: string;
-    importSearch: string;
-    importAction: string;
-    importing: string;
-    importRefs: (count: number) => string;
-    importProblems: (count: number) => string;
-    importImported: string;
+    openFromModules: {
+      title: string;
+      help: string;
+      loading: string;
+      empty: string;
+      search: string;
+      refs: (count: number) => string;
+      open: string;
+      opening: string;
+      opened: string;
+    };
     search: string;
     noMatches: string;
     backToActivities: string;
@@ -1863,9 +1863,6 @@ export type Strings = {
       moduleBuildJob: string;
       activityDeployJob: string;
       jobHint: string;
-      activityDataRemote: string;
-      mediaRemote: string;
-      remoteHint: string;
       mediaPublicBase: string;
       mediaPublicBaseHint: string;
       gitUserName: string;
@@ -1904,6 +1901,41 @@ export type Strings = {
         incomplete: string;
       };
       logLabel: string;
+    };
+    wafWorkspace: {
+      title: string;
+      about: string;
+      ready: string;
+      notReady: string;
+      preparing: string;
+      prepared: string;
+      external: (root: string) => string;
+      externalMissing: (root: string) => string;
+      failed: (reason: string) => string;
+      prepare: string;
+      logLabel: string;
+      repos: Record<"framework" | "navbar" | "media" | "activityData", string>;
+      repo: {
+        missing: string;
+        noRemote: string;
+        otherRemote: (remote: string) => string;
+        otherBranch: (branch: string) => string;
+        noBranch: string;
+        notInstalled: string;
+        cloned: (branch: string | null, dirty: boolean) => string;
+      };
+      sources: string;
+      remote: (name: string) => string;
+      branch: string;
+      moduleRemote: string;
+      moduleRemoteHint: string;
+      existing: string;
+      externalRoot: string;
+      externalRootPick: string;
+      externalRootMenuHint: string;
+      externalRootClear: string;
+      externalRootHint: string;
+      invalid: string;
     };
     accentNames: Record<string, string>;
   };
@@ -4388,11 +4420,8 @@ export type Strings = {
       deploy_no_module: string;
       deploy_not_canonical: string;
       deploy_settings_missing: string;
-      deploy_module_remote_missing: string;
-      deploy_module_remote_invalid: string;
-      deploy_clone_path_taken: string;
-      deploy_clone_path: string;
-      deploy_clone_failed: string;
+      product_taken: string;
+      module_not_a_clone: string;
       git_unavailable: string;
       activity_invalid: string;
       activity_exists: string;
@@ -4412,7 +4441,6 @@ export type Strings = {
       audio_changed: string;
       media_missing: string;
       module_spec_invalid: string;
-      waf_checkout_missing: string;
       run_not_found: string;
       project_deleting: string;
       invalid_credentials: string;

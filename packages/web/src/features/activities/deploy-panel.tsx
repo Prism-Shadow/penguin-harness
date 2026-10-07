@@ -11,7 +11,7 @@ import type {
   DeployRun,
   DeployStateResponse,
 } from "@prismshadow/penguin-server/api";
-import { ApiError, apiFetch } from "../../api/client";
+import { apiFetch } from "../../api/client";
 import { Button } from "../../components/ui/button";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { SkeletonList } from "../../components/ui/skeleton";
@@ -34,24 +34,10 @@ import {
   problemText,
   readinessLine,
   readinessRows,
-  repoName,
 } from "./deploy-model";
 import { DeployProd } from "./deploy-prod";
 import { DeployRelease } from "./deploy-release";
 import type { Announcement } from "./run-toasts";
-
-/** Why a Prepare clones press failed, in words: the server sends the facts, not a sentence. */
-function prepareError(cause: unknown): string {
-  if (cause instanceof ApiError && cause.code === "deploy_clone_failed" && cause.detail?.repo) {
-    const repo = cause.detail.repo;
-    const name =
-      repo === "module" || repo === "activityData" || repo === "media" ? repoName(repo) : repo;
-    return cause.detail.reason === "timed_out"
-      ? S.activities.deploy.cloneTimedOut(name)
-      : S.activities.deploy.cloneFailed(name, cause.detail.output ?? "");
-  }
-  return apiErrorText(cause);
-}
 
 export function DeployPanel({
   endpoint,
@@ -146,7 +132,7 @@ export function DeployPanel({
       reload();
       onAnnounce({ kind: "success", text: words.prepared });
     } catch (cause) {
-      if (alive.current) setActionError(prepareError(cause));
+      if (alive.current) setActionError(apiErrorText(cause));
     } finally {
       if (alive.current) setBusy(null);
     }

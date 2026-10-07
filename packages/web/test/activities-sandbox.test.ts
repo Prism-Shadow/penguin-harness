@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { filterImportSources } from "../src/features/activities/import-sources";
 import {
   canBuild,
   playUrl,
@@ -52,31 +51,5 @@ describe("the link that plays an activity", () => {
     expect(playUrl("p", "a", { language: "es-MX", scene: "intro" })).toBe(
       "/api/projects/p/activities/a/sandbox/play?language=es-MX&scene=intro",
     );
-  });
-});
-
-describe("searching what the checkout offers", () => {
-  const sources = [
-    {
-      product: { productCode: "r2pt01", moduleFolder: "waf-module-r2pt01", title: "Pat" },
-      refs: [],
-      problems: [],
-    },
-    {
-      product: { productCode: "lang1", moduleFolder: "waf-module-lang1", title: null },
-      refs: [],
-      problems: [],
-    },
-  ];
-
-  it("matches the title, the product code or the module folder", () => {
-    expect(filterImportSources(sources, "pat").map((s) => s.product.productCode)).toEqual([
-      "r2pt01",
-    ]);
-    expect(filterImportSources(sources, "LANG").map((s) => s.product.productCode)).toEqual([
-      "lang1",
-    ]);
-    expect(filterImportSources(sources, "waf-module-")).toHaveLength(2);
-    expect(filterImportSources(sources, "  ")).toHaveLength(2);
   });
 });

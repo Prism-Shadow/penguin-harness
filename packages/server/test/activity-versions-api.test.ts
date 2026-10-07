@@ -13,13 +13,16 @@ import { readBlob, sha256 } from "../src/activities/version-store.js";
 import type { VersionSaveResult, VersionSummary } from "../src/activities/version-types.js";
 import type { ActivityAuthoring } from "../src/mechanisms/activities.js";
 import { activitySpec } from "./activity-fixtures.js";
-import { speechWave } from "./audio-fixtures.js";
+import { fakeMp3Encoding, mp3OfWave, speechWave } from "./audio-fixtures.js";
 import { imagePng } from "./image-fixtures.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 
 const PROJECT = "versions-work";
 const AUDIO_RUN = `run_${"a".repeat(32)}`;
 const IMAGE_RUN = `run_${"c".repeat(32)}`;
+/** Where the accepted narration and image are, in the ref's media folder. */
+const HELLO = "media/loom/words/words-1/audios/english/hello.mp3";
+const CAT = "media/loom/words/words-1/images/english/cat.png";
 
 async function listFiles(dir: string): Promise<string[]> {
   const out: string[] = [];
@@ -38,7 +41,7 @@ describe("activity versions", () => {
   });
 
   async function setup() {
-    const t = await createTestApp();
+    const t = await createTestApp(fakeMp3Encoding);
     cleanups.push(t.cleanup);
     const owner = await provisionUser(t.app, "versions");
     const client = apiClient(t.app, owner.cookie);
@@ -108,8 +111,10 @@ describe("activity versions", () => {
       expectedRevision: specced.contentRevision,
     });
     expect(planned.status, await planned.clone().text()).toBe(200);
-    const wave = speechWave();
-    const audio = await authoring.storeAudio(PROJECT, activity.id, AUDIO_RUN, wave);
+    const speech = speechWave();
+    const audio = await authoring.storeAudio(PROJECT, activity.id, AUDIO_RUN, speech);
+    // The narration as it is kept: MP3.
+    const wave = mp3OfWave(speech);
     let draft = await authoring.applyAudio(
       PROJECT,
       activity.id,
@@ -217,8 +222,8 @@ describe("activity versions", () => {
       (await readBlob(activityDir, row.manifest_sha)).toString("utf8"),
     ) as VersionManifest;
     expect(manifest.media).toEqual([
-      { path: `audio/${AUDIO_RUN}.wav`, sha256: sha256(wave), bytes: wave.length },
-      { path: `images/${IMAGE_RUN}.png`, sha256: sha256(png), bytes: png.length },
+      { path: HELLO, sha256: sha256(wave), bytes: wave.length },
+      { path: CAT, sha256: sha256(png), bytes: png.length },
       { path: dogPath, sha256: sha256(uploadBytes), bytes: uploadBytes.length },
     ]);
     expect(manifest.references).toEqual(["media/loom/intro/tree.png"]);
@@ -238,13 +243,16 @@ describe("activity versions", () => {
     expect(v2.seq).toBe(2);
     expect(await fs.readdir(blobs)).toHaveLength(5);
 
-    // Everything written went under this activity's directory: nothing into the checkout,
-    // nothing elsewhere in the project.
+    // Everything written went under this activity's directory: nothing elsewhere in the
+    // project, and nothing into the WAF checkout (checked below).
     const after = await listFiles(path.dirname(collectionDir));
     const added = after.filter((file) => !before.includes(file));
     expect(added.length).toBeGreaterThan(0);
     for (const file of added) expect(file.startsWith(activityDir + path.sep)).toBe(true);
     expect(added.some((file) => file.includes("tree.png"))).toBe(false);
+    await expect(
+      fs.stat(path.join(t.root, "waf-checkout", "media/loom/intro/tree.png")),
+    ).rejects.toThrow();
   });
 
   it("treats an emptied feature selection like one never made", async () => {
@@ -267,9 +275,7 @@ describe("activity versions", () => {
   it("refuses to save when a generated file changed on disk", async () => {
     const s = await setup();
     await withMedia(s);
-    const drafts = path.join(s.activityDir, "drafts");
-    const [draftId] = await fs.readdir(drafts);
-    await fs.appendFile(path.join(drafts, draftId!, "images", `${IMAGE_RUN}.png`), "x");
+    await fs.appendFile(path.join(s.t.root, "waf-checkout", CAT), "x");
     const response = await s.save();
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code: "version_media_changed" } });

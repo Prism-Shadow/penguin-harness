@@ -8,6 +8,7 @@
  * `ELEVENLABS_VOICE_ID`, offered as "ElevenLabs default", and any id an author types.
  */
 import type { SpeechProviderId } from "./speech-types.js";
+import { KOKORO_VOICES, LOCAL_AUDIO_MODELS } from "./local-audio-models.js";
 
 export const SPEECH_MODEL = "gemini-3.1-flash-tts-preview";
 export const SPEECH_VOICES = ["Kore", "Puck", "Charon", "Fenrir", "Aoede"] as const;
@@ -55,7 +56,7 @@ export function isSpeechVoice(value: unknown): value is SpeechVoice {
 }
 
 /** The providers that speak narration; an asset naming none is spoken by Gemini. */
-export const SPEECH_PROVIDER_IDS: readonly SpeechProviderId[] = ["gemini", "elevenlabs"];
+export const SPEECH_PROVIDER_IDS: readonly SpeechProviderId[] = ["gemini", "elevenlabs", "kokoro"];
 
 export function isSpeechProvider(value: unknown): value is SpeechProviderId {
   return typeof value === "string" && (SPEECH_PROVIDER_IDS as readonly string[]).includes(value);
@@ -88,6 +89,7 @@ export function isElevenLabsVoiceId(value: unknown): value is string {
 
 /** True for a voice `provider` can speak with. */
 export function isVoiceOf(provider: SpeechProviderId, value: unknown): value is string {
+  if (provider === "kokoro") return KOKORO_VOICES.some((voice) => voice.id === value);
   return provider === "elevenlabs"
     ? value === ELEVENLABS_DEFAULT_VOICE || isElevenLabsVoiceId(value)
     : isSpeechVoice(value);
@@ -106,11 +108,18 @@ export const ELEVENLABS_DEFAULT_OPTION: VoiceOption = {
 
 /**
  * Every voice the picker offers an agent whose Vault holds `vaultKeys`: Gemini's, and the
- * ElevenLabs default when the Vault names one. Null keys (no agent chosen) list Gemini's.
+ * ElevenLabs default when the Vault names one. Gemini and Kokoro voices need no Vault lookup.
  */
 export function speechCatalogue(vaultKeys: readonly string[] | null): VoiceOption[] {
   return [
     ...SPEECH_CATALOGUE,
+    ...KOKORO_VOICES.map((voice) => ({
+      ...voice,
+      provider: "Kokoro",
+      providerId: "kokoro" as const,
+      model: LOCAL_AUDIO_MODELS.kokoro.model,
+      previewUrl: null,
+    })),
     ...(vaultKeys?.includes(ELEVENLABS_VOICE_KEY) ? [ELEVENLABS_DEFAULT_OPTION] : []),
   ];
 }

@@ -30,6 +30,7 @@
  * rolled back, and nothing after it runs.
  */
 import { isBookWord } from "./book-words.js";
+import { KOKORO_VOICES } from "./local-audio-models.js";
 import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
@@ -191,16 +192,52 @@ export function imageTargets(manifest: AssetManifest): { language: string; asset
   );
 }
 
-/**
- * The voice a narration or word is spoken in: its own saved voice when its provider speaks with
- * it, else the sequence's choice when that provider does, else the provider's default (the
- * Vault's ElevenLabs voice, or Gemini's first).
- */
+/** Reject unsupported saved providers before the sequence spends work on any targets. */
+export function validateSpeechLanguages(
+  manifest: AssetManifest | undefined,
+  input: PipelineInput,
+): void {
+  if (!manifest || input.codingAgentId || !input.agentId) return;
+  const steps = stepsFor(input.selection);
+  const targets = [
+    ...(steps.includes("speech") ? speechTargets(manifest) : []),
+    ...(steps.includes("speech") && steps.includes("translations")
+      ? translationTargets(manifest)
+      : []),
+    ...(steps.includes("words") ? unrecordedWithSounds(manifest) : []),
+  ];
+  for (const target of inScope(targets, input.scope)) {
+    const asset = manifest.assets[target.language]?.find((item) => item.key === target.assetKey);
+    if (
+      asset?.speechProvider === "kokoro" &&
+      !asset.path &&
+      !KOKORO_VOICES.some((voice) => voice.languages.includes(target.language))
+    ) {
+      throw new HttpError(
+        422,
+        "audio_invalid",
+        `Kokoro does not support ${target.language} (${target.assetKey}). Choose another speech provider before starting the pipeline.`,
+      );
+    }
+  }
+}
+
+/** Use the saved voice, the sequence's choice, or the provider's default for this language. */
 export function voiceFor(
   provider: SpeechProviderId,
   saved: string | undefined,
   chosen: string | undefined,
+  language = "en-US",
 ): string {
+  if (provider === "kokoro") {
+    const voices = KOKORO_VOICES.filter((voice) => voice.languages.includes(language));
+    return (
+      voices.find((voice) => voice.id === saved)?.id ??
+      voices.find((voice) => voice.id === chosen)?.id ??
+      voices[0]?.id ??
+      ""
+    );
+  }
   if (provider === "elevenlabs")
     return isVoiceOf("elevenlabs", saved)
       ? saved!
@@ -451,6 +488,8 @@ export class PipelineRunner {
       const activity = await current();
       const manifest = activity.draft.mediaPlan?.manifest;
       if (!manifest) throw new Error("Plan media before generating it.");
+      if (step.step === "speech")
+        validateSpeechLanguages(manifest, { ...input, selection: "speech" });
       const targets = inScope(
         step.step === "speech" ? speechTargets(manifest) : imageTargets(manifest),
         input.scope,
@@ -469,6 +508,7 @@ export class PipelineRunner {
           narration?.speechProvider ?? "gemini",
           narration?.voice,
           input.voice,
+          target.language,
         );
         step.detail = target.assetKey;
         const before = await current();
@@ -637,7 +677,6 @@ export class PipelineRunner {
         input.agentId,
         activity.draft.contentRevision,
         {
-          ...(input.wafRoot ? { wafRoot: input.wafRoot } : {}),
           ...(input.bookMode ? { bookMode: input.bookMode } : {}),
         },
         runtime,
@@ -677,6 +716,7 @@ export class PipelineRunner {
       return;
     }
     if (!manifest) throw new Error("Plan media before recording the book's words.");
+    validateSpeechLanguages(manifest, { ...input, selection: "words" });
     const waiting = inScope(unrecordedWithSounds(manifest), input.scope);
     if (!waiting.length) {
       step.status = "skipped";
@@ -711,7 +751,13 @@ export class PipelineRunner {
         activityId,
         input.agentId,
         before.draft.contentRevision,
-        { audio: { ...target, voice: voiceFor(provider, word?.voice, input.voice), provider } },
+        {
+          audio: {
+            ...target,
+            voice: voiceFor(provider, word?.voice, input.voice, target.language),
+            provider,
+          },
+        },
       );
       await this.follow(state, step, run);
       const after = await current();
@@ -785,7 +831,8 @@ export class ActivityPipelineService implements ActivityPipelines {
 
   async start(projectId: string, activityId: string, input: PipelineInput) {
     // An unknown activity is refused here rather than as the first step's failure.
-    await this.activities.getActivity(projectId, activityId);
+    const activity = await this.activities.getActivity(projectId, activityId);
+    validateSpeechLanguages(activity.draft.mediaPlan?.manifest, input);
     return this.active().start(projectId, activityId, input).state;
   }
 

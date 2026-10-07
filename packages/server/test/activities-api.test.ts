@@ -1,15 +1,14 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { projectDir } from "@prismshadow/penguin-core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail, ActivityDraft } from "../src/activities/domain.js";
-import { activitySpec } from "./activity-fixtures.js";
+import { activitySpec, refFilesDir } from "./activity-fixtures.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 
 describe("native activity authoring API", () => {
   const cleanups: (() => Promise<void>)[] = [];
   afterEach(async () => {
+    vi.unstubAllEnvs();
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
   it("creates an activity, persists its draft, and rejects stale edits", async () => {
@@ -234,16 +233,7 @@ describe("native activity authoring API", () => {
     expect(
       ((await (await client.get(endpoint)).json()) as ActivityDetail).draft.mediaPlan!.manifest,
     ).toEqual(manifest);
-    const file = path.join(
-      projectDir(t.root, "media_owner-activities"),
-      "activities",
-      created.collectionId,
-      "activities",
-      created.id,
-      "drafts",
-      draft.draftId,
-      "asset-manifest.json",
-    );
+    const file = path.join(refFilesDir(t.root, created.productCode, 1), "asset_manifest.json");
     expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual(manifest);
     draft = (await (
       await client.post(`${endpoint}/apply-generated-spec`, {
@@ -290,18 +280,9 @@ describe("native activity authoring API", () => {
         expectedRevision: current.draft.contentRevision,
       })
     ).json()) as ActivityDraft;
-    const file = path.join(
-      projectDir(t.root, "writer-activities"),
-      "activities",
-      created.collectionId,
-      "activities",
-      created.id,
-      "drafts",
-      draft.draftId,
-      "draft.json",
-    );
+    const file = path.join(refFilesDir(t.root, "p", 1), "activity_spec.json");
     const edited = JSON.parse(await fs.readFile(file, "utf8"));
-    edited.spec.scenes[0].description = "Edited outside the index";
+    edited.scenes[0].description = "Edited outside the index";
     await fs.writeFile(file, JSON.stringify(edited));
     const reread = (await (await client.get(endpoint)).json()) as ActivityDetail;
     expect(reread.draft.contentRevision).not.toBe(draft.contentRevision);
@@ -368,11 +349,8 @@ describe("native activity authoring API", () => {
       })
     ).json()) as ActivityDraft;
 
-    const wafRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-api-waf-"));
-    cleanups.push(() => fs.rm(wafRoot, { recursive: true, force: true }));
-    await fs.mkdir(path.join(wafRoot, "framework", "src"), { recursive: true });
-    await fs.writeFile(path.join(wafRoot, "framework", "package.json"), "{}");
-    await fs.mkdir(path.join(wafRoot, "modules"));
+    // The checkout createTestApp made, where the draft is, holds the bound image.
+    const wafRoot = path.join(t.root, "waf-checkout");
     await fs.mkdir(path.join(wafRoot, "media", "images"), { recursive: true });
     const png = Buffer.from([
       137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
@@ -382,7 +360,6 @@ describe("native activity authoring API", () => {
       language: "en-US",
       assetKey: "cat",
       expectedRevision: draft.contentRevision,
-      wafRoot,
     });
     const response = await ownerClient.get(`${endpoint}/media-image?${query}`);
     expect(response.status).toBe(200);
@@ -397,7 +374,6 @@ describe("native activity authoring API", () => {
         language: "en-US",
         assetKey: "cat",
         expectedRevision: "stale-revision",
-        wafRoot,
       })}`,
     );
     expect(staleResponse.status).toBe(409);

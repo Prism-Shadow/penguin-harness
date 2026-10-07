@@ -126,6 +126,7 @@ import {
 } from "./activities/test-browser.js";
 import { TestBrowserRoutes } from "./activities/test-browser-routes.js";
 import { DefaultSoundModelPorts } from "./activities/sound-models.js";
+import { LocalAudioService } from "./activities/local-audio.js";
 import { DefaultMediaLibraryPorts } from "./activities/media-bundle.js";
 import {
   ActivityQuality,
@@ -139,6 +140,13 @@ import {
   DefaultDeployPorts,
 } from "./activities/deploy-service.js";
 import { DeployAdminRoutes } from "./activities/deploy-routes.js";
+import {
+  DefaultWafWorkspacePorts,
+  WafWorkspace,
+  WafWorkspaceService,
+} from "./activities/waf-workspace.js";
+import { WafWorkspaceAdminRoutes } from "./activities/waf-workspace-routes.js";
+import { DefaultAudioEncodePorts } from "./activities/ref-media.js";
 import { ActivityDeployEventHub, ActivityDeployEvents } from "./activities/deploy-events.js";
 import { ActivityPhonemesService, DefaultEspeakPorts } from "./activities/phonemes.js";
 import { PhonemesAdminRoutes } from "./activities/phonemes-routes.js";
@@ -420,6 +428,7 @@ export class CodingAgentsModule {}
     ActivityVideoRenderService,
     DefaultTestBrowserPorts,
     DefaultSoundModelPorts,
+    LocalAudioService,
     DefaultMediaLibraryPorts,
     TestBrowserService,
     TestBrowserRoutes,
@@ -435,6 +444,10 @@ export class CodingAgentsModule {}
     ActivityDeployEventHub,
     ActivityDeployService,
     DeployAdminRoutes,
+    DefaultWafWorkspacePorts,
+    WafWorkspaceService,
+    WafWorkspaceAdminRoutes,
+    DefaultAudioEncodePorts,
   ],
   exports: [
     ActivityAuthoring,
@@ -445,6 +458,7 @@ export class CodingAgentsModule {}
     ActivityQuality,
     ActivityDeploys,
     ActivityDeployEvents,
+    WafWorkspace,
   ],
 })
 export class ActivitiesModule {}

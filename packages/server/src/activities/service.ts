@@ -2,10 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs/promises";
 import { buildReadiness } from "./build-readiness.js";
 import type { GeneratedAudioFormat, MediaAsset } from "./media.js";
-import type { CarriedBinding } from "./import-mapping.js";
 import {
   IMPLEMENTATION_FEATURES,
-  IMPLEMENTATION_FEATURES_FILE,
   normalizeFeatureSelection,
   unknownFeatureIds,
 } from "./implementation-features.js";
@@ -19,8 +17,26 @@ import type { Config, Db } from "../hmr/capabilities.js";
 import type { ActivityAuthoring } from "../mechanisms/activities.js";
 import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import { HttpError } from "../http/errors.js";
-import { generatedAudioPath, planMedia, validateManifest, validateMediaCoverage } from "./media.js";
-import { VIDEO_DIR, generatedVideoPath, inspectWebm, readVideoFile } from "./video-render.js";
+import {
+  generatedAudioExtension,
+  generatedMediaPath,
+  planMedia,
+  validateManifest,
+  validateMediaCoverage,
+} from "./media.js";
+import { inspectWebm, readVideoFile } from "./video-render.js";
+import {
+  candidateReference,
+  copyRefMedia,
+  mediaFile,
+  readdressMedia,
+  refMediaFolder,
+  uploadHome,
+  wavToMp3,
+  writeSidecar,
+  type AudioEncodePorts,
+  type UploadHome,
+} from "./ref-media.js";
 import type { VideoResult, VideoTarget } from "./video-types.js";
 import { mediaTextField, type MediaTextTarget } from "./media-text.js";
 import { AUDIO_MAX_BYTES, type AudioResult, type AudioTarget } from "./audio.js";
@@ -47,16 +63,21 @@ import {
 } from "./media-bundle.js";
 import type { BundleItem, LibraryFile, ProjectMediaListing } from "./media-library-types.js";
 import { readBoundImage, type ImageRequest } from "./image.js";
+import type { WafWorkspace } from "./waf-workspace.js";
 import {
-  applyImport,
-  describeOutcome,
-  type ExistingProduct,
-  type ImportOutcome,
-  type ImportTarget,
-} from "./import-apply.js";
-import { describeImport, mapImport, type ImportMapping } from "./import-mapping.js";
-import { discoverLoomProducts, readLoomProduct, type ImportedActivity } from "./loom-import.js";
-import { findWafRoot } from "./waf-module.js";
+  PENGUIN_FILE,
+  productDir,
+  readFeatureFile,
+  readProductOwner,
+  readRefDraft,
+  refDir,
+  refSpecDir,
+  REF_FEATURES_FILE,
+  writeFeatureFile,
+  writeProductFiles,
+  writeRefDraft,
+  writeRefMetadata,
+} from "./ref-files.js";
 import {
   GENERATED_IMAGE_MAX_BYTES,
   inspectPng,
@@ -107,9 +128,24 @@ import {
   type RefAssetDecision,
   type RefNumberSuggestion,
 } from "./ref-template.js";
+import { adoptLoomProduct, describeAdoption, type CarriedBinding } from "./loom-adopt.js";
+import { mapProductMetadata, parseRefDirName, readLoomProduct } from "./loom-read.js";
+import type { ClaimModuleProductResponse, ModuleProduct } from "./module-product-types.js";
 
 /** A run's id, as a pinned module build names one. */
 const RUN_ID = /^run_[a-f0-9]{32}$/;
+/** Where a draft kept its rendered videos before drafts moved into their modules. */
+const LEGACY_VIDEO_DIR = "videos";
+
+/** Whether a draft still binds media where drafts kept it before they moved into modules. */
+function hasLegacyMedia(draft: ActivityDraft): boolean {
+  return Object.values(draft.mediaPlan?.manifest.assets ?? {})
+    .flat()
+    .some(
+      (asset) =>
+        asset.path?.startsWith("media/generated/") || asset.path?.startsWith("media/uploads/"),
+    );
+}
 
 /** Serializes compare-and-publish operations within the server's single-writer lifetime. */
 export class ActivityLocks {
@@ -146,6 +182,8 @@ export class ActivityService implements ActivityAuthoring {
   @Use() private readonly db!: Db;
   @Use() private readonly mediaLibrary!: MediaLibraryPorts;
   @Use() private readonly phonemes!: ActivityPhonemes;
+  @Use() private readonly wafWorkspace!: WafWorkspace;
+  @Use() private readonly audioEncode!: AudioEncodePorts;
   private readonly locks = new ActivityLocks();
   /** The activities whose lock the running work already holds, through `exclusive`. */
   private readonly held = new AsyncLocalStorage<ReadonlySet<string>>();
@@ -175,10 +213,8 @@ export class ActivityService implements ActivityAuthoring {
     const bound = activity.draft.mediaPlan?.manifest.assets[input.language]?.find(
       (asset) => asset.key === input.assetKey,
     )?.path;
-    // An upload lives in this activity's workspace; only checkout media needs a WAF root.
-    if (isUploadReference(bound))
-      return readUpload(this.activityWorkspace(projectId, activity), bound!);
-    return readBoundImage(activity, input);
+    if (isUploadReference(bound)) return readUpload(await this.uploads(activity), bound!);
+    return readBoundImage(activity, input, await this.wafWorkspace.root());
   }
 
   private activityWorkspace(
@@ -199,12 +235,10 @@ export class ActivityService implements ActivityAuthoring {
   async readiness(
     projectId: string,
     activityId: string,
-    wafRoot: string,
     assessment?: { current: unknown; own: unknown },
   ) {
     const activity = await this.getActivity(projectId, activityId);
-    // The author's checkout when they typed one, or the one assembly would discover.
-    const checkout = await findWafRoot(process.cwd(), wafRoot || process.env.WAF_ROOT_DIR);
+    const checkout = await this.wafWorkspace.root();
     return buildReadiness(activity, {
       canonical: this.isCanonicalRef(activity),
       checkoutFound: !!checkout,
@@ -220,13 +254,7 @@ export class ActivityService implements ActivityAuthoring {
   async implementationFeatures(projectId: string, activityId: string) {
     const activity = await this.getActivity(projectId, activityId);
     // No file, or one that does not parse, is a ref that has selected nothing.
-    const stored: unknown = await fs
-      .readFile(
-        path.join(this.activityWorkspace(projectId, activity), IMPLEMENTATION_FEATURES_FILE),
-        "utf8",
-      )
-      .then((text) => JSON.parse(text) as unknown)
-      .catch(() => null);
+    const stored = await readFeatureFile(await this.draftFilesDir(activity));
     return {
       features: [...IMPLEMENTATION_FEATURES],
       selectedIds: normalizeFeatureSelection(
@@ -245,12 +273,8 @@ export class ActivityService implements ActivityAuthoring {
     return this.projectWork.run(projectId, () =>
       this.locks.run(activityId, async () => {
         const activity = await this.getActivity(projectId, activityId);
-        const workspace = this.activityWorkspace(projectId, activity);
-        await fs.mkdir(workspace, { recursive: true });
         const selection = normalizeFeatureSelection(selectedIds);
-        await atomicJson(path.join(workspace, IMPLEMENTATION_FEATURES_FILE), {
-          selectedIds: selection,
-        });
+        await writeFeatureFile(await this.draftFilesDir(activity), selection);
         return { features: [...IMPLEMENTATION_FEATURES], selectedIds: selection };
       }),
     );
@@ -263,12 +287,12 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<UploadedMedia> {
     return this.projectWork.run(projectId, async () => {
       const activity = await this.getActivity(projectId, activityId);
-      return storeUpload(this.activityWorkspace(projectId, activity), name, bytes);
+      return storeUpload(await this.uploads(activity), name, bytes);
     });
   }
   async listMedia(projectId: string, activityId: string): Promise<UploadedMedia[]> {
     const activity = await this.getActivity(projectId, activityId);
-    return listUploads(this.activityWorkspace(projectId, activity));
+    return listUploads(await this.uploads(activity));
   }
   async uploadContent(
     projectId: string,
@@ -276,7 +300,7 @@ export class ActivityService implements ActivityAuthoring {
     reference: string,
   ): Promise<{ bytes: Buffer; mimeType: string }> {
     const activity = await this.getActivity(projectId, activityId);
-    return readUpload(this.activityWorkspace(projectId, activity), reference);
+    return readUpload(await this.uploads(activity), reference);
   }
   /**
    * Every file uploaded to a live activity of this project, newest first. Only metadata is
@@ -285,11 +309,11 @@ export class ActivityService implements ActivityAuthoring {
    */
   async projectMedia(projectId: string): Promise<ProjectMediaListing> {
     const files: LibraryFile[] = [];
+    const root = await this.requireWafRoot();
     for (const activity of await this.listActivities(projectId)) {
-      const draftId = this.latestDraftId(activity.id);
-      if (!draftId) continue;
-      const workspace = this.draftWorkspace(projectId, activity.collectionId, activity.id, draftId);
-      for (const upload of await listUploads(workspace))
+      for (const upload of await listUploads(
+        uploadHome(root, activity.productCode, activity.refNum),
+      ))
         files.push({
           ...upload,
           activityId: activity.id,
@@ -328,22 +352,19 @@ export class ActivityService implements ActivityAuthoring {
     const unique = [
       ...new Map(items.map((item) => [`${item.activityId}\n${item.path}`, item])).values(),
     ];
-    const workspaces = new Map<string, string>();
-    const files: { file: string; workspace: string; path: string }[] = [];
+    const homes = new Map<string, UploadHome>();
+    const files: { file: string; home: UploadHome; path: string }[] = [];
     let total = 0;
     for (const item of unique) {
-      let workspace = workspaces.get(item.activityId);
-      if (!workspace) {
-        workspace = this.activityWorkspace(
-          projectId,
-          await this.getActivity(projectId, item.activityId),
-        );
-        workspaces.set(item.activityId, workspace);
+      let home = homes.get(item.activityId);
+      if (!home) {
+        home = await this.uploads(await this.getActivity(projectId, item.activityId));
+        homes.set(item.activityId, home);
       }
       // A path that is not an upload of this activity is simply not one of its files.
       let file: string | null = null;
       try {
-        file = uploadFile(workspace, item.path);
+        file = uploadFile(home, item.path);
       } catch {
         file = null;
       }
@@ -361,12 +382,12 @@ export class ActivityService implements ActivityAuthoring {
           "bundle_too_large",
           "The chosen files are more than 200 MiB together.",
         );
-      files.push({ file, workspace, path: item.path });
+      files.push({ file, home, path: item.path });
     }
     const names = bundleEntryNames(files.map((entry) => path.basename(entry.file)));
     const entries: Record<string, Uint8Array> = {};
     for (const [index, entry] of files.entries()) {
-      const { bytes } = await readUpload(entry.workspace, entry.path);
+      const { bytes } = await readUpload(entry.home, entry.path);
       entries[names[index]!] = bytes;
     }
     // Images, sound and video are compressed already; storing them is as small and faster.
@@ -391,7 +412,7 @@ export class ActivityService implements ActivityAuthoring {
     const activity = await this.getActivity(projectId, activityId);
     if (activity.draft.contentRevision !== expectedRevision)
       throw new HttpError(409, "draft_conflict", "Media changed before assembly.");
-    const source = this.activityWorkspace(projectId, activity);
+    const source = await this.uploads(activity);
     const copied = new Set<string>();
     for (const asset of Object.values(activity.draft.mediaPlan?.manifest.assets ?? {}).flat()) {
       if (!isUploadReference(asset.path) || copied.has(asset.path!)) continue;
@@ -403,19 +424,6 @@ export class ActivityService implements ActivityAuthoring {
     }
   }
 
-  private imagePath(
-    projectId: string,
-    activity: ActivityRecord & { draft: ActivityDraft },
-    runId: string,
-  ) {
-    if (!/^run_[a-f0-9]{32}$/.test(runId))
-      throw new HttpError(404, "run_not_found", "Image candidate not found.");
-    return path.join(
-      this.draftWorkspace(projectId, activity.collectionId, activity.id, activity.draft.draftId),
-      "images",
-      `${runId}.png`,
-    );
-  }
   async storeImage(
     projectId: string,
     activityId: string,
@@ -425,9 +433,7 @@ export class ActivityService implements ActivityAuthoring {
     return this.projectWork.run(projectId, async () => {
       const activity = await this.getActivity(projectId, activityId);
       const result = inspectPng(bytes, runId);
-      const file = this.imagePath(projectId, activity, runId);
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, bytes, { flag: "wx" });
+      await this.storeCandidate(activity, runId, "png", bytes);
       return result;
     });
   }
@@ -439,7 +445,7 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<Uint8Array> {
     const activity = await this.getActivity(projectId, activityId);
     const bytes = await readArtifactBytes(
-      this.imagePath(projectId, activity, runId),
+      await this.generatedFile(activity, "generatedImage", runId, "png"),
       GENERATED_IMAGE_MAX_BYTES,
     );
     if (inspectPng(bytes, runId).sha256 !== sha256)
@@ -454,7 +460,7 @@ export class ActivityService implements ActivityAuthoring {
     expectedRevision: string,
   ): Promise<ActivityDraft> {
     await this.readImage(projectId, activityId, result.runId, result.sha256);
-    return this.change(projectId, activityId, expectedRevision, (draft) => {
+    return this.change(projectId, activityId, expectedRevision, async (draft, activity) => {
       const plan = draft.mediaPlan;
       if (!plan || plan.specRevision !== contentRevision(draft.spec) || draft.status !== "valid")
         throw new HttpError(
@@ -472,8 +478,12 @@ export class ActivityService implements ActivityAuthoring {
           "image_changed",
           "The image description changed. Generate a new candidate.",
         );
-      asset.path = `media/generated/${result.runId}.png`;
+      asset.path = generatedMediaPath(activity, target.language, asset, "png");
       asset.generatedImage = { runId: result.runId, sha256: result.sha256 };
+      await this.acceptCandidate(activity, result.runId, "png", asset.path, {
+        text: asset.description,
+        model: "Penguin Harness",
+      });
       return { ...draft, mediaPlan: { ...plan, manifest } };
     });
   }
@@ -550,16 +560,6 @@ export class ActivityService implements ActivityAuthoring {
     }
   }
 
-  /** Where a run's recording is kept in the draft workspace: `videos/<runId>.webm`. */
-  private videoPath(
-    projectId: string,
-    activity: ActivityRecord & { draft: ActivityDraft },
-    runId: string,
-  ) {
-    if (!/^run_[a-f0-9]{32}$/.test(runId))
-      throw new HttpError(404, "run_not_found", "Video candidate not found.");
-    return path.join(this.activityWorkspace(projectId, activity), VIDEO_DIR, `${runId}.webm`);
-  }
   async storeVideo(
     projectId: string,
     activityId: string,
@@ -574,16 +574,16 @@ export class ActivityService implements ActivityAuthoring {
       } catch (error) {
         throw new HttpError(422, "video_invalid", (error as Error).message);
       }
-      const file = this.videoPath(projectId, activity, runId);
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, bytes, { flag: "wx" });
+      await this.storeCandidate(activity, runId, "webm", bytes);
       return { runId, ...inspected };
     });
   }
   async discardVideo(projectId: string, activityId: string, runId: string): Promise<void> {
     await this.projectWork.run(projectId, async () => {
       const activity = await this.getActivity(projectId, activityId);
-      await fs.rm(this.videoPath(projectId, activity, runId), { force: true });
+      const root = await this.requireWafRoot();
+      const reference = candidateReference(activity.productCode, activity.refNum, runId, "webm");
+      await fs.rm(mediaFile(root, reference)!, { force: true });
     });
   }
   async readVideo(
@@ -597,7 +597,9 @@ export class ActivityService implements ActivityAuthoring {
       new HttpError(409, "video_changed", "The stored video changed. Record it again.");
     let bytes: Buffer;
     try {
-      bytes = await readVideoFile(this.videoPath(projectId, activity, runId));
+      bytes = await readVideoFile(
+        await this.generatedFile(activity, "generatedVideo", runId, "webm"),
+      );
     } catch (error) {
       if (error instanceof HttpError) throw error;
       if ((error as NodeJS.ErrnoException).code === "ENOENT")
@@ -620,7 +622,7 @@ export class ActivityService implements ActivityAuthoring {
     expectedRevision: string,
   ): Promise<ActivityDraft> {
     await this.readVideo(projectId, activityId, result.runId, result.sha256);
-    return this.change(projectId, activityId, expectedRevision, (draft) => {
+    return this.change(projectId, activityId, expectedRevision, async (draft, activity) => {
       const plan = draft.mediaPlan;
       if (!plan || plan.specRevision !== contentRevision(draft.spec) || draft.status !== "valid")
         throw new HttpError(
@@ -638,8 +640,9 @@ export class ActivityService implements ActivityAuthoring {
           "video_asset_changed",
           "The video or animation this was recorded for is no longer in the media plan.",
         );
-      asset.path = generatedVideoPath(result.runId);
+      asset.path = generatedMediaPath(activity, target.language, asset, "webm");
       asset.generatedVideo = { runId: result.runId, sha256: result.sha256 };
+      await this.acceptCandidate(activity, result.runId, "webm", asset.path, null);
       // Measured from the file this replaces.
       delete asset.durationMs;
       return { ...draft, mediaPlan: { ...plan, manifest } };
@@ -670,15 +673,15 @@ export class ActivityService implements ActivityAuthoring {
     }
   }
   /**
-   * The draft file behind a bound recording's media path (`media/generated/<runId>.webm`), for
-   * the player to serve, or null when the path is not a recording this draft binds.
+   * The file behind a bound recording's media path, for the player to serve, or null when the
+   * path is not a recording this draft binds.
    */
   async boundVideoFile(projectId: string, activityId: string, mediaPath: string) {
     const activity = await this.getActivity(projectId, activityId);
     const bound = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
       .flat()
       .find((asset) => asset.generatedVideo && asset.path === mediaPath)?.generatedVideo;
-    return bound ? this.videoPath(projectId, activity, bound.runId) : null;
+    return bound ? mediaFile(await this.requireWafRoot(), mediaPath) : null;
   }
 
   private collectionDir(projectId: string, collectionId: string): string {
@@ -797,6 +800,18 @@ export class ActivityService implements ActivityAuthoring {
         // A ref belongs to a product, and the first ref of a product creates it and is its
         // canonical one: the module code has to belong to some ref, and the only ref there
         // is at that moment is this one.
+        const known = this.db
+          .prepare(
+            "SELECT module_folder FROM activity_products WHERE collection_id = ? AND product_code = ?",
+          )
+          .get(collection.collectionId, productCode) as { module_folder: string } | undefined;
+        // Checked before anything is indexed, so a refusal leaves no product row behind.
+        await this.claimModuleFolder(
+          projectId,
+          known?.module_folder ?? normalizeModuleFolder(input.moduleFolder, productCode),
+          productCode,
+          refNum,
+        );
         const product = this.ensureProduct({
           projectId,
           collectionId: collection.collectionId,
@@ -830,7 +845,7 @@ export class ActivityService implements ActivityAuthoring {
           spec: null,
           updatedAt: now,
         };
-        await this.writeDraft(projectId, draft, collection.collectionId);
+        await this.writeDraft(activity, draft);
         this.db.exec("BEGIN");
         try {
           this.db
@@ -863,8 +878,13 @@ export class ActivityService implements ActivityAuthoring {
           this.db.exec("COMMIT");
         } catch (error) {
           this.db.exec("ROLLBACK");
+          await fs.rm(path.dirname(await this.draftFilesDir(activity)), {
+            recursive: true,
+            force: true,
+          });
           throw error;
         }
+        await this.syncProductFiles(activity.productId!);
         return { ...activity, draft };
       });
     });
@@ -912,15 +932,28 @@ export class ActivityService implements ActivityAuthoring {
       )
       .get(activityId) as { draft_id: string } | undefined;
     if (!draftRow) throw new Error("Activity draft index is missing.");
-    const stored = JSON.parse(
-      await fs.readFile(
-        path.join(
-          this.draftWorkspace(projectId, activity.collectionId, activityId, draftRow.draft_id),
-          "draft.json",
-        ),
-        "utf8",
-      ),
-    ) as ActivityDraft;
+    const filesDir = await this.draftFilesDir(activity);
+    let stored =
+      (await readRefDraft(filesDir)) ??
+      (await this.moveLegacyDraft(projectId, activity, draftRow.draft_id, filesDir));
+    // A draft moved before its media moved with it still binds the old folders' paths.
+    if (hasLegacyMedia(stored))
+      stored = await this.locks.run(`legacy:${activity.id}`, async () => {
+        const again = (await readRefDraft(filesDir)) ?? stored;
+        if (!hasLegacyMedia(again)) return again;
+        const workspace = this.draftWorkspace(
+          projectId,
+          activity.collectionId,
+          activity.id,
+          draftRow.draft_id,
+        );
+        const moved = await this.moveLegacyMedia(activity, workspace, again);
+        await this.writeDraft(activity, moved);
+        this.db
+          .prepare("UPDATE activity_drafts SET content_revision = ? WHERE draft_id = ?")
+          .run(moved.contentRevision, draftRow.draft_id);
+        return moved;
+      });
     let file = stored;
     if (
       file.draftId !== draftRow.draft_id ||
@@ -951,8 +984,8 @@ export class ActivityService implements ActivityAuthoring {
         throw new Error("Media requirements are corrupt.");
       const manifest = file.mediaPlan.manifest as unknown;
       // The row owns the ref's address. A renumber indexes the new number before it
-      // rewrites draft.json, so a read in between (or after a crash there) finds the old
-      // number in the manifest; it is read under the row's number, and the next save
+      // rewrites the ref's files, so a read in between (or after a crash there) finds the
+      // old number in the manifest; it is read under the row's number, and the next save
       // writes it that way.
       if (
         manifest &&
@@ -961,14 +994,20 @@ export class ActivityService implements ActivityAuthoring {
         (manifest as { productCode?: unknown }).productCode === activity.productCode &&
         (manifest as { refNum?: unknown }).refNum !== activity.refNum &&
         Number.isSafeInteger((manifest as { refNum?: unknown }).refNum)
-      )
+      ) {
+        // Its media paths name the old number too; the media folder itself moved with the
+        // ref's files, so they are read at the new one.
+        const moved = structuredClone(file.mediaPlan.manifest);
+        readdressMedia(
+          moved.assets,
+          refMediaFolder(activity.productCode, moved.refNum),
+          refMediaFolder(activity.productCode, activity.refNum),
+        );
         file = {
           ...file,
-          mediaPlan: {
-            ...file.mediaPlan,
-            manifest: { ...file.mediaPlan.manifest, refNum: activity.refNum },
-          },
+          mediaPlan: { ...file.mediaPlan, manifest: { ...moved, refNum: activity.refNum } },
         };
+      }
       validateManifest(file.mediaPlan!.manifest, activity);
     }
     // The file is authoritative. Never substitute the index for missing/corrupt content.
@@ -1379,101 +1418,6 @@ export class ActivityService implements ActivityAuthoring {
       };
     });
   }
-  /**
-   * An imported ref's media: planned from its specification as any ref's is, then bound as
-   * Loom had it. A language Loom held besides the default holds exactly what Loom listed
-   * for it, which is what it says differently; the rest falls back to the default.
-   */
-  async importMedia(
-    projectId: string,
-    activityId: string,
-    media: Record<string, CarriedBinding[]>,
-    expectedRevision: string,
-  ): Promise<ActivityDraft> {
-    const planned = await this.planMedia(projectId, activityId, expectedRevision);
-    const manifest = structuredClone(planned.mediaPlan!.manifest);
-    const defaults = manifest.assets[DEFAULT_LANGUAGE_CODE] ?? [];
-    const sceneIds = new Set(
-      ((planned.spec?.scenes ?? planned.spec?.stages ?? []) as { id?: unknown }[]).map((scene) =>
-        String(scene.id),
-      ),
-    );
-    for (const [language, bindings] of Object.entries(media)) {
-      const byKey = new Map(bindings.map((binding) => [binding.key, binding]));
-      const listed = (asset: MediaAsset) =>
-        byKey.has(asset.key) || (!!asset.sourceKey && byKey.has(asset.sourceKey));
-      const base =
-        language === DEFAULT_LANGUAGE_CODE
-          ? defaults
-          : defaults.filter(listed).map((asset) => {
-              const {
-                script: _script,
-                path: _path,
-                generatedAudio: _audio,
-                generatedImage: _image,
-                generatedVideo: _video,
-                translatedFrom: _from,
-                wordTimings: _timings,
-                durationMs: _duration,
-                ...rest
-              } = structuredClone(asset);
-              return rest;
-            });
-      manifest.assets[language] = base.map((asset) => {
-        const binding = byKey.get(asset.key) ?? (asset.sourceKey && byKey.get(asset.sourceKey));
-        if (!binding) return asset;
-        return {
-          ...asset,
-          ...(binding.path ? { path: binding.path } : {}),
-          ...(asset.type === "audio" && binding.script !== undefined
-            ? { script: binding.script }
-            : {}),
-          ...(asset.type === "audio" && binding.wordTimings
-            ? { wordTimings: binding.wordTimings }
-            : {}),
-          ...(asset.type === "audio" && binding.durationMs !== undefined
-            ? { durationMs: binding.durationMs }
-            : {}),
-          ...(asset.type === "audio" && binding.playback ? binding.playback : {}),
-          ...(asset.type === "audio" && binding.playback && binding.targetDurationMs !== undefined
-            ? { targetDurationMs: binding.targetDurationMs }
-            : {}),
-        };
-      });
-      // A decodable book's word pronunciations are planned from its narration, not its
-      // specification, so they are carried as Loom had them, in the scenes that still exist.
-      const present = new Set(manifest.assets[language]!.map((asset) => asset.key));
-      for (const binding of bindings) {
-        const word = binding.bookWord;
-        if (!word || present.has(binding.key)) continue;
-        present.add(binding.key);
-        manifest.assets[language]!.push({
-          key: binding.key,
-          type: "audio",
-          role: "bookWord",
-          description: `Pronunciation of “${word.word}”.`,
-          word: word.word,
-          normalizedWord: word.normalizedWord,
-          ...(word.phonemes
-            ? { phonemes: word.phonemes, phonemeSource: word.customized ? "author" : "espeak" }
-            : {}),
-          ...(word.customized ? { customized: true } : {}),
-          ...(binding.path ? { path: binding.path } : {}),
-          ...(binding.script !== undefined ? { script: binding.script } : {}),
-          ...(binding.wordTimings ? { wordTimings: binding.wordTimings } : {}),
-          ...(binding.durationMs !== undefined ? { durationMs: binding.durationMs } : {}),
-          usages: word.usages.filter(
-            (usage) =>
-              sceneIds.has(usage.sceneId) &&
-              /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(usage.sourceKey) &&
-              usage.occurrence >= 1 &&
-              usage.sceneOccurrenceCount >= usage.occurrence,
-          ),
-        });
-      }
-    }
-    return this.applyMedia(projectId, activityId, manifest, planned.contentRevision);
-  }
   async applyMedia(
     projectId: string,
     activityId: string,
@@ -1525,11 +1469,11 @@ export class ActivityService implements ActivityAuthoring {
         }
         // An upload is bytes this server holds, so what it actually is can be checked
         // rather than assumed. A path alone says nothing about the media it names.
-        const workspace = this.activityWorkspace(projectId, { ...activity, draft });
+        const home = await this.uploads(activity);
         for (const assets of Object.values(parsed.assets))
           for (const asset of assets) {
             if (!isUploadReference(asset.path)) continue;
-            const { mimeType } = await readUpload(workspace, asset.path!);
+            const { mimeType } = await readUpload(home, asset.path!);
             const kind = mimeType.slice(0, mimeType.indexOf("/"));
             const wanted =
               asset.type === "image" ? "image" : asset.type === "audio" ? "audio" : "video";
@@ -1553,26 +1497,12 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<AudioResult> {
     return this.projectWork.run(projectId, async () => {
       const activity = await this.getActivity(projectId, activityId);
-      const result = inspectGeneratedAudio(bytes, runId, format);
-      const file = this.audioPath(projectId, activity, runId, format);
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, bytes, { flag: "wx" });
-      return result;
+      // The media repository keeps audio as MP3, as Loom kept it; a WAV take is converted.
+      const mp3 = format === "mp3" ? bytes : await (this.audioEncode.wavToMp3 ?? wavToMp3)(bytes);
+      const result = inspectGeneratedAudio(mp3, runId, "mp3");
+      await this.storeCandidate(activity, runId, "mp3", mp3);
+      return { ...result, format: "mp3" };
     });
-  }
-  private audioPath(
-    projectId: string,
-    activity: ActivityRecord & { draft: ActivityDraft },
-    runId: string,
-    format: GeneratedAudioFormat | undefined,
-  ): string {
-    if (!/^run_[a-f0-9]{32}$/.test(runId))
-      throw new HttpError(404, "run_not_found", "Audio candidate not found.");
-    return path.join(
-      this.draftWorkspace(projectId, activity.collectionId, activity.id, activity.draft.draftId),
-      "audio",
-      `${runId}.${format ?? "wav"}`,
-    );
   }
   async readAudio(
     projectId: string,
@@ -1583,7 +1513,12 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<Uint8Array> {
     const activity = await this.getActivity(projectId, activityId);
     const bytes = await readArtifactBytes(
-      this.audioPath(projectId, activity, runId, format),
+      await this.generatedFile(
+        activity,
+        "generatedAudio",
+        runId,
+        generatedAudioExtension({ format }),
+      ),
       AUDIO_MAX_BYTES,
     );
     if (inspectGeneratedAudio(bytes, runId, format).sha256 !== sha256)
@@ -1599,7 +1534,7 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<ActivityDraft> {
     // Verify immutable bytes before the same compare-and-publish lock used by all draft edits.
     await this.readAudio(projectId, activityId, result.runId, result.sha256, result.format);
-    return this.change(projectId, activityId, expectedRevision, (draft) => {
+    return this.change(projectId, activityId, expectedRevision, async (draft, activity) => {
       const plan = draft.mediaPlan;
       if (!plan || plan.specRevision !== contentRevision(draft.spec) || draft.status !== "valid")
         throw new HttpError(409, "media_stale", "Rebuild the media plan before accepting speech.");
@@ -1627,7 +1562,12 @@ export class ActivityService implements ActivityAuthoring {
         sha256: result.sha256,
         ...(result.format === "mp3" ? { format: "mp3" as const } : {}),
       };
-      asset.path = generatedAudioPath(generated);
+      asset.path = generatedMediaPath(
+        activity,
+        target.language,
+        asset,
+        generatedAudioExtension(generated),
+      );
       asset.generatedAudio = generated;
       // The timings and length described the recording this replaces; playback stays.
       delete asset.wordTimings;
@@ -1642,6 +1582,19 @@ export class ActivityService implements ActivityAuthoring {
       delete asset.phonemeTimings;
       delete asset.wholeWordTiming;
       if (isBookWord(asset)) Object.assign(asset, recordingTimingFields(asset));
+      await this.acceptCandidate(
+        activity,
+        result.runId,
+        generatedAudioExtension(generated),
+        asset.path,
+        {
+          text: asset.script ?? "",
+          model: "Penguin Harness",
+          ...(asset.voice ? { voice: asset.voice } : {}),
+          ...(asset.wordTimings ? { wordTimings: asset.wordTimings } : {}),
+          ...(asset.durationMs !== undefined ? { durationMs: asset.durationMs } : {}),
+        },
+      );
       return { ...draft, mediaPlan: { ...plan, manifest } };
     });
   }
@@ -1716,6 +1669,13 @@ export class ActivityService implements ActivityAuthoring {
       }
       if (content.mediaPlan) {
         const plan = structuredClone(content.mediaPlan);
+        // Saved under another number, its media is where that number named it; the restore
+        // writes it back under this ref's folder (see ActivityVersionService.restore).
+        readdressMedia(
+          plan.manifest.assets,
+          refMediaFolder(activity.productCode, plan.manifest.refNum),
+          refMediaFolder(activity.productCode, activity.refNum),
+        );
         plan.manifest.refNum = activity.refNum;
         try {
           validateManifest(plan.manifest, activity);
@@ -1767,7 +1727,8 @@ export class ActivityService implements ActivityAuthoring {
       const draft = await edit(current.draft, current);
       draft.contentRevision = draftRevision(draft);
       draft.updatedAt = new Date().toISOString();
-      await this.writeDraft(projectId, draft, current.collectionId);
+      const title = draft.status === "valid" ? (draft.spec!.title as string) : current.title;
+      await this.writeDraft({ ...current, title }, draft);
       this.db
         .prepare(
           "UPDATE activity_drafts SET content_revision = ?, status = ?, updated_at = ? WHERE draft_id = ?",
@@ -1775,28 +1736,333 @@ export class ActivityService implements ActivityAuthoring {
         .run(draft.contentRevision, draft.status, draft.updatedAt, draft.draftId);
       this.db
         .prepare("UPDATE activities SET title = ?, updated_at = ? WHERE id = ?")
-        .run(
-          draft.status === "valid" ? (draft.spec!.title as string) : current.title,
-          draft.updatedAt,
-          activityId,
-        );
+        .run(title, draft.updatedAt, activityId);
+      if (title !== current.title && this.isCanonicalRef(current) && current.productId)
+        await this.syncProductFiles(current.productId);
       return draft;
     });
   }
-  private async writeDraft(
+  /**
+   * A draft saved before activities were stored in their modules, written into the ref's
+   * module files the first time it is read. The old `draft.json` is left where it was, as a
+   * copy. Files already at the ref's address in the module (Loom's, or anything else) are
+   * never overwritten: the read is refused, naming both places.
+   */
+  private async moveLegacyDraft(
     projectId: string,
-    draft: ActivityDraft,
-    collectionId: string,
-  ): Promise<void> {
-    const dir = this.draftWorkspace(projectId, collectionId, draft.activityId, draft.draftId);
-    await fs.mkdir(dir, { recursive: true });
-    // These two files are exports; only the atomically published draft is authoritative.
-    if (draft.spec !== null) await atomicJson(path.join(dir, "activity-spec.json"), draft.spec);
-    if (draft.mediaPlan)
-      await atomicJson(path.join(dir, "asset-manifest.json"), draft.mediaPlan.manifest);
-    await fs.writeFile(path.join(dir, "description.md"), draft.description, "utf8");
-    await atomicJson(path.join(dir, "draft.json"), draft);
+    activity: ActivityRecord,
+    draftId: string,
+    filesDir: string,
+  ): Promise<ActivityDraft> {
+    return this.locks.run(`legacy:${activity.id}`, async () => {
+      const again = await readRefDraft(filesDir);
+      if (again) return again;
+      const workspace = this.draftWorkspace(projectId, activity.collectionId, activity.id, draftId);
+      const text = await fs.readFile(path.join(workspace, "draft.json"), "utf8").catch(() => null);
+      if (text === null) throw new Error("Activity draft is missing from its module.");
+      const refFolder = path.dirname(filesDir);
+      if (await exists(refFolder))
+        throw new HttpError(
+          409,
+          "ref_files_conflict",
+          `The module already has files for ${activity.productCode}-${activity.refNum} at ${refFolder}; this ref's earlier draft was left in ${workspace}.`,
+        );
+      const product = this.productOf(activity);
+      await this.claimModuleFolder(
+        projectId,
+        this.moduleFolderOf(activity),
+        activity.productCode,
+        activity.refNum,
+      );
+      const legacy = await this.moveLegacyMedia(activity, workspace, JSON.parse(text));
+      await this.writeDraft(activity, legacy);
+      this.db
+        .prepare("UPDATE activity_drafts SET content_revision = ? WHERE draft_id = ?")
+        .run(legacy.contentRevision, draftId);
+      const features = await fs
+        .readFile(path.join(workspace, "implementation-features.json"), "utf8")
+        .then(
+          (value) => JSON.parse(value) as { selectedIds?: unknown },
+          () => null,
+        );
+      if (features)
+        await writeFeatureFile(filesDir, normalizeFeatureSelection(features.selectedIds));
+      if (product) await this.syncProductFiles(product.productId);
+      return legacy;
+    });
   }
+
+  /**
+   * An earlier draft's media, copied into the ref's folder in the media repository and
+   * re-bound there: its accepted takes (`media/generated/<runId>.<ext>`, kept in the draft's
+   * `images`, `audio` and `videos` folders) go to the paths Loom's layout gives their assets,
+   * its uploads (`media/uploads/...`) to the ref's `uploads/`, and every take not accepted
+   * yet to `candidates/`, so it can still be. The old files stay where they were, as copies.
+   * A take has no sidecar: what made it was never recorded beside it.
+   */
+  private async moveLegacyMedia(
+    activity: ActivityRecord,
+    workspace: string,
+    draft: ActivityDraft,
+  ): Promise<ActivityDraft> {
+    const root = await this.requireWafRoot();
+    const folder = refMediaFolder(activity.productCode, activity.refNum);
+    const copy = async (from: string, reference: string) => {
+      const to = mediaFile(root, reference);
+      if (!to || (await exists(to))) return;
+      const stat = await fs.lstat(from).catch(() => null);
+      if (!stat?.isFile()) return;
+      await fs.mkdir(path.dirname(to), { recursive: true });
+      await fs.copyFile(from, to);
+    };
+    for (const dir of ["images", "audio", LEGACY_VIDEO_DIR]) {
+      const names = await fs.readdir(path.join(workspace, dir)).catch(() => [] as string[]);
+      for (const name of names)
+        if (/^run_[a-f0-9]{32}\.(png|wav|mp3|webm)$/.test(name))
+          await copy(path.join(workspace, dir, name), `${folder}/candidates/${name}`);
+    }
+    const plan = draft.mediaPlan;
+    if (!plan) return draft;
+    const manifest = structuredClone(plan.manifest);
+    const legacyUploads = "media/uploads/";
+    for (const [language, assets] of Object.entries(manifest.assets))
+      for (const asset of assets) {
+        if (asset.path?.startsWith(legacyUploads)) {
+          const rest = asset.path.slice(legacyUploads.length);
+          const reference = `${folder}/uploads/${rest}`;
+          await copy(path.join(workspace, "media", "uploads", ...rest.split("/")), reference);
+          asset.path = reference;
+          continue;
+        }
+        const taken = asset.generatedImage
+          ? { dir: "images", runId: asset.generatedImage.runId, extension: "png" }
+          : asset.generatedVideo
+            ? { dir: LEGACY_VIDEO_DIR, runId: asset.generatedVideo.runId, extension: "webm" }
+            : asset.generatedAudio
+              ? {
+                  dir: "audio",
+                  runId: asset.generatedAudio.runId,
+                  extension: generatedAudioExtension(asset.generatedAudio),
+                }
+              : null;
+        if (!taken || !asset.path?.startsWith("media/generated/")) continue;
+        const reference = generatedMediaPath(activity, language, asset, taken.extension);
+        await copy(path.join(workspace, taken.dir, `${taken.runId}.${taken.extension}`), reference);
+        asset.path = reference;
+      }
+    manifest.productCode = activity.productCode;
+    manifest.refNum = activity.refNum;
+    const moved: ActivityDraft = { ...draft, mediaPlan: { ...plan, manifest } };
+    // Only addresses changed: a draft that was valid stays valid under its new revision.
+    moved.contentRevision = draftRevision(moved);
+    return moved;
+  }
+
+  /**
+   * The ref's draft into its module's files, with its identity beside it. The folder is the
+   * ref's address, so `activity` must carry the number the files are to be under.
+   */
+  private async writeDraft(activity: ActivityRecord, draft: ActivityDraft): Promise<void> {
+    const dir = await this.draftFilesDir(activity);
+    await writeRefDraft(dir, draft);
+    await writeRefMetadata(dir, {
+      productCode: activity.productCode,
+      refNum: activity.refNum,
+      title: activity.title,
+      moduleFolder: this.moduleFolderOf(activity),
+      displayName: activity.displayName,
+      stable: activity.stable,
+      ...(draft.spec?.runtime !== undefined ? { runtime: draft.spec.runtime } : {}),
+    });
+  }
+
+  /**
+   * The files its number names, from where they are for `from` to where they go for `to`:
+   * the ref's folder in its module, the module's configuration and assessment, and the ref's
+   * media folder in the media repository.
+   */
+  private async refNumberFiles(
+    from: ActivityRecord,
+    to: ActivityRecord,
+  ): Promise<{ from: string; to: string }[]> {
+    const root = await this.requireWafRoot();
+    const module = path.join(root, "modules", this.moduleFolderOf(from));
+    const named = (ref: ActivityRecord, folder: string) =>
+      path.join(module, folder, `${ref.productCode}-${ref.refNum}.json`);
+    const media = (ref: ActivityRecord) =>
+      mediaFile(root, refMediaFolder(ref.productCode, ref.refNum))!;
+    return [
+      {
+        from: path.dirname(await this.draftFilesDir(from)),
+        to: path.dirname(await this.draftFilesDir(to)),
+      },
+      { from: named(from, "configurations"), to: named(to, "configurations") },
+      { from: named(from, "assessments"), to: named(to, "assessments") },
+      { from: media(from), to: media(to) },
+    ];
+  }
+
+  /** The ref's uploads, in its media folder in the media repository. */
+  private async uploads(activity: ActivityRecord): Promise<UploadHome> {
+    return uploadHome(await this.requireWafRoot(), activity.productCode, activity.refNum);
+  }
+
+  /** Writes a generation's take into the ref's candidates, in the media repository. */
+  private async storeCandidate(
+    activity: ActivityRecord,
+    runId: string,
+    extension: string,
+    bytes: Uint8Array,
+  ): Promise<void> {
+    const reference = candidateReference(activity.productCode, activity.refNum, runId, extension);
+    const file = mediaFile(await this.requireWafRoot(), reference)!;
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, bytes, { flag: "wx" });
+  }
+
+  /**
+   * A generated take of this ref: its candidate while it waits, and once accepted, the file
+   * the manifest binds to that run. A path that is neither is returned as the candidate's, so
+   * the reader reports it missing.
+   */
+  private async generatedFile(
+    activity: ActivityDetail,
+    field: "generatedImage" | "generatedAudio" | "generatedVideo",
+    runId: string,
+    extension: string,
+  ): Promise<string> {
+    const root = await this.requireWafRoot();
+    const reference = candidateReference(activity.productCode, activity.refNum, runId, extension);
+    const candidate = mediaFile(root, reference)!;
+    if (await exists(candidate)) return candidate;
+    const bound = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
+      .flat()
+      .find((asset) => asset[field]?.runId === runId && asset.path);
+    return (bound && mediaFile(root, bound.path!)) || candidate;
+  }
+
+  /**
+   * An accepted take, copied from its candidate to the path the asset is bound to (replacing
+   * the file there), with Loom's sidecar beside it. The candidate goes once the copy is there.
+   */
+  private async acceptCandidate(
+    activity: ActivityRecord,
+    runId: string,
+    extension: string,
+    reference: string,
+    sidecar: Parameters<typeof writeSidecar>[1] | null,
+  ): Promise<void> {
+    const root = await this.requireWafRoot();
+    const candidate = mediaFile(
+      root,
+      candidateReference(activity.productCode, activity.refNum, runId, extension),
+    )!;
+    const target = mediaFile(root, reference);
+    if (!target) throw new HttpError(400, "media_path_invalid", "The media path is invalid.");
+    // Accepted already (the same take accepted twice): the file is where it belongs.
+    if (!(await exists(candidate))) return;
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.copyFile(candidate, target);
+    if (sidecar) await writeSidecar(target, sidecar);
+    await fs.rm(candidate, { force: true });
+  }
+
+  /** The WAF workspace's root; every ref's files are in its modules. */
+  private async requireWafRoot(): Promise<string> {
+    return this.wafWorkspace.requireRoot();
+  }
+
+  private moduleFolderOf(activity: ActivityRecord): string {
+    return (
+      this.productOf(activity)?.moduleFolder ??
+      normalizeModuleFolder(undefined, activity.productCode)
+    );
+  }
+
+  /** `generated/<pc>/refs/<pc>-<ref>/spec` in the ref's module: where its draft is. */
+  async draftFilesDir(activity: ActivityRecord): Promise<string> {
+    return refSpecDir(
+      await this.requireWafRoot(),
+      this.moduleFolderOf(activity),
+      activity.productCode,
+      activity.refNum,
+    );
+  }
+
+  /**
+   * Makes sure a new ref may be written into its module: the module is there (cloned, or
+   * made in an existing checkout), no other project owns the product, and no files are
+   * already at the ref's address.
+   */
+  private async claimModuleFolder(
+    projectId: string,
+    moduleFolder: string,
+    productCode: string,
+    refNum: number,
+  ): Promise<void> {
+    const root = await this.requireWafRoot();
+    await this.wafWorkspace.authoringModule(moduleFolder);
+    // The product's media folder, checked out of the partial media clone with its LFS files.
+    await this.wafWorkspace.ensureMedia([`loom/${productCode}`]);
+    const dir = productDir(root, moduleFolder, productCode);
+    const owner = await readProductOwner(dir);
+    if (owner && owner.projectId !== projectId)
+      throw new HttpError(
+        409,
+        "product_taken",
+        `Product ${productCode} belongs to another project.`,
+      );
+    const ref = refDir(root, moduleFolder, productCode, refNum);
+    if (await exists(ref))
+      throw new HttpError(
+        409,
+        "activity_exists",
+        `Ref ${refNum} of ${productCode} already has files in its module.`,
+      );
+    // Media already at the ref's address (Loom's, say) is someone else's, not this ref's.
+    if (await exists(mediaFile(root, refMediaFolder(productCode, refNum))!))
+      throw new HttpError(
+        409,
+        "activity_exists",
+        `Ref ${refNum} of ${productCode} already has media in the media repository.`,
+      );
+  }
+
+  /** The product's metadata and owner in its module, as the index has them now. */
+  private async syncProductFiles(productId: string): Promise<void> {
+    const row = this.db
+      .prepare("SELECT * FROM activity_products WHERE product_id = ?")
+      .get(productId) as Record<string, unknown> | undefined;
+    if (!row) return;
+    const product = this.mapProduct(row);
+    const canonical =
+      product.canonicalRefNum === null
+        ? undefined
+        : (this.db
+            .prepare(
+              "SELECT title FROM activities WHERE product_id = ? AND ref_num = ? AND archived = 0",
+            )
+            .get(productId, product.canonicalRefNum) as { title: string } | undefined);
+    await writeProductFiles(
+      productDir(await this.requireWafRoot(), product.moduleFolder, product.productCode),
+      {
+        productCode: product.productCode,
+        title: canonical?.title ?? product.productCode,
+        moduleFolder: product.moduleFolder,
+        activityType: product.activityType,
+        bookMode: product.bookMode,
+        canonicalRefNum: product.canonicalRefNum,
+        tags: this.productTags(productId),
+      },
+      {
+        schemaVersion: 1,
+        projectId: product.projectId,
+        productId: product.productId,
+        collectionId: product.collectionId,
+      },
+    );
+  }
+
   private mapActivity(row: Record<string, unknown>, tags: string[]): ActivityRecord {
     return {
       id: row.id as string,
@@ -1914,24 +2180,6 @@ export class ActivityService implements ActivityAuthoring {
     return product.canonicalRefNum === null || product.canonicalRefNum === activity.refNum;
   }
 
-  /** What a product code already holds in this collection, or null if nothing does. */
-  existingProduct(collectionId: string, productCode: string): ExistingProduct | null {
-    const product = this.db
-      .prepare("SELECT * FROM activity_products WHERE collection_id = ? AND product_code = ?")
-      .get(collectionId, productCode) as Record<string, unknown> | undefined;
-    if (!product) return null;
-    const refs = this.db
-      .prepare(
-        "SELECT ref_num AS refNum, archived FROM activities WHERE collection_id = ? AND product_code = ? ORDER BY ref_num",
-      )
-      .all(collectionId, productCode) as { refNum: number; archived: number }[];
-    return {
-      refNums: refs.filter((ref) => !ref.archived).map((ref) => ref.refNum),
-      archivedRefNums: refs.filter((ref) => ref.archived).map((ref) => ref.refNum),
-      canonicalRefNum: this.mapProduct(product).canonicalRefNum,
-    };
-  }
-
   /**
    * What an author calls a ref, and whether others may build against it.
    *
@@ -1966,6 +2214,7 @@ export class ActivityService implements ActivityAuthoring {
             "UPDATE activities SET display_name = ?, stable = ?, updated_at = ? WHERE id = ?",
           )
           .run(next.displayName, next.stable ? 1 : 0, now, activityId);
+        await this.writeDraft(next, activity.draft);
         return next;
       }),
     );
@@ -2044,6 +2293,12 @@ export class ActivityService implements ActivityAuthoring {
           if (previous.mediaPlan) {
             const manifest = structuredClone(previous.mediaPlan.manifest);
             manifest.refNum = next;
+            // The ref's media folder is named by its number and moves with it (below).
+            readdressMedia(
+              manifest.assets,
+              refMediaFolder(current.productCode, current.refNum),
+              refMediaFolder(current.productCode, next),
+            );
             try {
               validateManifest(manifest, { productCode: current.productCode, refNum: next });
             } catch (error) {
@@ -2085,22 +2340,52 @@ export class ActivityService implements ActivityAuthoring {
               throw error;
             }
           };
+          // The ref's folder is named by its number, so the files move before anything
+          // names the new number; a folder already there belongs to something else.
+          // Everything in the module named by the ref's number moves with it, as Loom's
+          // renamer moved it: the ref's folder, and its configuration and assessment. A
+          // target already there belongs to something else, so nothing moves.
+          const moved = { ...current, refNum: next, updatedAt: now };
+          const moves = await this.refNumberFiles(current, moved);
+          for (const move of moves)
+            if (await exists(move.to))
+              throw new HttpError(
+                409,
+                "activity_exists",
+                `Ref ${next} of ${current.productCode} already has files in its module.`,
+              );
+          const done: typeof moves = [];
+          const undo = async () => {
+            for (const move of done.reverse()) await fs.rename(move.to, move.from).catch(() => {});
+          };
+          try {
+            for (const move of moves) {
+              if (!(await exists(move.from))) continue;
+              await fs.rename(move.from, move.to);
+              done.push(move);
+            }
+          } catch (error) {
+            await undo();
+            throw error;
+          }
           index({ refNum: next, draft, activityUpdatedAt: now, productUpdatedAt: now });
           try {
-            await this.writeDraft(projectId, draft, current.collectionId);
+            await this.writeDraft(moved, draft);
           } catch (error) {
-            // draft.json is written last, so on disk the draft still names the old number;
-            // the index goes back to it, and the exports are rewritten to match.
+            // penguin.json is written last, so the files still name the old number; the
+            // index and the files go back to it.
             index({
               refNum: current.refNum,
               draft: previous,
               activityUpdatedAt: current.updatedAt,
               productUpdatedAt: product?.updatedAt ?? now,
             });
-            await this.writeDraft(projectId, previous, current.collectionId).catch(() => {});
+            await undo();
+            await this.writeDraft(current, previous).catch(() => {});
             throw error;
           }
-          return { ...current, refNum: next, updatedAt: now, draft };
+          if (wasCanonical) await this.syncProductFiles(product!.productId);
+          return { ...moved, draft };
         });
       }),
     );
@@ -2166,6 +2451,14 @@ export class ActivityService implements ActivityAuthoring {
             `Ref ${template.refNum} is not marked stable. Mark it stable before making refs from it.`,
           );
         const planned = refDraftFromTemplate(template, refNum, input.decisions);
+        // The template's media folder is copied to the new ref's (refDraftFromTemplate has
+        // re-addressed the plan to it), and so is an upload a decision binds.
+        const fromFolder = refMediaFolder(template.productCode, template.refNum);
+        const toFolder = refMediaFolder(template.productCode, refNum);
+        const moved = (reference: string) =>
+          reference.startsWith(`${fromFolder}/`)
+            ? `${toFolder}${reference.slice(fromFolder.length)}`
+            : reference;
         const created = await this.createActivity(projectId, {
           collectionId: template.collectionId,
           productCode: template.productCode,
@@ -2174,15 +2467,21 @@ export class ActivityService implements ActivityAuthoring {
           activityType: template.activityType,
         });
         try {
-          const target = this.activityWorkspace(projectId, created);
-          await this.copyTemplateFiles(this.activityWorkspace(projectId, template), target);
+          const target = await this.uploads(created);
+          await copyRefMedia(await this.requireWafRoot(), fromFolder, toFolder);
+          const features = path.join(await this.draftFilesDir(template), REF_FEATURES_FILE);
+          if (await exists(features))
+            await fs.copyFile(
+              features,
+              path.join(await this.draftFilesDir(created), REF_FEATURES_FILE),
+            );
           // A bound upload must be one of the files just copied, of the asset's kind.
           for (const decision of input.decisions) {
             if (decision.action !== "bind") continue;
             const asset = planned.mediaPlan?.manifest.assets[decision.language]?.find(
               (entry) => entry.key === decision.assetKey,
             );
-            const mimeType = await readUpload(target, decision.path!).then(
+            const mimeType = await readUpload(target, moved(decision.path!)).then(
               (file) => file.mimeType,
               () => null,
             );
@@ -2216,22 +2515,6 @@ export class ActivityService implements ActivityAuthoring {
     );
   }
 
-  /** Copy a template's own files into a new ref's workspace, never following a link. */
-  private async copyTemplateFiles(source: string, target: string): Promise<void> {
-    await fs.mkdir(target, { recursive: true });
-    for (const name of ["audio", "images", VIDEO_DIR, "media", IMPLEMENTATION_FEATURES_FILE]) {
-      const from = path.join(source, name);
-      const stat = await fs.lstat(from).catch(() => null);
-      if (!stat || stat.isSymbolicLink()) continue;
-      await fs.cp(from, path.join(target, name), {
-        recursive: true,
-        errorOnExist: true,
-        force: false,
-        filter: async (entry) => !(await fs.lstat(entry)).isSymbolicLink(),
-      });
-    }
-  }
-
   /** Remove a ref made moments ago whose making failed: its rows, then its files. */
   private async discardCreatedRef(projectId: string, activity: ActivityRecord): Promise<void> {
     this.db.exec("BEGIN");
@@ -2247,6 +2530,12 @@ export class ActivityService implements ActivityAuthoring {
       path.join(this.collectionDir(projectId, activity.collectionId), "activities", activity.id),
       { recursive: true, force: true },
     );
+    await fs.rm(path.dirname(await this.draftFilesDir(activity)), { recursive: true, force: true });
+    const media = mediaFile(
+      await this.requireWafRoot(),
+      refMediaFolder(activity.productCode, activity.refNum),
+    );
+    if (media) await fs.rm(media, { recursive: true, force: true });
   }
 
   /**
@@ -2280,6 +2569,7 @@ export class ActivityService implements ActivityAuthoring {
         this.db.exec("ROLLBACK");
         throw error;
       }
+      await this.syncProductFiles(productId);
       return next;
     });
   }
@@ -2354,115 +2644,433 @@ export class ActivityService implements ActivityAuthoring {
       this.db
         .prepare("UPDATE activity_products SET book_mode = ?, updated_at = ? WHERE product_id = ?")
         .run(mode, now, product.productId);
+      await this.syncProductFiles(product.productId);
       return { ...product, bookMode: mode, updatedAt: now };
     });
   }
 
   /**
-   * The Loom products a checkout offers, read only.
-   *
-   * Nothing is imported by looking; this is the list an author chooses from, and a product
-   * that could not be read fully arrives with its problems attached rather than hidden.
+   * The products in the WAF workspace's modules no project has open: what a Loom-authored
+   * module holds under `generated/`, and a product this project owned before its index was
+   * lost. Read from each product's metadata and its refs' folders only.
    */
-  async availableImports(): Promise<{ modulesDir: string | null; products: ImportedActivity[] }> {
-    const wafRoot = await findWafRoot();
-    if (!wafRoot) return { modulesDir: null, products: [] };
-    const modulesDir = path.join(wafRoot, "modules");
-    return { modulesDir, products: await discoverLoomProducts(modulesDir) };
+  async moduleProducts(projectId: string): Promise<ModuleProduct[]> {
+    const modules = path.join(await this.requireWafRoot(), "modules");
+    const indexed = new Map(
+      (
+        this.db
+          .prepare(
+            "SELECT module_folder AS folder, product_code AS code, project_id AS projectId, product_id AS productId FROM activity_products",
+          )
+          .all() as { folder: string; code: string; projectId: string; productId: string }[]
+      ).map((row) => [`${row.folder}\u0000${row.code}`, row]),
+    );
+    const found: ModuleProduct[] = [];
+    const folders = await fs.readdir(modules, { withFileTypes: true }).catch(() => []);
+    for (const folder of folders
+      .filter((entry) => entry.isDirectory())
+      .map((e) => e.name)
+      .sort()) {
+      const generated = path.join(modules, folder, "generated");
+      const codes = await fs.readdir(generated, { withFileTypes: true }).catch(() => []);
+      for (const code of codes
+        .filter((entry) => entry.isDirectory())
+        .map((e) => e.name)
+        .sort()) {
+        // Open in another project: not offered. Open in this one: offered with the refs it
+        // does not have yet (one that failed to open, or one added to the module since).
+        const open = indexed.get(`${folder}\u0000${code}`);
+        if (open && open.projectId !== projectId) continue;
+        const have = new Set(
+          open
+            ? (
+                this.db
+                  .prepare("SELECT ref_num AS refNum FROM activities WHERE product_id = ?")
+                  .all(open.productId) as { refNum: number }[]
+              ).map((row) => row.refNum)
+            : [],
+        );
+        const dir = path.join(generated, code);
+        const owner = await readProductOwner(dir).catch(() => null);
+        if (owner && owner.projectId !== projectId) continue;
+        const metadata = mapProductMetadata(
+          code,
+          folder,
+          await fs
+            .readFile(path.join(dir, "spec", "activity_metadata.json"), "utf8")
+            .then((text) => JSON.parse(text) as unknown)
+            .catch(() => null),
+        );
+        const refNums = (await fs.readdir(path.join(dir, "refs")).catch(() => [] as string[]))
+          .map((name) => parseRefDirName(code, name))
+          .filter((refNum): refNum is number => refNum !== null && !have.has(refNum))
+          .sort((left, right) => left - right);
+        if (!refNums.length) continue;
+        found.push({
+          moduleFolder: folder,
+          productCode: code,
+          title: metadata.title,
+          activityType: metadata.activityType,
+          refNums,
+        });
+      }
+    }
+    return found;
   }
 
   /**
-   * Read one Loom product, decide what Penguin would make of it, and make it.
-   *
-   * The three steps stay separate on purpose: the reader never writes, the mapping never
-   * touches the store, and this reports all of it together so an author sees what was
-   * repaired and what was lost beside what was created.
+   * Opens a product that is in the modules into this project, in place: the product and its
+   * refs are indexed, the project is recorded as its owner, and each ref Loom authored gets
+   * Penguin's files beside Loom's. Loom's specification is used as it is (its module folder
+   * repaired), the media plan is made from it again and Loom's bindings carried onto it, and
+   * Loom's own specification and manifest are kept as `*.loom.json`. A ref Penguin already
+   * wrote (this project's, before its index was lost) keeps its draft and ids.
    */
-  async importFromLoom(
+  async claimModuleProduct(
     projectId: string,
-    moduleFolder: string,
-    productCode: string,
-    collectionId?: string,
-  ): Promise<{
-    mapping: ImportMapping;
-    outcome: ImportOutcome;
-    message: string;
-    problems: string[];
-  }> {
-    const wafRoot = await findWafRoot();
-    if (!wafRoot)
-      throw new HttpError(
-        400,
-        "waf_checkout_missing",
-        "WAF checkout not found. Select a root containing framework, modules and media.",
-      );
-    let source: ImportedActivity;
+    input: { moduleFolder: string; productCode: string; collectionId?: string },
+  ): Promise<ClaimModuleProductResponse> {
+    const root = await this.requireWafRoot();
+    const moduleFolder = normalizeModuleFolder(input.moduleFolder, input.productCode);
+    let productCode: string;
     try {
-      source = await readLoomProduct(
-        path.join(wafRoot, "modules"),
-        normalizeModuleFolder(moduleFolder, "module"),
-        normalizeProductCode(productCode),
-      );
+      productCode = normalizeProductCode(input.productCode);
     } catch (error) {
       throw new HttpError(400, "activity_invalid", (error as Error).message);
     }
-    if (!source.refs.length)
-      throw new HttpError(404, "loom_product_not_found", "No such product in the checkout.");
-    const mapping = mapImport(source.product, source.refs);
-    const outcome = await this.importProduct(projectId, collectionId, mapping);
+    const dir = productDir(root, moduleFolder, productCode);
+    // One claim of a product at a time: two would both find it unowned.
+    return this.locks.run(`claim:${moduleFolder}/${productCode}`, () =>
+      this.claimLocked(projectId, root, dir, moduleFolder, productCode, input.collectionId),
+    );
+  }
+
+  private async claimLocked(
+    projectId: string,
+    root: string,
+    dir: string,
+    moduleFolder: string,
+    productCode: string,
+    collectionId: string | undefined,
+  ): Promise<ClaimModuleProductResponse> {
+    if (!(await exists(path.join(dir, "refs"))))
+      throw new HttpError(404, "module_product_not_found", "No such product in the modules.");
+    const owner = await readProductOwner(dir);
+    if (owner && owner.projectId !== projectId)
+      throw new HttpError(
+        409,
+        "product_taken",
+        `Product ${productCode} belongs to another project.`,
+      );
+    const openRow = this.db
+      .prepare("SELECT * FROM activity_products WHERE module_folder = ? AND product_code = ?")
+      .get(moduleFolder, productCode) as Record<string, unknown> | undefined;
+    // Open in this project already: opening it again opens the refs it does not have yet,
+    // one that failed to open before or one added to the module since.
+    const reopened = openRow ? this.mapProduct(openRow) : null;
+    if (reopened && reopened.projectId !== projectId)
+      throw new HttpError(409, "product_open", `Product ${productCode} is already open.`);
+    const read = await readLoomProduct(path.join(root, "modules"), moduleFolder, productCode);
+    if (!read.refs.length)
+      throw new HttpError(404, "module_product_not_found", "This product has no refs.");
+    const adoption = adoptLoomProduct(read.product, read.refs);
+    const collection = reopened
+      ? await this.ensureCollection(projectId, reopened.collectionId)
+      : await this.ensureCollection(projectId, collectionId);
+    if (
+      !reopened &&
+      this.db
+        .prepare("SELECT 1 FROM activity_products WHERE collection_id = ? AND product_code = ?")
+        .get(collection.collectionId, productCode)
+    )
+      throw new HttpError(
+        409,
+        "activity_exists",
+        `This project already has a product ${productCode}, in another module.`,
+      );
+    const opened = new Set(
+      reopened
+        ? (
+            this.db
+              .prepare("SELECT ref_num AS refNum FROM activities WHERE product_id = ?")
+              .all(reopened.productId) as { refNum: number }[]
+          ).map((row) => row.refNum)
+        : [],
+    );
+    const pending = adoption.activities.filter((mapped) => !opened.has(mapped.refNum));
+    if (reopened && !pending.length)
+      throw new HttpError(409, "product_open", `Product ${productCode} is already open.`);
+    const problems = [
+      ...read.problems,
+      ...read.refs
+        .filter((ref) => !opened.has(ref.refNum))
+        .flatMap((ref) => ref.problems.map((problem) => `Ref ${ref.refNum}: ${problem}`)),
+    ];
+    const now = new Date().toISOString();
+    const product: ActivityProduct = reopened ?? {
+      productId: owner?.productId ?? newId("prd"),
+      projectId,
+      collectionId: collection.collectionId,
+      productCode,
+      moduleFolder,
+      canonicalRefNum: adoption.product.canonicalRefNum,
+      activityType: adoption.product.activityType,
+      bookMode: adoption.product.bookMode,
+      createdAt: now,
+      updatedAt: now,
+    };
+    if (!reopened)
+      this.db
+        .prepare(
+          `INSERT INTO activity_products
+             (product_id, project_id, collection_id, product_code, module_folder,
+              canonical_ref_num, activity_type, book_mode, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          product.productId,
+          projectId,
+          product.collectionId,
+          productCode,
+          moduleFolder,
+          product.canonicalRefNum,
+          product.activityType,
+          product.bookMode,
+          now,
+          now,
+        );
+    const activityIds: string[] = [];
+    for (const mapped of pending) {
+      const specDir = refSpecDir(root, moduleFolder, productCode, mapped.refNum);
+      const penguin = await readRefDraft(specDir).catch(() => null);
+      const activity: ActivityRecord = {
+        id: penguin?.activityId ?? newId("act"),
+        collectionId: collection.collectionId,
+        productId: product.productId,
+        productCode,
+        refNum: mapped.refNum,
+        title: mapped.title,
+        displayName: mapped.displayName,
+        stable: mapped.stable,
+        activityType: product.activityType,
+        createdAt: now,
+        updatedAt: now,
+        archived: false,
+        tags: [],
+      };
+      const draftId = penguin?.draftId ?? newId("draft");
+      this.db
+        .prepare(
+          "INSERT INTO activities (id, collection_id, product_id, product_code, ref_num, title, display_name, stable, activity_type, created_at, updated_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+        )
+        .run(
+          activity.id,
+          activity.collectionId,
+          product.productId,
+          productCode,
+          mapped.refNum,
+          activity.title,
+          activity.displayName,
+          activity.stable ? 1 : 0,
+          activity.activityType,
+          now,
+          now,
+        );
+      this.db
+        .prepare(
+          "INSERT INTO activity_drafts (draft_id, activity_id, base_version_id, content_revision, status, updated_at) VALUES (?, ?, NULL, ?, ?, ?)",
+        )
+        .run(
+          draftId,
+          activity.id,
+          penguin?.contentRevision ?? contentRevision({ description: "", spec: null }),
+          penguin?.status ?? "draft",
+          now,
+        );
+      if (penguin) {
+        activityIds.push(activity.id);
+        continue;
+      }
+      try {
+        await this.adoptLoomRef(projectId, activity, draftId, specDir, mapped);
+        activityIds.push(activity.id);
+      } catch (error) {
+        // Put back as Loom left it, so opening the product again retries this ref.
+        await this.undoLoomRef(activity.id, specDir);
+        problems.push(
+          `Ref ${mapped.refNum} was not opened: ${(error as Error).message} Open the product again to retry it.`,
+        );
+      }
+    }
+    await this.syncProductFiles(product.productId);
     return {
-      mapping,
-      outcome,
-      message: `${describeImport(mapping)} ${describeOutcome(outcome, mapping.product.productCode)}`,
-      problems: [...source.problems, ...source.refs.flatMap((ref) => ref.problems)],
+      collectionId: collection.collectionId,
+      activityIds,
+      message: describeAdoption(adoption),
+      problems,
     };
   }
 
   /**
-   * Import one Loom product into a collection.
-   *
-   * The ordering and failure policy live in `applyImport`; this only supplies the store.
-   * Every call it makes is an ordinary authoring call, so an imported activity is
-   * indistinguishable from one an author made here — which is the point of the trial.
+   * A Loom ref whose opening failed, put back as Loom left it: its rows go, Penguin's
+   * bookkeeping goes, and Loom's specification and manifest come back from their
+   * `*.loom.json` copies. The product's next opening then finds it not yet open.
    */
-  async importProduct(
+  private async undoLoomRef(activityId: string, specDir: string): Promise<void> {
+    this.db.prepare("DELETE FROM activity_drafts WHERE activity_id = ?").run(activityId);
+    this.db.prepare("DELETE FROM activities WHERE id = ?").run(activityId);
+    await fs.rm(path.join(specDir, PENGUIN_FILE), { force: true, recursive: true });
+    for (const name of ["activity_spec", "asset_manifest"]) {
+      const kept = path.join(specDir, `${name}.loom.json`);
+      if (await exists(kept)) await fs.copyFile(kept, path.join(specDir, `${name}.json`));
+    }
+  }
+
+  /**
+   * Gives one Loom-authored ref Penguin's files: Loom's specification and manifest are kept
+   * as `*.loom.json`, an empty draft is written, and then the specification, media plan and
+   * Loom's bindings are applied through the ordinary authoring calls, so an adopted ref is
+   * checked exactly as one made here is.
+   */
+  private async adoptLoomRef(
     projectId: string,
-    collectionId: string | undefined,
-    mapping: ImportMapping,
-  ): Promise<ImportOutcome> {
-    const collection = await this.ensureCollection(projectId, collectionId);
-    const target: ImportTarget = {
-      existingProduct: async (productCode) =>
-        this.existingProduct(collection.collectionId, productCode),
-      createRef: async (input) => {
-        const created = await this.createActivity(projectId, {
-          collectionId: collection.collectionId,
-          productCode: input.productCode,
-          refNum: input.refNum,
-          title: input.title,
-          activityType: input.activityType,
-          moduleFolder: input.moduleFolder,
-        });
-        return { activityId: created.id, revision: created.draft.contentRevision };
-      },
-      setRefIdentity: async (activityId, identity) => {
-        await this.setRefIdentity(projectId, activityId, identity);
-      },
-      setDescription: async (activityId, description, revision) =>
-        (await this.updateDescription(projectId, activityId, description, revision))
-          .contentRevision,
-      setSpec: async (activityId, spec, revision) =>
-        (await this.applySpec(projectId, activityId, spec, revision)).contentRevision,
-      setBookMode: async (productCode, mode) => {
-        await this.setProductBookMode(projectId, collection.collectionId, productCode, mode);
-      },
-      setImplementationFeatures: async (activityId, selectedIds) => {
-        await this.setImplementationFeatures(projectId, activityId, selectedIds);
-      },
-      setMedia: async (activityId, media, revision) =>
-        (await this.importMedia(projectId, activityId, media, revision)).contentRevision,
+    activity: ActivityRecord,
+    draftId: string,
+    specDir: string,
+    mapped: {
+      description: string;
+      spec: Record<string, unknown> | null;
+      media: Record<string, CarriedBinding[]>;
+    },
+  ): Promise<void> {
+    for (const name of ["activity_spec", "asset_manifest"]) {
+      const from = path.join(specDir, `${name}.json`);
+      const to = path.join(specDir, `${name}.loom.json`);
+      if ((await exists(from)) && !(await exists(to))) await fs.copyFile(from, to);
+    }
+    const now = new Date().toISOString();
+    const empty: ActivityDraft = {
+      draftId,
+      activityId: activity.id,
+      baseVersionId: null,
+      contentRevision: contentRevision({ description: mapped.description, spec: null }),
+      status: "draft",
+      description: mapped.description,
+      spec: null,
+      updatedAt: now,
     };
-    return applyImport(mapping, target);
+    empty.contentRevision = draftRevision(empty);
+    await this.writeDraft(activity, empty);
+    this.db
+      .prepare(
+        "UPDATE activity_drafts SET content_revision = ?, status = ?, updated_at = ? WHERE draft_id = ?",
+      )
+      .run(empty.contentRevision, empty.status, now, draftId);
+    if (!mapped.spec) return;
+    const specified = await this.applySpec(
+      projectId,
+      activity.id,
+      mapped.spec,
+      empty.contentRevision,
+    );
+    if (specified.status !== "valid" || !Object.keys(mapped.media).length) return;
+    await this.carryLoomMedia(projectId, activity.id, mapped.media, specified.contentRevision);
+  }
+
+  /**
+   * The media plan made from the ref's specification, with Loom's bindings carried onto it. A
+   * language Loom held besides the default holds what Loom listed for it; the rest falls
+   * back to the default.
+   */
+  private async carryLoomMedia(
+    projectId: string,
+    activityId: string,
+    media: Record<string, CarriedBinding[]>,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    const planned = await this.planMedia(projectId, activityId, expectedRevision);
+    const manifest = structuredClone(planned.mediaPlan!.manifest);
+    const defaults = manifest.assets[DEFAULT_LANGUAGE_CODE] ?? [];
+    const sceneIds = new Set(
+      ((planned.spec?.scenes ?? planned.spec?.stages ?? []) as { id?: unknown }[]).map((scene) =>
+        String(scene.id),
+      ),
+    );
+    for (const [language, bindings] of Object.entries(media)) {
+      const byKey = new Map(bindings.map((binding) => [binding.key, binding]));
+      const listed = (asset: MediaAsset) =>
+        byKey.has(asset.key) || (!!asset.sourceKey && byKey.has(asset.sourceKey));
+      const base =
+        language === DEFAULT_LANGUAGE_CODE
+          ? defaults
+          : defaults.filter(listed).map((asset) => {
+              const {
+                script: _script,
+                path: _path,
+                generatedAudio: _audio,
+                generatedImage: _image,
+                generatedVideo: _video,
+                translatedFrom: _from,
+                wordTimings: _timings,
+                durationMs: _duration,
+                ...rest
+              } = structuredClone(asset);
+              return rest;
+            });
+      manifest.assets[language] = base.map((asset) => {
+        const binding = byKey.get(asset.key) ?? (asset.sourceKey && byKey.get(asset.sourceKey));
+        if (!binding) return asset;
+        return {
+          ...asset,
+          ...(binding.path ? { path: binding.path } : {}),
+          ...(asset.type === "audio" && binding.script !== undefined
+            ? { script: binding.script }
+            : {}),
+          ...(asset.type === "audio" && binding.wordTimings
+            ? { wordTimings: binding.wordTimings }
+            : {}),
+          ...(asset.type === "audio" && binding.durationMs !== undefined
+            ? { durationMs: binding.durationMs }
+            : {}),
+          ...(asset.type === "audio" && binding.playback ? binding.playback : {}),
+          ...(asset.type === "audio" && binding.playback && binding.targetDurationMs !== undefined
+            ? { targetDurationMs: binding.targetDurationMs }
+            : {}),
+        };
+      });
+      // A decodable book's word pronunciations are planned from its narration, not its
+      // specification, so they are carried as Loom had them, in the scenes that still exist.
+      const present = new Set(manifest.assets[language]!.map((asset) => asset.key));
+      for (const binding of bindings) {
+        const word = binding.bookWord;
+        if (!word || present.has(binding.key)) continue;
+        present.add(binding.key);
+        manifest.assets[language]!.push({
+          key: binding.key,
+          type: "audio",
+          role: "bookWord",
+          description: `Pronunciation of “${word.word}”.`,
+          word: word.word,
+          normalizedWord: word.normalizedWord,
+          ...(word.phonemes
+            ? { phonemes: word.phonemes, phonemeSource: word.customized ? "author" : "espeak" }
+            : {}),
+          ...(word.customized ? { customized: true } : {}),
+          ...(binding.path ? { path: binding.path } : {}),
+          ...(binding.script !== undefined ? { script: binding.script } : {}),
+          ...(binding.wordTimings ? { wordTimings: binding.wordTimings } : {}),
+          ...(binding.durationMs !== undefined ? { durationMs: binding.durationMs } : {}),
+          usages: word.usages.filter(
+            (usage) =>
+              sceneIds.has(usage.sceneId) &&
+              /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(usage.sourceKey) &&
+              usage.occurrence >= 1 &&
+              usage.sceneOccurrenceCount >= usage.occurrence,
+          ),
+        });
+      }
+    }
+    return this.applyMedia(projectId, activityId, manifest, planned.contentRevision);
   }
 }
 
@@ -2484,4 +3092,12 @@ function validModuleDocuments(value: unknown): boolean {
         typeof entry.editedAt === "string")
     );
   });
+}
+
+/** Whether anything is at `file`. */
+async function exists(file: string): Promise<boolean> {
+  return fs.stat(file).then(
+    () => true,
+    () => false,
+  );
 }

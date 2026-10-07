@@ -14,10 +14,10 @@ import type { Config } from "../hmr/capabilities.js";
 import { hostOnly, requestAuthority, resolvePreviewTarget } from "../services/preview-token.js";
 import { playBase } from "./play-routes.js";
 import { requestOrigin } from "../http/routes/model-oauth.js";
-import { findWafRoot } from "./waf-module.js";
 import { IMAGE_MODEL } from "./generated-image.js";
 import { audioMimeType } from "./sound.js";
 import { UPLOAD_MAX_BYTES } from "./upload.js";
+import type { ClaimModuleProductResponse, ModuleProductsResponse } from "./module-product-types.js";
 import { BUNDLE_FILE_NAME, BUNDLE_MAX_ITEMS } from "./media-bundle.js";
 import type { BundleItem } from "./media-library-types.js";
 import { ActivityPipelines, parseSelection } from "./pipeline-run.js";
@@ -145,19 +145,20 @@ export class ActivityRoutes {
         ...(summaries ? { summaries } : {}),
       });
     });
-    app.get("/import-sources", async (c) => {
-      this.access.requireProjectOwner(c.var.user.userId, requireValidId(c, "projectId"));
-      return c.json(await this.activities.availableImports());
-    });
-    app.post("/import", async (c) => {
+    // Products in the WAF workspace's modules no project has open, and opening one here.
+    app.get("/module-products", async (c) =>
+      c.json({
+        products: await this.activities.moduleProducts(requireValidId(c, "projectId")),
+      } satisfies ModuleProductsResponse),
+    );
+    app.post("/module-products/claim", async (c) => {
       const body = await readJson(c);
       return c.json(
-        await this.activities.importFromLoom(
-          requireValidId(c, "projectId"),
-          requireString(body, "moduleFolder"),
-          requireString(body, "productCode"),
-          optionalString(body, "collectionId"),
-        ),
+        (await this.activities.claimModuleProduct(requireValidId(c, "projectId"), {
+          moduleFolder: requireString(body, "moduleFolder", { minLen: 1, maxLen: 128 }),
+          productCode: requireString(body, "productCode", { minLen: 1, maxLen: 128 }),
+          collectionId: optionalString(body, "collectionId", { maxLen: 128 }),
+        })) satisfies ClaimModuleProductResponse,
       );
     });
     // The project's media library: every activity's uploads, read across the project.
@@ -240,10 +241,6 @@ export class ActivityRoutes {
         ),
       );
     });
-    app.get("/module-setup", async (c) => {
-      this.access.requireProjectOwner(c.var.user.userId, requireValidId(c, "projectId"));
-      return c.json({ wafRoot: await findWafRoot() });
-    });
     app.post("/:activityId/assemble-module", async (c) => {
       const body = await readJson(c);
       const runner = stageRunner(body);
@@ -254,7 +251,6 @@ export class ActivityRoutes {
           runner.agentId,
           requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
           {
-            wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) || undefined,
             bookMode: optionalString(body, "bookMode", { maxLen: 32 }) || undefined,
           },
           runner.runtime,
@@ -294,8 +290,6 @@ export class ActivityRoutes {
             composition: {
               language: requireString(body, "language", { minLen: 5, maxLen: 5 }),
               assetKey: requireString(body, "assetKey", { minLen: 1, maxLen: 128 }),
-              // The checkout the author chose, for scene images bound to checkout media.
-              wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) || undefined,
             },
           },
           runner.runtime,
@@ -709,14 +703,13 @@ export class ActivityRoutes {
     });
     app.get("/:activityId/media-image", async (c) => {
       const projectId = requireValidId(c, "projectId");
-      // Choosing a server-side checkout is an owner capability, like module assembly.
+      // Reading the server's checkout is an owner capability, like module assembly.
       this.access.requireProjectOwner(c.var.user.userId, projectId);
       const query = c.req.query();
       const result = await this.activities.imageContent(projectId, pathParam(c, "activityId"), {
         language: requireString(query, "language", { minLen: 5, maxLen: 5 }),
         assetKey: requireString(query, "assetKey", { minLen: 1, maxLen: 128 }),
         expectedRevision: requireString(query, "expectedRevision", { minLen: 1, maxLen: 128 }),
-        wafRoot: optionalString(query, "wafRoot", { maxLen: 4096 }) || undefined,
       });
       return new Response(new Uint8Array(result.bytes), {
         headers: {
@@ -941,14 +934,6 @@ export class ActivityRoutes {
       const activityId = pathParam(c, "activityId");
       const body = await readJson(c);
       const expectedRevision = requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 });
-      // Loom's module in the checkout names its files by the current number, and the
-      // checkout is never written; renaming the ref alone would leave the preview behind.
-      if ((await this.sandbox.moduleDocuments(projectId, activityId)).source === "checkout")
-        throw new HttpError(
-          409,
-          "checkout_ref",
-          "This ref's module lives in the read-only WAF checkout under its current number, so it cannot be renumbered here.",
-        );
       if ((await this.pipelines.status(projectId, activityId))?.status === "running")
         throw new HttpError(
           409,
@@ -1185,8 +1170,13 @@ export class ActivityRoutes {
       const assetKey = optionalString(body, "assetKey", { maxLen: 200 });
       if (assetKey && !language) throw badRequest("assetKey needs a language.");
       const soundProvider = optionalString(body, "soundProvider", { maxLen: 32 });
-      if (soundProvider && soundProvider !== "elevenlabs" && soundProvider !== "agenthub")
-        throw badRequest("soundProvider must be elevenlabs or agenthub.");
+      if (
+        soundProvider &&
+        !["elevenlabs", "agenthub", "musicgen", "audiogen", "audioldm"].includes(soundProvider)
+      )
+        throw badRequest(
+          "Choose elevenlabs, agenthub, musicgen, audiogen or audioldm for soundProvider.",
+        );
       const state = await this.pipelines.start(projectId, activityId, {
         selection: parseSelection(body.stage),
         ...(language ? { scope: { language, ...(assetKey ? { assetKey } : {}) } } : {}),
@@ -1194,9 +1184,6 @@ export class ActivityRoutes {
         ...(runner.runtime ? { codingAgentId: runner.runtime.codingAgentId } : {}),
         ...(optionalString(body, "voice", { maxLen: 64 })
           ? { voice: optionalString(body, "voice", { maxLen: 64 }) }
-          : {}),
-        ...(optionalString(body, "wafRoot", { maxLen: 4096 })
-          ? { wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) }
           : {}),
         ...(bookMode ? { bookMode: bookMode as "readAlong" | "decodable" } : {}),
         ...(soundProvider ? { soundProvider: soundProvider as SoundProviderId } : {}),
@@ -1246,15 +1233,12 @@ export class ActivityRoutes {
     );
     // What stands between the draft and an assembled module, checked where the facts live.
     app.get("/:activityId/readiness", async (c) => {
-      const wafRoot = (c.req.query("wafRoot") ?? "").trim();
-      if (wafRoot.length > 4096) throw badRequest("wafRoot is too long.");
       const projectId = requireValidId(c, "projectId");
       const activityId = pathParam(c, "activityId");
       return c.json({
         checks: await this.activities.readiness(
           projectId,
           activityId,
-          wafRoot,
           // A module that cannot be read leaves the author's edit, which the service reads.
           await Promise.all([
             this.currentAssessment(projectId, activityId),

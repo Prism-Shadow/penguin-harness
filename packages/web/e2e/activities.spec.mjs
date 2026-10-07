@@ -143,18 +143,23 @@ async function fixture(page) {
       const summaries = Object.fromEntries(
         activities.map((entry) => [
           entry.id,
-          { canonical: true, hasPlan: false, done: 0, total: 3, status: { kind: "next", milestone: "spec" } },
+          {
+            canonical: true,
+            hasPlan: false,
+            done: 0,
+            total: 3,
+            status: { kind: "next", milestone: "spec" },
+          },
         ]),
       );
       return json({ activities, summaries });
     }
-    if (p === `${base}/module-setup`) return json({ wafRoot: "C:/WAF checkout" });
     if (p === `${base}/speech-setup`) return json({ voices: ["Kore", "Puck"] });
     if (p === `${base}/act_test/media-uploads`) {
       if (request.method() === "POST") {
         const input = request.postDataJSON();
         const stored = {
-          path: `media/uploads/${input.name
+          path: `media/loom/words/words-1/uploads/${input.name
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/-[^-]*$/, "")}-1234abcd.png`,
@@ -998,9 +1003,7 @@ test("chooses a narration's voice from the picker and applies one voice to every
   expect(f.errors).toEqual([]);
 });
 
-test("uploads media into the activity workspace and binds it from the library", async ({
-  page,
-}) => {
+test("uploads media into the ref's uploads and binds it from the library", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
   await openSection(page, "Specification");
@@ -1021,7 +1024,7 @@ test("uploads media into the activity workspace and binds it from the library", 
   await page
     .locator('input[type="file"]')
     .setInputFiles({ name: "cat.png", mimeType: "image/png", buffer: PIXEL });
-  await expect(binding).toHaveValue(/^media\/uploads\/cat-[a-f0-9]{8}\.png$/);
+  await expect(binding).toHaveValue(/^media\/loom\/words\/words-1\/uploads\/cat-[a-f0-9]{8}\.png$/);
   await expect(page.getByText("Stored with this activity.")).toBeVisible();
 
   // Another upload does not replace the bound file at once: it is shown beside it first.
@@ -1040,7 +1043,7 @@ test("uploads media into the activity workspace and binds it from the library", 
   await upload("dog.png");
   await comparison.getByRole("button", { name: "Use new", exact: true }).click();
   await expect(comparison).toHaveCount(0);
-  await expect(binding).toHaveValue(/^media\/uploads\/dog-[a-f0-9]{8}\.png$/);
+  await expect(binding).toHaveValue(/^media\/loom\/words\/words-1\/uploads\/dog-[a-f0-9]{8}\.png$/);
 
   // Clearing and rebinding from the library reaches the same file.
   await page.getByRole("button", { name: "Clear media path", exact: true }).click();
@@ -1053,7 +1056,7 @@ test("uploads media into the activity workspace and binds it from the library", 
   await page.getByRole("button", { name: /^cat\.png/ }).click();
   await expect(page.getByRole("button", { name: "Preview image", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Use this file", exact: true }).click();
-  await expect(binding).toHaveValue(/^media\/uploads\/cat-[a-f0-9]{8}\.png$/);
+  await expect(binding).toHaveValue(/^media\/loom\/words\/words-1\/uploads\/cat-[a-f0-9]{8}\.png$/);
   await expect(page.getByText("Stored with this activity.")).toBeVisible();
 
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
@@ -1088,7 +1091,7 @@ test("uploads media into the activity workspace and binds it from the library", 
   expect(f.errors).toEqual([]);
 });
 
-test("previews only saved images and resets previews across edits, checkout changes and failures", async ({
+test("previews only saved images and resets previews across edits and failures", async ({
   page,
 }) => {
   const f = await fixture(page);
@@ -1112,8 +1115,8 @@ test("previews only saved images and resets previews across edits, checkout chan
   expect(f.imageRequests[0]).toMatchObject({
     language: "en-US",
     assetKey: "cat",
-    wafRoot: "C:/WAF checkout",
   });
+  expect(f.imageRequests[0]).not.toHaveProperty("wafRoot");
   expect(f.imageRequests[0].expectedRevision).toBeTruthy();
   await expect(page.getByRole("link", { name: "Open full-size image" })).toHaveAttribute(
     "href",
@@ -1126,8 +1129,6 @@ test("previews only saved images and resets previews across edits, checkout chan
   ).toBeVisible();
   expect(f.imageRequests).toHaveLength(1);
   await binding.fill("media/images/cat.png");
-  await openSection(page, "Module preview");
-  await page.getByRole("textbox", { name: /^WAF checkout/ }).fill("C:/Other WAF");
   f.setImageFailure(true);
   await openSection(page, "Scenes and media");
   await page.getByRole("button", { name: "Preview image", exact: true }).click();
@@ -1135,7 +1136,6 @@ test("previews only saved images and resets previews across edits, checkout chan
   f.setImageFailure(false);
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.getByText("1 × 1 pixels", { exact: true })).toBeVisible();
-  expect(f.imageRequests.at(-1).wafRoot).toBe("C:/Other WAF");
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
@@ -1161,14 +1161,13 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   await page.getByRole("button", { name: "Validate and save", exact: true }).click();
   await openSection(page, "Module preview");
   await expect(assemble).toBeEnabled();
-  await expect(page.getByRole("textbox", { name: /^WAF checkout/ })).toHaveValue("C:/WAF checkout");
+  // The checkout is the server's WAF workspace, not something an author types.
+  await expect(page.getByRole("textbox", { name: /^WAF checkout/ })).toHaveCount(0);
   const sent = page.waitForRequest((request) => request.url().endsWith("/assemble-module"));
   await assemble.click();
   const payload = (await sent).postDataJSON();
-  expect(payload).toMatchObject({
-    wafRoot: "C:/WAF checkout",
-    agentId: "default_agent",
-  });
+  expect(payload).toMatchObject({ agentId: "default_agent" });
+  expect(payload).not.toHaveProperty("wafRoot");
   expect(payload).not.toHaveProperty("bookMode");
   await openSection(page, "Generation history");
   await expect(page.getByText("Module assembly", { exact: true })).toBeVisible();
@@ -1759,7 +1758,10 @@ test("the studio header wraps its controls instead of overlapping them", async (
     const boxes = [];
     for (const locator of locators) {
       const box = await locator.boundingBox();
-      expect(box, `expected a visible bounding box for ${await locator.evaluate((el) => el.outerHTML.slice(0, 80))}`).not.toBeNull();
+      expect(
+        box,
+        `expected a visible bounding box for ${await locator.evaluate((el) => el.outerHTML.slice(0, 80))}`,
+      ).not.toBeNull();
       boxes.push(box);
     }
     for (let i = 0; i < boxes.length; i++)
@@ -1939,9 +1941,7 @@ test("an activity collapses the sidebar without changing the stored choice", asy
   await page.getByRole("link", { name: "Agents", exact: true }).click();
   await expect(page).toHaveURL(/\/agents$/);
   await expect(page.getByRole("button", { name: "Collapse sidebar", exact: true })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("penguin.sidebarCollapsed"))).not.toBe(
-    "1",
-  );
+  expect(await page.evaluate(() => localStorage.getItem("penguin.sidebarCollapsed"))).not.toBe("1");
   expect(f.errors).toEqual([]);
 });
 
@@ -2731,11 +2731,9 @@ test("lists the live tap targets on the current state and resizes the map", asyn
 test("the Build stage lists what stands between the draft and a module", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
-  const asked = [];
   await page.route("**/*", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== `${base}/act_test/readiness`) return route.fallback();
-    asked.push(url.searchParams.get("wafRoot"));
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -2780,9 +2778,6 @@ test("the Build stage lists what stands between the draft and a module", async (
   ).toBeDisabled();
   await expect(checks.getByText("No unsaved edits.")).toBeVisible();
   await expect(page.getByText("This activity has not been assembled yet.")).toBeVisible();
-  // The checkout an author types is the one checked.
-  await page.getByRole("textbox", { name: /^WAF checkout/ }).fill("D:/waf");
-  await expect.poll(() => asked.at(-1)).toBe("D:/waf");
   expect(f.errors).toEqual([]);
 });
 
@@ -3473,7 +3468,7 @@ test("trims a stretch out of a narration and binds the shorter clip", async ({ p
                 type: "audio",
                 description: "Greeting",
                 script: "Hello",
-                path: "media/uploads/hello-00000000.wav",
+                path: "media/loom/words/words-1/uploads/hello-00000000.wav",
                 usages: [
                   { sceneId: "intro", sourceKey: "hello", occurrence: 1, sceneOccurrenceCount: 1 },
                 ],
@@ -3492,7 +3487,7 @@ test("trims a stretch out of a narration and binds the shorter clip", async ({ p
     if (p === `${base}/act_test/media-uploads` && request.method() === "POST") {
       const input = request.postDataJSON();
       const record = {
-        path: "media/uploads/hello-trimmed-1234abcd.wav",
+        path: "media/loom/words/words-1/uploads/hello-trimmed-1234abcd.wav",
         name: input.name,
         kind: "audio",
         mimeType: "audio/wav",
@@ -3546,7 +3541,7 @@ test("trims a stretch out of a narration and binds the shorter clip", async ({ p
   expect(stored[0].byteLength).toBeGreaterThan(44 + 7000 * 2);
   expect(stored[0].byteLength).toBeLessThan(44 + 9000 * 2);
   await expect(page.getByRole("textbox", { name: /^Media path/ })).toHaveValue(
-    "media/uploads/hello-trimmed-1234abcd.wav",
+    "media/loom/words/words-1/uploads/hello-trimmed-1234abcd.wav",
   );
   expect(f.errors).toEqual([]);
 });
@@ -3555,7 +3550,7 @@ test("shows a narration's file details", async ({ page }) => {
   const f = await fixture(page);
   const clip = toneWav(2);
   const path = "media/audio/hello.wav";
-  const uploadPath = "media/uploads/clip-1234abcd.wav";
+  const uploadPath = "media/loom/words/words-1/uploads/clip-1234abcd.wav";
   // Stubbed before the activity opens, so its first upload listing holds the clip.
   let statsReads = 0;
   await page.route("**/*", (route) => {
@@ -3981,7 +3976,11 @@ test("a narration shows every language's script, and opens another language from
           productCode: "words",
           refNum: 12,
           assets: {
-            "en-US": [narration("hello", "Hello", { path: "media/uploads/hello-1234abcd.wav" })],
+            "en-US": [
+              narration("hello", "Hello", {
+                path: "media/loom/words/words-1/uploads/hello-1234abcd.wav",
+              }),
+            ],
             "es-MX": [narration("hello")],
           },
         },
@@ -4003,7 +4002,7 @@ test("a narration shows every language's script, and opens another language from
   // The bound recording can be downloaded as the player would fetch it.
   await expect(page.getByRole("link", { name: "Download current", exact: true })).toHaveAttribute(
     "href",
-    `${base}/act_test/sandbox/media/uploads/hello-1234abcd.wav`,
+    `${base}/act_test/sandbox/media/loom/words/words-1/uploads/hello-1234abcd.wav`,
   );
   await languages.getByRole("button", { name: "Open", exact: true }).click();
   // Spanish has no recording yet, so there is nothing to download.
@@ -4433,7 +4432,7 @@ test("the home page groups refs under their product code", async ({ page }) => {
 /** Files uploaded across the project, as `GET /media-library` reports them. */
 function libraryFile(name, activityId, productCode, refNum, activityTitle, overrides = {}) {
   return {
-    path: `media/uploads/${name}`,
+    path: `media/loom/words/words-1/uploads/${name}`,
     name,
     kind: "image",
     mimeType: "image/png",
@@ -4530,7 +4529,7 @@ test("browses the project's media, switches to the table, and downloads two file
   // One file downloads as itself.
   await expect(page.getByRole("link", { name: "Download (1)", exact: true })).toHaveAttribute(
     "href",
-    `${base}/act_words/media-upload?path=media%2Fuploads%2Fcat-1111222233334444.png`,
+    `${base}/act_words/media-upload?path=media%2Floom%2Fwords%2Fwords-1%2Fuploads%2Fcat-1111222233334444.png`,
   );
   await list.getByRole("checkbox", { name: "Select bell-5555666677778888.wav" }).check();
   const saved = page.waitForEvent("download");
@@ -4539,8 +4538,14 @@ test("browses the project's media, switches to the table, and downloads two file
   expect(bundles).toEqual([
     {
       items: [
-        { activityId: "act_letters", path: "media/uploads/bell-5555666677778888.wav" },
-        { activityId: "act_words", path: "media/uploads/cat-1111222233334444.png" },
+        {
+          activityId: "act_letters",
+          path: "media/loom/words/words-1/uploads/bell-5555666677778888.wav",
+        },
+        {
+          activityId: "act_words",
+          path: "media/loom/words/words-1/uploads/cat-1111222233334444.png",
+        },
       ],
     },
   ]);
@@ -4579,7 +4584,7 @@ test("picks a file uploaded to another activity", async ({ page }) => {
         status: 201,
         contentType: "application/json",
         body: JSON.stringify({
-          path: "media/uploads/sun-9999aaaabbbbcccc.png",
+          path: "media/loom/words/words-1/uploads/sun-9999aaaabbbbcccc.png",
           name: "sun-9999aaaabbbbcccc.png",
           kind: "image",
           mimeType: "image/png",
@@ -4614,10 +4619,13 @@ test("picks a file uploaded to another activity", async ({ page }) => {
   await expect(page.getByRole("button", { name: /^bell-/ })).toHaveCount(0);
   await sun.click();
   await page.getByRole("button", { name: "Use this file", exact: true }).click();
-  await expect(binding).toHaveValue("media/uploads/sun-9999aaaabbbbcccc.png");
+  await expect(binding).toHaveValue("media/loom/words/words-1/uploads/sun-9999aaaabbbbcccc.png");
   await expect(page.getByText("Stored with this activity.")).toBeVisible();
   expect(copies).toEqual([
-    { fromActivityId: "act_letters", path: "media/uploads/sun-9999aaaabbbbcccc.png" },
+    {
+      fromActivityId: "act_letters",
+      path: "media/loom/words/words-1/uploads/sun-9999aaaabbbbcccc.png",
+    },
   ]);
   expect(f.errors).toEqual([]);
 });
@@ -4636,7 +4644,7 @@ test("renumbers a ref from the header, and refuses while it is stable", async ({
   await create(page);
   const state = { refNum: 12, stable: true };
   const posts = [];
-  let refuseCheckout = true;
+  let refuseOnce = true;
   const ref = { productCode: "words", collectionId: "col_test", archived: false };
   await page.route("**/*", async (route) => {
     const request = route.request();
@@ -4657,9 +4665,9 @@ test("renumbers a ref from the header, and refuses while it is stable", async ({
       posts.push(body);
       // The server refuses a stable ref and a taken number as the dialog does.
       if (state.stable) return json({ error: { code: "ref_stable", message: "Stable." } }, 409);
-      if (refuseCheckout) {
-        refuseCheckout = false;
-        return json({ error: { code: "checkout_ref", message: "Checkout." } }, 409);
+      if (refuseOnce) {
+        refuseOnce = false;
+        return json({ error: { code: "activity_exists", message: "Taken." } }, 409);
       }
       state.refNum = body.refNum;
       return json({ ...current, refNum: state.refNum, stable: state.stable });
@@ -4692,7 +4700,7 @@ test("renumbers a ref from the header, and refuses while it is stable", async ({
   // A refusal from the server is worded in the dialog, which stays open.
   await number.fill("14");
   await dialog.getByRole("button", { name: "Renumber", exact: true }).click();
-  await expect(dialog.getByText(/read-only WAF checkout/)).toBeVisible();
+  await expect(dialog.getByText(/files in its module already use that number/)).toBeVisible();
   expect(posts).toHaveLength(1);
 
   await dialog.getByRole("button", { name: "Renumber", exact: true }).click();
@@ -4905,9 +4913,7 @@ test("switches the studio to the Reviewing layout and saves a layout of its own"
   await expect(
     page.getByRole("separator", { name: "Activity rail width", exact: true }),
   ).toHaveAttribute("aria-valuenow", "300");
-  await expect(
-    page.getByRole("complementary", { name: "Chat", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Chat", exact: true })).toBeVisible();
 
   // Save the arrangement under a name of the author's own; the same name twice is refused.
   await page.getByRole("button", { name: "Close the panel", exact: true }).click();
@@ -5595,7 +5601,7 @@ test("writes a prompt for a sound effect, generates it, and keeps the new clip",
                 channel: "sfx",
                 loop: false,
                 volume: 1,
-                path: "media/uploads/door-00000000.mp3",
+                path: "media/loom/words/words-1/uploads/door-00000000.mp3",
                 usages: [usage],
               },
             ],
@@ -5930,7 +5936,7 @@ test("generates the missing sounds from Audios", async ({ page }) => {
                 description: "Correct answer",
                 script: "bright chime",
                 kind: "sfx",
-                path: "media/uploads/chime-00000000.mp3",
+                path: "media/loom/words/words-1/uploads/chime-00000000.mp3",
                 usages: usage("chime"),
               },
               {
@@ -6886,9 +6892,12 @@ test("shows what a deploy still needs", async ({ page }) => {
   const problems = page.getByRole("region", { name: "What is missing" });
   await expect(problems.getByText("QA Jenkins address is empty.", { exact: true })).toBeVisible();
   await expect(
-    problems.getByText("The Media clone is not on this server yet. Prepare clones makes it.", {
-      exact: true,
-    }),
+    problems.getByText(
+      "The Media clone is not on this server yet. Prepare clones makes the module's; an admin prepares the others in Settings, under WAF workspace.",
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible();
   await expect(
     page.getByText("An admin fills in the deploy settings under System settings, Deploy.", {
@@ -6964,7 +6973,7 @@ test("an admin opens the deploy settings from what a deploy still needs", async 
       frameworkVersion: "",
     },
     jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
-    repos: { activityDataRemote: "", mediaRemote: "" },
+    repos: { mediaPublicBase: "{{MEDIA}}/" },
     git: { userName: "", userEmail: "" },
     timeouts: { buildMinutes: 30, deployMinutes: 30 },
   };
@@ -7039,7 +7048,10 @@ test("on a phone, System settings from the drawer's account menu opens one dialo
   await page.goto(`${origin}/activities`);
   // The drawer's sidebar and the hidden desktop pane are both mounted now, each with an
   // account menu; the dialog they open is the layout's one.
-  await page.getByRole("button", { name: /^Sessions/ }).first().click();
+  await page
+    .getByRole("button", { name: /^Sessions/ })
+    .first()
+    .click();
   // Only the drawer's user row is on screen; the desktop pane's is hidden at this width.
   await page.getByRole("button", { name: "author", exact: true }).click();
   await page.getByRole("button", { name: "System settings", exact: true }).click();
@@ -7068,7 +7080,7 @@ test("an admin fills in the deploy settings and tests the QA connection", async 
       frameworkVersion: "",
     },
     jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
-    repos: { activityDataRemote: "git@github.com:org/data.git", mediaRemote: "" },
+    repos: { mediaPublicBase: "{{MEDIA}}/" },
     git: { userName: "", userEmail: "" },
     timeouts: { buildMinutes: 30, deployMinutes: 30 },
   };
@@ -7958,7 +7970,7 @@ test("composes a scene from its storyboard when the experiment is on", async ({ 
                 key: "sky",
                 type: "image",
                 description: "A blue sky",
-                path: "media/uploads/sky-00000000.png",
+                path: "media/loom/words/words-1/uploads/sky-00000000.png",
                 usages: [usage("sky")],
               },
             ],
@@ -8204,14 +8216,14 @@ test("records a composed scene and keeps it as the scene's video", async ({ page
                 key: "intro-video",
                 type: "video",
                 description: "The sky slowly brightens",
-                path: "media/uploads/intro-00000000.webm",
+                path: "media/loom/words/words-1/uploads/intro-00000000.webm",
                 usages: [usage("intro-video")],
               },
               {
                 key: "sky",
                 type: "image",
                 description: "A blue sky",
-                path: "media/uploads/sky-00000000.png",
+                path: "media/loom/words/words-1/uploads/sky-00000000.png",
                 usages: [usage("sky")],
               },
             ],
@@ -8381,7 +8393,7 @@ test("records a composed scene and keeps it as the scene's video", async ({ page
     comparison.getByRole("figure", { name: "Current", exact: true }).locator("video"),
   ).toHaveAttribute(
     "src",
-    `${base}/act_test/media-upload?path=media%2Fuploads%2Fintro-00000000.webm`,
+    `${base}/act_test/media-upload?path=media%2Floom%2Fwords%2Fwords-1%2Fuploads%2Fintro-00000000.webm`,
   );
   await expect(
     comparison.getByRole("figure", { name: "New", exact: true }).locator("video"),
@@ -8406,4 +8418,45 @@ test("records a composed scene and keeps it as the scene's video", async ({ page
         ),
     ),
   ).toEqual([]);
+});
+
+test("opens a product that is in the modules into the project", async ({ page }) => {
+  const f = await fixture(page);
+  const claims = [];
+  const products = [
+    {
+      moduleFolder: "waf-module-r2pt01",
+      productCode: "r2pt01",
+      title: "Decodable Books",
+      activityType: "book",
+      refNums: [150, 151],
+    },
+  ];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value) =>
+      route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/module-products` && request.method() === "GET") return json({ products });
+    if (p === `${base}/module-products/claim` && request.method() === "POST") {
+      claims.push(request.postDataJSON());
+      return json({
+        collectionId: "col_modules",
+        activityIds: ["act_150", "act_151"],
+        message: "Opening r2pt01 with 2 refs, ref 150 canonical. Nothing was dropped.",
+        problems: [],
+      });
+    }
+    return route.fallback();
+  });
+  await page.goto(`${origin}/activities`);
+  await page.getByRole("button", { name: "Open from modules", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Open from modules" });
+  await expect(dialog.getByText("Decodable Books", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("r2pt01 · waf-module-r2pt01 · 2 refs")).toBeVisible();
+  await dialog.getByRole("button", { name: "Open", exact: true }).click();
+  await expect(dialog.getByText(/Nothing was dropped\./)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Opened", exact: true })).toBeDisabled();
+  expect(claims).toEqual([{ moduleFolder: "waf-module-r2pt01", productCode: "r2pt01" }]);
+  expect(f.errors).toEqual([]);
 });

@@ -21,7 +21,7 @@ import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { activitySpec } from "./activity-fixtures.js";
-import { soundMp3, speechWave } from "./audio-fixtures.js";
+import { fakeMp3Encoding, mp3OfWave, soundMp3, speechWave } from "./audio-fixtures.js";
 
 const PROJECT = "speaker-activities";
 const VOICE_ID = "AbCdEfGhIj0123456789";
@@ -44,7 +44,8 @@ describe("choosing who speaks a narration", () => {
       credential: "ELEVENLABS_API_KEY",
     });
     expect(speechProviderFor({ speechProvider: "kokoro" }, ["GEMINI_API_KEY"])).toEqual({
-      problem: "provider_unknown",
+      problem: "runtime_missing",
+      credential: "kokoro-js",
     });
     expect(speechProviderFor({ speechProvider: "elevenlabs" }, null)).toMatchObject({
       provider: "elevenlabs",
@@ -61,8 +62,17 @@ describe("choosing who speaks a narration", () => {
         problem: "credential_missing",
         timings: true,
       },
+      {
+        id: "kokoro",
+        credential: "",
+        available: false,
+        problem: "runtime_missing",
+        timings: false,
+      },
     ]);
-    expect(speechCatalogue(null).every((option) => option.providerId === "gemini")).toBe(true);
+    expect(new Set(speechCatalogue(null).map((option) => option.providerId))).toEqual(
+      new Set(["gemini", "kokoro"]),
+    );
     expect(speechCatalogue(["ELEVENLABS_VOICE_ID"]).at(-1)).toMatchObject({
       id: ELEVENLABS_DEFAULT_VOICE,
       label: "ElevenLabs default",
@@ -96,7 +106,7 @@ describe("choosing who speaks a narration", () => {
       validateManifest(manifest({ type: "audio" }), address).assets["en-US"]![0]!.speechProvider,
     ).toBeUndefined();
     expect(() =>
-      validateManifest(manifest({ type: "audio", speechProvider: "kokoro" }), address),
+      validateManifest(manifest({ type: "audio", speechProvider: "unknown" }), address),
     ).toThrow(/speech provider/);
     expect(() =>
       validateManifest(manifest({ type: "image", speechProvider: "gemini" }), address),
@@ -139,7 +149,7 @@ describe("speech through the provider seam", () => {
         yield requestEnd("completed");
       },
     });
-    const t = await createTestApp();
+    const t = await createTestApp(fakeMp3Encoding);
     const adopt = t.deps.manager.adopt.bind(t.deps.manager);
     vi.spyOn(t.deps.manager, "adopt").mockImplementation((row) => adopt(row, fakeSession(row)));
     cleanups.push(t.cleanup);
@@ -291,7 +301,7 @@ describe("speech through the provider seam", () => {
     expect(JSON.stringify(await noVoice.json())).toContain("ELEVENLABS_VOICE_ID");
     // A Gemini voice is not one ElevenLabs speaks with.
     expect((await f.generate("Kore")).status).toBe(422);
-    const unknown = await f.generate(VOICE_ID, "kokoro");
+    const unknown = await f.generate(VOICE_ID, "unknown");
     expect(unknown.status).toBe(400);
     expect(JSON.stringify(await unknown.json())).toContain("speech_provider_unknown");
     const listed = (await (await f.client.get(`${f.endpoint}/runs`)).json()) as { runs: unknown[] };
@@ -307,6 +317,7 @@ describe("speech through the provider seam", () => {
     expect(setup.providers).toEqual([
       expect.objectContaining({ id: "gemini", available: false, problem: "credential_missing" }),
       expect.objectContaining({ id: "elevenlabs", available: true, timings: true }),
+      expect.objectContaining({ id: "kokoro", timings: false }),
     ]);
     expect(setup.catalogue.map((option) => option.id)).toContain(ELEVENLABS_DEFAULT_VOICE);
     // An agent id that is not an id is refused before it names a path.
@@ -327,6 +338,10 @@ describe("speech through the provider seam", () => {
       "Charon",
       "Fenrir",
       "Aoede",
+      "af_heart",
+      "am_michael",
+      "bf_emma",
+      "bm_george",
     ]);
     // Key names only: a Vault value never reaches the App.
     expect(JSON.stringify(setup)).not.toContain("fake-test-only");
@@ -354,7 +369,7 @@ describe("speech through the provider seam", () => {
     expect((await f.hello()).path).toBeUndefined();
     await f.accept(run);
     const bound = await f.hello();
-    expect(bound.path).toBe(`media/generated/${run.runId}.mp3`);
+    expect(bound.path).toBe("media/loom/p/p-1/audios/english/hello.mp3");
     expect(bound.generatedAudio).toMatchObject({ runId: run.runId, format: "mp3" });
     expect(bound.wordTimings).toEqual(timings);
     // 40 frames of 1152 samples at 44.1 kHz.
@@ -378,7 +393,7 @@ describe("speech through the provider seam", () => {
     expect(strayed.error).toContain("speech.wav");
   });
 
-  it("keeps Gemini speech as before: a WAV, no provider on the run, and no timings even from a stray file", async () => {
+  it("keeps Gemini speech as MP3 made from its WAV, no provider on the run, and no timings even from a stray file", async () => {
     const f = await fixture();
     await f.setVault(["GEMINI_API_KEY"]);
     const run = await f.started("Kore");
@@ -398,8 +413,12 @@ describe("speech through the provider seam", () => {
     expect(summary.status, summary.error ?? "").toBe("succeeded");
     await f.accept(run);
     const bound = await f.hello();
-    expect(bound.path).toBe(`media/generated/${run.runId}.wav`);
-    expect(bound.generatedAudio?.format).toBeUndefined();
+    // The media repository keeps audio as MP3, so Gemini's WAV is converted.
+    expect(bound.path).toBe("media/loom/p/p-1/audios/english/hello.mp3");
+    expect(bound.generatedAudio).toMatchObject({ runId: run.runId, format: "mp3" });
+    const played = await f.client.get(`${f.endpoint}/runs/${run.runId}/audio`);
+    expect(played.headers.get("content-type")).toBe("audio/mpeg");
+    expect(Buffer.from(await played.arrayBuffer())).toEqual(mp3OfWave(speechWave(4800)));
     expect(bound.wordTimings).toBeUndefined();
     expect(bound.durationMs).toBeUndefined();
   });

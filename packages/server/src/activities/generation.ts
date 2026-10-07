@@ -30,6 +30,8 @@ import {
 } from "./audio.js";
 import { SOUND_OUTPUT_FILES, soundPrompt, soundTarget } from "./sound.js";
 import { AGENTHUB_VERSION, SoundModelPorts } from "./sound-models.js";
+import { LocalAudio, type LocalAudioRequest } from "./local-audio.js";
+import { isLocalAudioProvider } from "./local-audio-models.js";
 import { soundProviderFor, soundSetup, speechProviderFor, speechSetup } from "./audio-providers.js";
 import type { SoundFormat, SoundSetup } from "./sound-types.js";
 import type { SpeechSetup } from "./speech-types.js";
@@ -49,13 +51,8 @@ import {
   imagePrompt,
   type ImageResult,
 } from "./generated-image.js";
-import {
-  findWafRoot,
-  prepareModule,
-  collectModule,
-  modulePrompt,
-  verifyMediaArtifacts,
-} from "./waf-module.js";
+import type { WafWorkspace } from "./waf-workspace.js";
+import { prepareModule, collectModule, modulePrompt, verifyMediaArtifacts } from "./waf-module.js";
 import {
   DISCARDED_PROPOSAL_FILE,
   PROPOSAL_FILE,
@@ -259,7 +256,10 @@ export class ActivityGenerationService implements ActivityGeneration {
   @Use() private readonly channels!: Channels;
   @Use() private readonly log!: Log;
   @Use() private readonly soundModels!: SoundModelPorts;
+  @Use() private readonly localAudio!: LocalAudio;
+  private readonly localRuns = new Map<string, AbortController>();
   @Use() private readonly settings!: Settings;
+  @Use() private readonly wafWorkspace!: WafWorkspace;
   private readonly locks = new ActivityLocks();
   private readonly observers = new Map<string, Observer>();
   private readonly operations = new Set<Promise<unknown>>();
@@ -291,6 +291,7 @@ export class ActivityGenerationService implements ActivityGeneration {
   private stop() {
     if (this.stopped) return;
     this.stopped = true;
+    for (const controller of this.localRuns.values()) controller.abort();
     if (this.timer) clearInterval(this.timer);
     for (const observer of this.observers.values()) observer.unsubscribe();
     this.observers.clear();
@@ -441,7 +442,9 @@ export class ActivityGenerationService implements ActivityGeneration {
   async soundSetup(projectId: string, agentId: string): Promise<SoundSetup> {
     await this.agents.requireExists(projectId, agentId);
     const keys = (await this.agents.getVault(projectId, agentId)).entries.map((entry) => entry.key);
-    return { providers: soundSetup(keys, this.soundModels.agenthubModels) };
+    return {
+      providers: soundSetup(keys, this.soundModels.agenthubModels, this.localAudio.availability()),
+    };
   }
 
   /**
@@ -459,7 +462,11 @@ export class ActivityGenerationService implements ActivityGeneration {
     if (!agentId) return { ...base, catalogue: speechCatalogue(null) };
     await this.agents.requireExists(projectId, agentId);
     const keys = (await this.agents.getVault(projectId, agentId)).entries.map((entry) => entry.key);
-    return { ...base, catalogue: speechCatalogue(keys), providers: speechSetup(keys) };
+    return {
+      ...base,
+      catalogue: speechCatalogue(keys),
+      providers: speechSetup(keys, this.localAudio.availability()),
+    };
   }
 
   run(projectId: string, activityId: string, runId: string): Promise<ActivityRun> {
@@ -476,7 +483,6 @@ export class ActivityGenerationService implements ActivityGeneration {
     agentId: string,
     expectedRevision: string,
     module?: {
-      wafRoot?: string;
       bookMode?: string;
       audio?: {
         language: string;
@@ -496,7 +502,7 @@ export class ActivityGenerationService implements ActivityGeneration {
       /** A phonemes run: sounds for a decodable book's words of one language. */
       phonemes?: { language: string; words: unknown };
       /** A scene composition for a video or animation asset (experimental). */
-      composition?: { language: string; assetKey: string; wafRoot?: string };
+      composition?: { language: string; assetKey: string };
     },
     runtime?: { codingAgentId?: string },
   ): Promise<ActivityRun> {
@@ -631,13 +637,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                 `This activity shares its module with ref ${product?.canonicalRefNum}, which owns the module code. Assemble from that ref instead.`,
               );
             }
-            wafRoot = await findWafRoot(process.cwd(), module.wafRoot ?? process.env.WAF_ROOT_DIR);
-            if (!wafRoot)
-              throw new HttpError(
-                400,
-                "waf_checkout_missing",
-                "WAF checkout not found. Select a root containing framework, modules and media.",
-              );
+            wafRoot = await this.wafWorkspace.requireRoot();
           }
           if (codingAgentId && (audio || image || sound))
             // Each calls its provider through a helper that reads the key from a Penguin
@@ -669,8 +669,18 @@ export class ActivityGenerationService implements ActivityGeneration {
             );
             // The provider the run names is honoured strictly: without its key the run is
             // refused, naming the key, and never spoken by another provider instead.
-            const choice = speechProviderFor({ speechProvider: speechProviderOf(audio) }, keys);
+            const choice = speechProviderFor(
+              { speechProvider: speechProviderOf(audio) },
+              keys,
+              this.localAudio.availability(),
+            );
             if ("problem" in choice) {
+              if (choice.problem === "runtime_missing")
+                throw new HttpError(
+                  409,
+                  "local_audio_missing",
+                  "Install kokoro-js in the server environment before generating local speech.",
+                );
               const credential = "credential" in choice ? choice.credential : undefined;
               // The key travels as data too, so the App names it in its own words.
               throw new HttpError(
@@ -701,7 +711,14 @@ export class ActivityGenerationService implements ActivityGeneration {
               keys,
               module?.sound?.model,
               this.soundModels.agenthubModels,
+              this.localAudio.availability(),
             );
+            if ("problem" in choice && choice.problem === "runtime_missing")
+              throw new HttpError(
+                409,
+                "local_audio_missing",
+                "Install @huggingface/transformers in the server environment before generating local music or sound effects.",
+              );
             if ("problem" in choice)
               throw new HttpError(
                 400,
@@ -802,6 +819,28 @@ export class ActivityGenerationService implements ActivityGeneration {
           try {
             const workspace = this.workspace(run);
             await fs.mkdir(workspace, { recursive: true });
+            const localProvider = sound?.sound.provider ?? audio?.provider;
+            if (localProvider && isLocalAudioProvider(localProvider) && run.audio) {
+              const request: LocalAudioRequest = {
+                provider: localProvider,
+                model: run.audio.model,
+                text: sound ? sound.sound.prompt : run.audio.script,
+                ...(sound
+                  ? { seconds: (sound.sound.targetDurationMs ?? 10_000) / 1000 }
+                  : { voice: run.audio.voice, language: run.audio.language }),
+              };
+              await atomicJson(path.join(workspace, "local-audio-input.json"), request);
+              if (this.stopped)
+                throw new HttpError(503, "activity_stopping", "Server is stopping.");
+              const controller = new AbortController();
+              this.localRuns.set(run.runId, controller);
+              void this.track(this.generateLocal(run, request, controller)).catch(
+                (error: unknown) => {
+                  this.log.line(`[activities] Local audio settlement failed: ${String(error)}`);
+                },
+              );
+              return run;
+            }
             // Requirement hashes track editorial changes, not media file bytes. They belong
             // to draft reconciliation; exposing them to a generator invites false checksum claims.
             const input = {
@@ -1070,11 +1109,53 @@ export class ActivityGenerationService implements ActivityGeneration {
         if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
         if (run.status === "running") {
           this.finish(run, "cancelled", "Generation cancelled.");
+          this.localRuns.get(runId)?.abort();
           if (run.sessionId) this.sessions.abortTask(run.sessionId);
         }
         return run;
       }),
     );
+  }
+
+  private async generateLocal(
+    run: ActivityRun,
+    request: LocalAudioRequest,
+    controller: AbortController,
+  ): Promise<void> {
+    try {
+      const bytes = await this.localAudio.generate(request, controller.signal);
+      await this.projectWork.run(run.projectId, () =>
+        this.locks.run(run.activityId, async () => {
+          const currentRun = await this.getRun(run.projectId, run.activityId, run.runId);
+          if (currentRun.status !== "running" || this.stopped || controller.signal.aborted) return;
+          const current = await this.activities.getActivity(run.projectId, run.activityId);
+          if (current.draft.contentRevision !== run.inputRevision) {
+            this.finish(currentRun, "conflict", "The draft changed during local audio generation.");
+            return;
+          }
+          const result = await this.activities.storeAudio(
+            run.projectId,
+            run.activityId,
+            run.runId,
+            bytes,
+          );
+          currentRun.candidate = JSON.stringify(result);
+          this.finish(currentRun, "succeeded");
+        }),
+      );
+    } catch (error) {
+      await this.locks.run(run.activityId, async () => {
+        const current = await this.getRun(run.projectId, run.activityId, run.runId);
+        if (current.status !== "running") return;
+        this.finish(
+          current,
+          this.stopped ? "interrupted" : "failed",
+          error instanceof Error ? error.message : "Local audio generation failed.",
+        );
+      });
+    } finally {
+      this.localRuns.delete(run.runId);
+    }
   }
 
   openDeterministic(
@@ -1486,7 +1567,7 @@ export class ActivityGenerationService implements ActivityGeneration {
     projectId: string,
     activityId: string,
     activity: ActivityDetail,
-    input: { language: string; assetKey: string; wafRoot?: string },
+    input: { language: string; assetKey: string },
   ): Promise<CompositionStage> {
     if (!this.videoExperiment()) throw experimentOff();
     const scene = compositionScene(activity, input);
@@ -1504,7 +1585,6 @@ export class ActivityGenerationService implements ActivityGeneration {
         language: input.language,
         assetKey: image.key,
         expectedRevision: activity.draft.contentRevision,
-        ...(input.wafRoot ? { wafRoot: input.wafRoot } : {}),
       });
       // Staged images are served back only up to this size, so a larger one is refused now
       // rather than missing from the composition later.

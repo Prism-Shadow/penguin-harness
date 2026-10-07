@@ -271,7 +271,7 @@ describe("scene compositions", () => {
     expect(runs.runs).toEqual([]);
   });
 
-  it("refuses a scene image too large to be served back, and passes the author's checkout on", async () => {
+  it("refuses a scene image too large to be served back", async () => {
     const f = await fixture();
     await f.experiment(true);
     const authoring = f.t.deps.tree.api<ActivityAuthoring>("ActivitiesModule", "ActivityAuthoring");
@@ -285,14 +285,13 @@ describe("scene compositions", () => {
         .contentRevision,
       language: "en-US",
       assetKey: "intro-video",
-      wafRoot: "/checkouts/waf",
     });
     expect(refused.status).toBe(409);
     expect(JSON.stringify(await refused.json())).toContain("composition_image_too_large");
     expect(read).toHaveBeenCalledWith(
       PROJECT,
       expect.any(String),
-      expect.objectContaining({ assetKey: "sky", wafRoot: "/checkouts/waf" }),
+      expect.objectContaining({ assetKey: "sky" }),
     );
     const runs = (await (await f.client.get(`${f.endpoint}/runs`)).json()) as { runs: unknown[] };
     expect(runs.runs).toEqual([]);

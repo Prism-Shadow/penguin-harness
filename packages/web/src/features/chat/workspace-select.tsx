@@ -23,6 +23,16 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
+/** Whether a path is absolute on the server: POSIX (`/home/…`) or Windows (`C:\…`, `\\host\…`). */
+export function isAbsoluteDir(path: string): boolean {
+  return /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(path);
+}
+
+/** A directory's own name: its last segment, either separator; a root is its own name. */
+export function dirName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
 export const pillClass =
   "flex max-w-64 items-center gap-1.5 rounded-full border border-gray-300 bg-white py-1 pl-1.5 pr-2 " +
@@ -140,7 +150,7 @@ export function WorkspaceSelect({
     if (next && !browsedRef.current) {
       browsedRef.current = true;
       const ws = workspace.trim();
-      loadDir(ws.startsWith("/") ? ws : "");
+      loadDir(isAbsoluteDir(ws) ? ws : "");
     }
   };
 
@@ -192,10 +202,8 @@ export function WorkspaceSelect({
   };
 
   const trimmed = workspace.trim();
-  // Pill short name: the last segment of the directory name (root gives "/"); shows "temporary workspace" when empty.
-  const label = trimmed
-    ? (trimmed.split("/").filter(Boolean).pop() ?? "/")
-    : (emptyLabel ?? S.chat.workspaceAuto);
+  // Pill short name: the last segment of the directory name (a root is its own name); shows "temporary workspace" when empty.
+  const label = trimmed ? dirName(trimmed) : (emptyLabel ?? S.chat.workspaceAuto);
   const parentPath = dir?.parent ?? null;
   // Hidden directories (starting with .) are excluded from the list.
   const entries = (dir?.entries ?? []).filter((e) => !e.name.startsWith("."));

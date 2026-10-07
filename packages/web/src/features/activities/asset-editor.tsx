@@ -34,6 +34,7 @@ import {
   SPEECH_PROVIDERS,
   isElevenLabsVoiceId,
   providerStatus,
+  supportsSpeechLanguage,
   setProvider,
   speechChoice,
   voicesFor,
@@ -63,7 +64,6 @@ export function AssetEditor({
   canGenerateMedia = canGenerate,
   canAccept,
   canPreview,
-  wafRoot,
   revision,
   voices,
   defaultVoice,
@@ -109,7 +109,6 @@ export function AssetEditor({
   canGenerateMedia?: boolean;
   canAccept: boolean;
   canPreview: boolean;
-  wafRoot: string;
   revision: string;
   /** The voices a narration can be spoken in. */
   voices: readonly VoiceOption[];
@@ -186,8 +185,10 @@ export function AssetEditor({
   const asset = group.find((entry) => entry.key === selection?.key);
   // A narration speaks with its own provider and saved voice; one naming none uses the
   // page's default voice, or the provider's first.
-  const { provider, voice } = speechChoice(asset, voices, defaultVoice);
-  const providerVoices = voicesFor(voices, provider, group);
+  const { provider, voice } = speechChoice(asset, voices, defaultVoice, language);
+  const providerVoices = voicesFor(voices, provider, group).filter(
+    (voice) => provider !== "kokoro" || voice.languages.includes(language),
+  );
   const providerState = providerStatus(speechProviders, provider);
   // An ElevenLabs voice id the author is typing, used once it is well formed.
   const [typedVoice, setTypedVoice] = useState("");
@@ -206,7 +207,6 @@ export function AssetEditor({
     language,
     assetKey: asset?.key ?? "",
     expectedRevision: revision,
-    ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
   })}`;
   const audioUrl = (runId: string) => `${endpoint}/runs/${encodeURIComponent(runId)}/audio`;
   const generatedImageUrl = (runId: string) =>
@@ -742,33 +742,50 @@ export function AssetEditor({
                     <Select
                       size="sm"
                       label={S.activities.speechProvider.label}
+                      hint={
+                        provider === "kokoro" ? S.activities.speechProvider.localInfo : undefined
+                      }
                       value={provider}
                       disabled={disabled}
                       onChange={(event) =>
                         edit((entry) =>
-                          setProvider(entry, event.target.value as SpeechProviderId, voices),
+                          setProvider(
+                            entry,
+                            event.target.value as SpeechProviderId,
+                            voices,
+                            language,
+                          ),
                         )
                       }
                     >
                       {SPEECH_PROVIDERS.map((id) => {
+                        const supported = supportsSpeechLanguage(voices, id, language);
                         const status = providerStatus(speechProviders, id);
                         const name = S.activities.speechProvider[id];
                         return (
                           <option
                             key={id}
                             value={id}
-                            disabled={!!status && !status.available && id !== provider}
+                            disabled={
+                              !supported || (!!status && !status.available && id !== provider)
+                            }
                           >
-                            {status && !status.available
-                              ? `${name} (${S.activities.speechProvider.keyMissing(status.credential)})`
-                              : name}
+                            {!supported
+                              ? `${name} (${S.activities.speechProvider.languageUnsupported})`
+                              : status && !status.available
+                                ? `${name} (${status.problem === "runtime_missing" ? S.activities.speechProvider.runtimeMissing : S.activities.speechProvider.keyMissing(status.credential)})`
+                                : name}
                           </option>
                         );
                       })}
                     </Select>
                     {providerState && !providerState.available && (
                       <p className={`text-xs ${toneInk.attention}`}>
-                        {S.activities.sound.problems.credential_missing(providerState.credential)}
+                        {providerState.problem === "runtime_missing"
+                          ? S.activities.speechProvider.runtimeMissing
+                          : S.activities.sound.problems.credential_missing(
+                              providerState.credential,
+                            )}
                       </p>
                     )}
                     <VoicePicker

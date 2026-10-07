@@ -1,21 +1,16 @@
 /**
- * Reading an activity Loom already authored.
+ * Reading a product Loom authored in a module, for a project to adopt in place.
  *
- * Strictly read-only: this opens files under a Loom modules directory and reports what it
- * found. Nothing is written, here or anywhere it calls. That is deliberate for the first
- * pass — the point is to test the product hierarchy against real Loom data before nine
- * generation stages are built on top of it, and a reader that cannot write cannot damage
- * a checkout someone authored in.
- *
- * The source is Loom's AUTHORING layout under `modules_dir`, not the exported
- * `waf-activity-data` projection: the projection is what gets deployed and is lossy for
- * authoring — it has no description, no asset manifest and no state machine.
+ * Read-only: this opens a module's `generated/` files and reports what it found, and never
+ * writes. Adopting (service.claimModuleProduct) is what then gives each ref Penguin's own
+ * files beside Loom's.
  *
  *     <modulesDir>/<moduleFolder>/generated/<productCode>/
- *       spec/activity_metadata.json      product: module folder, canonical ref, type
+ *       spec/activity_metadata.json      product: canonical ref, type, templateStable
+ *       spec/penguin.json                which Penguin project owns it, once one does
  *       spec/state-machine.json          the canonical product machine
  *       refs/<productCode>-<refNum>/spec/
- *         activity_metadata.json         ref: number, display name, stability
+ *         activity_metadata.json         ref: number, display name
  *         activity_spec.json             scenes
  *         asset_manifest.json            media, keyed by language
  *         activity_description.txt       what an author typed
@@ -99,13 +94,15 @@ export function loomRefPaths(
 }
 
 /** What a product's metadata says, with Loom's names translated to Penguin's. */
-export interface ImportedProduct {
+export interface LoomProductMetadata {
   productCode: string;
   moduleFolder: string;
   title: string | null;
   canonicalRefNum: number | null;
   activityType: "standard" | "book";
   bookMode: "decodable" | "readAlong" | null;
+  /** Loom's product-level `templateStable`: whether new refs may be made from the canonical one. */
+  templateStable: boolean;
 }
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -123,42 +120,46 @@ export function mapProductMetadata(
   productCode: string,
   moduleFolder: string,
   json: unknown,
-): ImportedProduct {
+): LoomProductMetadata {
   const record = asRecord(json);
   const type = asString(record["activityType"]) ?? asString(record["type"]);
   const bookMode = asString(record["bookMode"]);
   return {
     productCode,
-    // Loom lets a product override its folder, and one folder may host several products,
-    // so what the file says wins over where it was found.
-    moduleFolder: asString(record["moduleFolder"]) ?? moduleFolder,
+    // Where the files are is where Penguin reads and writes them, whatever an older copy of
+    // the folder's name in the file says.
+    moduleFolder,
     title: asString(record["title"]),
     canonicalRefNum: asRefNum(record["canonicalRefNum"]),
     activityType: type === "book" ? "book" : "standard",
     bookMode: bookMode === "decodable" || bookMode === "readAlong" ? bookMode : null,
+    templateStable: record["templateStable"] === true,
   };
 }
 
-/** What a ref's metadata says. Loom calls the stability flag `templateStable`. */
-export interface ImportedRefMetadata {
+/**
+ * What a ref's metadata says. Stability is not read here: Loom keeps `templateStable` on the
+ * product, and a ref's copy of it is a stale snapshot (see readLoomRef).
+ */
+export interface LoomRefMetadata {
   refNum: number | null;
   title: string | null;
   displayName: string | null;
   stable: boolean;
 }
 
-export function mapRefMetadata(json: unknown): ImportedRefMetadata {
+export function mapRefMetadata(json: unknown): LoomRefMetadata {
   const record = asRecord(json);
   return {
     refNum: asRefNum(record["refNum"]),
     title: asString(record["title"]),
     displayName: asString(record["displayName"]),
-    stable: record["templateStable"] === true,
+    stable: false,
   };
 }
 
 /** One ref as read off disk, with whatever was missing named rather than filled in. */
-export interface ImportedRef extends ImportedRefMetadata {
+export interface LoomRef extends LoomRefMetadata {
   refNum: number;
   canonical: boolean;
   spec: Record<string, unknown> | null;
@@ -173,9 +174,9 @@ export interface ImportedRef extends ImportedRefMetadata {
   problems: string[];
 }
 
-export interface ImportedActivity {
-  product: ImportedProduct;
-  refs: ImportedRef[];
+export interface LoomProductRead {
+  product: LoomProductMetadata;
+  refs: LoomRef[];
   /** The canonical machine sits here; a ref copy appears only after implementation. */
   hasProductStateMachine: boolean;
   problems: string[];
@@ -217,9 +218,9 @@ export function manifestLanguages(manifest: Record<string, unknown> | null): str
 export async function readLoomRef(
   modulesDir: string,
   moduleFolder: string,
-  product: ImportedProduct,
+  product: LoomProductMetadata,
   refNum: number,
-): Promise<ImportedRef> {
+): Promise<LoomRef> {
   const paths = loomRefPaths(modulesDir, moduleFolder, product.productCode, refNum);
   const problems: string[] = [];
   const metadata = mapRefMetadata(await readJson(paths.metadata, problems, "Ref metadata"));
@@ -254,6 +255,8 @@ export async function readLoomRef(
   return {
     ...metadata,
     refNum,
+    // The canonical ref is the template; the product says whether it is stable.
+    stable: product.canonicalRefNum === refNum && product.templateStable,
     canonical: product.canonicalRefNum === refNum,
     spec,
     manifest,
@@ -270,7 +273,7 @@ export async function readLoomProduct(
   modulesDir: string,
   moduleFolder: string,
   productCode: string,
-): Promise<ImportedActivity> {
+): Promise<LoomProductRead> {
   const problems: string[] = [];
   const paths = loomProductPaths(modulesDir, moduleFolder, productCode);
   const product = mapProductMetadata(
@@ -316,7 +319,7 @@ export async function readLoomProduct(
  * One module folder may hold several product codes, which is why this walks both levels
  * rather than assuming `waf-module-<productCode>`.
  */
-export async function discoverLoomProducts(modulesDir: string): Promise<ImportedActivity[]> {
+export async function discoverLoomProducts(modulesDir: string): Promise<LoomProductRead[]> {
   let folders: string[] = [];
   try {
     folders = (await fs.readdir(modulesDir, { withFileTypes: true }))
@@ -326,7 +329,7 @@ export async function discoverLoomProducts(modulesDir: string): Promise<Imported
   } catch {
     return [];
   }
-  const found: ImportedActivity[] = [];
+  const found: LoomProductRead[] = [];
   for (const folder of folders) {
     let codes: string[] = [];
     try {

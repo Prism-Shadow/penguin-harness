@@ -11,7 +11,7 @@ import type { AssetManifest, MediaPlan } from "./media.js";
 import { isUploadReference } from "./upload.js";
 
 export interface VersionMedia {
-  /** Relative to the draft workspace, e.g. `audio/<runId>.wav` or `media/uploads/<name>`. */
+  /** The manifest's path, relative to the WAF root: `media/loom/<pc>/<pc>-<ref>/...`. */
   path: string;
   sha256: string;
   bytes: number;
@@ -42,10 +42,9 @@ export interface OwnedMedia {
 const RUN_ID = /^run_[a-f0-9]{32}$/;
 
 /**
- * Which bound files belong to Penguin (and where they sit in the draft workspace) and which
- * are checkout references. A generated clip or image lives at `audio/<runId>.wav` (`.mp3` for a sound) or
- * `images/<runId>.png`, a recorded scene video at `videos/<runId>.webm`; an upload lives at its
- * own reference.
+ * Which bound files belong to Penguin and which are references to media it did not make. A
+ * generated clip, image or recording and an upload are Penguin's, each at its own path in the
+ * media repository; any other path (the curated library, Loom's media) is a reference.
  */
 export function ownedMediaPaths(manifest: AssetManifest | undefined): {
   owned: OwnedMedia[];
@@ -54,15 +53,9 @@ export function ownedMediaPaths(manifest: AssetManifest | undefined): {
   const owned = new Map<string, OwnedMedia>();
   const references = new Set<string>();
   for (const asset of Object.values(manifest?.assets ?? {}).flat()) {
-    if (asset.generatedAudio && RUN_ID.test(asset.generatedAudio.runId)) {
-      const file = `audio/${asset.generatedAudio.runId}.${asset.generatedAudio.format ?? "wav"}`;
-      owned.set(file, { path: file, expectedSha256: asset.generatedAudio.sha256 });
-    } else if (asset.generatedImage && RUN_ID.test(asset.generatedImage.runId)) {
-      const file = `images/${asset.generatedImage.runId}.png`;
-      owned.set(file, { path: file, expectedSha256: asset.generatedImage.sha256 });
-    } else if (asset.generatedVideo && RUN_ID.test(asset.generatedVideo.runId)) {
-      const file = `videos/${asset.generatedVideo.runId}.webm`;
-      owned.set(file, { path: file, expectedSha256: asset.generatedVideo.sha256 });
+    const generated = asset.generatedAudio ?? asset.generatedImage ?? asset.generatedVideo;
+    if (generated && RUN_ID.test(generated.runId) && asset.path) {
+      owned.set(asset.path, { path: asset.path, expectedSha256: generated.sha256 });
     } else if (isUploadReference(asset.path)) {
       if (!owned.has(asset.path!))
         owned.set(asset.path!, { path: asset.path!, expectedSha256: null });

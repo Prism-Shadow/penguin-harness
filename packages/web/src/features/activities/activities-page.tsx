@@ -1,3 +1,4 @@
+import { OpenModuleDialog } from "./open-module-dialog";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Link,
@@ -55,7 +56,6 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { AssetLibraryView } from "./asset-library-view";
 import { settledPipeline, settledRuns, type Announcement } from "./run-toasts";
 import { CreateActivityDialog } from "./create-activity-dialog";
-import { ImportDialog } from "./import-dialog";
 import { ActivityWorkspace as WorkspaceShell, type StudioPanelEntry } from "./activity-workspace";
 import { AssetEditor } from "./asset-editor";
 import { SpeechCoverage } from "./speech-coverage";
@@ -173,8 +173,8 @@ function ActivityWorkspace({
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState<string | null>(null);
   const [sort, setSort] = useState<GroupSort>("recent");
+  const [openModules, setOpenModules] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
   const dirty = useRef(false);
   const mounted = useRef(true);
   const accessible = useRef(available);
@@ -362,15 +362,15 @@ function ActivityWorkspace({
         tag={tag}
         onTag={setTag}
         onRefresh={() => void reload()}
-        onImport={() => setImportOpen(true)}
+        onOpenFromModules={() => setOpenModules(true)}
         onCreate={() => setCreateOpen(true)}
         onMedia={() => navigate("/activities/media")}
       />
-      {importOpen && (
-        <ImportDialog
+      {openModules && (
+        <OpenModuleDialog
           projectId={projectId}
-          onClose={() => setImportOpen(false)}
-          onImported={() => void reload()}
+          onClose={() => setOpenModules(false)}
+          onOpened={() => void reload()}
         />
       )}
       {createOpen && (
@@ -504,7 +504,6 @@ function ActivityEditor({
     };
   }, []);
   const [bookMode, setBookMode] = useState<"" | "readAlong" | "decodable">("");
-  const [wafRoot, setWafRoot] = useState("");
   const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>([]);
   const voices = voiceOptions.map((option) => option.id);
   // The voice bulk speech, retries and the stage sequence speak with where a narration names
@@ -556,18 +555,7 @@ function ActivityEditor({
   );
   useEffect(() => {
     if (!available || !editable) return;
-    let cancelled = false;
     void loadUploads();
-    void apiFetch<{ wafRoot: string | null }>(`${basePath(projectId)}/module-setup`)
-      .then((value) => {
-        if (!cancelled) setWafRoot(value.wafRoot ?? "");
-      })
-      .catch(() => {
-        /* An explicit path can still be supplied when discovery fails. */
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [projectId, available, editable]);
   const dirty =
     detail !== null &&
@@ -869,7 +857,6 @@ function ActivityEditor({
           ...scope,
           ...(soundProvider ? { soundProvider } : {}),
           ...(bulkVoice ? { voice: bulkVoice } : {}),
-          ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
           ...(detail.activityType === "book" && bookMode ? { bookMode } : {}),
         },
       });
@@ -909,6 +896,7 @@ function ActivityEditor({
               ),
               voiceOptions,
               speechQueue!.voice,
+              speechQueue!.language,
             ),
           },
         });
@@ -1481,7 +1469,6 @@ function ActivityEditor({
                 language,
                 assetKey,
                 expectedRevision: detail.draft.contentRevision,
-                ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
               })}`
             }
             onSelect={setBoardScene}
@@ -1538,7 +1525,6 @@ function ActivityEditor({
             savedManifest={detail.draft.mediaPlan?.manifest}
             canAccept={editable && available && !busy && !running && !dirty}
             canPreview={editable && available && !busy && !dirty}
-            wafRoot={wafRoot}
             voices={voiceOptions}
             defaultVoice={bulkVoice}
             onChange={(value) => setMedia(pretty(value))}
@@ -1581,7 +1567,6 @@ function ActivityEditor({
                       language: lang,
                       assetKey,
                       // Scene images bound to checkout media are read from the chosen checkout.
-                      ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
                     })
                 : undefined
             }
@@ -1918,6 +1903,7 @@ function ActivityEditor({
                         updated.assets[language] ?? [],
                         provider,
                         voiceOptions,
+                        language,
                       );
                       if (!count) return;
                       setMedia(pretty(updated));
@@ -1937,7 +1923,7 @@ function ActivityEditor({
                         voiceOptions.find((option) => option.id === voice)?.providerId ??
                         (isElevenLabsVoiceId(voice) ? "elevenlabs" : "gemini");
                       if (sharedProvider(group) !== owner)
-                        applyProvider(group, owner, voiceOptions);
+                        applyProvider(group, owner, voiceOptions, language);
                       const count = applyVoice(group, voice);
                       if (!count) return;
                       // The choice shows at once and stays in the editor if the save fails.
@@ -2005,6 +1991,7 @@ function ActivityEditor({
                           editedManifest.assets[language]?.find((asset) => asset.key === key),
                           voiceOptions,
                           bulkVoice,
+                          language,
                         ),
                       })
                     }
@@ -2089,7 +2076,6 @@ function ActivityEditor({
                     <BuildPanel
                       endpoint={endpoint}
                       revision={detail.draft.contentRevision}
-                      wafRoot={wafRoot}
                       runs={runs}
                       unsaved={dirty}
                       proposalOpen={!!proposal.read?.proposal?.changes.length}
@@ -2119,14 +2105,6 @@ function ActivityEditor({
                                 </Select>
                               </>
                             )}
-                            <Input
-                              size="sm"
-                              label={S.activities.wafRoot}
-                              value={wafRoot}
-                              onChange={(event) => setWafRoot(event.target.value)}
-                              disabled={busy || running}
-                              hint={S.activities.wafRootHint}
-                            />
                             <Button
                               size="sm"
                               disabled={
@@ -2149,7 +2127,6 @@ function ActivityEditor({
                                       body: {
                                         ...runner,
                                         expectedRevision: detail.draft.contentRevision,
-                                        wafRoot: wafRoot.trim() || undefined,
                                         ...(detail.activityType === "book" ? { bookMode } : {}),
                                       },
                                     },
@@ -2234,7 +2211,6 @@ function ActivityEditor({
                     uploadsLoading={uploadsLoading}
                     agents={agents}
                     defaultAgent={currentAgent?.agentId ?? ""}
-                    wafRoot={wafRoot}
                     onIdentity={(record) => {
                       setDetail((current) => (current ? { ...current, ...record } : current));
                       void onSaved();

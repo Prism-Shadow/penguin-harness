@@ -17,7 +17,7 @@ import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { SoundSetup } from "../src/activities/sound-types.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { activitySpec } from "./activity-fixtures.js";
-import { soundMp3, speechWave } from "./audio-fixtures.js";
+import { fakeMp3Encoding, mp3OfWave, soundMp3, speechWave } from "./audio-fixtures.js";
 
 // The catalogue this build ships is empty. Tests pass a stand-in to prove that one entry is
 // all a hub sound model needs; nothing here reaches agenthub or a provider.
@@ -150,9 +150,10 @@ describe("sound generation through a model hub model", () => {
         yield requestEnd("completed");
       },
     });
-    const t = await createTestApp(
-      catalogue ? { soundModelPorts: { agenthubModels: catalogue } } : {},
-    );
+    const t = await createTestApp({
+      ...fakeMp3Encoding,
+      ...(catalogue ? { soundModelPorts: { agenthubModels: catalogue } } : {}),
+    });
     const adopt = t.deps.manager.adopt.bind(t.deps.manager);
     vi.spyOn(t.deps.manager, "adopt").mockImplementation((row) => adopt(row, fakeSession(row)));
     cleanups.push(t.cleanup);
@@ -260,7 +261,13 @@ describe("sound generation through a model hub model", () => {
     const setup = (await (
       await f.client.get(`/api/projects/${PROJECT}/activities/sound-setup?agentId=default_agent`)
     ).json()) as SoundSetup;
-    expect(setup.providers.map((entry) => entry.id)).toEqual(["elevenlabs", "agenthub"]);
+    expect(setup.providers.map((entry) => entry.id)).toEqual([
+      "elevenlabs",
+      "agenthub",
+      "musicgen",
+      "audiogen",
+      "audioldm",
+    ]);
     expect(setup.providers[1]).toMatchObject({
       available: false,
       problem: "no_model",
@@ -275,7 +282,7 @@ describe("sound generation through a model hub model", () => {
     expect(listed.runs).toEqual([]);
   });
 
-  it("stages the agenthub helper for an injected model and keeps its WAV only when accepted", async () => {
+  it("stages the agenthub helper for an injected model and keeps its WAV, as MP3, only when accepted", async () => {
     const f = await fixture([TUNE]);
     await f.setVault(["ELEVENLABS_API_KEY"]);
     const missing = await f.generate();
@@ -315,16 +322,21 @@ describe("sound generation through a model hub model", () => {
     const summary = await f.finish(run, "wav");
     expect(summary.status, summary.error ?? "").toBe("succeeded");
     const played = await f.client.get(`${f.endpoint}/runs/${run.runId}/audio`);
-    expect(played.headers.get("content-type")).toBe("audio/wav");
-    expect(Buffer.from(await played.arrayBuffer())).toEqual(speechWave(2400));
+    // The model's WAV is kept as MP3, as the media repository keeps audio.
+    expect(played.headers.get("content-type")).toBe("audio/mpeg");
+    expect(Buffer.from(await played.arrayBuffer())).toEqual(mp3OfWave(speechWave(2400)));
     expect((await f.tune()).path).toBeUndefined();
     const accepted = await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-audio`, {
       expectedRevision: run.inputRevision,
     });
     expect(accepted.status, await accepted.clone().text()).toBe(200);
     const bound = await f.tune();
-    expect(bound.path).toBe(`media/generated/${run.runId}.wav`);
-    expect(bound.generatedAudio).toEqual({ runId: run.runId, sha256: expect.any(String) });
+    expect(bound.path).toBe("media/loom/p/p-1/audios/english/tune.mp3");
+    expect(bound.generatedAudio).toEqual({
+      runId: run.runId,
+      sha256: expect.any(String),
+      format: "mp3",
+    });
     expect(bound).toMatchObject({ kind: "music", targetDurationMs: 4000 });
   });
 

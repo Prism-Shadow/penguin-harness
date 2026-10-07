@@ -88,12 +88,15 @@ describe("activity image preview binding", () => {
 
   it("reads a bound PNG and identifies its content type", async () => {
     const root = await wafFixture();
-    const result = await readBoundImage(activity(), {
-      language: "en-US",
-      assetKey: "cat",
-      expectedRevision: "draft-revision",
-      wafRoot: root,
-    });
+    const result = await readBoundImage(
+      activity(),
+      {
+        language: "en-US",
+        assetKey: "cat",
+        expectedRevision: "draft-revision",
+      },
+      root,
+    );
     expect(result.mimeType).toBe("image/png");
     expect(result.bytes).toEqual(PNG);
   });
@@ -101,23 +104,29 @@ describe("activity image preview binding", () => {
   it("rejects stale revisions and stale or missing plans", async () => {
     const root = await wafFixture();
     await expect(
-      readBoundImage(activity(), {
-        language: "en-US",
-        assetKey: "cat",
-        expectedRevision: "stale",
-        wafRoot: root,
-      }),
+      readBoundImage(
+        activity(),
+        {
+          language: "en-US",
+          assetKey: "cat",
+          expectedRevision: "stale",
+        },
+        root,
+      ),
     ).rejects.toMatchObject({ status: 409, code: "draft_conflict" });
 
     const stale = activity();
     stale.draft.mediaPlan!.specRevision = "old-spec";
     await expect(
-      readBoundImage(stale, {
-        language: "en-US",
-        assetKey: "cat",
-        expectedRevision: "draft-revision",
-        wafRoot: root,
-      }),
+      readBoundImage(
+        stale,
+        {
+          language: "en-US",
+          assetKey: "cat",
+          expectedRevision: "draft-revision",
+        },
+        root,
+      ),
     ).rejects.toMatchObject({ status: 409, code: "media_stale" });
   });
 
@@ -126,34 +135,43 @@ describe("activity image preview binding", () => {
     const missing = activity();
     missing.draft.mediaPlan!.manifest.assets["en-US"] = [];
     await expect(
-      readBoundImage(missing, {
-        language: "en-US",
-        assetKey: "cat",
-        expectedRevision: "draft-revision",
-        wafRoot: root,
-      }),
+      readBoundImage(
+        missing,
+        {
+          language: "en-US",
+          assetKey: "cat",
+          expectedRevision: "draft-revision",
+        },
+        root,
+      ),
     ).rejects.toMatchObject({ status: 404, code: "image_unbound" });
 
     const wrongType = activity();
     wrongType.draft.mediaPlan!.manifest.assets["en-US"]![0]!.type = "audio";
     await expect(
-      readBoundImage(wrongType, {
-        language: "en-US",
-        assetKey: "cat",
-        expectedRevision: "draft-revision",
-        wafRoot: root,
-      }),
+      readBoundImage(
+        wrongType,
+        {
+          language: "en-US",
+          assetKey: "cat",
+          expectedRevision: "draft-revision",
+        },
+        root,
+      ),
     ).rejects.toMatchObject({ status: 404, code: "image_unbound" });
 
     for (const unsafePath of ["media/../secret.png", "media/images/../cat.png"]) {
       const unsafe = activity(unsafePath);
       await expect(
-        readBoundImage(unsafe, {
-          language: "en-US",
-          assetKey: "cat",
-          expectedRevision: "draft-revision",
-          wafRoot: root,
-        }),
+        readBoundImage(
+          unsafe,
+          {
+            language: "en-US",
+            assetKey: "cat",
+            expectedRevision: "draft-revision",
+          },
+          root,
+        ),
       ).rejects.toMatchObject({ status: 400, code: "image_path_invalid" });
     }
   });
@@ -165,23 +183,29 @@ describe("activity image preview binding", () => {
     const linked = "media/images/linked.png";
     await fs.symlink(outside, path.join(root, linked));
     await expect(
-      readBoundImage(activity(linked), {
-        language: "en-US",
-        assetKey: "cat",
-        expectedRevision: "draft-revision",
-        wafRoot: root,
-      }),
+      readBoundImage(
+        activity(linked),
+        {
+          language: "en-US",
+          assetKey: "cat",
+          expectedRevision: "draft-revision",
+        },
+        root,
+      ),
     ).rejects.toMatchObject({ status: 404, code: "image_unavailable" });
 
     const directory = "media/images/directory.png";
     await fs.mkdir(path.join(root, directory));
     await expect(
-      readBoundImage(activity(directory), {
-        language: "en-US",
-        assetKey: "cat",
-        expectedRevision: "draft-revision",
-        wafRoot: root,
-      }),
+      readBoundImage(
+        activity(directory),
+        {
+          language: "en-US",
+          assetKey: "cat",
+          expectedRevision: "draft-revision",
+        },
+        root,
+      ),
     ).rejects.toMatchObject({ status: 404, code: "image_unavailable" });
 
     const oversized = "media/images/large.png";
@@ -190,23 +214,29 @@ describe("activity image preview binding", () => {
       Buffer.concat([PNG, Buffer.alloc(IMAGE_MAX_BYTES)]),
     );
     await expect(
-      readBoundImage(activity(oversized), {
-        language: "en-US",
-        assetKey: "cat",
-        expectedRevision: "draft-revision",
-        wafRoot: root,
-      }),
+      readBoundImage(
+        activity(oversized),
+        {
+          language: "en-US",
+          assetKey: "cat",
+          expectedRevision: "draft-revision",
+        },
+        root,
+      ),
     ).rejects.toMatchObject({ status: 404, code: "image_unavailable" });
 
     const text = "media/images/text.png";
     await fs.writeFile(path.join(root, text), "not an image");
     await expect(
-      readBoundImage(activity(text), {
-        language: "en-US",
-        assetKey: "cat",
-        expectedRevision: "draft-revision",
-        wafRoot: root,
-      }),
+      readBoundImage(
+        activity(text),
+        {
+          language: "en-US",
+          assetKey: "cat",
+          expectedRevision: "draft-revision",
+        },
+        root,
+      ),
     ).rejects.toMatchObject({ status: 415, code: "image_unsupported" });
   });
 
@@ -224,12 +254,15 @@ describe("activity image preview binding", () => {
       throw error;
     }
     await expect(
-      readBoundImage(activity(), {
-        language: "en-US",
-        assetKey: "cat",
-        expectedRevision: "draft-revision",
-        wafRoot: root,
-      }),
+      readBoundImage(
+        activity(),
+        {
+          language: "en-US",
+          assetKey: "cat",
+          expectedRevision: "draft-revision",
+        },
+        root,
+      ),
     ).rejects.toMatchObject({ status: 404, code: "image_unavailable" });
   });
 });

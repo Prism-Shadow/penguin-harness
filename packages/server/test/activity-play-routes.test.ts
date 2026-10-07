@@ -11,7 +11,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { activitySpec } from "./activity-fixtures.js";
+import { activitySpec, createCheckoutActivity } from "./activity-fixtures.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 
 const FOLDER = "waf-module-sight-words";
@@ -71,7 +71,9 @@ async function checkout(options: { usesAssessment?: boolean } = {}): Promise<str
 describe("playing an imported activity", () => {
   const cleanups: (() => Promise<void>)[] = [];
   afterEach(async () => {
-    for (const cleanup of cleanups.splice(0)) await cleanup();
+    // Last in, first out: a second setup restores the WAF_ROOT_DIR the first one set, and the
+    // first one's cleanup then restores what was there before either.
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   });
 
   async function setup(options: Parameters<typeof checkout>[0] = {}) {
@@ -89,15 +91,7 @@ describe("playing an imported activity", () => {
     const client = apiClient(t.app, owner.cookie);
     const projectId = "play_owner-play";
     await client.post("/api/projects", { projectId, name: "Play" });
-    const imported = await client.post(`/api/projects/${projectId}/activities/import`, {
-      moduleFolder: FOLDER,
-      productCode: CODE,
-    });
-    expect(imported.status).toBe(200);
-    const list = (await (await client.get(`/api/projects/${projectId}/activities`)).json()) as {
-      activities: { id: string }[];
-    };
-    const activityId = list.activities[0]!.id;
+    const activityId = await createCheckoutActivity(client, projectId, root, CODE);
 
     const redirect = await client.get(
       `/api/projects/${projectId}/activities/${activityId}/sandbox/play?language=en-US`,

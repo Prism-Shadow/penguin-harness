@@ -206,13 +206,14 @@ describe("activity media planning", () => {
     manifest.assets["en-US"] = [];
     expect(() => validateMediaCoverage(manifest, a)).toThrow("every asset");
   });
-  it("validates generated image provenance and its immutable media path", () => {
+  it("validates generated image provenance and its path in the media repository", () => {
     const a = activity();
     const manifest = planMedia(a).manifest;
     const image = manifest.assets["en-US"]![0]!;
     const runId = "run_0123456789abcdef0123456789abcdef";
     const sha256 = "a".repeat(64);
-    image.path = `media/generated/${runId}.png`;
+    const loom = "media/loom/P/P-1/images/english/cat.png";
+    image.path = loom;
     image.generatedImage = { runId, sha256 };
     expect(validateManifest(manifest, a).assets["en-US"]![0]!.generatedImage).toEqual({
       runId,
@@ -225,10 +226,14 @@ describe("activity media planning", () => {
       },
       {
         generatedImage: { runId: "run_0123456789abcdef0123456789abcdeg", sha256 },
-        path: `media/generated/${runId}.png`,
+        path: loom,
       },
-      { generatedImage: { runId, sha256: "bad" }, path: `media/generated/${runId}.png` },
-      { generatedImage: { runId, sha256 }, path: `media/generated/${runId}.wav` },
+      { generatedImage: { runId, sha256: "bad" }, path: loom },
+      { generatedImage: { runId, sha256 }, path: "media/loom/P/P-1/images/english/cat.wav" },
+      // Where a take used to be bound, and another ref's or language's folder.
+      { generatedImage: { runId, sha256 }, path: `media/generated/${runId}.png` },
+      { generatedImage: { runId, sha256 }, path: "media/loom/P/P-2/images/english/cat.png" },
+      { generatedImage: { runId, sha256 }, path: "media/loom/P/P-1/images/spanish/cat.png" },
     ]) {
       const invalid = planMedia(a).manifest;
       Object.assign(invalid.assets["en-US"]![0]!, change);
@@ -237,7 +242,7 @@ describe("activity media planning", () => {
     const wrongType = planMedia(a).manifest;
     const wrong = wrongType.assets["en-US"]![0]!;
     wrong.type = "audio";
-    wrong.path = `media/generated/${runId}.png`;
+    wrong.path = loom;
     wrong.generatedImage = { runId, sha256 };
     expect(() => validateManifest(wrongType, a)).toThrow("generated image");
   });
@@ -336,21 +341,21 @@ describe("sound fields in the media manifest", () => {
     expect(() => check({ ...narration, targetDurationMs: 3000 })).toThrow(/requested length/);
   });
 
-  it("binds an MP3 clip at its own path and a WAV clip as before", () => {
+  it("binds an MP3 or a WAV clip at the asset's path in the media repository", () => {
+    const door = "media/loom/words/words-1/audios/english/door";
     const mp3 = check({
       ...effect,
-      path: `media/generated/${runId}.mp3`,
+      path: `${door}.mp3`,
       generatedAudio: { runId, sha256, format: "mp3" },
     });
     expect(mp3.generatedAudio).toEqual({ runId, sha256, format: "mp3" });
     expect(
-      check({ ...effect, path: `media/generated/${runId}.wav`, generatedAudio: { runId, sha256 } })
-        .generatedAudio,
+      check({ ...effect, path: `${door}.wav`, generatedAudio: { runId, sha256 } }).generatedAudio,
     ).toEqual({ runId, sha256 });
     expect(
       check({
         ...effect,
-        path: `media/generated/${runId}.wav`,
+        path: `${door}.wav`,
         generatedAudio: { runId, sha256, format: "wav" },
       }).generatedAudio?.format,
     ).toBe("wav");
@@ -358,18 +363,25 @@ describe("sound fields in the media manifest", () => {
     expect(() =>
       check({
         ...effect,
-        path: `media/generated/${runId}.wav`,
+        path: `${door}.wav`,
         generatedAudio: { runId, sha256, format: "mp3" },
       }),
     ).toThrow(/generated audio/);
     expect(() =>
-      check({ ...effect, path: `media/generated/${runId}.mp3`, generatedAudio: { runId, sha256 } }),
+      check({ ...effect, path: `${door}.mp3`, generatedAudio: { runId, sha256 } }),
     ).toThrow(/generated audio/);
     expect(() =>
       check({
         ...effect,
-        path: `media/generated/${runId}.ogg`,
+        path: `${door}.ogg`,
         generatedAudio: { runId, sha256, format: "ogg" },
+      }),
+    ).toThrow(/generated audio/);
+    expect(() =>
+      check({
+        ...effect,
+        path: `media/generated/${runId}.mp3`,
+        generatedAudio: { runId, sha256, format: "mp3" },
       }),
     ).toThrow(/generated audio/);
   });

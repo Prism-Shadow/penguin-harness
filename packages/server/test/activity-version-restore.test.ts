@@ -17,9 +17,11 @@ import {
   writeBlob,
   writeVersion,
 } from "../src/activities/version-store.js";
+import { REF_FEATURES_FILE } from "../src/activities/ref-files.js";
 import { apiClient, provisionUser } from "./helpers.js";
+import { refFilesDir } from "./activity-fixtures.js";
 import {
-  AUDIO_RUN,
+  HELLO,
   regenerateNarration,
   versionsApp,
   withMedia,
@@ -60,10 +62,10 @@ describe("restoring activity versions", () => {
     expect(draft.contentRevision).toBe(v1Draft.contentRevision);
     expect(draft.status).toBe("valid");
     expect((await s.read()).draft.contentRevision).toBe(v1Draft.contentRevision);
-    // Bound media bytes equal the version's; the regenerated clip stays where it was.
-    expect(await fs.readFile(path.join(s.workspace, "audio", `${AUDIO_RUN}.wav`))).toEqual(wave);
+    // Bound media bytes equal the version's: the regenerated narration's file, at the same
+    // path, holds the version's narration again.
+    expect(await fs.readFile(path.join(s.workspace, HELLO))).toEqual(wave);
     expect(await fs.readFile(path.join(s.workspace, dogPath))).toEqual(uploadBytes);
-    await expect(fs.stat(path.join(s.workspace, "audio", `${RUN_2}.wav`))).resolves.toBeTruthy();
 
     const versions = await s.list();
     expect(versions.map((v) => [v.seq, v.kind, v.reason, v.current])).toEqual([
@@ -75,6 +77,32 @@ describe("restoring activity versions", () => {
       .prepare("SELECT source_version_id FROM activity_versions WHERE seq = 3")
       .get() as { source_version_id: string };
     expect(source.source_version_id).toBe(v1.versionId);
+  });
+
+  it("restores a version saved under another number into this ref's media folder", async () => {
+    const s = await versionsApp(PROJECT, cleanups);
+    const { wave, dogPath, uploadBytes } = await withMedia(s);
+    const v1 = await s.saved();
+    const renumbered = await s.client.post(`${s.endpoint}/ref-number`, {
+      refNum: 2,
+      expectedRevision: (await s.read()).draft.contentRevision,
+    });
+    expect(renumbered.status, await renumbered.clone().text()).toBe(200);
+    const moved = (p: string) => p.replace("/words-1/", "/words-2/");
+    // The files moved with the number; lose them, so only the version can bring them back.
+    await fs.rm(path.join(s.workspace, moved(HELLO)));
+    await fs.rm(path.join(s.workspace, moved(dogPath)));
+    const response = await restore(s, v1.versionId, (await s.read()).draft.contentRevision);
+    expect(response.status, await response.clone().text()).toBe(200);
+    const draft = (await response.json()) as ActivityDraft;
+    expect(draft.mediaPlan!.manifest.refNum).toBe(2);
+    const assets = draft.mediaPlan!.manifest.assets["en-US"]!;
+    expect(assets.find((asset) => asset.key === "hello")!.path).toBe(moved(HELLO));
+    expect(assets.find((asset) => asset.key === "dog")!.path).toBe(moved(dogPath));
+    expect(await fs.readFile(path.join(s.workspace, moved(HELLO)))).toEqual(wave);
+    expect(await fs.readFile(path.join(s.workspace, moved(dogPath)))).toEqual(uploadBytes);
+    // Nothing is written back under the number the version was saved with.
+    await expect(fs.stat(path.join(s.workspace, HELLO))).rejects.toThrow();
   });
 
   it("returns to the exact revision before a restore by restoring the kept version", async () => {
@@ -136,20 +164,20 @@ describe("restoring activity versions", () => {
     const s = await versionsApp(PROJECT, cleanups);
     const { wave } = await withMedia(s);
     const v1 = await s.saved();
-    await regenerateNarration(s, RUN_2);
+    const { wave: again } = await regenerateNarration(s, RUN_2);
     const before = (await s.read()).draft;
     await fs.rm(blobFile(s.activityDir, sha256(wave)));
-    await fs.rm(path.join(s.workspace, "audio", `${AUDIO_RUN}.wav`));
     const response = await restore(s, v1.versionId, before.contentRevision);
     expect(response.status).toBe(409);
     const body = (await response.json()) as {
       error: { code: string; message: string; detail?: Record<string, string> };
     };
     expect(body.error.code).toBe("version_incomplete");
-    expect(body.error.detail).toEqual({ path: `audio/${AUDIO_RUN}.wav` });
+    expect(body.error.detail).toEqual({ path: HELLO });
     expect((await s.read()).draft).toEqual(before);
     expect((await s.list()).map((v) => v.seq)).toEqual([1]);
-    await expect(fs.stat(path.join(s.workspace, "audio", `${AUDIO_RUN}.wav`))).rejects.toThrow();
+    // The regenerated narration stays in place.
+    expect(await fs.readFile(path.join(s.workspace, HELLO))).toEqual(again);
   });
 
   it("restores when a file of the draft is missing, keeping the draft without it first", async () => {
@@ -157,11 +185,11 @@ describe("restoring activity versions", () => {
     const { wave } = await withMedia(s);
     const v1 = await s.saved();
     await regenerateNarration(s, RUN_2);
-    await fs.rm(path.join(s.workspace, "audio", `${RUN_2}.wav`));
+    await fs.rm(path.join(s.workspace, HELLO));
     const before = (await s.read()).draft;
     const response = await restore(s, v1.versionId, before.contentRevision);
     expect(response.status, await response.clone().text()).toBe(200);
-    expect(await fs.readFile(path.join(s.workspace, "audio", `${AUDIO_RUN}.wav`))).toEqual(wave);
+    expect(await fs.readFile(path.join(s.workspace, HELLO))).toEqual(wave);
     const versions = await s.list();
     expect(versions.map((v) => [v.seq, v.kind, v.reason])).toEqual([
       [3, "restore", null],
@@ -209,7 +237,7 @@ describe("restoring activity versions", () => {
     writeVersion(s.t.deps.db, odd);
     await s.describe("Other");
     const before = (await s.read()).draft;
-    const features = path.join(s.workspace, "implementation-features.json");
+    const features = path.join(refFilesDir(s.t.root, "words", 1), REF_FEATURES_FILE);
     const featuresBefore = await fs.readFile(features, "utf8").catch(() => null);
     const response = await restore(s, odd.versionId, before.contentRevision);
     expect(response.status).toBe(422);

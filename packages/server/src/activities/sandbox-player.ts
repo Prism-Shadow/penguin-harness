@@ -219,6 +219,9 @@ pubSub.on(Activity.Events.ActivityLoadFailed, handleActivityFailed);
 function hideLoading() {
     const loading = document.getElementById('playerLoading');
     if (loading) loading.hidden = true;
+    // A hidden video still decodes every loop; the activity needs that time more.
+    const video = document.getElementById('playerLoadingVideo');
+    if (video) video.pause();
 }
 
 function startPlayer() {
@@ -420,6 +423,13 @@ function escapeHtml(value: string): string {
 }
 
 /**
+ * The character animation behind "Loading preview…", from the WAF media checkout: the same
+ * file Loom's dev-sandbox shows. Served through the media route like any other asset, so a
+ * checkout without it (or with only its LFS pointer) keeps the plain text instead.
+ */
+export const LOADING_VIDEO_PATH = "media/videos/loading/CharacterLoadingScreen.mp4";
+
+/**
  * The player page.
  *
  * The configuration is JSON inside a non-executing script element, with `<` escaped so a
@@ -441,6 +451,10 @@ export function playerPage(input: PlayerPageInput): string {
         position: fixed; inset: 0; z-index: 100000; display: flex; align-items: center;
         justify-content: center; background: #229cbd; color: #fff; font: 600 1.25rem/1.2 sans-serif;
       }
+      #playerLoadingVideo {
+        position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+        object-position: center;
+      }
       #playerLoading[hidden], #playerExpired[hidden] { display: none; }
       #playerExpired {
         position: fixed; inset: 0; z-index: 100001; display: flex; align-items: center;
@@ -461,7 +475,10 @@ export function playerPage(input: PlayerPageInput): string {
       <div id="teacherHelpOverlay" draggable="false">
         <img src="${base}images/teacherHelp.jpg" alt="" id="teacherHelpImage" draggable="false" />
       </div>
-      <div id="playerLoading" role="status" aria-live="polite">Loading preview…</div>
+      <div id="playerLoading" role="status" aria-live="polite">
+        <span>Loading preview…</span>
+        <video id="playerLoadingVideo" src="${base}${LOADING_VIDEO_PATH}" autoplay loop muted playsinline preload="auto" aria-hidden="true" onerror="this.remove()"></video>
+      </div>
       <div id="playerExpired" role="alert" hidden>
         This preview link has expired, so its pictures and sounds can no longer load. Reload the preview to keep playing.
       </div>

@@ -30,6 +30,7 @@ import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
 import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
+import { LOCAL_AUDIO_ASSETS } from "./local-audio-assets.mjs";
 import { buildBuiltinPlugins, prefixLayout } from "./build-plugins.mjs";
 import { createHash } from "node:crypto";
 
@@ -243,7 +244,7 @@ async function readNativeAssets() {
   // over, the one thing that has to arrive before the CLI does. A pushed bundle resolves them
   // from its own assets directory, so a push that omits one leaves a server that cannot
   // install a machine at all. Same set the packaged build copies into dist/; see the module.
-  for (const { name, from } of FAR_SIDE_SCRIPTS) {
+  for (const { name, from } of [...FAR_SIDE_SCRIPTS, ...LOCAL_AUDIO_ASSETS]) {
     files[name] = await fsp.readFile(path.join(ROOT, from));
   }
   // The builtin plugins, as the npm prefix the loader resolves from (`plugins/package.json`

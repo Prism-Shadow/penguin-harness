@@ -1,8 +1,9 @@
 /**
  * Whether a deploy of one activity could start, and what is missing if not.
  *
- * Built from facts the caller gathered (the activity, its product, the settings, the
- * module's repository) plus what git and the disk say about the three deploy clones. Every
+ * Built from facts the caller gathered (the activity, its product, the settings, the WAF
+ * workspace's remotes) plus what git and the disk say about the three clones a deploy works in:
+ * the workspace's module, activity-data and media repositories. Every
  * git call and every disk look goes through the ports, so a test answers them with fakes.
  *
  * It reads only: nothing is cloned, fetched or written. The remote is reached only when the
@@ -14,7 +15,6 @@ import {
   activityDataBranchName,
   branchState,
   cloneState,
-  cloneUrlFor,
   deployBranchName,
   deployClonePaths,
   gitAvailable,
@@ -39,8 +39,12 @@ import type { CloneState, DeployContext, DeployProblem, DeployRepo } from "./dep
 export const DEPLOY_LAYOUT = "mainOnly";
 
 export interface DeployContextInput {
-  /** PENGUIN_HOME: the clones live under it, and git is run from it. */
+  /** PENGUIN_HOME: git is run from it. */
   home: string;
+  /** The WAF workspace's root, where the clones are; null when it is not prepared. */
+  wafRoot: string | null;
+  /** The remotes the clones should have, from the workspace's settings. */
+  remotes: { module: string | null; activityData: string; media: string };
   productCode: string;
   /** The product's module folder; null when the activity belongs to no product. */
   moduleFolder: string | null;
@@ -50,8 +54,6 @@ export interface DeployContextInput {
   layout: string | null;
   settings: DeploySettings;
   secrets: DeploySecrets;
-  /** The module's package.json `repository`, as written; null when it names none. */
-  moduleRepository: string | null;
   /** Ask the remote whether the branches are there (reaches the network). */
   checkRemote: boolean;
 }
@@ -81,34 +83,28 @@ export async function buildDeployContext(
   if (layout !== DEPLOY_LAYOUT) problems.push({ code: "layout_unsupported", layout });
   for (const field of missingSettings(input.settings, input.secrets))
     problems.push({ code: "settings_missing", field });
-  const named = input.moduleRepository ? cloneUrlFor(input.moduleRepository) : null;
-  // The module's remote comes from a package.json, not the admin: it must pass the same rule
-  // the settings' remotes do before anything is cloned from it.
+  const named = input.remotes.module;
   const moduleRemote = named !== null && isAllowedRemote(named) ? named : null;
-  if (input.moduleFolder !== null && named === null)
-    problems.push({ code: "module_remote_missing" });
-  else if (input.moduleFolder !== null && moduleRemote === null)
+  if (input.moduleFolder !== null && moduleRemote === null)
     problems.push({ code: "module_remote_invalid" });
+  if (input.wafRoot === null) problems.push({ code: "workspace_not_ready" });
 
   const branches = {
     deploy: folder ? deployBranchName(folder) : "",
     activityData: activityDataBranchName(input.productCode),
   };
-  const paths = deployClonePaths(input.home, folder || "_");
+  // Without a workspace there are no clones to look at; its problem says why.
+  const ready = input.wafRoot !== null;
+  const paths = deployClonePaths(input.wafRoot ?? input.home, folder || "_");
   const repos: Array<{ repo: DeployRepo; dir: string; remote: string | null; used: boolean }> = [
-    { repo: "module", dir: paths.module, remote: moduleRemote, used: folder !== "" },
+    { repo: "module", dir: paths.module, remote: moduleRemote, used: ready && folder !== "" },
     {
       repo: "activityData",
       dir: paths.activityData,
-      remote: input.settings.repos.activityDataRemote || null,
-      used: true,
+      remote: input.remotes.activityData || null,
+      used: ready,
     },
-    {
-      repo: "media",
-      dir: paths.media,
-      remote: input.settings.repos.mediaRemote || null,
-      used: true,
-    },
+    { repo: "media", dir: paths.media, remote: input.remotes.media || null, used: ready },
   ];
   const present = await Promise.all(
     repos.map((entry) =>
@@ -137,15 +133,19 @@ export async function buildDeployContext(
       continue;
     }
     if (!gitOk) continue;
-    if (state.clean === false) problems.push({ code: "clone_dirty", repo: entry.repo });
+    // The module and media clones are where activities are authored: work in them is what a
+    // deploy commits, so only the activity-data clone, which is the deploy's own, must be
+    // clean and pushed.
+    const ownOnly = entry.repo === "activityData";
+    if (ownOnly && state.clean === false) problems.push({ code: "clone_dirty", repo: entry.repo });
     if (state.remoteUrlMatches === false)
       problems.push({ code: "clone_remote_mismatch", repo: entry.repo });
-    if (state.ahead !== null && state.ahead > 0)
+    if (ownOnly && state.ahead !== null && state.ahead > 0)
       problems.push({ code: "clone_ahead", repo: entry.repo, count: state.ahead });
     // What git could not say is not ready: a deploy must not start on a guess.
     if (state.clean === null)
       problems.push({ code: "clone_unknown", repo: entry.repo, what: "status" });
-    if (state.ahead === null)
+    if (ownOnly && state.ahead === null)
       problems.push({ code: "clone_unknown", repo: entry.repo, what: "upstream" });
     // The checked-out branch is only shown: the deploy checks out main itself, and a clean
     // clone with nothing unpushed can switch safely.

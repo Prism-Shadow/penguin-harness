@@ -18,7 +18,7 @@ import type {
 } from "../src/activities/quality-types.js";
 import { INSTALL_MARKER } from "../src/activities/test-browser.js";
 import type { ActivityGeneration } from "../src/mechanisms/activities.js";
-import { activitySpec } from "./activity-fixtures.js";
+import { activitySpec, createCheckoutActivity } from "./activity-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 
 const FOLDER = "waf-module-sight-words";
@@ -148,7 +148,9 @@ function fakeBrowser(options: { hold?: Promise<void>; failOn?: string } = {}) {
 describe("quality run", () => {
   const cleanups: (() => Promise<void>)[] = [];
   afterEach(async () => {
-    for (const cleanup of cleanups.splice(0)) await cleanup();
+    // Last in, first out: a second setup restores the WAF_ROOT_DIR the first one set, and the
+    // first one's cleanup then restores what was there before either.
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   });
 
   async function setup(
@@ -177,15 +179,7 @@ describe("quality run", () => {
     const client = apiClient(t.app, owner.cookie);
     const projectId = "quality_owner-quality";
     await client.post("/api/projects", { projectId, name: "Quality" });
-    const imported = await client.post(`/api/projects/${projectId}/activities/import`, {
-      moduleFolder: FOLDER,
-      productCode: CODE,
-    });
-    expect(imported.status, await imported.clone().text()).toBe(200);
-    const list = (await (await client.get(`/api/projects/${projectId}/activities`)).json()) as {
-      activities: { id: string }[];
-    };
-    const activityId = list.activities[0]!.id;
+    const activityId = await createCheckoutActivity(client, projectId, root, CODE);
     const endpoint = `/api/projects/${projectId}/activities/${activityId}`;
     const state = async () => {
       const res = await client.get(`${endpoint}/quality`);

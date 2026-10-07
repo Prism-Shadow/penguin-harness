@@ -92,10 +92,18 @@ import {
 import { DefaultSoundModelPorts, type SoundModelPorts } from "../src/activities/sound-models.js";
 import { DefaultEspeakPorts, type EspeakPorts } from "../src/activities/phonemes.js";
 import { DefaultDeployPorts, type DeployPorts } from "../src/activities/deploy-service.js";
+import { DefaultAudioEncodePorts, type AudioEncodePorts } from "../src/activities/ref-media.js";
+import {
+  DefaultWafWorkspacePorts,
+  type WafWorkspacePorts,
+} from "../src/activities/waf-workspace.js";
 import {
   DefaultMediaLibraryPorts,
   type MediaLibraryPorts,
 } from "../src/activities/media-bundle.js";
+
+// A developer's own WAF checkout must never be written by a test; a test names its own.
+delete process.env.WAF_ROOT_DIR;
 
 export async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
@@ -291,6 +299,15 @@ export interface TestAppOptions {
   espeakPorts?: EspeakPorts;
   /** Test double: git and Jenkins for deploys, so a test never reaches a remote. */
   deployPorts?: DeployPorts;
+  /** Test double: git and npm for the WAF workspace, so a test never clones or installs. */
+  wafWorkspacePorts?: WafWorkspacePorts;
+  /** Test double: WAV to MP3 conversion, so a test never runs ffmpeg. */
+  audioEncodePorts?: AudioEncodePorts;
+  /**
+   * False leaves the WAF workspace unset. By default the server reads an empty WAF checkout
+   * under the test's root (activities are stored in its modules); WAF_ROOT_DIR overrides it.
+   */
+  wafCheckout?: boolean;
   /** Test double: the quality check's browser launcher and axe source, so no browser starts. */
   qualityCheckPorts?: QualityCheckPorts;
   /** Test double: the scene-video recorder's browser launcher, so no browser starts. */
@@ -393,11 +410,14 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   if (o.soundModelPorts) out.push([DefaultSoundModelPorts, o.soundModelPorts]);
   if (o.espeakPorts) out.push([DefaultEspeakPorts, o.espeakPorts]);
   if (o.deployPorts) out.push([DefaultDeployPorts, o.deployPorts]);
+  // Nothing clones at boot in a test: a test that wants preparing asks for it.
+  out.push([DefaultWafWorkspacePorts, { autoPrepare: false, ...o.wafWorkspacePorts }]);
+  if (o.audioEncodePorts) out.push([DefaultAudioEncodePorts, o.audioEncodePorts]);
   return out;
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
-  const { beforeSeed, config, plugins, ...overrides } = options;
+  const { beforeSeed, config, plugins, wafCheckout = true, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
   const finalConfig = { ...testConfig(root), ...config };
@@ -417,6 +437,14 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
   const deps = flattenForTests(boot);
   await deps.authService.seedAdmin();
+  if (wafCheckout) {
+    const checkout = path.join(root, "waf-checkout");
+    await fs.mkdir(path.join(checkout, "framework", "src"), { recursive: true });
+    await fs.writeFile(path.join(checkout, "framework", "package.json"), "{}");
+    await fs.mkdir(path.join(checkout, "modules"), { recursive: true });
+    await fs.mkdir(path.join(checkout, "media"), { recursive: true });
+    deps.serverSettingsRepo.set("wafWorkspace", JSON.stringify({ externalRoot: checkout }));
+  }
   // The seed hashes and discards; tests know the password only because the config injects it.
   // With a null override there is nothing to know, and such tests never password-login.
   const adminPassword = finalConfig.seedAdminPassword ?? TEST_ADMIN_PASSWORD;

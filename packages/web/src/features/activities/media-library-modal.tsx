@@ -1,7 +1,7 @@
 /**
- * The picker over uploaded media. It browses this activity's own workspace, or the uploads
- * of the project's other activities, never the shared WAF checkout, and hands back a
- * `media/uploads/...` reference for the caller to bind. A file from another activity is
+ * The picker over uploaded media. It browses this activity's own uploads, or the uploads of
+ * the project's other activities, and hands back a `media/loom/<pc>/<pc>-<ref>/uploads/...`
+ * reference for the caller to bind. A file from another activity is
  * copied into this one first, so each activity keeps owning its files.
  */
 import { useEffect, useRef, useState } from "react";

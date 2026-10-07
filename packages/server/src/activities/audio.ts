@@ -13,6 +13,7 @@ import type { SpeechProviderId } from "./speech-types.js";
 import type { GeneratedAudioFormat } from "./media.js";
 import type { WordTiming } from "./word-timings.js";
 import { isBookWord } from "./book-words.js";
+import { KOKORO_VOICES, LOCAL_AUDIO_MODELS } from "./local-audio-models.js";
 
 export interface AudioTarget {
   language: string;
@@ -58,6 +59,7 @@ export { SPEECH_MODEL, SPEECH_VOICES } from "./voice-catalogue.js";
 export const SPEECH_OUTPUT_FILES: Readonly<Record<SpeechProviderId, string>> = {
   gemini: "speech.wav",
   elevenlabs: "speech.mp3",
+  kokoro: "speech.wav",
 };
 
 /** Word timings a speech helper writes beside its clip when the provider returns them. */
@@ -88,9 +90,34 @@ export function audioTarget(
     );
   const provider = input.provider ?? asset.speechProvider ?? "gemini";
   if (!isSpeechProvider(provider))
-    throw new HttpError(400, "speech_provider_unknown", "Choose Gemini or ElevenLabs.");
+    throw new HttpError(400, "speech_provider_unknown", "Choose Gemini, ElevenLabs or Kokoro.");
   if (!isVoiceOf(provider, input.voice))
     throw new HttpError(422, "audio_invalid", "Select a supported speech voice.");
+  if (provider === "kokoro") {
+    const voice = KOKORO_VOICES.find((entry) => entry.id === input.voice)!;
+    if (!voice.languages.includes(input.language))
+      throw new HttpError(
+        422,
+        "audio_invalid",
+        "Choose a Kokoro voice for this narration's language.",
+      );
+    if (isBookWord(asset) && !asset.customScript)
+      throw new HttpError(
+        422,
+        "audio_invalid",
+        "Kokoro reads text literally. Write a custom pronunciation script before recording this word.",
+      );
+    if (input.model !== undefined && input.model !== LOCAL_AUDIO_MODELS.kokoro.model)
+      throw new HttpError(400, "speech_model_unknown", "Choose a model this provider offers.");
+    return {
+      language: input.language,
+      assetKey: input.assetKey,
+      script: asset.script,
+      voice: input.voice,
+      provider,
+      model: LOCAL_AUDIO_MODELS.kokoro.model,
+    };
+  }
   if (provider === "gemini") {
     if (input.model !== undefined && input.model !== SPEECH_MODEL)
       throw new HttpError(400, "speech_model_unknown", "Choose a model this provider offers.");

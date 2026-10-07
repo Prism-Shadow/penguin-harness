@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mediaContentType, mediaEtag, planMediaResponse } from "../src/activities/media-origin.js";
+import {
+  mediaContentType,
+  mediaEtag,
+  mediaVersion,
+  planMediaResponse,
+} from "../src/activities/media-origin.js";
 
 const facts = { size: 1000, mtimeMs: 1_700_000_000_000 };
 const etag = mediaEtag(facts);
@@ -48,9 +53,38 @@ describe("a whole-file request", () => {
     expect(plan.headers["Accept-Ranges"]).toBe("bytes");
   });
 
-  it("is never cached, because a draft's media changes under the same URL", () => {
-    expect(plan.headers["Cache-Control"]).toBe("private, no-store");
+  it("is revalidated, because a draft's media changes under the same path", () => {
+    expect(plan.headers["Cache-Control"]).toBe("private, no-cache");
     expect(plan.headers["X-Content-Type-Options"]).toBe("nosniff");
+  });
+});
+
+describe("a versioned request", () => {
+  it("names the file's own bytes, so a replaced file gets a new version", () => {
+    expect(mediaVersion(facts)).toBe(mediaVersion({ ...facts }));
+    expect(mediaVersion(facts)).not.toBe(mediaVersion({ ...facts, size: facts.size + 1 }));
+    expect(mediaVersion(facts)).not.toBe(mediaVersion({ ...facts, mtimeMs: facts.mtimeMs + 1 }));
+  });
+
+  it("is cached for good when its version matches the file", () => {
+    const plan = planMediaResponse("cat.png", facts, { version: mediaVersion(facts) });
+    expect(plan.headers["Cache-Control"]).toBe("private, max-age=31536000, immutable");
+  });
+
+  it("stays on the 304 too, so a revalidated copy keeps its lifetime", () => {
+    const plan = planMediaResponse("cat.png", facts, {
+      version: mediaVersion(facts),
+      ifNoneMatch: mediaEtag(facts),
+    });
+    expect(plan.status).toBe(304);
+    expect(plan.headers["Cache-Control"]).toBe("private, max-age=31536000, immutable");
+  });
+
+  it("is revalidated when its version names other bytes", () => {
+    for (const version of ["stale-1", "manual", ""]) {
+      const plan = planMediaResponse("cat.png", facts, { version });
+      expect(plan.headers["Cache-Control"]).toBe("private, no-cache");
+    }
   });
 });
 

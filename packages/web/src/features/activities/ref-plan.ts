@@ -5,6 +5,7 @@
  *
  * Pure, so the page and the tests cannot disagree about what a row asks for.
  */
+import { isUploadPath } from "./media-library";
 import type { AssetManifest, MediaAsset, RefAssetDecision } from "@prismshadow/penguin-server/api";
 
 /** What happens to one asset: kept, generated again, replaced by a file, or by an upload. */
@@ -255,7 +256,7 @@ export function boundSource(asset: MediaAsset, endpoint: string): string | null 
     return `${endpoint}/runs/${encodeURIComponent(asset.generatedAudio.runId)}/audio`;
   if (asset.generatedVideo)
     return `${endpoint}/runs/${encodeURIComponent(asset.generatedVideo.runId)}/video`;
-  if (asset.path.startsWith("media/uploads/"))
+  if (isUploadPath(asset.path))
     return `${endpoint}/media-upload?${new URLSearchParams({ path: asset.path })}`;
   return `${endpoint}/sandbox/media/${asset.path
     .slice("media/".length)

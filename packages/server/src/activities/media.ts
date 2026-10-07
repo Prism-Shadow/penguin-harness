@@ -7,6 +7,7 @@ import {
   readPlayback,
   type AudioKind,
 } from "./playback.js";
+import { mediaTargetPath } from "./languages.js";
 import type { SpeechProviderId } from "./speech-types.js";
 import type { PhonemeSource, PhonemeTiming, WholeWordTiming } from "./book-word-types.js";
 import {
@@ -90,7 +91,7 @@ export interface MediaAsset {
   generatedImage?: { runId: string; sha256: string };
   /**
    * A scene video a run recorded from a composition and the author accepted (experimental),
-   * on a video or animation asset, bound to `media/generated/<runId>.webm`.
+   * on a video or animation asset, bound to its path in the media repository (see generatedMediaPath).
    */
   generatedVideo?: { runId: string; sha256: string };
   usages: {
@@ -102,9 +103,46 @@ export interface MediaAsset {
 }
 export type GeneratedAudioFormat = "wav" | "mp3";
 
-/** Where an accepted clip is bound: `media/generated/<runId>.<format>`, WAV when unnamed. */
-export function generatedAudioPath(generated: { runId: string; format?: GeneratedAudioFormat }) {
-  return `media/generated/${generated.runId}.${generated.format ?? "wav"}`;
+/**
+ * Where an accepted generated file is bound: Loom's path for the asset in the media repository,
+ * `media/loom/<pc>/<pc>-<ref>/<folder>/<language>/<key>.<extension>` (see ref-media.ts).
+ */
+export function generatedMediaPath(
+  address: ActivityAddress,
+  language: string,
+  asset: { key: string; type: string },
+  extension: string,
+): string {
+  const target = mediaTargetPath({
+    productCode: address.productCode,
+    refNum: address.refNum,
+    type: asset.type,
+    assetKey: asset.key,
+    extension,
+    language,
+  });
+  if (!target) throw new Error(`There is no media folder for a ${asset.type} in ${language}.`);
+  return target;
+}
+
+/** The extension an accepted clip is stored with: its format, WAV when unnamed. */
+export function generatedAudioExtension(generated: { format?: GeneratedAudioFormat }): string {
+  return generated.format ?? "wav";
+}
+
+/** Whether `asset.path` is where its accepted generated file belongs. */
+function boundAt(
+  address: ActivityAddress,
+  language: string,
+  asset: Record<string, unknown>,
+  extension: string,
+): boolean {
+  try {
+    const named = { key: String(asset.key), type: String(asset.type) };
+    return asset.path === generatedMediaPath(address, language, named, extension);
+  } catch {
+    return false;
+  }
 }
 
 export interface AssetManifest extends ActivityAddress {
@@ -222,11 +260,11 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         throw new Error("Only a narration may name a voice.");
       if (
         asset.speechProvider !== undefined &&
-        (!["gemini", "elevenlabs"].includes(String(asset.speechProvider)) ||
+        (!["gemini", "elevenlabs", "kokoro"].includes(String(asset.speechProvider)) ||
           asset.type !== "audio" ||
           asset.kind !== undefined)
       )
-        throw new Error("Only a narration names a speech provider: gemini or elevenlabs.");
+        throw new Error("Only a narration names a speech provider: gemini, elevenlabs or kokoro.");
       if (
         asset.wordTimings !== undefined &&
         (asset.type !== "audio" ||
@@ -369,11 +407,14 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           typeof generated.sha256 !== "string" ||
           !/^[a-f0-9]{64}$/.test(generated.sha256) ||
           (generated.format !== undefined && !["wav", "mp3"].includes(String(generated.format))) ||
-          asset.path !==
-            generatedAudioPath({
-              runId: generated.runId,
+          !boundAt(
+            address,
+            language,
+            asset,
+            generatedAudioExtension({
               format: generated.format as GeneratedAudioFormat | undefined,
-            })
+            }),
+          )
         )
           throw new Error("Invalid generated audio binding.");
       }
@@ -386,7 +427,7 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           !/^run_[a-f0-9]{32}$/.test(generated.runId) ||
           typeof generated.sha256 !== "string" ||
           !/^[a-f0-9]{64}$/.test(generated.sha256) ||
-          asset.path !== `media/generated/${generated.runId}.png`
+          !boundAt(address, language, asset, "png")
         )
           throw new Error("Invalid generated image binding.");
       }
@@ -399,7 +440,7 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           !/^run_[a-f0-9]{32}$/.test(generated.runId) ||
           typeof generated.sha256 !== "string" ||
           !/^[a-f0-9]{64}$/.test(generated.sha256) ||
-          asset.path !== `media/generated/${generated.runId}.webm`
+          !boundAt(address, language, asset, "webm")
         )
           throw new Error("Invalid generated video binding.");
       }

@@ -3,7 +3,8 @@
  * or one stage (the owner's), one deploy at a time, the log after a cursor, and Stop.
  *
  * git, npm, Jenkins and the clock are fakes behind the deploy ports: nothing here reaches a
- * network, a real remote or a real program, and the WAF checkout is never written.
+ * network, a real remote or a real program. The clones are the WAF checkout's: its
+ * activity-data, media and module repositories are there already.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -30,7 +31,7 @@ const QA_TOKEN = "qa-secret-token";
 function fakeGit() {
   const calls: Array<{ args: string[]; cwd: string }> = [];
   /** Whether the module clone has uncommitted changes, as a failed verify leaves it. */
-  const clone = { dirty: false };
+  const clone = { dirty: false, stashed: false };
   let tagReads = 0;
   const ok = (stdout = ""): DeployGitResult => ({ code: 0, stdout, stderr: "" });
   const read = (dir: string, name: string) =>
@@ -38,6 +39,8 @@ function fakeGit() {
   const runGit = async (args: string[], cwd: string): Promise<DeployGitResult> => {
     calls.push({ args, cwd });
     if (args[0] === "--version") return ok("git version 2.45.0");
+    // The workspace asks whether a module's repository exists before cloning it.
+    if (args[0] === "ls-remote" && args[2] === "--") return ok("abc\trefs/heads/main\n");
     if (args[0] === "clone") {
       const [remote, dir] = args.slice(args.indexOf("--") + 1);
       await fs.mkdir(path.join(dir!, ".git"), { recursive: true });
@@ -53,8 +56,15 @@ function fakeGit() {
     const joined = args.join(" ");
     if (joined === "remote get-url origin") return ok(`${origin}\n`);
     if (joined === "rev-parse --abbrev-ref HEAD") return ok("main\n");
-    if (joined === "status --porcelain")
+    if (args[0] === "status" && args[1] === "--porcelain")
       return ok(clone.dirty && cwd.includes("modules") ? " M src/index.js\n" : "");
+    // The work in the module clone is set aside, put back, and committed on main.
+    if (cwd.includes("modules")) {
+      if (joined.startsWith("stash push")) clone.stashed = clone.dirty;
+      if (joined.startsWith("stash push")) clone.dirty = false;
+      if (joined === "stash pop") clone.dirty = clone.stashed;
+      if (args[0] === "-c" && args.includes("commit")) clone.dirty = false;
+    }
     if (joined === "rev-list --count @{u}..HEAD") return ok("0\n");
     if (joined === "rev-parse HEAD") return ok("c0ffee\n");
     if (args[0] === "rev-parse" && args[1] === "--verify")
@@ -70,8 +80,11 @@ function fakeGit() {
     }
     if (args[0] === "tag") return ok(tagReads++ === 0 ? "1.4.0\n" : "1.4.0\n1.5.0\n");
     if (joined === "diff --cached --quiet") return { code: 1, stdout: "", stderr: "" };
-    if (joined === "clean -fd -e node_modules") clone.dirty = false;
-    if (["fetch", "checkout", "reset", "clean", "add", "push", "-c"].includes(args[0]!))
+    if (
+      ["fetch", "checkout", "merge", "stash", "reset", "clean", "add", "push", "-c"].includes(
+        args[0]!,
+      )
+    )
       return ok();
     return { code: 1, stdout: "", stderr: `unexpected: ${joined}` };
   };
@@ -151,15 +164,23 @@ describe("activity deploy release routes", () => {
     cleanups.push(() => fs.rm(root, { recursive: true, force: true }));
     await fs.mkdir(path.join(root, "framework", "src"), { recursive: true });
     await fs.writeFile(path.join(root, "framework", "package.json"), "{}");
-    await fs.mkdir(path.join(root, "media"), { recursive: true });
-    await fs.mkdir(path.join(root, "modules", "waf-module-words"), { recursive: true });
+    await fs.mkdir(path.join(root, "modules"), { recursive: true });
+    // The checkout's clones, the product's module among them (its owner cloned it, and
+    // Penguin writes the product's files into it); its media's sparse set has this
+    // product's folder.
+    for (const [folder, remote] of [
+      ["waf-activity-data", DATA_REMOTE],
+      ["media", MEDIA_REMOTE],
+      ["modules/waf-module-words", "git@github.com:org/waf-module-words.git"],
+    ] as const) {
+      await fs.mkdir(path.join(root, folder, ".git"), { recursive: true });
+      await fs.writeFile(path.join(root, folder, ".git", "origin"), remote);
+    }
     await fs.writeFile(
       path.join(root, "modules", "waf-module-words", "package.json"),
-      JSON.stringify({
-        name: "waf-module-words",
-        repository: "git+https://github.com/org/waf-module-words.git",
-      }),
+      JSON.stringify({ name: "waf-module-words", version: "1.0.0" }),
     );
+    await fs.writeFile(path.join(root, "media", ".git", "sparse"), "loom/words");
     vi.stubEnv("WAF_ROOT_DIR", root);
 
     const git = fakeGit();
@@ -173,6 +194,7 @@ describe("activity deploy release routes", () => {
         now: () => 0,
         sleep: async () => {},
       },
+      wafWorkspacePorts: { runGit: git.runGit },
     });
     cleanups.push(async () => {
       await t.cleanup();
@@ -203,8 +225,15 @@ describe("activity deploy release routes", () => {
             frameworkVersion: "4.2.1",
             activityBaseUrl: "https://qa.example.org",
           },
-          repos: { activityDataRemote: DATA_REMOTE, mediaRemote: MEDIA_REMOTE },
           git: { userName: "Deploy", userEmail: "deploy@example.org" },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await admin.put("/api/admin/waf-workspace/settings", {
+          repos: { activityData: { remote: DATA_REMOTE }, media: { remote: MEDIA_REMOTE } },
+          moduleRemote: "git@github.com:org/{module}.git",
         })
       ).status,
     ).toBe(200);
@@ -283,7 +312,7 @@ describe("activity deploy release routes", () => {
   });
 
   it("releases the module: four stages, the resolved version, and a log read after a cursor", async () => {
-    const { t, root, client, endpoint, state, git, jenkins, npm } = await setup();
+    const { root, client, endpoint, state, git, jenkins, npm } = await setup();
     const res = await client.post(`${endpoint}/deploy`, {
       stage: "release",
       moduleVersion: "1.5.0",
@@ -320,18 +349,13 @@ describe("activity deploy release routes", () => {
     const trigger = jenkins.calls.find((call) => call.url.endsWith("/buildWithParameters"))!;
     expect(trigger.body).toBe("Modules=words+loom%2Fwords-deploy");
     expect(trigger.auth).toBe(`Basic ${Buffer.from(`robot:${QA_TOKEN}`).toString("base64")}`);
-    // Everything ran in the deploy clone; the checkout was never a working directory.
-    const clone = path.join(t.root, "activity-deploy", "repos", "modules", "waf-module-words");
-    for (const call of git.calls) expect(call.cwd.startsWith(root)).toBe(false);
+    // The release ran in the module's clone, where the checkout keeps modules.
+    const clone = path.join(root, "modules", "waf-module-words");
+    expect(git.calls.some((call) => call.cwd === clone && call.args[0] === "push")).toBe(true);
     expect(JSON.parse(await fs.readFile(path.join(clone, "package.json"), "utf8"))).toMatchObject({
       name: "wafmodule-words",
       version: "1.5.0",
     });
-    expect(
-      JSON.parse(
-        await fs.readFile(path.join(root, "modules", "waf-module-words", "package.json"), "utf8"),
-      ).name,
-    ).toBe("waf-module-words");
 
     const page = async (after: number) => {
       const got = await client.get(`${endpoint}/deploy/runs/${run.runId}/log?after=${after}`);
@@ -357,14 +381,15 @@ describe("activity deploy release routes", () => {
     await vi.waitFor(async () => expect((await state()).run?.status).toBe("succeeded"));
   });
 
-  it("starts again after a failed verify left the clone dirty, and prepares once per verify", async () => {
+  it("starts again after a failed verify left work in the clone, commits it, and prepares once per verify", async () => {
     const { client, endpoint, state, git, npm } = await setup({ failLint: true });
     expect((await client.post(`${endpoint}/deploy`, { stage: "release" })).status).toBe(202);
     await vi.waitFor(async () => expect((await state()).run?.status).toBe("failed"));
-    // The copied files are still in the clone: readiness says so, and nothing is blocked by it.
+    // The copied files are still in the clone: the module clone holds authored work, so
+    // readiness does not count that against it, and nothing is blocked by it.
     git.clone.dirty = true;
     const failed = await state();
-    expect(failed.context.problems).toContainEqual({ code: "clone_dirty", repo: "module" });
+    expect(failed.context.problems).not.toContainEqual({ code: "clone_dirty", repo: "module" });
     expect(failed.stages[0]).toMatchObject({
       stage: "verify_module",
       status: "failed",
@@ -382,8 +407,15 @@ describe("activity deploy release routes", () => {
     const moduleCalls = git.calls
       .filter((call) => call.cwd.includes("modules"))
       .map((call) => call.args.join(" "));
-    expect(moduleCalls).toContain("checkout -f main");
-    expect(moduleCalls).toContain("clean -fd -e node_modules");
+    // The work was carried onto main and committed there, never reset or cleaned away.
+    expect(moduleCalls).toContain("stash push --include-untracked -m penguin-harness deploy");
+    expect(moduleCalls).toContain("checkout main");
+    expect(moduleCalls).toContain("stash pop");
+    expect(moduleCalls).toContain("add --all");
+    expect(moduleCalls).toContainEqual(
+      expect.stringMatching(/commit -m Penguin Harness: words as authored$/),
+    );
+    expect(moduleCalls.some((call) => /^(reset|clean|checkout -f)\b/.test(call))).toBe(false);
 
     // Prepare works on what verify leaves; run on its own again it would drop that content.
     const again = await client.post(`${endpoint}/deploy`, { stage: "prepare_deploy" });

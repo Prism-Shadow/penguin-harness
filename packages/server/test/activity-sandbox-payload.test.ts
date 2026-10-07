@@ -11,7 +11,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SandboxBuilder } from "../src/activities/sandbox-builder.js";
-import { ActivitySandboxService } from "../src/activities/sandbox-service.js";
+import { mediaVersion } from "../src/activities/media-origin.js";
+import {
+  ActivitySandboxService,
+  playLinkExpiry,
+  PLAY_TOKEN_TTL_MS,
+} from "../src/activities/sandbox-service.js";
 import { HttpError } from "../src/http/errors.js";
 
 const PROJECT = "proj";
@@ -199,17 +204,42 @@ describe("the payload a preview serves", () => {
     });
   });
 
-  it("overlays this ref's media, versioned so a regenerated clip is not cached", async () => {
-    const { service } = await build({
-      manifest: { assets: { "en-US": [{ key: "intro", type: "audio", path: "media/a.mp3" }] } },
-      contentRevision: "abcdefghijklmnopqrstuvwxyz",
+  it("overlays this ref's media, versioned by the file it points at", async () => {
+    const { service, root } = await build({
+      manifest: {
+        assets: {
+          "en-US": [
+            { key: "intro", type: "audio", path: "media/a.mp3" },
+            { key: "outro", type: "audio", path: "media/missing.mp3" },
+          ],
+        },
+      },
     });
+    await fs.mkdir(path.join(root, "draft", "media"), { recursive: true });
+    await fs.writeFile(path.join(root, "draft", "media", "a.mp3"), "sound", "utf8");
+    const stat = await fs.stat(path.join(root, "draft", "media", "a.mp3"));
     const payload = await service.payload(PROJECT, ACTIVITY, {});
     const assets = payload.layout.compartments.main.assets as Record<string, { url: string }>;
-    // The token is resolved to where this preview serves media, versioned all the same.
+    // The token is resolved to where this preview serves media, versioned by the file's own
+    // size and time, so a replaced file is a new URL even when the draft did not change.
     expect(assets.intro!.url).toBe(
-      "/api/projects/proj/activities/act_1/sandbox/media/a.mp3?v=abcdefghijklmnop",
+      `/api/projects/proj/activities/act_1/sandbox/media/a.mp3?v=${mediaVersion(stat)}`,
     );
+    // A file that is not there yet has no version to name, so its URL is revalidated.
+    expect(assets.outro!.url).toBe("/api/projects/proj/activities/act_1/sandbox/media/missing.mp3");
+  });
+
+  it("caches a media URL for good only while its version names the file", async () => {
+    const { service, root } = await build({});
+    await fs.mkdir(path.join(root, "draft", "media"), { recursive: true });
+    await fs.writeFile(path.join(root, "draft", "media", "a.mp3"), "sound", "utf8");
+    const stat = await fs.stat(path.join(root, "draft", "media", "a.mp3"));
+    const current = await service.media(PROJECT, ACTIVITY, "a.mp3", {
+      version: mediaVersion(stat),
+    });
+    expect(current.headers["Cache-Control"]).toBe("private, max-age=31536000, immutable");
+    const stale = await service.media(PROJECT, ACTIVITY, "a.mp3", { version: "old-1" });
+    expect(stale.headers["Cache-Control"]).toBe("private, no-cache");
   });
 
   it("declares the navbar compartment even with nothing in it", async () => {
@@ -523,5 +553,20 @@ describe("the payload a preview serves", () => {
     });
     const payload = await service.payload(PROJECT, ACTIVITY, {});
     expect(payload.configuration.sightWords).toEqual({ intro: "Edited" });
+  });
+});
+
+describe("a play link's expiry", () => {
+  const hour = 60 * 60 * 1000;
+
+  it("never lasts less than the full lifetime", () => {
+    for (const now of [0, 1, hour - 1, hour, 1_790_000_123_456])
+      expect(playLinkExpiry(now) - now).toBeGreaterThanOrEqual(PLAY_TOKEN_TTL_MS);
+  });
+
+  it("is the same within the hour, so a reload reuses the cached media", () => {
+    const start = 1_790_000_000_000 - (1_790_000_000_000 % hour) + 1;
+    expect(playLinkExpiry(start)).toBe(playLinkExpiry(start + hour - 2));
+    expect(playLinkExpiry(start + hour)).toBe(playLinkExpiry(start) + hour);
   });
 });

@@ -2,14 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { contentRevision, type ActivityDetail } from "./domain.js";
 import { readArtifactBytes } from "./artifact.js";
-import { findWafRoot } from "./waf-module.js";
 import { HttpError } from "../http/errors.js";
 
 export interface ImageRequest {
   language: string;
   assetKey: string;
   expectedRevision: string;
-  wafRoot?: string;
 }
 
 export const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
@@ -41,7 +39,12 @@ export function imageMime(bytes: Buffer): string {
 }
 
 /** Resolve an activity binding, never a caller-supplied media filename. */
-export async function readBoundImage(activity: ActivityDetail, input: ImageRequest) {
+/** `root` is the WAF checkout the path is read under; null when there is none. */
+export async function readBoundImage(
+  activity: ActivityDetail,
+  input: ImageRequest,
+  root: string | null,
+) {
   if (activity.draft.contentRevision !== input.expectedRevision)
     throw new HttpError(
       409,
@@ -65,12 +68,11 @@ export async function readBoundImage(activity: ActivityDetail, input: ImageReque
     parts.some((part) => !part || part === "." || part === ".." || /[. ]$/.test(part))
   )
     throw new HttpError(400, "image_path_invalid", "The saved image path is invalid.");
-  const root = await findWafRoot(undefined, input.wafRoot);
   if (!root)
     throw new HttpError(
       400,
       "waf_missing",
-      "Choose a WAF checkout containing framework, modules and media.",
+      "The WAF workspace is not prepared. An admin can prepare it in Settings.",
     );
   try {
     let file = root;

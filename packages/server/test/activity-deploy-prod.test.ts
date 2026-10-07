@@ -25,6 +25,8 @@ import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.j
 
 const QA_JENKINS = "https://jenkins.example.org";
 const PROD_JENKINS = "https://jenkins-prod.example.org";
+const DATA_REMOTE = "git@github.com:org/data.git";
+const MEDIA_REMOTE = "git@github.com:org/media.git";
 
 /**
  * A git whose clones are `.git` folders on disk; the media repository holds every file, and
@@ -36,6 +38,8 @@ function fakeGit(moduleBuilds: () => number) {
     fs.readFile(path.join(dir, ".git", name), "utf8").catch(() => null);
   return async (args: string[], cwd: string): Promise<DeployGitResult> => {
     if (args[0] === "--version") return ok("git version 2.45.0");
+    // The workspace asks whether a module's repository exists before cloning it.
+    if (args[0] === "ls-remote" && args[2] === "--") return ok("abc\trefs/heads/main\n");
     if (args[0] === "clone") {
       const [remote, dir] = args.slice(args.indexOf("--") + 1);
       await fs.mkdir(path.join(dir!, ".git"), { recursive: true });
@@ -51,7 +55,8 @@ function fakeGit(moduleBuilds: () => number) {
     const joined = args.join(" ");
     if (joined === "remote get-url origin") return ok(`${origin}\n`);
     if (joined === "rev-parse --abbrev-ref HEAD") return ok("main\n");
-    if (joined === "status --porcelain") return ok("");
+    // The clones are clean: nothing authored waits in them, and no file differs from HEAD.
+    if (args[0] === "status" && args[1] === "--porcelain") return ok("");
     if (joined === "rev-list --count @{u}..HEAD") return ok("0\n");
     if (joined === "rev-parse HEAD") return ok("c0ffee\n");
     if (args[0] === "rev-parse" && args[1] === "--verify")
@@ -73,7 +78,11 @@ function fakeGit(moduleBuilds: () => number) {
         Array.from({ length: moduleBuilds() + 1 }, (_, index) => `1.${4 + index}.0\n`).join(""),
       );
     if (joined === "diff --cached --quiet") return { code: 1, stdout: "", stderr: "" };
-    if (["fetch", "checkout", "reset", "clean", "add", "push", "-c"].includes(args[0]!))
+    if (
+      ["fetch", "checkout", "merge", "stash", "reset", "clean", "add", "push", "-c"].includes(
+        args[0]!,
+      )
+    )
       return ok();
     return { code: 1, stdout: "", stderr: `unexpected: ${joined}` };
   };
@@ -151,27 +160,37 @@ describe("activity deploy to PROD", () => {
     cleanups.push(() => fs.rm(root, { recursive: true, force: true }));
     await fs.mkdir(path.join(root, "framework", "src"), { recursive: true });
     await fs.writeFile(path.join(root, "framework", "package.json"), "{}");
-    await fs.mkdir(path.join(root, "media"), { recursive: true });
-    await fs.mkdir(path.join(root, "modules", "waf-module-words"), { recursive: true });
+    await fs.mkdir(path.join(root, "modules"), { recursive: true });
+    // The checkout's clones, the product's module among them (its owner cloned it, and
+    // Penguin writes the product's files into it); its media's sparse set has this
+    // product's folder.
+    for (const [folder, remote] of [
+      ["waf-activity-data", DATA_REMOTE],
+      ["media", MEDIA_REMOTE],
+      ["modules/waf-module-words", "git@github.com:org/waf-module-words.git"],
+    ] as const) {
+      await fs.mkdir(path.join(root, folder, ".git"), { recursive: true });
+      await fs.writeFile(path.join(root, folder, ".git", "origin"), remote);
+    }
     await fs.writeFile(
       path.join(root, "modules", "waf-module-words", "package.json"),
-      JSON.stringify({
-        name: "waf-module-words",
-        repository: "git+https://github.com/org/waf-module-words.git",
-      }),
+      JSON.stringify({ name: "waf-module-words", version: "1.0.0" }),
     );
+    await fs.writeFile(path.join(root, "media", ".git", "sparse"), "loom/words");
     vi.stubEnv("WAF_ROOT_DIR", root);
 
     const jenkins = fakeJenkins();
     const clock = { at: Date.UTC(2026, 8, 28, 9, 0, 0) };
+    const runGit = fakeGit(() => jenkins.moduleBuilds());
     const t = await createTestApp({
       deployPorts: {
-        runGit: fakeGit(() => jenkins.moduleBuilds()),
+        runGit,
         jenkinsFetch: jenkins.request,
         runProcess: async () => ({ code: 0, tail: "" }),
         now: () => clock.at,
         sleep: async () => {},
       },
+      wafWorkspacePorts: { runGit },
     });
     cleanups.push(async () => {
       await t.cleanup();
@@ -212,11 +231,15 @@ describe("activity deploy to PROD", () => {
             token: "prod-secret-token",
             frameworkVersion: "4.1.0",
           },
-          repos: {
-            activityDataRemote: "git@github.com:org/data.git",
-            mediaRemote: "git@github.com:org/media.git",
-          },
           git: { userName: "Deploy", userEmail: "deploy@example.org" },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await admin.put("/api/admin/waf-workspace/settings", {
+          repos: { activityData: { remote: DATA_REMOTE }, media: { remote: MEDIA_REMOTE } },
+          moduleRemote: "git@github.com:org/{module}.git",
         })
       ).status,
     ).toBe(200);

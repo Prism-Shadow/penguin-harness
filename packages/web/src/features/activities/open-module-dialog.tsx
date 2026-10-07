@@ -1,4 +1,17 @@
+/**
+ * Opening a product that is in the WAF workspace's modules, in place.
+ *
+ * Lists the products no project has open (reading only: nothing is opened by looking) and
+ * opens one at a time into this project, which then owns it. Beside each opened product it
+ * shows the server's own account of what was repaired or could not be carried, rather than a
+ * bare success.
+ */
 import { useEffect, useMemo, useState } from "react";
+import type {
+  ClaimModuleProductResponse,
+  ModuleProduct,
+  ModuleProductsResponse,
+} from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
@@ -6,42 +19,32 @@ import { toneInk, toneStrip } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { filterImportSources, type ImportSource, type ImportSources } from "./import-sources";
+import { filterModuleProducts, moduleProductKey } from "./module-products";
 
-/** What the server says about one import, as far as this dialog shows it. */
-interface ImportResult {
-  message: string;
-  problems: string[];
-}
-
-/**
- * Bringing activities Loom generated into this project.
- *
- * Lists what the WAF checkout offers -- reading only, nothing is imported by looking -- and
- * imports one product at a time, showing the server's own account of what was created,
- * repaired or left behind beside it rather than a bare success.
- */
-export function ImportDialog({
+export function OpenModuleDialog({
   projectId,
   onClose,
-  onImported,
+  onOpened,
 }: {
   projectId: string;
   onClose: () => void;
-  onImported: () => void;
+  onOpened: () => void;
 }) {
+  const words = S.activities.openFromModules;
   const base = `/api/projects/${encodeURIComponent(projectId)}/activities`;
-  const [sources, setSources] = useState<ImportSources | null>(null);
+  const [products, setProducts] = useState<ModuleProduct[] | null>(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [importing, setImporting] = useState<string | null>(null);
-  const [results, setResults] = useState<Record<string, ImportResult | { error: string }>>({});
+  const [opening, setOpening] = useState<string | null>(null);
+  const [results, setResults] = useState<
+    Record<string, ClaimModuleProductResponse | { error: string }>
+  >({});
 
   useEffect(() => {
     let live = true;
-    apiFetch<ImportSources>(`${base}/import-sources`)
+    apiFetch<ModuleProductsResponse>(`${base}/module-products`)
       .then((value) => {
-        if (live) setSources(value);
+        if (live) setProducts(value.products);
       })
       .catch((cause: unknown) => {
         if (live) setError(apiErrorText(cause));
@@ -51,75 +54,65 @@ export function ImportDialog({
     };
   }, [base]);
 
-  const visible = useMemo(
-    () => filterImportSources(sources?.products ?? [], search),
-    [sources, search],
-  );
+  const visible = useMemo(() => filterModuleProducts(products ?? [], search), [products, search]);
 
-  async function importProduct(source: ImportSource) {
-    const key = `${source.product.moduleFolder}/${source.product.productCode}`;
-    setImporting(key);
+  async function open(product: ModuleProduct) {
+    const key = moduleProductKey(product);
+    setOpening(key);
     try {
-      const result = await apiFetch<ImportResult>(`${base}/import`, {
+      const result = await apiFetch<ClaimModuleProductResponse>(`${base}/module-products/claim`, {
         method: "POST",
-        body: {
-          moduleFolder: source.product.moduleFolder,
-          productCode: source.product.productCode,
-        },
+        body: { moduleFolder: product.moduleFolder, productCode: product.productCode },
       });
       setResults((current) => ({ ...current, [key]: result }));
-      onImported();
+      onOpened();
     } catch (cause) {
       setResults((current) => ({ ...current, [key]: { error: apiErrorText(cause) } }));
     } finally {
-      setImporting(null);
+      setOpening(null);
     }
   }
 
   return (
     <Modal
       open
-      title={S.activities.importFromLoom}
+      title={words.title}
       onClose={onClose}
       footer={
-        <Button size="sm" onClick={onClose} disabled={importing !== null}>
+        <Button size="sm" onClick={onClose} disabled={opening !== null}>
           {S.common.close}
         </Button>
       }
     >
       <div className="space-y-3">
-        <p className="text-xs text-gray-500">{S.activities.importHelp}</p>
+        <p className="text-xs text-gray-500">{words.help}</p>
         {error && (
           <p role="alert" className={`text-sm ${toneInk.danger}`}>
             {error}
           </p>
         )}
-        {!sources && !error && (
+        {!products && !error && (
           <p role="status" className="text-xs text-gray-500">
-            {S.activities.importLoading}
+            {words.loading}
           </p>
         )}
-        {sources && sources.modulesDir === null && (
-          <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
-            {S.activities.importNoCheckout}
-          </p>
+        {products && products.length === 0 && (
+          <p className="text-sm text-gray-500">{words.empty}</p>
         )}
-        {sources && sources.modulesDir !== null && sources.products.length === 0 && (
-          <p className="text-sm text-gray-500">{S.activities.importEmpty}</p>
-        )}
-        {sources && sources.products.length > 0 && (
+        {products && products.length > 0 && (
           <>
             <Input
               size="sm"
-              aria-label={S.activities.importSearch}
-              placeholder={S.activities.importSearch}
+              aria-label={words.search}
+              placeholder={words.search}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
             <ul className="max-h-[50vh] space-y-2 overflow-auto">
-              {visible.map((source) => {
-                const key = `${source.product.moduleFolder}/${source.product.productCode}`;
+              {visible.map((product) => {
+                const key = moduleProductKey(product);
                 const result = results[key];
+                const opened = !!result && !("error" in result);
                 return (
                   <li
                     key={key}
@@ -128,26 +121,20 @@ export function ImportDialog({
                     <div className="flex items-center justify-between gap-3">
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">
-                          {source.product.title || source.product.productCode}
+                          {product.title || product.productCode}
                         </span>
                         <span className="block truncate text-xs text-gray-500">
-                          {source.product.productCode} · {source.product.moduleFolder} ·{" "}
-                          {S.activities.importRefs(source.refs.length)}
-                          {source.problems.length > 0 &&
-                            ` · ${S.activities.importProblems(source.problems.length)}`}
+                          {product.productCode} · {product.moduleFolder} ·{" "}
+                          {words.refs(product.refNums.length)}
                         </span>
                       </span>
                       <Button
                         size="sm"
-                        variant={result && !("error" in result) ? "ghost" : "primary"}
-                        disabled={importing !== null}
-                        onClick={() => void importProduct(source)}
+                        variant={opened ? "ghost" : "primary"}
+                        disabled={opening !== null || opened}
+                        onClick={() => void open(product)}
                       >
-                        {importing === key
-                          ? S.activities.importing
-                          : result && !("error" in result)
-                            ? S.activities.importImported
-                            : S.activities.importAction}
+                        {opening === key ? words.opening : opened ? words.opened : words.open}
                       </Button>
                     </div>
                     {result && "error" in result && (

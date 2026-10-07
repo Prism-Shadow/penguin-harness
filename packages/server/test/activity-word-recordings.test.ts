@@ -212,7 +212,8 @@ describe("recording a decodable book's words", () => {
       ]),
     });
     const recorded = await f.cat();
-    expect(recorded.path).toBe(`media/generated/${run.runId}.mp3`);
+    expect(recorded.path).toBe(`media/loom/cat-book/cat-book-1/audios/english/${recorded.key}.mp3`);
+    expect(recorded.generatedAudio).toMatchObject({ runId: run.runId, format: "mp3" });
     expect(recorded.phonemeTimings).toEqual([
       { phoneme: "k", startMs: 0, endMs: 400 },
       { phoneme: "æ", startMs: 400, endMs: 800 },

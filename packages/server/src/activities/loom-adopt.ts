@@ -1,14 +1,12 @@
 /**
- * Turning what Loom authored into what Penguin stores.
+ * Turning what Loom authored into what Penguin stores, when a project adopts a Loom product
+ * in place (service.claimModuleProduct).
  *
- * #43 reads a Loom activity and reports what is there. This decides what Penguin would
- * make of it — and, as importantly, what it would have to drop.
- *
- * The dropping is the part that matters. An import that silently loses a ref's display
- * name, or quietly renames a language group it does not recognise, produces an activity
- * that looks imported and is not the one that was authored. Everything this cannot carry
- * is named, so the round-trip trial in this phase compares like with like rather than
- * discovering the gaps by eye.
+ * Loom's specification is used as it is, with one repair. The media plan is made again from
+ * it, as Penguin makes every plan, and Loom's bindings (paths, scripts, timings, playback,
+ * book words) are carried onto it; Loom's own manifest is kept beside Penguin's as
+ * `asset_manifest.loom.json`. Everything that cannot be carried is named, so an author
+ * sees what was lost rather than finding it by eye.
  */
 import { validateActivitySpec } from "./domain.js";
 import { DEFAULT_LANGUAGE_CODE, findLanguage } from "./languages.js";
@@ -222,10 +220,10 @@ export function carriedBindings(
   return { media, lost, badPaths };
 }
 
-export interface ImportMapping {
+export interface LoomAdoption {
   product: MappedProduct;
   activities: MappedActivity[];
-  /** What could not be carried, in an author's words. Empty means a clean import. */
+  /** What could not be carried, in an author's words. Empty means nothing was lost. */
   dropped: string[];
   /** What was repaired rather than dropped, so nobody mistakes it for fidelity. */
   repaired: string[];
@@ -240,7 +238,7 @@ function titleFor(product: SourceProduct, ref: SourceRef): string {
  * What Penguin would make of a Loom product and its refs.
  *
  * Two repairs are applied rather than refused, because refusing would make most of the
- * real corpus unimportable, and both are recorded:
+ * real corpus unopenable, and both are recorded:
  *
  * A product naming a canonical ref that does not exist gets its lowest ref instead — the
  * same repair migration 18 makes for existing Penguin rows, and three real products need
@@ -249,7 +247,7 @@ function titleFor(product: SourceProduct, ref: SourceRef): string {
  * A product with no title at all takes the ref's, or its address, because Penguin requires
  * one.
  */
-export function mapImport(product: SourceProduct, refs: readonly SourceRef[]): ImportMapping {
+export function adoptLoomProduct(product: SourceProduct, refs: readonly SourceRef[]): LoomAdoption {
   const dropped: string[] = [];
   const repaired: string[] = [];
 
@@ -281,9 +279,9 @@ export function mapImport(product: SourceProduct, refs: readonly SourceRef[]): I
       );
     // Checked here rather than on the way in, so a specification Penguin will not accept
     // is a reported loss instead of a ref that gets created and then cannot be finished.
-    // A half-written ref is worse than a missing one: it looks imported and does nothing.
+    // A half-written ref is worse than a missing one: it looks adopted and does nothing.
     let spec = ref.spec;
-    if (!spec) dropped.push(`Ref ${ref.refNum} has no specification to import.`);
+    if (!spec) dropped.push(`Ref ${ref.refNum} has no specification.`);
     else {
       // The folder in a specification is a redundant copy of where the product actually
       // lives, and five real refs carry an old misspelling of it. Losing a whole activity
@@ -305,7 +303,7 @@ export function mapImport(product: SourceProduct, refs: readonly SourceRef[]): I
         spec = null;
       }
     }
-    if (!ref.manifest) dropped.push(`Ref ${ref.refNum} has no asset manifest to import.`);
+    if (!ref.manifest) dropped.push(`Ref ${ref.refNum} has no asset manifest.`);
     const carried = carriedBindings(ref.manifest, languages);
     const lostNames = Object.entries(carried.lost).map(([name, count]) => `${name} (${count})`);
     if (lostNames.length)
@@ -352,19 +350,19 @@ export function mapImport(product: SourceProduct, refs: readonly SourceRef[]): I
   };
 }
 
-/** Whether this import would produce an activity faithful to what Loom held. */
-export function importIsFaithful(mapping: ImportMapping): boolean {
+/** Whether this adoption keeps everything Loom held. */
+export function adoptionIsFaithful(mapping: LoomAdoption): boolean {
   return mapping.dropped.length === 0;
 }
 
 /**
- * Whether a book product can actually be assembled after import.
+ * Whether a book product can actually be assembled once adopted.
  *
  * Asked separately because it is not a fidelity question: a book with no reading mode
- * imports perfectly and then cannot be built, and an author should learn that at import
+ * is adopted perfectly and then cannot be built, and an author should learn that when adopting
  * rather than at assembly.
  */
-export function assemblyBlockers(mapping: ImportMapping): string[] {
+export function assemblyBlockers(mapping: LoomAdoption): string[] {
   if (mapping.product.activityType !== "book") return [];
   if (mapping.product.bookMode) return [];
   return [
@@ -372,11 +370,11 @@ export function assemblyBlockers(mapping: ImportMapping): string[] {
   ];
 }
 
-/** One line about what an import would do. */
-export function describeImport(mapping: ImportMapping): string {
+/** One line about what an adoption does. */
+export function describeAdoption(mapping: LoomAdoption): string {
   const count = mapping.activities.length;
   const parts = [
-    `Importing ${mapping.product.productCode} with ${count} ${count === 1 ? "ref" : "refs"}, ref ${mapping.product.canonicalRefNum} canonical.`,
+    `Opening ${mapping.product.productCode} with ${count} ${count === 1 ? "ref" : "refs"}, ref ${mapping.product.canonicalRefNum} canonical.`,
   ];
   if (mapping.repaired.length)
     parts.push(

@@ -1,6 +1,6 @@
 /**
- * The version manifest: which bound files Penguin owns and keeps, which are checkout
- * references it only records, and a hash that follows content and nothing else.
+ * The version manifest: which bound files Penguin owns and keeps, which are references to
+ * media it did not make and only records, and a hash that follows content and nothing else.
  */
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -18,6 +18,10 @@ const AUDIO_RUN = `run_${"a".repeat(32)}`;
 const IMAGE_RUN = `run_${"b".repeat(32)}`;
 const SHA_A = "a".repeat(64);
 const SHA_B = "b".repeat(64);
+const REF = "media/loom/words/words-1";
+const HELLO = `${REF}/audios/english/hello.mp3`;
+const CAT = `${REF}/images/english/cat.png`;
+const DOG = `${REF}/uploads/dog-0123456789abcdef.png`;
 
 function asset(key: string, extra: Partial<MediaAsset>): MediaAsset {
   return { key, type: "image", description: key, usages: [], ...extra } as MediaAsset;
@@ -34,16 +38,16 @@ function plan(assets: MediaAsset[]): AssetManifest {
 const bound = plan([
   asset("hello", {
     type: "audio",
-    path: `media/generated/${AUDIO_RUN}.wav`,
-    generatedAudio: { runId: AUDIO_RUN, sha256: SHA_A },
+    path: HELLO,
+    generatedAudio: { runId: AUDIO_RUN, sha256: SHA_A, format: "mp3" },
   }),
   asset("cat", {
-    path: `media/generated/${IMAGE_RUN}.png`,
+    path: CAT,
     generatedImage: { runId: IMAGE_RUN, sha256: SHA_B },
   }),
-  asset("dog", { path: "media/uploads/dog-0123456789abcdef.png" }),
+  asset("dog", { path: DOG }),
   // A second asset bound to the same upload is one file.
-  asset("puppy", { path: "media/uploads/dog-0123456789abcdef.png" }),
+  asset("puppy", { path: DOG }),
   asset("tree", { path: "media/loom/scene/tree.png" }),
   asset("unbound", {}),
 ]);
@@ -63,12 +67,12 @@ function draft(overrides: Partial<ActivityDraft> = {}): ActivityDraft {
 }
 
 describe("ownedMediaPaths", () => {
-  it("keeps generated media at their workspace paths and uploads at their own", () => {
+  it("keeps generated media and uploads at their paths in the media repository", () => {
     expect(ownedMediaPaths(bound)).toEqual({
       owned: [
-        { path: `audio/${AUDIO_RUN}.wav`, expectedSha256: SHA_A },
-        { path: `images/${IMAGE_RUN}.png`, expectedSha256: SHA_B },
-        { path: "media/uploads/dog-0123456789abcdef.png", expectedSha256: null },
+        { path: HELLO, expectedSha256: SHA_A },
+        { path: CAT, expectedSha256: SHA_B },
+        { path: DOG, expectedSha256: null },
       ],
       references: ["media/loom/scene/tree.png"],
     });
@@ -81,8 +85,8 @@ describe("ownedMediaPaths", () => {
 
 describe("versionManifest", () => {
   const files = [
-    { path: "media/uploads/dog-0123456789abcdef.png", sha256: SHA_B, bytes: 30 },
-    { path: `audio/${AUDIO_RUN}.wav`, sha256: SHA_A, bytes: 12 },
+    { path: DOG, sha256: SHA_B, bytes: 30 },
+    { path: HELLO, sha256: SHA_A, bytes: 12 },
   ];
 
   it("holds the draft's content, the features, the files sorted and the references", () => {
@@ -96,10 +100,7 @@ describe("versionManifest", () => {
     expect(manifest.draft.mediaPlan?.manifest).toBe(bound);
     expect(manifest.draft).not.toHaveProperty("moduleDocuments");
     expect(manifest.implementationFeatures).toEqual(["feature-one"]);
-    expect(manifest.media.map((file) => file.path)).toEqual([
-      `audio/${AUDIO_RUN}.wav`,
-      "media/uploads/dog-0123456789abcdef.png",
-    ]);
+    expect(manifest.media.map((file) => file.path)).toEqual([HELLO, DOG]);
     expect(manifest.references).toEqual(["media/loom/scene/tree.png"]);
     expect(mediaBytes(manifest)).toBe(42);
   });

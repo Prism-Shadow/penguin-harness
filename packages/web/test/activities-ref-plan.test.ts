@@ -165,7 +165,7 @@ describe("blockers", () => {
       { code: "libraryMissing", key: "spare" },
     ]);
     next = setFileName(next, "cat", "cat.png");
-    next = setLibraryPath(next, "spare", "media/uploads/spare-1.png");
+    next = setLibraryPath(next, "spare", "media/loom/words/words-1/uploads/spare-1.png");
     next = setText(next, "hello", "Hi");
     next = setText(next, "outro-voice", "Bye");
     expect(blockers(next, "13", [])).toEqual([]);
@@ -206,10 +206,15 @@ describe("decisions", () => {
     const picked = setLibraryPath(
       setAction(rows(), "cat", "library"),
       "cat",
-      "media/uploads/a.png",
+      "media/loom/words/words-1/uploads/a.png",
     );
     expect(decisions(picked, "en-US")).toEqual([
-      { language: "en-US", assetKey: "cat", action: "bind", path: "media/uploads/a.png" },
+      {
+        language: "en-US",
+        assetKey: "cat",
+        action: "bind",
+        path: "media/loom/words/words-1/uploads/a.png",
+      },
     ]);
     expect(decisions(rows(), "en-US")).toEqual([]);
   });
@@ -225,9 +230,9 @@ describe("boundSource", () => {
   const endpoint = "/api/projects/p/activities/act";
   it("plays a generated clip from its run, an upload from the uploads, the rest from the checkout", () => {
     expect(boundSource(assets[2]!, endpoint)).toBe(`${endpoint}/runs/${RUN}/audio`);
-    expect(boundSource({ ...assets[0]!, path: "media/uploads/bye-1.wav" }, endpoint)).toBe(
-      `${endpoint}/media-upload?path=media%2Fuploads%2Fbye-1.wav`,
-    );
+    expect(
+      boundSource({ ...assets[0]!, path: "media/loom/words/words-1/uploads/bye-1.wav" }, endpoint),
+    ).toBe(`${endpoint}/media-upload?path=media%2Floom%2Fwords%2Fwords-1%2Fuploads%2Fbye-1.wav`);
     expect(boundSource(assets[3]!, endpoint)).toBe(
       `${endpoint}/sandbox/media/loom/words/theme.mp3`,
     );

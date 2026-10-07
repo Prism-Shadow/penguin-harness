@@ -108,7 +108,7 @@ describe("what a sound run asks for", () => {
       ),
     ).toBe("sound_invalid");
     expect(refusal(activity([door]), "missing")).toBe("sound_invalid");
-    expect(refusal(activity([door]), "door", "musicgen")).toBe("sound_provider_unknown");
+    expect(refusal(activity([door]), "door", "musicgen")).toBe("sound_kind_unsupported");
     const stale = activity([door]);
     stale.draft.mediaPlan!.specRevision = contentRevision({ other: true });
     expect(refusal(stale, "door")).toBe("media_stale");
@@ -116,6 +116,26 @@ describe("what a sound run asks for", () => {
 });
 
 describe("the sound provider seam", () => {
+  it.each(["audiogen", "audioldm"] as const)(
+    "pins %s to its exact effect model and refuses longer clips",
+    (provider) => {
+      const model =
+        provider === "audiogen" ? "facebook/audiogen-medium" : "cvssp/audioldm-s-full-v2";
+      expect(
+        soundProviderFor("sfx", provider, [], undefined, [], { [provider]: true }),
+      ).toMatchObject({ provider, model, format: "wav" });
+      expect(soundProviderFor("music", provider, null)).toEqual({ problem: "kind_unsupported" });
+      expect(soundProviderFor("sfx", provider, null, "other-model")).toEqual({
+        problem: "model_unknown",
+      });
+      expect(() =>
+        soundTarget(
+          activity([{ ...door, script: '<audio kind="sfx" duration="11">Door</audio>' }]),
+          { language: "en-US", assetKey: "door", provider },
+        ),
+      ).toThrow("10 seconds");
+    },
+  );
   it("names the model per kind and the key a provider needs", () => {
     expect(soundProviderFor("music", "elevenlabs", ["ELEVENLABS_API_KEY"])).toEqual({
       provider: "elevenlabs",
@@ -134,7 +154,7 @@ describe("the sound provider seam", () => {
       problem: "no_model",
     });
     expect(soundProviderFor("sfx", "musicgen", ["GEMINI_API_KEY"])).toEqual({
-      problem: "provider_unknown",
+      problem: "kind_unsupported",
     });
   });
 
@@ -156,6 +176,30 @@ describe("the sound provider seam", () => {
         available: false,
         problem: "no_model",
         modelChoices: [],
+      },
+      {
+        id: "musicgen",
+        kinds: ["music"],
+        credential: "",
+        models: { music: "Xenova/musicgen-small" },
+        available: false,
+        problem: "runtime_missing",
+      },
+      {
+        id: "audiogen",
+        kinds: ["sfx"],
+        credential: "",
+        models: { sfx: "facebook/audiogen-medium" },
+        available: false,
+        problem: "runtime_missing",
+      },
+      {
+        id: "audioldm",
+        kinds: ["sfx"],
+        credential: "",
+        models: { sfx: "cvssp/audioldm-s-full-v2" },
+        available: false,
+        problem: "runtime_missing",
       },
     ]);
     expect(soundSetup(["ELEVENLABS_API_KEY"])[0]).toMatchObject({ available: true });

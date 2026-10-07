@@ -49,8 +49,8 @@ export function problemText(problem: DeployProblem): string {
   switch (problem.code) {
     case "settings_missing":
       return words.settings_missing(fieldName(problem.field));
-    case "module_remote_missing":
-      return words.module_remote_missing;
+    case "workspace_not_ready":
+      return words.workspace_not_ready;
     case "module_remote_invalid":
       return words.module_remote_invalid;
     case "clone_missing":
@@ -294,6 +294,8 @@ export function stageErrorText(error: DeployStageError): string {
       return words.media_missing(error.paths, error.count);
     case "deploy_timed_out":
       return words.deploy_timed_out(error.minutes, error.target);
+    case "module_repository_missing":
+      return words.module_repository_missing(error.remote);
     case "interrupted":
       return words.interrupted;
     case "unexpected":

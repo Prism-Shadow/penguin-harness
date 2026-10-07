@@ -44,7 +44,11 @@ allowBuilds:
   # BUILD a config; it spawns the runner through the harness, never through a pty).
   node-pty: true
   # sass's optional file watcher; the activity sandbox compiles once and never watches.
-  '@parcel/watcher': false
+  "@parcel/watcher": false
+  # Local audio inference uses ONNX Runtime's native binaries.
+  onnxruntime-node: true
+  # Transformers.js imports sharp, whose installer checks its platform binary.
+  sharp: true
 # pnpm 11 withholds freshly published versions by default (supply-chain gate), which
 # would resolve agenthub back to the previous release and lose the fix the bump is for.
 # This package is first-party, so the exemption carries no third-party risk.

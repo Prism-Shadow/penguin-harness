@@ -14,6 +14,14 @@ import { activitySpec } from "./activity-fixtures.js";
 
 const RUN = `run_${"a".repeat(32)}`;
 const SHA = "b".repeat(64);
+/** The template's media folder, and the new ref's. */
+const FROM = "media/loom/words/words-12";
+const TO = "media/loom/words/words-13";
+/** An asset as the new ref holds it: bound into its own media folder. */
+const moved = (asset: MediaAsset): MediaAsset => ({
+  ...asset,
+  path: asset.path!.replace(FROM, TO),
+});
 const usage = (sceneId: string, key: string) => ({
   sceneId,
   sourceKey: key,
@@ -62,7 +70,7 @@ const cat: MediaAsset = {
   key: "cat",
   type: "image",
   description: "A cat",
-  path: `media/generated/${RUN}.png`,
+  path: `${FROM}/images/english/cat.png`,
   generatedImage: { runId: RUN, sha256: SHA },
   usages: [usage("intro", "cat")],
 };
@@ -72,8 +80,8 @@ const hello: MediaAsset = {
   description: "Greeting",
   script: "Hello there",
   voice: "Kore",
-  path: `media/generated/${RUN}.wav`,
-  generatedAudio: { runId: RUN, sha256: SHA },
+  path: `${FROM}/audios/english/hello.mp3`,
+  generatedAudio: { runId: RUN, sha256: SHA, format: "mp3" },
   wordTimings: [{ word: "Hello", startMs: 0, endMs: 200 }],
   durationMs: 400,
   usages: [usage("intro", "hello")],
@@ -90,7 +98,8 @@ describe("refDraftFromTemplate", () => {
     expect(draft.mediaPlan!.manifest.productCode).toBe("words");
     expect(draft.mediaPlan!.specRevision).toBe(source.draft.mediaPlan!.specRevision);
     expect(draft.mediaPlan!.requirements).toEqual(source.draft.mediaPlan!.requirements);
-    expect(draft.mediaPlan!.manifest.assets["en-US"]).toEqual([cat, hello]);
+    // Generated media are bound into the new ref's media folder, where its copy of them is.
+    expect(draft.mediaPlan!.manifest.assets["en-US"]).toEqual([moved(cat), moved(hello)]);
     // The template itself is untouched.
     expect(source.draft.mediaPlan!.manifest.refNum).toBe(12);
   });
@@ -99,7 +108,7 @@ describe("refDraftFromTemplate", () => {
     const draft = refDraftFromTemplate(template([cat]), 13, [
       { language: "en-US", assetKey: "cat", action: "keep", description: "ignored" },
     ]);
-    expect(draft.mediaPlan!.manifest.assets["en-US"]![0]).toEqual(cat);
+    expect(draft.mediaPlan!.manifest.assets["en-US"]![0]).toEqual(moved(cat));
   });
 
   it("clears a narration with an edited script and voice, dropping its recording", () => {
@@ -156,13 +165,13 @@ describe("refDraftFromTemplate", () => {
 
   it("binds an asset to an upload and forgets its generated file", () => {
     const draft = refDraftFromTemplate(template([cat]), 13, [
-      { language: "en-US", assetKey: "cat", action: "bind", path: "media/uploads/dog-1.png" },
+      { language: "en-US", assetKey: "cat", action: "bind", path: `${FROM}/uploads/dog-1.png` },
     ]);
     expect(draft.mediaPlan!.manifest.assets["en-US"]![0]).toEqual({
       key: "cat",
       type: "image",
       description: "A cat",
-      path: "media/uploads/dog-1.png",
+      path: expect.stringMatching(/^media\/loom\/words\/words-1[23]\/uploads\/dog-1\.png$/),
       usages: [usage("intro", "cat")],
     });
   });

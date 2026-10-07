@@ -4,6 +4,7 @@ import {
   SPEECH_MODEL,
   SPEECH_VOICES,
   isSpeechVoice,
+  speechCatalogue,
 } from "../src/activities/voice-catalogue.js";
 import * as audio from "../src/activities/audio.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
@@ -59,7 +60,11 @@ describe("the speech setup route", () => {
       catalogue: { id: string }[];
     };
     expect(body.voices).toEqual([...SPEECH_VOICES]);
-    expect(body.catalogue.map((option) => option.id)).toEqual([...SPEECH_VOICES]);
-    expect(body.catalogue).toEqual(JSON.parse(JSON.stringify(SPEECH_CATALOGUE)));
+    // Gemini's voices first, then the local Kokoro voices.
+    expect(body.catalogue.map((option) => option.id).slice(0, SPEECH_VOICES.length)).toEqual([
+      ...SPEECH_VOICES,
+    ]);
+    expect(body.catalogue.map((option) => option.id)).toContain("af_heart");
+    expect(body.catalogue).toEqual(JSON.parse(JSON.stringify(speechCatalogue(null))));
   });
 });

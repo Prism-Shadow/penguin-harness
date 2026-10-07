@@ -150,8 +150,7 @@ export const en: Strings = {
       sessionsEmpty: "No agent has worked on this activity yet.",
       showTranscript: "Show",
       hideTranscript: "Hide",
-      transcriptToggle: (action: string, run: string, time: string) =>
-        `${action}: ${run}, ${time}`,
+      transcriptToggle: (action: string, run: string, time: string) => `${action}: ${run}, ${time}`,
       openFullPage: "Open full page",
     },
     studioRefs: {
@@ -177,13 +176,12 @@ export const en: Strings = {
       renumbered: (from: number, to: number) => `Ref ${from} is now ref ${to}.`,
       reassemble: "Assemble the module again so the preview plays under the new number.",
       renumberErrors: {
-        checkout_ref:
-          "This ref's module lives in the read-only WAF checkout under its current number, so it cannot be renumbered here.",
         draft_conflict:
           "The draft changed since it was loaded. Reload the activity, then try again.",
         run_active: "A run is working on this ref. Stop it before renumbering.",
         pipeline_running: "This activity is running its stages. Stop them before renumbering.",
-        activity_exists: "Another ref of this product, or a deleted one, already uses that number.",
+        activity_exists:
+          "Another ref of this product, a deleted one, or files in its module already use that number.",
       },
     },
     tags: {
@@ -430,8 +428,7 @@ export const en: Strings = {
       canonical: "Canonical ref",
       progress: (done: number, total: number) => `${done} of ${total} milestones`,
       newRef: "New ref",
-      newRefUnavailable:
-        "Plan the canonical ref's media first; a new ref copies its media plan.",
+      newRefUnavailable: "Plan the canonical ref's media first; a new ref copies its media plan.",
       status: {
         running: (what: string) => `${what} running`,
         stale: "Media plan out of date",
@@ -543,9 +540,6 @@ export const en: Strings = {
       checkRemote: "Check remote",
       checkingRemote: "Asking the remote…",
       remoteChecked: "Checked against the remote.",
-      cloneFailed: (repo, output) =>
-        output ? `The ${repo} clone failed. git said: ${output}` : `The ${repo} clone failed.`,
-      cloneTimedOut: (repo) => `The ${repo} clone took longer than its time limit and was stopped.`,
       fields: {
         "qa.jenkinsUrl": "QA Jenkins address",
         "qa.username": "QA Jenkins user",
@@ -562,8 +556,6 @@ export const en: Strings = {
         "prod.frameworkVersion": "PROD framework version",
         "jobs.moduleBuild": "Module build job",
         "jobs.activityDeploy": "Activity deploy job",
-        "repos.activityDataRemote": "Activity data repository",
-        "repos.mediaRemote": "Media repository",
         "repos.mediaPublicBase": "Media address",
         "git.userName": "Git user name",
         "git.userEmail": "Git email",
@@ -617,12 +609,12 @@ export const en: Strings = {
       },
       problems: {
         settings_missing: (field) => `${field} is empty.`,
-        module_remote_missing:
-          "The module's package.json names no repository, so there is nowhere to clone it from.",
+        workspace_not_ready:
+          "The WAF workspace is not prepared. An admin can prepare it in Settings, under WAF workspace.",
         module_remote_invalid:
-          "The module's package.json names a repository that cannot be cloned from. Only an ssh remote, git@host:owner/repo or an https address without a password can.",
+          "The WAF workspace's module remote cannot be cloned from. Only an ssh remote, git@host:owner/repo or an https address without a password can.",
         clone_missing: (repo) =>
-          `The ${repo} clone is not on this server yet. Prepare clones makes it.`,
+          `The ${repo} clone is not on this server yet. Prepare clones makes the module's; an admin prepares the others in Settings, under WAF workspace.`,
         clone_unknown: (repo, what) =>
           what === "status"
             ? `git could not say whether the ${repo} clone is clean.`
@@ -781,6 +773,8 @@ export const en: Strings = {
             : `${command} failed with exit code ${exitCode}. The log shows its output.`,
         command_timed_out: (command) =>
           `${command} took longer than its time limit and was stopped.`,
+        module_repository_missing: (remote) =>
+          `The module's repository ${remote} does not exist yet. Create it empty, then deploy again.`,
         command_missing: (command) => `${command} is not installed on this server.`,
         jenkins_failed: (status) =>
           status ? `Jenkins refused the request (HTTP ${status}).` : "Jenkins did not answer.",
@@ -994,8 +988,8 @@ export const en: Strings = {
         fail: "Another ref owns this product's module code. Assemble from that ref.",
       },
       checkout: {
-        ok: "The WAF checkout was found.",
-        fail: "No WAF checkout was found. Enter its folder below.",
+        ok: "The WAF workspace is ready.",
+        fail: "The WAF workspace is not prepared. An admin can prepare it in Settings, under WAF workspace.",
       },
       unsaved: { ok: "No unsaved edits.", fail: "Save your edits first." },
       proposal: {
@@ -1560,6 +1554,11 @@ export const en: Strings = {
       label: "Provider",
       gemini: "Gemini",
       elevenlabs: "ElevenLabs",
+      kokoro: "Kokoro (local)",
+      localInfo:
+        "Runs on the server. The first generation downloads model weights. English voices only; word timings are not provided.",
+      runtimeMissing: "Local runtime not installed on the server",
+      languageUnsupported: "Unavailable for this language",
       keyMissing: (key: string) => `needs ${key}`,
       timings: "Word timings",
       timingsAbout:
@@ -1594,15 +1593,25 @@ export const en: Strings = {
       prompt: "Prompt",
       promptHint: "Describe the sound, e.g. gentle marimba loop, playful. Up to 2000 characters.",
       length: "Length (seconds)",
-      lengthHint: "1 to 60 seconds; empty lets the model choose",
-      lengthInvalid: "Enter a length from 1 to 60 seconds, or leave it empty.",
+      lengthHint: (max: number, local: boolean) =>
+        `1 to ${max} seconds; ${local ? "empty uses 10 seconds" : "empty lets the model choose"}`,
+      lengthInvalid: (max: number) => `Enter a length from 1 to ${max} seconds, or leave it empty.`,
       provider: "Provider",
       model: "Model",
       generate: "Generate",
       regenerate: "Generate again",
       generating: "Generating…",
-      providers: { elevenlabs: "ElevenLabs", agenthub: "Model" },
+      providers: {
+        elevenlabs: "ElevenLabs",
+        agenthub: "Model",
+        musicgen: "MusicGen (local)",
+        audiogen: "AudioGen (local)",
+        audioldm: "AudioLDM (local)",
+      },
+      localInfo:
+        "Runs on the server and downloads model weights on first use. MusicGen supports up to 30 seconds; AudioGen and AudioLDM support up to 10 seconds.",
       problems: {
+        runtime_missing: "Install the local audio dependencies on the server to use this provider.",
         credential_missing: (key: string) => `Add ${key} to the selected agent's Vault.`,
         kind_unsupported: "This provider does not make this kind of sound.",
         provider_unknown: "This provider is not available in this version.",
@@ -1818,9 +1827,6 @@ export const en: Strings = {
     saveMedia: "Validate and save media",
     mediaCounts: (total, bound) =>
       `${total} assets, ${bound} paths assigned, ${total - bound} unbound (saved plan)`,
-    wafRoot: "WAF checkout",
-    wafRootHint:
-      "Folder containing framework, modules and media. Leave empty for automatic discovery.",
     readingMode: "Reading mode",
     readingModeHint: "Choose a mode and build the media plan before assembly.",
     readingModeHelp:
@@ -1861,20 +1867,17 @@ export const en: Strings = {
     previewResolutionLabel: "Preview resolution",
     previewResolutionOwn: (dimensions: string) => `${dimensions} (the activity's own)`,
     newActivity: "New activity",
-    importFromLoom: "Import from Loom",
-    importHelp:
-      "Activities Loom generated in the WAF checkout's modules folder. Importing copies each ref's specification, description and media plan into this project. The module and its media stay in the checkout, and the preview plays them from there.",
-    importLoading: "Reading the checkout…",
-    importNoCheckout:
-      "No WAF checkout was found. Penguin looks for a folder holding framework, modules and media, or the one WAF_ROOT_DIR names.",
-    importEmpty: "The checkout has no activities Loom generated.",
-    importSearch: "Search Loom activities",
-    importAction: "Import",
-    importing: "Importing…",
-    importRefs: (count: number) => (count === 1 ? "1 ref" : `${count} refs`),
-    importProblems: (count: number) =>
-      count === 1 ? "1 problem reading it" : `${count} problems reading it`,
-    importImported: "Imported",
+    openFromModules: {
+      title: "Open from modules",
+      help: "Products in the WAF workspace's modules that no project has open, such as ones Loom authored. Opening one makes it this project's and adds Penguin's files beside Loom's in the module; Loom's specification and manifest are kept as .loom.json copies.",
+      loading: "Reading the modules…",
+      empty: "Every product in the modules is open in a project already.",
+      search: "Search products",
+      refs: (count: number) => (count === 1 ? "1 ref" : `${count} refs`),
+      open: "Open",
+      opening: "Opening…",
+      opened: "Opened",
+    },
     search: "Search activities",
     noMatches: "No activities match this search.",
     backToActivities: "All activities",
@@ -2238,9 +2241,6 @@ export const en: Strings = {
       moduleBuildJob: "Module build job",
       activityDeployJob: "Activity deploy job",
       jobHint: "Leave empty for the default",
-      activityDataRemote: "Activity data repository",
-      mediaRemote: "Media repository",
-      remoteHint: "git@github.com:owner/repo.git or https://…",
       mediaPublicBase: "Media address",
       mediaPublicBaseHint:
         "Where a deployed activity finds its media. Keep {{MEDIA}}/ unless the activity data deploy changes: it fills that in. Otherwise /media/ or https://…",
@@ -2295,6 +2295,51 @@ export const en: Strings = {
         incomplete: "the installer finished, but the browser is not where it should be.",
       },
       logLabel: "Installer output",
+    },
+    wafWorkspace: {
+      title: "WAF workspace",
+      about:
+        "The checkouts activities are authored, played and deployed from: the framework, the navigation bar, media and activity data, plus one repository per product's module. Penguin clones them into its own data folder and installs what the framework and navigation bar build with, by itself when the server starts and they are not there yet; Prepare does it again, for instance after a failure. Media is cloned partially, and a product's media is fetched only when it is needed. git uses this server's own SSH keys. To use a checkout you already have instead, enter its folder below; Penguin then only reads it.",
+      ready: "Ready",
+      notReady: "Not prepared. Prepare clones what is missing.",
+      preparing: "Preparing the workspace. Cloning and installing can take several minutes.",
+      prepared: "The WAF workspace is ready.",
+      external: (root) => `Using the existing checkout at ${root}`,
+      externalMissing: (root) =>
+        `No WAF checkout at ${root}. It needs framework, modules and media folders.`,
+      failed: (reason) => `Preparing did not finish: ${reason}`,
+      prepare: "Prepare",
+      logLabel: "Preparation log",
+      repos: {
+        framework: "Framework",
+        navbar: "Navigation bar",
+        media: "Media",
+        activityData: "Activity data",
+      },
+      repo: {
+        missing: "Not cloned",
+        noRemote: "no remote",
+        otherRemote: (remote) => `A clone of ${remote}, not the remote below`,
+        otherBranch: (branch) => `On ${branch}, not the branch below. Prepare switches it.`,
+        noBranch: "no branch",
+        notInstalled: "Cloned, dependencies not installed",
+        cloned: (branch, dirty) =>
+          `Cloned${branch ? `, ${branch}` : ""}${dirty ? ", with local changes" : ""}`,
+      },
+      sources: "Repositories",
+      remote: (name) => `${name} remote`,
+      branch: "Branch",
+      moduleRemote: "Module remote",
+      moduleRemoteHint:
+        "Where a product's module repository is. {module} is replaced by its folder, for example waf-module-r2pt01.",
+      existing: "Existing checkout",
+      externalRoot: "Checkout folder",
+      externalRootPick: "None: Penguin manages its own",
+      externalRootMenuHint: "Pick the folder that holds framework, modules and media.",
+      externalRootClear: "Let Penguin manage its own",
+      externalRootHint:
+        "Leave empty to let Penguin manage its own. The folder must hold framework, modules and media. WAF_ROOT_DIR on the server takes precedence.",
+      invalid: "This value is not valid.",
     },
     accentNames: {
       neutral: "Neutral",
@@ -6403,14 +6448,10 @@ Scenarios:
       deploy_not_canonical:
         "Only the canonical ref deploys: every ref of this product shares its module.",
       deploy_settings_missing: "An admin has to fill in the deploy settings first.",
-      deploy_module_remote_missing: "The module's package.json names no repository.",
-      deploy_module_remote_invalid:
-        "The module's package.json names a repository that cannot be cloned from.",
-      deploy_clone_path:
-        "A clone would have been made outside the deploy directory or inside the WAF checkout, so nothing was cloned.",
-      deploy_clone_failed: "A clone failed.",
-      deploy_clone_path_taken:
-        "Something that is not the expected clone is already where the clone goes. It was left as it is.",
+      product_taken:
+        "Another project owns this product. A product's refs all belong to one project, because they share one module.",
+      module_not_a_clone:
+        "The module's folder in the WAF workspace exists but is not a git repository. It was left as it is.",
       git_unavailable: "git could not be run on this server.",
       activity_invalid:
         "The activity details are invalid. Check the product code, reference number, and title.",
@@ -6437,10 +6478,8 @@ Scenarios:
       audio_changed:
         "This audio candidate or its requirement changed. Generate a new candidate before accepting.",
       media_missing:
-        "Referenced media is missing or linked in the selected WAF checkout. Check the saved paths before retrying assembly.",
+        "Referenced media is missing or linked in the WAF workspace. Check the saved paths before retrying assembly.",
       module_spec_invalid: "Module scenes need unique safe IDs other than activity.",
-      waf_checkout_missing:
-        "WAF checkout not found. Select a folder containing framework, modules and media.",
       run_not_found: "This generation attempt no longer exists, or you do not have access.",
       project_deleting:
         "This Project is being deleted. Activity changes and generation are unavailable.",

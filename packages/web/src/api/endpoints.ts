@@ -159,6 +159,9 @@ import type {
   ProxyProbeTargetsResponse,
   ServerSettingsResponse,
   TestBrowserStatusResponse,
+  WafWorkspaceSettings,
+  WafWorkspaceSettingsResponse,
+  WafWorkspaceStatusResponse,
   DeployConnectionTestResponse,
   DeploySettingsResponse,
   DeploySettingsUpdate,
@@ -298,6 +301,25 @@ export const adminGetTestBrowser = () =>
 /** Starts installing the test browser (admin only); 409 while an install is already running. */
 export const adminInstallTestBrowser = () =>
   apiFetch<TestBrowserStatusResponse>("/api/admin/test-browser/install", { method: "POST" });
+
+/** The WAF workspace's state: its repositories, and whether a preparation runs (admin only). */
+export const adminGetWafWorkspace = () =>
+  apiFetch<WafWorkspaceStatusResponse>("/api/admin/waf-workspace");
+
+/** Starts cloning what the WAF workspace is missing; a no-op while one preparation runs. */
+export const adminPrepareWafWorkspace = () =>
+  apiFetch<WafWorkspaceStatusResponse>("/api/admin/waf-workspace/prepare", { method: "POST" });
+
+/** The WAF workspace's remotes, branches and any existing checkout (admin only). */
+export const adminGetWafWorkspaceSettings = () =>
+  apiFetch<WafWorkspaceSettingsResponse>("/api/admin/waf-workspace/settings");
+
+/** Omitted fields keep their value. */
+export const adminPutWafWorkspaceSettings = (body: Partial<WafWorkspaceSettings>) =>
+  apiFetch<WafWorkspaceSettingsResponse>("/api/admin/waf-workspace/settings", {
+    method: "PUT",
+    body,
+  });
 
 /** The deploy settings (admin only); tokens come back only as whether one is set. */
 export const adminGetDeploySettings = () =>

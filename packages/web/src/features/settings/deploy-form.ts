@@ -87,13 +87,6 @@ export const DEPLOY_GROUPS: readonly DeployGroup[] = [
     target: null,
     fields: [
       {
-        path: "repos.activityDataRemote",
-        label: "activityDataRemote",
-        hint: "remoteHint",
-        kind: "text",
-      },
-      { path: "repos.mediaRemote", label: "mediaRemote", hint: "remoteHint", kind: "text" },
-      {
         path: "repos.mediaPublicBase",
         label: "mediaPublicBase",
         hint: "mediaPublicBaseHint",

@@ -5,10 +5,10 @@
 import type { VoiceOption } from "./voice-catalogue.js";
 
 /** Who speaks a narration. An asset or run naming none is spoken by Gemini. */
-export type SpeechProviderId = "gemini" | "elevenlabs";
+export type SpeechProviderId = "gemini" | "elevenlabs" | "kokoro";
 
 /** Why a provider cannot speak for the chosen agent now. The App words it. */
-export type SpeechProblem = "credential_missing";
+export type SpeechProblem = "credential_missing" | "runtime_missing";
 
 /** One speech provider as the editor's Provider picker shows it, for the chosen agent. */
 export interface SpeechProviderStatus {

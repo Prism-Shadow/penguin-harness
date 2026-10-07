@@ -10,12 +10,13 @@ import type { ImageTarget, ImageResult } from "../activities/generated-image.js"
 import type { MediaTextTarget } from "../activities/media-text.js";
 import type { AssistFocus, AssistProposal, ProposalChange } from "../activities/assist.js";
 import type { UploadedMedia } from "../activities/upload.js";
+import type {
+  ClaimModuleProductResponse,
+  ModuleProduct,
+} from "../activities/module-product-types.js";
 import type { BundleItem, ProjectMediaListing } from "../activities/media-library-types.js";
-import type { ImportOutcome } from "../activities/import-apply.js";
-import type { ImportedActivity } from "../activities/loom-import.js";
 import type { ImplementationFeature } from "../activities/implementation-features.js";
 import type { ReadinessCheck } from "../activities/readiness-types.js";
-import type { ImportMapping } from "../activities/import-mapping.js";
 import type { RefAssetDecision, RefNumberSuggestion } from "../activities/ref-template-types.js";
 import type {
   ActivityDetail,
@@ -44,7 +45,6 @@ export abstract class ActivityGeneration extends Interface<{
     agentId: string,
     expectedRevision: string,
     module?: {
-      wafRoot?: string;
       bookMode?: string;
       /**
        * A narration run: its voice, and the provider (Gemini, or the narration's own, when
@@ -79,7 +79,7 @@ export abstract class ActivityGeneration extends Interface<{
        * An animated composition of a video or animation asset's scene, from its description
        * and bound images (experimental: refused while `activityVideoExperiment` is off).
        */
-      composition?: { language: string; assetKey: string; wafRoot?: string };
+      composition?: { language: string; assetKey: string };
     },
     /** Run on an external coding agent instead of the Penguin agent `agentId` names. */
     runtime?: { codingAgentId?: string },
@@ -354,7 +354,6 @@ export abstract class ActivityAuthoring extends Interface<{
   readiness(
     projectId: string,
     activityId: string,
-    wafRoot: string,
     assessment?: { current: unknown; own: unknown },
   ): Promise<ReadinessCheck[]>;
   /** Loom's implementation features, and the ones this ref asks its assembly to reproduce. */
@@ -484,26 +483,6 @@ export abstract class ActivityAuthoring extends Interface<{
     productCode: string,
     mode: "decodable" | "readAlong",
   ): Promise<ActivityProduct>;
-  /** Create everything a Loom product's mapping describes, and report what happened. */
-  importProduct(
-    projectId: string,
-    collectionId: string | undefined,
-    mapping: ImportMapping,
-  ): Promise<ImportOutcome>;
-  /** The Loom products a checkout offers. Reading only; nothing is imported by looking. */
-  availableImports(): Promise<{ modulesDir: string | null; products: ImportedActivity[] }>;
-  /** Read one Loom product, decide what Penguin would make of it, and make it. */
-  importFromLoom(
-    projectId: string,
-    moduleFolder: string,
-    productCode: string,
-    collectionId?: string,
-  ): Promise<{
-    mapping: ImportMapping;
-    outcome: ImportOutcome;
-    message: string;
-    problems: string[];
-  }>;
   /**
    * Save an author's edit of the module's configuration or assessment in the draft; the
    * assessment only on the canonical ref, because every ref shares it. An assessment problem
@@ -542,12 +521,28 @@ export abstract class ActivityAuthoring extends Interface<{
     spec: unknown,
     expectedRevision?: string,
   ): Promise<ActivityDraft>;
+  /** Where the draft's uploads and generated media are kept, under PENGUIN_HOME. */
   draftWorkspace(
     projectId: string,
     collectionId: string,
     activityId: string,
     draftId: string,
   ): string;
+  /**
+   * Where the draft itself is: `generated/<pc>/refs/<pc>-<ref>/spec` in the ref's module in
+   * the WAF workspace (409 `waf_workspace_not_ready` when there is none).
+   */
+  draftFilesDir(activity: ActivityRecord): Promise<string>;
+  /** Products in the WAF workspace's modules no project has open (see ModuleProduct). */
+  moduleProducts(projectId: string): Promise<ModuleProduct[]>;
+  /**
+   * Opens a product that is in the modules into this project, in place: 409 `product_taken`
+   * when another project owns it, `product_open` when it is open already.
+   */
+  claimModuleProduct(
+    projectId: string,
+    input: { moduleFolder: string; productCode: string; collectionId?: string },
+  ): Promise<ClaimModuleProductResponse>;
   /**
    * Run `operation` while no other change to this activity's draft or files can start, as the
    * project's activity work. A nested `exclusive` and a draft change that takes an expected

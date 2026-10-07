@@ -173,8 +173,8 @@ describe("sound generation through Harness sessions", () => {
     expect(spoken.status).toBe(422);
     expect(JSON.stringify(await spoken.json())).toContain("sound_invalid");
     const unknown = await f.generate("door", "musicgen");
-    expect(unknown.status).toBe(400);
-    expect(JSON.stringify(await unknown.json())).toContain("sound_provider_unknown");
+    expect(unknown.status).toBe(422);
+    expect(JSON.stringify(await unknown.json())).toContain("sound_kind_unsupported");
     // External coding agents never see a Penguin agent's Vault.
     await expect(
       f.service.start(
@@ -204,6 +204,17 @@ describe("sound generation through Harness sessions", () => {
         credential: "ELEVENLABS_API_KEY",
       }),
       expect.objectContaining({ id: "agenthub", available: false, problem: "no_model" }),
+      expect.objectContaining({ id: "musicgen", kinds: ["music"] }),
+      expect.objectContaining({
+        id: "audiogen",
+        kinds: ["sfx"],
+        models: { sfx: "facebook/audiogen-medium" },
+      }),
+      expect.objectContaining({
+        id: "audioldm",
+        kinds: ["sfx"],
+        models: { sfx: "cvssp/audioldm-s-full-v2" },
+      }),
     ]);
     await f.setVault(["ELEVENLABS_API_KEY"]);
     expect((await setup()).providers[0]).toMatchObject({ id: "elevenlabs", available: true });
@@ -259,7 +270,7 @@ describe("sound generation through Harness sessions", () => {
     });
     expect(accepted.status, await accepted.clone().text()).toBe(200);
     const bound = await door();
-    expect(bound.path).toBe(`media/generated/${run.runId}.mp3`);
+    expect(bound.path).toBe("media/loom/p/p-1/audios/english/door.mp3");
     expect(bound.generatedAudio).toMatchObject({ runId: run.runId, format: "mp3" });
     // Playback and the requested length stay; the take's own length is not recorded.
     expect(bound).toMatchObject({ kind: "sfx", channel: "sfx", loop: false, volume: 1 });
@@ -277,9 +288,7 @@ describe("sound generation through Harness sessions", () => {
       assembly,
       (await f.current()).draft.contentRevision,
     );
-    expect(await fs.readFile(path.join(assembly, `media/generated/${run.runId}.mp3`))).toEqual(
-      fixtureBytes,
-    );
+    expect(await fs.readFile(path.join(assembly, bound.path!))).toEqual(fixtureBytes);
   });
 
   it("refuses to accept after the prompt was edited, and fails a run whose output is not MP3", async () => {

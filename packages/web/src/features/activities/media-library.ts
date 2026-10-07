@@ -59,9 +59,12 @@ export function boundUpload(
   return path ? media.find((entry) => entry.path === path) : undefined;
 }
 
-/** Whether a binding is served from this activity's workspace rather than the checkout. */
+/**
+ * Whether a binding is an uploaded file: `media/loom/<pc>/<pc>-<ref>/uploads/<name>` in the
+ * media repository, as the server stores it.
+ */
 export function isUploadPath(path: string | undefined): boolean {
-  return !!path && path.startsWith("media/uploads/");
+  return !!path && /^media\/loom\/[^/]+\/[^/]+\/uploads\/[^/]+$/.test(path);
 }
 
 /**

@@ -33,6 +33,7 @@ export type SettingsSectionKey =
   | "uploads"
   | "company"
   | "testBrowser"
+  | "wafWorkspace"
   | "deploy"
   | "users";
 
@@ -71,6 +72,8 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     // The browser quality checks and tests open activities in: installing it downloads onto
     // the server, so it is the admin's, like the other server-global pages.
     { key: "testBrowser", group: "server", visible: (v) => v.isAdmin },
+    // The checkouts activities are authored in: cloned onto the server, so the admin's.
+    { key: "wafWorkspace", group: "server", visible: (v) => v.isAdmin },
     // Where activities deploy to: one Jenkins and one set of repositories for the server.
     { key: "deploy", group: "server", visible: (v) => v.isAdmin },
     // Single-user under the desktop shell: the server rejects the admin user routes there.
