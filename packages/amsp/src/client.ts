@@ -20,7 +20,7 @@ import type {
 } from "./types.js";
 
 export interface AgentClientOptions {
-  /** The server's AMSP base URL, e.g. `http://127.0.0.1:7364/api/amsp/v1`. */
+  /** The server's AMSP base URL, e.g. `http://localhost:7364/api/amsp/v1`. */
   baseUrl: string;
   /** The Agent, as `<projectId>/<agentId>`, e.g. `demo/coder`. */
   agent: string;
@@ -318,7 +318,7 @@ class AgentRun implements Run {
  * A client of one Agent's API.
  *
  * ```ts
- * const client = new AgentClient({ baseUrl: "http://127.0.0.1:7364/api/amsp/v1", agent: "demo/coder", apiKey });
+ * const client = new AgentClient({ baseUrl: "http://localhost:7364/api/amsp/v1", agent: "demo/coder", apiKey });
  * const { text, sessionId } = await client.ask({ input: "Summarize README.md" });
  * ```
  */

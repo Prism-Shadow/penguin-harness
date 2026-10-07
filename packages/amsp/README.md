@@ -8,7 +8,7 @@ A Project owner turns an agent's API on in the PenguinHarness Web App (the agent
 import { AgentClient } from "@prismshadow/amsp";
 
 const client = new AgentClient({
-  baseUrl: "http://127.0.0.1:7364/api/amsp/v1",
+  baseUrl: "http://localhost:7364/api/amsp/v1",
   agent: "demo/coder", // <projectId>/<agentId>
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
