@@ -23,9 +23,9 @@ A new-chat draft an older Web App left in the browser with the evaluation mark l
 
 ## When this can be removed
 
-At the 0.3.0 release preparation, by whoever prepares that release. Precondition: 0.3.0 is the first release after this one, so every Trace a user keeps running on was either written with a source or read once through the narrowing. The removal takes out:
+At the 0.3.0 release preparation, by whoever prepares that release. Reading a Trace never rewrites its head, so a Session created before this release keeps a head without `source` for good: dropping the `undefined` branch alone would make every such conversation a malformed head, skipped by adoption and refused by resume. The preparer therefore settles one question with the user first: rewrite the old heads once (a migration that sets `source` from the narrowing), or keep that one branch permanently. The `benchmark` branch and the aliases below can go either way. The removal takes out:
 
-- the two `compat(0.3.0)` branches of `normalizeSessionSource`, which then answers `undefined` for anything but the five values; a head without a valid source is then a malformed head, skipped by adoption and refused by resume, as a head without `provider` is;
+- the `compat(0.3.0)` branches of `normalizeSessionSource` (the `undefined` one only after the question above is settled); a head without a valid source is then a malformed head, skipped by adoption and refused by resume, as a head without `provider` is;
 - the `benchmark` alias in the create route (`packages/server/src/http/routes/sessions.ts`);
 - the hidden `--source` option of `penguin run` (`packages/cli/src/commands/run.ts`) and its two messages in `packages/cli/src/i18n.ts`;
 - the cases for these in `packages/core/test/session-source.test.ts`, `packages/server/test/session-source.test.ts`, `packages/server/test/trace-index.test.ts` and `packages/cli/test/server-commands.test.ts`.

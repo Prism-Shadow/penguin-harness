@@ -7,9 +7,10 @@
  * `cli`). Old Traces are never rewritten: each reader narrows what it reads through this one
  * function instead.
  *
- * Removal: at the 0.3.0 release preparation the two `compat(0.3.0)` branches go, and the
- * function becomes a strict narrowing that answers `undefined` for anything but the five
- * values; a head without a valid source is then malformed, the way one without `provider` is.
+ * Removal: at the 0.3.0 release preparation the `benchmark` branch goes. The `undefined` branch
+ * goes only together with a one-time rewrite of old heads, or stays for good — the user decides
+ * then: reading never rewrites a head, so every Session created before the source was required
+ * would otherwise become a malformed head, the way one without `provider` is.
  */
 import type { SessionSource } from "./types.js";
 

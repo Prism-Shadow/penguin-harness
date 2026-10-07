@@ -23,9 +23,9 @@
 
 ## 何时可以移除
 
-在 0.3.0 发布准备时，由负责该次发布的人移除。前提：0.3.0 是此版本之后的第一个发布，因此用户仍在使用的每个 Trace，要么写入时已带来源，要么已经过一次收窄读取。移除的内容：
+在 0.3.0 发布准备时，由负责该次发布的人移除。读取 Trace 不会改写其开头，因此此版本之前创建的 Session，其开头永远不带 `source`：只删掉 `undefined` 分支，会让所有这类对话都成为格式错误的开头，收编时跳过、恢复时拒绝。所以负责发布的人须先与用户确定一件事：一次性改写旧的开头（按收窄结果补写 `source` 的迁移），或永久保留这一个分支。`benchmark` 分支与下列别名不受影响，照常移除。移除的内容：
 
-- `normalizeSessionSource` 中两个标有 `compat(0.3.0)` 的分支，之后它对五个取值以外的任何值都返回 `undefined`；开头没有合法来源的 Trace 即视为格式错误，收编时跳过、恢复时拒绝，与没有 `provider` 的开头一样；
+- `normalizeSessionSource` 中标有 `compat(0.3.0)` 的分支（`undefined` 分支须待上述问题确定后再处理）；开头没有合法来源的 Trace 即视为格式错误，收编时跳过、恢复时拒绝，与没有 `provider` 的开头一样；
 - 创建路由中的 `benchmark` 别名（`packages/server/src/http/routes/sessions.ts`）；
 - `penguin run` 隐藏的 `--source` 选项（`packages/cli/src/commands/run.ts`）及其在 `packages/cli/src/i18n.ts` 中的两条文案；
 - `packages/core/test/session-source.test.ts`、`packages/server/test/session-source.test.ts`、`packages/server/test/trace-index.test.ts` 与 `packages/cli/test/server-commands.test.ts` 中对应的用例。
