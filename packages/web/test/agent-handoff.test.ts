@@ -28,6 +28,7 @@ const agent = (agentId: string, name?: string): AgentSummary => ({
   skillCount: 0,
   hookCount: 0,
   memoryCount: 0,
+  apiEnabled: false,
 });
 
 const AGENTS: AgentSummary[] = [

@@ -156,6 +156,7 @@ import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { Auth } from "../../mechanisms/identity.js";
+import type { AgentApi } from "../../mechanisms/agent-api.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
@@ -1727,6 +1728,7 @@ export class SessionApiRoutes {
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
   @Use() private readonly drivers!: SessionDrivers;
+  @Use() private readonly agentApi!: AgentApi;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1807,6 +1809,7 @@ export class SessionApiRoutes {
     });
     this.commandPolicyRoutes = commandPolicyRoutes({ projectConfigService, access });
     this.agentsRoutes = agentsRoutes({
+      agentApi: this.agentApi,
       agentConfigService,
       agentService: this.agents,
       errorsRepo: this.errorsRepo,

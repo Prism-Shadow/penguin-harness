@@ -11,6 +11,10 @@
 import type {
   AdminUserCreateResponse,
   AdminUsersResponse,
+  AgentApiKeyCreateResponse,
+  AgentApiKeyInfo,
+  AgentApiResponse,
+  AgentApiSettings,
   AgentConfigResponse,
   AgentCreateResponse,
   AgentHooksResponse,
@@ -21,6 +25,7 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  ApprovalMode,
   AuthResponse,
   BenchmarkCasesResponse,
   BrowserBackendResponse,
@@ -691,6 +696,7 @@ router
       hookCount: 0,
       pluginUpdates: [],
       memoryCount: 0,
+      apiEnabled: false,
     };
     store.f.agents.push(agent);
     const template = store.f.agentConfigs[IDS.agents.notes]!;
@@ -772,6 +778,84 @@ router
     if (agent.agentId === IDS.agents.docs)
       fail(409, "agent_builtin", "The docs Agent is the demo's; it stays.");
     ctx.store.f.agents = ctx.store.f.agents.filter((a) => a.agentId !== agent.agentId);
+    return empty();
+  });
+
+// ---------------------------------------------------------------------------------------------
+// An Agent's public API: its switches, approval mode and keys (the stream itself is not mocked)
+// ---------------------------------------------------------------------------------------------
+
+const API_APPROVAL_MODES: readonly ApprovalMode[] = [
+  "allow-all",
+  "deny-all",
+  "read-only",
+  "always-ask",
+];
+
+/** `n` random bytes as base64url, the alphabet the server's keys and key ids are written in. */
+function base64url(n: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(n));
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * The Agent's settings, as the server reads an Agent never configured: off, keyed, allow-all.
+ * The store's own object: answers hand out a copy, as a server's JSON would, since the app keeps
+ * what it is given and a later write here must not reach into its state.
+ */
+const apiOf = (ctx: Ctx): AgentApiSettings => {
+  const agentId = agentOf(ctx).agentId;
+  ctx.store.f.agentApi[agentId] ??= {
+    enabled: false,
+    open: false,
+    approvalMode: "allow-all",
+    keys: [],
+  };
+  return ctx.store.f.agentApi[agentId];
+};
+
+router
+  .get("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => ({
+    api: structuredClone(apiOf(ctx)),
+  }))
+  .put("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => {
+    const settings = apiOf(ctx);
+    const { enabled, open, approvalMode } = record(ctx.body);
+    if (typeof enabled === "boolean") {
+      settings.enabled = enabled;
+      agentOf(ctx).apiEnabled = enabled;
+    }
+    if (typeof open === "boolean") settings.open = open;
+    const mode = API_APPROVAL_MODES.find((m) => m === approvalMode);
+    if (mode !== undefined) settings.approvalMode = mode;
+    return { api: structuredClone(settings) };
+  })
+  .post("/api/projects/:projectId/agents/:agentId/api/keys", (ctx): unknown => {
+    const settings = apiOf(ctx);
+    const name = str(record(ctx.body).name).trim();
+    if (name.length < 1 || name.length > 64) {
+      fail(400, "bad_request", "A key's name is 1 to 64 characters.");
+    }
+    const secret = `penguin_${base64url(32)}`;
+    const key: AgentApiKeyInfo = {
+      keyId: base64url(12),
+      name,
+      prefix: secret.slice(0, 12),
+      createdBy: ctx.store.f.user.userId,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null,
+    };
+    settings.keys.push(key);
+    return json({ key: { ...key }, secret } satisfies AgentApiKeyCreateResponse, 201);
+  })
+  .delete("/api/projects/:projectId/agents/:agentId/api/keys/:keyId", (ctx) => {
+    const settings = apiOf(ctx);
+    const kept = settings.keys.filter((k) => k.keyId !== ctx.params.keyId);
+    if (kept.length === settings.keys.length) fail(404, "key_not_found", "No such key.");
+    settings.keys = kept;
     return empty();
   });
 
