@@ -27,7 +27,7 @@ export interface AgentApiKeyRow {
   keyId: string;
   projectId: string;
   agentId: string;
-  /** The key's first 12 characters (`pha_` + 8). */
+  /** The key's first 16 characters (`penguin_` + 8). */
   prefix: string;
   name: string;
   /** user_id of whoever created it. */
