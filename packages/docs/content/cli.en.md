@@ -204,7 +204,7 @@ penguin logs 402a2e24 -f
 
 ## penguin agent
 
-`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent.
+`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -223,6 +223,48 @@ Options of `agent create`:
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent api
+
+Manages an agent's [Agent API](/agent-api), the way its **API** tab does: whether programs may call it, keyless access, the approval mode its API conversations start with, and its keys. Any member can run `status` and `keys ls`; the server takes every change from the Project's owner only, and `server` from an admin only.
+
+```bash
+penguin agent api status        --agent-id <id> [--project-id <id>] [--json] [--server <url>]
+penguin agent api enable        --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
+penguin agent api disable       --agent-id <id> [...]
+penguin agent api set           --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
+penguin agent api keys ls       --agent-id <id> [...]
+penguin agent api keys create   --agent-id <id> --name <name> [...]
+penguin agent api keys rm <keyId> --agent-id <id> [...]
+penguin agent api server on|off [--json] [--server <url>]
+```
+
+| Command | What it does |
+| --- | --- |
+| `status` | Prints whether the API is on, keyless access, the approval mode, the Base URL (the server's address followed by `/api/amsp/v1`), the Agent ID (`<projectId>/<agentId>`), the number of keys and the server-wide switch. `--json` prints `{agent, baseUrl, api, serverEnabled}` |
+| `enable` | Turns the API on; `--open` / `--no-open` and `--approve` set keyless access and the approval mode in the same request. Prints the status it left |
+| `disable` | Turns the API off. Keyless access, the approval mode and the keys are kept. Prints the status it left |
+| `set` | Changes keyless access or the approval mode and leaves the switch as it is. Given neither, it sends nothing and exits non-zero |
+| `keys ls` | Lists the keys: id, name, prefix, created and last used (`never` until a run uses it). `--json` prints the array |
+| `keys create` | Creates a key. The key alone is printed to stdout, and the confirmation to stderr, so `KEY=$(penguin agent api keys create …)` captures exactly the key. It is shown this once. `--json` prints `{key, secret}` |
+| `keys rm` | Deletes a key by its id; a program presenting it is refused from its next request. An unknown id fails with `key_not_found` |
+| `server` | Turns the Agent API on or off for the whole server (`agentApiEnabled`). Off refuses every agent's API requests and keeps their settings and keys. Any state other than `on` or `off` sends nothing and fails |
+
+Options:
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--agent-id <id>` | The agent. Required: unlike other commands, it never falls back to `PENGUIN_AGENT_ID` or `default_agent`, so no agent is exposed by default. | — |
+| `--open` / `--no-open` | Allows keyless access / requires a key (`enable`, `set`). | Unchanged |
+| `--approve <mode>` | The approval mode new API conversations start with; see [Approval modes (--approve)](#approval-modes---approve). A mode that asks sends the question to the calling program (`enable`, `set`). An unknown mode fails before any request. | Unchanged |
+| `--name <name>` | The key's name, 1–64 characters (`keys create`, required). | — |
+| `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
+
+```bash
+penguin agent api enable --agent-id helper --approve read-only
+KEY=$(penguin agent api keys create --agent-id helper --name ci)
+penguin agent api status --agent-id helper --json
 ```
 
 ## penguin project

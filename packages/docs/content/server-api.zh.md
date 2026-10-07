@@ -3,7 +3,7 @@ title: Server API
 description: PenguinHarness 服务器的 HTTP API 参考：认证、全部路由分组、SSE 流式协议和 DTO 类型导入。
 ---
 
-PenguinHarness 服务器提供一组同源 HTTP API，内置 Web App 和其他任何 HTTP 客户端用的都是它。本页先讲认证，再按功能分组介绍路由（每组先给路由表，再补充细节），最后讲 SSE 流式协议。启动服务器的方法见[快速开始](/quickstart)。
+PenguinHarness 服务器提供一组同源 HTTP API，内置 Web App 和其他任何 HTTP 客户端用的都是它。本页先讲认证，再按功能分组介绍路由（每组先给路由表，再补充细节），最后讲 SSE 流式协议。启动服务器的方法见[快速开始](/quickstart)。PenguinHarness 之外的程序凭 Agent 的密钥调用的 API 另有专页，见 [Agent API](/agent-api)。
 
 ## 概览
 
@@ -42,7 +42,7 @@ API 接受两种凭证：Cookie 会话和本地 API token。
 - Cookie 会话：`penguin_session`（HttpOnly，SameSite=Lax），有效期 30 天，滑动续期。
 - 密码以 scrypt 哈希存储。会话是 `auth_sessions` 表中的一行，以随机 Cookie token 的 sha256 为键；原始 token 从不存储。会话重启后依然有效，并在原地续期；登出则删除这一行。
 - 不开放注册。启动时，服务器会用一个随机密码初始化内置管理员 `admin`：密码哈希后保存，明文随即丢弃，没有任何人见过它。在设置密码之前，每次启动都会打印一条首次登录链接，用来认领账号。自动化场景可以改用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定一个已知密码。其余所有账号都由管理员创建。
-- 仅限同源：未启用任何 CORS 中间件。
+- 仅限同源：未启用任何 CORS 中间件。例外是 Agent API 的 `/api/amsp/v1`：它应答任何来源的预检，并在带 `Authorization` 的请求上返回 `Access-Control-Allow-Origin: *`。这组路由不接受上面两种凭证：请求出示的是该 Agent 的 API 密钥；Agent 允许无密钥访问时，也可以不出示。见 [Agent API](/agent-api)。
 - 标为「仅管理员」的路由，对其他用户一律返回 `403` `admin_required`。
 
 ```bash
@@ -106,11 +106,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ## 服务器设置（仅管理员）
 
-服务器全局的代理、附件、公司模式和 Chrome 扩展设置，以及插件声明的设置分组。
+服务器全局的代理、附件、公司模式、Chrome 扩展和 Agent API 设置，以及插件声明的设置分组。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled}}` |
+| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled, agentApiEnabled}}` |
 | PUT | `/api/admin/settings` | 更新设置；省略的字段保持当前值，任何字段非法都会拒绝整个 PUT。返回更新后的完整设置 |
 | GET | `/api/admin/settings/proxy-probe` | 可达性探测的目标：`{targets: [{provider, url}]}`。不发起任何请求 |
 | POST | `/api/admin/settings/proxy-probe/:provider` | 经服务器的出站链路探测其中一个目标，不发送任何凭证：`{probe: {provider, url, outcome, ms, status?}}` |
@@ -166,6 +166,10 @@ PUT 按如下规则校验：
 ### Chrome 扩展开关
 
 `browserExtensionsEnabled` 是服务器的**允许 Chrome 扩展连接**开关，默认开启。关闭后立即断开所有已连接的 PenguinHarness Browser 扩展（WebSocket 关闭码 `4009`），拒绝新的连接和配对码，所有用户的 Chrome 后端都不可用（`extension_disabled`）。配对会保留，重新开启后扩展可以重新连上。见 [Agent 浏览器](#agent-浏览器)。
+
+### Agent API 开关
+
+`agentApiEnabled` 是服务器的**允许 Agent API** 开关，默认开启。关闭后，`/api/amsp/v1` 下除 CORS 预检以外的所有请求都以 `403` `agent_api_disabled` 拒绝。各 Agent 的 API 开关、审批模式和密钥都会保留，[Agent API 设置](#agent-api-设置)下的路由照常可用。修改从下一个请求起生效，无需重启。所有成员都能从 Agent 的 API 设置中的 `serverEnabled` 读到这个开关。见[管理员开关](/agent-api#管理员开关)。
 
 ### 插件设置
 
@@ -425,6 +429,9 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | POST | `/agents/:agentId/hooks/archive` | 从 zip 安装钩子包：`{dataBase64, overwrite?}` |
 | GET | `/agents/:agentId/hooks/:name/archive` | 将已安装的钩子包导出为 zip |
 | DELETE | `/agents/:agentId/hooks/:name` | 卸载一个钩子包 |
+| GET / PUT | `/agents/:agentId/api` | Agent 的 API 设置：开关、无密钥访问、审批模式和密钥（PUT 仅限所有者） |
+| POST | `/agents/:agentId/api/keys` | 新建 API 密钥：`{name}` → 201 `{key, secret}`（仅所有者） |
+| DELETE | `/agents/:agentId/api/keys/:keyId` | 删除 API 密钥（仅所有者） |
 | GET | `/api/plugins`（全局） | 按分类返回插件库（任何已登录用户） |
 | GET | `/api/plugins/:plugin/files`（全局） | 单个插件库插件自带的所有文件，以路径为键返回文本（任何已登录用户） |
 
@@ -452,6 +459,38 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 - `POST …/hooks/archive` 要求 `hooks.json` 及其脚本位于 zip 根目录或同一个顶层目录内，且列出的每条命令都必须指向包内的文件。不带 `overwrite` 时，同名钩子包已安装会返回 409 `hook_exists`。`GET …/hooks/:name/archive` 导出的 zip 可以再通过这个路由安装。
 - `GET /api/plugins` 按分类返回插件库的全部插件，包括每个插件的 Skill 元数据和钩子点。
 - `GET /api/plugins/:plugin/files` 返回单个插件库插件自带的全部文件，以路径为键返回文本：`skills/<name>/` 下是每个 Skill 可安装的 `SKILL.md` 和参考文件，`hooks/` 下是钩子脚本。插件详情页的文件浏览器用的就是这个路由。
+
+### Agent API 设置
+
+这组路由支撑 Agent 的 **API** 标签页和 `penguin agent api`。这些设置属于这台服务器，保存在它的数据库里，不在 Agent State 中，也不在 Project 文件中，因此 Agent 既不能自行对外开放，也不能放宽自己的审批模式。任何成员都能读取；修改设置和管理密钥仅限 Project 所有者，成员会得到 `403` `owner_required`。
+
+```ts
+interface AgentApiResponse {
+  api: {
+    enabled: boolean;      // the API tab's switch; off = every /api/amsp/v1 request for the agent is 404 agent_not_found
+    open: boolean;         // keyless access: a request without Authorization is accepted
+    approvalMode: "allow-all" | "deny-all" | "read-only" | "always-ask";
+    keys: AgentApiKeyInfo[];
+  };
+  serverEnabled: boolean;  // the admin's agentApiEnabled, readable by every member
+}
+
+interface AgentApiKeyInfo {
+  keyId: string;
+  name: string;            // 1-64 characters
+  prefix: string;          // the key's first 16 characters
+  createdBy: string;       // the owner who created it
+  createdAt: string;
+  lastUsedAt: string | null; // null until a run authenticates with it
+}
+```
+
+- 从未配置过的 Agent 读作：关闭、需要密钥、`allow-all`、没有密钥。
+- `PUT …/api` 接受 `{enabled?, open?, approvalMode?}`，返回完整的 `AgentApiResponse`。省略的字段保持原值；所有字段校验通过后才会写入任何一项。每个 API Session 在创建时复制 `approvalMode`，所以修改只影响之后新建的 API Session。
+- `POST …/api/keys` 接受 `{name}`，返回 201 `{key, secret}`。`secret` 形如 `penguin_` 加 43 个字符，只出现在这一次响应里：服务器只保存它的 SHA-256，列表中以 `prefix` 区分密钥。
+- `DELETE …/api/keys/:keyId` 返回 204，该密钥从下一个请求起即被拒绝。密钥不存在时返回 `404` `key_not_found`。
+- `GET /agents` 给每个 Agent 标上 `apiEnabled`，即同一个开关，智能体页面据此显示 API 图标。删除 Agent 会一并删除它的 API 设置和密钥；删除 Project 会删除其下所有 Agent 的这些数据。
+- 程序凭密钥能做什么，见 [Agent API](/agent-api)；它读取的事件流见 [AMSP](/amsp)。
 
 ## 插件注册表与 Project 插件
 
@@ -647,7 +686,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `excludeOrg=1` 会把组织的工位会话、工单会话和子 Session 一并移出这一页以及 `counts=1` 的总数，这正是开发模式的列表所要的。取其他值返回 400。
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
-- `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。只有 `excludeOrg` 会把它当作过滤条件，而且只用来剔除这些行。
+- `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，Agent API 的运行新建的 Session 由服务器写入 `"api"`，这两个值客户端都不能发送。`excludeOrg` 用它剔除 `org` 行，Agent API 只延续 `api` 行；见 [Agent API](/agent-api#会话)。
 - Session 的 `source` 表示它是哪一类会话（见 [session_meta](/omni-message#sessionmeta)），类别由它决定：已归档的 Session 无论来源都是 `archived`；其余的 `user` 会话为 `active`，`api`、`schedule`、`subagent`、`cli` 会话为 `background`。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
 - 创建时 `source` 只接受 `"cli"`，由 `penguin run` 发送；其他来源只由服务器自己写入，省略时创建 `user` 会话。已停用的 `"benchmark"` 仍然接受，按 `"cli"` 处理。
 - `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，系统隐藏的条目（带隐藏属性，如 `AppData`、`NTUSER.DAT`）另带 `hidden: true`，只写盘符如 `D:` 即视为其根目录 `D:\`。请求主目录并带 `places=1` 时，另附选择器左栏所需的两项：`standardFolders`（桌面、文档、下载、图片，按该机器自己的规则取得——Windows 的已知文件夹、Linux 的 XDG 用户目录；读取失败时省略）与 `locations`（Windows 的各盘符、macOS 的各卷、Linux 的根目录及 `/media`、`/run/media`、`/mnt` 下的挂载点，各带 `kind`，有名称时带 `label`）。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。

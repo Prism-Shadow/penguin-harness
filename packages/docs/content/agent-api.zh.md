@@ -9,7 +9,7 @@ Agent API 让 PenguinHarness 之外的程序（脚本、服务、浏览器里的
 
 - 想对外开放某个 Agent，见[开启 Agent 的 API](#开启-agent-的-api)。
 - 想在 shell 里试一试，见[用 curl 调用](#用-curl-调用)。
-- 想在 TypeScript 里调用（Node 或浏览器），见[amsp 客户端](#amsp-客户端)。
+- 想在 TypeScript 里调用（Node 或浏览器），见 [amsp 客户端](#amsp-客户端)。
 - 想逐个了解事件流里的事件，见 [AMSP](/amsp)。
 
 ## 开始之前
@@ -29,7 +29,7 @@ Agent API 让 PenguinHarness 之外的程序（脚本、服务、浏览器里的
 4. 在**密钥**下选择**新建密钥**，起个名字，然后复制密钥。密钥只显示这一次。
 5. 在**连接**下复制 **Base URL** 和 **Agent ID**。**示例**里有一条 curl 命令和一段 TypeScript 代码，两者都已填好，密钥处写作 `$PENGUIN_AGENT_KEY`。
 
-在 Agents 页面上，已开启 API 的 Agent 名称后带有 API 图标。
+在**智能体**页面上，已开启 API 的 Agent 名称后带有 API 图标，悬停提示为**已开启 API 访问**。
 
 关闭**开启 API 访问**后，该 Agent 的所有请求立即以 `404` `agent_not_found` 拒绝。它的密钥和设置都会保留，等重新开启时继续使用。
 
@@ -320,4 +320,4 @@ class AmspStreamError extends Error {}
 
 ## 管理员开关
 
-**设置 › Agent API** 中有管理员的**允许 Agent API** 开关，缺省开启。关闭后，所有 Agent API 请求（CORS 预检除外）都以 `403` `agent_api_disabled` 拒绝。各 Agent 的开关、审批模式和密钥都会保留，API 标签页上的开关显示为不可用，并附有说明。这个设置是 `GET`/`PUT /api/admin/settings` 中的 `agentApiEnabled`，在终端里用 `penguin agent api server on|off` 设置。
+**设置 › 服务器 › Agent API** 中有管理员的**允许 Agent API** 开关，缺省开启。关闭前会先确认；关闭后，所有 Agent API 请求（CORS 预检除外）都以 `403` `agent_api_disabled` 拒绝。各 Agent 的开关、审批模式和密钥都会保留，所有成员看到的 API 标签页开关都显示为不可用，并附有说明。见设置中的 [Agent API](/settings#agent-api)。这个设置是 `GET`/`PUT /api/admin/settings` 中的 `agentApiEnabled`，在终端里用 `penguin agent api server on|off` 设置。

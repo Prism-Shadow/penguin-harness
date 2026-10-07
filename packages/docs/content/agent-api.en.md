@@ -29,7 +29,7 @@ Where to go:
 4. Under **Keys**, select **New key**, name it and copy the key. It is shown once.
 5. Copy the **Base URL** and the **Agent ID** under **Connection**. **Examples** holds a curl command and a TypeScript snippet with both filled in and `$PENGUIN_AGENT_KEY` in place of the key.
 
-On the Agents page, an agent whose API is on carries an API icon after its name.
+On the **Agents** page, an agent whose API is on carries an API icon after its name, with the tooltip **API access on**.
 
 Turning **Enable API access** off refuses every request for the agent at once with `404` `agent_not_found`. Its keys and settings are kept for when it is turned back on.
 
@@ -320,4 +320,4 @@ Each command also takes `--project-id`, `--server` and `--json`. `--approve` tak
 
 ## The admin switch
 
-**Settings › Agent API** holds the administrator's **Allow the Agent API** switch, on by default. Turning it off refuses every Agent API request with `403` `agent_api_disabled`, the CORS preflight excepted. Agents' switches, approval modes and keys are kept, and the API tab shows its switch disabled with a note. The setting is `agentApiEnabled` in `GET`/`PUT /api/admin/settings`, and `penguin agent api server on|off` sets it from a terminal.
+**Settings › Server › Agent API** holds the administrator's **Allow the Agent API** switch, on by default. Turning it off asks first, then refuses every Agent API request with `403` `agent_api_disabled`, the CORS preflight excepted. Agents' switches, approval modes and keys are kept, and every member sees the API tab's switch disabled with a note saying why. See [Agent API](/settings#agent-api) in Settings. The setting is `agentApiEnabled` in `GET`/`PUT /api/admin/settings`, and `penguin agent api server on|off` sets it from a terminal.

@@ -204,7 +204,7 @@ penguin logs 402a2e24 -f
 
 ## penguin agent
 
-`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。
+`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。`agent api` 管理 Agent 的 API，见 [penguin agent api](#penguin-agent-api)。
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -223,6 +223,48 @@ penguin agent create --agent-id <id> [options]
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent api
+
+管理 Agent 的 [Agent API](/agent-api)，作用与它的 **API** 标签页相同：是否允许程序调用、无密钥访问、API 会话起始的审批模式，以及密钥。任何成员都能执行 `status` 和 `keys ls`；所有修改，服务器只接受 Project 所有者发起，`server` 只接受管理员发起。
+
+```bash
+penguin agent api status        --agent-id <id> [--project-id <id>] [--json] [--server <url>]
+penguin agent api enable        --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
+penguin agent api disable       --agent-id <id> [...]
+penguin agent api set           --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
+penguin agent api keys ls       --agent-id <id> [...]
+penguin agent api keys create   --agent-id <id> --name <name> [...]
+penguin agent api keys rm <keyId> --agent-id <id> [...]
+penguin agent api server on|off [--json] [--server <url>]
+```
+
+| 命令 | 作用 |
+| --- | --- |
+| `status` | 打印 API 是否开启、无密钥访问、审批模式、Base URL（服务器地址加上 `/api/amsp/v1`）、Agent ID（`<projectId>/<agentId>`）、密钥数量和服务器总开关。`--json` 打印 `{agent, baseUrl, api, serverEnabled}` |
+| `enable` | 开启 API；`--open` / `--no-open` 和 `--approve` 在同一个请求里设置无密钥访问和审批模式。打印执行后的状态 |
+| `disable` | 关闭 API。无密钥访问、审批模式和密钥都会保留。打印执行后的状态 |
+| `set` | 修改无密钥访问或审批模式，不改变开关。两者都没给时不发送任何请求，以非零码退出 |
+| `keys ls` | 列出密钥：id、名称、前缀、创建时间和最近使用时间（尚未被运行使用时为 `从未`）。`--json` 打印数组 |
+| `keys create` | 新建密钥。stdout 上只有密钥本身，确认信息写到 stderr，所以 `KEY=$(penguin agent api keys create …)` 恰好取到密钥。密钥只显示这一次。`--json` 打印 `{key, secret}` |
+| `keys rm` | 按 id 删除密钥；出示它的程序从下一个请求起即被拒绝。id 不存在时以 `key_not_found` 失败 |
+| `server` | 为整台服务器开启或关闭 Agent API（`agentApiEnabled`）。关闭后所有 Agent 的 API 请求都被拒绝，各 Agent 的设置和密钥保留。`on`、`off` 以外的状态不发送任何请求，直接失败 |
+
+选项：
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--agent-id <id>` | 目标 Agent。必填：与其他命令不同，它不会回退到 `PENGUIN_AGENT_ID` 或 `default_agent`，任何 Agent 都不会因默认值而被对外开放。 | — |
+| `--open` / `--no-open` | 允许无密钥访问 / 要求密钥（`enable`、`set`）。 | 不变 |
+| `--approve <mode>` | 新建 API 会话起始的审批模式，见[审批模式（--approve）](#审批模式--approve)。需要确认时，确认请求发给调用方程序（`enable`、`set`）。模式未知时，在发出任何请求之前失败。 | 不变 |
+| `--name <name>` | 密钥名称，1–64 个字符（`keys create`，必填）。 | — |
+| `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
+
+```bash
+penguin agent api enable --agent-id helper --approve read-only
+KEY=$(penguin agent api keys create --agent-id helper --name ci)
+penguin agent api status --agent-id helper --json
 ```
 
 ## penguin project
