@@ -226,7 +226,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
       // scribble over it — the renderer holds output while the input buffer is non-empty
       // and flushes once the line is submitted or cleared. TTY only.
       const syncInputHold = (): void => {
-        renderer.setInputHold(state === "running" && rli.line.length > 0);
+        renderer.setInputHold(
+          state === "running" && (rli.line.length > 0 || composer.hasPending()),
+        );
       };
       if (isTTY) {
         inputStream.on("data", () => setImmediate(syncInputHold));
@@ -267,11 +269,21 @@ export function registerChatCommand(program: Command, t: Messages): void {
       process.once("exit", cleanup);
 
       if (pasteFilter) {
+        // A paste is message text whether or not a Task runs: it waits in the composer for
+        // Enter, which sends it as the next prompt or, mid-run, as steering, the same as a
+        // typed line. Only the y/N answers (approval, exit confirmation) take no paste.
         pasteFilter.on("paste", (text: string) => {
-          if (state !== "idle") return; // ignore paste while running
+          if (state !== "idle" && state !== "running") return;
           const { lineCount, normalized } = composer.pushPaste(text);
           if (lineCount === 0) return;
-          out.write(`${normalized}\n`);
+          if (state === "running") {
+            // Through the renderer, which finishes an open streamed line first; the hold then
+            // keeps further output off the pasted text until it is sent.
+            renderer.printLine(normalized);
+            syncInputHold();
+          } else {
+            out.write(`${normalized}\n`);
+          }
           rl.setPrompt(CONT_PROMPT);
           rl.prompt();
         });
@@ -330,9 +342,16 @@ export function registerChatCommand(program: Command, t: Messages): void {
           resolve(parseApprovalAnswer(line, "allow"));
           return;
         }
-        // running: a non-empty line becomes a steering message for the running Task.
+        // running: a non-empty message becomes a steering message for the running Task, a
+        // paste waiting in the composer included (this Enter sends it whole).
         if (state === "running") {
-          const text = line.trim();
+          const { message } = composer.pushTypedLine(line);
+          if (message === undefined) {
+            rl.setPrompt(CONT_PROMPT);
+            rl.prompt();
+            return;
+          }
+          const text = message.trim();
           if (text.length === 0) return;
           steer(text);
         }
@@ -397,6 +416,14 @@ export function registerChatCommand(program: Command, t: Messages): void {
           }
           state = "idle";
           pendingLine = resolve;
+          // A paste made while the Task ran and not sent yet stays, under the continuation
+          // prompt: the next Enter sends it as this prompt.
+          if (composer.hasPending()) {
+            out.write("\n");
+            rl.setPrompt(CONT_PROMPT);
+            rl.prompt();
+            return;
+          }
           composer.reset();
           rli.line = "";
           rli.cursor = 0;
