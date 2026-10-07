@@ -820,6 +820,7 @@ const apiOf = (ctx: Ctx): AgentApiSettings => {
 router
   .get("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => ({
     api: structuredClone(apiOf(ctx)),
+    serverEnabled: ctx.store.f.serverSettings.agentApiEnabled,
   }))
   .put("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => {
     const settings = apiOf(ctx);
@@ -831,7 +832,10 @@ router
     if (typeof open === "boolean") settings.open = open;
     const mode = API_APPROVAL_MODES.find((m) => m === approvalMode);
     if (mode !== undefined) settings.approvalMode = mode;
-    return { api: structuredClone(settings) };
+    return {
+      api: structuredClone(settings),
+      serverEnabled: ctx.store.f.serverSettings.agentApiEnabled,
+    };
   })
   .post("/api/projects/:projectId/agents/:agentId/api/keys", (ctx): unknown => {
     const settings = apiOf(ctx);
@@ -843,7 +847,7 @@ router
     const key: AgentApiKeyInfo = {
       keyId: base64url(12),
       name,
-      prefix: secret.slice(0, 12),
+      prefix: secret.slice(0, 16),
       createdBy: ctx.store.f.user.userId,
       createdAt: new Date().toISOString(),
       lastUsedAt: null,

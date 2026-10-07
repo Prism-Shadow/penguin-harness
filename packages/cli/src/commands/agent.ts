@@ -22,7 +22,8 @@
  * created with (`--approve`, validated as `run` and `chat` validate theirs), and the keys. The
  * agent is always named with `--agent-id` — exposing one is never left to a default. `enable`,
  * `disable` and `set` print the resulting status, as `status` does; its last line is the
- * server-wide switch, which only an admin can read and which `server on|off` writes. `keys
+ * server-wide switch, which the settings read reports to any member and which `server on|off`
+ * (admins only) writes. `keys
  * create` prints the key bare on stdout — the only time it exists anywhere — and everything else
  * on stderr, so `KEY=$(penguin agent api keys create …)` captures exactly the key.
  * Docs: /docs/cli § "penguin agent".
@@ -38,7 +39,7 @@ import type {
   ServerSettingsResponse,
 } from "@prismshadow/penguin-server/api";
 import { resolveApprovalMode } from "../approval.js";
-import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
+import { resolveConnection, resolveProjectId, ServerClient } from "../client.js";
 import { listAgents } from "../server-session.js";
 import { displayWidth, renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
@@ -79,27 +80,17 @@ function settingsPatch(opts: ApiOpts, t: Messages): AgentApiUpdateRequest {
   };
 }
 
-/** The server-wide switch, or null when this account may not read it (only admins may). */
-async function readServerSwitch(client: ServerClient): Promise<boolean | null> {
-  try {
-    const res = await client.request<ServerSettingsResponse>("GET", "/api/admin/settings");
-    return typeof res.settings.agentApiEnabled === "boolean" ? res.settings.agentApiEnabled : null;
-  } catch (err) {
-    if (err instanceof ApiError) return null;
-    throw err;
-  }
-}
-
 /** Prints the settings as `status` shows them: a heading and one aligned line per fact, or JSON. */
-async function printStatus(
+function printStatus(
   client: ServerClient,
   ref: string,
-  settings: AgentApiSettings,
+  res: AgentApiResponse,
   json: boolean,
   t: Messages,
-): Promise<void> {
+): void {
   const baseUrl = `${client.conn.baseUrl}/api/amsp/v1`;
-  const server = await readServerSwitch(client);
+  const settings: AgentApiSettings = res.api;
+  const server = res.serverEnabled;
   if (json) {
     process.stdout.write(
       `${JSON.stringify({ agent: ref, baseUrl, api: settings, serverEnabled: server })}\n`,
@@ -114,14 +105,7 @@ async function printStatus(
     [t.agent.apiFieldBaseUrl(), baseUrl],
     [t.agent.apiFieldAgentId(), ref],
     [t.agent.apiFieldKeys(), String(settings.keys.length)],
-    [
-      t.agent.apiFieldServer(),
-      server === null
-        ? t.agent.apiServerUnknown()
-        : server
-          ? t.agent.apiServerOn()
-          : t.agent.apiServerOff(),
-    ],
+    [t.agent.apiFieldServer(), server ? t.agent.apiServerOn() : t.agent.apiServerOff()],
   ];
   const width = Math.max(...rows.map(([label]) => displayWidth(label)));
   const lines = rows.map(
@@ -135,7 +119,7 @@ async function writeSettings(opts: ApiOpts, patch: AgentApiUpdateRequest, t: Mes
   const { path, ref } = target(opts);
   const client = await connect(opts, t);
   const res = await client.request<AgentApiResponse>("PUT", path, patch);
-  await printStatus(client, ref, res.api, opts.json === true, t);
+  printStatus(client, ref, res, opts.json === true, t);
 }
 
 function registerApiCommands(agent: Command, t: Messages): void {
@@ -159,7 +143,7 @@ function registerApiCommands(agent: Command, t: Messages): void {
       const { path, ref } = target(opts);
       const client = await connect(opts, t);
       const res = await client.request<AgentApiResponse>("GET", path);
-      await printStatus(client, ref, res.api, opts.json === true, t);
+      printStatus(client, ref, res, opts.json === true, t);
     },
   );
 

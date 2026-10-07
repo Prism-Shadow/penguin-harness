@@ -12,8 +12,9 @@
  * - A created key's secret is on screen in its own panel, whose copy button copies exactly the
  *   secret and whose Done hands back; with no secret pending there is no panel.
  * - The examples call the real Base URL and Agent ID, with the key left as $PENGUIN_AGENT_KEY.
- * - With the admin's server-wide switch off, the tab's switch is disabled and says why; a member
- *   who is not the owner finds every control disabled, no key actions, and is told why.
+ * - With the admin's server-wide switch off, the tab's switch is disabled and says why, to every
+ *   member and not only an admin (the tab's own read carries the switch); a member who is not the
+ *   owner finds every control disabled, no key actions, and is told why.
  * - Turning the API off asks first, in the danger tone. Answered yes, it writes the switch off
  *   and hands on what the server stored; a failed write is handed on as the failure.
  * - Deleting a key asks first, naming it. Answered yes, it deletes that key and hands on its id;
@@ -27,7 +28,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, isValidElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { AgentApiKeyInfo, AgentApiSettings } from "@prismshadow/penguin-server/api";
+import type {
+  AgentApiKeyInfo,
+  AgentApiResponse,
+  AgentApiSettings,
+} from "@prismshadow/penguin-server/api";
 import { Button, CopyButton, Select, ToggleRow } from "@prismshadow/penguin-ui";
 import {
   AgentApiOffConfirm,
@@ -57,7 +62,7 @@ vi.mock("@prismshadow/penguin-ui", async (importOriginal) => {
 const USED: AgentApiKeyInfo = {
   keyId: "kq3VtX9cRb2LmN0a",
   name: "docs-site search",
-  prefix: "penguin_Zr8k",
+  prefix: "penguin_Zr8kQ2vT",
   createdBy: "admin",
   createdAt: "2026-10-01T08:00:00.000Z",
   lastUsedAt: "2026-10-07T09:30:00.000Z",
@@ -66,7 +71,7 @@ const FRESH: AgentApiKeyInfo = {
   ...USED,
   keyId: "Hc7pW2sYd4EfJ6uB",
   name: "weekly report",
-  prefix: "penguin_4mGx",
+  prefix: "penguin_4mGxL7pA",
   lastUsedAt: null,
 };
 const ON: AgentApiSettings = {
@@ -178,12 +183,12 @@ describe("the API tab", () => {
     expect(render()).toContain(`${BASE}/agents/demo/coder/runs`);
   });
 
-  it("disables the switch and says why when the admin has the API off server-wide", () => {
+  it("disables the switch and tells any member why when the admin has the API off server-wide", () => {
     const [toggle] = find(ApiTabView(props({ serverEnabled: false })), ToggleRow);
     expect(toggle!.props.disabled).toBe(true);
     expect(render({ serverEnabled: false })).toContain(S.agent.apiAdminOff);
-    // A viewer who may not read the server switch is not told it is off.
-    expect(render({ serverEnabled: null })).not.toContain(S.agent.apiAdminOff);
+    expect(render({ serverEnabled: false, isOwner: false })).toContain(S.agent.apiAdminOff);
+    expect(render()).not.toContain(S.agent.apiAdminOff);
   });
 
   it("leaves a member who is not the owner every control disabled and no key action", () => {
@@ -212,8 +217,8 @@ describe("turning an Agent's API off", () => {
     }) as Confirm;
 
   it("asks first in the danger tone; answered yes, writes it off and hands on what was stored", async () => {
-    const stored: AgentApiSettings = { ...ON, enabled: false };
-    const fetch = stubFetch(() => json({ api: stored }));
+    const stored: AgentApiResponse = { api: { ...ON, enabled: false }, serverEnabled: true };
+    const fetch = stubFetch(() => json(stored));
     const onWriting = vi.fn();
     const onSettled = vi.fn();
     const question = confirm(onSettled, onWriting);
@@ -222,7 +227,7 @@ describe("turning an Agent's API off", () => {
     expect(fetch.requests).toEqual([]);
     question.props.onConfirm();
     expect(onWriting).toHaveBeenCalledOnce();
-    await vi.waitFor(() => expect(onSettled).toHaveBeenCalledExactlyOnceWith({ api: stored }));
+    await vi.waitFor(() => expect(onSettled).toHaveBeenCalledExactlyOnceWith(stored));
     expect(fetch.requests.map((r) => [r.method, r.path, r.body])).toEqual([
       ["PUT", "/api/projects/demo/agents/coder/api", { enabled: false }],
     ]);

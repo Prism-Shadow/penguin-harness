@@ -1163,7 +1163,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         {
           keyId: "kq3VtX9cRb2LmN0a",
           name: L("文档站检索", "docs-site search"),
-          prefix: "penguin_Zr8k",
+          prefix: "penguin_Zr8kQ2vT",
           createdBy: user.userId,
           createdAt: iso(ago(21)),
           lastUsedAt: iso(ago(0, 12)),
@@ -1171,7 +1171,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         {
           keyId: "Hc7pW2sYd4EfJ6uB",
           name: L("每周报告脚本", "weekly report script"),
-          prefix: "penguin_4mGx",
+          prefix: "penguin_4mGxL7pA",
           createdBy: user.userId,
           createdAt: iso(ago(2)),
           lastUsedAt: null,

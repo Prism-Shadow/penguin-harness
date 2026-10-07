@@ -11,9 +11,9 @@
  * create response: it is shown once, in a panel with its copy button, until Done, and afterwards
  * the list names the key by its prefix alone.
  *
- * The admin's server-wide switch (Settings › Agent API) overrides every Agent: when it is off the
- * switch here is disabled and says so, and nothing is lost. Only an admin can read that switch, so
- * for anyone else the tab takes it as on.
+ * The admin's server-wide switch (Settings › Server › Agent API) overrides every Agent: when it is
+ * off the switch here is disabled and says so, and nothing is lost. The tab's own read carries that
+ * switch (`serverEnabled`), so every member sees it, not only an admin.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
@@ -44,7 +44,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { APPROVAL_MODES } from "../chat/approval-mode";
 
@@ -91,7 +90,8 @@ const deleteKey = (projectId: string, agentId: string, keyId: string): Promise<v
 
 /**
  * The question before the Agent's API goes off, in the danger tone. Answered yes, it says the
- * write began, writes the switch off and hands on the outcome: the stored settings, or the failure.
+ * write began, writes the switch off and hands on the outcome: what the server stored, or the
+ * failure.
  */
 export function AgentApiOffConfirm({
   open,
@@ -106,7 +106,7 @@ export function AgentApiOffConfirm({
   agentId: string;
   onClose: () => void;
   onWriting: () => void;
-  onSettled: (outcome: { api: AgentApiSettings } | { error: unknown }) => void;
+  onSettled: (outcome: AgentApiResponse | { error: unknown }) => void;
 }) {
   return (
     <ConfirmModal
@@ -117,7 +117,7 @@ export function AgentApiOffConfirm({
         onClose();
         onWriting();
         switchOffAgentApi(projectId, agentId).then(
-          (res) => onSettled({ api: res.api }),
+          (res) => onSettled(res),
           (error: unknown) => onSettled({ error }),
         );
       }}
@@ -248,8 +248,8 @@ function KeyRow({
 
 export interface ApiTabViewProps {
   settings: AgentApiSettings;
-  /** The admin's server-wide switch; null when this viewer may not read it (not an admin). */
-  serverEnabled: boolean | null;
+  /** The admin's server-wide switch, as the tab's own read reports it to every member. */
+  serverEnabled: boolean;
   isOwner: boolean;
   busy: boolean;
   baseUrl: string;
@@ -272,7 +272,7 @@ export interface ApiTabViewProps {
 
 /** The tab as it reads for one state of the settings: no state of its own. */
 export function ApiTabView(p: ApiTabViewProps) {
-  const serverOff = p.serverEnabled === false;
+  const serverOff = !p.serverEnabled;
   const examples = agentApiExamples(p.baseUrl, p.agentRef);
   const onDraftKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") p.onCreateKey();
@@ -403,13 +403,11 @@ export function ApiTab({
   agentId: string;
   isOwner: boolean;
 }) {
-  const { user } = useAuth();
-  const isAdmin = user?.isAdmin === true;
   const { reloadAgents } = useProject();
   const [settings, setSettings] = useState<AgentApiSettings | null>(null);
   // Only the initial load failure renders inline; writes report via toast.
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [serverEnabled, setServerEnabled] = useState<boolean | null>(null);
+  const [serverEnabled, setServerEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
   const [deleting, setDeleting] = useState<AgentApiKeyInfo | null>(null);
@@ -423,25 +421,18 @@ export function ApiTab({
     setLoadError(null);
     api.getAgentApi(projectId, agentId).then(
       (res) => {
-        if (!cancelled) setSettings(res.api);
+        if (cancelled) return;
+        setSettings(res.api);
+        setServerEnabled(res.serverEnabled);
       },
       (e: unknown) => {
         if (!cancelled) setLoadError(apiErrorText(e));
       },
     );
-    // The server-wide switch is an admin read; anyone else is answered 403, so not asked.
-    if (isAdmin) {
-      api.adminGetSettings().then(
-        (res) => {
-          if (!cancelled) setServerEnabled(res.settings.agentApiEnabled);
-        },
-        () => undefined,
-      );
-    }
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, isAdmin]);
+  }, [projectId, agentId]);
 
   /** One settings write: the stored answer replaces the view, a failure says why. */
   const write = useCallback(
@@ -450,6 +441,7 @@ export function ApiTab({
       try {
         const res = await api.putAgentApi(projectId, agentId, patch);
         setSettings(res.api);
+        setServerEnabled(res.serverEnabled);
         // The Agents list marks an Agent whose API is on.
         if (patch.enabled !== undefined) void reloadAgents();
       } catch (e) {
@@ -527,6 +519,7 @@ export function ApiTab({
         onSettled={(outcome) => {
           if ("api" in outcome) {
             setSettings(outcome.api);
+            setServerEnabled(outcome.serverEnabled);
             void reloadAgents();
           } else toastError(apiErrorText(outcome.error));
           setBusy(false);

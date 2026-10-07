@@ -215,8 +215,6 @@ export interface Messages {
     apiNo(): string;
     apiServerOn(): string;
     apiServerOff(): string;
-    /** The server-wide switch could not be read (only admins may). */
-    apiServerUnknown(): string;
     /** `keys ls` columns, and the line for an agent with none. */
     apiColKeyId(): string;
     apiColKeyName(): string;
@@ -1280,7 +1278,6 @@ const en: Messages = {
     apiNo: () => "no",
     apiServerOn: () => "on",
     apiServerOff: () => "off (every API request is refused)",
-    apiServerUnknown: () => "unknown (only an admin can read it)",
     apiColKeyId: () => "ID",
     apiColKeyName: () => "NAME",
     apiColPrefix: () => "PREFIX",
@@ -2330,7 +2327,6 @@ const zh: Messages = {
     apiNo: () => "否",
     apiServerOn: () => "开",
     apiServerOff: () => "关（所有 API 请求均被拒绝）",
-    apiServerUnknown: () => "未知（仅管理员可读取）",
     apiColKeyId: () => "ID",
     apiColKeyName: () => "名称",
     apiColPrefix: () => "前缀",

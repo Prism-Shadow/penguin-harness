@@ -10,7 +10,8 @@
  * - `set` sends only what it is given; given nothing, it sends nothing and fails.
  * - An unknown `--approve` mode fails before any request.
  * - The agent is never a default: without `--agent-id`, nothing is sent.
- * - `status` shows an admin the server-wide switch, and tells anyone else it cannot be read.
+ * - `status` shows the server-wide switch to any member, an admin or not, from the agent's own
+ *   settings read: the admin settings are never asked.
  * - `server off` / `server on` write the server-wide switch; any other state sends nothing.
  * - `keys rm` deletes the key; an unknown key fails with the server's code.
  */
@@ -162,20 +163,21 @@ describe("penguin agent api enable / disable / set", () => {
 });
 
 describe("penguin agent api status / server", () => {
-  it("status shows an admin the server switch, and tells anyone else it cannot be read", async () => {
-    server.adminSettings = { agentApiEnabled: false };
+  it("status shows the server switch to a member who is not an admin, without asking the admin settings", async () => {
+    server.adminSettings = { ...server.adminSettings, agentApiEnabled: false };
+    server.adminForbidden = true;
     expect(await cli(["agent", "api", "status", "--agent-id", "default_agent"])).toBe(0);
     expect(out()).toMatch(new RegExp(`${t.agent.apiFieldServer()}\\s+off`));
 
-    server.adminSettings = "forbidden";
     stdout.length = 0;
     expect(await cli(["agent", "api", "status", "--agent-id", "default_agent", "--json"])).toBe(0);
     expect(JSON.parse(out())).toEqual({
       agent: REF,
       baseUrl: "http://127.0.0.1:7399/api/amsp/v1",
       api: { enabled: false, open: false, approvalMode: "allow-all", keys: [] },
-      serverEnabled: null,
+      serverEnabled: false,
     });
+    expect(server.requests.some((r) => r.path === "/api/admin/settings")).toBe(false);
   });
 
   it("server off and on write the server-wide switch", async () => {

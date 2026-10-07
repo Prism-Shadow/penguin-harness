@@ -249,8 +249,11 @@ export class FakeServer {
    * as the server reads one never configured (off, keyed, allow-all, no keys).
    */
   readonly agentApi = new Map<string, FakeAgentApiState>();
-  /** What GET /api/admin/settings answers; `"forbidden"` answers 403, as for a non-admin account. */
-  adminSettings: Json | "forbidden" = {
+  /**
+   * What GET /api/admin/settings answers. Its `agentApiEnabled` is also every agent API settings
+   * answer's `serverEnabled`, which any member reads.
+   */
+  adminSettings: Json = {
     proxyForApp: true,
     proxyForAgent: true,
     proxyUrl: null,
@@ -260,6 +263,8 @@ export class FakeServer {
     browserExtensionsEnabled: true,
     agentApiEnabled: true,
   };
+  /** The admin settings routes answer 403, as for an account that is not an admin. */
+  adminForbidden = false;
   /** Every secret POST …/api/keys minted, in order: short and obviously fake, never key-shaped. */
   readonly mintedSecrets: string[] = [];
   private nextKeyOrdinal = 1;
@@ -449,7 +454,7 @@ export class FakeServer {
         if (typeof body?.open === "boolean") api.open = body.open;
         if (typeof body?.approvalMode === "string") api.approvalMode = body.approvalMode;
       }
-      return this.json({ api });
+      return this.json({ api, serverEnabled: this.adminSettings.agentApiEnabled !== false });
     }
     if (keyId === undefined && method === "POST") {
       const name = typeof body?.name === "string" ? body.name.trim() : "";
@@ -1790,9 +1795,7 @@ export class FakeServer {
     }
 
     if (apiPath === "/api/admin/settings") {
-      if (this.adminSettings === "forbidden") {
-        return this.error(403, "forbidden", "Admins only.");
-      }
+      if (this.adminForbidden) return this.error(403, "forbidden", "Admins only.");
       if (method === "PUT") this.adminSettings = { ...this.adminSettings, ...body };
       return this.json({ settings: this.adminSettings });
     }

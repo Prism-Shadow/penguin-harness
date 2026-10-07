@@ -220,6 +220,16 @@ describe("the mocked API", () => {
     expect((await api.getAgentApi(project, agent)).api.keys).toEqual([]);
   });
 
+  it("tells an Agent's API tab when the admin has turned the Agent API off server-wide", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    expect((await api.getAgentApi(project, agent)).serverEnabled).toBe(true);
+    await api.adminPutSettings({ agentApiEnabled: false });
+    expect((await api.getAgentApi(project, agent)).serverEnabled).toBe(false);
+    expect((await api.putAgentApi(project, agent, { open: true })).serverEnabled).toBe(false);
+  });
+
   it("serves the group tables a new Project writes, and takes a protocol or a cleared key on any group", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
