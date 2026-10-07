@@ -6,8 +6,9 @@
  * benchmark repository, which keeps the source's name. Every case is a Harbor task directory
  * there (`task` names it), written here as text only — see builtin-benchmarks.ts for how a row
  * becomes a statement and a rubric. Each list is the tasks marked `final` in that benchmark's
- * `selection.json` in the repository, in its order, and the caps are its `job.yaml`'s; a later
- * change to the set is a row edit, and the case numbers (`CASE-001-…`) follow the rows' order.
+ * `selection.json` in the repository, in its order, and the caps and the time-budget note are its
+ * `job.yaml`'s; a later change to the set is a row edit, and the case numbers (`CASE-001-…`)
+ * follow the rows' order.
  * A Project keeps the case list it was created with (project-benchmarks.ts writes a Benchmark
  * once, when the Project is created). Summaries say what a task asks and what it delivers, never
  * how to solve it: they are public to every agent that reads the Benchmark, an optimizer
@@ -57,9 +58,9 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     id: "penguinharness-benchmark-sec-a",
     title: "PenguinHarness Benchmark Sec A",
     description:
-      "Sec A is rag-bench-essential (Data Analysis Bench): data analysis over long PDFs, scanned " +
-      "forms, hierarchical tables, spreadsheets and document libraries, scored pass or fail by " +
-      `each case's own scorer. ${BUILT_IN}`,
+      "Sec A is rag-bench-essential (Data Analysis Bench): data analysis over long reports, " +
+      "hierarchical tables, spreadsheets, document libraries, a 144 MB survey microdata file and " +
+      `a Formula 1 SQLite database, scored pass or fail by each case's own scorer. ${BUILT_IN}`,
     repoDir: "rag-bench-essential",
     source: "rag-bench-essential, Data Analysis Bench (converted to Harbor tasks)",
     upstream: {
@@ -79,24 +80,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "Determine which fee rules apply to one merchant on one day from a 138k-row payments file, about a thousand fee rules and a domain manual. The answer is a set of fee IDs.",
         category: "Payments analytics / DABstep",
-        cpus: 1,
-        memoryMb: 4096,
-      },
-      {
-        task: "docfinqa_oilgas_canada_pdf_hard",
-        title: "Answer a financial question from an annual-report PDF",
-        summary:
-          "Answer a DocFinQA question from the original annual-report PDF rather than pre-extracted text, which takes finding the relevant production table and computing a percentage.",
-        category: "Long PDF financial QA / DocFinQA",
-        cpus: 1,
-        memoryMb: 4096,
-      },
-      {
-        task: "docvqa_contract_effective_date_ocr_hard",
-        title: "Read a date from a scanned contract form",
-        summary:
-          "Answer a DocVQA question about a scanned form with handwritten fields; finding the right date field takes OCR and a careful reading of the page.",
-        category: "Scanned document OCR / DocVQA",
         cpus: 1,
         memoryMb: 4096,
       },
@@ -163,6 +146,24 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         cpus: 1,
         memoryMb: 4096,
       },
+      {
+        task: "longda_nscg_telework_hard",
+        title: "Count teleworkers by employer size from survey microdata",
+        summary:
+          "From the public-use file of the 2023 National Survey of College Graduates, a 144 MB microdata table with thousands of columns, and its documentation, compute the weighted counts of workers who were allowed to telework and did so, by employer size. The answer is seven counts in thousands.",
+        category: "Long-document data analysis / LongDA",
+        cpus: 1,
+        memoryMb: 4096,
+      },
+      {
+        task: "spider2lite_f1_overtake_audit_hard",
+        title: "Audit overtakes in a Formula 1 database",
+        summary:
+          "From a Formula 1 SQLite database of about 1.9 million rows and the rules that classify overtakes, count the overtake events by category in two race scopes and list the drivers overtaken on track more often than they overtook. The answers go into three CSV files.",
+        category: "SQL analytics / Spider2-Lite",
+        cpus: 1,
+        memoryMb: 4096,
+      },
     ],
   },
   {
@@ -192,15 +193,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         memoryMb: 8192,
       },
       {
-        task: "tengo-callable-instance-isolation",
-        title: "Fix Go-side calls of Tengo callables and closures",
-        summary:
-          "Let Go code invoke exported Tengo functions and closures while keeping their runtime context and isolating the state of each compiled instance. Make the fix in the Tengo repository and commit it.",
-        category: "Go / bugfix",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
         task: "expr-try-catch-errors",
         title: "Add try/catch error recovery to expr",
         summary:
@@ -219,29 +211,11 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         memoryMb: 8192,
       },
       {
-        task: "fastapi-implicit-head-options",
-        title: "Add implicit HEAD and automatic OPTIONS responses to FastAPI",
-        summary:
-          "Add configurable implicit HEAD handling and automatic OPTIONS responses for FastAPI routes, routers and included routers. Implement it in the FastAPI repository and commit it.",
-        category: "Python / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
         task: "httpx-streaming-json-iteration",
         title: "Add streaming JSON iteration to HTTPX responses",
         summary:
           "Add response iterators that parse JSON values incrementally from supported streaming media types. Implement them in the HTTPX repository and commit them.",
         category: "Python / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
-        task: "ts-pattern-match-each",
-        title: "Add matchEach to ts-pattern",
-        summary:
-          "Add a matcher to ts-pattern that evaluates every matching clause and returns all their results in order. Implement it in the ts-pattern repository and commit it.",
-        category: "TypeScript / feature request",
         cpus: 2,
         memoryMb: 8192,
       },
@@ -255,20 +229,47 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         memoryMb: 8192,
       },
       {
-        task: "fd-deterministic-multi-key-sorting",
-        title: "Add deterministic multi-key sorting to fd",
-        summary:
-          "Add repeatable multi-key sorting of fd's output, with deterministic tie-breaking and a seeded random order. Implement it in the fd repository and commit it.",
-        category: "Rust / feature request",
-        cpus: 2,
-        memoryMb: 8192,
-      },
-      {
         task: "katex-multicolumn-array-spans",
         title: "Add multicolumn spans to KaTeX array environments",
         summary:
           "Parse and render `\\multicolumn` in KaTeX's array-like environments, with span-aware alignment and errors. Implement it in the KaTeX repository and commit it.",
         category: "JavaScript / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "etree-xml-diff-patch",
+        title: "Add XML diff, patch and merge operations to etree",
+        summary:
+          "Add structural comparison, diffing, patch generation and application, reverse patches, three-way merge with conflict reporting, and diff summaries to the etree XML library. Implement them in the etree repository and commit them.",
+        category: "Go / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "bandit-interprocedural-taint-checks",
+        title: "Add taint-tracking injection checks to Bandit",
+        summary:
+          "Add Bandit checks for SQL injection, shell injection, path traversal, SSRF and XSS that flag user input reaching a sink through variables, string formatting, assignments and calls, and treat parameterized queries and the listed sanitizers as safe. Implement them in the Bandit repository and commit them.",
+        category: "Python / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "kysely-window-grouping-helpers",
+        title: "Add grouping-set and window-frame helpers to Kysely",
+        summary:
+          "Add CUBE, ROLLUP and GROUPING SETS clauses, window-frame builders with exclusions, ranking and value window functions with null handling, and a plugin that strips redundant default frames to Kysely's query builder. Implement them in the Kysely repository and commit them.",
+        category: "TypeScript / feature request",
+        cpus: 2,
+        memoryMb: 8192,
+      },
+      {
+        task: "pest-character-class-coalescing",
+        title: "Coalesce choices into character classes in pest",
+        summary:
+          "Add an optimizer pass to pest that collapses qualifying chains of single-character and range alternatives into merged character classes, and negated ones into negated character classes. Implement it in the pest repository and commit it.",
+        category: "Rust / feature request",
         cpus: 2,
         memoryMb: 8192,
       },
@@ -319,29 +320,11 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         memoryMb: 2048,
       },
       {
-        task: "marketing-1008-contact-data-cleanup",
-        title: "Audit and tag CRM contacts",
-        summary:
-          "Audit the CRM's contacts for malformed and duplicate records under the applicable data policy, tag the clean records and report the result, respecting the exemptions the policy names (HubSpot, Gmail, Slack). The task passes only when all 15 end-state assertions hold.",
-        category: "Marketing / Data cleanup",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
         task: "operations-1323-access-request-validation",
         title: "Approve or deny access requests by policy",
         summary:
           "Decide the pending access requests against a seniority policy table, skip the ones already processed, and route approvals and denials to their channels (Google Sheets, Asana, Gmail). The task passes only when all 12 end-state assertions hold.",
         category: "Operations / Negative selection",
-        cpus: 1,
-        memoryMb: 2048,
-      },
-      {
-        task: "operations-1339-contractor-badge-expiration",
-        title: "Warn contractors whose badges expire soon",
-        summary:
-          "Find the contractor badges that expire within two weeks, apply the exclusions the records call for, and notify each remaining holder by SMS, email and chat (Google Sheets, Twilio, Gmail, Slack). The task passes only when all 18 end-state assertions hold.",
-        category: "Operations / Date window with exclusions",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -355,29 +338,47 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         memoryMb: 2048,
       },
       {
-        task: "finance-4003-overdue-invoice-followup",
-        title: "Follow up overdue invoices by the collections process",
+        task: "finance-4020-tax-prep-summary",
+        title: "Compile 1099-NEC data for the accountant",
         summary:
-          "Check an accounts-receivable tracker for overdue invoices, act on each as the company's collections process prescribes, and update the tracker rows (Gmail, Google Sheets). The task passes only when all 8 end-state assertions hold.",
-        category: "Finance / Rule-based escalation",
+          "Compile the quarter's 1099-NEC preparation data under the current filing guidelines, which may have changed vendor classifications, and email the accountant each qualifying vendor's name, total paid and tax ID with the overall total (Google Sheets, Google Drive, Slack, Gmail). The task passes only when all 9 end-state assertions hold.",
+        category: "Finance / Classification with updated rules",
         cpus: 1,
         memoryMb: 2048,
       },
       {
-        task: "hr-5032-employee-directory-update",
-        title: "Update the employee directory",
+        task: "hr-5066-intern-program-coordination",
+        title: "Set up the summer intern program",
         summary:
-          "Apply a new hire, a termination and a title change to the employee directory sheet in place, then post a summary (Google Sheets, Slack). The task passes only when all 8 end-state assertions hold.",
-        category: "HR / Record maintenance",
+          "Set up the summer intern program for the interns whose background checks have cleared: onboarding tasks, mentor emails with each intern's school and start date, corporate credit cards, company email accounts and a welcome announcement, taking the notes on mentor availability and program updates into account (Google Sheets, Google Drive, Asana, Gmail, Slack). The task passes only when all 18 end-state assertions hold.",
+        category: "HR / Scope limited by policy",
         cpus: 1,
         memoryMb: 2048,
       },
       {
-        task: "hr-5018-candidate-rejection-followup",
-        title: "Send candidate rejection follow-ups",
+        task: "marketing-1011-ad-performance-review",
+        title: "Pause underperforming ad campaigns",
         summary:
-          "Send each candidate the follow-up the recruiting sheet's notes call for, within the company's contact policy (Google Sheets, Gmail). The task passes only when all 8 end-state assertions hold.",
-        category: "HR / Conflicting instructions",
+          "Review the Google Ads campaigns' performance data, pause the underperformers under the current criteria, which recent policy changes may have altered, and email marketing a summary naming the affected campaigns and amounts (Google Sheets, Google Drive, Google Ads, Slack, Gmail). The task passes only when all 20 end-state assertions hold.",
+        category: "Marketing / Metrics under a changed policy",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "operations-1271-twilio-facilities-emergency",
+        title: "Handle the most critical facilities emergency",
+        summary:
+          "Identify the most critical new facilities emergency from the queue and the safety team's latest priority updates, then text the on-call person its details and how many remain, log it on a Monday board and in Notion, and alert the building's occupants (Google Sheets, Google Drive, Twilio, Monday, Notion, Gmail). The task passes only when all 28 end-state assertions hold.",
+        category: "Operations / Prioritization with exclusions",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "operations-1386-hazmat-shipping-compliance",
+        title: "Send hazmat declarations for outbound shipments",
+        summary:
+          "Send an international hazmat declaration through DocuSign for each outbound shipment that the stated destination, reclassification and declaration-status rules select, then email the compliance officer and post a summary with the count to the logistics channel (Google Sheets, Google Drive, DocuSign, Gmail, Slack). The task passes only when all 24 end-state assertions hold.",
+        category: "Operations / Compliance rules",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -400,20 +401,17 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     sharedNetwork: true,
     verifier: "separate container",
     downloads: "Docker Hub and the package mirrors the task images build from",
-    runTimeout: "25m",
-    maxTurns: 200,
-    note: "Each task image builds from its Dockerfile on first use, typically in 5 to 20 minutes; later runs reuse it.",
+    runTimeout: "40m",
+    maxTurns: 320,
+    timeBudgetNote:
+      "Your run is stopped after 40 minutes of wall-clock time; whatever the output files hold at that point is graded. Write a first complete answer early and refine it.",
+    note:
+      "Each task image builds from its Dockerfile on first use, typically within a few minutes; " +
+      "later runs reuse it. Caps are 40 minutes and 320 turns, raised after the first " +
+      "measurement stopped most 25-minute trials before they finished, and " +
+      "`time_budget_note` tells the agent its budget before the task's instruction; upstream " +
+      "tells its agents nothing.",
     cases: [
-      {
-        task: "symbolic-regression",
-        title: "Recover a hidden sparse rule behind a binary label",
-        summary:
-          "Training data holds 300 rows of 100 numeric predictors and a binary label produced by a sparse non-linear rule plus a little noise. Edit the provided regressor so it generalises to a held-out test set.",
-        category: "Mathematical sciences / Statistics",
-        cpus: 1,
-        memoryMb: 2048,
-        expertHours: 2,
-      },
       {
         task: "variable-star-vetting",
         title: "Classify variable stars and measure their periods",
@@ -423,26 +421,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         cpus: 2,
         memoryMb: 2048,
         expertHours: 3,
-      },
-      {
-        task: "geometric-pharmacophore-alignment",
-        title: "Pose six ligands into pharmacophore volumes",
-        summary:
-          "Generate a pose for each of six ligands so that its features fall inside the target's pharmacophore interaction volumes and no atom enters an excluded volume; one ligand is a macrocycle. The poses go into one SDF file.",
-        category: "Physical sciences / Chemistry",
-        cpus: 4,
-        memoryMb: 2048,
-        expertHours: 8,
-      },
-      {
-        task: "dapi-he-alignment",
-        title: "Match single cells between DAPI and H&E images",
-        summary:
-          "Register DAPI fluorescence images to deformed H&E histology images for three breast-cancer tissue patches, and match the single cells between the two modalities. The matches go into one CSV file per patch.",
-        category: "Life sciences / Medicine",
-        cpus: 2,
-        memoryMb: 4096,
-        expertHours: 4,
       },
       {
         task: "clinical-metadata-recovery",
@@ -455,41 +433,11 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         expertHours: 4,
       },
       {
-        task: "genomic-model-ranking",
-        title: "Rank genomic models by transfer and predict target labels",
-        summary:
-          "Rank the supplied genomic prediction models by how well they transfer to target sequence families and cell contexts, and estimate a label probability for every unlabelled target example. The deliverables are the ranking, the predictions and the script that makes them.",
-        category: "Life sciences / Biology",
-        cpus: 2,
-        memoryMb: 4096,
-        expertHours: 5,
-      },
-      {
-        task: "diag-chipseq",
-        title: "Normalize ChIP-seq signal against an external reference",
-        summary:
-          "For four blinded H3K9ac ChIP-seq comparisons, decide which external-reference measurements support quantitative scaling, and recover the externally corrected global and peak-level changes between perturbed and control samples. The results go into three TSV tables.",
-        category: "Life sciences / Biology",
-        cpus: 2,
-        memoryMb: 4096,
-        expertHours: 5,
-      },
-      {
         task: "mri-harmonization",
         title: "Harmonize MRI features across scanners",
         summary:
           "From subjects scanned on several MRI scanners, build a model that removes scanner effects from 221 multimodal imaging-derived phenotypes while keeping each subject's biological signal. The model is one JSON file.",
         category: "Life sciences / Neuroscience",
-        cpus: 2,
-        memoryMb: 4096,
-        expertHours: 4,
-      },
-      {
-        task: "baseline-free-localization",
-        title: "Localize damage from a single guided-wave inspection",
-        summary:
-          "Implement a method that localizes damage in a plate from one guided-wave inspection, with neither a pristine reference measurement nor labelled examples. The deliverable is a Python solution file.",
-        category: "Engineering sciences / Mechanical engineering",
         cpus: 2,
         memoryMb: 4096,
         expertHours: 4,
@@ -503,6 +451,66 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         cpus: 2,
         memoryMb: 4096,
         expertHours: 18,
+      },
+      {
+        task: "virtual-baseline-localization",
+        title: "Localize a real crack from a simulated baseline",
+        summary:
+          "Implement a method that localizes a real crack in experimental guided-wave inspections of a plate, given only the simulated response of a finite-element digital twin whose dimensions and sensor layout differ from the real plate's. The deliverable is a Python solution file, run on withheld inspections.",
+        category: "Engineering sciences / Mechanical engineering",
+        cpus: 2,
+        memoryMb: 4096,
+        expertHours: 4,
+      },
+      {
+        task: "guided-wave-localization",
+        title: "Localize damage from one healthy guided-wave reference",
+        summary:
+          "Implement a method that localizes damage in a guided-wave inspection of a plate, given a single undamaged reference inspection that may come from another plate geometry, sensor layout and operating condition. The deliverable is a Python solution file, run on withheld damaged inspections.",
+        category: "Engineering sciences / Mechanical engineering",
+        cpus: 2,
+        memoryMb: 4096,
+        expertHours: 4,
+      },
+      {
+        task: "foraging-cognitive-model",
+        title: "Predict mouse choices with a compact cognitive model",
+        summary:
+          "Fit a compact cognitive model to the choices of 20 mice in a two-armed bandit foraging task and predict their trial-by-trial choices in later, held-out sessions, carrying at most four quantities from trial to trial. The deliverable is a Python model module, scored by its likelihood against a per-animal ceiling.",
+        category: "Life sciences / Neuroscience",
+        cpus: 4,
+        memoryMb: 4096,
+        expertHours: 12,
+      },
+      {
+        task: "linked-cell-suppression",
+        title: "Protect linked statistical tables by cell suppression",
+        summary:
+          "Write a program that chooses complementary cell suppressions across linked aggregate tables so that a linear-programming attacker cannot narrow any sensitive cell past its protection interval, within per-stage and total cost budgets. The deliverable is a self-contained Python program, run on hidden cases.",
+        category: "Mathematical sciences / Operations research",
+        cpus: 4,
+        memoryMb: 8192,
+        expertHours: 24,
+      },
+      {
+        task: "certified-sparse-regression",
+        title: "Certify a sparse regression solution as globally optimal",
+        summary:
+          "For a sparse regression with L0 and L2 penalties over 10,000 features, find a solution and prove it optimal within a given tolerance with a branch-and-bound partition of the support space whose node count stays under the grader's bound. The solution and its certificate go into one JSON file.",
+        category: "Mathematical sciences / Operations research",
+        cpus: 4,
+        memoryMb: 8192,
+        expertHours: 20,
+      },
+      {
+        task: "neo-orbit-determination",
+        title: "Determine a near-Earth asteroid's orbit from raw astrometry",
+        summary:
+          "Identify which detections in a 2004 Minor Planet Center astrometry extract belong to one near-Earth asteroid, among unrelated moving objects, and determine its geocentric J2000 ecliptic state vector at the epoch of its first detection. The state and the attributed records go into one JSON file.",
+        category: "Physical sciences / Astronomy",
+        cpus: 2,
+        memoryMb: 4096,
+        expertHours: 8,
       },
     ],
   },

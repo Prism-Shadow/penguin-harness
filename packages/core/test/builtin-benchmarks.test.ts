@@ -8,9 +8,10 @@
  * - Every case is one Harbor task: its directory names the task after `CASE-NNN-` within the
  *   API's id rules; its statement links the task's folder in the repository, the repository's
  *   rules for running a task and the measured results, and launches that same task with its
- *   caps — the no-network line only for deep-swe, and the shared-network line for every other
- *   benchmark, whose tasks have a public agent phase, as the repository's rules allow; its
- *   rubric is worth 100 points.
+ *   caps — the time-budget sentence word for word where the benchmark's measured runs told the
+ *   agent its budget, the no-network line only for deep-swe, and the shared-network line for
+ *   every other benchmark, whose tasks have a public agent phase, as the repository's rules
+ *   allow; its rubric is worth 100 points.
  * - The five list in Sec A to Sec E order, and each description opens by naming the original
  *   benchmark its cases cite as their source.
  * - Provisioning again writes nothing; a directory already under an id, built-in or the
@@ -174,6 +175,9 @@ describe("built-in Benchmarks", () => {
         expect(statement, caseId).toContain(
           `--ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} `,
         );
+        // The time budget the measured runs told the agent, as one shell word, and only there.
+        const budget = /^ {2}--ak time_budget_note='([^']*)' \\$/m.exec(statement)?.[1];
+        expect(budget, caseId).toBe(bench.timeBudgetNote);
         // The repository's rules for running a task, and its measured results.
         expect(statement, caseId).toMatch(
           /https:\/\/\S+\/blob\/[^/\s]+\/README\.md#running-a-task-for-agents/,

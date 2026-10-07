@@ -71,6 +71,12 @@ export interface BuiltinBenchmark {
   /** Per-trial caps of the measured runs: the adapter's soft timeout and the Agent's turn cap. */
   runTimeout: string;
   maxTurns: number;
+  /**
+   * The adapter's `time_budget_note` of the measured runs, when the benchmark's `job.yaml` sets
+   * one: a sentence the adapter puts before the task's instruction to tell the agent its time
+   * budget. The launch passes it word for word.
+   */
+  timeBudgetNote?: string;
   /** One more sentence of running notes for every statement, when the benchmark needs one. */
   note?: string;
   cases: BuiltinBenchmarkCase[];
@@ -89,6 +95,11 @@ function taskPath(bench: BuiltinBenchmark): string {
 /** A link into the benchmark repository at the pinned revision: a folder (`tree`) or a file (`blob`). */
 function repoLink(kind: "tree" | "blob", rel: string): string {
   return `${BENCHMARK_REPO}/${kind}/${BENCHMARK_REPO_REF}/${rel}`;
+}
+
+/** `text` as one single-quoted shell word. */
+function shellWord(text: string): string {
+  return `'${text.replace(/'/g, "'\\''")}'`;
 }
 
 /** A plain Benchmark config, like any other: nothing in it marks how the cases run. */
@@ -117,6 +128,9 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     `  -a ${HARBOR_AGENT} -m <provider>/<model_id> \\`,
     "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
     `  --ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} \\`,
+    ...(bench.timeBudgetNote !== undefined
+      ? [`  --ak time_budget_note=${shellWord(bench.timeBudgetNote)} \\`]
+      : []),
     ...(offline ? ["  --allow-agent-host <model provider API host> \\"] : []),
     ...(bench.sharedNetwork
       ? ["  --extra-docker-compose tools/docker/shared-network.yaml \\"]
