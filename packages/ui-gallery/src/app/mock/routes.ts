@@ -801,7 +801,11 @@ function base64url(n: number): string {
     .replace(/=+$/, "");
 }
 
-/** The Agent's settings, as the server reads an Agent never configured: off, keyed, allow-all. */
+/**
+ * The Agent's settings, as the server reads an Agent never configured: off, keyed, allow-all.
+ * The store's own object: answers hand out a copy, as a server's JSON would, since the app keeps
+ * what it is given and a later write here must not reach into its state.
+ */
 const apiOf = (ctx: Ctx): AgentApiSettings => {
   const agentId = agentOf(ctx).agentId;
   ctx.store.f.agentApi[agentId] ??= {
@@ -815,7 +819,7 @@ const apiOf = (ctx: Ctx): AgentApiSettings => {
 
 router
   .get("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => ({
-    api: apiOf(ctx),
+    api: structuredClone(apiOf(ctx)),
   }))
   .put("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => {
     const settings = apiOf(ctx);
@@ -827,7 +831,7 @@ router
     if (typeof open === "boolean") settings.open = open;
     const mode = API_APPROVAL_MODES.find((m) => m === approvalMode);
     if (mode !== undefined) settings.approvalMode = mode;
-    return { api: settings };
+    return { api: structuredClone(settings) };
   })
   .post("/api/projects/:projectId/agents/:agentId/api/keys", (ctx): unknown => {
     const settings = apiOf(ctx);
@@ -845,7 +849,7 @@ router
       lastUsedAt: null,
     };
     settings.keys.push(key);
-    return json({ key, secret } satisfies AgentApiKeyCreateResponse, 201);
+    return json({ key: { ...key }, secret } satisfies AgentApiKeyCreateResponse, 201);
   })
   .delete("/api/projects/:projectId/agents/:agentId/api/keys/:keyId", (ctx) => {
     const settings = apiOf(ctx);

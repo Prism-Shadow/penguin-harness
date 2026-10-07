@@ -202,6 +202,24 @@ describe("the mocked API", () => {
     expect(store.f.models.models.find((m) => m.isDefault)?.modelId).toBe("claude-sonnet-5");
   });
 
+  it("keeps an Agent's API settings without reaching into an answer the app already holds", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[1]!.agentId;
+    const before = await api.getAgentApi(project, agent);
+    expect(before.api).toMatchObject({ enabled: false, keys: [] });
+    const on = await api.putAgentApi(project, agent, { enabled: true, approvalMode: "read-only" });
+    expect(on.api).toMatchObject({ enabled: true, approvalMode: "read-only" });
+    expect((await api.listAgents(project)).agents[1]!.apiEnabled).toBe(true);
+    const created = await api.createAgentApiKey(project, agent, { name: "ci" });
+    // The app appends the new key to what it read: the earlier answers must not already hold it.
+    expect(before.api.keys).toEqual([]);
+    expect(on.api.keys).toEqual([]);
+    expect(created.secret.startsWith(created.key.prefix)).toBe(true);
+    await api.deleteAgentApiKey(project, agent, created.key.keyId);
+    expect((await api.getAgentApi(project, agent)).api.keys).toEqual([]);
+  });
+
   it("serves the group tables a new Project writes, and takes a protocol or a cleared key on any group", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
