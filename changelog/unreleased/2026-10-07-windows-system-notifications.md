@@ -3,6 +3,7 @@
 - **Date:** 2026-10-07
 - **Type:** fix
 - **Scope:** `web`, `desktop`
+- **PR:** [#998](https://github.com/Prism-Shadow/penguin-harness/pull/998)
 - **Issue:** [#997](https://github.com/Prism-Shadow/penguin-harness/issues/997)
 
 [中文版](2026-10-07-windows-system-notifications.zh.md)
