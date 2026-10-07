@@ -18,9 +18,8 @@
  *
  * The Windows AppUserModelID splits the same way: Windows groups taskbar buttons and
  * routes toast notifications by AUMID, so a dev run must not claim the installed
- * app's identity. (Dev toasts may not render without an installed shortcut carrying
- * the dev AUMID — acceptable for a source run; the release value keeps matching what
- * electron-builder stamps on the installed shortcuts, see electron-builder.yml.)
+ * app's identity. Both profiles register their AUMID under HKCU on startup (see
+ * win-aumid.ts) in addition to what electron-builder stamps on installed shortcuts.
  *
  * Tripwire for whoever edits main.ts's imports: Electron resolves the userData path
  * once, on the first read, and caches it — so `app.setName()` only relocates anything
