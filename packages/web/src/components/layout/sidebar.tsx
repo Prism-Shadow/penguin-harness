@@ -135,6 +135,7 @@ import {
 } from "../../lib/session-grouping";
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
 import { machineForSession } from "../../lib/session-machines";
+import { backgroundSourceMark } from "../../lib/session-source-mark";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import {
   initialNavGroupCollapsed,
@@ -314,9 +315,9 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
 }
 
 /**
- * Open-state key of a collapsed folder (subagent / scheduled / evaluations / archived) inside
- * a group: each folder has its own state. "\0" never appears in Agent ids or Workspace paths,
- * so the composite never collides across groups or with plain group keys.
+ * Open-state key of a collapsed folder (background / archived) inside a group: each folder has its
+ * own state. "\0" never appears in Agent ids or Workspace paths, so the composite never collides
+ * across groups or with plain group keys.
  */
 const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0${groupKey}`;
 
@@ -334,13 +335,7 @@ const groupShares = (
   totals: SessionCategoryCounts | undefined,
   rows: readonly SessionInfo[],
 ): { active: number; folded: number } => {
-  const counts: SessionCategoryCounts = {
-    active: 0,
-    subagent: 0,
-    schedule: 0,
-    benchmark: 0,
-    archived: 0,
-  };
+  const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
   for (const s of rows) counts[sessionCategory(s)] += 1;
   counts.active = Math.max(counts.active, totals?.active ?? 0);
   for (const category of FOLDER_CATEGORIES)
@@ -580,7 +575,7 @@ export function Sidebar({
     setFolderCaps(new Map());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapseStoreKey, pinStoreKey, folderOnlyStoreKey, currentProjectId]);
-  /** Expanded folders (subagent / scheduled / evaluations / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
+  /** Expanded folders (background / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
   /** "More" rows with a fetch in flight, keyed `${category}\0${groupKey}` — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
@@ -922,9 +917,7 @@ export function Sidebar({
   /** A time bucket's rows as a group partition: the buckets carry active conversations only. */
   const bucketPartition = (rows: SessionInfo[]): SessionPartition => ({
     active: rows,
-    subagent: [],
-    schedule: [],
-    benchmark: [],
+    background: [],
     archived: [],
   });
 
@@ -1127,10 +1120,10 @@ export function Sidebar({
     }
   };
 
-  // The open chat is an automation-created Session: expand exactly its origin's folder in its
-  // group, so the active row is never hidden inside a collapsed folder (mirrors the archived
-  // expansion on archiving the open chat; archived wins, so an archived Session is left to
-  // that folder). Auto-expansion fires ONCE per (grouping mode, active session): the ref guard
+  // The open chat is a background Session (one a program opened): expand the Background folder
+  // in its group, so the active row is never hidden inside a collapsed folder (mirrors the
+  // archived expansion on archiving the open chat; archived wins, so an archived Session is left
+  // to that folder). Auto-expansion fires ONCE per (grouping mode, active session): the ref guard
   // keeps list mutations (status ticks, reloads) from re-opening a folder the user explicitly
   // collapsed while that chat stays open. `sessions` must remain a dependency — the active
   // session may not be in the list yet on first render, and the guard is only set once the
@@ -1279,16 +1272,14 @@ export function Sidebar({
       }
       setDeletingSession(null);
       // The deleted session was the one open: jump to this Agent's next conversation, otherwise
-      // fall back to the chat home page. Auto-opened conversations are never archived (hidden by
-      // default — landing there would look like the chat vanished into thin air) and never
-      // subagent children (they belong to some other conversation).
+      // fall back to the chat home page. Only a person's conversation is auto-opened — never an
+      // archived one (hidden by default — landing there would look like the chat vanished into
+      // thin air) and never a background one (a program opened it; the user was not in it),
+      // the rule latestConversation follows.
       if (activeSessionId === target.sessionId) {
-        const rest = (byAgent.get(target.agentId) ?? []).filter((s) => {
-          const category = sessionCategory(s);
-          return (
-            s.sessionId !== target.sessionId && (category === "active" || category === "schedule")
-          );
-        });
+        const rest = (byAgent.get(target.agentId) ?? []).filter(
+          (s) => s.sessionId !== target.sessionId && sessionCategory(s) === "active",
+        );
         navigate(rest[0] ? `/chat/${rest[0].sessionId}` : "/chat");
       }
     } catch (e) {
@@ -1563,10 +1554,10 @@ export function Sidebar({
             background={sessionBackgroundTasks(s)}
             scheduled={scheduledSessions.has(s.sessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
-            // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
-            // evaluations / archived) are ordered by last activity inside their folder and
-            // never pass through orderSessionRows, so a pin there would write an id, light
-            // the glyph, move nothing — and then shift the active list's drag partition.
+            // Pinning is an ACTIVE-list priority: folder rows (background / archived) are
+            // ordered by last activity inside their folder and never pass through
+            // orderSessionRows, so a pin there would write an id, light the glyph, move nothing
+            // — and then shift the active list's drag partition.
             canPin={activeList}
             // Last ACTIVITY, not creation: the server stamps lastActiveAt when a run
             // starts and again when it ends, so a running row shows its run-start time
@@ -1629,14 +1620,13 @@ export function Sidebar({
   };
 
   /**
-   * Collapsed-by-default lazy folder (subagent / scheduled / evaluations / archived): nothing is
-   * fetched until the first expand, and once open the folder reveals and pages
-   * independently with its own "More" and "show less" rows. Everything is driven by the
-   * group's **own** exact server share (`totals` — the Agent's counts in agent mode, the
-   * per-Workspace fold in workspace mode): the folder exists only while its share is
-   * non-zero, the label shows that share, and "More" shows only while something of that
-   * share is still hidden — an Agent's content in *other* Workspaces can never surface a
-   * folder here.
+   * Collapsed-by-default lazy folder (background / archived): nothing is fetched until the
+   * first expand, and once open the folder reveals and pages independently with its own "More"
+   * and "show less" rows. Everything is driven by the group's **own** exact server share
+   * (`totals` — the Agent's counts in agent mode, the per-Workspace fold in workspace mode): the
+   * folder exists only while its share is non-zero, the label shows that share, and "More" shows
+   * only while something of that share is still hidden — an Agent's content in *other*
+   * Workspaces can never surface a folder here.
    *
    * The folder obeys the same display rule the active list does (revealPlan): one page
    * of rows shows at a time and "More" reveals one page more, spending a fetch only when
@@ -1736,10 +1726,10 @@ export function Sidebar({
 
   /**
    * Expanded group body shared by both modes: active user rows (display-capped; "More"
-   * reveals and loads further **active-only** pages — the folders below never feed it) +
-   * the collapsed-by-default subagent / scheduled / evaluations / archived folders, each
-   * loading on first expand and paging on its own. `totals` / `agentsFor` carry the group's
-   * exact server share and its fetch fan-out set per category.
+   * reveals and loads further **active-only** pages — the folders below never feed it) + the
+   * collapsed-by-default background / archived folders, each loading on first expand and paging
+   * on its own. `totals` / `agentsFor` carry the group's exact server share and its fetch
+   * fan-out set per category.
    */
   const renderGroupBody = (
     groupKey: string,
@@ -1853,9 +1843,9 @@ export function Sidebar({
           />
         )}
 
-        {/* Folders (collapsed by default): subagent first — spawned from the conversations
-            at hand — then scheduled background runs, then the Evaluation Center's runs, then
-            archived (archived wins over the origin folders). */}
+        {/* Folders (collapsed by default): Background — what programs opened (API,
+            scheduled, subagent and CLI Sessions), each row marked with its source — then
+            Archived (archived wins over the source). */}
         {folders}
       </>
     );
@@ -3068,11 +3058,13 @@ function SidebarSessionRow({
       active={active}
       archived={s.archived}
       {...(agentHint !== undefined ? { agent: { id: s.agentId, name: agentHint } } : {})}
-      // Four marks for the row's STANDING arrangements, all in one dim cluster: how the row is
-      // filed (pinned — only where pinning reorders anything), where it can be reached from (the
-      // messaging relay, named by its channel), whether it runs on its own (a scheduled task still
-      // to fire; a paused or ended one draws nothing) and whether it owns work that outlives the
-      // turn (background tasks, live via session_background).
+      // The marks for the row's STANDING arrangements, all in one dim cluster: which program
+      // opened it (a Background row's source), how the row is filed (pinned — only where pinning
+      // reorders anything), where it can be reached from (the messaging relay, named by its
+      // channel), whether it runs on its own (a scheduled task still to fire; a paused or ended
+      // one draws nothing) and whether it owns work that outlives the turn (background tasks,
+      // live via session_background).
+      {...(backgroundSourceMark(s) ?? {})}
       {...(pinned && canPin ? { pinnedLabel: S.chat.pinnedSession } : {})}
       {...(s.messagingChannel !== undefined
         ? { relayLabel: S.messaging.enabledIndicator[s.messagingChannel] }

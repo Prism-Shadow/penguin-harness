@@ -289,13 +289,7 @@ async function sessionCompactionThreshold(
 }
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
-const SESSION_CATEGORIES: readonly SessionCategory[] = [
-  "active",
-  "subagent",
-  "schedule",
-  "benchmark",
-  "archived",
-];
+const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "background", "archived"];
 
 /** Accepted `order` query values of the list endpoint (SessionListOrder, spelled out for validation). */
 const SESSION_LIST_ORDERS: readonly SessionListOrder[] = ["created", "activity"];
@@ -611,9 +605,15 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // Creating-client hint stored on the row ("cli" from the CLI; default "web").
     // Informational provenance only — lists serve every row regardless.
     const client = optionalEnum(body, "client", ["web", "cli"] as const);
-    // The only origin a client may set: `subagent` and `schedule` are written by the server
-    // itself, so anything but `benchmark` is a 400 rather than a silently ignored field.
-    const source = optionalEnum(body, "source", ["benchmark"] as const);
+    // The one source a client may name is `cli` (`penguin run`): every other one is the
+    // server's own to write, and absent means `user`, so anything else is a 400 rather than a
+    // silently ignored field. compat(0.3.0): the retired `benchmark` is accepted as `cli`, for
+    // an older CLI or Web App that still sends it.
+    const source = optionalEnum(
+      { source: body.source === "benchmark" ? "cli" : body.source },
+      "source",
+      ["cli"] as const,
+    );
     let workspace = optionalString(body, "workspace", { minLen: 1, label: "workspace" });
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
@@ -812,7 +812,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     };
     try {
       const insertedForkRow = deps.sessionsRepo.insertFork(row.sessionId, forkRow);
-      deps.sessionSources.set(fork.sessionId, null);
+      // A fork is a person's conversation, as its Trace head records.
+      deps.sessionSources.set(fork.sessionId, "user");
       return c.json(
         {
           session: await deps.sessionService.toInfo(insertedForkRow, true),

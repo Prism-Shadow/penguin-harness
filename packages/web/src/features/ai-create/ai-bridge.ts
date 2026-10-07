@@ -32,8 +32,6 @@ export interface AiChatRequest {
   skills?: string[];
   /** Pins the new conversation's model (a paired reference); absent, the draft keeps its cached carry-over. */
   modelRef?: ModelRefDto;
-  /** Marks the new conversation as a Benchmark evaluation / optimization run; the sidebar files it under the Evaluations folder. */
-  source?: "benchmark";
 }
 
 /** What the draft page finds in `location.state` after openAiChat. */
@@ -59,10 +57,6 @@ export function buildAiDraft(existing: DraftCache, req: AiChatRequest): DraftCac
   };
   if (req.workspace !== undefined) draft.workspace = req.workspace;
   if (req.modelRef !== undefined) draft.modelRef = req.modelRef;
-  // Carried only for the request that asks for it: a mark the slot still holds from an earlier
-  // composed prompt would otherwise follow an unrelated conversation into the Evaluations folder.
-  if (req.source !== undefined) draft.source = req.source;
-  else delete draft.source;
   delete draft.handoffAgentId;
   return draft;
 }

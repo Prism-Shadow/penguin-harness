@@ -12,10 +12,11 @@
  * sidebar's scroller cannot clip them.
  *
  * Every mark after the title names itself, in a hint and in visually hidden text, which is what
- * lets the standing ones recede to the subtle ink: pinned, relayed to a messaging channel,
- * scheduled to run on its own, and work still running in the background. The live state (a
- * turning hourglass, the compress mark, the unread dot) has one reserved box, kept empty when
- * there is nothing to show, so the title never re-flows as a run starts, finishes and is read.
+ * lets the standing ones recede to the subtle ink: the program that opened it (its source),
+ * pinned, relayed to a messaging channel, scheduled to run on its own, and work still running in
+ * the background. The live state (a turning hourglass, the compress mark, the unread dot) has one
+ * reserved box, kept empty when there is nothing to show, so the title never re-flows as a run
+ * starts, finishes and is read.
  *
  * The title is the caller's to draw, with the classes the row hands `renderTitle`: the row
  * decides the ink and the weight, the caller its own truncation — the app's line reveals a
@@ -154,6 +155,12 @@ export interface SessionRowProps {
   archived?: boolean;
   /** The conversation's agent, as a small avatar before the title (where its group is not the agent). */
   agent?: { id: string; name: string };
+  /**
+   * The program that opened it (an API caller, a scheduled task, a parent agent, a CLI run): the
+   * caller's glyph from the icon registry, named by `sourceLabel`. Drawn only when both are given.
+   */
+  sourceGlyph?: string;
+  sourceLabel?: string;
   /** Pinned to the top of its list: the pin mark, named by this. */
   pinnedLabel?: string;
   /** Relayed to a messaging channel: the paper plane, named by this (the channel's name). */
@@ -201,6 +208,8 @@ export function SessionRow({
   active = false,
   archived = false,
   agent,
+  sourceGlyph,
+  sourceLabel,
   pinnedLabel,
   relayLabel,
   scheduledLabel,
@@ -305,6 +314,9 @@ export function SessionRow({
             </span>
           )}
           {renderTitle(`min-w-0 flex-1 font-sans text-sm ${titleInk}`)}
+          {sourceGlyph !== undefined && sourceLabel !== undefined && (
+            <RowMark glyph={sourceGlyph} label={sourceLabel} />
+          )}
           {pinnedLabel !== undefined && <RowMark glyph={ICONS.pin} label={pinnedLabel} />}
           {relayLabel !== undefined && <RowMark glyph={ICONS.paperPlane} label={relayLabel} />}
           {scheduledLabel !== undefined && (

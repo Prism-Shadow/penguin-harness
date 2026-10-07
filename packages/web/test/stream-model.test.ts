@@ -135,6 +135,7 @@ function meta(sessionId: string): OmniMessage<SessionMetaPayload> {
     system_prompt: "",
     agent_state: "/a",
     workspace: "/w",
+    source: "user",
   });
 }
 

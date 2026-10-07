@@ -54,6 +54,7 @@ function meta(): OmniMessage {
     system_prompt: "SP",
     agent_state: "/agent/state",
     workspace: "/ws",
+    source: "user",
   });
 }
 

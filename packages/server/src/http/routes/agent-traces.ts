@@ -48,13 +48,7 @@ export interface AgentTracesRouteDeps {
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;
 
 /** Accepted `category` query values of the paginated listing (SessionCategory, spelled out for validation — same as the sessions list route). */
-const SESSION_CATEGORIES: readonly SessionCategory[] = [
-  "active",
-  "subagent",
-  "schedule",
-  "benchmark",
-  "archived",
-];
+const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "background", "archived"];
 
 export function agentTracesRoutes(deps: AgentTracesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();

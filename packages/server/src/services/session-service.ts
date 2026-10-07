@@ -14,7 +14,12 @@
  * added to session-manager's active table (state idle).
  */
 import fs from "node:fs/promises";
-import { agentsDir, createAgent, isSessionMeta } from "@prismshadow/penguin-core";
+import {
+  agentsDir,
+  createAgent,
+  isSessionMeta,
+  normalizeSessionSource,
+} from "@prismshadow/penguin-core";
 import type {
   AgentAssembly,
   ControlEnvContext,
@@ -37,7 +42,7 @@ import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/
 import { badRequest } from "../http/validate.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
-import { asSessionSource } from "../runtime/session-sources.js";
+import { sourceCategory } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
@@ -392,8 +397,8 @@ export class SessionService {
   }
 
   /**
-   * A Session's origin, with session_meta as the single source of truth: the in-process
-   * registry answers first (populated at creation / subagent registration / adoption /
+   * A Session's source, with session_meta as the single source of truth: the in-process
+   * registry answers first (populated at creation / subagent registration / forks / adoption /
    * index registration); on a miss (a Session created before this process started) the
    * trace index's registration-time facts answer — the reconciler head-read the earliest
    * shard once when the file first appeared, so no file is touched here. A Session with
@@ -402,12 +407,12 @@ export class SessionService {
    */
   private async sourceOf(row: SessionRow, hasTrace: boolean): Promise<SessionSource | undefined> {
     const known = this.deps.sources.get(row.sessionId);
-    if (known !== undefined) return known ?? undefined;
+    if (known !== undefined) return known;
     if (!hasTrace) return undefined;
     const facts = this.deps.traceStore.getSession(row.sessionId);
     if (!facts?.metaRead) return undefined; // Unreadable/unregistered: stay unknown, retry on the next list.
     this.deps.sources.set(row.sessionId, facts.source);
-    return facts.source ?? undefined;
+    return facts.source;
   }
 
   /** Whether this Session already has a Trace record (a Task has been run): answered by the index (reconciled first). */
@@ -416,14 +421,12 @@ export class SessionService {
   }
 
   /**
-   * The list category of a row: archived wins (an explicit user action), then the
-   * origin's bucket, and no/unknown source is `active` — the same precedence the
-   * sidebar's partition applies to loaded rows, so server filtering and client
-   * rendering can never disagree.
+   * The list category of a row: archived wins (an explicit user action), then its source's
+   * (see sourceCategory). An archived row's source is never looked up.
    */
   private async categoryOf(row: SessionRow, hasTrace: boolean): Promise<SessionCategory> {
     if ((row.archivedAt ?? null) !== null) return "archived";
-    return (await this.sourceOf(row, hasTrace)) ?? "active";
+    return sourceCategory(await this.sourceOf(row, hasTrace));
   }
 
   /**
@@ -544,13 +547,7 @@ export class SessionService {
     }
 
     const want = paging ? skip + paging.limit : Infinity;
-    const counts: SessionCategoryCounts = {
-      active: 0,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    };
+    const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const workspaceLatest: Record<string, string> = {};
     const matched: SessionRow[] = [];
@@ -563,13 +560,7 @@ export class SessionService {
       const cat = await this.categoryOf(row, rowHasTrace(row));
       counts[cat] += 1;
       if (withCounts) {
-        const ws = (workspaceCounts[row.workspace] ??= {
-          active: 0,
-          subagent: 0,
-          schedule: 0,
-          benchmark: 0,
-          archived: 0,
-        });
+        const ws = (workspaceCounts[row.workspace] ??= { active: 0, background: 0, archived: 0 });
         ws[cat] += 1;
         // A path's newest Session by creation, whichever order the walk is in.
         const latest = workspaceLatest[row.workspace];
@@ -654,11 +645,11 @@ export class SessionService {
     /** Whether the creator is an administrator (may loosen past the settings). Default false. */
     isAdmin?: boolean;
     /**
-     * Session source marker: `schedule` when triggered by a scheduled task, `benchmark` when
-     * created by a Benchmark evaluation or optimization (the only value a client may send);
-     * defaults to user-created.
+     * What kind of conversation this is, recorded in the Session's session_meta: `schedule`
+     * from the scheduler, `cli` from `penguin run` (the only source a request may name);
+     * absent means `user`, a person's conversation.
      */
-    source?: "schedule" | "benchmark";
+    source?: SessionSource;
     /**
      * Creating-client hint stored on the index row (`POST .../sessions` body `client`):
      * "cli" from the CLI, defaulting to "web". "org" is not accepted over HTTP — the
@@ -708,7 +699,7 @@ export class SessionService {
         modelId,
         provider,
         ...(args.workspace !== undefined ? { workspaceDir: args.workspace } : {}),
-        // The origin is also recorded in core session_meta (Trace), not just the index row.
+        // The source is recorded in core session_meta (Trace); the index row stores none.
         ...(args.source !== undefined ? { source: args.source } : {}),
       });
     } catch (err) {
@@ -722,14 +713,14 @@ export class SessionService {
         err instanceof Error ? err.message : String(err),
       );
     }
-    // The origin is derived from the just-created core Session's session_meta (the single
+    // The source is read from the just-created core Session's session_meta (the single
     // source of truth) rather than echoing args.source back: what the registry serves is
     // exactly what the Trace will record.
     const metaMsg = session.metaMessage;
-    this.deps.sources.set(
-      session.sessionId,
-      isSessionMeta(metaMsg) ? (asSessionSource(metaMsg.payload.source) ?? null) : null,
+    const source = normalizeSessionSource(
+      isSessionMeta(metaMsg) ? metaMsg.payload.source : undefined,
     );
+    this.deps.sources.set(session.sessionId, source);
     const createdAt = new Date().toISOString();
     const row: SessionRow = {
       sessionId: session.sessionId,
@@ -752,13 +743,12 @@ export class SessionService {
     this.deps.sessions.insert(row);
     this.deps.manager.adopt(row, session);
     // After the insert: a reader who reacts by fetching the list must find the row there.
-    const source = this.deps.sources.get(session.sessionId);
     this.deps.notifyProjectUsers?.(args.projectId, {
       type: "session_created",
       projectId: args.projectId,
       agentId: args.agentId,
       sessionId: row.sessionId,
-      ...(source ? { source } : {}),
+      source,
     });
     return this.toInfo(row, false);
   }
@@ -860,7 +850,7 @@ export class SessionService {
     // (core will give a clear error on resume; the product hasn't launched yet, so
     // old data can simply be deleted and recreated).
     if (facts.provider === null || facts.modelId === null) return null;
-    // Registration already narrowed the origin; record it in the registry (single source of truth).
+    // Registration already narrowed the source; record it in the registry (single source of truth).
     this.deps.sources.set(sessionId, facts.source);
     const createdAt = sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString();
     const row: SessionRow = {

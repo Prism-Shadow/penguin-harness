@@ -891,10 +891,10 @@ export function ChatPage() {
   ]);
 
   // Auto-select the last conversation when the route doesn't select one: the most recently
-  // ACTIVE loaded active/schedule Session, the same rule the collapsed rail's entry follows —
-  // archived rows are hidden by choice and subagent Sessions belong to their parent, so
-  // neither is auto-opened. If there is none, fall back to draft state (instead of
-  // auto-creating one).
+  // ACTIVE loaded conversation of the user's own (`user` source), the same rule the collapsed
+  // rail's entry follows — archived rows are hidden by choice and background Sessions were
+  // opened by a program, so neither is auto-opened. If there is none, fall back to draft state
+  // (instead of auto-creating one).
   useEffect(() => {
     if (sessionsLoading || draft) return;
     if (selected !== null) return;

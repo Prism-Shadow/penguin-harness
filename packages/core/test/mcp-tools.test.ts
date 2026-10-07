@@ -543,6 +543,7 @@ describe("Session first-run bootstrap events", () => {
       system_prompt: "sp",
       agent_state: tmp,
       workspace: tmp,
+      source: "user",
     };
     return new Session({
       meta,
@@ -665,6 +666,7 @@ describe("Session first-run bootstrap events", () => {
         system_prompt: "sp",
         agent_state: tmp,
         workspace: tmp,
+        source: "user",
       },
       bootstrap: async ({ emit }) => {
         calls += 1;

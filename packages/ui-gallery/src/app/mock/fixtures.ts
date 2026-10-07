@@ -573,7 +573,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       L("评估 CASE-001", "Evaluate CASE-001"),
       ago(3),
       {
-        source: "benchmark",
+        // A Test Session the evaluation launched through `penguin run`.
+        source: "cli",
         workspace: `/home/demo/.penguin/data/projects/${IDS.project}/agents/${IDS.agents.docs}/workspaces/case-001`,
       },
     ),

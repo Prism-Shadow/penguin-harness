@@ -3,8 +3,8 @@
  * services/trace-index.ts for the cache rules). Pure row access — reconciliation
  * policy (mtime gates, head-reads) lives in the service.
  */
+import { normalizeSessionSource } from "@prismshadow/penguin-core";
 import type { SessionSource } from "../../api/types.js";
-import { asSessionSource } from "../../runtime/session-sources.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
 import type { TraceIndexStore } from "../../mechanisms/traces.js";
@@ -24,7 +24,8 @@ export interface TraceSessionRow {
   sessionId: string;
   projectId: string;
   agentId: string;
-  source: SessionSource | null;
+  /** The head's session_meta source, narrowed; meaningful only once `metaRead`. */
+  source: SessionSource;
   workspace: string;
   title: string | null;
   provider: string | null;
@@ -45,13 +46,14 @@ function mapFile(r: Record<string, unknown>): TraceFileRow {
 }
 
 function mapSession(r: Record<string, unknown>): TraceSessionRow {
-  const source = r.source as string | null;
   return {
     sessionId: r.session_id as string,
     projectId: r.project_id as string,
     agentId: r.agent_id as string,
-    // Narrowed on read as well as write: junk in a hand-edited DB must not leak out as a source.
-    source: asSessionSource(source) ?? null,
+    // Narrowed on read as well as write: a row registered before the source was required holds
+    // NULL (read as `user`) or `benchmark` (read as `cli`), and junk in a hand-edited DB must not
+    // leak out as a source. The cache is derived, so old rows are read, never migrated.
+    source: normalizeSessionSource(r.source ?? undefined),
     workspace: (r.workspace as string | null) ?? "",
     title: (r.title as string | null) ?? null,
     provider: (r.provider as string | null) ?? null,

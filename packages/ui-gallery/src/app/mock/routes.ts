@@ -782,22 +782,17 @@ router
 const TEMP_WORKSPACE = /[/\\]workspaces[/\\][^/\\]+$/;
 const isTemp = (workspace: string) => workspace === "" || TEMP_WORKSPACE.test(workspace);
 
+/** The server's rule: archived first, then a person's conversation is active and every other source background. */
 function categoryOf(row: SessionInfo): SessionCategory {
   if (row.archived) return "archived";
-  return row.source ?? "active";
+  return row.source === undefined || row.source === "user" ? "active" : "background";
 }
 
 /** An organization's desk or ticket Session, by its owner or by the durable `org` stamp. */
 const isOrgRow = (row: SessionInfo) => (row.orgId ?? "") !== "" || row.client === "org";
 
 function countsOf(rows: readonly SessionInfo[]): SessionCategoryCounts {
-  const counts: SessionCategoryCounts = {
-    active: 0,
-    schedule: 0,
-    subagent: 0,
-    benchmark: 0,
-    archived: 0,
-  };
+  const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
   for (const row of rows) counts[categoryOf(row)] += 1;
   return counts;
 }

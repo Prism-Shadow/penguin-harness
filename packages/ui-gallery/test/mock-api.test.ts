@@ -88,9 +88,8 @@ describe("the mocked API", () => {
     expect(first.sessions.length).toBe(3);
     expect(first.counts?.active).toBeGreaterThan(3);
     expect(first.counts?.archived).toBe(1);
-    expect(first.counts?.schedule).toBe(1);
-    expect(first.counts?.subagent).toBe(1);
-    expect(first.counts?.benchmark).toBe(1);
+    // The scheduled, subagent and CLI rows share the Background folder.
+    expect(first.counts?.background).toBe(3);
     expect(first.workspaceCounts).toBeDefined();
     const rest = await api.listSessions(project, agent, {
       offset: 3,

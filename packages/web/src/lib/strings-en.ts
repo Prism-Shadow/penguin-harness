@@ -3354,10 +3354,14 @@ Scenarios:
     loadMoreSessions: "Load more chats",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
-      subagent: (n: number) => `Subagents (${n})`,
-      schedule: (n: number) => `Scheduled (${n})`,
-      benchmark: (n: number) => `Evaluations (${n})`,
+      background: (n: number) => `Background (${n})`,
       archived: (n: number) => `Archived (${n})`,
+    },
+    sessionSource: {
+      api: "API",
+      schedule: "Scheduled",
+      subagent: "Subagent",
+      cli: "CLI",
     },
     /** Tooltip of a folder-only group's header (nothing active of its own): what its folders hold, plus the Workspace path where the header has one. */
     folderOnlyGroup: (n: number, path?: string) =>

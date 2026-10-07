@@ -30,6 +30,7 @@ function metaPayload(): SessionMetaPayload {
     system_prompt: "",
     agent_state: "/tmp/a",
     workspace: "/tmp/w",
+    source: "user",
   };
 }
 
@@ -117,20 +118,8 @@ describe("agent-trace-detail", () => {
     ]);
     expect(paged.sessions![0]!.category).toBe("active");
     expect(paged.sessions![0]!.workspace).toBe("/tmp/w");
-    expect(paged.counts).toEqual({
-      active: 1,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    });
-    expect(paged.workspaceCounts!["/tmp/w"]).toEqual({
-      active: 1,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    });
+    expect(paged.counts).toEqual({ active: 1, background: 0, archived: 0 });
+    expect(paged.workspaceCounts!["/tmp/w"]).toEqual({ active: 1, background: 0, archived: 0 });
 
     // A sessions-table title (one batched lookup for the page) wins over the fallback.
     t.deps.sessionsRepo.insert({
@@ -162,7 +151,7 @@ describe("agent-trace-detail", () => {
     // Category filter: pages within one bucket (totalSessions = the bucket's count);
     // unknown values and category-without-limit are client errors.
     const filtered = (await (
-      await owner.get(`${base()}?limit=10&category=subagent`)
+      await owner.get(`${base()}?limit=10&category=background`)
     ).json()) as AgentTracesResponse;
     expect(filtered.sessions).toEqual([]);
     expect(filtered.totalSessions).toBe(0);

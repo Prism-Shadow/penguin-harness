@@ -3,7 +3,7 @@
  *
  *   penguin run -m <msg> [--project-id <id>] [--agent-id <id>] [--workspace <path>]
  *               [--model-id <id> --provider <group>] [--approve <mode>]
- *               [--thinking <level>] [--session <session_id>] [--source benchmark]
+ *               [--thinking <level>] [--session <session_id>]
  *               [--background] [--goal [budget]] [--json] [--server <url>]
  *
  * The CLI is a thin client: it creates a Session over the API (or reuses `--session`),
@@ -15,10 +15,10 @@
  *   default_project / default_agent); Workspace = the CLI's cwd (resolved locally —
  *   server and CLI share the machine in the default flow); model = the Project default;
  *   approval mode allow-all (the historical run default).
- * - `--session` accepts a full id or a unique fragment; it excludes `--workspace`, the
- *   model pair and `--source` (none can change after creation); `--approve` PATCHes the mode.
- * - `--source benchmark` marks a NEW Session as created by a Benchmark evaluation: the Web
- *   App files it under the Evaluations folder of its session list.
+ * - Every Session it creates is recorded as a `cli` Session (`session_meta.source`), which the
+ *   Web App lists in the Background folder; `penguin chat` creates `user` Sessions instead.
+ * - `--session` accepts a full id or a unique fragment; it excludes `--workspace` and the
+ *   model pair (neither can change after creation); `--approve` PATCHes the mode.
  * - `--background`: POST the task and exit immediately, printing the session id
  *   (`{"sessionId"}` under `--json`) — the task keeps running on the server.
  * - `--json` (non-background): suppress rendering; print `{sessionId, status, text}`
@@ -27,6 +27,7 @@
  *   the stream wind down (the abort event maps to exit code 1).
  * Docs: /docs/cli § "penguin run".
  */
+import { Option } from "commander";
 import type { Command } from "commander";
 import { VERSION } from "@prismshadow/penguin-core";
 import { StreamRenderer, dim } from "../render.js";
@@ -65,7 +66,8 @@ export function registerRunCommand(program: Command, t: Messages): void {
     .option("--approve <mode>", t.common.approve)
     .option("--thinking <level>", t.common.thinking)
     .option("--session <sessionId>", t.run.session)
-    .option("--source <source>", t.run.source)
+    // compat(0.3.0): the retired `--source benchmark`, kept out of the help (see the action).
+    .addOption(new Option("--source <source>").hideHelp())
     .option("--background", t.run.background)
     .option("--timeout <duration>", t.common.timeout)
     .option("--goal [budget]", t.run.goal)
@@ -96,18 +98,19 @@ export function registerRunCommand(program: Command, t: Messages): void {
           return;
         }
       }
-      // `benchmark` is the only origin a client may set: the server writes `subagent` and
-      // `schedule` itself, so any other value is rejected here rather than sent.
-      if (opts.source !== undefined && String(opts.source) !== "benchmark") {
-        process.stderr.write(`${t.error(t.run.sourceInvalid(String(opts.source)))}\n`);
-        process.exitCode = 1;
-        return;
+      // compat(0.3.0): `--source` is gone, since every Session `penguin run` creates is `cli`.
+      // Installed copies of the agent-evaluation skill still pass `--source benchmark`, so that
+      // value is accepted as a no-op with a note; any other value stays an error.
+      if (opts.source !== undefined) {
+        if (String(opts.source) !== "benchmark") {
+          process.stderr.write(`${t.error(t.run.sourceInvalid(String(opts.source)))}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        process.stderr.write(`${dim(t.run.sourceIgnored())}\n`);
       }
-      if (
-        opts.session !== undefined &&
-        (opts.workspace || opts.modelId || opts.provider || opts.source)
-      ) {
-        // Workspace, model and origin are fixed at creation; a reused Session keeps its own.
+      if (opts.session !== undefined && (opts.workspace || opts.modelId || opts.provider)) {
+        // Workspace and model are fixed at creation; a reused Session keeps its own.
         process.stderr.write(`${t.error(t.run.sessionNoOverride())}\n`);
         process.exitCode = 1;
         return;
@@ -169,7 +172,7 @@ export function registerRunCommand(program: Command, t: Messages): void {
             : caller
               ? { approvalMode: caller.approvalMode }
               : {}),
-          ...(opts.source !== undefined ? { source: "benchmark" as const } : {}),
+          source: "cli",
         });
         if (thinking === undefined && caller?.thinkingLevel !== undefined) {
           callerThinking = caller.thinkingLevel;
