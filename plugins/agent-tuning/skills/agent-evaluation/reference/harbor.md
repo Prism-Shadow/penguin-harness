@@ -16,6 +16,7 @@ The repository's README section *Running a task (for agents)*, which the stateme
 | `HARBOR_VERSION` | `harbor==<HARBOR_VERSION>` of the launch |
 | `AGENT` | `-a <AGENT>` of the launch: the adapter inside the repository's `agents/` |
 | `RUN_TIMEOUT`, `MAX_TURNS` | `--ak run_timeout=<RUN_TIMEOUT>` and `--ak max_turns=<MAX_TURNS>` of the launch: the per-trial soft timeout and turn cap |
+| The time-budget line | `--ak time_budget_note='<sentence>'`: present only where the benchmark's measured runs told the agent its time budget; the adapter puts the sentence before the task's instruction |
 | The host line | `--allow-agent-host <model provider API host>`: present only for a task whose agent phase has no network (§B.3) |
 | The overlay line | `--extra-docker-compose tools/docker/shared-network.yaml`: present only where the repository allows the shared network (§A.9) |
 
@@ -97,7 +98,7 @@ Prepare as `SKILL.md` says — the request, the required files, `status`, the ve
    `$JOBS_DIR/$JOB_NAME` must not exist yet: Harbor resumes an existing job directory instead of running a new trial, so pick a new timestamp when it does.
 5. **The PenguinHarness version.** `PENGUIN_VERSION` is the `version` field of `penguin version --json`, the release number; the container installs `@prismshadow/penguin-cli` at that version from npm.
 6. **The shared network,** only when the statement's launch has the overlay line: require `docker network inspect penguin-bench` to succeed, creating the network as §A.9 says when it does not. A launch without the line runs without it: the trial makes a network of its own.
-7. **Launch** the statement's command, in the foreground, from the checkout. Fill in its placeholders — `<provider>/<model_id>` with the request's pair, `<level>` with the configured `thinking_level`, `<penguin version>` with `$PENGUIN_VERSION`, `<model provider API host>` with `$HOST`, `<job name>` with `$JOB_NAME` and `<jobs dir>` with `$JOBS_DIR` — and insert `--ak agent_state_tar="$STATE_TAR" --ak host_penguin_home="$PENGUIN_HOME" --ak host_project_id="$PROJECT_ID"` before `--agent-setup-timeout-multiplier`. Change nothing else. Without the host and overlay lines, it reads:
+7. **Launch** the statement's command, in the foreground, from the checkout. Fill in its placeholders — `<provider>/<model_id>` with the request's pair, `<level>` with the configured `thinking_level`, `<penguin version>` with `$PENGUIN_VERSION`, `<model provider API host>` with `$HOST`, `<job name>` with `$JOB_NAME` and `<jobs dir>` with `$JOBS_DIR` — and insert `--ak agent_state_tar="$STATE_TAR" --ak host_penguin_home="$PENGUIN_HOME" --ak host_project_id="$PROJECT_ID"` before `--agent-setup-timeout-multiplier`. Change nothing else. Without the time-budget, host and overlay lines, it reads:
 
    ```bash
    cd "$CHECKOUT"
@@ -112,7 +113,7 @@ Prepare as `SKILL.md` says — the request, the required files, `status`, the ve
    rm -f "$STATE_TAR"
    ```
 
-   When the statement has them, its `--allow-agent-host "$HOST" \` and `--extra-docker-compose tools/docker/shared-network.yaml \` lines stay where it puts them, before the inserted options. A trial takes from a few minutes to an hour — an image pull or build, the adapter's install, the run itself up to `RUN_TIMEOUT`, then the verifier — so wait for the command to finish.
+   When the statement has them, its `--ak time_budget_note='…' \`, `--allow-agent-host "$HOST" \` and `--extra-docker-compose tools/docker/shared-network.yaml \` lines stay where it puts them, word for word, before the inserted options. A trial takes from a few minutes to an hour — an image pull or build, the adapter's install, the run itself up to `RUN_TIMEOUT`, then the verifier — so wait for the command to finish.
 
 The adapter, not you, reads the requested model's entry, its saved API key included, from `$PENGUIN_HOME/$PROJECT_ID/.project_config.toml`, and copies it into the task container alone, outside the trial directory. Never pass a key with `--ae`, in an environment variable or anywhere on the command line: Harbor writes the agent's environment into the job's `config.json`. When Harbor reports that the model is not configured or has no saved key, return `evaluation_failed`: external configuration is required, and the user saves the key for that model on the Models page.
 
