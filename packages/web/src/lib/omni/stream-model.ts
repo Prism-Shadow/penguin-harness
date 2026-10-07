@@ -53,6 +53,7 @@
 import {
   isEventMessage,
   isPartialPayload,
+  normalizeSessionSource,
   parseBackgroundTaskDoneMessage,
   parseUserSteeringText,
 } from "@prismshadow/penguin-core/omnimessage";
@@ -65,6 +66,7 @@ import type {
   OmniMessage,
   PartialModelPayload,
   SessionMetaPayload,
+  SessionSource,
   StopReason,
   TokenUsagePayload,
 } from "@prismshadow/penguin-core/omnimessage";
@@ -488,8 +490,8 @@ export interface NestedSessionMeta {
   agentId: string | null;
   provider: string;
   modelId: string;
-  /** Session origin as recorded by core (subagent / schedule / benchmark); absent = user-created. */
-  source?: "subagent" | "schedule" | "benchmark";
+  /** What kind of conversation the child is, as its meta records it (narrowed: an old Trace's missing source reads as `user`, `benchmark` as `cli`). */
+  source: SessionSource;
 }
 
 export interface StreamModel {
@@ -803,13 +805,13 @@ export function pushMessage(
   }
   if (msg.type === "session_meta" && model.nested) {
     const p = msg.payload as SessionMetaPayload;
-    const meta: NestedSessionMeta = {
+    model.meta = {
       agentId: agentIdFromStatePath(p.agent_state),
       provider: p.provider,
       modelId: p.model_id,
+      // Replayed from the child's own Trace, which may predate the required source.
+      source: normalizeSessionSource(p.source),
     };
-    if (p.source !== undefined) meta.source = p.source;
-    model.meta = meta;
   }
 }
 

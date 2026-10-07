@@ -142,7 +142,7 @@ An evaluation runs an agent on every case of a Benchmark and adds one labelled s
 
 The dialog has no field for the model or thinking level the tested agent runs on. **Model of the evaluation conversation** only sets the model of the conversation that dispatches and totals the runs.
 
-The evaluation conversation, and every Test Session it starts, is filed under the **Evaluations** folder of the session list. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
+The evaluation conversation is an ordinary conversation of yours. Every Test Session it starts is a CLI Session, filed under the **Background** folder of the session list. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
 
 ## Optimize an agent
 

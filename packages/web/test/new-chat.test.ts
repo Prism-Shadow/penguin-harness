@@ -5,9 +5,8 @@
  * - The new chat starts on the Project's default Agent while it names a listed Agent, else
  *   default_agent wherever it sits, else the first Agent, else none.
  * - Preparing the draft parks typed text with its selections, then leaves only the model
- *   carry-over and staged skills in the active slot: a text-less draft's other selections
- *   and an emptied evaluation draft's run mark are released, a slot holding nothing it keeps
- *   is emptied, and an empty slot is left alone.
+ *   carry-over and staged skills in the active slot: a text-less draft's other selections are
+ *   released, a slot holding nothing it keeps is emptied, and an empty slot is left alone.
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
@@ -67,39 +66,11 @@ describe("prepareNewChatDraft", () => {
     });
   });
 
-  it("drops an emptied evaluation draft's run mark, so the next New chat is not an evaluation run", () => {
-    const s = memoryStorage();
-    // Evaluation Center -> Use -> Evaluate seeds the slot with a composed prompt marked as an
-    // evaluation run. Editing the prompt drops aiPrefill, and deleting all of it leaves this
-    // behind (the draft page's persist): no text to park, but the run mark is still set, and a
-    // draft that reads it creates its Session with `source: "benchmark"`.
-    saveDraft(
-      draftKey("u-eval", "proj"),
-      {
-        text: "",
-        agentId: "evaluator",
-        workspace: "",
-        approvalMode: "allow-all",
-        modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
-        skills: ["agent-evaluation"],
-        source: "benchmark",
-      },
-      s,
-    );
-    expect(prepareNewChatDraft("u-eval", "proj", s)).toBeNull();
-    const slot = loadDraft(draftKey("u-eval", "proj"), s);
-    expect(slot.source).toBeUndefined();
-    expect(slot).toEqual({
-      modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
-      skills: ["agent-evaluation"],
-    });
-  });
-
   it("empties a slot that holds nothing it keeps", () => {
     const s = memoryStorage();
     saveDraft(
       draftKey("u-nothing-kept", "proj"),
-      { text: "  ", agentId: "coder", handoffAgentId: "writer", source: "benchmark" },
+      { text: "  ", agentId: "coder", handoffAgentId: "writer" },
       s,
     );
     expect(prepareNewChatDraft("u-nothing-kept", "proj", s)).toBeNull();

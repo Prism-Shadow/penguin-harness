@@ -10,10 +10,11 @@
  * - Grouping by Workspace merges Agents on one path (newest Session first, newest group first),
  *   folds every temporary Workspace into one trailing group per machine, keeps one path on two
  *   machines apart, and keeps archived rows in their group.
- * - A Session's folder is decided by archived first, then its source; partitioning keeps the
- *   order inside each folder, and benchmark runs get a folder of their own.
- * - The auto-opened "last conversation" is the most recently active user or scheduled row
- *   (ties by id), never an archived, subagent or benchmark one.
+ * - A Session's folder is decided by archived first, then its source: a person's conversation
+ *   (`user`, or not yet classified) is active, every other source goes to Background;
+ *   partitioning keeps the order inside each folder.
+ * - The auto-opened "last conversation" is the most recently active person's conversation
+ *   (ties by id), never an archived or a background one, scheduled ones included.
  * - A page fetched with one extra row reports whether the server has more, never showing it.
  * - Server counts sum per Workspace across Agents (recording which Agents hold each folder) and
  *   stay apart per machine; the newest stamp per group survives aggregation.
@@ -36,7 +37,11 @@
  *   least a page more, or the rest.
  */
 import { describe, expect, it } from "vitest";
-import type { SessionCategoryCounts, SessionInfo } from "@prismshadow/penguin-server/api";
+import type {
+  SessionCategoryCounts,
+  SessionInfo,
+  SessionSource,
+} from "@prismshadow/penguin-server/api";
 import type { ActivityKey, StreamPosition } from "../src/lib/session-grouping";
 import {
   SIDEBAR_PAGE_SIZE,
@@ -77,7 +82,7 @@ function session(
     sessionId?: string;
     agentId?: string;
     archived?: boolean;
-    source?: "schedule" | "subagent" | "benchmark";
+    source?: SessionSource;
     lastActiveAt?: string;
   } = {},
 ): SessionInfo {
@@ -264,79 +269,66 @@ describe("groupSessionsByWorkspace", () => {
 });
 
 describe("sessionCategory (the bucket a Session renders under = the server's list filter)", () => {
-  it("archived wins over source; a source names its bucket; no source is active", () => {
-    const at = "2026-07-01T10:00:00.000Z";
+  const at = "2026-07-01T10:00:00.000Z";
+
+  it.each(["api", "schedule", "subagent", "cli"] as const)(
+    "files a %s Session under Background",
+    (source) => {
+      expect(sessionCategory(session("/srv/a", at, { source }))).toBe("background");
+    },
+  );
+
+  it("files a person's conversation, and a row not yet classified, as active", () => {
+    expect(sessionCategory(session("/srv/a", at, { source: "user" }))).toBe("active");
     expect(sessionCategory(session("/srv/a", at))).toBe("active");
-    expect(sessionCategory(session("/srv/a", at, { source: "subagent" }))).toBe("subagent");
-    expect(sessionCategory(session("/srv/a", at, { source: "schedule" }))).toBe("schedule");
+  });
+
+  it("files an archived Session as archived, whatever its source", () => {
     expect(sessionCategory(session("/srv/a", at, { archived: true }))).toBe("archived");
-    expect(sessionCategory(session("/srv/a", at, { source: "subagent", archived: true }))).toBe(
+    expect(sessionCategory(session("/srv/a", at, { source: "cli", archived: true }))).toBe(
       "archived",
     );
   });
 });
 
-describe("partitionSessions (per-group user / subagent / scheduled / evaluations / archived split)", () => {
-  it("splits user rows and one bucket per origin, preserving order within each part", () => {
-    const user1 = session("/srv/alpha", "2026-07-06T10:00:00.000Z");
-    const sched1 = session("/srv/alpha", "2026-07-05T10:00:00.000Z", { source: "schedule" });
-    const sub1 = session("/srv/alpha", "2026-07-04T10:00:00.000Z", { source: "subagent" });
+describe("partitionSessions (per-group active / Background / Archived split)", () => {
+  it("splits active rows from the Background and Archived folders, preserving order within each part", () => {
+    const user1 = session("/srv/alpha", "2026-07-06T10:00:00.000Z", { source: "user" });
+    const sched = session("/srv/alpha", "2026-07-05T10:00:00.000Z", { source: "schedule" });
+    const sub = session("/srv/alpha", "2026-07-04T10:00:00.000Z", { source: "subagent" });
     const user2 = session("/srv/alpha", "2026-07-03T10:00:00.000Z");
-    const sub2 = session("/srv/alpha", "2026-07-02T10:00:00.000Z", { source: "subagent" });
-    const gone = session("/srv/alpha", "2026-07-01T10:00:00.000Z", { archived: true });
-    const parts = partitionSessions([user1, sched1, sub1, user2, sub2, gone]);
+    const cli = session("/srv/alpha", "2026-07-02T10:00:00.000Z", { source: "cli" });
+    const gone = session("/srv/alpha", "2026-07-01T10:00:00.000Z", {
+      source: "api",
+      archived: true,
+    });
+    const parts = partitionSessions([user1, sched, sub, user2, cli, gone]);
     expect(parts.active.map((s) => s.sessionId)).toEqual([user1.sessionId, user2.sessionId]);
-    expect(parts.subagent.map((s) => s.sessionId)).toEqual([sub1.sessionId, sub2.sessionId]);
-    expect(parts.schedule.map((s) => s.sessionId)).toEqual([sched1.sessionId]);
+    expect(parts.background.map((s) => s.sessionId)).toEqual([
+      sched.sessionId,
+      sub.sessionId,
+      cli.sessionId,
+    ]);
     expect(parts.archived.map((s) => s.sessionId)).toEqual([gone.sessionId]);
-  });
-
-  it("archived wins over source: an archived automation-created session goes to the Archived folder only", () => {
-    const sub = session("/srv/alpha", "2026-07-01T10:00:00.000Z", {
-      source: "subagent",
-      archived: true,
-    });
-    const sched = session("/srv/alpha", "2026-07-02T10:00:00.000Z", {
-      source: "schedule",
-      archived: true,
-    });
-    const parts = partitionSessions([sub, sched]);
-    expect(parts.subagent).toEqual([]);
-    expect(parts.schedule).toEqual([]);
-    expect(parts.archived.map((s) => s.sessionId)).toEqual([sub.sessionId, sched.sessionId]);
-    expect(parts.active).toEqual([]);
-  });
-
-  it("empty input yields five empty parts", () => {
-    expect(partitionSessions([])).toEqual({
-      active: [],
-      subagent: [],
-      schedule: [],
-      benchmark: [],
-      archived: [],
-    });
   });
 });
 
 describe("latestConversation (the auto-opened 'last conversation')", () => {
-  it("picks the most recently active active/schedule row regardless of input order; archived and subagent rows never win", () => {
+  it("picks the most recently active person's conversation regardless of input order; archived and background rows never win", () => {
     // Created first but returned to since: this is the conversation the user was last in,
     // and the one created last is not.
     const revisited = session("/srv/a", "2026-07-01T10:00:00.000Z", {
       lastActiveAt: "2026-07-06T10:00:00.000Z",
     });
-    const newerUntouched = session("/srv/a", "2026-07-03T10:00:00.000Z");
-    // Active more recently than every conversation, but never auto-opened:
+    const newerUntouched = session("/srv/a", "2026-07-03T10:00:00.000Z", { source: "user" });
+    // Active more recently than every conversation, but never auto-opened — a scheduled run
+    // included: a program opened it, and the user was not in it.
     const subAfter = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "subagent" });
+    const schedAfter = session("/srv/a", "2026-07-07T10:00:00.000Z", { source: "schedule" });
     const goneAfter = session("/srv/a", "2026-07-09T10:00:00.000Z", { archived: true });
-    expect(latestConversation([subAfter, newerUntouched, goneAfter, revisited])).toBe(revisited);
-
-    // A schedule-created run is the user's conversation: the most recently active one qualifies.
-    const schedAfter = session("/srv/a", "2026-07-05T10:00:00.000Z", {
-      lastActiveAt: "2026-07-07T10:00:00.000Z",
-      source: "schedule",
-    });
-    expect(latestConversation([revisited, schedAfter, subAfter])).toBe(schedAfter);
+    expect(latestConversation([subAfter, schedAfter, newerUntouched, goneAfter, revisited])).toBe(
+      revisited,
+    );
   });
 
   it("ties on lastActiveAt break by sessionId, and no qualifying row yields null", () => {
@@ -346,21 +338,7 @@ describe("latestConversation (the auto-opened 'last conversation')", () => {
     expect(latestConversation([a, b])).toBe(b);
     expect(latestConversation([b, a])).toBe(b);
     expect(latestConversation([])).toBeNull();
-    expect(latestConversation([session("/srv/a", at, { source: "subagent" })])).toBeNull();
-  });
-});
-
-describe("benchmark Sessions (the Evaluation Center's runs)", () => {
-  it("files a benchmark Session into its own folder and never auto-opens it", () => {
-    // The Test Session an evaluation launches for a Case × Run, active more recently than
-    // anything the user opened themselves.
-    const run = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "benchmark" });
-    const user = session("/srv/a", "2026-07-02T10:00:00.000Z");
-    const parts = partitionSessions([run, user]);
-    expect(parts.benchmark.map((s) => s.sessionId)).toEqual([run.sessionId]);
-    expect(parts.active.map((s) => s.sessionId)).toEqual([user.sessionId]);
-    // The evaluator's run is not the conversation the user was last in.
-    expect(latestConversation([run, user])).toBe(user);
+    expect(latestConversation([session("/srv/a", at, { source: "cli" })])).toBeNull();
   });
 });
 
@@ -378,39 +356,27 @@ describe("splitPage (limit+1 fetch trick)", () => {
 });
 
 describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
-  const zero = { active: 0, subagent: 0, schedule: 0, benchmark: 0, archived: 0 };
+  const zero = { active: 0, background: 0, archived: 0 };
 
   it("sums each Workspace path across Agents and records which Agents hold each category", () => {
     const byAgent = new Map<string, Record<string, SessionCategoryCounts>>([
       [
         "agent_a",
         {
-          "/srv/alpha": { ...zero, active: 2, subagent: 1 },
+          "/srv/alpha": { ...zero, active: 2 },
           "/srv/beta": { ...zero, archived: 3 },
         },
       ],
-      ["agent_b", { "/srv/alpha": { ...zero, active: 1, schedule: 2 } }],
+      ["agent_b", { "/srv/alpha": { ...zero, active: 1, background: 2 } }],
     ]);
     const groups = aggregateWorkspaceCounts(byAgent);
     expect(groups.get("/srv/alpha")).toEqual({
-      totals: { active: 3, subagent: 1, schedule: 2, benchmark: 0, archived: 0 },
-      agents: {
-        active: ["agent_a", "agent_b"],
-        subagent: ["agent_a"],
-        schedule: ["agent_b"],
-        benchmark: [],
-        archived: [],
-      },
+      totals: { active: 3, background: 2, archived: 0 },
+      agents: { active: ["agent_a", "agent_b"], background: ["agent_b"], archived: [] },
     });
     expect(groups.get("/srv/beta")).toEqual({
       totals: { ...zero, archived: 3 },
-      agents: {
-        active: [],
-        subagent: [],
-        schedule: [],
-        benchmark: [],
-        archived: ["agent_a"],
-      },
+      agents: { active: [], background: [], archived: ["agent_a"] },
     });
     // A group only in another Workspace never appears — its content can't surface elsewhere.
     expect(groups.has("/srv/gamma")).toBe(false);
@@ -430,13 +396,7 @@ describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
     expect(groups.size).toBe(1);
     expect(groups.get(TEMP_WORKSPACE_GROUP_KEY)).toEqual({
       totals: { ...zero, active: 3, archived: 1 },
-      agents: {
-        active: ["agent_a"],
-        subagent: [],
-        schedule: [],
-        benchmark: [],
-        archived: ["agent_a"],
-      },
+      agents: { active: ["agent_a"], background: [], archived: ["agent_a"] },
     });
   });
 
@@ -607,9 +567,7 @@ describe("groupSessionsByTime", () => {
 describe("totalCategoryCounts", () => {
   const counts = (over: Partial<SessionCategoryCounts>): SessionCategoryCounts => ({
     active: 0,
-    subagent: 0,
-    schedule: 0,
-    benchmark: 0,
+    background: 0,
     archived: 0,
     ...over,
   });
@@ -619,20 +577,14 @@ describe("totalCategoryCounts", () => {
       totalCategoryCounts(
         new Map([
           ["a", counts({ active: 3, archived: 2 })],
-          ["b", counts({ active: 4, subagent: 1 })],
+          ["b", counts({ active: 4, background: 1 })],
         ]),
       ),
-    ).toEqual({ active: 7, subagent: 1, schedule: 0, benchmark: 0, archived: 2 });
+    ).toEqual({ active: 7, background: 1, archived: 2 });
   });
 
   it("reports zeros for an empty map rather than leaving fields undefined", () => {
-    expect(totalCategoryCounts(new Map())).toEqual({
-      active: 0,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    });
+    expect(totalCategoryCounts(new Map())).toEqual({ active: 0, background: 0, archived: 0 });
   });
 });
 
@@ -665,10 +617,10 @@ describe("aggregateWorkspaceLatest (per-group newest-Session stamp)", () => {
 });
 
 describe("completeWorkspaceGroups (every counted Workspace is a group, placed by recency)", () => {
-  const zero = { active: 0, subagent: 0, schedule: 0, benchmark: 0, archived: 0 };
+  const zero = { active: 0, background: 0, archived: 0 };
   const counted = (totals: Partial<SessionCategoryCounts>) => ({
     totals: { ...zero, ...totals },
-    agents: { active: [], subagent: [], schedule: [], benchmark: [], archived: [] },
+    agents: { active: [], background: [], archived: [] },
   });
 
   it("reads a machine-qualified count key as that machine's directory, not as a path", () => {

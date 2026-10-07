@@ -52,12 +52,13 @@ penguin run -m <message> [options]
 | `--approve <mode>` | Approval mode; see [Approval modes (--approve)](#approval-modes---approve). With `--session`, it PATCHes the Session's sticky mode. | `allow-all` |
 | `--thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`) before the Task. It applies from the Session's next LLM request. | The Session's pinned level, else the agent config |
 | `--session <sessionId>` | Reuses an existing Session (full id or unique fragment) instead of creating one. Cannot be combined with `--workspace` or the model pair. | — |
-| `--source <source>` | Marks the new Session as created by a Benchmark evaluation. The only value is `benchmark`, and the Web App files such Sessions under the Evaluations folder of the session list. Cannot be combined with `--session`. | — |
 | `--background` | POSTs the Task and exits immediately, printing the session id (`{"sessionId"}` under `--json`). The Task keeps running on the server; follow it with `penguin logs -f`. | — |
 | `--timeout <duration>` | Soft-yield wait budget; see [Global conventions](#global-conventions). Cannot be combined with `--background`. | Wait indefinitely |
 | `--goal [budget]` | Goal mode: the message is the objective, and the server loops until the goal reaches a terminal state. The optional value is a token budget, such as `500k`. | — |
 | `--json` | Prints a final `{sessionId, status, text}` object instead of the rendered stream. `text` joins the main Session's assistant text messages. | — |
 | `--server <url>` | Target server; see [Server connection](#server-connection). | — |
+
+Every Session `run` creates is a CLI Session (`source: "cli"`), which the Web App lists in the **Background** folder of its session list rather than among the agent's conversations. `penguin chat` creates ordinary conversations. The `--source benchmark` that older evaluation skills pass is accepted and ignored, with a note.
 
 When `--timeout` expires, `run` prints what has rendered so far and a dim still-running line with the session id, then exits 0 without aborting the Task. Under `--json` it prints `{sessionId, status: "running", text}`. `--timeout 0` returns right after the POST, and under `--json` prints `{sessionId, status: "running"}` with no `text`. For a goal run, the `status` in the final JSON object is the goal outcome.
 

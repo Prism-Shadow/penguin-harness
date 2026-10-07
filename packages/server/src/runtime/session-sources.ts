@@ -1,39 +1,44 @@
 /**
- * In-process registry of Session origins, derived from core `session_meta` — the single
- * source of truth for a Session's origin (the DB stores no `source` column).
+ * In-process registry of Session sources, derived from core `session_meta` — the single
+ * source of truth for what kind of conversation a Session is (the DB stores no `source`
+ * column).
  *
  * Populated wherever the server actually has the meta in hand: Session creation
  * (SessionService reads the just-created core Session's meta), subagent registration
- * (SessionManager reads the forwarded child meta), and Trace adoption / lazy list
- * resolution (SessionService reads the Trace head's session_meta). `null` records a
- * **known** user-created Session (meta seen, no source) so the Trace is not re-read on
- * every list; an absent entry means "unknown" and the list path resolves it from the
- * Trace once per process lifetime.
+ * (SessionManager reads the forwarded child meta), forks (always `user`), and Trace adoption /
+ * lazy list resolution (the trace index's head read). Every value is narrowed through core's
+ * `normalizeSessionSource` before it lands here, so an old Trace's missing source reads as
+ * `user` and its `benchmark` as `cli`. An absent entry means "unknown": the list path resolves
+ * it from the Trace once per process lifetime.
  */
-import type { SessionSource } from "../api/types.js";
+import type { SessionCategory, SessionSource } from "../api/types.js";
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { SessionOrigins } from "../mechanisms/sessions.js";
 
 /**
- * Narrows an untrusted value (on-disk Trace JSON / forwarded meta) to a SessionSource:
- * only the exact known origins pass; anything else — including junk written by third
- * parties — is treated as absent rather than cast through.
+ * Where an unarchived Session is listed: a person's conversation (`user`, or a row not yet
+ * classified) is `active`; every other source — API, scheduled, subagent and CLI Sessions — is
+ * `background`. Archived wins over both, and the callers check it first. The Web App's sidebar
+ * applies the same rule to loaded rows (`sessionCategory`), so server filtering and client
+ * rendering never disagree.
  */
-export function asSessionSource(v: unknown): SessionSource | undefined {
-  return v === "schedule" || v === "subagent" || v === "benchmark" ? v : undefined;
+export function sourceCategory(
+  source: SessionSource | undefined,
+): Exclude<SessionCategory, "archived"> {
+  return source === undefined || source === "user" ? "active" : "background";
 }
 
 @Component()
 export class SessionSources implements SessionOrigins {
-  private readonly map = new Map<string, SessionSource | null>();
+  private readonly map = new Map<string, SessionSource>();
 
-  /** Records a Session's origin as read from session_meta (`null` = meta seen, user-created). */
-  set(sessionId: string, source: SessionSource | null): void {
+  /** Records a Session's source as read from session_meta. */
+  set(sessionId: string, source: SessionSource): void {
     this.map.set(sessionId, source);
   }
 
-  /** Known origin, `null` for a known user-created Session, `undefined` when this process has not seen the meta. */
-  get(sessionId: string): SessionSource | null | undefined {
+  /** The Session's known source; `undefined` when this process has not seen its meta. */
+  get(sessionId: string): SessionSource | undefined {
     return this.map.get(sessionId);
   }
 
