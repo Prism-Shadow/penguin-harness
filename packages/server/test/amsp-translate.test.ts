@@ -19,10 +19,11 @@
  * - Given an approval_request server event, approval.requested carries the call and its origin;
  *   the engine's decision follows as approval.decided.
  * - Given a compaction, only summary.* sits between compaction.started and compaction.done (the
- *   summary text as summary.done, the compaction's thinking left out), its usage is the sum of
- *   its attempts, and a main-Session session_meta becomes context.opened.
- * - Given a child Session's messages, they carry its origin and count their own requests without
- *   moving the main Session's ordinals.
+ *   summary text as summary.done, the compaction's thinking left out), and its usage is the sum
+ *   of its attempts.
+ * - Given a child Session's stream, its session_meta opens it as context.opened with its origin,
+ *   and its messages carry that origin and count their own requests without moving the main
+ *   Session's ordinals. (A main Session's next context is written to the Trace, not streamed.)
  * - Given the run's own input on the channel, it is not echoed; a steering text and a harness
  *   injection are, as user text.done with their sender; anything published before the input is
  *   not this run's.
@@ -287,17 +288,7 @@ describe("AMSP translator", () => {
     ]);
   });
 
-  it("compaction encloses summary items, never text or thinking items, and context.opened follows the new context's session_meta", () => {
-    const meta = sessionMeta({
-      session_id: "s-main",
-      provider: "custom",
-      model_id: "m2",
-      model_context_window: "unknown",
-      system_prompt: "",
-      agent_state: "/a",
-      workspace: "/w",
-      source: "api",
-    });
+  it("compaction encloses summary items, never text or thinking items, and its usage sums its attempts", () => {
     const events = startRun().play([
       compactionBegin({ reason: "context", mode: "summarize", context: 9000, turns: 4 }),
       partialThinking("start"),
@@ -308,7 +299,6 @@ describe("AMSP translator", () => {
       tokenUsage(counts(9, 900), counts(3, 300)),
       tokenUsage(counts(12, 1200), counts(3, 300)),
       compactionEnd({ reason: "context", mode: "summarize", status: "completed", attempt: 2 }),
-      meta,
       requestBegin(),
       assistantText("after"),
       requestEnd("completed"),
@@ -317,13 +307,13 @@ describe("AMSP translator", () => {
     const end = events.findIndex((e) => e.type === "compaction.done");
     expect(types(events.slice(start + 1, end))).toEqual(["summary.delta", "summary.delta"]);
     expect(events[end]).toMatchObject({ status: "completed", usage: counts(6, 600), attempt: 2 });
-    expect(events[end + 1]).toMatchObject({
-      type: "context.opened",
-      session_id: "s-main",
-      model_id: "m2",
-      context_window: "unknown",
-    });
-    expect(events[end + 1]!.origin).toBeUndefined();
+    // The next context's Request follows; the text after the compaction is the answer again.
+    expect(types(events.slice(end + 1))).toEqual([
+      "request.started",
+      "text.done",
+      "request.done",
+      "run.done",
+    ]);
     // A summary that arrives complete (nothing streamed) is its summary.done.
     const whole = startRun().play([
       compactionBegin({ reason: "manual", mode: "summarize", context: 10, turns: 1 }),
@@ -339,10 +329,21 @@ describe("AMSP translator", () => {
     expect(runDone(events).usage).toEqual(counts(6, 600));
   });
 
-  it("a child Session's messages carry its origin and do not disturb the main Session's request numbering", () => {
+  it("a child Session's session_meta opens it as context.opened, and its messages carry its origin without disturbing the main Session's request numbering", () => {
     const child = "session-child-1";
+    const childMeta = sessionMeta({
+      session_id: child,
+      provider: "custom",
+      model_id: "m2",
+      model_context_window: "unknown",
+      system_prompt: "",
+      agent_state: "/a",
+      workspace: "/w",
+      source: "subagent",
+    });
     const events = startRun().play([
       requestBegin(),
+      withOrigin(childMeta, child),
       withOrigin(requestBegin(), child),
       withOrigin(assistantText("child text"), child),
       withOrigin(tokenUsage(counts(1, 50), counts(1, 50)), child),
@@ -364,6 +365,16 @@ describe("AMSP translator", () => {
       [child, 2],
       ["main", 2],
     ]);
+    // The child's stream opens with its context, ahead of its first Request.
+    expect(events[1]).toMatchObject({
+      type: "context.opened",
+      origin: [child],
+      session_id: child,
+      provider: "custom",
+      model_id: "m2",
+      context_window: "unknown",
+    });
+    expect(events[2]).toMatchObject({ type: "request.started", origin: [child] });
     expect(events.find((e) => e.type === "text.done")).toMatchObject({ origin: [child] });
     const done = runDone(events);
     // The child's usage is part of the run's spend; the Session's own count is the main one.
