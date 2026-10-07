@@ -234,7 +234,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       hookCount: 1,
       pluginUpdates: [{ name: IDS.plugins.registry, version: "2026.09.20.1" }],
       memoryCount: 4,
-      apiEnabled: false,
+      // Its API is on: see `agentApi` below.
+      apiEnabled: true,
     },
     {
       agentId: IDS.agents.notes,
