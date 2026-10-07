@@ -127,6 +127,7 @@ beforeEach(async () => {
     agents: {
       pluginVersion: async () => ({ installed: "1", library: "1" }),
       updatePlugin: async () => {},
+      removeSkill: async () => undefined,
     },
     root,
     log: { line: () => undefined },

@@ -174,6 +174,12 @@ class FakeAgents {
     this.installed.add(agentId);
     this.outdated.delete(agentId);
   }
+  /** Skills each employee carries apart from the plugin's own, by name; a removal takes one off. */
+  others = new Map<string, Set<string>>();
+  removed: string[] = [];
+  async removeSkill(_p: string, agentId: string, name: string): Promise<void> {
+    if (this.others.get(agentId)?.delete(name) === true) this.removed.push(`${agentId}/${name}`);
+  }
 }
 
 /** `gh` as the service sees it: every pull request asked about is merged; the arguments asked are recorded. */
@@ -785,6 +791,28 @@ describe("ProposalService", () => {
     expect(agents.updates).toEqual(["acme_dev"]);
     await service.create(PROJECT, ORG, { author: "acme_dev", brief: "Current now" }, BOSS);
     expect(agents.updates).toEqual(["acme_dev"]);
+  });
+
+  it("an update removes the three skills penguin-proposal replaced, and nothing else", async () => {
+    agents.installed.add("acme_dev");
+    agents.outdated.add("acme_dev");
+    agents.others.set(
+      "acme_dev",
+      new Set(["proposal-author", "proposal-implementer", "proposal-tester", "company-employee"]),
+    );
+    await service.create(PROJECT, ORG, { author: "acme_dev", brief: "Old skills" }, BOSS);
+    expect(agents.updates).toEqual(["acme_dev"]);
+    expect(agents.removed).toEqual([
+      "acme_dev/proposal-author",
+      "acme_dev/proposal-implementer",
+      "acme_dev/proposal-tester",
+    ]);
+    expect([...agents.others.get("acme_dev")!]).toEqual(["company-employee"]);
+    // A failed install removes nothing: the old skills are all the employee has.
+    agents.others.set("acme_qa", new Set(["proposal-author"]));
+    agents.failInstall = true;
+    await service.create(PROJECT, ORG, { author: "acme_qa", brief: "Broken" }, BOSS);
+    expect([...agents.others.get("acme_qa")!]).toEqual(["proposal-author"]);
   });
 
   it("the author publishes and marks ready, and so may any other member", async () => {

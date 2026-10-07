@@ -107,6 +107,7 @@ import type {
 } from "./ports.js";
 import { changeAuthor, type AuthorHost } from "./author.js";
 import { RoadmapLinks } from "./roadmap-links.js";
+import { RETIRED_SKILLS } from "./skill-pack.js";
 import { SqliteProposalStore } from "./store-write.js";
 import { SqliteGraphStore } from "./graph-store.js";
 import { companyDbPath } from "./schema.js";
@@ -162,7 +163,7 @@ export const MATERIAL_KINDS: readonly ProposalMaterialKind[] = [
 export interface ServiceDeps {
   gateway: OrgGateway;
   /** The Agent lifecycle: what an employee carries of the skills plugin, and installing it. */
-  agents: Pick<AgentLifecycle, "pluginVersion" | "updatePlugin">;
+  agents: Pick<AgentLifecycle, "pluginVersion" | "updatePlugin" | "removeSkill">;
   /** The data root (Paths.root). */
   root: string;
   log: Pick<Log, "line">;
@@ -811,8 +812,9 @@ export class ProposalService {
 
   /**
    * The skills plugin reaches whoever writes or builds a proposal, on demand: nobody is hired
-   * for it and nobody installs it by hand. A library without the plugin, or an install that
-   * fails, is logged — the proposal stands either way.
+   * for it and nobody installs it by hand. The skills it no longer ships go once it is current
+   * (skill-pack.ts). A library without the plugin, or an install that fails, is logged — the
+   * proposal stands either way.
    */
   private async ensureSkills(projectId: string, agentId: string): Promise<void> {
     try {
@@ -821,11 +823,14 @@ export class ProposalService {
       // Missing, or older than the library's: the protocol changes (scope kinds, the ready
       // guard), and an author working from an old copy would write what the server refuses.
       if (
-        version.installed !== null &&
-        compareDatedVersions(version.installed, version.library) >= 0
-      )
-        return;
-      await this.deps.agents.updatePlugin(projectId, agentId, SKILLS_PLUGIN);
+        version.installed === null ||
+        compareDatedVersions(version.installed, version.library) < 0
+      ) {
+        await this.deps.agents.updatePlugin(projectId, agentId, SKILLS_PLUGIN);
+      }
+      for (const name of RETIRED_SKILLS) {
+        await this.deps.agents.removeSkill(projectId, agentId, name);
+      }
     } catch (err) {
       this.deps.log.line(
         `[${PLUGIN_NAME}] ${SKILLS_PLUGIN} not installed on ${agentId}: ${

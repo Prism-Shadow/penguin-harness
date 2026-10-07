@@ -94,6 +94,7 @@ function open(): ProposalService {
     agents: {
       pluginVersion: async () => ({ installed: null, library: null }),
       updatePlugin: async () => undefined,
+      removeSkill: async () => undefined,
     },
     root,
     log: { line: () => undefined },

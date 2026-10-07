@@ -92,6 +92,7 @@ describe("graph reads spawn nothing", () => {
       agents: {
         pluginVersion: async () => ({ installed: null, library: null }),
         updatePlugin: async () => {},
+        removeSkill: async () => undefined,
       },
       root,
       log: { line: () => undefined },

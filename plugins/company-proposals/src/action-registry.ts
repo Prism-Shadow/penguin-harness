@@ -59,6 +59,7 @@ import {
 } from "./action-prepare.js";
 import { actorOf, requireNoticeOnly, sendNotice } from "./action-notice.js";
 import { companyDbPath } from "./schema.js";
+import { withSkillHint } from "./skill-hint.js";
 import type { StartProcess } from "./deploy-process.js";
 
 /** Where an organization's company contributions come from: its company workflows. */
@@ -202,7 +203,10 @@ export class ActionRegistry {
     };
   }
 
-  /** Runs an Action; refusals and failures come back as the error they answered with. */
+  /**
+   * Runs an Action; refusals and failures come back as the error they answered with — for an
+   * employee's proposal or roadmap write, followed by the skill that explains it (skill-hint.ts).
+   */
   async run(
     projectId: string,
     orgId: string,
@@ -210,6 +214,14 @@ export class ActionRegistry {
     req: RunRequest,
   ): Promise<RunAnswer> {
     const scope = await this.scope(projectId, orgId, actor);
+    try {
+      return await this.runIn(scope, req);
+    } catch (err) {
+      throw withSkillHint(err, req, scope.caller);
+    }
+  }
+
+  private async runIn(scope: OrgScope, req: RunRequest): Promise<RunAnswer> {
     const via = req.notice === true ? "notify" : viaOf(req.via, scope.caller);
     // Which Action, judged by which guard: a key that resolves to none, or to two of one
     // standing, is answered here, before any run exists — it is not recorded.

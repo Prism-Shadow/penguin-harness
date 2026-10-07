@@ -65,6 +65,7 @@ describe("proposal.impl keeps the impl on the PR graph", () => {
       agents: {
         pluginVersion: async () => ({ installed: null, library: null }),
         updatePlugin: async () => undefined,
+        removeSkill: async () => undefined,
       },
       root,
       log: { line: () => undefined },

@@ -23,7 +23,7 @@ Two packages, off by default:
   plugins = ["@prismshadow/penguin-plugin-company-proposals"]
   ```
 
-- `agent-company-proposals`, the skills (`proposal-author`, `proposal-implementer`, `proposal-tester`): install it from the plugin library onto the employees that take those roles.
+- `agent-company-proposals`, the skill `penguin-proposal` (a section per role: author, implementer, tester, roadmap member and moderator): the plugin installs it on whoever writes or builds a proposal, and removes the three skills it replaced (`proposal-author`, `proposal-implementer`, `proposal-tester`); an employee whose proposal or roadmap write is refused is pointed to it.
 
 ## Use
 

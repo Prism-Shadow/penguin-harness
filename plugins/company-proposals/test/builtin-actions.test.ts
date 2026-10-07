@@ -336,6 +336,7 @@ describe("through the Action routes", () => {
       agents: {
         pluginVersion: async () => ({ installed: null, library: null }),
         updatePlugin: async () => {},
+        removeSkill: async () => undefined,
       },
       root,
       log: { line: () => undefined },

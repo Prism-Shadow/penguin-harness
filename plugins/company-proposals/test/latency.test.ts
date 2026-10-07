@@ -87,6 +87,7 @@ describe("latency at the scale of the largest organization", () => {
       agents: {
         pluginVersion: async () => ({ installed: null, library: null }),
         updatePlugin: async () => {},
+        removeSkill: async () => undefined,
       },
       root,
       log: { line: () => undefined },

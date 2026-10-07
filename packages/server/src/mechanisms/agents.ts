@@ -171,4 +171,6 @@ export abstract class AgentLifecycle {
     pluginName: string,
   ): Promise<{ installed: string | null; library: string | null }>;
   abstract updatePlugin(projectId: string, agentId: string, pluginName: string): Promise<void>;
+  /** Uninstalls one skill from an Agent; a skill it does not carry is no error. */
+  abstract removeSkill(projectId: string, agentId: string, name: string): Promise<void>;
 }

@@ -110,6 +110,7 @@ export async function fakeOrg(opts: { gh?: RunGh } = {}): Promise<{
     agents: {
       pluginVersion: async () => ({ installed: null, library: null }),
       updatePlugin: async () => undefined,
+      removeSkill: async () => undefined,
     },
     root,
     log: { line: () => undefined },

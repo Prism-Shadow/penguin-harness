@@ -22,6 +22,7 @@ import {
   installPlugin,
   installSkill,
   listInstalledHooks,
+  removeSkill,
   isValidId,
   loadAgentVault,
   memoryDir,
@@ -327,6 +328,14 @@ export class AgentService implements AgentLifecycle {
     for (const plugin of resolveLibraryPlugins([pluginName])) {
       await installPlugin(this.root, projectId, agentId, plugin);
     }
+  }
+
+  /**
+   * Uninstall one skill from an Agent (idempotent): how a plugin's update drops a skill its
+   * new version no longer ships, which a whole-plugin reinstall leaves behind.
+   */
+  async removeSkill(projectId: string, agentId: string, name: string): Promise<void> {
+    await removeSkill(this.root, projectId, agentId, name);
   }
 
   /** Number of memory topic files: regular `*.md` files (minus each scope's MEMORY.md index) summed over the scope directories under memory/ (0 if the directory doesn't exist). */
