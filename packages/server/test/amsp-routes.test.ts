@@ -1,6 +1,6 @@
 /**
  * The Agent API on the wire: the real Hono app, requests in, response bytes out, read the way a
- * client reads them (an SSE reader over the body). Sessions are fake runtimes adopted as API
+ * client reads them (the client package's `readSse` over the body). Sessions are fake runtimes adopted as API
  * Sessions (fixtures/session.ts) playing scripted streams, except where creating a Session is
  * the point: those run a real core Session against a loopback model (live-session.ts).
  *
@@ -55,6 +55,7 @@ import {
   requestEnd,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
+import { readSse } from "@prismshadow/amsp";
 import type { AmspEvent } from "@prismshadow/amsp";
 import type { AgentApiKeyCreateResponse, ApprovalMode, SessionResponse } from "../src/api/types.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
@@ -67,7 +68,6 @@ import {
   APPROVAL_ROUND_TRIP,
 } from "./fixtures/amsp-stream.js";
 import type { AmspStreamScript } from "./fixtures/amsp-stream.js";
-import { readSse } from "./fixtures/sse.js";
 import { MOCK_MODEL_ID, startMockLLM } from "./live-session.js";
 import type { MockLLM } from "./live-session.js";
 
@@ -123,10 +123,10 @@ function stream(res: Response) {
       }
       return out;
     },
-    /** The caller goes away. */
+    /** The caller goes away: a reader that has started cancels the body as it stops. */
     async disconnect(): Promise<void> {
       await reader.return(undefined);
-      await body.cancel();
+      if (!body.locked) await body.cancel();
     },
   };
 }
