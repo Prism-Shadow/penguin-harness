@@ -6,44 +6,45 @@
 
 [中文版](2026-10-07-agent-api-amsp.zh.md)
 
-A Project owner can open one agent to programs outside PenguinHarness. A program sends its input to `POST /api/amsp/v1/agents/:projectId/:agentId/runs`, reads the run as it happens as an AMSP event stream, and continues the conversation by its Session id. The runs use the Project's models and credentials, are recorded like any conversation, and appear in the sidebar's **Background** folder. A new package, `@prismshadow/amsp`, carries the protocol's types and a TypeScript client for Node and browsers.
+A Project owner could open one agent to programs outside PenguinHarness. A program sent its input to `POST /api/amsp/v1/agents/:projectId/:agentId/runs`, read the run as it happened as an AMSP event stream, and continued the conversation by its Session id. The runs used the Project's models and credentials, were recorded like any conversation, and appeared in the sidebar's **Background** folder. A new package, `@prismshadow/amsp`, carried the protocol's types and a TypeScript client for Node and browsers.
 
 ## The Agent API
 
-- Each agent has its own switch, off by default, an optional **keyless access** switch, also off by default, and an **API approval mode**, `allow-all` by default. They are stored in the server's database, in the new `agent_api` and `agent_api_keys` tables, outside the agent's state and outside the Project file, so an agent can neither expose itself nor loosen its own approvals.
-- Keys are minted per agent, named, and shown once: `penguin_` followed by 43 base64url characters, stored as SHA-256. A key runs its own agent and reads, aborts and answers the approvals of that agent's API conversations, and opens nothing else. Each run that presents a key stamps its last use.
-- The public routes are under `/api/amsp/v1`, outside the sign-in cookie: `GET /agents/:projectId/:agentId`, `POST /agents/:projectId/:agentId/runs`, `GET /sessions/:sessionId`, `POST /sessions/:sessionId/abort` and `POST /sessions/:sessionId/approvals/:toolCallId`. Any other path under the prefix answers a JSON `404` `not_found`. The key and the switches are checked before the body is read.
-- A run without `session_id` creates a conversation with `session_meta.source` `api` and the index row's `client` `api`, using the Project's default model, the server's new-chat sandbox and the agent's API approval mode, copied onto the conversation when it is created. `session_id` continues an API conversation of the same agent; any other id is `404` `session_not_found`.
-- When the approval mode asks, the request streams to the caller as `approval.requested`, and the conversation in the Web App can answer it too; the first answer counts. A caller that disconnects aborts its run, and its pending approvals are denied. `POST …/abort` aborts while keeping the stream open for the final `run.done`.
-- A busy conversation answers `409`; a fifth concurrent run of one agent answers `429` `too_many_runs` with `Retry-After: 2`.
-- The CORS preflight is answered for any origin; `Access-Control-Allow-Origin: *` is sent only on a request carrying `Authorization`, so a page on another origin cannot drive an agent through keyless access.
-- The administrator's `agentApiEnabled` setting in `/api/admin/settings`, on by default, refuses every Agent API request with `403` `agent_api_disabled` when off, keeping the agents' settings and keys.
-- The owner's routes under `/api/projects/:projectId/agents/:agentId/api` read and change an agent's settings and create and delete its keys; the agents list carries `apiEnabled`.
+- Each agent got its own switch, off by default, an optional **keyless access** switch, also off by default, and an **API approval mode**, `allow-all` by default. They were stored in the server's database, in the new `agent_api` and `agent_api_keys` tables, outside the agent's state and outside the Project file, so an agent could neither expose itself nor loosen its own approvals.
+- Keys were minted per agent, named, and shown once: `penguin_` followed by 43 base64url characters, stored as SHA-256 and listed by their first 16 characters. A key ran its own agent and read, aborted and answered the approvals of that agent's API conversations, and opened nothing else. Each run that presented a key stamped its last use.
+- The public routes were mounted under `/api/amsp/v1`, outside the sign-in cookie: `GET /agents/:projectId/:agentId`, `POST /agents/:projectId/:agentId/runs`, `GET /sessions/:sessionId`, `POST /sessions/:sessionId/abort` and `POST /sessions/:sessionId/approvals/:toolCallId`. Any other path under the prefix answered a JSON `404` `not_found`. The key and the switches were checked before the body was read.
+- A run without `session_id` created a conversation with `session_meta.source` `api` and the index row's `client` `api`, using the Project's default model, the server's new-chat sandbox and the agent's API approval mode, copied onto the conversation when it was created. `session_id` continued an API conversation of the same agent; any other id was `404` `session_not_found`.
+- When the approval mode asked, the request streamed to the caller as `approval.requested`, and the conversation in the Web App could answer it too; the first answer counted. A caller that disconnected aborted its run, and its pending approvals were denied. `POST …/abort` aborted while keeping the stream open for the final `run.done`.
+- A busy conversation answered `409`; a fifth concurrent run of one agent answered `429` `too_many_runs` with `Retry-After: 2`.
+- The CORS preflight was answered for any origin. `Access-Control-Allow-Origin: *` went only on a request carrying `Authorization`, the server-wide `413` and `415` refusals included, so a page on another origin could not drive an agent through keyless access.
+- The administrator's `agentApiEnabled` setting in `/api/admin/settings`, on by default, refused every Agent API request with `403` `agent_api_disabled` when off, keeping the agents' settings and keys.
+- The routes under `/api/projects/:projectId/agents/:agentId/api` let any member read an agent's settings, the administrator's switch included as `serverEnabled`, and let the owner change them and create and delete keys. The agents list carried `apiEnabled`.
 
 ## The AMSP stream
 
-- AMSP (Agent Message Stream Protocol) streams one run of an agent, one Task, the way MMSP streams one model call: SSE `data:` lines, `data: [DONE]` at the end, `: keep-alive` after 15 seconds of silence, bytes as base64. Events are flat objects named `<subject>.<phase>`: `run.*`, `context.opened`, `mcp_connect.*`, `tools.ready`, `request.*`, `K.delta` / `K.done` items, `approval.*`, `compaction.*` and `hook.fired`.
-- The server translates the Session's live stream into it: OmniMessage records and server events. Fragments and complete items are forwarded as the engine produced them, `partial_*` `stop` is not sent, and OmniMessage gained no field.
-- `run.done` is the single terminal event and always arrives, errors included, with the run's status, error, Request count, token usage and the Session's running total. Errors before the stream use the server's error envelope with fixed status codes.
-- New event types and optional fields are added within `/v1`; a change to a field's meaning would be `/v2`. Clients ignore event types they do not know.
+- AMSP (Agent Message Stream Protocol) streamed one run of an agent, one Task, the way MMSP streams one model call: SSE `data:` lines, `data: [DONE]` at the end, `: keep-alive` after 15 seconds of silence, bytes as base64. Events were flat objects named `<subject>.<phase>`: `run.*`, `context.opened`, `mcp_connect.*`, `tools.ready`, `request.*`, `K.delta` / `K.done` items, `approval.*`, `compaction.*` and `hook.fired`.
+- The server translated the Session's live stream into it: OmniMessage records and server events. Fragments and complete items were forwarded as the engine produced them, `partial_*` `stop` was not sent, and OmniMessage gained no field.
+- `run.done` was the single terminal event and always arrived, errors included, with the run's status, error, Request count, token usage and the Session's running total. Errors before the stream used the server's error envelope with fixed status codes.
+- New event types and optional fields were to be added within `/v1`, and a change to a field's meaning would be `/v2`; clients were required to ignore event types they did not know.
 
 ## The amsp client
 
-- `@prismshadow/amsp` is a new public package with no runtime dependencies, for Node 24 and browsers. It exports the AMSP wire types, which the server imports, and `AgentClient`.
-- `client.run()` returns a run to iterate for its events, with `session`, `result()` and `abort()`; `client.ask()` returns the result alone. `onApproval` answers approval requests, and without it they are denied. The client also offers `agent()`, `session()`, `abort()` and `approve()`, the `AmspHttpError` and `AmspStreamError` errors, `parseArguments` for a tool call's JSON arguments, and `readSse`, the SSE reader.
+- `@prismshadow/amsp` was a new public package with no runtime dependencies, for Node 24 and browsers. It exported the AMSP wire types, which the server imported, and `AgentClient`.
+- `client.run()` returned a run to iterate for its events, with `session`, `result()` and `abort()`; `client.ask()` returned the result alone. `onApproval` answered approval requests, and without it they were denied. The client also offered `agent()`, `session()`, `abort()` and `approve()`, the `AmspHttpError` and `AmspStreamError` errors, `parseArguments` for a tool call's JSON arguments, and `readSse`, the SSE reader.
 
 ## The Web App
 
-- The agent settings page gained an **API** tab: **Enable API access**, the approval mode for API conversations, the Base URL and Agent ID to copy, keys created with a one-time display and deleted from a list, **Allow keyless access** with its warning, and curl and TypeScript examples.
-- The Agents page marks an agent whose API is on with an API icon. **Settings** gained the administrator's **Allow the Agent API** switch.
+- The agent settings page gained an **API** tab: **Enable API access**, the approval mode for API conversations, the Base URL and Agent ID to copy, keys created with a one-time display and deleted from a list, **Allow keyless access** with its warning, and curl and TypeScript examples. While the administrator had the Agent API off, the tab disabled its switch and said why, to every member.
+- The Agents page marked an agent whose API was on with an API icon. **Settings › Server** gained an **Agent API** page with the administrator's **Allow the Agent API** switch, which asked before turning off.
 
 ## The CLI
 
-- `penguin agent api` shows and changes an agent's API from a terminal: `status`, `enable`, `disable` and `set` (with `--open` / `--no-open` and `--approve <mode>`), `keys ls`, `keys create` (the key alone on stdout), `keys rm`, and `server on|off` for the administrator's switch.
+- `penguin agent api` showed and changed an agent's API from a terminal: `status`, `enable`, `disable` and `set` (with `--open` / `--no-open` and `--approve <mode>`), `keys ls`, `keys create` (the key alone on stdout), `keys rm`, and `server on|off` for the administrator's switch. `--agent-id` was required, with no default, and `status` showed the administrator's switch to any member.
 
 ## Docs
 
 - Two new reference pages: **Agent API**, on turning an agent's API on, the approval mode, keys, keyless access, the routes, errors, curl, the client in Node and browsers, and the CLI; and **AMSP**, the protocol's transport, grammar, every event, examples, errors, the mapping from OmniMessage and the versioning rule.
+- **Server API** gained the agent API settings routes, `agentApiEnabled`, `apiEnabled`, `client` `api` and the CORS exception for `/api/amsp/v1`; **CLI Reference** gained `penguin agent api`; **Agents** gained the **API** tab; **Settings** gained the **Agent API** page; **OmniMessage** said that AMSP is a projection of it and changed nothing in it.
 
 ## Compatibility
 
