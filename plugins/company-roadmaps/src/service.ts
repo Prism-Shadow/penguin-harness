@@ -51,7 +51,17 @@ import {
   roomRequestLine,
 } from "./lines.js";
 import { changeMembers, roomFollowsRoadmap, type MembersRequest } from "./members.js";
+import { addItem, removeItem } from "./item-edits.js";
 import { CHANNEL_ID, agentMembers, readRoom } from "./room.js";
+import {
+  MAX_ITEMS,
+  basesOf,
+  isProposalNumber,
+  parseItems,
+  stringList,
+  text,
+  unknownCites,
+} from "./items.js";
 
 export { RoadmapError } from "./domain.js";
 export { moderatorOf } from "./guards.js";
@@ -109,134 +119,6 @@ export interface AdoptRequest {
   owner?: unknown;
   /** Defaults to the title. */
   brief?: unknown;
-}
-
-const ITEM_KEY = /^[a-z0-9][a-z0-9-]{0,39}$/;
-const MAX_ITEMS = 50;
-
-function isProposalNumber(raw: unknown): raw is number {
-  return typeof raw === "number" && Number.isInteger(raw) && raw >= 1;
-}
-
-/** The headings of a Markdown body, normalized the way a cite is compared. */
-export function headingsOf(body: string): Set<string> {
-  const out = new Set<string>();
-  for (const line of body.split("\n")) {
-    const m = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
-    if (m) out.add(normalizeCite(m[1]!));
-  }
-  return out;
-}
-
-export function normalizeCite(cite: string): string {
-  return cite.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-function stringList(raw: unknown, what: string): string[] {
-  if (!Array.isArray(raw) || raw.some((x) => typeof x !== "string" || x.trim() === "")) {
-    throw badRequest(`${what} must be a list of non-empty strings.`);
-  }
-  return (raw as string[]).map((x) => x.trim());
-}
-
-function text(raw: unknown, what: string, max: number): string {
-  if (typeof raw !== "string" || raw.trim() === "")
-    throw badRequest(`${what} must be a non-empty string.`);
-  if (raw.length > max) throw badRequest(`${what} is too long (max ${max} characters).`);
-  return raw.trim();
-}
-
-/**
- * The draft's items, checked: unique keys, a kind, a title and a brief, at least one cite; a
- * proposal item's owner is an employee and its `stackedOn` an EARLIER proposal item (or null);
- * a roadmap item's employees are employees.
- */
-export function parseItems(raw: unknown, org: Pick<OrgView, "employees">): DraftItem[] {
-  if (!Array.isArray(raw)) throw badRequest("items must be a list.");
-  if (raw.length > MAX_ITEMS) throw badRequest(`At most ${MAX_ITEMS} items.`);
-  const employees = new Set(org.employees.map((e) => e.agentId));
-  const seen = new Map<string, DraftItem["kind"]>();
-  const out: DraftItem[] = [];
-  for (const [i, entry] of raw.entries()) {
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-      throw badRequest(`items[${i}] must be an object.`);
-    }
-    const o = entry as Record<string, unknown>;
-    const key = o.key;
-    if (typeof key !== "string" || !ITEM_KEY.test(key)) {
-      throw badRequest(`items[${i}].key must be 1–40 lowercase letters, digits or dashes.`);
-    }
-    if (seen.has(key)) throw badRequest(`items[${i}].key repeats "${key}".`);
-    const title = text(o.title, `items[${i}].title`, 200);
-    const brief = text(o.brief, `items[${i}].brief`, 4000);
-    // An adopted proposal (`proposal`) may predate the body, so it needs no cite.
-    const cites =
-      o.cites === undefined && o.proposal !== undefined
-        ? []
-        : stringList(o.cites, `items[${i}].cites`);
-    if (cites.length === 0 && o.proposal === undefined)
-      throw badRequest(`items[${i}].cites must name at least one body section.`);
-    if (o.kind === "proposal") {
-      const owner = typeof o.owner === "string" ? o.owner : "";
-      if (!employees.has(owner)) throw badRequest(`items[${i}].owner is not an employee: ${owner}`);
-      const item: DraftItem = { key, kind: "proposal", title, brief, owner, cites };
-      if (o.proposal !== undefined) {
-        if (!isProposalNumber(o.proposal))
-          throw badRequest(`items[${i}].proposal must be a proposal number.`);
-        if (out.some((x) => x.kind === "proposal" && x.proposal === o.proposal))
-          throw badRequest(`items[${i}].proposal repeats proposal #${o.proposal}.`);
-        item.proposal = o.proposal;
-      }
-      if (o.stackedOn === null) item.stackedOn = null;
-      else if (o.stackedOn !== undefined) {
-        if (typeof o.stackedOn !== "string" || seen.get(o.stackedOn) !== "proposal") {
-          throw badRequest(
-            `items[${i}].stackedOn must name an earlier proposal item: ${String(o.stackedOn)}`,
-          );
-        }
-        item.stackedOn = o.stackedOn;
-      }
-      out.push(item);
-    } else if (o.kind === "roadmap") {
-      const list = stringList(o.employees, `items[${i}].employees`);
-      if (list.length === 0)
-        throw badRequest(`items[${i}].employees must name at least one employee.`);
-      if (new Set(list).size !== list.length)
-        throw badRequest(`items[${i}].employees repeats an employee.`);
-      for (const e of list) {
-        if (!employees.has(e)) throw badRequest(`items[${i}].employees: not an employee: ${e}`);
-      }
-      out.push({ key, kind: "roadmap", title, brief, employees: list, cites });
-    } else {
-      throw badRequest(`items[${i}].kind must be "proposal" or "roadmap".`);
-    }
-    seen.set(key, o.kind);
-  }
-  return out;
-}
-
-/** The cites that name no section of the body, as `key: cite`. */
-export function unknownCites(body: string, items: readonly DraftItem[]): string[] {
-  const headings = headingsOf(body);
-  const out: string[] = [];
-  for (const item of items) {
-    for (const cite of item.cites) {
-      if (!headings.has(normalizeCite(cite))) out.push(`${item.key}: ${cite}`);
-    }
-  }
-  return out;
-}
-
-/** The proposal item each proposal item is stacked on: its own `stackedOn`, else the previous proposal item. */
-export function basesOf(items: readonly DraftItem[]): Map<string, string | null> {
-  const out = new Map<string, string | null>();
-  let previous: string | null = null;
-  for (const item of items) {
-    if (item.kind !== "proposal") continue;
-    out.set(item.key, item.stackedOn === undefined ? previous : item.stackedOn);
-    previous = item.key;
-  }
-  return out;
 }
 
 export class RoadmapService {
@@ -531,7 +413,10 @@ export class RoadmapService {
     throw new RoadmapError(409, "room_taken", `No free channel id for roadmap #${number}'s room.`);
   }
 
-  /** The moderator (or a person) keeps the draft; nothing is created by it. */
+  /**
+   * The moderator (or a person) keeps the draft; nothing is created by it. `items` replaces the
+   * whole list: the answer names the keys it removed.
+   */
   async draft(
     projectId: string,
     orgId: string,
@@ -539,11 +424,12 @@ export class RoadmapService {
     req: DraftRequest,
     actor: OrgActor,
     act?: WriteAct,
-  ): Promise<WriteResult> {
+  ): Promise<WriteResult & { removed: string[] }> {
     return this.withLock(projectId, orgId, async () => {
       const { org, caller, store } = await this.open(projectId, orgId, actor, act);
       const a = act ?? defaultAct("roadmap.draft", caller, roadmapSubject(number));
-      a.check(this.require(store, number));
+      const before = this.require(store, number);
+      a.check(before);
       const entry: RoadmapWrite & { kind: "draft" } = {
         kind: "draft",
         number,
@@ -566,7 +452,44 @@ export class RoadmapService {
         throw badRequest("Send at least one of record, body, items.");
       }
       store.write(entry, (now) => a.check(now));
-      return { roadmap: this.view(this.require(store, number)), hints: [] };
+      const kept = entry.items?.map((i) => i.key);
+      const removed =
+        kept === undefined ? [] : before.items.map((i) => i.key).filter((k) => !kept.includes(k));
+      return { roadmap: this.view(this.require(store, number)), hints: [], removed };
+    });
+  }
+
+  /** `roadmap.item.add`: one item appended to a discussing roadmap's draft (item-edits.ts). */
+  async addItem(
+    projectId: string,
+    orgId: string,
+    number: number,
+    item: unknown,
+    actor: OrgActor,
+    act?: WriteAct,
+  ): Promise<WriteResult> {
+    return this.withLock(projectId, orgId, async () => {
+      const { org, caller, store } = await this.open(projectId, orgId, actor, act);
+      const a = act ?? defaultAct("roadmap.item.add", caller, roadmapSubject(number));
+      const r = addItem({ org, caller, store, act: a }, number, item);
+      return { roadmap: this.view(r), hints: [] };
+    });
+  }
+
+  /** `roadmap.item.remove`: one item left out of a discussing roadmap's draft (item-edits.ts). */
+  async removeItem(
+    projectId: string,
+    orgId: string,
+    number: number,
+    key: unknown,
+    actor: OrgActor,
+    act?: WriteAct,
+  ): Promise<WriteResult> {
+    return this.withLock(projectId, orgId, async () => {
+      const { org, caller, store } = await this.open(projectId, orgId, actor, act);
+      const a = act ?? defaultAct("roadmap.item.remove", caller, roadmapSubject(number));
+      const r = removeItem({ org, caller, store, act: a }, number, key);
+      return { roadmap: this.view(r), hints: [] };
     });
   }
 

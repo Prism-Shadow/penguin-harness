@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/agent-company-proposals",
-  "version": "0.2.14",
+  "version": "0.2.15",
   "description": "Proposals for PenguinHarness company mode: the penguin-proposal skill behind the company-proposals plugin — author, implementer, tester and roadmap roles — a change written for a person to read while a second employee builds it, revised on the implementation's feedback, commented on in batches and merged on approval.",
   "license": "Apache-2.0",
   "repository": {

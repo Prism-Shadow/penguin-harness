@@ -37,7 +37,8 @@ export {
 export type * from "./action-shapes.js";
 export { CHANNEL_ID, agentMembers, readRoom } from "./room.js";
 export type { RoomConfig } from "./room.js";
-export { RoadmapService, basesOf, headingsOf, parseItems, unknownCites } from "./service.js";
+export { RoadmapService } from "./service.js";
+export { basesOf, headingsOf, parseItems, unknownCites } from "./items.js";
 export type { RoadmapView, ServiceDeps, WriteResult } from "./service.js";
 export { changeMembers, parseMembers } from "./members.js";
 export type { MembersHost, MembersRequest } from "./members.js";

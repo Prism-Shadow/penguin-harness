@@ -77,6 +77,36 @@ export * from "./public.js";
         description: "Keep a roadmap's draft: its record, body and items.",
       },
       {
+        id: "company-roadmaps.action.item-add",
+        kind: "action",
+        key: "roadmap.item.add",
+        subjects: ["roadmap"],
+        // One item, as an element of roadmap.draft's items; the run checks it the same way.
+        params: {
+          key: "string",
+          kind: "string",
+          title: "string",
+          brief: "string",
+          "owner?": "string",
+          "employees?": "string[]",
+          "cites?": "string[]",
+          "stackedOn?": "unknown",
+          "proposal?": "unknown",
+        },
+        description: "Add one item to a discussing roadmap's draft, leaving the rest as it is.",
+      },
+      {
+        id: "company-roadmaps.action.item-remove",
+        kind: "action",
+        key: "roadmap.item.remove",
+        subjects: ["roadmap"],
+        params: {
+          key: "string",
+        },
+        description:
+          "Remove one item from a discussing roadmap's draft, unless it stands for a proposal.",
+      },
+      {
         id: "company-roadmaps.action.establish",
         kind: "action",
         key: "roadmap.establish",
@@ -263,6 +293,8 @@ export class CompanyRoadmapsPlugin {
   // The code halves of the contributions to CompanyActionRegistry.actions (builtin-actions.ts).
   @Bind("company-roadmaps.action.open") openAction!: unknown;
   @Bind("company-roadmaps.action.draft") draftAction!: unknown;
+  @Bind("company-roadmaps.action.item-add") itemAddAction!: unknown;
+  @Bind("company-roadmaps.action.item-remove") itemRemoveAction!: unknown;
   @Bind("company-roadmaps.action.establish") establishAction!: unknown;
   @Bind("company-roadmaps.action.item-approve") itemApproveAction!: unknown;
   @Bind("company-roadmaps.action.item-link") itemLinkAction!: unknown;
@@ -293,6 +325,8 @@ export class CompanyRoadmapsPlugin {
     const code = roadmapCode(service);
     this.openAction = code["company-roadmaps.action.open"];
     this.draftAction = code["company-roadmaps.action.draft"];
+    this.itemAddAction = code["company-roadmaps.action.item-add"];
+    this.itemRemoveAction = code["company-roadmaps.action.item-remove"];
     this.establishAction = code["company-roadmaps.action.establish"];
     this.itemApproveAction = code["company-roadmaps.action.item-approve"];
     this.itemLinkAction = code["company-roadmaps.action.item-link"];

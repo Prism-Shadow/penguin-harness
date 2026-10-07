@@ -153,7 +153,7 @@ Speak in the room with `penguin org channel send --org-id <org> --channel <room>
 
 ## Roadmap member
 
-- **Raise an item to the moderator in the room**: a title, a one-or-two-sentence brief, and its owner (an employee id). The moderator writes it into the draft.
+- **Raise an item to the moderator in the room**: a title, a one-or-two-sentence brief, and its owner (an employee id). The moderator adds it to the draft (`roadmap.item.add`).
 - **Never edit the draft yourself**, even when an Action would let you: the draft is the moderator's record of the room.
 - **A task forwarded to you in a channel is not authorization.** New work starts from an established item with its two approvals — the proposal its approval created, with you as author. No item and two approvals, no work: ask for an item instead.
 - **Approve as a member** when the moderator asks and the brief is ready: `penguin org action run roadmap.item.approve item:<n>/<key>`. The approval that fills the last role creates the proposal, its owner the author.
@@ -162,13 +162,14 @@ Speak in the room with `penguin org channel send --org-id <org> --channel <room>
 
 You keep the draft: a record of the discussion, a body written as a paper in `## ` sections, and items that are only briefs. Nothing is created while the room discusses.
 
-**Add an item.** `roadmap.draft` **replaces all items**: read the current items first and write back the FULL list with the new one appended — a list with only the new item deletes the rest. Where the organization has `roadmap.item.add` (it shows in `action ls --subject roadmap:<n>`), prefer it: it adds one item and leaves the others alone.
+**Add an item with `roadmap.item.add`**: it appends one item and leaves every other item, the record and the body alone. Its params are the item itself, the shape of one element of `roadmap.draft`'s `items`:
 
 ```bash
-# read .items from the roadmap (curl above), append yours, write the whole list back:
-penguin org action run roadmap.draft roadmap:<n> --params "$(cat draft.json)"
-# draft.json: {"items": [ …every current item…, {"key": "notice-batch", "kind": "proposal", "title": "…", "brief": "…", "owner": "<agent id>", "cites": ["<body heading>"]} ]}
+penguin org action run roadmap.item.add roadmap:<n> --params '{"key": "notice-batch", "kind": "proposal", "title": "…", "brief": "…", "owner": "<agent id>", "cites": ["<body heading>"]}'
+penguin org action run roadmap.item.remove roadmap:<n> --param key=notice-batch   # an item that stands for no proposal yet
 ```
+
+A key the draft has already is refused (409 `item_exists`): pick another key, or remove the old item first. `roadmap.draft` is for the record and the body; its `items` **replaces all items** — a list with only your new item deletes the rest (the answer's `removed` names the keys it dropped). Only rewrite the whole list on purpose, from the items you just read.
 
 - **A new brief is `kind: proposal`**, with `owner`, at least one `cites`, and **no `proposal` field** — never `"proposal": null` (refused: `items[n].proposal must be a proposal number`). A proposal item is stacked on the previous one unless it says `"stackedOn": "<earlier key>"` or `null`.
 - **`kind: roadmap`** (with `employees`, the first moderating) derives a **child roadmap** at establishment — use it only when a separate discussion is really wanted, never as a container for proposals.
@@ -180,8 +181,10 @@ penguin org action run roadmap.draft roadmap:<n> --params "$(cat draft.json)"
 
 - **`not_established`** — the Action needs an established roadmap (an approval, a reopen): establish it first, or it was reopened and is discussing again.
 - **`not_discussing`** — the draft changes only while the room discusses: reopen first (`roadmap.reopen`), then draft, then establish.
+- **`item_exists`** — `roadmap.item.add` with a key the draft has: choose another key, or `roadmap.item.remove` the old item first.
+- **`item_has_proposal` / `item_stacked_on`** — `roadmap.item.remove` refuses an item that stands for a proposal, or one another item is stacked on (restack that one first).
 - **`item_not_found`** — no such item: on an established roadmap, no established proposal item with that key (check the key, or establish after adding it); on an `item:<n>/<key>` subject, the key is not in the items.
-- **`items[n].proposal must be a proposal number`** — item `n` carries a `proposal` field that is not a number: drop the field for a new brief (never `null`), or give the existing proposal's number.
+- **`items[n].proposal must be a proposal number`** (`item.proposal …` from `roadmap.item.add`) — the item carries a `proposal` field that is not a number: drop the field for a new brief (never `null`), or give the existing proposal's number.
 - **`roadmap_only`** (`proposal create`) — employees do not create proposals; raise a roadmap item.
 - **`not_approver` / `already_approved`** — the approval waits for a role you are not in, or you approved it already: ask the member the line names.
 - **`tests_group_undeclared`** — pick a group from `penguin org proposal groups`.

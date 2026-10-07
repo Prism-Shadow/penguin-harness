@@ -165,6 +165,8 @@ const allow: Guard = () => undefined;
 export const roadmapGuards: Record<string, Guard> = {
   "roadmap.open": allow,
   "roadmap.draft": onRoadmap((r) => requireStatus(r, "discussing")),
+  "roadmap.item.add": onRoadmap((r) => requireStatus(r, "discussing")),
+  "roadmap.item.remove": onRoadmap((r) => requireStatus(r, "discussing")),
   "roadmap.establish": onRoadmap((r) => requireStatus(r, "discussing")),
 
   /**

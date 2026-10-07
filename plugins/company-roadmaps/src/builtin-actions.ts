@@ -21,6 +21,8 @@ import type { RoadmapService } from "./service.js";
 export const ROADMAP_ACTION_IDS = {
   "roadmap.open": "company-roadmaps.action.open",
   "roadmap.draft": "company-roadmaps.action.draft",
+  "roadmap.item.add": "company-roadmaps.action.item-add",
+  "roadmap.item.remove": "company-roadmaps.action.item-remove",
   "roadmap.establish": "company-roadmaps.action.establish",
   "roadmap.item.approve": "company-roadmaps.action.item-approve",
   "roadmap.item.link": "company-roadmaps.action.item-link",
@@ -79,6 +81,24 @@ const RUNS: Record<RoadmapActionKey, Run> = {
         ...(ctx.params.body !== undefined ? { body: ctx.params.body as string } : {}),
         ...(ctx.params.items !== undefined ? { items: ctx.params.items } : {}),
       },
+      ctx.actor,
+      act,
+    ),
+  "roadmap.item.add": (s, ctx, act) =>
+    s.addItem(
+      ctx.org.projectId,
+      ctx.org.orgId,
+      subjectNumber(ctx.subject),
+      ctx.params,
+      ctx.actor,
+      act,
+    ),
+  "roadmap.item.remove": (s, ctx, act) =>
+    s.removeItem(
+      ctx.org.projectId,
+      ctx.org.orgId,
+      subjectNumber(ctx.subject),
+      ctx.params.key,
       ctx.actor,
       act,
     ),

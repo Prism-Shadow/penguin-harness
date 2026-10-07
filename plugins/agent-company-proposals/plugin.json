@@ -3,7 +3,7 @@
   "description_zh": "公司提案与路线图的协议（Project 须先装上 company-proposals 插件），合为一个 Skill，按角色分节，任何员工都照做——不设专门岗位：作者写一份短小、抽象、可逐段评论的提案并按反馈修订；实施者同时在提案分支上实施、向 dev 开 PR 并反馈；测试者分批测试 dev 分支；路线图成员与主持人把讨论室的讨论变成获批的条目。插件会自动装到写或做提案的员工上。",
   "short_description": "The proposal and roadmap protocol for company mode: write, build, test, plan — any employee.",
   "short_description_zh": "公司模式的提案与路线图协议：写、做、测、规划——任何员工都可以。",
-  "version": "2026.10.07.1",
+  "version": "2026.10.07.2",
   "category": "agent-company",
   "preinstall": false,
   "quick_start": {
