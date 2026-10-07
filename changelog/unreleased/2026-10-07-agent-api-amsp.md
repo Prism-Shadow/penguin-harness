@@ -3,6 +3,7 @@
 - **Date:** 2026-10-07
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `amsp`, `docs`
+- **PR:** [#1000](https://github.com/Prism-Shadow/penguin-harness/pull/1000)
 
 [中文版](2026-10-07-agent-api-amsp.zh.md)
 
