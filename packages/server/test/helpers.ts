@@ -150,10 +150,11 @@ export function testConfig(root: string): ServerConfig {
     desktopToken: null,
     portFile: null,
     trustProxy: false,
-    supervised: false,
     // No CLI to offer: nothing is written into the temp root, and no directory is put on
     // the PATH of whatever a test's Agent runs.
     cliEntry: null,
+    // Off by default: no test may reach the network to list plugins.
+    pluginIndexUrl: null,
   };
 }
 

@@ -173,6 +173,7 @@ import type {
   PluginConfigResponse,
   PluginConfigActionResponse,
   PluginConfigUpdateRequest,
+  LanguageIndexResponse,
   PluginReadmeResponse,
   SessionsResponse,
   SessionSwitchModelRequest,
@@ -229,6 +230,10 @@ import type {
   BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
+  BrowserBackend,
+  BrowserBackendResponse,
+  BrowserExtensionPairingResponse,
+  BrowserExtensionsResponse,
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
@@ -1604,6 +1609,9 @@ export const installAgentPlugins = (projectId: string, agentId: string, names: s
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
 export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
 
+/** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
+export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
+
 export const getPluginReadme = (name: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
 
@@ -2313,9 +2321,10 @@ export const putInstalledPlugins = (projectId: string, plugins: readonly string[
     body: { plugins },
   });
 /**
- * Admin only: asks this Project for a plugin the build ships — in the shared table, or with
- * `machineId` in that machine's own table — refused for one it does not, so the list never
- * names a package that is not on the machine; then re-assembles the App where it runs here.
+ * Admin only: lists the package in the shared table, or with `machineId` in that machine's
+ * own table. The machines that will run it install it — this server npm-installs it into its
+ * data root unless the build ships it, and only when it runs it itself — then the App is
+ * re-assembled. Slow for a cold registry fetch.
  */
 export const installPlugin = (
   projectId: string,
@@ -2328,7 +2337,7 @@ export const installPlugin = (
   });
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that
- * machine's own table; nothing on disk changes.
+ * machine's own table; the package leaves this server's disk once nothing asks it to run here.
  */
 export const uninstallPlugin = (
   projectId: string,
@@ -2342,10 +2351,11 @@ export const uninstallPlugin = (
     { method: "DELETE" },
   );
 
-// ---- The built-in browser (desktop app only; every route is admin-only) ----
+// ---- The agent browser: the desktop's built-in browser, or the user's own Chrome ----
 /**
- * Always this server's: the pages live in the desktop shell this server was spawned by, so a
- * machine's browser routes would drive a shell that is not on this screen.
+ * Always this server's: the built-in browser's pages live in the desktop shell this server was
+ * spawned by, and a user's Chrome is paired to this server, so a machine's browser routes would
+ * drive a browser that is not on this screen.
  */
 const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
 
@@ -2355,9 +2365,37 @@ export type BuiltinBrowserStorage = Extract<
   { op: "clear-data" }
 >["storages"][number];
 
-/** Whether the browser can be driven at all, and its tabs as they stand. */
+/**
+ * The caller's backend — whether it can be driven now, its tabs — and every backend the server
+ * offers them (`backends`).
+ */
 export const getBuiltinBrowserStatus = () =>
   apiFetch<BuiltinBrowserStatus>(builtinBrowserPath("/status"), { server: null });
+/** The caller's backend and the ones they may choose (both only on the desktop, for an admin). */
+export const getBrowserBackend = () =>
+  apiFetch<BrowserBackendResponse>(builtinBrowserPath("/backend"), { server: null });
+/** Chooses the backend; 409 `action_in_flight` while an agent acts in the one being left. */
+export const putBrowserBackend = (backend: BrowserBackend) =>
+  apiFetch<BrowserBackendResponse>(builtinBrowserPath("/backend"), {
+    method: "PUT",
+    body: { backend },
+    server: null,
+  });
+/** A one-time pairing code for the signed-in user (ten minutes, one use; a new one replaces it). */
+export const createBrowserPairingCode = () =>
+  apiFetch<BrowserExtensionPairingResponse>(builtinBrowserPath("/extension/pairings"), {
+    method: "POST",
+    server: null,
+  });
+/** The Chromes paired to the caller's account, the connected one, and the admin's switch. */
+export const getBrowserExtensions = () =>
+  apiFetch<BrowserExtensionsResponse>(builtinBrowserPath("/extension"), { server: null });
+/** Forgets a paired Chrome; its connection closes and it must be paired again. */
+export const revokeBrowserExtension = (extensionId: string) =>
+  apiFetch<void>(builtinBrowserPath(`/extension/${encodeURIComponent(extensionId)}`), {
+    method: "DELETE",
+    server: null,
+  });
 /**
  * A new tab, at `url` or else at the homepage (blank without one). The server asks this window
  * (over the user channel) to create the page, and answers once the page is claimed — so this
@@ -2391,6 +2429,16 @@ export const setBuiltinBrowserOnScreen = (tabId: number | null) =>
   });
 export const closeBuiltinBrowserTab = (tabId: number) =>
   apiFetch<void>(builtinBrowserPath(`/tabs/${tabId}`), { method: "DELETE", server: null });
+/**
+ * Loads `url` in a tab through the server, and answers once it loaded: the address bar of a tab
+ * this window does not host (one in the user's Chrome).
+ */
+export const navigateBuiltinBrowserTab = (tabId: number, url: string) =>
+  apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath(`/tabs/${tabId}/navigate`), {
+    method: "POST",
+    body: { url },
+    server: null,
+  });
 /** The system browsers' profiles on this computer that can be imported from. */
 export const getBuiltinBrowserImportSources = () =>
   apiFetch<BuiltinBrowserImportSourcesResponse>(builtinBrowserPath("/import/sources"), {

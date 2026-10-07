@@ -3,6 +3,11 @@
   "description_zh": "让模型输出更易读的富文本组件：选项、表单、分步操作、提示框和 Mermaid 图，以围栏代码块的形式写在普通 Markdown 回复里，Web App 用自己的组件渲染，其他界面显示为纯文本；用户的选择以普通文字填入输入框。附带中英文的 STE 风格写作规则，以及一个检查脚本：发送前校验每个组件、给草稿打分并打印自审清单。",
   "short_description": "Choices, forms, steps, callouts and diagrams in replies, with a checker.",
   "short_description_zh": "在回复里使用选项、表单、步骤、提示框和图表，并自带检查脚本。",
-  "version": "2026.10.03.1",
-  "category": "office-productivity"
+  "version": "2026.10.04.1",
+  "category": "office-productivity",
+  "quick_start": {
+    "prompt": "Ask me which of three weekend plans I prefer as a choice block, then show the one I pick as a short procedure in steps.",
+    "prompt_zh": "用选项组件问我三个周末计划中更喜欢哪一个，再把我选中的那个写成一份简短的分步操作。",
+    "skills": ["a2ui"]
+  }
 }

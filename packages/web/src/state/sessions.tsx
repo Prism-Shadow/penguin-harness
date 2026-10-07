@@ -1249,9 +1249,10 @@ export function applyUserEvent(
     if (source === null) publishBuiltinBrowserResync();
     return;
   }
-  // The built-in browser's tabs, page requests and agent activity go to the browser layer in
-  // the app shell. Only this server's: the pages live in the desktop shell that spawned it, and
-  // a machine's server drives no shell on this screen.
+  // The agent browser's tabs, page requests, agent activity, backend and Chrome connection go
+  // to the browser layer in the app shell. Only this server's: the built-in pages live in the
+  // desktop shell that spawned it, the user's Chrome is paired to it, and a machine's server
+  // drives no browser on this screen.
   if (isBuiltinBrowserEvent(ev)) {
     if (source === null) publishBuiltinBrowserEvent(ev);
     return;

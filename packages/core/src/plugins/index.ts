@@ -100,6 +100,19 @@ export interface LibraryHooks {
   files: Record<string, string>;
 }
 
+/**
+ * A plugin's quick start (plugin.json `quick_start`): the demo a person runs to see what the
+ * plugin does — a prompt the Plugins page pre-fills into a new-chat draft, never sends.
+ */
+export interface QuickStart {
+  prompt: string;
+  promptZh?: string;
+  /** Skills of this plugin to pre-select in the draft. */
+  skills?: string[];
+  /** Open the draft in goal mode (the prompt is the objective). */
+  goal?: boolean;
+}
+
 /** A plugin in the library: the manifest fields plus the content it ships. */
 export interface LibraryPlugin {
   /** Plugin name (its directory name). */
@@ -121,6 +134,8 @@ export interface LibraryPlugin {
   icon?: string;
   skills: LibrarySkill[];
   hooks?: LibraryHooks;
+  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`, optional). */
+  quickStart?: QuickStart;
 }
 
 /** Category manifest entry: id and titles (Chinese optional, displayed per UI language). */
@@ -243,22 +258,6 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
   };
 }
 
-/**
- * The nearest package root above this module: `packages/core` from source or dist, and the
- * bundling package's own root wherever core is inlined (the CLI bundle, the desktop server
- * bundle) — which is exactly whose package.json lists the plugin packages to resolve.
- */
-function packageRoot(): string {
-  const start = path.dirname(fileURLToPath(import.meta.url));
-  let dir = start;
-  for (;;) {
-    if (fs.existsSync(path.join(dir, "package.json"))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) throw new Error(`No package.json above the plugin loader at ${start}`);
-    dir = parent;
-  }
-}
-const PKG_ROOT = packageRoot();
 /** npm-name prefix of the per-plugin packages (the host package's dependencies name them). */
 const PLUGIN_PKG_PREFIX = "@penguinharness/";
 
@@ -293,7 +292,7 @@ function workspaceRootAbove(from: string): string | null {
 export function workspacePluginRoot(
   name: string,
   resolvedDir: string,
-  packageRoot: string = PKG_ROOT,
+  packageRoot: string,
 ): string {
   const workspace = workspaceRootAbove(packageRoot);
   if (workspace === null) return resolvedDir;
@@ -309,36 +308,146 @@ export function workspacePluginRoot(
 }
 
 /**
+ * The host package: the package whose `dependencies` name the plugin packages. The library a
+ * hot push carried comes first when the platform named one (usePushedPluginLibrary); then two
+ * fixed starting points, tried in this order, each walked upward to the first package.json
+ * that names a plugin package:
+ *
+ * 1. the installation this module sits in — `packages/core` from source or dist, the
+ *    bundling package's own root wherever core is inlined (the CLI bundle, the desktop
+ *    server bundle);
+ * 2. the installation of the running program (`process.argv[1]`, symlinks resolved) — the
+ *    one that matters for a hot-pushed platform bundle, which sits in the data root's store
+ *    where nothing above it is a package, and whose plugins are the ones installed with the
+ *    program that booted it.
+ *
+ * A package.json on the way up that does not name a plugin package is skipped, and so is
+ * one that cannot be read or parsed (somebody else's file, not this one's answer); neither
+ * stops the walk from reaching the host above it. There is no fallback to whichever
+ * package.json was read first: when neither starting point leads to a host, the library
+ * call fails naming both.
+ *
+ * Determined on first use and never at import: the bundle has to LOAD on a machine that has
+ * no host package, and the library call is then what fails.
+ */
+interface HostPackage {
+  root: string;
+  /** Resolves the plugin packages the way a `require` from the host package would. */
+  require: NodeJS.Require;
+}
+
+const LOADER_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+function programDir(): string | null {
+  const entry = process.argv[1];
+  if (typeof entry !== "string" || entry === "") return null;
+  const resolved = path.resolve(entry);
+  // A package manager's bin is a symlink into the installation it belongs to.
+  try {
+    return path.dirname(fs.realpathSync(resolved));
+  } catch {
+    return path.dirname(resolved);
+  }
+}
+
+/**
+ * The library a hot push carried, when there is one (see {@link usePushedPluginLibrary}). It
+ * outranks the other two places: the plugins a pushed platform offers are the ones it was
+ * BUILT with, not the ones installed beside whatever program happened to boot it.
+ */
+let pushedLibrary: string | null = null;
+
+/**
+ * Points the library at the copy a hot push carried in its assets: a directory holding a
+ * `package.json` whose `dependencies` name the plugin packages, and their `node_modules`.
+ * `null` goes back to looking above this module and above the running program.
+ *
+ * Without it a pushed platform reads the library of the program that booted it — so a machine
+ * installed before a plugin existed never gets that plugin, however new its platform is, and
+ * a feature that seeds an Agent with it fails with "not in the plugin library". (Creating an
+ * organization installs `agent-company` on its CEO; on a program that predates company mode
+ * that was every attempt.) Called by the platform at boot, before anything reads the library.
+ */
+export function usePushedPluginLibrary(dir: string | null): void {
+  pushedLibrary = dir;
+  host = undefined;
+}
+
+/** From `start` upward, the first package.json whose `dependencies` name a plugin package. */
+function hostPackageAbove(start: string): HostPackage | null {
+  for (let dir = start; ;) {
+    const file = path.join(dir, "package.json");
+    if (fs.existsSync(file)) {
+      const candidate: HostPackage = { root: dir, require: createRequire(file) };
+      try {
+        if (Object.keys(readDependencies(candidate)).some((d) => d.startsWith(PLUGIN_PKG_PREFIX)))
+          return candidate;
+      } catch {
+        // Unreadable or malformed: walk on.
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+let host: HostPackage | null | undefined;
+function hostPackage(): HostPackage {
+  const program = programDir();
+  if (host === undefined)
+    host =
+      (pushedLibrary === null ? null : hostPackageAbove(pushedLibrary)) ??
+      hostPackageAbove(LOADER_DIR) ??
+      (program === null ? null : hostPackageAbove(program));
+  if (host === null) {
+    throw new Error(
+      `No package.json naming a ${PLUGIN_PKG_PREFIX} plugin package above the plugin loader at ${LOADER_DIR}` +
+        (program === null
+          ? " (no running program to look above: process.argv[1] is empty)"
+          : ` or above the program at ${program}`),
+    );
+  }
+  return host;
+}
+
+/** The host package's `dependencies`, read fresh — the same file its own `require` resolves from. */
+function readDependencies(pkg: HostPackage): Record<string, string> {
+  const parsed = JSON.parse(fs.readFileSync(path.join(pkg.root, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
+  return parsed.dependencies ?? {};
+}
+
+/**
  * Where the plugin directories live, name → absolute root. Each plugin is its own npm package
  * (`@penguinharness/<name>`, `plugins/<name>/` in the repo): the host package's `dependencies`
  * name them (core, the CLI, and the desktop app — whose packaged manifest keeps that field
  * and nothing else, so `devDependencies` would not survive into an installer), and each is
- * resolved through Node from this module's own location, so the lookup walks the same
- * `node_modules` chain a `require` from here would: an npm install and the packed desktop
- * app (electron-builder collects the declared packages into its node_modules) each land on
- * their own copy, and a workspace checkout is redirected to its `plugins/<name>/` directory
- * (see workspacePluginRoot). Read fresh on every call, like the plugin files themselves.
+ * resolved through Node from the host package (hostPackage), so the lookup walks the same
+ * `node_modules` chain a `require` from there would: the workspace, an npm install, the
+ * packed desktop app (electron-builder collects the declared packages into its node_modules)
+ * and the program a hot-pushed platform booted from all land on their own copy, and a workspace
+ * checkout is redirected to its `plugins/<name>/` directory (see workspacePluginRoot). Read
+ * fresh on every call, like the plugin files themselves.
  */
 function pluginRoots(): Map<string, string> {
   const roots = new Map<string, string>();
-  const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")) as {
-    dependencies?: Record<string, string>;
-  };
-  const require = createRequire(import.meta.url);
-  for (const dep of Object.keys(pkg.dependencies ?? {})) {
+  const pkg = hostPackage();
+  for (const dep of Object.keys(readDependencies(pkg))) {
     if (!dep.startsWith(PLUGIN_PKG_PREFIX)) continue;
     let manifest: string;
     try {
-      manifest = require.resolve(`${dep}/package.json`);
+      manifest = pkg.require.resolve(`${dep}/package.json`);
     } catch (err) {
       // A declared plugin that Node cannot find is a broken install (the deployment did not
       // carry the package), not a smaller library.
       throw new Error(
-        `Plugin package ${dep} is declared in ${PKG_ROOT}/package.json but cannot be resolved: ${err instanceof Error ? err.message : String(err)}`,
+        `Plugin package ${dep} is declared in ${pkg.root}/package.json but cannot be resolved: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
     const name = dep.slice(PLUGIN_PKG_PREFIX.length);
-    roots.set(name, workspacePluginRoot(name, path.dirname(manifest)));
+    roots.set(name, workspacePluginRoot(name, path.dirname(manifest), pkg.root));
   }
   return roots;
 }
@@ -428,6 +537,7 @@ interface PluginManifestFile {
   category?: string;
   /** Default true. */
   preinstall?: boolean;
+  quick_start?: { prompt?: unknown; prompt_zh?: unknown; skills?: unknown; goal?: unknown };
   /** One command list per hook point the plugin's hook package answers at. */
   hooks?: {
     stop?: HookCommand[];
@@ -501,6 +611,49 @@ function readPluginDir(name: string, dir: string): LibraryPlugin {
       }),
     ),
     ...(hooks !== undefined ? { hooks } : {}),
+    ...(manifest.quick_start !== undefined
+      ? { quickStart: parseQuickStart(manifest.quick_start, skills, manifestFile) }
+      : {}),
+  };
+}
+
+/**
+ * plugin.json `quick_start`, checked: a prompt is required, and the skills it pre-selects
+ * must be this plugin's own — a demo naming a skill the plugin does not ship would open a draft
+ * with nothing selected.
+ */
+function parseQuickStart(
+  raw: NonNullable<PluginManifestFile["quick_start"]>,
+  skills: readonly LibrarySkill[],
+  where: string,
+): QuickStart {
+  if (typeof raw.prompt !== "string" || raw.prompt.trim() === "") {
+    throw new Error(`${where}: quick_start.prompt must be a non-empty string`);
+  }
+  if (raw.prompt_zh !== undefined && typeof raw.prompt_zh !== "string") {
+    throw new Error(`${where}: quick_start.prompt_zh must be a string`);
+  }
+  let picked: string[] | undefined;
+  if (raw.skills !== undefined) {
+    if (!Array.isArray(raw.skills) || raw.skills.some((s) => typeof s !== "string")) {
+      throw new Error(`${where}: quick_start.skills must be a list of skill names`);
+    }
+    const unknown = (raw.skills as string[]).filter((n) => !skills.some((s) => s.name === n));
+    if (unknown.length > 0) {
+      throw new Error(
+        `${where}: quick_start.skills names skills the plugin does not ship: ${unknown.join(", ")}`,
+      );
+    }
+    picked = raw.skills as string[];
+  }
+  if (raw.goal !== undefined && typeof raw.goal !== "boolean") {
+    throw new Error(`${where}: quick_start.goal must be a boolean`);
+  }
+  return {
+    prompt: raw.prompt,
+    ...(typeof raw.prompt_zh === "string" ? { promptZh: raw.prompt_zh } : {}),
+    ...(picked !== undefined ? { skills: picked } : {}),
+    ...(raw.goal === true ? { goal: true } : {}),
   };
 }
 

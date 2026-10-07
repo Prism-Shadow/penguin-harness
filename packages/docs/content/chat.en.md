@@ -275,7 +275,7 @@ Good to know:
 
 ### Use a terminal
 
-Terminals open as tabs in the docks, or on the standalone `/terminal` page.
+Terminals open as tabs in the docks, or on the standalone `/terminal` page. Each runs your login shell with your own startup files, then puts this installation's `penguin` first on PATH, the same one agents get (see [PATH launcher](/configuration#path-launcher)).
 
 - Ctrl+` shows or hides the terminal tabs. With no terminal open, it takes over a running shell no conversation holds, or starts a new one.
 - Ctrl+Shift+` starts a new terminal in the docks.

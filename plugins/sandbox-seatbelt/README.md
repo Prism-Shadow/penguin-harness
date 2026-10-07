@@ -1,8 +1,9 @@
 # macOS Seatbelt sandbox backend
 
 The macOS counterpart to the bubblewrap backend, built on `sandbox-exec` (Seatbelt).
-Implements **all three** dimensions of the harness sandbox interface — filesystem writes,
-network isolation and path masking — as policy rules rather than mounts.
+Implements every dimension of the harness sandbox interface — filesystem writes, network
+isolation (none, or localhost only), path masking and closing the temporary directory — as
+policy rules rather than mounts.
 
 ## The program it runs
 

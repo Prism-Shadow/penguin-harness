@@ -95,9 +95,9 @@ Two forms, and **a title decides between them, not taste**:
 
 - **A title is present** → `InfoPopover` (`@prismshadow/penguin-ui`). A circled "?"
   immediately after the section heading, the table column header, or the field label — the last of
-  those via `Field`/`Input`/`Textarea`/`PasswordInput`'s `info` prop. The "?" is an *anchored*
-  mark: it reads as help only because it modifies the title it sits against, and it borrows that
-  title's meaning instead of restating it.
+  those via `Field`/`Input`/`Textarea`/`PasswordInput`/`Select`'s `info` prop. The "?" is an
+  *anchored* mark: it reads as help only because it modifies the title it sits against, and it
+  borrows that title's meaning instead of restating it.
 - **No title on the surface** → `HelpFold` (`@prismshadow/penguin-ui`). A compact row that
   names itself and expands its explanation inline underneath. This is the Agent settings tabs:
   their name lives in the tab bar and the panel does not repeat it, so a "?" at the top of the

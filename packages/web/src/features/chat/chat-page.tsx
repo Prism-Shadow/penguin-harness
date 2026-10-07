@@ -21,12 +21,10 @@ import type { ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
-  ApprovalMode,
   ModelRefDto,
   ModelsResponse,
   SessionInfo,
   SessionPatchRequest,
-  SessionSandbox,
   SessionProcessInfo,
   SessionStatus,
   SkillMetadataItem,
@@ -59,6 +57,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { useWorkflowTabs, WorkflowFrame, WorkflowTabStrip } from "../workflows/workflow-tabs";
 import { apiErrorText } from "../../lib/api-error";
+import type { PermissionPick } from "../../lib/permission-level";
 import { configuredCompactionLimit } from "../../lib/context";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
@@ -101,6 +100,7 @@ import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
+import { onPluginConfigSaved } from "../../lib/plugin-config-event";
 import { approvalModeChoices } from "./approval-mode";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import {
@@ -1529,7 +1529,7 @@ export function ChatPage() {
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
   // from the next LLM request (the picker's menu advises compacting first). Modeled on
-  // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
+  // onChangePermission — a failed write surfaces as a toast and leaves the level as it
   // was, rather than showing a level the server does not have.
   const applyTurnThinkingLevel = useCallback(
     (level: string) => {
@@ -1613,40 +1613,40 @@ export function ChatPage() {
     [selected],
   );
 
-  const onChangeApprovalMode = useCallback(
-    (mode: ApprovalMode) => {
+  // A preset from the permission button: the approval mode and the Session's own sandbox
+  // policy in one PATCH, applied from the next tool call and command. A refused change (a
+  // non-admin loosening past the server's settings) stores nothing — the route checks every
+  // field before writing any — so the Session is as it was, and the toast says why.
+  const onChangePermission = useCallback(
+    (pick: PermissionPick) => {
       if (!selected || modeSaving) return;
       setModeSaving(true);
       // Returned so the permission button keeps the pick on screen until the save settles.
       return api
-        .patchSession(selected.sessionId, { approvalMode: mode })
-        .then((res) => replace(res.session))
-        .catch((e: unknown) => {
-          toastError(apiErrorText(e));
+        .patchSession(selected.sessionId, {
+          approvalMode: pick.approvalMode,
+          // Absent for an approval-mode pick: the Session's policy is left as it is.
+          ...(pick.sandbox !== undefined ? { sandbox: pick.sandbox } : {}),
         })
+        .then((res) => replace(res.session))
+        .catch((e: unknown) => toastError(apiErrorText(e)))
         .finally(() => setModeSaving(false));
     },
     [selected, modeSaving, replace],
   );
 
-  // The Session's own sandbox policy: saved on the Session and applied from its next command.
-  // The same save shape as the approval mode — a refused change (a non-admin loosening past
-  // the server's settings) is a toast, and the button keeps showing what the server has.
-  const onChangeSandbox = useCallback(
-    (pick: Partial<SessionSandbox>) => {
-      if (!selected || modeSaving) return;
-      setModeSaving(true);
-      // Returned so the permission button keeps the pick on screen until the save settles.
-      return api
-        .patchSession(selected.sessionId, { sandbox: pick })
-        .then((res) => replace(res.session))
-        .catch((e: unknown) => {
-          toastError(apiErrorText(e));
-        })
-        .finally(() => setModeSaving(false));
-    },
-    [selected, modeSaving, replace],
-  );
+  // The Sandbox card was saved: the open Session's view (switch, presets) is read again, so the
+  // permission menu shows what the card now says.
+  const selectedId = selected?.sessionId;
+  useEffect(() => {
+    if (selectedId === undefined) return;
+    return onPluginConfigSaved("sandbox", () => {
+      void api.getSession(selectedId).then(
+        (res) => replace(res.session),
+        () => undefined,
+      );
+    });
+  }, [selectedId, replace]);
 
   // Starts a context compaction — the single path to the server for it (the composer's
   // /compact command and the thinking-switch dialog's "compact, then switch" both come
@@ -1997,8 +1997,7 @@ export function ChatPage() {
     subagentFocus,
     subagentTaskScope,
     models,
-    onChangeApprovalMode,
-    onChangeSandbox,
+    onChangePermission,
     modeSaving,
     parentThinkingLevel: sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel),
     fileOpenRequest,
@@ -2112,9 +2111,8 @@ export function ChatPage() {
       approvalMode={selected.approvalMode}
       // An organization's Session is not offered always-ask: nobody is there to be asked.
       approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}
-      onChangeApprovalMode={onChangeApprovalMode}
       sandbox={selected.sandbox}
-      onChangeSandbox={onChangeSandbox}
+      onChangePermission={onChangePermission}
       modeSaving={modeSaving}
       autoFocus
       agents={agents}

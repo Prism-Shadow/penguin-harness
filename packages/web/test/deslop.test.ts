@@ -73,8 +73,11 @@ const ALLOWLIST: DeslopAllowlist = {
  * palette outside the token system, while the key bar that reads it is.
  */
 const TOKENS_ONLY: readonly string[] = [
+  "features/builtin-browser/backend-menu.tsx",
   "features/builtin-browser/browser-tab-strip.tsx",
   "features/builtin-browser/browser-toolbar.tsx",
+  "features/builtin-browser/chrome-surface.tsx",
+  "features/builtin-browser/pairing-dialog.tsx",
   "features/chat/attached-files-banner.tsx",
   "features/chat/background-done-banner.tsx",
   "features/chat/compaction-banner.tsx",
@@ -91,6 +94,8 @@ const TOKENS_ONLY: readonly string[] = [
   "features/chat/workspace-finder.tsx",
   "features/chat/workspace-finder-model.ts",
   "features/chat/workspace-select.tsx",
+  "features/settings/browser-section.tsx",
+  "features/settings/chrome-extension-section.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
   "features/settings/trace-import-row.tsx",

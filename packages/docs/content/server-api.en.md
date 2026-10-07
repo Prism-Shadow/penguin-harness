@@ -81,7 +81,7 @@ Sign-in, sign-out, account claiming, and the current user's password, profile an
 | PUT | `/api/me/password` | Changes the password: `{oldPassword, newPassword}` |
 | PUT | `/api/me/profile` | Sets the avatar and nickname: `{displayName?, avatar?}` → `{user}` |
 | GET | `/api/me/prefs` | Reads UI preferences |
-| PUT | `/api/me/prefs` | Writes UI preferences (shallow merge) |
+| PUT | `/api/me/prefs` | Writes UI preferences (shallow merge); `browserBackend` is refused (`400`), since it is chosen through [`PUT /api/builtin-browser/backend`](#agent-browser) |
 
 - `GET /api/auth/claim` redeems a first-login link or the desktop shell's one-shot token. An invalid or already-used link redirects to `/login?claimFailed=…` instead, where the Web App explains how to get a working one.
 - `GET /api/install` needs no authentication. `installId` is an opaque id stored in `<root>/install-id`, minted the first time the root is used. The Web App compares it with the id it stored and, when they differ, clears the browser-side UI state that refers to server entities, so replacing the data root no longer leaves the old Workspace, drafts and pins behind. `null` means the server could not establish an id, and clients must then change nothing.
@@ -106,11 +106,11 @@ In desktop mode (a server spawned by the desktop app), every route in this group
 
 ## Server Settings (admin only)
 
-Server-wide proxy, attachment and company-mode settings, and the settings groups plugins declare.
+Server-wide proxy, attachment, company-mode and Chrome extension settings, and the settings groups plugins declare.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode}}` |
+| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled}}` |
 | PUT | `/api/admin/settings` | Updates settings; omitted fields keep their current value, and an invalid field rejects the whole PUT. Returns the full updated settings |
 | GET | `/api/admin/settings/proxy-probe` | The reachability probe's targets: `{targets: [{provider, url}]}`. Makes no request |
 | POST | `/api/admin/settings/proxy-probe/:provider` | Probes one target over the server's outbound path, sending no credential: `{probe: {provider, url, outcome, ms, status?}}` |
@@ -163,11 +163,17 @@ Two limits cannot be changed: the number of files per message (20) and the inlin
 
 `companyMode` is the server's **Enable company mode** switch, off by default. A change applies without a restart: while the switch is off, every organization route returns `404` `company_mode_off` and the organization scheduler fires nothing.
 
+### Chrome extension switch
+
+`browserExtensionsEnabled` is the server's **Allow Chrome extension connections** switch, on by default. Turning it off closes every connected PenguinHarness Browser extension at once (WebSocket close code `4009`), refuses new connections and pairing codes, and makes the Chrome backend unavailable for every user (`extension_disabled`). Pairings are kept, so turning it back on lets the extensions reconnect. See [Agent Browser](#agent-browser).
+
 ### Plugin settings
 
 A settings group is a contribution to `PluginConfigProvider.groups`; the sandbox's comes first. Each group in the list carries its schema (`configuration`), its stored values merged onto the defaults with secrets masked, the group whose card it is drawn inside (`parent`), and live status lines (`notices`).
 
-Field types are `string`, `secret`, `boolean`, `number`, `enum` (with `options`) and `list` (one value per line, optional `maxItems`). A `number` may declare `minimum` and `maximum`, and a `string` or `list` a `pattern` (with `patternErrorMessage`) that every value or line must match.
+Field types are `string`, `secret`, `boolean`, `number`, `enum` (with `options`) and `list` (one value per line, optional `maxItems`). A `number` may declare `minimum` and `maximum`, and a `string` or `list` a `pattern` (with `patternErrorMessage`) that every value or line must match. A field marked `advanced: true` is drawn in the card's Advanced fold, collapsed by default; it is stored and validated like any other. A field's `description` is what it means, drawn behind a "?" beside its title; its `hint` is the shape a value must take, shown under it. A `table` field has fixed `rows` and `columns` (`string`, `boolean` or `enum`, each with an optional `description` for its header's "?"), and may declare a `rowChoice` (a single choice of a row, stored in an `enum` field of the group, drawn as its title in brackets after the chosen row's name and picked from the row's "…" menu), a `pin` (a boolean column drawn as a pin toggle, with an `on` and `off` tooltip), a `columnGroup` (a header over adjacent columns) and `extensible` (rows may be added and reordered: stored under `"$added"` and `"$order"` beside the changed cells; only added rows may be deleted, and a row choice naming no row is refused). A row may carry a `description` and an `enum` option a `description`, both for the "?" after the row's name. A configuration may name a boolean field as its `switch`: while it is off, the card draws that field alone.
+
+The sandbox's entry also carries `backend`: `installed` says whether a sandbox backend for this machine's OS is installed, and `recommended` lists the packages this OS defaults to, installed together (`@penguinharness/sandbox-bwrap` and `@penguinharness/sandbox-dsh` on Linux, `@penguinharness/sandbox-seatbelt` on macOS, `@penguinharness/sandbox-wsl` on Windows). Its first notice says what this machine enforces and by what; a notice may carry `details` (and `detailsZh`), shown collapsed under it — here, each installed backend that is not in use, with its reason. Its `enabled` switch decides whether new Sessions start confined, and `defaultPreset` (the presets table's `rowChoice`, drawn as "(Default)" after the row's name) names the row whose mode, network and approval mode they start from. A document saved before the switch existed reads it as on when its old policy confined anything (a mode other than Off, a network that is not open, or masked paths); one saved before the default preset (with its own `mode` or `network`, or masked paths, and no `defaultPreset`) keeps starting new Sessions by its own `mode` and `network` until an administrator picks a default. For such a document `values.defaultPreset` is the first row whose start is exactly that one, and a save pins it; when no row gives it (a network of `none` or `local`, or Off with masked paths), `defaultPreset` is absent, a notice says what is in effect, and a save of other fields writes no `defaultPreset`. Neither is rewritten on read. A table's `rowChoice` may name no row: a save is not refused for that, only for leaving it on a row the table no longer has. The chat defaults' `sandbox.defaultApprovalMode` is the default preset's approval mode while the switch is on.
 
 On PUT, fields the request omits keep their value, `null` or `""` clears one, and a secret sent back as its mask keeps the stored value. A refused field returns `400` `plugin_config_invalid` naming it; a name no group answers to returns `404` `plugin_config_unknown`. The declaring module picks the change up itself, through its watch or at its next read, with no restart.
 
@@ -453,19 +459,28 @@ The plugins in this section are server-side packages: modules the server loads i
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/plugins/registry` | The plugin index: `{plugins: PluginIndexEntry[]}` |
+| GET | `/api/plugins/registry` | The plugin index: `{plugins: PluginIndexEntry[], failures: {source, error}[]}` |
 | GET | `/api/plugins/registry/readme?name=…` | One listed entry's readme: `{name, readme}` |
 | GET | `/api/projects/:projectId/plugins/installed` | The plugins this Project asks for, joined with what the process runs: `{plugins, shipped, file, restartPending}` |
 | POST | `/api/projects/:projectId/plugins/installed` | Admin only. Adds a plugin the build ships: `{specifier}` |
 | PUT | `/api/projects/:projectId/plugins/installed` | Admin only. Replaces the list: `{plugins}` |
 | DELETE | `/api/projects/:projectId/plugins/installed?specifier=…` | Admin only. Removes a plugin from the list |
 
-- The index follows the schema of typst/packages' `index.json`: a flat array of per-version entries with `name`, `version`, `description`, `authors` and `license`, plus optional `repository`, `homepage`, `keywords`, `categories` and `updatedAt`. An entry's `name` is the package name a Project's list uses. The index currently comes from a single registry built into the server, which lists the four sandbox backends. A registry is for discovery only and never imports plugin code.
+- The index follows the schema of typst/packages' `index.json`: a flat array of per-version entries with `name`, `version`, `description`, `authors` and `license`, plus optional `repository`, `homepage`, `keywords`, `categories` and `updatedAt`. An entry's `name` is the package name a Project's list uses. Two sources are merged: the index built into the server package, and the one the index repository publishes — a release asset on a fixed tag (`releases/download/nightly/index.json`), fetched at most every 30 minutes and replaced by a six-hourly workflow. A source that cannot be read shortens the listing rather than emptying it, and is named in `failures`; inside one document, though, a single malformed entry still fails that whole index. `PENGUIN_PLUGIN_INDEX=off` turns the published lookup off (no outbound request), and any other value replaces its URL. A registry is for discovery only and never imports plugin code.
 - `GET …/readme` returns the package's own `README.md`, read from the copy on this machine; `readme` is `null` when there is none. A name the index does not list returns `404` `not_found`, and a request without `name` returns `400` `bad_request`.
 - `GET …/installed` is open to any member of the Project. Each entry in `plugins` is `{specifier, active, builtin, modules, replaces, error?}`: `active` means the process has loaded the package, `builtin` that it ships with this build, `modules` and `replaces` are the nodes its generated `ifaces.json` declares, and `error` says why it is not running, such as a package that is not on this machine or a load that failed. `shipped` lists every plugin package the build ships, asked for or not. `file` names the file that holds the list. `restartPending` is true when a listed plugin is neither running nor failed, which a server restart resolves. A Project whose `.project_config.toml` cannot be read returns `400` `invalid_plugins_file`.
 - The writes answer with the same body as the GET. A specifier must be a package name, never a path, a URL or a version range (`400` `bad_request`). A name that enters the list must be a package the build ships, otherwise the route returns `400` `plugin_not_shipped`: nothing is downloaded. `PUT` sends names only, and a name that stays in the list keeps the requirement the file records for it. `DELETE` edits the list only and removes nothing from disk.
 - A write takes effect without a restart: the App [re-assembles itself](/server-boot#re-assembly) around the new list, with the effects of a hot swap. Agent runs in progress are stopped in every Project, because all Projects share one module tree. If the new App fails to boot, the edit is undone and the previous App is restored.
 - The list is the `[plugins]` table of the Project's `.project_config.toml` (see [Project config](/configuration#project-config)). The process loads the union of every Project's table, so a plugin one Project asks for is loaded for all of them.
+
+## Plugin-Contributed Languages
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/languages` | The languages this App's plugins contributed: `{languages: [{id, displayName, aliases?, extensions?}]}` — no grammars |
+| GET | `/api/languages/:id/grammar` | One language's TextMate grammar, in the shape Shiki's `loadLanguage` takes; `404` for an id nothing contributed |
+
+The listing carries no grammars: one is tens to hundreds of kilobytes, and only the languages a conversation shows are worth fetching. A grammar response is cached for an hour, since it cannot change without a new App, and a new App is a new page load. The aliases and file extensions have to arrive *before* the grammar, because Shiki registers a grammar's own aliases only once it is loaded, and the fence info string is what decides whether to load it. A grammar is data, not code: nothing on this path evaluates anything a plugin ships.
 
 ## Schedules
 
@@ -682,7 +697,7 @@ Two conventions apply to every route here. A Session the caller cannot access al
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/` | Session info |
-| PATCH | `/` | Updates the Session: `{approvalMode?, thinkingLevel?, archived?, title?}` |
+| PATCH | `/` | Updates the Session: `{approvalMode?, sandbox?, thinkingLevel?, archived?, title?}` |
 | DELETE | `/` | Deletes the Session, with its Traces and scratch files |
 | GET | `/messages` | The OmniMessage history, in full or as a window of Tasks |
 | GET | `/trace-image?file=&ordinal=[&i=]` | One image of a Trace record, as a windowed `/messages` page references it |
@@ -692,6 +707,7 @@ Two conventions apply to every route here. A Session the caller cannot access al
 | GET | `/goal` | The Session's most recent goal run |
 
 - `GET /` returns the Session's info. Unlike the list rows, the single-Session response also carries `tracePath`, the absolute path of the latest Trace file. `orgId` marks a Session that company mode's caches own (a desk session, or a session contributing to one of that organization's tickets); it is absent on every ordinary Session, and the list route sets it too.
+- `PATCH /` checks every field before it writes any, the `sandbox` pick (`{mode?, network?}`) included: a non-admin's pick wider than the server's sandbox settings is `403` `sandbox_forbidden`, a level no backend here can enforce `400` `sandbox_unsupported`, and a refused request stores nothing — not its `approvalMode` or `title` either. The Session's `sandbox` view marks each row of its `presets` that is wider than the server's settings with `aboveCeiling: true` (response-only), by the same comparison: a non-admin's pick of such a row is refused.
 - `PATCH /` with `thinkingLevel` pins the level on this Session durably, from its very next LLM request. The thinking level is soft-limited: it can change mid-context, at the cost of the provider's cached context, which is why the level picker advises compacting first. The pinned level comes back as `SessionInfo.thinkingLevel`; when that is absent, no level was ever pinned and the agent config applies.
 - `GET /messages` without parameters returns the full OmniMessage history. `tailLimit=n` reads the newest n Task-aligned units instead, and `before=<cursor>&limit=n` reads the n units before a cursor. The two forms are exclusive, `n` is between 1 and 1000, and `limit` defaults to 200. A window also stays within 4 MiB of serialized messages: it stops before the unit that would pass that, but always holds at least one, so it can hold fewer units than asked for and still carry a `before` cursor. The bundled Web App opens a conversation on its latest 20 turns and loads 20 more each time you scroll to the top. A windowed response carries `page`, with the cursor for the next page (`before`), the number of turns before the window (`earlierTurns`), the cumulative stats before it (`prior`), and the model of the context the window starts in (`contextModel`): a Session can switch models between contexts, and a window that starts partway into one does not hold the `session_meta` that names its model. While a Task runs, the response also carries `live`; see [The live field on GET /messages](#the-live-field-on-get-messages).
 - A windowed page serves images by reference. In each record that carries a `tracePosition`, a PNG, JPEG, GIF or WebP `data:` URL, whether a user's `image_url` or an entry of a tool output's `images`, is replaced by `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`, with `&i=<k>` for the k-th entry of `images`. That route answers the decoded image with its own type, `Cache-Control: private, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`. It returns 404 `trace_image_not_found` when the record holds no such image, and 400 for a missing or malformed parameter. Subagent messages, other image types and the full read keep their `data:` URLs.
@@ -1040,6 +1056,56 @@ Interactive shells on the server host. The Web App's terminals use these routes,
 - `keys` is literal text or a key token: `Enter`, `Tab`, `Escape`, `Backspace`, `Space`, `Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`, `PageDown`, `Delete`, or a control chord such as `C-c`. With `literal: true`, the text is sent exactly as given. A terminal whose shell has exited returns `409` `terminal_exited`.
 - The byte stream does not use these routes: it is a WebSocket at `GET /api/terminals/:id/stream` (an Upgrade request).
 - A request without a valid session or token returns `401` `unauthorized`.
+
+## Agent Browser
+
+The browser agents drive with `penguin browser`, under `/api/builtin-browser`. It has two backends: `builtin`, the desktop app's built-in browser, hosted by the desktop shell that spawned this server; and `chrome`, a user's own Chrome, connected through the PenguinHarness Browser extension. Each user has one backend in effect: the one they chose with `PUT /backend`, else `builtin` for an administrator under the desktop shell and `chrome` everywhere else. A server outside the desktop shell offers only `chrome`. A call never falls back from one backend to the other. See [Built-in Browser](/builtin-browser).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/status` | The caller's backend: `{available, reason?, backend, backends, tabs, activeTabId, metrics?}`. Never `503` |
+| GET | `/backend` | `{backend, choices}`: the backend in effect and the ones the caller may choose |
+| PUT | `/backend` | Chooses one: `{backend}` → `{backend, choices}` |
+| GET | `/tabs` | The tabs and the active one: `{tabs, activeTabId}` |
+| POST | `/tabs` | Opens a tab: `{url?, activate?, sessionId?}` → `{tab}`. Without `url`, the homepage or a blank page |
+| POST | `/tabs/claim` | Built-in: a window names the tab it created for an open request: `{requestId, tabId}` |
+| POST | `/tabs/on-screen` | Built-in: the tab a window shows now, or `null` |
+| POST | `/tabs/:tab/activate` | Makes a tab the active one; on `chrome`, Chrome shows it too |
+| DELETE | `/tabs/:tab` | Closes a tab; `204` |
+| POST | `/tabs/:tab/navigate`, `scan`, `exec`, `click`, `type`, `screenshot`, `cdp` | The agent's actions; see [penguin browser](/cli#penguin-browser) |
+| GET | `/import/sources` | Built-in: the system browser profiles that can be imported |
+| POST | `/import` | Built-in: imports cookies and history: `{sourceId, cookies?, history?, domains?}` |
+| GET / PUT | `/settings` | The homepage: `{homepage}`. Administrators only |
+| GET / DELETE | `/history?q=&limit=` | Built-in: searches or clears the history |
+| POST | `/clear-data` | Built-in: `{storages}`, any of `cookies`, `cache` and `storage` |
+| POST | `/extension/pairings` | A one-time pairing code for the signed-in user: `{code, expiresAt, origin}` |
+| GET | `/extension` | The caller's paired Chromes: `{paired, connected?, enabled}` |
+| DELETE | `/extension/:id` | Revokes one; `204`. Its connection is closed with `4003` |
+| POST | `/extension/pair` | The extension trades a code for its token: `{code, name, version}` → `{extensionId, token, installId, user, serverVersion}` |
+| GET | `/extension/ws` | The extension's WebSocket (an Upgrade request) |
+
+`:tab` is a tab id or `active`.
+
+### Who may call what
+
+- Every route takes any signed-in user. The built-in browser and what only it has (import, history, clearing data, `/tabs/claim`, the homepage) are for administrators: a member gets `403` `admin_required`. Asked of the `chrome` backend, import, history and clearing data return `405` `not_supported`.
+- `PUT /backend` and `POST /extension/pairings` are the signed-in person's own: the local API token gets `403` `human_required`. A backend the caller may not choose returns `405` `not_supported` (or `403` `admin_required` for a member asking for `builtin`), and a switch while an agent acts in the browser returns `409` `action_in_flight`. Switching closes no tabs.
+- An agent's calls use the local API token, which acts as the administrator. When such a call carries a `sessionId` (in the body, or in the query of a `GET` or `DELETE`), the server acts for the person driving that session instead: the one who started its current run, or the creator of a scheduled task, else the Project's owner. That is whose Chrome the agent drives; another user's Chrome is never used.
+- `GET /extension` and `DELETE /extension/:id` see only the caller's own pairings. A pairing code works once, for 10 minutes, and five wrong attempts end it; a new code replaces the caller's previous one.
+
+When the backend cannot be driven, an action returns `503` `browser_unavailable` with a `reason` beside the code. Built-in: `not_desktop` (no desktop shell), `shell_unsupported` (a shell too old for the browser) or `no_window` (no window took a new tab). Chrome: `extension_not_paired`, `extension_disconnected` or `extension_disabled`. Without a reason, the message says why, such as the user having paused the extension. On `chrome`, a tab the user took back answers `409` `tab_released`, and raw CDP that reaches outside the tab answers `403` `cdp_refused`: the `Target`, `Browser`, `Storage`, `Fetch`, `Extensions`, `Tethering` and `Security` domains, the `Network` methods that read or change cookies, clear the cache or intercept requests, `DOM.setFileInputFiles` and `Page.setDownloadBehavior`.
+
+### The extension's pairing and WebSocket
+
+- `POST /extension/pair` is mounted outside the session gate: the code is the credential, and no cookie is read. It answers CORS, including Chrome's Private Network Access preflight, for the extension's own origin alone; another `Origin` gets `403` `forbidden_origin`, and a request with none is let through. A bad or expired code returns `401` `invalid_code`.
+- The WebSocket at `/api/builtin-browser/extension/ws` authenticates with the extension's token, carried in the subprotocol list (`Sec-WebSocket-Protocol: penguin-browser.1, token.<token>`), never in the address; the server selects `penguin-browser.1`. The `Origin` must be the extension's (`chrome-extension://dodgfhpcbmkjfcbgnoidablfgjjhhmgp`, or any extension on a server with the dev profile), and cookies are not read. A foreign `Origin` gets `403` and a missing or unknown token `401`, before the upgrade.
+- Messages are JSON text frames in the desktop shell's envelopes (`desktop-browser-command`, `-reply`, `-event`), extended with the `open-tab`, `close-tab`, `activate-tab` and `ping` commands and the `tab-released` event. The server sends `hello` first and pings every 20 seconds.
+- Close codes: `4001` another Chrome of the same user connected (the last one wins); `4003` the pairing was revoked; `4005` a subprotocol or `hello` version the server does not speak; `4008` the pings went unanswered; `4009` the administrator's switch is off; `1012` the server is restarting.
+- The token is 32 random bytes, shown once, and stored only as its SHA-256. A reverse proxy must forward `Upgrade` for this path, as for the terminal stream.
+
+### Events
+
+The user channel carries the browser's events: `builtin_browser_tabs` (`{tabs, activeTabId, backend}`, the whole list of one backend), `builtin_browser_open` and `builtin_browser_close` (built-in), `builtin_browser_activity` (an agent starts or ends an action in a tab), `builtin_browser_metrics` (built-in), `builtin_browser_backend` (`{backend}`, the user switched) and `builtin_browser_extension` (`{state, extension?}`, the user's Chrome `connected`, `disconnected`, was `replaced` by another or `revoked`). The built-in browser's go to every administrator; a Chrome's go to its user.
 
 ## Desktop Shell, Hot Update and Web Contributions
 

@@ -17,7 +17,7 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins
 
 `a2ui` makes replies easier to read and act on: a choice, a form, a procedure in steps, a callout or a Mermaid diagram written as a fenced block inside ordinary Markdown, which the Web App renders with its own components (a pick fills the composer as plain text) and every other surface shows as readable text. The skill carries STE-style writing rules for Chinese and English and ships `scripts/check.mjs`, a self-contained bundle of core's `@prismshadow/penguin-core/a2ui` grammar (`pnpm build:a2ui-check` regenerates it; a core test fails when it is stale) that validates every block, scores the draft and prints the self-review rubric before the reply is sent.
 
-`browser-automation` drives the desktop app's built-in browser through `penguin browser`: GenericAgent's scan → act → check loop over simplified HTML, trusted clicks and typing, and sign-ins imported from the system browser, with Amazon orders as the worked example.
+`browser-automation` drives the agent browser through `penguin browser` — the desktop app's built-in browser, or the user's own Chrome through the PenguinHarness Browser extension: GenericAgent's scan → act → check loop over simplified HTML, trusted clicks and typing, and the user's own sign-ins, with Amazon orders as the worked example.
 
 `agent-tuning` powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, optimize it to version N+1 with a snapshot before every round.
 

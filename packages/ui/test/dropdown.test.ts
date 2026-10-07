@@ -4,7 +4,8 @@
  *
  * The panel mounts only while open, and its portal mode reaches for `document.body`, which a
  * static render has none of; the in-flow panel renders, and what the portal path must keep doing
- * (share the dialogs' focusable set and Escape stack) is pinned against the source. How the app's
+ * (share the dialogs' focusable set and Escape stack, and focus its first item once placed) is
+ * pinned against the source. How the app's
  * menus consult the scroll rule is `context-menu.test.ts`; that dialogs and menus share one
  * focusable selector is the web app's `modal-focus.test.ts`.
  */
@@ -79,6 +80,16 @@ describe("Dropdown", () => {
     expect(source).toMatch(/const layer = pushEscLayer\(\);[\s\S]*isTopEscLayer\(layer\)/);
     // Portaled panels clear a dialog's overlay; in-flow ones stay on the menu tier.
     expect(source).toContain('${portal ? "z-[60]" : "z-40"}');
+  });
+
+  // A source pin (no DOM here): a hidden, unplaced portaled panel cannot take focus.
+  it("source pin: the first-item focus effect waits for a portaled panel to be placed", () => {
+    const source = readFileSync(join(SRC_DIR, "components/overlays/dropdown/dropdown.tsx"), "utf8");
+    expect(source).toContain("const placed = !portal || pos !== null;");
+    expect(source).toMatch(
+      /if \(!open \|\| !placed \|\| focusOnOpenRef\.current === false\) return;\s*panelItems\(\)\[0\]\?\.focus\(\);\s*\}, \[open, placed, panelItems\]\);/,
+    );
+    expect(source).toContain('visibility: "hidden" as const');
   });
 });
 

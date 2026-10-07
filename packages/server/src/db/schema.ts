@@ -162,6 +162,17 @@ CREATE TABLE IF NOT EXISTS ui_prefs (
   user_id    TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
   prefs_json TEXT NOT NULL                    -- {theme?, lastProjectId?, ...} free-form JSON
 );
+CREATE TABLE IF NOT EXISTS browser_extensions ( -- one row per Chrome paired to a user (builtin-browser/extension-pairing.ts): the PenguinHarness Browser extension's long-lived credential, stored only hashed; NOT rebuildable — a lost row means pairing that Chrome again
+  extension_id TEXT PRIMARY KEY,              -- random id shown in the Web App's list
+  user_id      TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  token_hash   TEXT NOT NULL UNIQUE,          -- sha256(token) hex; the extension alone holds the token
+  name         TEXT NOT NULL,                 -- how the extension names this Chrome ("Chrome 130 on macOS")
+  version      TEXT NOT NULL,                 -- the extension's version, as of its last hello
+  created_at   TEXT NOT NULL,
+  last_seen_at TEXT,                          -- last connect or disconnect; NULL = never connected
+  revoked_at   TEXT                           -- set by Revoke; a revoked token's socket is closed 4003
+);
+CREATE INDEX IF NOT EXISTS idx_browser_extensions_user ON browser_extensions(user_id);
 CREATE TABLE IF NOT EXISTS server_settings (   -- admin-level server-global settings (GET/PUT /api/admin/settings)
   key   TEXT PRIMARY KEY,                     -- setting name, e.g. 'proxy_for_app'
   value TEXT NOT NULL                         -- JSON-encoded value; an absent row means the setting's built-in default

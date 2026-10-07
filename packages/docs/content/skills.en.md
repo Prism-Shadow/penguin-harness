@@ -198,7 +198,7 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plu
 | Office Productivity | `a2ui` | Rich reply blocks — a choice, a form, steps, a callout or a Mermaid diagram written as a fenced block inside ordinary Markdown, rendered by the Web App with its own components (a pick fills the composer as plain text) and shown as readable text elsewhere — with STE-style writing rules for Chinese and English and a checker script that validates and scores a draft before it is sent (preinstalled) |
 | | `data-analysis` | Complete data-analysis tasks with bounded evidence inspection, explicit answer-changing decisions, native artifact handling and final output verification |
 | | `use-firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
-| | `browser-automation` | Drive the desktop app's [Built-in Browser](/builtin-browser) with `penguin browser`: read pages as simplified HTML or text, act with JavaScript and trusted clicks and typing, and extract data such as Amazon orders, signed in with accounts imported from the system browser |
+| | `browser-automation` | Drive the agent browser with `penguin browser`, the desktop app's [Built-in Browser](/builtin-browser) or [your own Chrome](/builtin-browser#use-your-own-chrome): read pages as simplified HTML or text, act with JavaScript and trusted clicks and typing, and extract data such as Amazon orders, signed in with your own accounts |
 | | `use-bento-slides` | Author and edit Bento presentations: single-file `.bento.html` decks whose document is JSON, mapping material to charts, morph transitions and state slides |
 | | `humanizer` | Strip AI-writing tells from prose in any language and rewrite it into the register of books, newspapers and encyclopedias (not preinstalled: install from the library when needed) |
 | | `goal` | The stop hook behind [goal mode](/goal-mode): keeps the Session working toward an objective until it is complete, blocked, or out of Token budget (preinstalled) |
@@ -236,6 +236,7 @@ plugins/<plugin>/
 | `version` | `YYYY.MM.DD.N`: the date plus a sequence number for that day |
 | `category` | One of `office-productivity`, `software-development`, `ai-app-development`, `agent-company`; a missing or unknown category lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set, so it is installed only manually from the library |
+| `quick_start` | The demo the Plugins page pre-fills into a new-chat draft: `{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }` — a prompt that shows the plugin working once sent, the plugin's own skills to pre-select, and whether the draft opens in goal mode. The page never sends it; without it, quick start pre-selects the first skill |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds. A `user_prompt` command may add `"trigger"`: `"prompt"` (the default) runs it on every prompt the user submits, `"host"` only when a host starts the package's flow by name |
 
 ### Plugin naming and versioning

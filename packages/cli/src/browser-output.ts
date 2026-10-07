@@ -14,6 +14,8 @@
  * "penguin browser".
  */
 import type {
+  BrowserBackend,
+  BrowserBackendInfo,
   BuiltinBrowserExecResult,
   BuiltinBrowserHistoryEntry,
   BuiltinBrowserImportResult,
@@ -57,20 +59,46 @@ export function tabList(
   return t.browser.line(t.browser.label.tabs, value);
 }
 
+/**
+ * `status: available · backend: chrome (Chrome 130 on macOS, extension 0.2.13)` and the tab list,
+ * or `status: unavailable (<reason>) · backend: …` with a `note:` saying what to tell the user. The
+ * backend is the one the user chose (the agent never picks it); a server older than the second
+ * backend names none, and the line then ends at the status.
+ */
 export function renderStatus(status: BuiltinBrowserStatus, t: Messages): string {
   const { label, line } = t.browser;
+  const backend = backendSuffix(status, t);
   if (!status.available) {
     const reason = status.reason ?? "not_desktop";
     return lines([
-      line(label.status, t.browser.unavailable(reason)),
+      `${line(label.status, t.browser.unavailable(reason))}${backend}`,
       line(label.note, t.browser.unavailableHint(reason)),
     ]);
   }
   return lines([
-    line(label.status, t.browser.available()),
+    `${line(label.status, t.browser.available())}${backend}`,
     tabList(status.tabs, status.activeTabId, t),
     ...loadLines(status, t),
   ]);
+}
+
+/** ` · backend: <backend>`, naming the user's Chrome when one is paired; empty without a backend. */
+function backendSuffix(status: BuiltinBrowserStatus, t: Messages): string {
+  // Both optional at runtime: an older server answers without them.
+  const backend = status.backend as BrowserBackend | undefined;
+  const backends = status.backends as BrowserBackendInfo[] | undefined;
+  if (backend === undefined) return "";
+  const extension =
+    backend === "chrome"
+      ? backends?.find((info) => info.backend === "chrome")?.extension
+      : undefined;
+  const value = t.browser.backendValue(
+    backend,
+    extension !== undefined
+      ? { name: oneLine(extension.name), version: extension.version }
+      : undefined,
+  );
+  return ` · ${t.browser.line(t.browser.label.backend, value)}`;
 }
 
 /** A size in KB as the status shows it: `640 MB`, or `2.1 GB` from about a gigabyte up. */

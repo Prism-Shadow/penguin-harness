@@ -101,6 +101,16 @@ describe("SelectionMenuRows", () => {
     expect(add).toBeGreaterThan(copy);
   });
 
+  it("names the agent's Chrome tab while the agents drive the user's Chrome, and opens the link there", () => {
+    const onDone = vi.fn();
+    const rows = linkRows({ href: HREF, browser: "chrome", desktopShell: false, onDone });
+    expect(rows.map(label)).not.toContain(S.chat.linkMenu.openInBuiltinBrowser);
+    const row = rows.find((r) => label(r) === S.chat.linkMenu.openInChromeTab);
+    row!.props.onSelect();
+    expect(openedInBrowser).toEqual([HREF]);
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+
   it("follows the UI language", () => {
     setActiveStrings(en);
     const html = renderToStaticMarkup(
@@ -194,7 +204,7 @@ describe("LinkMenuRows", () => {
     const html = renderToStaticMarkup(
       createElement(LinkMenuRows, {
         href: HREF,
-        builtinBrowser: true,
+        browser: "builtin",
         desktopShell: true,
         onDone: () => {},
       }),
@@ -212,7 +222,7 @@ describe("LinkMenuRows", () => {
     const html = renderToStaticMarkup(
       createElement(LinkMenuRows, {
         href: HREF,
-        builtinBrowser: false,
+        browser: null,
         desktopShell: false,
         onDone: () => {},
       }),
@@ -228,7 +238,7 @@ describe("LinkMenuRows", () => {
     const html = renderToStaticMarkup(
       createElement(LinkMenuRows, {
         href: HREF,
-        builtinBrowser: true,
+        browser: "builtin",
         desktopShell: true,
         onDone: () => {},
       }),
@@ -240,7 +250,7 @@ describe("LinkMenuRows", () => {
 
   it("opens the link in the built-in browser through the browser's own new tab", () => {
     const onDone = vi.fn();
-    const row = linkRows({ href: HREF, builtinBrowser: true, desktopShell: true, onDone }).find(
+    const row = linkRows({ href: HREF, browser: "builtin", desktopShell: true, onDone }).find(
       (r) => label(r) === S.chat.linkMenu.openInBuiltinBrowser,
     );
     row!.props.onSelect();
@@ -252,7 +262,7 @@ describe("LinkMenuRows", () => {
     const open = vi.fn();
     vi.stubGlobal("window", { open });
     const onDone = vi.fn();
-    const row = linkRows({ href: HREF, builtinBrowser: false, desktopShell: true, onDone }).find(
+    const row = linkRows({ href: HREF, browser: null, desktopShell: true, onDone }).find(
       (r) => label(r) === S.chat.linkMenu.openExternal,
     );
     row!.props.onSelect();
@@ -264,7 +274,7 @@ describe("LinkMenuRows", () => {
   it("copies the address and confirms with a toast, as Copy does", async () => {
     writeClipboard.mockResolvedValue(true);
     const onDone = vi.fn();
-    const row = linkRows({ href: HREF, builtinBrowser: true, desktopShell: true, onDone }).find(
+    const row = linkRows({ href: HREF, browser: "builtin", desktopShell: true, onDone }).find(
       (r) => label(r) === S.chat.linkMenu.copyLink,
     );
     row!.props.onSelect();

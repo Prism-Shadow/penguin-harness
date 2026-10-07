@@ -256,6 +256,13 @@ export interface ServerSettings {
    * reports it so clients hide the mode switch. Organizations on disk are untouched.
    */
   companyMode: boolean;
+  /**
+   * Whether users may drive their own Chrome through the PenguinHarness Browser extension
+   * (default on). Off closes every connected extension (close code 4009), refuses new
+   * connections, and makes the chrome backend unavailable (`extension_disabled`); pairings are
+   * kept, so turning it on again lets the extensions reconnect.
+   */
+  browserExtensionsEnabled: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -268,6 +275,8 @@ export interface ServerSettingsUpdateRequest {
   proxyForAgent?: boolean;
   /** Company mode master switch; see `ServerSettings.companyMode`. */
   companyMode?: boolean;
+  /** Chrome extension switch; see `ServerSettings.browserExtensionsEnabled`. */
+  browserExtensionsEnabled?: boolean;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -405,6 +414,12 @@ export interface UiPrefs {
   lastOrgKey?: string;
   /** The one group balance shown beside the user name (pinned on the models page); null when unpinned. */
   pinnedBalance?: PinnedBalance | null;
+  /**
+   * The browser this user's agents drive. Written only through PUT /api/builtin-browser/backend
+   * (PUT /api/me/prefs refuses it): absent means built-in for an admin on the desktop, chrome
+   * everywhere else.
+   */
+  browserBackend?: BrowserBackend;
   [key: string]: unknown;
 }
 
@@ -1578,6 +1593,19 @@ export interface SessionSandbox {
    * (400 `sandbox_unsupported`).
    */
   localNetworkSupported?: boolean;
+  /** Response only, ignored in requests: whether a backend here can enforce `masksPaths`. */
+  maskPathsSupported?: boolean;
+  /**
+   * Response only, ignored in requests: true when this policy hides paths (the Sandbox card's
+   * masked paths, kept by every pick). Where `maskPathsSupported` is false, every level then
+   * refuses every command, and the composer says so.
+   */
+  masksPaths?: boolean;
+  /**
+   * Response only, ignored in requests: the names of the sandbox backends in use here, which the
+   * composer names when a level is beyond what they enforce. Absent with none in use.
+   */
+  backendsInUse?: string[];
   /**
    * Response only, ignored in requests: the sandbox backends that are enabled here but failed
    * to load or failed their check (a WSL distro not set up, a wrong program path), each with
@@ -1585,6 +1613,50 @@ export interface SessionSandbox {
    * composer marks the confining levels unavailable and gives the first one's reason.
    */
   unavailableBackends?: UnavailableSandboxBackend[];
+  /**
+   * Response only, ignored in requests: the server's sandbox presets (the Sandbox card's table),
+   * in table order, disabled rows included. The composer lists the enabled ones and names the
+   * Session's level by the first row matching its mode, network and approval mode. A server
+   * that does not report it gets the composer's built-in table.
+   */
+  presets?: SessionSandboxPreset[];
+  /**
+   * Response only, ignored in requests: true when this Session's policy holds something the
+   * presets do not show — masked paths, or the temp directory not writable.
+   */
+  advanced?: boolean;
+  /**
+   * Response only, chat defaults only: the approval mode a new Session starts with when its
+   * request names none — the Sandbox card's default preset's, while the switch is on. Absent:
+   * the server's own fallback (`allow-all`).
+   */
+  defaultApprovalMode?: ApprovalMode;
+  /**
+   * Response only, ignored in requests: the Sandbox card's switch on this server — whether new
+   * Sessions start confined. Off, the composer offers the approval modes alone (a Session keeps
+   * its own policy either way). A server that does not report it is read as on.
+   */
+  switchOn?: boolean;
+}
+
+/** One sandbox preset: a named mode, network level and approval mode. */
+export interface SessionSandboxPreset {
+  id: string;
+  /** The name an administrator gave it, or its declared English name. */
+  name: string;
+  /** Its declared Chinese name, while it has not been renamed. */
+  nameZh?: string;
+  /** Whether the composer's menu lists it. */
+  enabled: boolean;
+  mode: SessionSandboxMode;
+  network: SessionSandboxNetwork;
+  approvalMode: ApprovalMode;
+  /**
+   * Response-only: its file mode or network is wider than the server's sandbox settings (the
+   * ceiling for non-admins), so a non-admin's pick of it is refused with `403 sandbox_forbidden`.
+   * The same comparison as that refusal; absent when it is within them.
+   */
+  aboveCeiling?: true;
 }
 
 /** An enabled sandbox backend that is not in use on this server, and why. */
@@ -3946,6 +4018,18 @@ export interface PluginItem {
   hooks: string[];
   /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
+  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`); absent = pre-select its first skill. */
+  quickStart?: QuickStartItem;
+}
+
+/** A quick start: a prompt pre-filled into a new-chat draft — never sent by the page. */
+export interface QuickStartItem {
+  prompt: string;
+  promptZh?: string;
+  /** Skills to pre-select (a library plugin's own). */
+  skills?: string[];
+  /** Open the draft in goal mode. */
+  goal?: boolean;
 }
 
 export interface PluginGroupItem {
@@ -4058,6 +4142,12 @@ export interface PluginIndexEntry {
 /** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
 export interface PluginIndexResponse {
   plugins: PluginIndexEntry[];
+  /**
+   * Sources that could not be read, by `source` and reason. Present and empty when every
+   * source answered. A remote index that is down shortens the listing rather than emptying
+   * it, so the page needs to be able to say so instead of silently showing less.
+   */
+  failures: { source: string; error: string }[];
 }
 
 /** GET /api/plugins/registry/readme — long-form docs for one entry; `readme` is null when none exists. */
@@ -4065,6 +4155,30 @@ export interface PluginReadmeResponse {
   name: string;
   /** Markdown, rendered by the Web App. Null when this entry has no readme. */
   readme: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Plugin-contributed languages
+// ---------------------------------------------------------------------------
+
+/**
+ * One language a plugin contributes, as the listing reports it. The grammar itself is not
+ * here: it is tens to hundreds of kilobytes, and only the languages a conversation actually
+ * shows are worth fetching (`GET /api/languages/:id/grammar`).
+ */
+export interface LanguageSummary {
+  /** Canonical id: the fence info string, and the id both endpoints address. */
+  id: string;
+  displayName: string;
+  /** Alternative fence info strings, needed BEFORE the grammar loads (it is what decides to load it). */
+  aliases?: string[];
+  /** File extensions without the dot, for the Workspace file viewer. */
+  extensions?: string[];
+}
+
+/** GET /api/languages: every language this App's plugins contributed, by id. */
+export interface LanguageIndexResponse {
+  languages: LanguageSummary[];
 }
 
 // ---------------------------------------------------------------------------
@@ -5352,17 +5466,30 @@ export interface ContributionsResponse {
  * One field of a settings group a module declares (its `PluginConfigProvider.groups`
  * contribution's `properties.<name>`): what the Settings dialog draws for it. `secret` is
  * drawn as a password field and masked on the way out; `enum` is a choice among `options`;
- * `list` is a list of strings, drawn one per line.
+ * `list` is a list of strings, drawn one per line; `table` is a fixed set of `rows`, each a
+ * value per one of its `columns`, drawn as a table.
  */
 export interface PluginConfigField {
-  type: "string" | "secret" | "boolean" | "number" | "enum" | "list";
+  type: "string" | "secret" | "boolean" | "number" | "enum" | "list" | "table";
   title: string;
   titleZh?: string;
+  /** What the field means: disclosed behind a "?" beside its title. */
   description?: string;
   descriptionZh?: string;
+  /**
+   * The shape a value must take ("one absolute path per line"): shown under the field at all
+   * times, since it is read while typing.
+   */
+  hint?: string;
+  hintZh?: string;
   placeholder?: string;
   /** The value a package with nothing stored reads; also what an empty field falls back to. */
   default?: string | number | boolean | string[];
+  /**
+   * Drawn in the card's Advanced fold, collapsed by default, rather than among the basic
+   * fields. Presentation only: it is stored, validated and read like any other field.
+   */
+  advanced?: boolean;
   /** A save that would leave this field empty is refused. */
   required?: boolean;
   /** `enum` only: the values it may take, in display order. */
@@ -5376,6 +5503,114 @@ export interface PluginConfigField {
   pattern?: string;
   /** What a save refused by `pattern` says, after the field's name (e.g. "must be an absolute path"). */
   patternErrorMessage?: string;
+  /**
+   * `table` only: its columns, in display order, and its rows, in display order. The table
+   * has no `default`: the rows' declared cells are its defaults, and what is stored is only
+   * the cells that differ from them — `{ [row id]: { [column]: value } }`.
+   */
+  columns?: PluginConfigTableColumn[];
+  rows?: PluginConfigTableRow[];
+  /**
+   * `table` only: a single choice of one row — the sandbox's default preset. The choice is
+   * stored in `field`, an `enum` field of the same group whose options are the row ids (plus,
+   * in an `extensible` table, the ids of the rows added to it); the page draws that field only
+   * as its title in brackets after the chosen row's name ("(Default)"), and picks it from a
+   * row's "…" menu.
+   */
+  rowChoice?: PluginConfigRowChoice;
+  /**
+   * `table` only: rows may be added (and only those deleted, from the row's "…" menu) and every
+   * row reordered. A new row
+   * starts from these values. What is stored, beside the declared rows' changed cells, is the
+   * added rows under `"$added"` (`{ [row id]: { [column]: value } }`, every column present) and
+   * the row order under `"$order"` (row ids); neither key can be a row id. A save sends either
+   * key whole; a document without them reads as the declared rows in declared order.
+   */
+  extensible?: PluginConfigNewRow;
+  /**
+   * `table` only: a header drawn over adjacent columns that belong together (the sandbox's
+   * Pin, under "Action"). `columns` names them. When the group ends the columns, the row's drag
+   * handle and "…" menu join it.
+   */
+  columnGroup?: PluginConfigColumnGroup;
+  /**
+   * `table` only: a `boolean` column drawn as a pin toggle rather than a switch — a row pinned
+   * to a list (the sandbox presets in the composer's menu). The texts are its tooltip in each
+   * state. Declared on the table, not the column, so every column keeps one shape.
+   */
+  pin?: PluginConfigPinColumn;
+}
+
+/** A table's pin column: which boolean column, and its tooltip pinned and not. */
+export interface PluginConfigPinColumn {
+  column: string;
+  on: string;
+  onZh?: string;
+  off: string;
+  offZh?: string;
+}
+
+/**
+ * A table's single choice of a row: the `enum` field it stores into, and its title, drawn in
+ * brackets after the chosen row's name. The choice may name no row (nothing stored, and the
+ * group's `derive` gives none): no row is marked and a save is not refused for it. A save that
+ * leaves it naming a row the table no longer has is refused.
+ */
+export interface PluginConfigRowChoice {
+  field: string;
+  title: string;
+  titleZh?: string;
+}
+
+/** One column of a `table` field: a scalar field type (`string`, `boolean`, or an `enum` with `options`). */
+export interface PluginConfigTableColumn {
+  name: string;
+  type: "string" | "boolean" | "enum";
+  title: string;
+  titleZh?: string;
+  /** What the column means: disclosed behind a "?" beside its header. */
+  description?: string;
+  descriptionZh?: string;
+  options?: PluginConfigOption[];
+}
+
+/** One row of a `table` field: its id and its declared cells. */
+export interface PluginConfigTableRow {
+  id: string;
+  /** Every column's declared value. */
+  values: Record<string, string | boolean>;
+  /** A string cell's declared value in Chinese, shown until a save changes the cell. */
+  valuesZh?: Record<string, string>;
+  /** Columns whose cell in this row a save may not change. */
+  locked?: string[];
+  /** A row added to an `extensible` table (not declared): the only kind that may be deleted. */
+  added?: boolean;
+  /**
+   * What the row is for, disclosed behind a "?" beside its name while its `enum` cells hold
+   * their declared values. A row without one, or whose choices changed, gets a "?" listing its
+   * `enum` cells' values and what each does (the options' `description`s).
+   */
+  description?: string;
+  descriptionZh?: string;
+}
+
+/** A header over adjacent table columns, with its own "?". */
+export interface PluginConfigColumnGroup {
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  columns: string[];
+}
+
+/** The values a row added to an `extensible` table starts from. */
+export interface PluginConfigNewRow {
+  /** The add button's text ("Add preset"). */
+  add?: string;
+  addZh?: string;
+  values: Record<string, string | boolean>;
+  /** A string column's starting text in Chinese. */
+  valuesZh?: Record<string, string>;
 }
 
 /** One choice of an `enum` field. */
@@ -5383,6 +5618,9 @@ export interface PluginConfigOption {
   value: string;
   title: string;
   titleZh?: string;
+  /** What picking it does: listed, for a table column's option, in a row's "?" (see the row's `description`). */
+  description?: string;
+  descriptionZh?: string;
 }
 
 /** A declared configuration: a titled group of fields, in declaration order. */
@@ -5391,6 +5629,13 @@ export interface PluginConfiguration {
   titleZh?: string;
   description?: string;
   descriptionZh?: string;
+  /**
+   * A `boolean` field that turns the group on (the sandbox's `enabled`). While it is off, as
+   * drafted, the card draws that field alone: no other field, notice or action, and none of the
+   * groups drawn inside it. Turning it on in a group that reports a `backend` it lacks offers
+   * to install one.
+   */
+  switch?: string;
   properties: Record<string, PluginConfigField>;
 }
 
@@ -5404,6 +5649,9 @@ export interface PluginConfigNotice {
   tone: "attention" | "muted" | "progress";
   text: string;
   textZh?: string;
+  /** More about the notice, disclosed under it on request; lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
 }
 
 /** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
@@ -5421,11 +5669,33 @@ export interface PluginConfigEntry {
   actions?: PluginConfigActionDecl[];
   /** Enum options this machine cannot honour now: drawn greyed out with the reason; a save choosing one is refused. */
   unavailable?: PluginConfigUnavailableDecl[];
+  /**
+   * For a group whose settings a backend plugin enforces (the sandbox): whether one that
+   * applies to this machine's OS is installed, and which packages this OS defaults to. The card
+   * offers to install `recommended` when the group's switch is turned on and none is installed.
+   * Asked per read, like the notices; the client never guesses the OS.
+   */
+  backend?: PluginConfigBackend;
 }
 
-/** One enum option a settings group cannot honour on this machine, and why. */
+/** Whether a backend that applies to this machine is installed, and this OS's default ones. */
+export interface PluginConfigBackend {
+  /** A backend for this OS is installed: loaded, or installed and failing its check. */
+  installed: boolean;
+  /**
+   * The npm packages this OS defaults to, installed together; absent on an OS with no default
+   * backend. Linux names two: bubblewrap, and sandbox-dsh, which confines files through
+   * Landlock where bubblewrap is refused.
+   */
+  recommended?: string[];
+}
+
+/** One enum option (or boolean position) a settings group cannot honour on this machine, and why. */
 export interface PluginConfigUnavailableDecl {
   field: string;
+  /** A `table` field's column: the option is unavailable in every cell of that column. */
+  column?: string;
+  /** An enum option, or a boolean field's position: "true" or "false". */
   value: string;
   reason: string;
   reasonZh?: string;
@@ -5515,11 +5785,35 @@ export interface InstalledPluginsResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Built-in Browser (desktop only): Electron <webview> guests in the persist:penguin-browser
-// partition, driven over CDP by the shell on the server's behalf. See builtin-browser/.
+// The agent browser, two backends behind one link (see builtin-browser/): the desktop's
+// built-in browser — Electron <webview> guests in the persist:penguin-browser partition,
+// driven over CDP by the shell on the server's behalf — and the user's own Chrome, driven
+// through the PenguinHarness Browser extension over a WebSocket the extension opens.
 // ---------------------------------------------------------------------------
 
-/** One guest page of the built-in browser; `id` is the guest's webContents id. */
+/** The browser an agent drives: the desktop's built-in one, or the user's own Chrome. */
+export type BrowserBackend = "builtin" | "chrome";
+
+/**
+ * What a backend's link can do. The shell cannot create tabs (the Web App's <webview> does) and
+ * throttles and measures its guests; the extension creates, closes and focuses tabs itself and
+ * has no cookie store the server may touch.
+ */
+export interface BrowserLinkCapabilities {
+  /** `open-tab`, `close-tab` and `activate-tab` are answered (chrome). */
+  createsTabs: boolean;
+  /** `throttle` and the `metrics` events (builtin). */
+  throttles: boolean;
+  /** `set-cookies` and `clear-data` (builtin). */
+  cookieStore: boolean;
+}
+
+/**
+ * One tab of the agent browser. Built-in: a guest page, `id` its webContents id. Chrome: a tab
+ * the extension drives (one it created in the Penguin tab group, or one the user added), `id`
+ * Chrome's tab id; `canGoBack`/`canGoForward` are always false there (the tabs API cannot read
+ * them).
+ */
 export interface BuiltinBrowserTab {
   id: number;
   url: string;
@@ -5536,18 +5830,123 @@ export interface BuiltinBrowserTab {
   crashed?: string;
 }
 
-/** Why the built-in browser cannot be driven: not under the desktop shell, a shell too old to host it, or no app window to host a new tab. */
-export type BuiltinBrowserUnavailableReason = "not_desktop" | "shell_unsupported" | "no_window";
+/**
+ * Why the agent browser cannot be driven. Built-in: not under the desktop shell, a shell too old
+ * to host it, or no app window to host a new tab. Chrome: this user has no paired extension, it
+ * is paired but not connected now, or an admin switched Chrome connections off server-wide.
+ */
+export type BuiltinBrowserUnavailableReason =
+  | "not_desktop"
+  | "shell_unsupported"
+  | "no_window"
+  | "extension_not_paired"
+  | "extension_disconnected"
+  | "extension_disabled";
 
-/** GET /api/builtin-browser/status. */
-export interface BuiltinBrowserStatus {
+/** One backend as GET /status lists it for the caller. */
+export interface BrowserBackendInfo {
+  backend: BrowserBackend;
   available: boolean;
   reason?: BuiltinBrowserUnavailableReason;
+  /** chrome: the caller's connected extension, else the one seen most recently; absent when none is paired. */
+  extension?: {
+    id: string;
+    name: string;
+    version: string;
+    connected: boolean;
+    lastSeenAt: string | null;
+  };
+}
+
+/**
+ * GET /api/builtin-browser/status: the caller's effective backend (`backend`) — whether it can
+ * be driven now, its tabs — and every backend this server offers the caller (`backends`).
+ */
+export interface BuiltinBrowserStatus {
+  /** Whether the effective backend can be driven now. */
+  available: boolean;
+  reason?: BuiltinBrowserUnavailableReason;
+  backend: BrowserBackend;
+  backends: BrowserBackendInfo[];
   tabs: BuiltinBrowserTab[];
   activeTabId: number | null;
-  /** The shell's latest measurement of the browser's load; absent before its first one. */
+  /** The shell's latest measurement of the built-in browser's load; absent before its first one, and on chrome. */
   metrics?: BuiltinBrowserMetrics;
 }
+
+/** GET / PUT /api/builtin-browser/backend: the caller's backend and the ones they may choose. */
+export interface BrowserBackendResponse {
+  backend: BrowserBackend;
+  choices: BrowserBackend[];
+}
+
+/** One Chrome paired to the caller's account (a row of `browser_extensions`). */
+export interface BrowserExtensionRecord {
+  id: string;
+  /** As the extension names itself, e.g. "Chrome 130 on macOS". */
+  name: string;
+  version: string;
+  createdAt: string;
+  lastSeenAt: string | null;
+  /** Whether this one holds the caller's connection now (one at a time per user). */
+  connected: boolean;
+}
+
+/** GET /api/builtin-browser/extension. */
+export interface BrowserExtensionsResponse {
+  paired: BrowserExtensionRecord[];
+  /** The id of the connected one, when one is. */
+  connected?: string;
+  /** The admin's server-wide switch (`ServerSettings.browserExtensionsEnabled`). */
+  enabled: boolean;
+}
+
+/**
+ * POST /api/builtin-browser/extension/pairings: a one-time code for the signed-in user, valid
+ * for ten minutes, used once; the dialog shows it beside the server address.
+ */
+export interface BrowserExtensionPairingResponse {
+  /** 43 base64url characters. */
+  code: string;
+  /** ISO time the code stops working. */
+  expiresAt: string;
+  /** The request's Origin, when it carried one: the address the browser reaches this server at. */
+  origin: string | null;
+}
+
+/** POST /api/builtin-browser/extension/pair (no cookie: the extension's own request). */
+export interface BrowserExtensionPairRequest {
+  code: string;
+  /** How the extension names this Chrome, e.g. "Chrome 130 on macOS" (1–80 characters). */
+  name: string;
+  /** The extension's own version (manifest.version). */
+  version: string;
+}
+
+/** What /extension/pair answers: the long-lived token, shown once and stored only hashed here. */
+export interface BrowserExtensionPairResponse {
+  extensionId: string;
+  /** Rides the WebSocket's subprotocol list as `token.<token>`; never a URL. */
+  token: string;
+  /** This server's install id (a stable name for the data root); null when it is unknown. */
+  installId: string | null;
+  user: { userId: string; displayName: string | null };
+  serverVersion: string;
+}
+
+/**
+ * The extension WebSocket's close codes (`/api/builtin-browser/extension/ws`). Besides these the
+ * server closes with 1012 when it restarts or hot-swaps (reconnect with the usual backoff).
+ *
+ * - 4001 replaced: another extension of the same user connected (last connected wins); do not
+ *   auto-retry.
+ * - 4003 revoked: the pairing was revoked (or the token was); forget this server.
+ * - 4005 protocol_mismatch: no `penguin-browser.1` subprotocol, or a hello the server does not
+ *   speak; the extension needs updating.
+ * - 4008 ping_timeout: two pings (or the hello) went unanswered.
+ * - 4009 disabled: an admin switched Chrome connections off; retry hourly.
+ */
+export type BrowserExtensionCloseCode = 4001 | 4003 | 4005 | 4008 | 4009;
 
 /** One tab's share of the built-in browser's load, as the shell last measured it. */
 export interface BuiltinBrowserTabMetrics {
@@ -5711,9 +6110,22 @@ export interface BuiltinBrowserSettings {
 export type BuiltinBrowserAction =
   "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
 
-/** User-channel events of the built-in browser (admins only). */
+/**
+ * User-channel events of the agent browser. The built-in backend's go to every admin; a chrome
+ * backend's go to the user whose Chrome it is, as do `builtin_browser_backend` and
+ * `builtin_browser_extension`.
+ */
 export type BuiltinBrowserServerEvent =
-  | { type: "builtin_browser_tabs"; tabs: BuiltinBrowserTab[]; activeTabId: number | null }
+  /**
+   * A backend's whole tab list. `backend` names whose: a desktop admin hears both the built-in
+   * browser's and their own Chrome's, and the two lists must not overwrite each other.
+   */
+  | {
+      type: "builtin_browser_tabs";
+      tabs: BuiltinBrowserTab[];
+      activeTabId: number | null;
+      backend: BrowserBackend;
+    }
   /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
   | {
       type: "builtin_browser_open";
@@ -5732,7 +6144,15 @@ export type BuiltinBrowserServerEvent =
       sessionId?: string;
     }
   /** The shell measured the browser's load (see BuiltinBrowserMetrics). */
-  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics };
+  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics }
+  /** The user switched backend (PUT /backend); every window of theirs follows. */
+  | { type: "builtin_browser_backend"; backend: BrowserBackend }
+  /** The user's Chrome connected, went away, was replaced by another Chrome of theirs, or was revoked. */
+  | {
+      type: "builtin_browser_extension";
+      state: "connected" | "disconnected" | "replaced" | "revoked";
+      extension?: BrowserExtensionRecord;
+    };
 
 /** A cookie as the shell writes it (Electron's CookiesSetDetails). */
 export interface DesktopBrowserCookie {
@@ -5748,9 +6168,13 @@ export interface DesktopBrowserCookie {
   sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
 }
 
-/** Server → shell: what the shell does with its guests. Mechanism only — the product logic stays on the server. */
+/**
+ * Server → browser link: what the shell (built-in) or the extension (chrome) does with its tabs.
+ * Mechanism only — the product logic stays on the server. The names are historical: the same
+ * envelopes travel the extension's WebSocket as JSON text frames.
+ */
 export type DesktopBrowserCommand =
-  /** Reply: `{ version: 1, partition: string }`. An older shell never answers. */
+  /** Reply: a BrowserHello. An older shell never answers. */
   | { op: "hello" }
   /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
   | { op: "tabs" }
@@ -5777,7 +6201,30 @@ export type DesktopBrowserCommand =
    * before. A tab is unthrottled until a command lists it, so a server that never sends one
    * changes nothing. A shell older than this command answers `unknown_op`.
    */
-  | { op: "throttle"; tabIds: number[] };
+  | { op: "throttle"; tabIds: number[] }
+  /**
+   * Chrome only (the shell answers `unknown_op`). Reply: `{ tab: BuiltinBrowserTab }`. A tab at
+   * `url` (http(s) or about:blank, checked by the server) in the extension's Penguin tab group;
+   * `activate` asks for it to be the selected tab of its window.
+   */
+  | { op: "open-tab"; url: string; activate: boolean }
+  /** Chrome only. Reply: `{}`. Closes a tab the extension drives. */
+  | { op: "close-tab"; tabId: number }
+  /** Chrome only. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
+  | { op: "activate-tab"; tabId: number }
+  /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
+  | { op: "ping" };
+
+/**
+ * The `hello` reply. Built-in: `{ version: 1, partition }` (an older shell sends no `backend`).
+ * Chrome: `{ version: 1, backend: "chrome", extension }`; any other version is closed 4005.
+ */
+export interface BrowserHello {
+  version: 1;
+  backend?: BrowserBackend;
+  partition?: string;
+  extension?: { version: string; chrome: string; name: string };
+}
 
 export interface DesktopBrowserCommandMessage {
   type: "desktop-browser-command";
@@ -5815,7 +6262,14 @@ export type DesktopBrowserEvent =
    * shortly after one closes, empty after the last): each tab's memory and CPU, and the pages'
    * memory together, a process shared by two tabs counted once.
    */
-  | { kind: "metrics"; tabs: BuiltinBrowserTabMetrics[]; totalKB: number };
+  | { kind: "metrics"; tabs: BuiltinBrowserTabMetrics[]; totalKB: number }
+  /**
+   * Chrome only: the tab still exists in Chrome but the agent may no longer drive it — the user
+   * pressed Cancel on Chrome's debugging bar (`user`), the debugger went away otherwise
+   * (`detached`), or the page is one Chrome lets no extension attach to (`restricted`). The
+   * extension fails that tab's pending commands with the error `tab_released`.
+   */
+  | { kind: "tab-released"; tabId: number; reason: "user" | "detached" | "restricted" };
 
 export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";

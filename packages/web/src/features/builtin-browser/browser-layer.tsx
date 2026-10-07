@@ -29,6 +29,12 @@
  *
  * And it says once when the browser gets too heavy: each load warning the server starts giving
  * raises one toast, wherever the user is in the app; the toolbar's mark carries it after that.
+ *
+ * Every window, `<webview>` or not, follows the agent browser's state (BrowserFollower): the
+ * user's own Chrome needs no page here, so a plain browser window offers the Browser panel too.
+ * A backend switch or word on the user's Chrome is followed by a fresh status read, which brings
+ * the chosen backend's tabs and settles what an event alone cannot (a revoked Chrome that was the
+ * last one paired). While the agents drive Chrome the built-in pages stay hosted, out of sight.
  */
 import {
   memo,
@@ -168,7 +174,7 @@ function writeRect(style: CSSStyleDeclaration, rect: Rect): void {
  */
 function placePages(ring: HTMLDivElement | null): void {
   const state = browserState();
-  const tab = activeTab(state);
+  const tab = state.backend === "builtin" ? activeTab(state) : null;
   const slot = tab === null ? null : visibleSlot();
   const onScreen =
     slot === null
@@ -282,7 +288,48 @@ const GuestPage = memo(function GuestPage({ guest }: { guest: BrowserGuest }) {
 export function BuiltinBrowserLayer() {
   // Decided once: whether this window has the element does not change while it is open.
   const [supported] = useState(webviewSupported);
-  return supported ? <LayerHost /> : null;
+  return (
+    <>
+      <BrowserFollower />
+      {supported ? <LayerHost /> : null}
+    </>
+  );
+}
+
+/**
+ * Every window: reads the status, follows the events, re-reads the status after a backend switch
+ * or word on the user's Chrome, and when the channel comes back past its replay buffer (events
+ * were lost, or the server restarted). An agent opening a page or starting to act for the
+ * conversation on screen brings the Browser panel up, once per conversation. Unmounting
+ * (signing out) stops offering the browser until the next status.
+ */
+function BrowserFollower() {
+  useEffect(() => {
+    void refreshBrowserStatus();
+    const revealed = new Set<string>();
+    const offEvents = subscribeBuiltinBrowserEvents((event) => {
+      dispatchBrowser({ type: "event", event });
+      if (event.type === "builtin_browser_backend" || event.type === "builtin_browser_extension") {
+        void refreshBrowserStatus();
+      }
+      const conversation = currentDockScope();
+      const onScreen = { conversation, browserShown: isTabShown(BROWSER_TAB) };
+      if (shouldReveal(event, onScreen, revealed)) {
+        revealed.add(conversation);
+        openPanel(BROWSER_TAB);
+      }
+    });
+    const offResync = subscribeBuiltinBrowserResync(() => {
+      dispatchBrowser({ type: "resync" });
+      void refreshBrowserStatus();
+    });
+    return () => {
+      offEvents();
+      offResync();
+      dispatchBrowser({ type: "unreachable" });
+    };
+  }, []);
+  return null;
 }
 
 function LayerHost() {
@@ -292,38 +339,25 @@ function LayerHost() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const ringRef = useRef<HTMLDivElement | null>(null);
 
-  // This window hosts the pages from here on: read the registry and the settings, follow the
-  // events, and re-read both when the channel comes back past its replay buffer (events were
-  // lost, or the server restarted). Unmounting (signing out) drops the pages, and the store
-  // forgets them with it.
+  // This window hosts the built-in browser's pages from here on: read its settings, and re-read
+  // them (and forget which tab the server was told is on screen) when the channel comes back
+  // past its replay buffer. Unmounting (signing out) drops the pages, and the store forgets
+  // them with it.
   useEffect(() => {
     dispatchBrowser({ type: "supported", supported: true });
-    void refreshBrowserStatus();
     void refreshBrowserSettings();
-    const revealed = new Set<string>();
-    const offEvents = subscribeBuiltinBrowserEvents((event) => {
-      dispatchBrowser({ type: "event", event });
-      const conversation = currentDockScope();
-      const onScreen = { conversation, browserShown: isTabShown(BROWSER_TAB) };
-      if (shouldReveal(event, onScreen, revealed)) {
-        revealed.add(conversation);
-        openPanel(BROWSER_TAB);
-      }
-    });
     const offResync = subscribeBuiltinBrowserResync(() => {
       forgetOnScreenReport();
-      dispatchBrowser({ type: "resync" });
-      void refreshBrowserStatus();
       void refreshBrowserSettings();
     });
     return () => {
-      offEvents();
       offResync();
       dispatchBrowser({ type: "supported", supported: false });
     };
   }, []);
 
-  const available = state.available;
+  // A shell slow to answer the server's handshake reads as unavailable until it is asked again.
+  const available = state.available || state.backend !== "builtin";
   useEffect(() => {
     if (available) return;
     let cancelled = false;

@@ -81,7 +81,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | PUT | `/api/me/password` | 修改密码：`{oldPassword, newPassword}` |
 | PUT | `/api/me/profile` | 设置头像和昵称：`{displayName?, avatar?}` → `{user}` |
 | GET | `/api/me/prefs` | 读取 UI 偏好 |
-| PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并） |
+| PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并）；拒绝 `browserBackend`（`400`），它经由 [`PUT /api/builtin-browser/backend`](#agent-浏览器) 选择 |
 
 - `GET /api/auth/claim` 用于兑换首次登录链接或桌面 shell 的一次性 token。链接无效或已被使用时，会改为重定向到 `/login?claimFailed=…`，Web App 会在那里说明如何获取一条有效链接。
 - `GET /api/install` 无需身份验证。`installId` 是一个不透明的 id，存储在 `<root>/install-id`，在数据根目录首次使用时生成。Web App 将它与本地保存的 id 比对，不一致时清空浏览器端引用服务器实体的 UI 状态，这样替换数据根目录后就不会残留旧的 Workspace、草稿和置顶项。返回 `null` 表示服务器无法确立 id，此时客户端不得改动任何状态。
@@ -106,11 +106,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ## 服务器设置（仅管理员）
 
-服务器全局的代理、附件和公司模式设置，以及插件声明的设置分组。
+服务器全局的代理、附件、公司模式和 Chrome 扩展设置，以及插件声明的设置分组。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode}}` |
+| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled}}` |
 | PUT | `/api/admin/settings` | 更新设置；省略的字段保持当前值，任何字段非法都会拒绝整个 PUT。返回更新后的完整设置 |
 | GET | `/api/admin/settings/proxy-probe` | 可达性探测的目标：`{targets: [{provider, url}]}`。不发起任何请求 |
 | POST | `/api/admin/settings/proxy-probe/:provider` | 经服务器的出站链路探测其中一个目标，不发送任何凭证：`{probe: {provider, url, outcome, ms, status?}}` |
@@ -163,11 +163,17 @@ PUT 按如下规则校验：
 
 `companyMode` 是服务器的**启用公司模式**开关，默认关闭。修改无需重启即生效：开关关闭期间，所有组织路由都返回 `404` `company_mode_off`，组织的调度器也不会触发任何事件。
 
+### Chrome 扩展开关
+
+`browserExtensionsEnabled` 是服务器的**允许 Chrome 扩展连接**开关，默认开启。关闭后立即断开所有已连接的 PenguinHarness Browser 扩展（WebSocket 关闭码 `4009`），拒绝新的连接和配对码，所有用户的 Chrome 后端都不可用（`extension_disabled`）。配对会保留，重新开启后扩展可以重新连上。见 [Agent 浏览器](#agent-浏览器)。
+
 ### 插件设置
 
 设置分组是投给 `PluginConfigProvider.groups` 的 contribution，沙盒的排在最前。列表中的每个分组带有它的 schema（`configuration`）、合并到缺省值上的存储值（密钥掩码）、它被画在哪个分组的卡片里（`parent`），以及实时状态行（`notices`）。
 
-字段类型有 `string`、`secret`、`boolean`、`number`、`enum`（带 `options`）和 `list`（每行一个值，可选 `maxItems`）。`number` 可声明 `minimum` 与 `maximum`；`string` 与 `list` 可声明每个值或每一行都须匹配的 `pattern`（配 `patternErrorMessage`）。
+字段类型有 `string`、`secret`、`boolean`、`number`、`enum`（带 `options`）和 `list`（每行一个值，可选 `maxItems`）。`number` 可声明 `minimum` 与 `maximum`；`string` 与 `list` 可声明每个值或每一行都须匹配的 `pattern`（配 `patternErrorMessage`）。标记 `advanced: true` 的字段画在卡片默认折叠的「高级选项」里，存储与校验与其他字段相同。字段的 `description` 说明其含义，收在标题旁的「?」里；`hint` 是取值须符合的格式，显示在字段下方。`table` 字段有固定的 `rows` 与 `columns`（`string`、`boolean` 或 `enum`，各可带 `description`，用于列标题的「?」），并可声明 `rowChoice`（单选一行，存入该组的一个 `enum` 字段，画作被选行名称后带括号的标题，在该行的「…」菜单里选定）、`pin`（把一个布尔列画成图钉按钮，带 `on` 与 `off` 两种提示）、`columnGroup`（相邻几列上方的分组标题）与 `extensible`（可新增行并调整顺序，在改动的单元格旁存于 `"$added"` 与 `"$order"`；只有新增的行可删除，单选列不指向任何行的保存会被拒绝）。行可带 `description`，`enum` 的选项也可带 `description`，都用于行名称后的「?」。配置可把一个布尔字段声明为 `switch`：它关闭时，卡片只画这一个字段。
+
+沙盒条目另带 `backend`：`installed` 表示是否装有适用于本机操作系统的沙盒后端，`recommended` 列出本系统默认一并安装的后端包（Linux 为 `@penguinharness/sandbox-bwrap` 与 `@penguinharness/sandbox-dsh`，macOS 为 `@penguinharness/sandbox-seatbelt`，Windows 为 `@penguinharness/sandbox-wsl`）。它的第一条提示写明本机实施什么、由什么实施；提示可以带 `details`（及 `detailsZh`），折叠显示在其下方——这里是每个已安装但未启用的后端及原因。其 `enabled` 开关决定新建 Session 是否进入沙盒，`defaultPreset`（预设表的 `rowChoice`，画作行名称后的「（默认）」）指定新 Session 取哪一行的封禁模式、网络与审批方式。开关出现之前保存的设置，旧策略有任何封禁（封禁模式不是「关闭」、网络不是完全开放，或设置了屏蔽路径）即视为打开；默认预设出现之前保存的设置（带自身的 `mode` 或 `network`、或设置了屏蔽路径，且没有 `defaultPreset`），新 Session 仍按其自身的 `mode` 与 `network` 开始，直到管理员选定默认行。对这类文档，`values.defaultPreset` 是起点与之完全相同的第一行，保存时写入它；没有这样的行时（网络为 `none` 或 `local`，或模式为关闭而设了屏蔽路径），`defaultPreset` 缺省，一条提示写明实际生效的值，保存别的字段也不写入 `defaultPreset`。读取时都不改写文档。表的 `rowChoice` 可以不指向任何一行：保存不因此被拒，只有让它指向表里已不存在的行时才被拒。chat defaults 的 `sandbox.defaultApprovalMode` 是开关打开时默认预设的审批方式。
 
 PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，密钥按掩码原样送回即保持存储值。被拒的字段返回 `400` `plugin_config_invalid` 并点名该字段；没有分组叫这个名字时返回 `404` `plugin_config_unknown`。声明它的模块自己经 watch 或下次读取拿到改动，无需重启。
 
@@ -453,19 +459,28 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/plugins/registry` | 插件索引：`{plugins: PluginIndexEntry[]}` |
+| GET | `/api/plugins/registry` | 插件索引：`{plugins: PluginIndexEntry[], failures: {source, error}[]}` |
 | GET | `/api/plugins/registry/readme?name=…` | 索引中一个条目的说明文档：`{name, readme}` |
 | GET | `/api/projects/:projectId/plugins/installed` | 该 Project 要求的插件，连同进程的实际运行情况：`{plugins, shipped, file, restartPending}` |
 | POST | `/api/projects/:projectId/plugins/installed` | 仅管理员。添加一个随构建发布的插件：`{specifier}` |
 | PUT | `/api/projects/:projectId/plugins/installed` | 仅管理员。替换整个列表：`{plugins}` |
 | DELETE | `/api/projects/:projectId/plugins/installed?specifier=…` | 仅管理员。从列表中移除一个插件 |
 
-- 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`。条目的 `name` 就是 Project 列表里使用的包名。目前索引只来自服务器内置的一个注册表，其中列出了四个沙箱后端。注册表只用于发现，从不导入插件代码。
+- 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`。条目的 `name` 就是 Project 列表里使用的包名。索引合并两个来源：内嵌在 server 包中的那份，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让那份索引整体失败。`PENGUIN_PLUGIN_INDEX=off` 关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。注册表只用于发现，从不导入插件代码。
 - `GET …/readme` 返回包自带的 `README.md`，从本机上的副本读取；没有时 `readme` 为 `null`。索引未列出的名称返回 `404` `not_found`，缺少 `name` 的请求返回 `400` `bad_request`。
 - `GET …/installed` 对该 Project 的任何成员开放。`plugins` 的每个元素是 `{specifier, active, builtin, modules, replaces, error?}`：`active` 表示进程已加载这个包，`builtin` 表示它随本次构建发布，`modules` 和 `replaces` 是其生成的 `ifaces.json` 声明的节点，`error` 说明它为什么没有运行，例如本机上没有这个包，或加载失败。`shipped` 列出构建发布的全部插件包，无论是否被要求。`file` 是保存列表的文件名。已列出的插件既没有运行、也没有加载失败时，`restartPending` 为 true，重启服务器即可解决。Project 的 `.project_config.toml` 无法读取时返回 `400` `invalid_plugins_file`。
 - 写操作返回与 GET 相同的响应体。specifier 必须是包名，不能是路径、URL 或版本范围（`400` `bad_request`）。加入列表的名称必须是构建发布的包，否则路由返回 `400` `plugin_not_shipped`：不会下载任何东西。`PUT` 只发送名称，留在列表中的名称保留文件为它记录的要求。`DELETE` 只修改列表，不删除磁盘上的任何东西。
 - 写操作无需重启即可生效：App 围绕新列表[自行重组](/server-boot#重组)，效果与热替换相同。所有 Project 中正在进行的 Agent 运行都会被中止，因为所有 Project 共用同一棵模块树。新 App 启动失败时，改动会被撤销，之前的 App 随之恢复。
 - 列表就是 Project 的 `.project_config.toml` 中的 `[plugins]` 表（见 [Project 配置](/configuration#project-配置)）。进程加载所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
+
+## 插件提供的语言
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/languages` | 本 App 的插件贡献的语言：`{languages: [{id, displayName, aliases?, extensions?}]}`——不含语法 |
+| GET | `/api/languages/:id/grammar` | 单个语言的 TextMate 语法，形状即 Shiki 的 `loadLanguage` 所接受的；没有插件贡献的 id 返回 `404` |
+
+列表不带语法：一份语法有几十到几百 KB，只有对话中真正出现的语言才值得抓取。语法响应缓存一小时——它不换新 App 就不会变，而新 App 意味着一次新的页面加载。别名与文件扩展名必须*先于*语法到达：Shiki 只有在语法加载之后才会注册它自带的别名，而决定是否加载语法的，正是代码块的 info string。语法是数据而非代码：这条路径上不会执行插件提供的任何东西。
 
 ## 定时任务
 
@@ -682,7 +697,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/` | Session 信息 |
-| PATCH | `/` | 更新 Session：`{approvalMode?, thinkingLevel?, archived?, title?}` |
+| PATCH | `/` | 更新 Session：`{approvalMode?, sandbox?, thinkingLevel?, archived?, title?}` |
 | DELETE | `/` | 删除 Session，连同它的 Trace 和暂存文件 |
 | GET | `/messages` | OmniMessage 历史，全量或按 Task 窗口 |
 | GET | `/trace-image?file=&ordinal=[&i=]` | Trace 记录中的一张图片，即分窗 `/messages` 页引用的图片 |
@@ -692,6 +707,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/goal` | 当前 Session 最近一次目标运行 |
 
 - `GET /` 返回 Session 的信息。与列表行不同，单个 Session 的响应还带 `tracePath`，即最新 Trace 文件的绝对路径。`orgId` 标记公司模式缓存持有的会话（工位会话，或这个组织某个工单的贡献会话）；普通 Session 一律不带这个字段，列表路由同样会设置它。
+- `PATCH /` 先校验全部字段再写入任何一个，`sandbox` 选择（`{mode?, network?}`）也在其中：非管理员选的档位比服务端的沙盒设置更宽时为 `403` `sandbox_forbidden`，本机没有后端能实施的档位为 `400` `sandbox_unsupported`；被拒的请求什么都不落盘，`approvalMode` 与 `title` 也不例外。Session 的 `sandbox` 视图里，`presets` 中比服务端设置更宽的行带 `aboveCeiling: true`（只出现在响应里），与这条拒绝用同一次比较：非管理员选这样的行会被拒绝。
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
@@ -1040,6 +1056,56 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 - `keys` 是字面文本或按键名：`Enter`、`Tab`、`Escape`、`Backspace`、`Space`、`Up`、`Down`、`Left`、`Right`、`Home`、`End`、`PageUp`、`PageDown`、`Delete`，或 `C-c` 这样的组合键。设置 `literal: true` 时，文本按原样发送。shell 已退出的终端返回 `409` `terminal_exited`。
 - 字节流不走这些路由：它是一个 WebSocket，地址为 `GET /api/terminals/:id/stream`（一个 Upgrade 请求）。
 - 缺少有效会话或 token 的请求返回 `401` `unauthorized`。
+
+## Agent 浏览器
+
+Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-browser` 之下。它有两种后端：`builtin`，即桌面应用的内置浏览器，由启动本服务器的桌面 shell 承载；`chrome`，即用户自己的 Chrome，经由 PenguinHarness Browser 扩展连接。每个用户同一时间只有一种后端生效：他用 `PUT /backend` 选定的那种；没有选过时，桌面 shell 下的管理员为 `builtin`，其他情况为 `chrome`。不在桌面 shell 下运行的服务器只提供 `chrome`。调用从不从一种后端回退到另一种。见[内置浏览器](/builtin-browser)。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/status` | 调用者的后端：`{available, reason?, backend, backends, tabs, activeTabId, metrics?}`。从不返回 `503` |
+| GET | `/backend` | `{backend, choices}`：生效的后端，以及调用者可选的后端 |
+| PUT | `/backend` | 选择后端：`{backend}` → `{backend, choices}` |
+| GET | `/tabs` | 标签页及当前标签页：`{tabs, activeTabId}` |
+| POST | `/tabs` | 打开标签页：`{url?, activate?, sessionId?}` → `{tab}`。不给 `url` 时打开主页或空白页 |
+| POST | `/tabs/claim` | 内置：窗口认领它为某个打开请求创建的标签页：`{requestId, tabId}` |
+| POST | `/tabs/on-screen` | 内置：窗口当前显示的标签页，或 `null` |
+| POST | `/tabs/:tab/activate` | 设为当前标签页；在 `chrome` 上，Chrome 也会切到该标签页 |
+| DELETE | `/tabs/:tab` | 关闭标签页；`204` |
+| POST | `/tabs/:tab/navigate`、`scan`、`exec`、`click`、`type`、`screenshot`、`cdp` | Agent 的各项操作，见 [penguin browser](/cli#penguin-browser) |
+| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料 |
+| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` |
+| GET / PUT | `/settings` | 主页：`{homepage}`。仅管理员 |
+| GET / DELETE | `/history?q=&limit=` | 内置：搜索或清空历史记录 |
+| POST | `/clear-data` | 内置：`{storages}`，取 `cookies`、`cache` 和 `storage` 中的若干项 |
+| POST | `/extension/pairings` | 为当前登录的用户生成一次性配对码：`{code, expiresAt, origin}` |
+| GET | `/extension` | 调用者已配对的 Chrome：`{paired, connected?, enabled}` |
+| DELETE | `/extension/:id` | 撤销其中一个；`204`。它的连接以 `4003` 关闭 |
+| POST | `/extension/pair` | 扩展用配对码换取 token：`{code, name, version}` → `{extensionId, token, installId, user, serverVersion}` |
+| GET | `/extension/ws` | 扩展的 WebSocket（一个 Upgrade 请求） |
+
+`:tab` 为标签页 id 或 `active`。
+
+### 谁可以调用什么
+
+- 所有路由都接受任何已登录的用户。内置浏览器及只属于它的功能（导入、历史记录、清除数据、`/tabs/claim`、主页）只对管理员开放，普通成员得到 `403` `admin_required`。对 `chrome` 后端调用导入、历史记录和清除数据时，返回 `405` `not_supported`。
+- `PUT /backend` 和 `POST /extension/pairings` 只能由已登录的本人操作：本机 API token 得到 `403` `human_required`。调用者不能选择的后端返回 `405` `not_supported`（普通成员要求 `builtin` 时返回 `403` `admin_required`），Agent 正在操作浏览器时切换返回 `409` `action_in_flight`。切换不会关闭任何标签页。
+- Agent 的调用使用本机 API token，其身份是管理员。这样的调用带有 `sessionId`（在请求体里，或 `GET`、`DELETE` 的查询参数里）时，服务器改按正在驱动该会话的那个人行事：发起该会话当前这轮运行的人，或定时任务的创建者，再不然是 Project 的所有者。Agent 驱动的就是这个人的 Chrome，从不使用其他用户的 Chrome。
+- `GET /extension` 和 `DELETE /extension/:id` 只能看到调用者自己的配对。配对码只能用一次，10 分钟内有效，输错五次即作废；新生成的配对码会取代调用者之前的那个。
+
+后端无法驱动时，操作返回 `503` `browser_unavailable`，错误码旁带一个 `reason`。内置后端：`not_desktop`（没有桌面 shell）、`shell_unsupported`（shell 版本过旧，无法承载浏览器）或 `no_window`（没有窗口认领新标签页）。Chrome 后端：`extension_not_paired`、`extension_disconnected` 或 `extension_disabled`。不带 `reason` 时，错误信息会说明原因，例如用户暂停了扩展。在 `chrome` 上，用户收回的标签页返回 `409` `tab_released`；超出标签页范围的原始 CDP 返回 `403` `cdp_refused`，包括 `Target`、`Browser`、`Storage`、`Fetch`、`Extensions`、`Tethering` 和 `Security` 域，读写 Cookie、清除缓存或拦截请求的 `Network` 方法，以及 `DOM.setFileInputFiles` 和 `Page.setDownloadBehavior`。
+
+### 扩展的配对与 WebSocket
+
+- `POST /extension/pair` 挂载在会话关卡之外：配对码本身就是凭据，不读取任何 Cookie。它只对扩展自己的来源应答 CORS（包括 Chrome 的私有网络访问预检）；其他 `Origin` 得到 `403` `forbidden_origin`，不带 `Origin` 的请求放行。配对码错误或过期时返回 `401` `invalid_code`。
+- `/api/builtin-browser/extension/ws` 上的 WebSocket 用扩展的 token 认证，token 放在子协议列表里（`Sec-WebSocket-Protocol: penguin-browser.1, token.<token>`），从不出现在地址中；服务器选用 `penguin-browser.1`。`Origin` 必须是扩展的（`chrome-extension://dodgfhpcbmkjfcbgnoidablfgjjhhmgp`，dev 配置的服务器上可以是任何扩展），Cookie 一概不读。升级之前，外来的 `Origin` 得到 `403`，缺少或未知的 token 得到 `401`。
+- 消息是 JSON 文本帧，沿用桌面 shell 的信封（`desktop-browser-command`、`-reply`、`-event`），另增加 `open-tab`、`close-tab`、`activate-tab` 和 `ping` 命令，以及 `tab-released` 事件。服务器先发送 `hello`，之后每 20 秒 ping 一次。
+- 关闭码：`4001` 同一用户的另一个 Chrome 连上了（最后连上的接管）；`4003` 配对已被撤销；`4005` 子协议或 `hello` 的版本服务器不支持；`4008` ping 没有得到应答；`4009` 管理员的开关已关闭；`1012` 服务器正在重启。
+- token 是 32 字节随机数，只显示一次，服务器只保存它的 SHA-256。反向代理必须为这个路径转发 `Upgrade`，与终端流相同。
+
+### 事件
+
+用户通道传送浏览器的事件：`builtin_browser_tabs`（`{tabs, activeTabId, backend}`，某一种后端的完整列表）、`builtin_browser_open` 和 `builtin_browser_close`（内置）、`builtin_browser_activity`（Agent 在某个标签页里开始或结束一次操作）、`builtin_browser_metrics`（内置）、`builtin_browser_backend`（`{backend}`，用户切换了后端）以及 `builtin_browser_extension`（`{state, extension?}`，用户的 Chrome `connected`、`disconnected`、被另一个 `replaced` 或已 `revoked`）。内置浏览器的事件发给每个管理员；Chrome 的事件发给它的用户。
 
 ## 桌面 shell、热更新与 Web 贡献
 

@@ -1,14 +1,34 @@
 /**
- * The built-in browser's state in a window (features/builtin-browser/browser-state.ts): the
- * server's tab registry, the pages this window hosts, the agent's activity, the homepage and the
- * browser's load — driven by the user channel's five events and the window's own actions
- * (claim, close, activate, settings read or saved, a new tab asked for) — and the rule that keeps
- * a tab open while the panel is on screen.
+ * The agent browser's state in a window (features/builtin-browser/browser-state.ts): the
+ * built-in browser's tab registry, the pages this window hosts, the agent's activity, the
+ * homepage and the browser's load — driven by the user channel's events and the window's own
+ * actions (claim, close, activate, settings read or saved, a new tab asked for) — and the rule
+ * that keeps a tab open while the panel is on screen. Then the second backend, the user's own
+ * Chrome:
+ *
+ * - Given a server with no desktop shell, the Browser panel is offered in a window that cannot
+ *   host a page, and the agents' backend is Chrome; given a server too old to name backends, the
+ *   built-in rule alone decides.
+ * - A desktop admin hears both backends' tab lists: each replaces only its own registry, so the
+ *   built-in pages and their tabs survive a Chrome list and the other way round, and the
+ *   built-in list does not make an unconnected Chrome look connected.
+ * - A backend switch moves the window to the new backend as its entry last stood and drops the
+ *   activity marks; a repeated switch changes nothing.
+ * - The server's word on the user's Chrome: connected makes it drivable and names it, a
+ *   disconnection does not (unless the admin's switch is why), a revoke of the Chrome shown
+ *   takes it away, and every word is counted.
+ * - Closing a Chrome tab here drops it at once and holds back a stale list, as built-in closes do.
+ * - Chrome never gets the new-tab page by itself, and a link opens where the chosen backend can
+ *   take it: the built-in browser while it runs here, Chrome while it is connected, else nowhere.
+ * - A refused status read stops offering the browser.
  */
 import { describe, expect, it } from "vitest";
 import type {
+  BrowserBackendInfo,
+  BrowserExtensionRecord,
   BuiltinBrowserMetrics,
   BuiltinBrowserServerEvent,
+  BuiltinBrowserStatus,
   BuiltinBrowserTab,
 } from "@prismshadow/penguin-server/api";
 import {
@@ -16,12 +36,16 @@ import {
   activeTab,
   addressOf,
   browserOffered,
+  chromeInfo,
   currentActivity,
   guestByKey,
   guestForTab,
   guestKey,
+  linkTarget,
   reduceBrowser,
   shouldReveal,
+  shownActiveTab,
+  shownTabs,
   tabBusy,
   wantsNewTabPage,
   type BrowserAction,
@@ -39,6 +63,12 @@ function tab(id: number, over: Partial<BuiltinBrowserTab> = {}): BuiltinBrowserT
     ...over,
   };
 }
+
+/** A status's backend fields, as a desktop server answers them for its admin. */
+const BUILTIN = {
+  backend: "builtin" as const,
+  backends: [{ backend: "builtin" as const, available: true }],
+};
 
 function run(state: BrowserState, ...actions: BrowserAction[]): BrowserState {
   return actions.reduce(reduceBrowser, state);
@@ -58,7 +88,7 @@ const open = (requestId: string, over: Partial<{ url: string; activate: boolean 
 const READY = run(
   INITIAL_BROWSER_STATE,
   { type: "supported", supported: true },
-  { type: "status", status: { available: true, tabs: [], activeTabId: null } },
+  { type: "status", status: { available: true, ...BUILTIN, tabs: [], activeTabId: null } },
 );
 
 describe("availability", () => {
@@ -67,14 +97,20 @@ describe("availability", () => {
     expect(browserOffered(READY)).toBe(true);
     const shellTooOld = reduceBrowser(READY, {
       type: "status",
-      status: { available: false, reason: "shell_unsupported", tabs: [], activeTabId: null },
+      status: {
+        available: false,
+        reason: "shell_unsupported",
+        ...BUILTIN,
+        tabs: [],
+        activeTabId: null,
+      },
     });
     expect(browserOffered(shellTooOld)).toBe(false);
     expect(shellTooOld.reason).toBe("shell_unsupported");
     // A plain browser tab: the server may be fine, but there is no <webview> here.
     const noWebview = reduceBrowser(INITIAL_BROWSER_STATE, {
       type: "status",
-      status: { available: true, tabs: [], activeTabId: null },
+      status: { available: true, ...BUILTIN, tabs: [], activeTabId: null },
     });
     expect(browserOffered(noWebview)).toBe(false);
   });
@@ -86,7 +122,7 @@ describe("availability", () => {
   it("takes the registry from the status", () => {
     const state = reduceBrowser(READY, {
       type: "status",
-      status: { available: true, tabs: [tab(3), tab(5)], activeTabId: 5 },
+      status: { available: true, ...BUILTIN, tabs: [tab(3), tab(5)], activeTabId: 5 },
     });
     expect(state.tabs.map((t) => t.id)).toEqual([3, 5]);
     expect(activeTab(state)?.id).toBe(5);
@@ -165,13 +201,23 @@ describe("tabs and closing", () => {
     { type: "attached", key: guestKey("a"), tabId: 1 },
     open("b"),
     { type: "attached", key: guestKey("b"), tabId: 2 },
-    event({ type: "builtin_browser_tabs", tabs: [tab(1), tab(2)], activeTabId: 2 }),
+    event({
+      type: "builtin_browser_tabs",
+      backend: "builtin",
+      tabs: [tab(1), tab(2)],
+      activeTabId: 2,
+    }),
   );
 
   it("replaces the registry whole on every tabs event", () => {
     const next = reduceBrowser(
       withTabs,
-      event({ type: "builtin_browser_tabs", tabs: [tab(2, { title: "Renamed" })], activeTabId: 2 }),
+      event({
+        type: "builtin_browser_tabs",
+        backend: "builtin",
+        tabs: [tab(2, { title: "Renamed" })],
+        activeTabId: 2,
+      }),
     );
     expect(next.tabs).toEqual([tab(2, { title: "Renamed" })]);
   });
@@ -191,14 +237,19 @@ describe("tabs and closing", () => {
     // A snapshot published before the close still lists tab 2.
     const stale = reduceBrowser(
       closed,
-      event({ type: "builtin_browser_tabs", tabs: [tab(1), tab(2)], activeTabId: 2 }),
+      event({
+        type: "builtin_browser_tabs",
+        backend: "builtin",
+        tabs: [tab(1), tab(2)],
+        activeTabId: 2,
+      }),
     );
     expect(stale.tabs.map((t) => t.id)).toEqual([1]);
     expect(stale.activeTabId).toBeNull();
     // Once the server stops listing it, the tab id is no longer held back.
     const settled = reduceBrowser(
       stale,
-      event({ type: "builtin_browser_tabs", tabs: [tab(1)], activeTabId: 1 }),
+      event({ type: "builtin_browser_tabs", backend: "builtin", tabs: [tab(1)], activeTabId: 1 }),
     );
     expect(settled.closing).toEqual([]);
     expect(settled.activeTabId).toBe(1);
@@ -233,7 +284,12 @@ describe("agent activity", () => {
   it("names the active tab's activity first", () => {
     const state = run(
       READY,
-      event({ type: "builtin_browser_tabs", tabs: [tab(1), tab(2)], activeTabId: 2 }),
+      event({
+        type: "builtin_browser_tabs",
+        backend: "builtin",
+        tabs: [tab(1), tab(2)],
+        activeTabId: 2,
+      }),
       busy(1, true),
       event({
         type: "builtin_browser_activity",
@@ -341,7 +397,7 @@ describe("load", () => {
   });
 
   it("takes the status's measurement, and keeps the last one when a status has none", () => {
-    const status = { available: true, tabs: [tab(1), tab(2)], activeTabId: 1 };
+    const status = { available: true, ...BUILTIN, tabs: [tab(1), tab(2)], activeTabId: 1 };
     const read = run(READY, { type: "status", status: { ...status, metrics: heavy } });
     expect(read.metrics).toEqual(heavy);
     expect(run(read, { type: "status", status }).metrics).toEqual(heavy);
@@ -350,7 +406,12 @@ describe("load", () => {
   it("shows a crashed tab as the server reports it", () => {
     const state = run(
       READY,
-      event({ type: "builtin_browser_tabs", tabs: [tab(4, { crashed: "oom" })], activeTabId: 4 }),
+      event({
+        type: "builtin_browser_tabs",
+        backend: "builtin",
+        tabs: [tab(4, { crashed: "oom" })],
+        activeTabId: 4,
+      }),
     );
     expect(activeTab(state)?.crashed).toBe("oom");
   });
@@ -358,7 +419,12 @@ describe("load", () => {
 
 describe("the new-tab page", () => {
   const listed = (...tabs: BuiltinBrowserTab[]) =>
-    event({ type: "builtin_browser_tabs", tabs, activeTabId: tabs.at(-1)?.id ?? null });
+    event({
+      type: "builtin_browser_tabs",
+      backend: "builtin",
+      tabs,
+      activeTabId: tabs.at(-1)?.id ?? null,
+    });
 
   it("is opened for a panel on screen with no tab: the first time, or after a restart", () => {
     expect(wantsNewTabPage(READY, true)).toBe(true);
@@ -424,7 +490,7 @@ describe("the address a tab shows", () => {
       READY,
       open("r1", { url: home }),
       { type: "attached", key: guestKey("r1"), tabId: 4 },
-      event({ type: "builtin_browser_tabs", tabs: [opening], activeTabId: 4 }),
+      event({ type: "builtin_browser_tabs", backend: "builtin", tabs: [opening], activeTabId: 4 }),
     );
     expect(addressOf(state, opening)).toBe(home);
   });
@@ -447,5 +513,286 @@ describe("the address a tab shows", () => {
 
   it("is the registry's for a tab whose page this window does not host", () => {
     expect(addressOf(READY, tab(8, { url: "", title: "", loading: true }))).toBe("");
+  });
+});
+
+// ------------------------------------------------------------------- the user's own Chrome
+
+const CHROME_130: BrowserExtensionRecord = {
+  id: "ext-1",
+  name: "Chrome 130 on macOS",
+  version: "0.2.13",
+  createdAt: "2026-10-02T08:00:00.000Z",
+  lastSeenAt: "2026-10-02T09:00:00.000Z",
+  connected: true,
+};
+
+const chromeEntry = (over: Partial<BrowserBackendInfo> = {}): BrowserBackendInfo => ({
+  backend: "chrome",
+  available: true,
+  extension: {
+    id: CHROME_130.id,
+    name: CHROME_130.name,
+    version: CHROME_130.version,
+    connected: true,
+    lastSeenAt: CHROME_130.lastSeenAt,
+  },
+  ...over,
+});
+
+const UNPAIRED = chromeEntry({
+  available: false,
+  reason: "extension_not_paired",
+  extension: undefined,
+});
+const DISCONNECTED = chromeEntry({
+  available: false,
+  reason: "extension_disconnected",
+  extension: { ...chromeEntry().extension!, connected: false },
+});
+
+/** GET /status as a server answers it for one backend among `backends`. */
+const status = (
+  backend: "builtin" | "chrome",
+  backends: BrowserBackendInfo[],
+  tabs: BuiltinBrowserTab[] = [],
+  activeTabId: number | null = null,
+): BuiltinBrowserStatus => {
+  const entry = backends.find((b) => b.backend === backend);
+  return {
+    available: entry?.available === true,
+    ...(entry?.reason !== undefined ? { reason: entry.reason } : {}),
+    backend,
+    backends,
+    tabs,
+    activeTabId,
+  };
+};
+
+const chromeTabs = (tabs: BuiltinBrowserTab[], activeTabId: number | null) =>
+  event({ type: "builtin_browser_tabs", backend: "chrome", tabs, activeTabId });
+
+/** A plain browser window against a server with no desktop shell, its Chrome connected. */
+const WEB_CONNECTED = run(INITIAL_BROWSER_STATE, {
+  type: "status",
+  status: status("chrome", [chromeEntry()], [tab(1201)], 1201),
+});
+
+/** The desktop app's window for its admin, on the built-in browser, its Chrome connected too. */
+const DESKTOP = run(
+  READY,
+  {
+    type: "status",
+    status: status("builtin", [{ backend: "builtin", available: true }, chromeEntry()]),
+  },
+  open("a"),
+  { type: "attached", key: guestKey("a"), tabId: 3 },
+  event({ type: "builtin_browser_tabs", backend: "builtin", tabs: [tab(3)], activeTabId: 3 }),
+);
+
+describe("where the browser is offered", () => {
+  it("offers the panel without a page host when the server has the user's Chrome, even unpaired", () => {
+    const web = reduceBrowser(INITIAL_BROWSER_STATE, {
+      type: "status",
+      status: status("chrome", [UNPAIRED]),
+    });
+    expect(web.supported).toBe(false);
+    expect(web.backend).toBe("chrome");
+    expect(browserOffered(web)).toBe(true);
+    expect(chromeInfo(web)?.reason).toBe("extension_not_paired");
+    expect(linkTarget(web)).toBeNull();
+  });
+
+  it("falls back to the built-in rule alone for a server too old to name its backends", () => {
+    const old = { available: true, tabs: [], activeTabId: null } as unknown as BuiltinBrowserStatus;
+    const desktop = run(
+      INITIAL_BROWSER_STATE,
+      { type: "supported", supported: true },
+      {
+        type: "status",
+        status: old,
+      },
+    );
+    expect(desktop.backend).toBe("builtin");
+    expect(browserOffered(desktop)).toBe(true);
+    expect(
+      browserOffered(reduceBrowser(INITIAL_BROWSER_STATE, { type: "status", status: old })),
+    ).toBe(false);
+  });
+
+  it("stops offering it once the status is refused", () => {
+    expect(browserOffered(reduceBrowser(WEB_CONNECTED, { type: "unreachable" }))).toBe(false);
+  });
+});
+
+describe("two registries", () => {
+  it("takes the Chrome tabs from a status on Chrome, leaving the built-in registry alone", () => {
+    expect(shownTabs(WEB_CONNECTED).tabs.map((t) => t.id)).toEqual([1201]);
+    expect(shownActiveTab(WEB_CONNECTED)?.id).toBe(1201);
+    expect(WEB_CONNECTED.tabs).toEqual([]);
+  });
+
+  it("keeps the built-in tabs and pages when the user's Chrome reports its list, and the other way round", () => {
+    const heard = reduceBrowser(DESKTOP, chromeTabs([tab(1201), tab(1202)], 1202));
+    expect(heard.tabs.map((t) => t.id)).toEqual([3]);
+    expect(heard.guests.map((g) => g.tabId)).toEqual([3]);
+    expect(activeTab(heard)?.id).toBe(3);
+    expect(heard.chrome.tabs.map((t) => t.id)).toEqual([1201, 1202]);
+    const back = reduceBrowser(
+      heard,
+      event({
+        type: "builtin_browser_tabs",
+        backend: "builtin",
+        tabs: [tab(3), tab(4)],
+        activeTabId: 4,
+      }),
+    );
+    expect(back.chrome.tabs.map((t) => t.id)).toEqual([1201, 1202]);
+    expect(back.tabs.map((t) => t.id)).toEqual([3, 4]);
+  });
+
+  it("does not take a built-in list as word that an unconnected Chrome runs", () => {
+    const onChrome = run(DESKTOP, {
+      type: "status",
+      status: status("chrome", [{ backend: "builtin", available: true }, DISCONNECTED]),
+    });
+    expect(onChrome.available).toBe(false);
+    const heard = reduceBrowser(
+      onChrome,
+      event({ type: "builtin_browser_tabs", backend: "builtin", tabs: [tab(3)], activeTabId: 3 }),
+    );
+    expect(heard.available).toBe(false);
+    expect(heard.reason).toBe("extension_disconnected");
+  });
+
+  it("closes a Chrome tab here at once, and keeps a stale list from bringing it back", () => {
+    const two = reduceBrowser(WEB_CONNECTED, chromeTabs([tab(1201), tab(1202)], 1202));
+    const closed = reduceBrowser(two, { type: "chrome-closed", tabId: 1202 });
+    expect(closed.chrome.tabs.map((t) => t.id)).toEqual([1201]);
+    expect(closed.chrome.activeTabId).toBe(1201);
+    const stale = reduceBrowser(closed, chromeTabs([tab(1201), tab(1202)], 1202));
+    expect(stale.chrome.tabs.map((t) => t.id)).toEqual([1201]);
+    expect(reduceBrowser(stale, chromeTabs([tab(1201)], 1201)).chrome.closing).toEqual([]);
+  });
+
+  it("brings a Chrome tab to the front here, not a built-in one", () => {
+    const two = reduceBrowser(DESKTOP, chromeTabs([tab(1201), tab(1202)], 1202));
+    const picked = reduceBrowser(two, { type: "activated", tabId: 1201, backend: "chrome" });
+    expect(picked.chrome.activeTabId).toBe(1201);
+    expect(picked.activeTabId).toBe(3);
+  });
+});
+
+describe("switching backends", () => {
+  it("moves to the new backend as its entry last stood, and drops the activity marks", () => {
+    const busy = reduceBrowser(
+      DESKTOP,
+      event({ type: "builtin_browser_activity", tabId: 3, busy: true, action: "scan" }),
+    );
+    const moved = reduceBrowser(
+      busy,
+      event({ type: "builtin_browser_backend", backend: "chrome" }),
+    );
+    expect(moved.backend).toBe("chrome");
+    expect(moved.available).toBe(true);
+    expect(moved.activity).toEqual({});
+    // The built-in pages stay hosted, out of sight.
+    expect(moved.guests.map((g) => g.tabId)).toEqual([3]);
+    expect(
+      reduceBrowser(moved, event({ type: "builtin_browser_backend", backend: "chrome" })),
+    ).toBe(moved);
+  });
+
+  it("names the active Chrome tab's activity once the agents drive Chrome", () => {
+    const onChrome = run(
+      WEB_CONNECTED,
+      event({ type: "builtin_browser_activity", tabId: 1201, busy: true, action: "exec" }),
+    );
+    expect(currentActivity(onChrome)?.action).toBe("exec");
+  });
+
+  it("never opens the new-tab page in the user's Chrome", () => {
+    const desktopOnChrome = reduceBrowser(
+      { ...READY, backends: [{ backend: "builtin", available: true }, chromeEntry()] },
+      event({ type: "builtin_browser_backend", backend: "chrome" }),
+    );
+    expect(wantsNewTabPage(desktopOnChrome, true)).toBe(false);
+    expect(wantsNewTabPage(WEB_CONNECTED, true)).toBe(false);
+  });
+});
+
+describe("the server's word on the user's Chrome", () => {
+  const extension = (
+    state: "connected" | "disconnected" | "replaced" | "revoked",
+    record: BrowserExtensionRecord = CHROME_130,
+  ) => event({ type: "builtin_browser_extension", state, extension: record });
+
+  it("makes a Chrome that connects drivable and names it, and counts every word", () => {
+    const waiting = reduceBrowser(INITIAL_BROWSER_STATE, {
+      type: "status",
+      status: status("chrome", [DISCONNECTED]),
+    });
+    const connected = reduceBrowser(waiting, extension("connected"));
+    expect(connected.available).toBe(true);
+    expect(chromeInfo(connected)?.extension?.name).toBe("Chrome 130 on macOS");
+    expect(connected.extension).toEqual({ seq: 1, last: "connected" });
+    expect(linkTarget(connected)).toBe("chrome");
+  });
+
+  it("makes a Chrome that went away undrivable, still named, and an admin's switch stays the reason", () => {
+    const gone = reduceBrowser(
+      WEB_CONNECTED,
+      extension("disconnected", { ...CHROME_130, connected: false }),
+    );
+    expect(gone.available).toBe(false);
+    expect(gone.reason).toBe("extension_disconnected");
+    expect(chromeInfo(gone)?.extension?.connected).toBe(false);
+    const switchedOff = run(
+      INITIAL_BROWSER_STATE,
+      {
+        type: "status",
+        status: status("chrome", [chromeEntry({ available: false, reason: "extension_disabled" })]),
+      },
+      extension("disconnected"),
+    );
+    expect(switchedOff.reason).toBe("extension_disabled");
+  });
+
+  it("takes a revoked Chrome away when it is the one shown, and leaves it when another was revoked", () => {
+    const revoked = reduceBrowser(WEB_CONNECTED, extension("revoked"));
+    expect(revoked.available).toBe(false);
+    expect(chromeInfo(revoked)?.extension).toBeUndefined();
+    const other = reduceBrowser(
+      WEB_CONNECTED,
+      extension("revoked", { ...CHROME_130, id: "ext-2" }),
+    );
+    expect(other.available).toBe(true);
+    expect(other.extension.seq).toBe(1);
+  });
+
+  it("names the Chrome that replaced another and waits for it to connect", () => {
+    const replaced = reduceBrowser(
+      WEB_CONNECTED,
+      extension("replaced", {
+        ...CHROME_130,
+        id: "ext-2",
+        name: "Chrome 131 on Linux",
+        connected: false,
+      }),
+    );
+    expect(chromeInfo(replaced)?.extension?.name).toBe("Chrome 131 on Linux");
+    expect(replaced.available).toBe(true);
+  });
+});
+
+describe("where a link opens", () => {
+  it("opens in the built-in browser while it runs here, else in a connected Chrome, else nowhere", () => {
+    expect(linkTarget(DESKTOP)).toBe("builtin");
+    expect(linkTarget(WEB_CONNECTED)).toBe("chrome");
+    const gone = reduceBrowser(
+      WEB_CONNECTED,
+      event({ type: "builtin_browser_extension", state: "disconnected" }),
+    );
+    expect(linkTarget(gone)).toBeNull();
   });
 });

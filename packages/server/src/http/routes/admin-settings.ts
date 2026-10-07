@@ -3,7 +3,8 @@
  * GET|PUT /api/admin/settings — the server-global settings stored in server_settings:
  * the proxy settings (the "application uses the proxy" and "agent environment uses the
  * proxy" switches and their shared explicit address) and the upload limits (the
- * per-file and per-message attachment caps, in whole MB).
+ * per-file and per-message attachment caps, in whole MB), the company-mode switch, and the
+ * switch that lets users drive their own Chrome through the extension.
  * A PUT applies immediately: everything is validated first (a rejected request writes
  * nothing), then the persisted values are written, then the process dispatcher is
  * rebuilt so new outbound connections follow the change without a restart (the agent
@@ -93,6 +94,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
       ...deps.serverSettingsRepo.getAttachmentLimitsMb(),
       companyMode: deps.serverSettingsRepo.getCompanyMode(),
+      browserExtensionsEnabled: deps.serverSettingsRepo.getBrowserExtensionsEnabled(),
     },
   });
 
@@ -105,6 +107,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     const proxyForApp = optionalBoolean(body, "proxyForApp");
     const proxyForAgent = optionalBoolean(body, "proxyForAgent");
     const companyMode = optionalBoolean(body, "companyMode");
+    const browserExtensionsEnabled = optionalBoolean(body, "browserExtensionsEnabled");
     const proxyUrlProvided = body.proxyUrl !== undefined;
     const proxyUrl = proxyUrlProvided ? parseProxyUrl(body.proxyUrl) : null;
     const attachmentMaxMb =
@@ -132,6 +135,11 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     // Read per tick by the organization scheduler and per request by the organization routes, so
     // flipping it needs no restart: off holds every automatic trigger and 404s the routes.
     if (companyMode !== undefined) deps.serverSettingsRepo.setCompanyMode(companyMode);
+    // The browser module watches this key: off closes every connected Chrome extension (4009)
+    // at once and refuses new ones; on lets them reconnect.
+    if (browserExtensionsEnabled !== undefined) {
+      deps.serverSettingsRepo.setBrowserExtensionsEnabled(browserExtensionsEnabled);
+    }
     if (proxyForApp !== undefined) deps.serverSettingsRepo.setProxyForApp(proxyForApp);
     if (proxyForAgent !== undefined) deps.serverSettingsRepo.setProxyForAgent(proxyForAgent);
     if (proxyUrlProvided) deps.serverSettingsRepo.setProxyUrl(proxyUrl);
