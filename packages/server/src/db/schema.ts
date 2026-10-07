@@ -187,7 +187,7 @@ CREATE TABLE IF NOT EXISTS agent_api_keys (     -- one row per key the API tab o
   project_id   TEXT NOT NULL,
   agent_id     TEXT NOT NULL,
   token_hash   TEXT NOT NULL UNIQUE,            -- sha256(key) hex
-  prefix       TEXT NOT NULL,                   -- the key's first 12 characters ("pha_" + 8), shown in the list
+  prefix       TEXT NOT NULL,                   -- the key's first 16 characters ("penguin_" + 8), shown in the list
   name         TEXT NOT NULL,                   -- 1-64 characters
   created_by   TEXT NOT NULL REFERENCES users(user_id),
   created_at   TEXT NOT NULL,

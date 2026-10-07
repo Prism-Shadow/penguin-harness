@@ -782,7 +782,7 @@ describe("migration 13 → current: agent-api", () => {
         db
           .prepare(
             "INSERT INTO agent_api_keys (key_id, project_id, agent_id, token_hash, prefix, name, created_by, created_at)" +
-              " VALUES (?, 'p1', 'coder', ?, 'pha_abcdefgh', 'ci', ?, '2026-10-07T00:00:00.000Z')",
+              " VALUES (?, 'p1', 'coder', ?, 'penguin_abcdefgh', 'ci', ?, '2026-10-07T00:00:00.000Z')",
           )
           .run(keyId, hash, createdBy);
       insert("k1", "h1", "alice");

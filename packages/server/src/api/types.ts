@@ -1462,7 +1462,7 @@ export interface AgentApiKeyInfo {
   keyId: string;
   /** 1-64 characters, given by whoever created it. */
   name: string;
-  /** The key's first 12 characters (`pha_` + 8), enough to tell keys apart. */
+  /** The key's first 16 characters (`penguin_` + 8), enough to tell keys apart. */
   prefix: string;
   /** user_id of the Project owner who created it. */
   createdBy: string;
@@ -1492,6 +1492,11 @@ export interface AgentApiSettings {
 
 export interface AgentApiResponse {
   api: AgentApiSettings;
+  /**
+   * The admin's server-wide switch (`ServerSettings.agentApiEnabled`), which only an admin can
+   * read through /api/admin/settings: off, every Agent's API is refused (403) whatever `api` says.
+   */
+  serverEnabled: boolean;
 }
 
 /** PUT body (owner only): every field optional, omitted fields keep their current value. */
@@ -1507,7 +1512,7 @@ export interface AgentApiKeyCreateRequest {
   name: string;
 }
 
-/** The one response that carries the secret (`pha_` + 43 base64url characters); only its hash is stored. */
+/** The one response that carries the secret (`penguin_` + 43 base64url characters); only its hash is stored. */
 export interface AgentApiKeyCreateResponse {
   key: AgentApiKeyInfo;
   secret: string;

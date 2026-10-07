@@ -2,7 +2,8 @@
  * Agent routes:
  * GET|POST /api/projects/:p/agents, DELETE /:agentId (owner only).
  * The list is the union of DB entries and directory scan results, including active
- * Session count, total Session count, and config last-modified time.
+ * Session count, total Session count, config last-modified time, and whether the Agent's API
+ * switch is on.
  */
 import { Hono } from "hono";
 import type { AgentCreateResponse, AgentsResponse, AgentSummary } from "../../api/types.js";
@@ -150,6 +151,9 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       // are deliberately kept — historical stats survive Agent deletion (see deleteAgent).
       deps.schedulesRepo.deleteByAgent(projectId, agentId);
       deps.errorsRepo.deleteByAgent(projectId, agentId);
+      // The Agent's API exposure goes with it: a later Agent created under the same id starts
+      // off, and no key minted for this one opens it.
+      deps.agentApi.deleteByAgent(projectId, agentId);
     } finally {
       deps.manager.endAgentDeletion(projectId, agentId);
     }
