@@ -1,8 +1,11 @@
 /**
  * @prismshadow/amsp — public entry point: the AMSP wire types, which the PenguinHarness server
- * imports as types too.
+ * imports as types too, and a zero-dependency client of one Agent's API.
  */
 export * from "./types.js";
-
-// TODO(WP-B): the client lands here — AgentClient, the async-iterable Run with result() and
-// abort(), onApproval, AmspHttpError / AmspStreamError, parseArguments and readSse.
+export { AmspHttpError, AmspStreamError } from "./errors.js";
+export { AgentClient } from "./client.js";
+export type { AgentClientOptions, Run, RunOptions } from "./client.js";
+export { parseArguments } from "./collect.js";
+export type { RunResult } from "./collect.js";
+export { readSse } from "./sse.js";
