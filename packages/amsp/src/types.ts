@@ -5,12 +5,20 @@
  * caller continues by id. A run is a `text/event-stream` of `data: <JSON>` blocks, one event
  * each, closed by `data: [DONE]`:
  *
- *   stream := run.started body* run.done
+ *   stream  := run.started body* run.done
+ *   request := request.started (item | tool_result | approval | hook.fired)* request.done
+ *   item    := K.delta* K.done        ; K = thinking | text | tool_call | inline_data | inline_thinking
  *
  * Events are flat objects discriminated by `type`, snake_case on the wire like MMSP and the
  * OmniMessage payloads they are projected from. `run.done` is the one terminal event and always
  * arrives, errors included. Clients must ignore a `type` they do not know: new event types and
  * optional fields are additive within `/v1`; a change to an existing field's meaning is `/v2`.
+ *
+ * A Request pair brackets the model's output, not the tools: the engine runs a tool as soon as
+ * its call is complete, so the approval and the start of the result arrive while the Request is
+ * still open, and the result may end after `request.done` (always before the next
+ * `request.started` of the same origin). Attribute results by `tool_call_id`. Fragments and
+ * complete items are forwarded as the engine produced them and never rebuilt from each other.
  *
  * The server's translator produces these events and imports this file as types; the client
  * consumes them.
@@ -76,6 +84,11 @@ export interface RunDone extends Base {
 }
 
 // ---- context / bootstrap ----
+/**
+ * A new model context the engine streams: a child Session starting (with `origin`) or, between
+ * runs, a model switch. The context a compaction opens is recorded in the Trace, not streamed, so
+ * none follows `compaction.done`.
+ */
 export interface ContextOpened extends Base {
   type: "context.opened";
   session_id: string;
@@ -103,6 +116,7 @@ export interface RequestStarted extends Base {
   type: "request.started";
   request: number /* 1-based within the run */;
 }
+/** The Request ended. Results of the tools it called may still follow, before the next `request.started`. */
 export interface RequestDone extends Base {
   type: "request.done";
   request: number;
@@ -130,9 +144,10 @@ export interface ToolCallDelta extends Base {
   tool_call_id: string;
   /** Set on the first fragment; may be empty afterwards. */
   name: string;
-  /** A fragment of the arguments JSON string. */
+  /** A piece of the arguments text as the provider streamed it. */
   arguments: string;
 }
+/** Output a running tool has produced so far; may arrive while the Request that made the call is still open. */
 export interface ToolResultDelta extends Base {
   type: "tool_result.delta";
   tool_call_id: string;
@@ -140,6 +155,11 @@ export interface ToolResultDelta extends Base {
   /** Not incremental: one fragment carries the whole set. */
   images?: string[];
 }
+/**
+ * A fragment of a compaction's summary. A streamed summary has no `summary.done`: the engine
+ * streams the fragments or delivers the text whole, never both, and nothing rebuilds one from the
+ * other.
+ */
 export interface SummaryDelta extends Base {
   type: "summary.delta";
   text: string;
@@ -163,10 +183,16 @@ export interface ToolCallDone extends Base {
   type: "tool_call.done";
   tool_call_id: string;
   name: string;
-  /** The complete arguments as a JSON string — identical to the concatenated deltas; parse with `parseArguments`. */
+  /**
+   * The complete arguments as a JSON string: the engine's serialization of the parsed call, which
+   * the fragments joined need not equal character for character (`{"command": "ls"}` streamed,
+   * `{"command":"ls"}` here) but parse to the same object; parse with `parseArguments`. A call cut
+   * short (`stop_reason` other than `completed`) carries the text received so far instead.
+   */
   arguments: string;
   stop_reason: StopReason;
 }
+/** The tool's result as the model receives it; may arrive after the call's `request.done`, always before the next `request.started` of the same origin. */
 export interface ToolResultDone extends Base {
   type: "tool_result.done";
   tool_call_id: string;
@@ -193,6 +219,7 @@ export interface ImageUrlDone extends Base {
   role: "user";
   image_url: string;
 }
+/** A compaction's summary delivered whole; absent when the summary was streamed. */
 export interface SummaryDone extends Base {
   type: "summary.done";
   text: string;
@@ -200,6 +227,7 @@ export interface SummaryDone extends Base {
 }
 
 // ---- approvals ----
+/** A tool call waiting for the caller's answer; arrives while the call's Request is still open and carries the whole call. */
 export interface ApprovalRequested extends Base {
   type: "approval.requested";
   tool_call: { tool_call_id: string; name: string; arguments: string };

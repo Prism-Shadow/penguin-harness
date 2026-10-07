@@ -7,8 +7,10 @@
  * - A run POSTs its input, and the Session to continue, as JSON to the Agent's runs route, with
  *   the key as a Bearer token and the caller's extra headers; a keyless client sends no
  *   Authorization.
- * - result() joins the main Session's assistant texts and keeps every complete item; deltas, user
- *   texts, a subagent's texts and compaction summaries stay out of the text.
+ * - result() joins the main Session's assistant texts and keeps every complete item, on the order
+ *   the server captured: user texts, a subagent's texts and compaction summaries stay out of the
+ *   text; a summary the engine streamed has no summary.done and leaves no item (fragments are
+ *   never rebuilt into one), one delivered whole is kept as its summary.done.
  * - A run that ends fatal resolves with that status and error; it does not reject.
  * - session resolves from run.started while the server still holds back the first content event.
  * - Keep-alive comments, CRLF framing, chunks split mid-event and a data block spread over two
@@ -30,9 +32,13 @@
  * - A 200 answer that is not an event stream (saying what came instead), and a block that is not
  *   an AMSP event, are AmspStreamErrors.
  *
- * Approvals
+ * Approvals (on the captured order: the engine runs the tool while its Request is still open, so
+ * approval.requested, approval.decided and the first result fragment precede request.done, and
+ * the rest of the result follows it)
  * - An approval request is answered by POST with the callback's decision, even when the caller
  *   only awaits the result; no callback, or a throwing one, answers deny.
+ * - The result of such a run carries the next Request's text and one tool_result.done for the
+ *   call, whichever side of request.done its fragments fell on.
  * - An approval someone else answered first does not fail the run, and an answer that fails after
  *   the run completed leaves it completed.
  * - An approval the server refuses to take ends the run with that refusal and closes the
@@ -52,7 +58,9 @@
  *   AmspHttpError.
  * - abort(sessionId) says whether a run was interrupted; approve() posts a decision and reports
  *   one already taken as approval_not_found.
- * - parseArguments returns the arguments object, {} for none, and null for anything malformed.
+ * - parseArguments returns the arguments object, {} for none, and null for anything malformed;
+ *   a tool_call.done's arguments (the engine's serialization of the parsed call) and its
+ *   fragments joined (the provider's text) parse to the same object although their text differs.
  * - An agent reference that is not <projectId>/<agentId> is refused at construction.
  * - A fetch handed to the client carries its requests instead of the global one.
  */
@@ -75,6 +83,7 @@ import {
   type FetchFake,
   type Step,
 } from "./helpers/fetch-fake.js";
+import { APPROVAL_ROUND_TRIP, MIXED_RUN, sessionOf } from "./helpers/streams.js";
 
 const AT = "2026-10-07T10:00:00.000Z";
 const SESSION = "session-2026-10-07-10-00-00-3f9a1c2e";
@@ -82,6 +91,11 @@ const KEY = "test-agent-key";
 const RUNS = "/agents/demo/coder/runs";
 const APPROVAL = `/sessions/${SESSION}/approvals/call_1`;
 const USAGE = { cache_read: 0, cache_write: 0, output: 2, total: 412 };
+
+/** The approval route of the captured round trip's Session. */
+const ROUND_TRIP_SESSION = sessionOf(APPROVAL_ROUND_TRIP);
+const ROUND_TRIP_APPROVAL = `/sessions/${ROUND_TRIP_SESSION}/approvals/call_1`;
+const ROUND_TRIP_REQUESTED = APPROVAL_ROUND_TRIP.find((e) => e.type === "approval.requested")!;
 
 function ev(type: string, fields: Record<string, unknown> = {}): AmspEvent {
   return { type, at: AT, ...fields } as AmspEvent;
@@ -109,28 +123,21 @@ const PLAIN = [
   runDone(),
 ];
 
-const TOOL_CALL = ev("tool_call.done", {
-  tool_call_id: "call_1",
-  name: "exec_command",
-  arguments: '{"command":"ls"}',
-  stop_reason: "completed",
-});
 const APPROVAL_REQUESTED = ev("approval.requested", {
   tool_call: { tool_call_id: "call_1", name: "exec_command", arguments: '{"command":"ls"}' },
 });
 
-/** A tool call the server holds for approval until `answered` settles, then runs. */
+/**
+ * The captured round trip: the server holds the stream at approval.requested until `answered`
+ * settles, then the tool runs — its decision and first result fragment before request.done, the
+ * rest of the result after it, then the second Request.
+ */
 function approvalScript(answered: Promise<unknown>): Step[] {
+  const asked = APPROVAL_ROUND_TRIP.indexOf(ROUND_TRIP_REQUESTED) + 1;
   return [
-    frame(started),
-    frame(ev("request.started", { request: 1 })),
-    frame(TOOL_CALL),
-    frame(ev("request.done", { request: 1, status: "completed", usage: USAGE })),
-    frame(APPROVAL_REQUESTED),
+    ...APPROVAL_ROUND_TRIP.slice(0, asked).map(frame),
     answered,
-    frame(ev("approval.decided", { tool_call_id: "call_1", decision: "allow" })),
-    frame(ev("tool_result.done", { tool_call_id: "call_1", output: "README.md\n" })),
-    frame(runDone({ requests: 1 })),
+    ...APPROVAL_ROUND_TRIP.slice(asked).map(frame),
     DONE,
   ];
 }
@@ -204,56 +211,62 @@ describe("a run's stream", () => {
     expect(fake.calls[0]!.body).toEqual({ input: "hi" });
   });
 
-  it("joins the main Session's assistant texts in result(), leaving deltas, user texts, subagent texts and summaries out", async () => {
-    const events = [
-      started,
-      ev("text.done", { role: "user", text: "Check the tests too", sender: "user" }),
-      ev("request.started", { request: 1 }),
-      ev("text.delta", { role: "assistant", text: "First." }),
-      ev("text.done", { role: "assistant", text: "First.", stop_reason: "completed" }),
-      ev("text.done", { role: "assistant", text: "", stop_reason: "completed" }),
-      TOOL_CALL,
-      ev("request.done", { request: 1, status: "completed", usage: USAGE }),
-      ev("text.done", { role: "assistant", text: "Subagent's answer", origin: ["session-child"] }),
-      ev("compaction.started", { reason: "context", mode: "summarize", context: 900, turns: 4 }),
-      ev("summary.delta", { text: "So far" }),
-      ev("summary.done", { text: "So far", stop_reason: "completed" }),
-      ev("compaction.done", { reason: "context", mode: "summarize", status: "completed" }),
-      ev("request.started", { request: 2 }),
-      ev("text.done", { role: "assistant", text: "Second.", stop_reason: "completed" }),
-      ev("request.done", { request: 2, status: "completed", usage: USAGE }),
-      runDone({ requests: 2, session_usage: null }),
-    ];
-    fake.stream("POST", RUNS, [...events.map(frame), DONE]);
+  it("joins the main Session's assistant texts in result(), leaving deltas, user texts, a subagent's texts and a streamed summary out", async () => {
+    fake.stream("POST", RUNS, [...MIXED_RUN.map(frame), DONE]);
 
-    const result = await client.ask({ input: "hi" });
+    const result = await client.ask({ input: "Fix the build" });
 
     expect(result).toMatchObject({
       status: "completed",
-      sessionId: SESSION,
-      text: "First.\n\nSecond.",
-      usage: USAGE,
-      sessionUsage: null,
-      requests: 2,
+      sessionId: sessionOf(MIXED_RUN),
+      text: "Working on it.\n\nDone: the build is green.",
+      usage: { output: 18, total: 1100 },
+      sessionUsage: { output: 15, total: 900 },
+      requests: 3,
     });
     expect(result).not.toHaveProperty("error");
     expect(result.items.map((item) => item.type)).toEqual([
       "run.started",
-      "text.done",
       "request.started",
       "text.done",
-      "text.done",
-      "tool_call.done",
       "request.done",
+      "text.done", // the steering text, role user
+      "context.opened", // the subagent's Session
+      "request.started",
       "text.done",
+      "request.done",
       "compaction.started",
-      "summary.done",
-      "compaction.done",
+      "compaction.done", // the summary was streamed: no summary.done, and none is rebuilt
       "request.started",
       "text.done",
       "request.done",
       "run.done",
     ]);
+    expect(result.items.find((item) => item.type === "context.opened")).toMatchObject({
+      origin: ["session-2026-10-07-10-00-01-c0000001"],
+    });
+  });
+
+  it("keeps a summary the engine delivered whole as its summary.done item, still out of the text", async () => {
+    const summary = ev("summary.done", { text: "The whole summary.", stop_reason: "completed" });
+    fake.stream("POST", RUNS, [
+      frame(started),
+      frame(ev("request.started", { request: 1 })),
+      frame(ev("text.done", { role: "assistant", text: "Before.", stop_reason: "completed" })),
+      frame(ev("request.done", { request: 1, status: "completed", usage: USAGE })),
+      frame(
+        ev("compaction.started", { reason: "manual", mode: "summarize", context: 10, turns: 1 }),
+      ),
+      frame(summary),
+      frame(ev("compaction.done", { reason: "manual", mode: "summarize", status: "completed" })),
+      frame(runDone()),
+      DONE,
+    ]);
+
+    const result = await client.ask({ input: "hi" });
+
+    expect(result.text).toBe("Before.");
+    expect(result.items.filter((item) => item.type.startsWith("summary."))).toEqual([summary]);
   });
 
   it("resolves a run that ended fatal with its status and error", async () => {
@@ -488,44 +501,80 @@ describe("approvals", () => {
   ])(
     "answers with $decision for $callback, while the caller only awaits the result",
     async ({ onApproval, decision }) => {
-      fake.empty("POST", APPROVAL, 204);
-      fake.stream("POST", RUNS, approvalScript(fake.requested("POST", APPROVAL)));
+      fake.empty("POST", ROUND_TRIP_APPROVAL, 204);
+      fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
 
-      await expect(client.ask({ input: "list the files", onApproval })).resolves.toMatchObject({
+      await expect(client.ask({ input: "List the files", onApproval })).resolves.toMatchObject({
         status: "completed",
       });
 
-      const answer = fake.calls.find((call) => call.path === APPROVAL)!;
+      const answer = fake.calls.find((call) => call.path === ROUND_TRIP_APPROVAL)!;
       expect(answer.body).toEqual({ decision });
       expect(answer.headers.get("authorization")).toBe(`Bearer ${KEY}`);
     },
   );
 
   it("hands the callback the request and the Session it belongs to", async () => {
-    fake.empty("POST", APPROVAL, 204);
-    fake.stream("POST", RUNS, approvalScript(fake.requested("POST", APPROVAL)));
+    fake.empty("POST", ROUND_TRIP_APPROVAL, 204);
+    fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
     const asked: unknown[] = [];
 
     await client.ask({
-      input: "list the files",
+      input: "List the files",
       onApproval: (request, ctx) => {
         asked.push({ request, ctx });
         return parseArguments(request.tool_call)?.command === "ls" ? "allow" : "deny";
       },
     });
 
-    expect(asked).toEqual([{ request: APPROVAL_REQUESTED, ctx: { sessionId: SESSION } }]);
-    expect(fake.calls.find((call) => call.path === APPROVAL)!.body).toEqual({ decision: "allow" });
+    expect(asked).toEqual([
+      { request: ROUND_TRIP_REQUESTED, ctx: { sessionId: ROUND_TRIP_SESSION } },
+    ]);
+    expect(fake.calls.find((call) => call.path === ROUND_TRIP_APPROVAL)!.body).toEqual({
+      decision: "allow",
+    });
+  });
+
+  it("collects the next Request's text and one tool_result.done for a tool that ran inside its Request", async () => {
+    fake.empty("POST", ROUND_TRIP_APPROVAL, 204);
+    fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
+
+    const result = await client.ask({ input: "List the files", onApproval: () => "allow" });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      sessionId: ROUND_TRIP_SESSION,
+      text: "Two entries: README.md and src.",
+      requests: 2,
+    });
+    // The result's fragments fell on both sides of request.done; its one .done closes it.
+    expect(result.items.map((item) => item.type)).toEqual([
+      "run.started",
+      "request.started",
+      "tool_call.done",
+      "approval.requested",
+      "approval.decided",
+      "request.done",
+      "tool_result.done",
+      "request.started",
+      "text.done",
+      "request.done",
+      "run.done",
+    ]);
+    expect(result.items.find((item) => item.type === "tool_result.done")).toMatchObject({
+      tool_call_id: "call_1",
+      output: "README.md\nsrc\n",
+    });
   });
 
   it("finishes the run when someone else answered the approval first", async () => {
-    fake.json("POST", APPROVAL, 404, {
+    fake.json("POST", ROUND_TRIP_APPROVAL, 404, {
       error: { code: "approval_not_found", message: "This approval was already decided." },
     });
-    fake.stream("POST", RUNS, approvalScript(fake.requested("POST", APPROVAL)));
+    fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
 
     await expect(
-      client.ask({ input: "list the files", onApproval: () => "allow" }),
+      client.ask({ input: "List the files", onApproval: () => "allow" }),
     ).resolves.toMatchObject({
       status: "completed",
     });
@@ -565,12 +614,12 @@ describe("approvals", () => {
   });
 
   it("ends the run with the server's refusal to take an answer, and closes the connection", async () => {
-    fake.json("POST", APPROVAL, 401, {
+    fake.json("POST", ROUND_TRIP_APPROVAL, 401, {
       error: { code: "unauthorized", message: "This Agent requires an API key." },
     });
     const served = fake.stream("POST", RUNS, approvalScript(never()));
 
-    await expect(client.ask({ input: "list the files" })).rejects.toMatchObject({
+    await expect(client.ask({ input: "List the files" })).rejects.toMatchObject({
       status: 401,
       code: "unauthorized",
     });
@@ -782,6 +831,22 @@ describe("the rest of the client", () => {
     expect(
       parseArguments({ tool_call_id: "call_1", name: "exec_command", arguments: args }),
     ).toEqual(parsed);
+  });
+
+  it("parseArguments reads the same object from a tool_call.done and from its fragments joined, although their text differs", () => {
+    // The fragments are the provider's text; the .done is the engine's serialization of the
+    // parsed call. Neither is rebuilt from the other, so a reader parses whichever it holds.
+    const streamed = ['{"command"', ': "echo hi"}'].join("");
+    const done = '{"command":"echo hi"}';
+    const call = (args: string) => ({
+      tool_call_id: "call_1",
+      name: "exec_command",
+      arguments: args,
+    });
+
+    expect(streamed).not.toBe(done);
+    expect(parseArguments(call(done))).toEqual({ command: "echo hi" });
+    expect(parseArguments(call(streamed))).toEqual(parseArguments(call(done)));
   });
 
   it.each(["coder", "demo/", "/coder", "demo/coder/extra"])(

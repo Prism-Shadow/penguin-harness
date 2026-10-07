@@ -20,25 +20,27 @@ AMSP is a projection of the Session's live stream: the server translates the [Om
 ## Grammar
 
 ```text
-stream            := run.started body* run.done
-body              := context.opened | mcp_connect.started | mcp_connect.done | tools.ready
-                   | request | tool_result_group | approval.requested | approval.decided
-                   | compaction | hook.fired | text.done (role user) | image_url.done
-request           := request.started item_group* request.done
-item_group        := K.delta* K.done        ; K = thinking | text | tool_call | inline_data | inline_thinking
-tool_result_group := tool_result.delta* tool_result.done      ; keyed by tool_call_id
-compaction        := compaction.started (summary.delta* summary.done)? compaction.done
+stream       := run.started body* run.done
+body         := context.opened | mcp_connect.started | mcp_connect.done | tools.ready
+              | request | tool_result | approval | compaction | hook.fired
+              | text.done (role user) | image_url.done
+request      := request.started (item | tool_result | approval | hook.fired)* request.done
+item         := K.delta* K.done              ; K = thinking | text | tool_call | inline_data | inline_thinking
+tool_result  := tool_result.delta | tool_result.done   ; one event each: a result is tool_result.delta* tool_result.done,
+                                                       ; keyed by tool_call_id, and may straddle request.done
+approval     := approval.requested | approval.decided
+compaction   := compaction.started (summary.delta* | summary.done)? compaction.done
 ```
 
 The rules a client can rely on:
 
 1. **Exactly one terminal.** `run.done` is the last event before `[DONE]`, whether the run completed, was aborted, failed, or the server failed while driving it (`status: "fatal"`, `error.code: "internal"`). A body that ends without it means the connection broke.
-2. **Items close with `.done`.** A `.done` item carries the whole content; the `.delta` fragments of the same group, concatenated, equal it, because the server forwards both as the engine produced them and rebuilds neither. A `.done` may arrive with no fragments before it.
-3. **One origin's model output never interleaves.** Within one origin, the thinking, text, tool call and inline groups come one after another. Tool results may interleave with each other when tools run in parallel; attribute them by `tool_call_id`. Different origins interleave freely; attribute by `origin`.
-4. **A Request pair encloses its model output.** Tools run, and approvals are asked, between a `request.done` and the next `request.started`. A retried attempt is a new pair: `request.done` with `status: "retryable"` and `retry_in_ms`, then `request.started` again.
+2. **Items close with `.done`, and fragments are never reconciled with it.** A `.done` item carries the whole content. The server forwards the fragments and the complete item as the engine produced them and rebuilds neither from the other. For text and thinking the fragments, concatenated, equal the `.done`; for a tool call they need not: the fragments are the provider's text as it streamed, and `tool_call.done.arguments` is the engine's serialization of the parsed call, so `{"command": "ls"}` may stream and `{"command":"ls"}` arrive done — both parse to the same object. A `.done` may arrive with no fragments before it. A streamed compaction summary is the one item without a `.done` (rule 7).
+3. **One origin's model output is serial; tool results are not items.** Within one origin, the thinking, text, tool call and inline items come one after another: an item's `.done` precedes the next item's first fragment. Tool results, approvals and hook events may fall between any two events of an item, and the results of tools running in parallel interleave with each other; attribute them by `tool_call_id`. Different origins interleave freely; attribute by `origin`.
+4. **A Request pair encloses its model output, not its tools.** The engine runs a tool as soon as its call is complete, while the Request is still open: the approval is asked and answered before that Request's `request.done`, the result starts as soon as the call is approved, usually before `request.done`, and may end after it. Every result of a Request's calls arrives before the next `request.started` of the same origin. A retried attempt is a new pair: `request.done` with `status: "retryable"` and `retry_in_ms`, then `request.started` again.
 5. **Usage adds up.** `request.done.usage` is that attempt's count (`null` when there is none) and `compaction.done.usage` sums its attempts. `run.done.usage` is the sum of every `request.done.usage` and `compaction.done.usage` of the run; `run.done.session_usage` is the Session's running total as the engine last reported it, or `null`.
 6. **Unknown types are ignored.** A client must skip an event `type` it does not know.
-7. **Compaction holds only summaries.** Between `compaction.started` and `compaction.done` the only items are `summary.*`, never `text.*`. A completed compaction, and a model switch, is followed by `context.opened`.
+7. **Compaction holds only summaries.** Between `compaction.started` and `compaction.done` the only items are `summary.*`: the compaction's thinking is not forwarded, and `text.*` never appears. The engine streams a summary's fragments or delivers its text whole, never both, so a streamed summary is `summary.delta*` followed by `compaction.done` with no `summary.done`, and a whole one is a single `summary.done`. No `context.opened` follows a compaction: the context it opens is recorded in the Trace without being streamed. In practice `context.opened` marks a subagent's Session starting; the main Session streams one only on a model switch, which happens between runs.
 
 ## Events
 
@@ -57,7 +59,7 @@ Each event below also carries `at`, and `origin` when it comes from a subagent. 
 
 | Event | Fields | Meaning |
 | --- | --- | --- |
-| `context.opened` | `session_id`, `provider`, `model_id`, `context_window` | A new model context: after a compaction or a model switch, or, with `origin`, a subagent's Session starting |
+| `context.opened` | `session_id`, `provider`, `model_id`, `context_window` | A new model context the engine streams: with `origin`, a subagent's Session starting; without, a model switch, which happens between runs. The context a compaction opens is not streamed |
 | `mcp_connect.started` | `servers` | The agent's MCP servers start connecting |
 | `mcp_connect.done` | `status`, `results`, `error?` | Each server's outcome: `{server, transport, status, duration_ms, tools?, error?}` |
 | `tools.ready` | `tools` | The tool definitions the model is given: `{name, description, parameters?}` |
@@ -76,16 +78,16 @@ Each event below also carries `at`, and `origin` when it comes from a subagent. 
 | `text.delta` | `role: "assistant"`, `text` | A fragment of the model's text; may be empty |
 | `text.done` | `role`, `text`, `stop_reason`, `sender?` | A complete text. `role: "user"` is a message added during the run, such as steering or a hook's continuation, with `sender` saying who added it |
 | `thinking.delta` / `thinking.done` | `thinking`, `stop_reason` on done | The model's thinking |
-| `tool_call.delta` | `tool_call_id`, `name`, `arguments` | A fragment of a tool call: `name` is set on the first one, `arguments` is a piece of the JSON string |
-| `tool_call.done` | `tool_call_id`, `name`, `arguments`, `stop_reason` | The complete call; `arguments` is the JSON string the model wrote |
-| `tool_result.delta` | `tool_call_id`, `output`, `images?` | Output a running tool has produced so far; `images` arrive whole, in one fragment |
-| `tool_result.done` | `tool_call_id`, `output`, `images?`, `stop_reason` | The tool's result as the model receives it |
+| `tool_call.delta` | `tool_call_id`, `name`, `arguments` | A fragment of a tool call: `name` is set on the first one, `arguments` is a piece of the text the provider streamed |
+| `tool_call.done` | `tool_call_id`, `name`, `arguments`, `stop_reason` | The complete call; `arguments` is the engine's serialization of the parsed call as a JSON string |
+| `tool_result.delta` | `tool_call_id`, `output`, `images?` | Output a running tool has produced so far, possibly before the Request's `request.done`; `images` arrive whole, in one fragment |
+| `tool_result.done` | `tool_call_id`, `output`, `images?`, `stop_reason` | The tool's result as the model receives it; may follow the Request's `request.done`, always before the next `request.started` |
 | `inline_data.done` | `role`, `mime_type`, `data`, `stop_reason` | An image or other data inline in the conversation, base64 |
 | `inline_thinking.done` | `mime_type`, `data`, `stop_reason` | Opaque thinking data a provider returns, base64 |
 | `image_url.done` | `role: "user"`, `image_url` | An image added to the conversation during the run |
-| `summary.delta` / `summary.done` | `text`, `stop_reason` on done | The summary a compaction writes |
+| `summary.delta` / `summary.done` | `text`, `stop_reason` on done | The summary a compaction writes: streamed as fragments with no `.done`, or delivered whole as one `summary.done` |
 
-`arguments` stays a string, unlike MMSP, which parses it: the string is what the model wrote and what the Trace keeps. The client's `parseArguments` turns it into an object.
+`arguments` stays a string, unlike MMSP, which parses it. The fragments carry the provider's text as it streamed; `tool_call.done.arguments` is the engine's own serialization of the parsed call, also what the Trace keeps, so the two need not match character for character but parse to the same object. A call cut short (`stop_reason` other than `completed`) carries the text received so far. The client's `parseArguments` turns either into an object.
 
 The run's own input is not repeated on the stream; `run.started` follows the request.
 
@@ -124,25 +126,37 @@ data: [DONE]
 
 Each event is followed by a blank line on the wire; the examples leave them out.
 
-A tool call that waits for the caller's approval, then a second Request:
+A tool call that waits for the caller's approval, then a second Request. The tool runs while the first Request is still open: the approval and the start of the result come before its `request.done`, the rest of the result after it. The streamed arguments are the provider's text; the `.done` carries the engine's serialization of the parsed call:
 
 ```text
 data: {"type":"run.started",…}
 data: {"type":"request.started","request":1,…}
 data: {"type":"tool_call.delta","tool_call_id":"call_1","name":"exec_command","arguments":"",…}
-data: {"type":"tool_call.delta","tool_call_id":"call_1","name":"","arguments":"{\"command\":\"ls\"}",…}
+data: {"type":"tool_call.delta","tool_call_id":"call_1","name":"","arguments":"{\"command\": \"ls\"}",…}
 data: {"type":"tool_call.done","tool_call_id":"call_1","name":"exec_command","arguments":"{\"command\":\"ls\"}","stop_reason":"completed",…}
-data: {"type":"request.done","request":1,"status":"completed","usage":{…},…}
 data: {"type":"approval.requested","tool_call":{"tool_call_id":"call_1","name":"exec_command","arguments":"{\"command\":\"ls\"}"},…}
             ← caller: POST /api/amsp/v1/sessions/<id>/approvals/call_1 {"decision":"allow"} → 204
 data: {"type":"approval.decided","tool_call_id":"call_1","decision":"allow",…}
-data: {"type":"tool_result.delta","tool_call_id":"call_1","output":"README.md\n",…}
+data: {"type":"tool_result.delta","tool_call_id":"call_1","output":"",…}
+data: {"type":"request.done","request":1,"status":"completed","usage":{…},…}
+data: {"type":"tool_result.delta","tool_call_id":"call_1","output":"README.md\nsrc\n",…}
 data: {"type":"tool_result.done","tool_call_id":"call_1","output":"README.md\nsrc\n","stop_reason":"completed",…}
 data: {"type":"request.started","request":2,…}
 data: {"type":"text.delta",…} … data: {"type":"text.done","text":"Two entries: README.md and src.",…}
 data: {"type":"request.done","request":2,"status":"completed","usage":{…},…}
 data: {"type":"run.done","status":"completed","requests":2,"usage":{…},"session_usage":{…},…}
 data: [DONE]
+```
+
+A compaction between two Requests. Its summary is streamed, so it has no `summary.done`, and no `context.opened` follows:
+
+```text
+data: {"type":"request.done","request":1,"status":"completed","usage":{…},…}
+data: {"type":"compaction.started","reason":"context","mode":"summarize","context":300,"turns":1,…}
+data: {"type":"summary.delta","text":"",…}
+data: {"type":"summary.delta","text":"Summary.",…}
+data: {"type":"compaction.done","reason":"context","mode":"summarize","status":"completed","usage":{…},"attempt":1,…}
+data: {"type":"request.started","request":2,…}
 ```
 
 A transient failure and its retry, then the caller aborts:
@@ -188,15 +202,16 @@ The server's translator reads what the Session publishes while it runs and write
 
 | OmniMessage record or server event | AMSP |
 | --- | --- |
+| Anything the Session published before the run's input (an idle `task_state` a subagent's state change re-published, a background subagent's output) | Not sent: the translator starts at the input's echo |
 | The run's own input | Not sent |
-| `session_meta` | `context.opened` |
+| `session_meta` | `context.opened`: a subagent's, or a model switch's between runs; the context a compaction opens is written to the Trace only |
 | `mcp_connect_begin` / `mcp_connect_end` | `mcp_connect.started` / `mcp_connect.done` |
 | `tool_list_ready` | `tools.ready` |
 | `request_begin` / `request_end` | `request.started` / `request.done` |
 | `token_usage` | Not sent: its counts go on the next `request.done` (or `compaction.done`), and its Session total on `run.done` |
-| `partial_text`, `partial_thinking`, `partial_tool_call`, `partial_tool_call_output`, at `start` and `delta` | `text.delta`, `thinking.delta`, `tool_call.delta`, `tool_result.delta`; inside a compaction, text is `summary.delta` |
+| `partial_text`, `partial_thinking`, `partial_tool_call`, `partial_tool_call_output`, at `start` and `delta` | `text.delta`, `thinking.delta`, `tool_call.delta`, `tool_result.delta`; inside a compaction, text is `summary.delta` (no `summary.done` follows it) and thinking is not sent |
 | A `partial_*` at `stop` | Not sent |
-| `text`, `thinking`, `tool_call`, `tool_call_output` | `text.done`, `thinking.done`, `tool_call.done`, `tool_result.done`; inside a compaction, text is `summary.done` |
+| `text`, `thinking`, `tool_call`, `tool_call_output` | `text.done`, `thinking.done`, `tool_call.done`, `tool_result.done`; inside a compaction, a text the engine delivered whole is `summary.done` and thinking is not sent |
 | `inline_data`, `inline_thinking`, `image_url` | `inline_data.done`, `inline_thinking.done`, `image_url.done` |
 | The `approval_request` server event / `approval_decision` | `approval.requested` / `approval.decided` |
 | `compaction_begin` / `compaction_end` | `compaction.started` / `compaction.done` |

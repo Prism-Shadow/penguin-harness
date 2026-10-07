@@ -20,25 +20,27 @@ AMSP 是 Session 实时流的投影：服务器把一次运行产生的 [OmniMes
 ## 语法
 
 ```text
-stream            := run.started body* run.done
-body              := context.opened | mcp_connect.started | mcp_connect.done | tools.ready
-                   | request | tool_result_group | approval.requested | approval.decided
-                   | compaction | hook.fired | text.done (role user) | image_url.done
-request           := request.started item_group* request.done
-item_group        := K.delta* K.done        ; K = thinking | text | tool_call | inline_data | inline_thinking
-tool_result_group := tool_result.delta* tool_result.done      ; keyed by tool_call_id
-compaction        := compaction.started (summary.delta* summary.done)? compaction.done
+stream       := run.started body* run.done
+body         := context.opened | mcp_connect.started | mcp_connect.done | tools.ready
+              | request | tool_result | approval | compaction | hook.fired
+              | text.done (role user) | image_url.done
+request      := request.started (item | tool_result | approval | hook.fired)* request.done
+item         := K.delta* K.done              ; K = thinking | text | tool_call | inline_data | inline_thinking
+tool_result  := tool_result.delta | tool_result.done   ; 各为单个事件：一次结果为 tool_result.delta* tool_result.done，
+                                                       ; 按 tool_call_id 归属，可以跨过 request.done
+approval     := approval.requested | approval.decided
+compaction   := compaction.started (summary.delta* | summary.done)? compaction.done
 ```
 
 客户端可以依赖的规则：
 
 1. **有且只有一个终止事件。** `run.done` 是 `[DONE]` 之前的最后一个事件，无论运行是完成、被中止、失败，还是服务器在驱动运行时出错（`status: "fatal"`、`error.code: "internal"`）。响应体在它之前结束，意味着连接断了。
-2. **内容项以 `.done` 收尾。** `.done` 携带完整内容；同一组的 `.delta` 分片拼接起来与它相同，因为服务器两者都按引擎产出的原样转发，哪个都不重建。`.done` 之前也可能没有任何分片。
-3. **同一来源的模型输出从不交错。** 在同一 `origin` 内，思考、文本、工具调用和内联内容各组依次出现。工具并行执行时，工具结果之间可以交错，按 `tool_call_id` 归属。不同来源之间可以任意交错，按 `origin` 归属。
-4. **Request 成对包住其模型输出。** 工具执行和审批发生在一个 `request.done` 与下一个 `request.started` 之间。重试的尝试是新的一对：先是 `status: "retryable"` 且带 `retry_in_ms` 的 `request.done`，再是新的 `request.started`。
+2. **内容项以 `.done` 收尾，分片与它从不对账。** `.done` 携带完整内容。服务器把分片和完整内容项都按引擎产出的原样转发，不由一方重建另一方。文本和思考的分片拼接起来与 `.done` 相同；工具调用则未必：分片是供应商流式输出的原文，`tool_call.done.arguments` 是引擎对解析后参数的再序列化，所以流里可能是 `{"command": "ls"}`，`.done` 里是 `{"command":"ls"}`，两者解析为同一个对象。`.done` 之前也可能没有任何分片。流式产出的压缩摘要是唯一没有 `.done` 的内容项（规则 7）。
+3. **同一来源的模型输出依次出现，工具结果不是内容项。** 在同一 `origin` 内，思考、文本、工具调用和内联内容项依次出现：一项的 `.done` 先于下一项的第一个分片。工具结果、审批和钩子事件可以落在一项的任意两个事件之间；工具并行执行时，结果之间彼此交错，按 `tool_call_id` 归属。不同来源之间可以任意交错，按 `origin` 归属。
+4. **Request 成对包住的是其模型输出，不是其工具执行。** 引擎在调用完整时就开始执行工具，此时 Request 尚未结束：审批的请求和决定都在该 Request 的 `request.done` 之前；结果在调用获准后即开始，通常也在 `request.done` 之前，并可能在它之后才结束。一次 Request 的全部结果都在同一来源的下一个 `request.started` 之前到齐。重试的尝试是新的一对：先是 `status: "retryable"` 且带 `retry_in_ms` 的 `request.done`，再是新的 `request.started`。
 5. **用量可以加总。** `request.done.usage` 是该次尝试的计数（没有时为 `null`），`compaction.done.usage` 是其各次尝试之和。`run.done.usage` 是本次运行全部 `request.done.usage` 与 `compaction.done.usage` 之和；`run.done.session_usage` 是引擎最后报告的 Session 累计值，没有时为 `null`。
 6. **忽略未知类型。** 客户端必须跳过不认识的事件 `type`。
-7. **压缩期间只有摘要。** 在 `compaction.started` 与 `compaction.done` 之间，内容项只会是 `summary.*`，从不是 `text.*`。压缩完成后（以及切换模型后）会跟一个 `context.opened`。
+7. **压缩期间只有摘要。** 在 `compaction.started` 与 `compaction.done` 之间，内容项只会是 `summary.*`：压缩请求的思考不转发，`text.*` 也不会出现。引擎对摘要只流式产出分片或只给出完整文本，两者不会都有：流式产出的摘要是 `summary.delta*` 直接接 `compaction.done`，没有 `summary.done`；整段给出的摘要是一个 `summary.done`。压缩之后没有 `context.opened`：压缩开出的新上下文写进 Trace，不进流。实际上 `context.opened` 标记的是子 Agent 的 Session 开始；主 Session 只在切换模型时流出它，而切换发生在两次运行之间。
 
 ## 事件
 
@@ -57,7 +59,7 @@ compaction        := compaction.started (summary.delta* summary.done)? compactio
 
 | 事件 | 字段 | 含义 |
 | --- | --- | --- |
-| `context.opened` | `session_id`、`provider`、`model_id`、`context_window` | 新的模型上下文：发生在压缩或切换模型之后；带 `origin` 时，表示一个子 Agent 的 Session 开始了 |
+| `context.opened` | `session_id`、`provider`、`model_id`、`context_window` | 引擎流出的新模型上下文：带 `origin` 时，表示一个子 Agent 的 Session 开始了；不带时是切换模型，它发生在两次运行之间。压缩开出的上下文不进流 |
 | `mcp_connect.started` | `servers` | Agent 的 MCP Server 开始连接 |
 | `mcp_connect.done` | `status`、`results`、`error?` | 每个 Server 的结果：`{server, transport, status, duration_ms, tools?, error?}` |
 | `tools.ready` | `tools` | 提供给模型的工具定义：`{name, description, parameters?}` |
@@ -76,16 +78,16 @@ compaction        := compaction.started (summary.delta* summary.done)? compactio
 | `text.delta` | `role: "assistant"`、`text` | 模型文本的一个分片，可以为空 |
 | `text.done` | `role`、`text`、`stop_reason`、`sender?` | 一段完整文本。`role: "user"` 表示运行途中加入的消息，例如引导消息或钩子的续写，由 `sender` 说明是谁加入的 |
 | `thinking.delta` / `thinking.done` | `thinking`，done 另带 `stop_reason` | 模型的思考 |
-| `tool_call.delta` | `tool_call_id`、`name`、`arguments` | 工具调用的一个分片：第一个分片带 `name`，`arguments` 是 JSON 字符串的一段 |
-| `tool_call.done` | `tool_call_id`、`name`、`arguments`、`stop_reason` | 完整的调用；`arguments` 是模型写出的 JSON 字符串 |
-| `tool_result.delta` | `tool_call_id`、`output`、`images?` | 运行中的工具到目前为止的输出；`images` 整组出现在一个分片里 |
-| `tool_result.done` | `tool_call_id`、`output`、`images?`、`stop_reason` | 模型收到的工具结果 |
+| `tool_call.delta` | `tool_call_id`、`name`、`arguments` | 工具调用的一个分片：第一个分片带 `name`，`arguments` 是供应商流式输出原文的一段 |
+| `tool_call.done` | `tool_call_id`、`name`、`arguments`、`stop_reason` | 完整的调用；`arguments` 是引擎对解析后参数的再序列化，为 JSON 字符串 |
+| `tool_result.delta` | `tool_call_id`、`output`、`images?` | 运行中的工具到目前为止的输出，可能出现在该 Request 的 `request.done` 之前；`images` 整组出现在一个分片里 |
+| `tool_result.done` | `tool_call_id`、`output`、`images?`、`stop_reason` | 模型收到的工具结果；可能在该 Request 的 `request.done` 之后，但总在下一个 `request.started` 之前 |
 | `inline_data.done` | `role`、`mime_type`、`data`、`stop_reason` | 对话中内联的图片或其他数据，base64 |
 | `inline_thinking.done` | `mime_type`、`data`、`stop_reason` | 供应商返回的不透明思考数据，base64 |
 | `image_url.done` | `role: "user"`、`image_url` | 运行途中加入对话的图片 |
-| `summary.delta` / `summary.done` | `text`，done 另带 `stop_reason` | 压缩写出的摘要 |
+| `summary.delta` / `summary.done` | `text`，done 另带 `stop_reason` | 压缩写出的摘要：流式产出时只有分片、没有 `.done`，整段给出时是一个 `summary.done` |
 
-与 MMSP 解析后的对象不同，`arguments` 保持为字符串：这个字符串就是模型写出的内容，也是 Trace 保存的内容。客户端的 `parseArguments` 把它转成对象。
+与 MMSP 解析后的对象不同，`arguments` 保持为字符串。分片携带供应商流式输出的原文；`tool_call.done.arguments` 是引擎对解析后参数的再序列化，也是 Trace 保存的内容，所以两者不必逐字相同，但解析为同一个对象。被打断的调用（`stop_reason` 不是 `completed`）携带的是已收到的原文。客户端的 `parseArguments` 把任一种转成对象。
 
 运行自身的输入不会在流中重复出现；请求之后紧接着就是 `run.started`。
 
@@ -124,25 +126,37 @@ data: [DONE]
 
 在实际传输中每个事件后面都跟一个空行，示例里省略了。
 
-一次需要调用方审批的工具调用，之后是第二次 Request：
+一次需要调用方审批的工具调用，之后是第二次 Request。工具在第一次 Request 尚未结束时执行：审批和结果的开头在它的 `request.done` 之前，结果的其余部分在其后。分片里的参数是供应商的原文，`.done` 里的是引擎对解析后参数的再序列化：
 
 ```text
 data: {"type":"run.started",…}
 data: {"type":"request.started","request":1,…}
 data: {"type":"tool_call.delta","tool_call_id":"call_1","name":"exec_command","arguments":"",…}
-data: {"type":"tool_call.delta","tool_call_id":"call_1","name":"","arguments":"{\"command\":\"ls\"}",…}
+data: {"type":"tool_call.delta","tool_call_id":"call_1","name":"","arguments":"{\"command\": \"ls\"}",…}
 data: {"type":"tool_call.done","tool_call_id":"call_1","name":"exec_command","arguments":"{\"command\":\"ls\"}","stop_reason":"completed",…}
-data: {"type":"request.done","request":1,"status":"completed","usage":{…},…}
 data: {"type":"approval.requested","tool_call":{"tool_call_id":"call_1","name":"exec_command","arguments":"{\"command\":\"ls\"}"},…}
             ← caller: POST /api/amsp/v1/sessions/<id>/approvals/call_1 {"decision":"allow"} → 204
 data: {"type":"approval.decided","tool_call_id":"call_1","decision":"allow",…}
-data: {"type":"tool_result.delta","tool_call_id":"call_1","output":"README.md\n",…}
+data: {"type":"tool_result.delta","tool_call_id":"call_1","output":"",…}
+data: {"type":"request.done","request":1,"status":"completed","usage":{…},…}
+data: {"type":"tool_result.delta","tool_call_id":"call_1","output":"README.md\nsrc\n",…}
 data: {"type":"tool_result.done","tool_call_id":"call_1","output":"README.md\nsrc\n","stop_reason":"completed",…}
 data: {"type":"request.started","request":2,…}
 data: {"type":"text.delta",…} … data: {"type":"text.done","text":"Two entries: README.md and src.",…}
 data: {"type":"request.done","request":2,"status":"completed","usage":{…},…}
 data: {"type":"run.done","status":"completed","requests":2,"usage":{…},"session_usage":{…},…}
 data: [DONE]
+```
+
+两次 Request 之间的一次压缩。摘要是流式产出的，所以没有 `summary.done`，之后也没有 `context.opened`：
+
+```text
+data: {"type":"request.done","request":1,"status":"completed","usage":{…},…}
+data: {"type":"compaction.started","reason":"context","mode":"summarize","context":300,"turns":1,…}
+data: {"type":"summary.delta","text":"",…}
+data: {"type":"summary.delta","text":"Summary.",…}
+data: {"type":"compaction.done","reason":"context","mode":"summarize","status":"completed","usage":{…},"attempt":1,…}
+data: {"type":"request.started","request":2,…}
 ```
 
 一次临时故障及其重试，之后调用方中止了运行：
@@ -188,15 +202,16 @@ data: [DONE]
 
 | OmniMessage 记录或服务器事件 | AMSP |
 | --- | --- |
+| Session 在本次运行的输入之前发布的一切（子 Agent 状态变化重发的空闲 `task_state`、后台子 Agent 的输出） | 不发送：翻译器从输入的回显开始 |
 | 运行自身的输入 | 不发送 |
-| `session_meta` | `context.opened` |
+| `session_meta` | `context.opened`：子 Agent 的，或两次运行之间切换模型的；压缩开出的上下文只写 Trace |
 | `mcp_connect_begin` / `mcp_connect_end` | `mcp_connect.started` / `mcp_connect.done` |
 | `tool_list_ready` | `tools.ready` |
 | `request_begin` / `request_end` | `request.started` / `request.done` |
 | `token_usage` | 不发送：其计数写到下一个 `request.done`（或 `compaction.done`）上，Session 累计值写到 `run.done` 上 |
-| `partial_text`、`partial_thinking`、`partial_tool_call`、`partial_tool_call_output` 的 `start` 与 `delta` | `text.delta`、`thinking.delta`、`tool_call.delta`、`tool_result.delta`；压缩期间的文本为 `summary.delta` |
+| `partial_text`、`partial_thinking`、`partial_tool_call`、`partial_tool_call_output` 的 `start` 与 `delta` | `text.delta`、`thinking.delta`、`tool_call.delta`、`tool_result.delta`；压缩期间的文本为 `summary.delta`（其后没有 `summary.done`），压缩期间的思考不发送 |
 | `partial_*` 的 `stop` | 不发送 |
-| `text`、`thinking`、`tool_call`、`tool_call_output` | `text.done`、`thinking.done`、`tool_call.done`、`tool_result.done`；压缩期间的文本为 `summary.done` |
+| `text`、`thinking`、`tool_call`、`tool_call_output` | `text.done`、`thinking.done`、`tool_call.done`、`tool_result.done`；压缩期间引擎整段给出的文本为 `summary.done`，压缩期间的思考不发送 |
 | `inline_data`、`inline_thinking`、`image_url` | `inline_data.done`、`inline_thinking.done`、`image_url.done` |
 | 服务器事件 `approval_request` / `approval_decision` | `approval.requested` / `approval.decided` |
 | `compaction_begin` / `compaction_end` | `compaction.started` / `compaction.done` |
