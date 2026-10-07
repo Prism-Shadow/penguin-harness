@@ -25,9 +25,11 @@ import type { TraceIndex } from "../../mechanisms/traces.js";
 import type { ErrorLog } from "../../mechanisms/observability.js";
 import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
 import type { Access } from "../../mechanisms/projects.js";
+import type { AgentApi } from "../../mechanisms/agent-api.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentsRouteDeps {
+  agentApi: AgentApi;
   agentConfigService: AgentConfig;
   agentService: AgentLifecycle;
   errorsRepo: ErrorLog;
@@ -50,6 +52,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const items = await deps.agentService.listAgents(projectId);
+    // One query for the whole list: which Agents have their API switch on (this server's web.db).
+    const apiEnabled = new Set(deps.agentApi.enabledAgents(projectId));
     const agents: AgentSummary[] = await Promise.all(
       items.map(async (item) => {
         const stats = await deps.sessionService.sessionStats(
@@ -62,6 +66,7 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
           activeSessionCount: deps.manager.activeCountForAgent(projectId, item.agentId),
           sessionCount: stats.sessionCount,
           sessionActivity: stats.activity,
+          apiEnabled: apiEnabled.has(item.agentId),
         };
       }),
     );
@@ -116,6 +121,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       activeSessionCount: 0,
       sessionCount: 0,
       sessionActivity: Array.from({ length: ACTIVITY_DAYS }, () => 0),
+      // A new Agent's API is off until its owner turns it on.
+      apiEnabled: false,
     };
     return c.json({ agent } satisfies AgentCreateResponse, 201);
   });

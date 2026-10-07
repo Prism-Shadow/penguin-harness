@@ -267,6 +267,12 @@ export interface ServerSettings {
    * kept, so turning it on again lets the extensions reconnect.
    */
   browserExtensionsEnabled: boolean;
+  /**
+   * Whether external programs may talk to Agents through the Agent API (default on). Off answers
+   * every `/api/amsp/v1` request 403 `agent_api_disabled` (a CORS preflight excepted); every
+   * Agent's API switch, approval mode and keys are kept, so turning it on again restores them.
+   */
+  agentApiEnabled: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -281,6 +287,8 @@ export interface ServerSettingsUpdateRequest {
   companyMode?: boolean;
   /** Chrome extension switch; see `ServerSettings.browserExtensionsEnabled`. */
   browserExtensionsEnabled?: boolean;
+  /** Agent API switch; see `ServerSettings.agentApiEnabled`. */
+  agentApiEnabled?: boolean;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -1248,6 +1256,8 @@ export interface AgentSummary {
   pluginUpdates: PluginUpdateRef[];
   /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
   memoryCount: number;
+  /** Whether the Agent's API tab switch is on (this server's web.db, see AgentApiSettings.enabled): the list card's API mark. */
+  apiEnabled: boolean;
 }
 
 export interface AgentsResponse {

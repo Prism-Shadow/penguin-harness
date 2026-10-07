@@ -231,6 +231,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       hookCount: 1,
       pluginUpdates: [{ name: IDS.plugins.registry, version: "2026.09.20.1" }],
       memoryCount: 4,
+      apiEnabled: false,
     },
     {
       agentId: IDS.agents.notes,
@@ -253,6 +254,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       hookCount: 0,
       pluginUpdates: [],
       memoryCount: 0,
+      apiEnabled: false,
     },
   ];
 
@@ -1463,6 +1465,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       attachmentTotalMb: 120,
       companyMode: false,
       browserExtensionsEnabled: true,
+      agentApiEnabled: true,
     },
     project,
     members: [

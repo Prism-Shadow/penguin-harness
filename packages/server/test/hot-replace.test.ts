@@ -47,6 +47,8 @@ function memorySettings(maxMb = 7): Settings {
     setCompanyMode: () => {},
     getBrowserExtensionsEnabled: () => true,
     setBrowserExtensionsEnabled: () => {},
+    getAgentApiEnabled: () => true,
+    setAgentApiEnabled: () => {},
     watch: () => () => {},
     getProxyForApp: () => false,
     setProxyForApp: () => {},
