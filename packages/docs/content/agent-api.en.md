@@ -17,7 +17,7 @@ Where to go:
 - Only the Project's owner turns an agent's API on or off, chooses its approval mode and manages its keys. Members see the settings.
 - The server's administrator can turn the whole Agent API off; it is on by default. See [The admin switch](#the-admin-switch).
 - A program needs three things, all shown on the agent's **API** tab:
-  - the **Base URL**, the server's address followed by `/api/amsp/v1`, such as `http://127.0.0.1:7364/api/amsp/v1` for a local server;
+  - the **Base URL**, the server's address followed by `/api/amsp/v1`, such as `http://localhost:7364/api/amsp/v1` for a local server. On a server bound to loopback, which is the default, the address is `localhost`: `127.0.0.1` is where it serves previews, and it answers every API request there with `401`;
   - the **Agent ID**, `<projectId>/<agentId>`, such as `demo/coder`;
   - a **key**, unless the agent allows [keyless access](#keyless-access).
 
@@ -72,7 +72,7 @@ A browser page on another origin cannot use keyless access: the server sends no 
 ## Call it with curl
 
 ```bash
-curl -N http://127.0.0.1:7364/api/amsp/v1/agents/demo/coder/runs \
+curl -N http://localhost:7364/api/amsp/v1/agents/demo/coder/runs \
   -H "Authorization: Bearer $PENGUIN_AGENT_KEY" -H "Content-Type: application/json" \
   -d '{"input":"Summarize README.md"}'
 ```
@@ -91,7 +91,7 @@ data: [DONE]
 To continue the conversation, send the Session id with the next input:
 
 ```bash
-curl -N http://127.0.0.1:7364/api/amsp/v1/agents/demo/coder/runs \
+curl -N http://localhost:7364/api/amsp/v1/agents/demo/coder/runs \
   -H "Authorization: Bearer $PENGUIN_AGENT_KEY" -H "Content-Type: application/json" \
   -d '{"session_id":"session-2026-10-07-10-00-00-3f9a1c2e","input":"Now list its headings"}'
 ```
@@ -166,7 +166,7 @@ npm install @prismshadow/amsp
 import { AgentClient } from "@prismshadow/amsp";
 
 const client = new AgentClient({
-  baseUrl: "http://127.0.0.1:7364/api/amsp/v1",
+  baseUrl: "http://localhost:7364/api/amsp/v1",
   agent: "demo/coder",
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
@@ -233,7 +233,7 @@ import { AgentClient } from "@prismshadow/amsp";
 
 const keyField = document.querySelector<HTMLInputElement>("#key")!;
 const client = new AgentClient({
-  baseUrl: "http://127.0.0.1:7364/api/amsp/v1",
+  baseUrl: "http://localhost:7364/api/amsp/v1",
   agent: "demo/coder",
   apiKey: keyField.value,
 });

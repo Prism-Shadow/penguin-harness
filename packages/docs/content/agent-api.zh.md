@@ -17,7 +17,7 @@ Agent API 让 PenguinHarness 之外的程序（脚本、服务、浏览器里的
 - 只有 Project 的所有者能开启或关闭 Agent 的 API、选择审批模式、管理密钥；成员可以查看这些设置。
 - 服务器管理员可以整体关闭 Agent API，缺省为开启。见[管理员开关](#管理员开关)。
 - 程序需要三样东西，都显示在该 Agent 的 **API** 标签页上：
-  - **Base URL**：服务器地址加上 `/api/amsp/v1`，本机服务器即 `http://127.0.0.1:7364/api/amsp/v1`；
+  - **Base URL**：服务器地址加上 `/api/amsp/v1`，本机服务器即 `http://localhost:7364/api/amsp/v1`。服务器监听本机回环地址时（这是缺省设置），地址要写 `localhost`：`127.0.0.1` 是它提供预览的地址，在那里的所有 API 请求都以 `401` 拒绝；
   - **Agent ID**：`<projectId>/<agentId>`，例如 `demo/coder`；
   - **密钥**：除非该 Agent 允许[无密钥访问](#无密钥访问)。
 
@@ -72,7 +72,7 @@ API 会话的沙箱取自服务器的新对话默认值，与其他新对话相�
 ## 用 curl 调用
 
 ```bash
-curl -N http://127.0.0.1:7364/api/amsp/v1/agents/demo/coder/runs \
+curl -N http://localhost:7364/api/amsp/v1/agents/demo/coder/runs \
   -H "Authorization: Bearer $PENGUIN_AGENT_KEY" -H "Content-Type: application/json" \
   -d '{"input":"Summarize README.md"}'
 ```
@@ -91,7 +91,7 @@ data: [DONE]
 要延续对话，把 Session id 和下一条输入一起发送：
 
 ```bash
-curl -N http://127.0.0.1:7364/api/amsp/v1/agents/demo/coder/runs \
+curl -N http://localhost:7364/api/amsp/v1/agents/demo/coder/runs \
   -H "Authorization: Bearer $PENGUIN_AGENT_KEY" -H "Content-Type: application/json" \
   -d '{"session_id":"session-2026-10-07-10-00-00-3f9a1c2e","input":"Now list its headings"}'
 ```
@@ -166,7 +166,7 @@ npm install @prismshadow/amsp
 import { AgentClient } from "@prismshadow/amsp";
 
 const client = new AgentClient({
-  baseUrl: "http://127.0.0.1:7364/api/amsp/v1",
+  baseUrl: "http://localhost:7364/api/amsp/v1",
   agent: "demo/coder",
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
@@ -233,7 +233,7 @@ import { AgentClient } from "@prismshadow/amsp";
 
 const keyField = document.querySelector<HTMLInputElement>("#key")!;
 const client = new AgentClient({
-  baseUrl: "http://127.0.0.1:7364/api/amsp/v1",
+  baseUrl: "http://localhost:7364/api/amsp/v1",
   agent: "demo/coder",
   apiKey: keyField.value,
 });
