@@ -3,6 +3,7 @@
 - **Date:** 2026-10-07
 - **Type:** fix
 - **Scope:** `cli`, `docs`
+- **PR:** [#1001](https://github.com/Prism-Shadow/penguin-harness/pull/1001)
 
 [中文版](2026-10-07-chat-paste-while-running.zh.md)
 
