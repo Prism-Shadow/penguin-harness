@@ -8,6 +8,7 @@
  *   leaves every other row alone; a stamp change alone still lands.
  * - session_background sets or clears the named row's counts, and moves neither the glyph nor
  *   the status.
+ * - session_approvals sets the named row's pending-approval count, zero included.
  * - session_title renames the named row in place.
  * - An event for a Session no loaded page holds changes nothing (a status from another Project;
  *   one of this Project's is fetched — sessions-store.test.ts), and one that matches the row
@@ -168,6 +169,23 @@ describe("session_background on the user channel", () => {
   });
 });
 
+describe("session_approvals on the user channel", () => {
+  const approvalsEvent = (sessionId: string, count: number): ServerEvent => ({
+    type: "session_approvals",
+    sessionId,
+    count,
+  });
+
+  it("sets the named row's count and leaves every other row alone, then clears it at zero", () => {
+    const store = storeWith(session("a"), session("b"));
+    applyUserEvent(store, approvalsEvent("b", 2), neverReload);
+    expect(rowOf(store, "b").pendingApprovalCount).toBe(2);
+    expect(rowOf(store, "a").pendingApprovalCount).toBe(0);
+    applyUserEvent(store, approvalsEvent("b", 0), neverReload);
+    expect(rowOf(store, "b").pendingApprovalCount).toBe(0);
+  });
+});
+
 describe("session_title on the user channel", () => {
   const titleEvent = (sessionId: string, title: string): ServerEvent => ({
     type: "session_title",
@@ -190,6 +208,7 @@ describe("events that need no change", () => {
     stateEvent("not-loaded", "running", STARTED, true, "another-project"),
     { type: "session_background", sessionId: "not-loaded", processes: 1, subagents: 0 },
     { type: "session_title", sessionId: "not-loaded", title: "whatever" },
+    { type: "session_approvals", sessionId: "not-loaded", count: 1 },
   ];
 
   it("an event for a Session no loaded page holds invents no row and re-renders nothing", () => {
@@ -223,6 +242,7 @@ describe("events that need no change", () => {
       { type: "session_title", sessionId: "a", title: "Login page bug" },
       neverReload,
     );
+    applyUserEvent(store, { type: "session_approvals", sessionId: "a", count: 0 }, neverReload);
     // Zero onto an already-clear row is the same non-event.
     applyUserEvent(
       store,
