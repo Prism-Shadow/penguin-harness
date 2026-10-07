@@ -29,6 +29,8 @@
  * - Given a Session the Web App created, or another Agent's API Session, the answer is 404
  *   `session_not_found`.
  * - Given a busy Session, a second run is 409 and nothing is streamed.
+ * - Given a Session whose Trace is gone, so that loading it heals it into a new id, the run is
+ *   followed there: run.started names the new id and the stream runs to its end.
  * - Given an Agent with four runs going, a fifth is 429 with Retry-After, and creates nothing.
  * - Given each scripted stream, the caller reads exactly the fixture's events, ending with one
  *   run.done and then [DONE] (the approval script answered through the approvals route, which
@@ -55,10 +57,10 @@ import {
 import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
 import type { AmspEvent } from "@prismshadow/amsp";
 import type { AgentApiKeyCreateResponse, ApprovalMode, SessionResponse } from "../src/api/types.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
 import { apiClient, createTestApp, loginAdmin, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
+import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import {
   AMSP_FIXTURE_NOW,
   AMSP_STREAM_SCRIPTS,
@@ -381,11 +383,16 @@ describe("Agent API: runs", () => {
   let admin: Admin;
   let key: string;
   let mock: MockLLM;
+  /** What loading a Session that is not in memory gives (the self-heal case sets it). */
+  let load: SessionLoader["load"] = () => Promise.reject(new Error("nothing to load here"));
 
   beforeAll(async () => {
     mock = await startMockLLM((n) => `reply ${n}`);
     // Titles stay off, so the model is asked for the runs alone.
-    t = await createTestApp({ titles: { maybeGenerate: () => {} } });
+    t = await createTestApp({
+      titles: { maybeGenerate: () => {} },
+      loader: { load: (row) => load(row) },
+    });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     const models = await admin.put(`/api/projects/${P}/models`, {
       defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
@@ -559,6 +566,33 @@ describe("Agent API: runs", () => {
     release();
     await first.rest();
     expect(runs).toHaveLength(1);
+  });
+
+  it("a Session healed into a new id as it loads is followed: run.started names the new id and the run streams to its end", async () => {
+    const stale = uniqueSessionId();
+    const healed = uniqueSessionId();
+    t.deps.sessionsRepo.insert(sessionRow(stale, { projectId: P, agentId: A, client: "api" }));
+    load = async () =>
+      fakeSession(healed, {
+        async *run() {
+          // A real engine's first record follows its bootstrap I/O.
+          await new Promise((resolve) => setImmediate(resolve));
+          yield requestBegin();
+          yield assistantText("healed");
+          yield requestEnd("completed");
+        },
+      });
+    const items = await stream(
+      await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { session_id: stale, input: "hi" } }),
+    ).rest();
+    expect(items[0]).toMatchObject({ type: "run.started", session_id: healed });
+    expect(items.find((e) => e !== "[DONE]" && e.type === "text.done")).toMatchObject({
+      text: "healed",
+    });
+    expect(items.slice(-2)).toEqual([
+      expect.objectContaining({ type: "run.done", status: "completed" }),
+      "[DONE]",
+    ]);
   });
 
   it("the fifth concurrent run of an Agent is 429 with Retry-After, and creates nothing", async () => {
