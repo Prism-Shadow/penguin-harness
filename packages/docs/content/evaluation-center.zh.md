@@ -47,7 +47,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 | Benchmark | 原始评测集：衡量什么 |
 | --- | --- |
-| `penguinharness-benchmark-sec-a` | rag-bench-essential（Data Analysis Bench）：基于 PDF、扫描件、表格与文档库的数据分析 |
+| `penguinharness-benchmark-sec-a` | rag-bench-essential（Data Analysis Bench）：基于报告、表格、文档库、调查微观数据与 SQL 数据库的数据分析 |
 | `penguinharness-benchmark-sec-b` | DeepSWE v1.1：在真实开源仓库里实现功能、修复缺陷 |
 | `penguinharness-benchmark-sec-c` | AutomationBench：跨模拟 SaaS 应用的业务流程 |
 | `penguinharness-benchmark-sec-d` | Terminal-Bench-Science 0.1：研究级的科学计算 |
@@ -63,7 +63,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 它们和其他 Benchmark 一样评估，见[评估 Agent](#评估-agent)。执行评估的 Agent 的 `agent-evaluation` Skill 从题干认出这类题，并按仓库里的规则运行：评估先按题干给出的提交取一次仓库，再为每道题的每次运行跑一次 Harbor trial，同时至多四个，因为每个 trial 都要占用主机上数量有限的 Docker 网络。被测 Agent 带着自己的 Agent State 在任务容器里运行，一次 trial 从几分钟到一小时左右不等（含镜像构建）。每次 trial 的文件，包括 Agent 的 Trace 和验证器的输出，都留在该 Benchmark 的 `.jobs/` 目录下；这次运行记在 Session id `harbor:<trial 名>` 名下，评估详情弹窗里可以复制它。
 
-跑一次大约花多少钱、PenguinHarness 在这些题上得分如何（三次尝试的准确率、成本、Token 数与耗时），见仓库里的 [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md)。
+跑一次大约花多少钱、PenguinHarness 在这些题上得分如何（三次尝试的准确率、成本、Token 数与耗时），见仓库里的 [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md)。这几套题按那里实测所用的模型校准过难度，所以分数只描述这 50 道题，不代表上游完整评测集上的水平。
 
 它们自带的评估记录为空。它们和示例一样，只在 Project 创建时写入，此后不再写入：删掉的不会再出现。升级前就已存在的 Project 不会因为升级而得到它们；之后新建的 Project 都有。
 

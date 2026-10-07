@@ -47,7 +47,7 @@ A new Project also comes with five Benchmarks built from public evaluation sets,
 
 | Benchmark | Original benchmark: what it measures |
 | --- | --- |
-| `penguinharness-benchmark-sec-a` | rag-bench-essential (Data Analysis Bench): analysis over PDFs, scanned forms, spreadsheets and document libraries |
+| `penguinharness-benchmark-sec-a` | rag-bench-essential (Data Analysis Bench): analysis over reports, spreadsheets, document libraries, survey microdata and a SQL database |
 | `penguinharness-benchmark-sec-b` | DeepSWE v1.1: features and fixes in real open-source repositories |
 | `penguinharness-benchmark-sec-c` | AutomationBench: business workflows across simulated SaaS apps |
 | `penguinharness-benchmark-sec-d` | Terminal-Bench-Science 0.1: research-grade scientific computing |
@@ -63,7 +63,7 @@ Each case runs as a [Harbor](https://github.com/harbor-framework/harbor) task in
 
 You evaluate them like any other Benchmark; see [Evaluate an agent](#evaluate-an-agent). The evaluator agent's `agent-evaluation` Skill recognizes such a case from its statement and follows the repository's rules: the evaluation fetches the repository once, at the statement's commit, then runs one Harbor trial per case and run, at most four at a time because every trial takes Docker networks from a limited supply. The tested agent runs inside the task's container with its own Agent State, and a trial takes from a few minutes to about an hour, image builds included. Each trial's files, the agent's Traces and the verifier's output, stay under the Benchmark's `.jobs/` directory. Its run is recorded under the Session id `harbor:<trial name>`, which the evaluation dialog lets you copy.
 
-What a run costs and how PenguinHarness scores on these tasks — accuracy over three attempts, cost, tokens and time — is measured in the repository's [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md).
+What a run costs and how PenguinHarness scores on these tasks — accuracy over three attempts, cost, tokens and time — is measured in the repository's [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md). The task sets were calibrated on the model measured there, so the scores describe these 50 tasks, not the full upstream benchmarks.
 
 They ship with no evaluations. Like the example, they are written when the Project is created and never again: if you delete one, it stays deleted. A Project that existed before your PenguinHarness shipped them does not get them when you upgrade; every Project created afterwards does.
 
