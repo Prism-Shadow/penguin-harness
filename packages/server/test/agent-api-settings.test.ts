@@ -18,6 +18,8 @@
  * - Given a Project with keys whose owner is deleted, the deletion goes through.
  * - Given the admin, the Agent API switch reads on by default and round-trips through
  *   GET/PUT /api/admin/settings; a non-admin cannot change it.
+ * - Given the admin's switch off, a Project owner who cannot read the admin settings learns it
+ *   from the API tab's settings, on a read and on a write alike.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
@@ -202,6 +204,24 @@ describe("Agent API settings", () => {
         .prepare("SELECT COUNT(*) AS n FROM agent_api_keys WHERE project_id = ?")
         .get("api_doomed-default_project"),
     ).toEqual({ n: 0 });
+  });
+
+  it("the API tab tells an owner who is no admin that the admin has the API off", async () => {
+    expect((await owner.get("/api/admin/settings")).status).toBe(403);
+    expect(
+      ((await (await owner.get(tab("default_agent"))).json()) as AgentApiResponse).serverEnabled,
+    ).toBe(true);
+    await admin.put("/api/admin/settings", { agentApiEnabled: false });
+    try {
+      const read = (await (await member.get(tab("default_agent"))).json()) as AgentApiResponse;
+      expect(read.serverEnabled).toBe(false);
+      // The Agent's own switch is kept, and a write answers the same way.
+      expect(read.api.enabled).toBe(true);
+      const write = await owner.put(tab("default_agent"), { open: false });
+      expect(((await write.json()) as AgentApiResponse).serverEnabled).toBe(false);
+    } finally {
+      await admin.put("/api/admin/settings", { agentApiEnabled: true });
+    }
   });
 
   it("the admin switch round-trips through GET/PUT /api/admin/settings", async () => {

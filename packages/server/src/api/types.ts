@@ -1492,6 +1492,11 @@ export interface AgentApiSettings {
 
 export interface AgentApiResponse {
   api: AgentApiSettings;
+  /**
+   * The admin's server-wide switch (`ServerSettings.agentApiEnabled`), which only an admin can
+   * read through /api/admin/settings: off, every Agent's API is refused (403) whatever `api` says.
+   */
+  serverEnabled: boolean;
 }
 
 /** PUT body (owner only): every field optional, omitted fields keep their current value. */

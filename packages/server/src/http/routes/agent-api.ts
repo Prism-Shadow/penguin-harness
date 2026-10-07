@@ -33,12 +33,14 @@ import { APPROVAL_MODES } from "./sessions.js";
 import type { AgentApi, AgentApiKeyRow } from "../../mechanisms/agent-api.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
+import type { Settings } from "../../mechanisms/settings.js";
 
 /** What this route group reaches — bound by its module (services/agent-routes.ts). */
 export interface AgentApiRouteDeps {
   agentApi: AgentApi;
   agentConfigService: Pick<AgentConfig, "requireExists">;
   access: Pick<Access, "requireProjectAccess" | "requireProjectOwner">;
+  settings: Pick<Settings, "getAgentApiEnabled">;
   now: () => Date;
 }
 
@@ -67,6 +69,8 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
         approvalMode: row?.approvalMode ?? "allow-all",
         keys: deps.agentApi.listKeys(projectId, agentId).map(keyInfo),
       },
+      // The tab says when the admin has the whole API off: only an admin can read that setting.
+      serverEnabled: deps.settings.getAgentApiEnabled(),
     };
   };
 
