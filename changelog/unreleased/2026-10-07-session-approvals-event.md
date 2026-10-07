@@ -3,6 +3,7 @@
 - **Date:** 2026-10-07
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#1002](https://github.com/Prism-Shadow/penguin-harness/pull/1002)
 
 [中文版](2026-10-07-session-approvals-event.zh.md)
 
