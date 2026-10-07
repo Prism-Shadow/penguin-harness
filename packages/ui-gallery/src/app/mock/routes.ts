@@ -696,6 +696,7 @@ router
       hookCount: 0,
       pluginUpdates: [],
       memoryCount: 0,
+      apiEnabled: false,
     };
     store.f.agents.push(agent);
     const template = store.f.agentConfigs[IDS.agents.notes]!;
