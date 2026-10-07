@@ -28,6 +28,7 @@ import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
 import { BrowserSection } from "./browser-section";
 import { ChromeExtensionSection } from "./chrome-extension-section";
+import { AgentApiSection } from "./agent-api-section";
 import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
@@ -52,6 +53,8 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   company: ICONS.building,
   /** Plug: whether users may connect their Chrome. */
   chromeExtension: ICONS.plug,
+  /** Angle brackets: programs calling the Agents. The plug that marks the API elsewhere is taken here, by the Chrome page above. */
+  agentApi: ICONS.angleBrackets,
   /** Puzzle piece: plugins, the plugin library's own mark. */
   plugins: ICONS.puzzle,
   /** Two people: user management. */
@@ -103,6 +106,7 @@ export function SettingsDialog({
     uploads: S.settings.uploadLimitsTitle,
     company: S.settings.companyModeTitle,
     chromeExtension: S.settings.chromeExtensionTitle,
+    agentApi: S.settings.agentApiTitle,
     plugins: S.settings.pluginsTitle,
     users: S.admin.users,
   };
@@ -118,6 +122,7 @@ export function SettingsDialog({
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
     chromeExtension: S.settings.chromeExtensionInfo,
+    agentApi: S.settings.agentApiHint,
     plugins: S.settings.pluginsInfo,
   };
 
@@ -155,6 +160,7 @@ export function SettingsDialog({
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}
       {current === "chromeExtension" && <ChromeExtensionSection />}
+      {current === "agentApi" && <AgentApiSection />}
       {current === "plugins" && (
         <PluginsSection {...(pluginFocus !== undefined ? { focus: pluginFocus } : {})} />
       )}

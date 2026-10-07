@@ -9,6 +9,10 @@ import type {
   AdminUserCreateRequest,
   AdminUserCreateResponse,
   AdminUsersResponse,
+  AgentApiKeyCreateRequest,
+  AgentApiKeyCreateResponse,
+  AgentApiResponse,
+  AgentApiUpdateRequest,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
   AgentCreateRequest,
@@ -707,6 +711,36 @@ export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/kernel-update`,
     { method: "POST" },
   );
+
+// An Agent's public API (the stream itself is AMSP under /api/amsp/v1; these are its settings) ---
+
+const agentApiBase = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/api`;
+
+/** The Agent's API switch, keyless switch, approval mode and keys (any member may read them). */
+export const getAgentApi = (projectId: string, agentId: string) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId));
+
+/** Changes the given settings and keeps the rest (owner only). */
+export const putAgentApi = (projectId: string, agentId: string, body: AgentApiUpdateRequest) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId), { method: "PUT", body });
+
+/** Mints a key (owner only): the answer is the one place the secret is ever shown. */
+export const createAgentApiKey = (
+  projectId: string,
+  agentId: string,
+  body: AgentApiKeyCreateRequest,
+) =>
+  apiFetch<AgentApiKeyCreateResponse>(`${agentApiBase(projectId, agentId)}/keys`, {
+    method: "POST",
+    body,
+  });
+
+/** Deletes a key for good (owner only): a program presenting it is refused from the next request on. */
+export const deleteAgentApiKey = (projectId: string, agentId: string, keyId: string) =>
+  apiFetch<void>(`${agentApiBase(projectId, agentId)}/keys/${encodeURIComponent(keyId)}`, {
+    method: "DELETE",
+  });
 
 // Session ---------------------------------------------------------------------
 

@@ -7,6 +7,7 @@
  * data in step with the app that reads it.
  */
 import type {
+  AgentApiSettings,
   AgentConfigResponse,
   AgentSummary,
   BenchmarkCaseSummary,
@@ -152,6 +153,8 @@ export interface DemoFixtures {
   update: UpdateCheckResponse;
   memory: Record<string, { overview: MemoryOverviewResponse; files: MemoryFileResponse[] }>;
   vault: Record<string, VaultResponse>;
+  /** Each Agent's public API settings, keyed by Agent id; an Agent missing here never had them set. */
+  agentApi: Record<string, AgentApiSettings>;
   workspace: { entries: Record<string, WorkspaceFileEntry[]>; content: Record<string, string> };
   chatDefaults: ChatDefaultsDto;
   commandPolicy: CommandPolicyDto;
@@ -1147,6 +1150,33 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     [IDS.agents.notes]: { entries: [] },
   };
 
+  // The docs Agent answers programs: one key in daily use, one minted and never used.
+  const agentApi: DemoFixtures["agentApi"] = {
+    [IDS.agents.docs]: {
+      enabled: true,
+      open: false,
+      approvalMode: "allow-all",
+      keys: [
+        {
+          keyId: "kq3VtX9cRb2LmN0a",
+          name: L("文档站检索", "docs-site search"),
+          prefix: "penguin_Zr8k",
+          createdBy: user.userId,
+          createdAt: iso(ago(21)),
+          lastUsedAt: iso(ago(0, 12)),
+        },
+        {
+          keyId: "Hc7pW2sYd4EfJ6uB",
+          name: L("每周报告脚本", "weekly report script"),
+          prefix: "penguin_4mGx",
+          createdBy: user.userId,
+          createdAt: iso(ago(2)),
+          lastUsedAt: null,
+        },
+      ],
+    },
+  };
+
   const file = (name: string, sizeBytes: number, days: number): WorkspaceFileEntry => ({
     name,
     kind: "file",
@@ -1491,6 +1521,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     update,
     memory,
     vault,
+    agentApi,
     workspace,
     chatDefaults,
     commandPolicy,
