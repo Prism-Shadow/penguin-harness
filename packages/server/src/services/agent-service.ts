@@ -19,6 +19,9 @@ import {
   agentsMdPath,
   BUILTIN_AGENT_IDS,
   createAgent as coreCreateAgent,
+  DEFAULT_AGENT_ID,
+  projectDir,
+  provisionProjectAgents,
   installPlugin,
   installSkill,
   listInstalledHooks,
@@ -105,6 +108,7 @@ export class AgentService implements AgentLifecycle {
 
   /** Union of DB index ∪ directory scan; unmanaged directory Agents are backfilled into the DB. */
   async listAgents(projectId: string): Promise<AgentListItem[]> {
+    await this.provisionMissingBuiltins(projectId);
     const known = new Map(this.agents.list(projectId).map((r) => [r.agentId, r]));
 
     let entries: string[] = [];
@@ -165,6 +169,38 @@ export class AgentService implements AgentLifecycle {
         };
       }),
     );
+  }
+
+  /**
+   * Gives a Project created before one of its builtin Agents existed that Agent (media_agent
+   * arrived after default_agent): provisioned from its preset and indexed just after
+   * default_agent, so the builtins still sort first. An Agent already on disk is never touched.
+   */
+  async provisionMissingBuiltins(projectId: string): Promise<void> {
+    const missing: string[] = [];
+    for (const agentId of BUILTIN_AGENT_IDS) {
+      try {
+        await fs.access(systemConfigPath(this.root, projectId, agentId));
+      } catch {
+        missing.push(agentId);
+      }
+    }
+    if (missing.length === 0) return;
+    // A Project that was never created has no directory, and listing it must not create one.
+    try {
+      await fs.access(projectDir(this.root, projectId));
+    } catch {
+      return;
+    }
+    await provisionProjectAgents({ root: this.root, projectId });
+    const first = this.agents.list(projectId).find((row) => row.agentId === DEFAULT_AGENT_ID);
+    const base = first ? Date.parse(first.createdAt) : Date.now();
+    for (const agentId of missing)
+      this.agents.insertOrIgnore({
+        projectId,
+        agentId,
+        createdAt: new Date(base + BUILTIN_AGENT_IDS.indexOf(agentId)).toISOString(),
+      });
   }
 
   /**

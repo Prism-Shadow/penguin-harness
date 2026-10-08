@@ -121,6 +121,11 @@ export abstract class Benchmarks extends Interface<{
 /** AgentLifecycle: the mechanism AgentService implements. */
 export abstract class AgentLifecycle extends Interface<{
   listAgents(projectId: string): Promise<AgentListItem[]>;
+  /**
+   * Gives an existing Project any builtin Agent it predates, from its preset, and indexes it.
+   * A Project with no directory is left alone, and an Agent already on disk is never touched.
+   */
+  provisionMissingBuiltins(projectId: string): Promise<void>;
   /** Every id `createAgent` refuses as taken, as names only, including a folder that does not list. */
   takenAgentIds(projectId: string): Promise<string[]>;
   deleteAgent(projectId: string, agentId: string): Promise<void>;

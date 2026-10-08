@@ -79,8 +79,8 @@ import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skil
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { AiCreateModal, CreateButtons } from "../ai-create";
 
-/** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
-const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
+/** Built-in Agents shipped with every Project (the server also rejects their deletion, so no delete entry point is shown here). */
+const BUILTIN_AGENT_IDS = new Set(["default_agent", "media_agent", "activity_agent"]);
 
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {

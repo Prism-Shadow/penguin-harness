@@ -31,9 +31,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   expect(put.ok(), "put models").toBeTruthy();
 
   const agents = await (await page.request.get(`${BASE}/api/projects/${projectId}/agents`)).json();
-  // The project ships with exactly one builtin agent: default_agent.
+  // The project ships with three builtin agents: default_agent, the Media Agent and the
+  // Activity Agent.
   const agentIds = agents.agents.map((a) => a.agentId);
-  expect(agentIds).toEqual(["default_agent"]);
+  expect(agentIds).toEqual(["default_agent", "media_agent", "activity_agent"]);
   const agentId = "default_agent";
 
   // Approval defaults to allow-all; this test verifies the manual approval flow, so specify always-ask explicitly.

@@ -1,7 +1,8 @@
 /**
- * Built-in agent provisioning and skill library install policy: the sole built-in agent
+ * Built-in agent provisioning and skill library install policy: the built-in agent
  * default_agent comes pre-installed with the library's preinstalled skill set (skills marked
- * `preinstall: false` stay manual-install), an ordinary newly created agent starts with zero
+ * `preinstall: false` stay manual-install), the built-in media_agent and an ordinary newly
+ * created agent start with zero
  * skills, and the default AGENTS.md is an empty file; provisionProjectAgents is idempotent and
  * never overwrites existing config.
  */
@@ -11,6 +12,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { libraryPlugin, librarySkill, loadPreinstalledPlugins } from "../src/index.js";
 import {
+  ACTIVITY_AGENT_ID,
+  ACTIVITY_AGENT_MD,
   agentsMdPath,
   assembleSystemPrompt,
   BUILTIN_AGENT_IDS,
@@ -18,6 +21,8 @@ import {
   DEFAULT_PROJECT_ID,
   listInstalledSkills,
   loadAgentState,
+  MEDIA_AGENT_ID,
+  MEDIA_AGENT_MD,
   provisionProjectAgents,
   skillsDir,
 } from "../src/state/index.js";
@@ -83,10 +88,10 @@ describe("Skill installation policy", () => {
 });
 
 describe("provisionProjectAgents", () => {
-  it("the only built-in Agent default_agent: installs the library's preinstalled Skills, AGENTS.md is empty", async () => {
+  it("default_agent installs the library's preinstalled Skills, AGENTS.md is empty", async () => {
     const ids = await provisionProjectAgents();
-    expect(ids).toEqual([DEFAULT_AGENT_ID]);
-    expect(BUILTIN_AGENT_IDS).toEqual([DEFAULT_AGENT_ID]);
+    expect(ids).toEqual([DEFAULT_AGENT_ID, MEDIA_AGENT_ID, ACTIVITY_AGENT_ID]);
+    expect(BUILTIN_AGENT_IDS).toEqual([DEFAULT_AGENT_ID, MEDIA_AGENT_ID, ACTIVITY_AGENT_ID]);
 
     // name/description are written into system_config; AGENTS.md is an empty file.
     const state = await loadAgentState({ init: {}, agentId: DEFAULT_AGENT_ID });
@@ -101,10 +106,40 @@ describe("provisionProjectAgents", () => {
     expect(sdkMd).toBe(librarySkill("penguin-sdk")!.skill.content);
   });
 
+  it("media_agent is the Media Agent, with no Skills and its role in AGENTS.md", async () => {
+    await provisionProjectAgents();
+    const state = await loadAgentState({ init: {}, agentId: MEDIA_AGENT_ID });
+    expect(state.systemConfig.name).toBe("Media Agent");
+    expect(state.systemConfig.description).toBeTruthy();
+    expect(state.agentsMd).toBe(MEDIA_AGENT_MD);
+    expect(state.agentsMd).toContain("Never print, echo or repeat a key's value.");
+    expect(await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, MEDIA_AGENT_ID)).toEqual([]);
+  });
+
+  it("activity_agent is the Activity Agent, with exactly the WAF authoring Skills", async () => {
+    await provisionProjectAgents();
+    const state = await loadAgentState({ init: {}, agentId: ACTIVITY_AGENT_ID });
+    expect(state.systemConfig.name).toBe("Activity Agent");
+    expect(state.systemConfig.description).toBeTruthy();
+    expect(state.agentsMd).toBe(ACTIVITY_AGENT_MD);
+    expect(state.agentsMd).toContain(
+      "The shared WAF checkout named in waf-context.json is read-only",
+    );
+    // The plugin is `preinstall: false`, so this is the only builtin Agent carrying it.
+    const installed = await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, ACTIVITY_AGENT_ID);
+    expect(installed.map((s) => s.name).sort()).toEqual(
+      libraryPlugin("waf-authoring")!
+        .skills.map((s) => s.name)
+        .sort(),
+    );
+    const general = await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    expect(general.map((s) => s.name)).not.toContain("waf-state-machine");
+  });
+
   it("provision is idempotent: running it again does not change the result", async () => {
     await provisionProjectAgents();
     const ids = await provisionProjectAgents();
-    expect(ids).toEqual([DEFAULT_AGENT_ID]);
+    expect(ids).toEqual([DEFAULT_AGENT_ID, MEDIA_AGENT_ID, ACTIVITY_AGENT_ID]);
     const md = await fs.readFile(
       agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
       "utf8",
