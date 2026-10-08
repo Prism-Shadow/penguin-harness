@@ -109,7 +109,10 @@ export function DeployProd({
   }
 
   return (
-    <section className="space-y-3" aria-labelledby="activity-deploy-prod-title">
+    <section
+      className="space-y-3 rounded-xl border border-gray-200 p-4 dark:border-gray-800"
+      aria-labelledby="activity-deploy-prod-title"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4
           id="activity-deploy-prod-title"
