@@ -14,3 +14,4 @@
 # Binary assets: never subject to text normalization or diffs.
 *.png binary
 *.webp binary
+*.mp4 binary

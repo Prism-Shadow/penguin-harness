@@ -22,7 +22,11 @@ import {
   type LayoutState,
   type LayoutStore,
 } from "../src/features/activities/layout-presets";
-import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH } from "../src/features/activities/workspace-model";
+import {
+  RAIL_MAX_WIDTH,
+  RAIL_MIN_WIDTH,
+  SIDE_PANEL_MIN_WIDTH,
+} from "../src/features/activities/workspace-model";
 import { MAP_MIN } from "../src/features/activities/map-split";
 
 function memory() {
@@ -47,6 +51,7 @@ const STATE: LayoutState = {
   railWidth: 340,
   railCollapsed: false,
   sidePanel: "run",
+  sidePanelWidth: 600,
   section: "speech",
   mapWidth: 500,
   mapVisible: false,
@@ -268,6 +273,7 @@ describe("sanitize", () => {
         railWidth: 9000,
         railCollapsed: "yes",
         sidePanel: "cockpit",
+        sidePanelWidth: 10,
         section: "nowhere",
         mapWidth: 1,
         mapVisible: false,
@@ -277,6 +283,7 @@ describe("sanitize", () => {
       railWidth: RAIL_MAX_WIDTH,
       railCollapsed: false,
       sidePanel: null,
+      sidePanelWidth: SIDE_PANEL_MIN_WIDTH,
       section: "description",
       mapWidth: MAP_MIN,
       mapVisible: false,
@@ -294,6 +301,7 @@ describe("applyOrder", () => {
     expect(applyOrder(reviewing.state)).toEqual([
       { kind: "railCollapsed", value: true },
       { kind: "sidePanel", value: "player" },
+      { kind: "sidePanelWidth", value: 820 },
       { kind: "mapVisible", value: true },
       { kind: "mapWidth", value: 420 },
       { kind: "section", value: "scenes" },
@@ -321,6 +329,7 @@ describe("currentPresetId", () => {
           ...STATE,
           railCollapsed: true,
           sidePanel: "player",
+          sidePanelWidth: 820,
           section: "scenes",
           mapVisible: true,
           mapWidth: 420,
@@ -341,6 +350,13 @@ describe("currentPresetId", () => {
     expect(currentPresetId(STATE, presets)).toBe(id);
     // The map is hidden, so its width does not count.
     expect(currentPresetId({ ...STATE, mapWidth: 700 }, presets)).toBe(id);
+    expect(currentPresetId({ ...STATE, sidePanelWidth: 700 }, presets)).toBeNull();
+    // A closed panel's width does not count either.
+    const closed = savePreset(empty(), "Closed", { ...STATE, sidePanel: null }, [], ids);
+    if (!closed.ok) throw new Error("save failed");
+    expect(
+      currentPresetId({ ...STATE, sidePanel: null, sidePanelWidth: 900 }, allPresets(closed.store)),
+    ).toBe(closed.preset.id);
     expect(currentPresetId({ ...STATE, showReasoning: true }, presets)).toBeNull();
   });
 });

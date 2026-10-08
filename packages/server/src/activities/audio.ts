@@ -2,11 +2,13 @@ import { createHash } from "node:crypto";
 import { contentRevision, type ActivityDetail } from "./domain.js";
 import { HttpError } from "../http/errors.js";
 import {
+  DEFAULT_SPEECH_PROVIDER,
   ELEVENLABS_DEFAULT_MODEL,
   SPEECH_MODEL,
   isElevenLabsModel,
   isSpeechProvider,
   isVoiceOf,
+  wordSpeechProvider,
 } from "./voice-catalogue.js";
 import type { SoundRequest } from "./sound-types.js";
 import type { SpeechProviderId } from "./speech-types.js";
@@ -23,11 +25,17 @@ export interface AudioTarget {
   /** The narration's voice. A sound run has none. */
   voice?: string;
   /**
+   * The ElevenLabs voice the default voice resolved to when the run started: the Vault's
+   * `ELEVENLABS_VOICE_ID`, else Loom's. The helper speaks with it and the clip records it.
+   * Absent for any other voice.
+   */
+  voiceId?: string;
+  /**
    * Who speaks the narration. Absent is Gemini, which every run before ElevenLabs speech
    * is; only an ElevenLabs run names it.
    */
   provider?: SpeechProviderId;
-  /** Gemini's TTS model, or for ElevenLabs `eleven_v3` or `eleven_multilingual_v2`. */
+  /** Gemini's TTS model, or for ElevenLabs `eleven_v3`, `eleven_v4` or `eleven_multilingual_v2`. */
   model: string;
   /** Present on a music or sound-effect run: what its provider is asked for. */
   sound?: SoundRequest;
@@ -66,6 +74,19 @@ export const SPEECH_OUTPUT_FILES: Readonly<Record<SpeechProviderId, string>> = {
 export const SPEECH_TIMINGS_FILE = "speech-timings.json";
 
 /**
+ * The model a narration is spoken with when its run names none: Gemini's and Kokoro's only
+ * model, or for ElevenLabs the narration's saved model, else the default.
+ */
+export function speechModelFor(
+  provider: SpeechProviderId,
+  asset: { speechModel?: string },
+): string {
+  if (provider === "gemini") return SPEECH_MODEL;
+  if (provider === "kokoro") return LOCAL_AUDIO_MODELS.kokoro.model;
+  return asset.speechModel ?? ELEVENLABS_DEFAULT_MODEL;
+}
+
+/**
  * What a speech run for one narration asks for. The provider is the one the request names,
  * else the narration's own `speechProvider`, else Gemini; the voice must be one that provider
  * speaks with.
@@ -88,7 +109,10 @@ export function audioTarget(
       "audio_invalid",
       "Select an audio asset with a saved script of 1–5000 characters.",
     );
-  const provider = input.provider ?? asset.speechProvider ?? "gemini";
+  const provider =
+    input.provider ??
+    asset.speechProvider ??
+    (isBookWord(asset) ? wordSpeechProvider(asset) : DEFAULT_SPEECH_PROVIDER);
   if (!isSpeechProvider(provider))
     throw new HttpError(400, "speech_provider_unknown", "Choose Gemini, ElevenLabs or Kokoro.");
   if (!isVoiceOf(provider, input.voice))
@@ -130,7 +154,8 @@ export function audioTarget(
       ...(isBookWord(asset) && !asset.customScript ? { delivery: "direction" as const } : {}),
     };
   }
-  const model = input.model ?? ELEVENLABS_DEFAULT_MODEL;
+  // The request's model, else the one the narration saved, else the default.
+  const model = input.model ?? speechModelFor("elevenlabs", asset);
   if (!isElevenLabsModel(model))
     throw new HttpError(400, "speech_model_unknown", "Choose a model this provider offers.");
   return {
@@ -143,7 +168,10 @@ export function audioTarget(
   };
 }
 
-/** Who speaks a run's narration; a record naming none is Gemini's. */
+/**
+ * Who speaks a run's narration; a record naming none is Gemini's, from before a run always
+ * named its provider. A narration asset naming none is DEFAULT_SPEECH_PROVIDER's instead.
+ */
 export function speechProviderOf(target: Pick<AudioTarget, "provider">): SpeechProviderId {
   return target.provider ?? "gemini";
 }
@@ -197,20 +225,4 @@ export function inspectWave(bytes: Uint8Array, runId: string): AudioResult {
     durationMs: samples / 48,
     mimeType: "audio/wav",
   };
-}
-
-export const audioPrompt = `Generate the single speech candidate specified in speech-input.json.
-The supplied generate-speech.mjs helper calls the configured speech provider through AgentHub and reads GEMINI_API_KEY only from the Agent Vault-injected process environment.
-Use normal Harness exec_command approval for npm install --ignore-scripts and node generate-speech.mjs. Do not print credentials or read them into your context. Do not edit the supplied helper, package.json or input files. Do not delegate or write outside this workspace.
-Run the helper once. It writes speech.wav. Never synthesize fake tones or substitute another provider, model, voice or script. If credentials, installation or the provider fail, report the failure and stop; do not retry a billable provider request automatically.
-Finish only after the helper succeeds. The user will listen and explicitly accept the candidate; do not edit activity drafts or replace accepted media.`;
-
-/** What a speech run's Session is told; Gemini's is `audioPrompt`, unchanged. */
-export function speechPrompt(target: Pick<AudioTarget, "provider">): string {
-  if (speechProviderOf(target) === "gemini") return audioPrompt;
-  return `Generate the single speech candidate specified in speech-input.json.
-The supplied generate-speech.mjs helper calls ElevenLabs with Node's built-in fetch and reads ELEVENLABS_API_KEY (and ELEVENLABS_VOICE_ID for the default voice) only from the Agent Vault-injected process environment. Nothing needs installing.
-Use normal Harness exec_command approval for node generate-speech.mjs. Do not print credentials or read them into your context. Do not edit the supplied helper, package.json or input files. Do not delegate or write outside this workspace.
-Run the helper once. It writes speech.mp3 and speech-timings.json. Never synthesize fake tones or substitute another provider, model, voice or script. If credentials or the provider fail, report the failure and stop; do not retry a billable provider request automatically.
-Finish only after the helper succeeds. The user will listen and explicitly accept the candidate; do not edit activity drafts or replace accepted media.`;
 }

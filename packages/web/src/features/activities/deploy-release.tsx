@@ -22,6 +22,7 @@ import { Input } from "../../components/ui/input";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneDot, toneInk } from "../../lib/tone";
+import { DeployTimeline } from "./deploy-timeline";
 import {
   appendLog,
   isProdRun,
@@ -38,11 +39,6 @@ import type { Announcement } from "./run-toasts";
 
 /** What this section starts: the release, the QA deploy or one of their stages. PROD is the PROD bar's. */
 type QaSelection = Exclude<DeployStageSelection, "prod">;
-
-const HEAD =
-  "border-b border-gray-100 bg-gray-50 text-left text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400";
-const TH = "whitespace-nowrap px-3 py-2 font-medium";
-const TD = "px-3 py-2 align-top";
 
 /** How often the log is asked for while a release runs. */
 const POLL_MS = 1000;
@@ -79,6 +75,7 @@ export function DeployRelease({
   const [version, setVersion] = useState("");
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState(false);
   const [lines, setLines] = useState<DeployLogLine[]>([]);
   const logRef = useRef<HTMLPreElement | null>(null);
   const follow = useRef(true);
@@ -228,18 +225,21 @@ export function DeployRelease({
       ? null
       : stageConfirmText(confirm, branches);
   return (
-    <section className="space-y-3" aria-labelledby="activity-deploy-release-title">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4
-          id="activity-deploy-release-title"
-          className="flex items-center gap-2 text-sm font-semibold"
-        >
-          {words.releaseTitle}
-          <InfoPopover label={words.releaseTitle}>
-            <p>{words.releaseAbout}</p>
-            <p className="mt-2">{words.qaAbout}</p>
-          </InfoPopover>
-        </h4>
+    <section className="space-y-4" aria-labelledby="activity-deploy-release-title">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50/60 p-4 dark:border-gray-800 dark:bg-gray-900/40">
+        <div>
+          <h4
+            id="activity-deploy-release-title"
+            className="flex items-center gap-2 text-base font-semibold"
+          >
+            {words.workflowTitle}
+            <InfoPopover label={words.workflowTitle}>
+              <p>{words.releaseAbout}</p>
+              <p className="mt-2">{words.qaAbout}</p>
+            </InfoPopover>
+          </h4>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{words.workflowSummary}</p>
+        </div>
         {editable && (
           <div className="flex flex-wrap gap-2">
             {running && (
@@ -261,9 +261,10 @@ export function DeployRelease({
               {running && run?.selection === "release" ? words.releasing : words.releaseModule}
             </Button>
             <Button
-              size="sm"
+              size="md"
               variant="primary"
               disabled={!canRelease}
+              aria-describedby={!canRelease && first?.blocker ? "deploy-start-blocker" : undefined}
               aria-busy={busy === "start" && confirm === "qa"}
               onClick={() => setConfirm("qa")}
             >
@@ -272,6 +273,11 @@ export function DeployRelease({
           </div>
         )}
       </div>
+      {!running && first?.blocker && (
+        <p id="deploy-start-blocker" className="text-xs text-gray-500 dark:text-gray-400">
+          {first.blocker}
+        </p>
+      )}
       {line && (
         <p
           role="status"
@@ -317,116 +323,128 @@ export function DeployRelease({
           )}
         </p>
       )}
-      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-        <table className="w-full text-sm" aria-label={words.stagesLabel}>
-          <thead>
-            <tr className={HEAD}>
-              <th className={TH}>{words.stageColumns.stage}</th>
-              <th className={TH}>{words.stageColumns.state}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
-            {rows.map((row) => (
-              <tr key={row.stage}>
-                <td className={`${TD} whitespace-nowrap font-medium`}>{row.label}</td>
-                <td className={`${TD} text-xs`}>
-                  <span className="flex items-center gap-2">
-                    <span
-                      aria-hidden
-                      className={`size-1.5 shrink-0 rounded-full ${toneDot[row.tone]}`}
-                    />
-                    {row.statusText}
-                  </span>
-                  {row.error && <p className={`mt-1 ${toneInk.danger}`}>{row.error}</p>}
-                  {row.blocker && !running && (
-                    <p className="mt-1 text-gray-500 dark:text-gray-400">{row.blocker}</p>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,0.7fr)]">
+        <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+            <h5 className="text-xs font-semibold">{words.stagesLabel}</h5>
+            {editable && (
+              <Button size="sm" aria-pressed={advanced} onClick={() => setAdvanced(!advanced)}>
+                {words.advanced}
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+            {(
+              [
+                { key: "module", stages: rows.slice(0, 4) },
+                { key: "data", stages: rows.slice(4, 8) },
+                { key: "qa", stages: rows.slice(8) },
+              ] as const
+            ).map((phase) => (
+              <div key={phase.key} className="min-w-0">
+                <p className="text-xs font-medium">{words.phaseLabels[phase.key]}</p>
+                <div
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={phase.stages.length}
+                  aria-valuenow={phase.stages.filter((row) => row.status === "done").length}
+                  className="mt-2 flex gap-1"
+                  aria-label={words.phaseLabels[phase.key]}
+                  aria-valuetext={words.stageProgress(
+                    phase.stages.filter((row) => row.status === "done").length,
+                    phase.stages.length,
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {findings && (
-        <section aria-labelledby="activity-deploy-preflight-title" className="space-y-1">
-          <h5 id="activity-deploy-preflight-title" className="text-xs font-semibold">
-            {words.preflightTitle}
-          </h5>
-          {findings.errors.length > 0 && (
-            <>
-              <h6 id="activity-deploy-preflight-errors" className={`text-xs ${toneInk.danger}`}>
-                {words.preflightErrors}
-              </h6>
-              <ul
-                aria-labelledby="activity-deploy-preflight-errors"
-                className="list-disc space-y-1 pl-5 text-xs"
-              >
-                {findings.errors.map((text, index) => (
-                  <li key={index} className={toneInk.danger}>
-                    {text}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {findings.warnings.length > 0 && (
-            <>
-              <h6
-                id="activity-deploy-preflight-warnings"
-                className="text-xs text-gray-600 dark:text-gray-300"
-              >
-                {words.preflightWarnings}
-              </h6>
-              <ul
-                aria-labelledby="activity-deploy-preflight-warnings"
-                className="list-disc space-y-1 pl-5 text-xs"
-              >
-                {findings.warnings.map((text, index) => (
-                  <li key={index} className="text-gray-600 dark:text-gray-300">
-                    {text}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </section>
-      )}
-      {editable && (
-        <details className="space-y-2">
-          <summary className="cursor-pointer text-xs font-medium">{words.advanced}</summary>
-          <ul className="mt-2 space-y-1">
-            {rows.map((row) => (
-              <li key={row.stage} className="flex items-center justify-between gap-2 text-sm">
-                <span>{row.label}</span>
-                <Button
-                  size="sm"
-                  aria-label={words.runStage(row.label)}
-                  disabled={running || busy !== null || row.blocker !== null}
-                  onClick={() => runStage(row.stage)}
                 >
-                  {words.run}
-                </Button>
-              </li>
+                  {phase.stages.map((row) => (
+                    <span
+                      key={row.stage}
+                      aria-hidden
+                      className={`h-1 flex-1 rounded-full ${row.status === "pending" ? "bg-gray-200 dark:bg-gray-800" : toneDot[row.tone]}`}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
-          </ul>
-        </details>
-      )}
-      <section aria-labelledby="activity-deploy-log-title" className="space-y-1">
-        <h5 id="activity-deploy-log-title" className="text-xs font-semibold">
-          {words.log}
-        </h5>
-        <pre
-          ref={logRef}
-          data-testid="deploy-log"
-          onScroll={(event) => {
-            const element = event.currentTarget;
-            follow.current = element.scrollTop + element.clientHeight >= element.scrollHeight - 8;
-          }}
-          className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-200 p-2 font-mono text-xs dark:border-gray-800"
-        >
-          {lines.length ? lines.map((entry) => entry.text).join("\n") : words.logEmpty}
-        </pre>
-      </section>
+          </div>
+          <DeployTimeline
+            rows={rows}
+            advanced={advanced && editable}
+            disabled={running || busy !== null}
+            onRun={runStage}
+          />
+        </div>
+        <div className="min-w-0 space-y-4">
+          {findings && (
+            <section aria-labelledby="activity-deploy-preflight-title" className="space-y-1">
+              <h5 id="activity-deploy-preflight-title" className="text-xs font-semibold">
+                {words.preflightTitle}
+              </h5>
+              {findings.errors.length > 0 && (
+                <>
+                  <h6 id="activity-deploy-preflight-errors" className={`text-xs ${toneInk.danger}`}>
+                    {words.preflightErrors}
+                  </h6>
+                  <ul
+                    aria-labelledby="activity-deploy-preflight-errors"
+                    className="list-disc space-y-1 pl-5 text-xs"
+                  >
+                    {findings.errors.map((text, index) => (
+                      <li key={index} className={toneInk.danger}>
+                        {text}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {findings.warnings.length > 0 && (
+                <>
+                  <h6
+                    id="activity-deploy-preflight-warnings"
+                    className="text-xs text-gray-600 dark:text-gray-300"
+                  >
+                    {words.preflightWarnings}
+                  </h6>
+                  <ul
+                    aria-labelledby="activity-deploy-preflight-warnings"
+                    className="list-disc space-y-1 pl-5 text-xs"
+                  >
+                    {findings.warnings.map((text, index) => (
+                      <li key={index} className="text-gray-600 dark:text-gray-300">
+                        {text}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </section>
+          )}
+          <section
+            aria-labelledby="activity-deploy-log-title"
+            className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"
+          >
+            <h5
+              id="activity-deploy-log-title"
+              className="border-b border-gray-200 px-4 py-3 text-xs font-semibold dark:border-gray-800"
+            >
+              {words.log}
+            </h5>
+            <pre
+              ref={logRef}
+              data-testid="deploy-log"
+              onScroll={(event) => {
+                const element = event.currentTarget;
+                follow.current =
+                  element.scrollTop + element.clientHeight >= element.scrollHeight - 8;
+              }}
+              tabIndex={0}
+              aria-labelledby="activity-deploy-log-title"
+              className="min-h-40 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words bg-gray-50/50 p-4 font-mono text-xs leading-relaxed dark:bg-gray-900/40"
+            >
+              {lines.length ? lines.map((entry) => entry.text).join("\n") : words.logEmpty}
+            </pre>
+          </section>
+        </div>
+      </div>
       <ConfirmModal
         open={confirm !== null}
         title={

@@ -25,6 +25,7 @@ import {
   validateMediaCoverage,
 } from "./media.js";
 import { inspectWebm, readVideoFile } from "./video-render.js";
+import { seedMediaPlaceholders } from "./media-placeholder.js";
 import {
   candidateReference,
   copyRefMedia,
@@ -103,11 +104,12 @@ import {
   validateActivitySpec,
 } from "./domain.js";
 import {
-  assessmentBasis,
-  configurationBasis,
+  documentBasis,
+  isSharedDocument,
   isStale,
   validateAssessment,
   validateConfiguration,
+  validateDefinition,
 } from "./module-overrides.js";
 import { normalizeTags } from "./tags.js";
 import type { ActivityPhonemes } from "./phonemes.js";
@@ -657,6 +659,11 @@ export class ActivityService implements ActivityAuthoring {
     const activity = await this.getActivity(projectId, activityId);
     if (activity.draft.contentRevision !== expectedRevision)
       throw new HttpError(409, "draft_conflict", "Media changed before assembly.");
+    await seedMediaPlaceholders(
+      await this.requireWafRoot(),
+      activity,
+      activity.draft.mediaPlan?.manifest.assets ?? {},
+    );
     const copied = new Set<string>();
     for (const asset of Object.values(activity.draft.mediaPlan?.manifest.assets ?? {}).flat()) {
       if (!asset.generatedVideo || copied.has(asset.path!)) continue;
@@ -1089,8 +1096,8 @@ export class ActivityService implements ActivityAuthoring {
   }
   /**
    * Save an author's edit of a module document. It replaces the generated document in the
-   * preview and in every assembly until it is discarded. The assessment is shared by every
-   * ref of the product, so only the canonical ref may edit it. `baseline` is the document the
+   * preview and in every assembly until it is discarded. The assessment and the module
+   * definition are shared by every ref of the product, so only the canonical ref may edit them. `baseline` is the document the
    * author was editing; an assessment problem it already had does not refuse the save.
    */
   async setModuleDocument(
@@ -1102,17 +1109,21 @@ export class ActivityService implements ActivityAuthoring {
     baseline?: unknown,
   ): Promise<ActivityDraft> {
     const document =
-      kind === "assessment" ? validateAssessment(value, baseline) : validateConfiguration(value);
+      kind === "assessment"
+        ? validateAssessment(value, baseline)
+        : kind === "definition"
+          ? validateDefinition(value)
+          : validateConfiguration(value);
     return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
-      if (kind === "assessment" && !this.isCanonicalRef(activity))
+      if (isSharedDocument(kind) && !this.isCanonicalRef(activity))
         throw new HttpError(
           409,
           "not_canonical",
-          "The assessment is shared by every ref of this product. Edit it on the canonical ref.",
+          `The ${kind === "definition" ? "module definition" : "assessment"} is shared by every ref of this product. Edit it on the canonical ref.`,
         );
       const override: ModuleDocumentOverride = {
         value: document,
-        basis: kind === "assessment" ? assessmentBasis(draft) : configurationBasis(draft),
+        basis: documentBasis(kind, draft),
         editedAt: new Date().toISOString(),
       };
       return { ...draft, moduleDocuments: { ...draft.moduleDocuments, [kind]: override } };
@@ -1136,7 +1147,7 @@ export class ActivityService implements ActivityAuthoring {
 
   /**
    * The edit that applies to this ref, and whether it is stale: its own configuration, or
-   * the product's assessment, which lives in the canonical ref's draft.
+   * the product's assessment or module definition, which live in the canonical ref's draft.
    */
   async effectiveModuleDocument(
     projectId: string,
@@ -1144,7 +1155,7 @@ export class ActivityService implements ActivityAuthoring {
     kind: ModuleDocumentKind,
   ): Promise<(ModuleDocumentOverride & { stale: boolean }) | null> {
     let draft = activity.draft;
-    if (kind === "assessment" && !this.isCanonicalRef(activity)) {
+    if (isSharedDocument(kind) && !this.isCanonicalRef(activity)) {
       const canonicalRefNum = this.productOf(activity)?.canonicalRefNum ?? null;
       const row = this.db
         .prepare(
@@ -1157,7 +1168,7 @@ export class ActivityService implements ActivityAuthoring {
     }
     const override = draft.moduleDocuments?.[kind];
     if (!override) return null;
-    const basis = kind === "assessment" ? assessmentBasis(draft) : configurationBasis(draft);
+    const basis = documentBasis(kind, draft);
     return { ...override, stale: isStale(override, basis) };
   }
   async updateDescription(
@@ -1200,13 +1211,27 @@ export class ActivityService implements ActivityAuthoring {
     activityId: string,
     expectedRevision: string,
   ): Promise<ActivityDraft> {
-    return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
-      try {
-        return { ...draft, mediaPlan: planMedia({ ...activity, draft }) };
-      } catch (error) {
-        throw new HttpError(422, "media_invalid", (error as Error).message);
-      }
-    });
+    const planned = await this.change(
+      projectId,
+      activityId,
+      expectedRevision,
+      (draft, activity) => {
+        try {
+          return { ...draft, mediaPlan: planMedia({ ...activity, draft }) };
+        } catch (error) {
+          throw new HttpError(422, "media_invalid", (error as Error).message);
+        }
+      },
+    );
+    // The placeholders videos and animations are bound to go into the media repository with
+    // the plan, as
+    // Loom's assets_configuration does; without a checkout, assembly seeds it instead.
+    const wafRoot = await this.wafWorkspace.root();
+    if (wafRoot && planned.mediaPlan) {
+      const activity = await this.getActivity(projectId, activityId);
+      await seedMediaPlaceholders(wafRoot, activity, planned.mediaPlan.manifest.assets);
+    }
+    return planned;
   }
   /**
    * A language added to the media plan, from the product's language table. A
@@ -1561,6 +1586,10 @@ export class ActivityService implements ActivityAuthoring {
         runId: result.runId,
         sha256: result.sha256,
         ...(result.format === "mp3" ? { format: "mp3" as const } : {}),
+        // What the narration was spoken with, so another model or voice makes it again
+        // (speechTargets).
+        ...(!target.sound && target.model ? { model: target.model } : {}),
+        ...(!target.sound && target.voice ? { voice: target.voiceId ?? target.voice } : {}),
       };
       asset.path = generatedMediaPath(
         activity,
@@ -3078,7 +3107,7 @@ export class ActivityService implements ActivityAuthoring {
 function validModuleDocuments(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   // Only the kinds this server knows are checked; another kind is kept as it is and ignored.
-  return (["configuration", "assessment"] as const).every((kind) => {
+  return (["configuration", "assessment", "definition"] as const).every((kind) => {
     const entry = (value as Record<string, unknown>)[kind] as Record<string, unknown> | undefined;
     return (
       entry === undefined ||

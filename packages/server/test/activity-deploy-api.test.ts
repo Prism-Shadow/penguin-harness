@@ -279,6 +279,7 @@ describe("activity deploy routes", () => {
 
   it("tests a connection with the stored credentials and reports only the status", async () => {
     const { admin, jenkins } = await setup();
+    await admin.put("/api/admin/activity-deploy/settings", { qa: { jenkinsUrl: "" } });
     const missing = await admin.post("/api/admin/activity-deploy/settings/test/qa");
     expect(missing.status).toBe(409);
     expect(await missing.json()).toMatchObject({
@@ -312,7 +313,7 @@ describe("activity deploy routes", () => {
     expect(found.problems).not.toContainEqual({ code: "workspace_not_ready" });
     expect(found.problems).toEqual(
       expect.arrayContaining([
-        { code: "settings_missing", field: "qa.jenkinsUrl" },
+        { code: "settings_missing", field: "qa.username" },
         { code: "settings_missing", field: "qa.token" },
         { code: "clone_missing", repo: "activityData" },
         { code: "clone_missing", repo: "media" },

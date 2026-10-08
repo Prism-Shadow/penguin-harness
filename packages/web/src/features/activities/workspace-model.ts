@@ -224,20 +224,100 @@ export function railWidthAfterKey(width: number, key: string, large = false): nu
  * The panels the studio header's tab group opens beside the work, in tab order. Loom keeps
  * these behind a rail of its own; here the header's tabs choose which one is open.
  */
-export type StudioPanel = "run" | "player" | "conversation" | "sessions";
-export const STUDIO_PANELS: readonly StudioPanel[] = ["run", "player", "conversation", "sessions"];
+export type StudioPanel = "run" | "player" | "tests" | "quality" | "conversation" | "sessions";
+export const STUDIO_PANELS: readonly StudioPanel[] = [
+  "run",
+  "player",
+  "tests",
+  "quality",
+  "conversation",
+  "sessions",
+];
 
-/** The width of the panel a tab opens, in pixels. */
-export const SIDE_PANEL_WIDTH = 400;
+/** The side panel's width bounds, in pixels. The player wants room, so the top is generous. */
+export const SIDE_PANEL_MIN_WIDTH = 320;
+export const SIDE_PANEL_MAX_WIDTH = 1600;
+export const SIDE_PANEL_DEFAULT_WIDTH = 480;
+/** What the work keeps beside a wide panel: a usable editor and the collapsed rail's button. */
+export const SIDE_PANEL_WORK_MIN = EDITOR_MIN_WIDTH + 48;
+
+/** Keep a dragged or stored width inside the bounds, and reject anything unreadable. */
+export function clampSidePanelWidth(width: number): number {
+  if (!Number.isFinite(width)) return SIDE_PANEL_DEFAULT_WIDTH;
+  return Math.min(SIDE_PANEL_MAX_WIDTH, Math.max(SIDE_PANEL_MIN_WIDTH, Math.round(width)));
+}
 
 /**
- * Whether an open side panel can sit beside the tree and the editor. When it cannot, it
+ * The panel width a workspace can afford: the stored width, short of crushing the editor.
+ * The rail gives way first (it folds into its menu form), then the panel.
+ */
+export function sidePanelWidthFor(stored: number, available: number): number {
+  const width = clampSidePanelWidth(stored);
+  if (!Number.isFinite(available) || available <= 0) return width;
+  return Math.max(SIDE_PANEL_MIN_WIDTH, Math.min(width, available - SIDE_PANEL_WORK_MIN));
+}
+
+/**
+ * Whether an open side panel can sit beside the work at its narrowest. When it cannot, it
  * covers the editor instead of squeezing it past the point where the editor still works:
  * a panel over the work can be closed, a crushed editor cannot be read.
  */
 export function sidePanelFitsBeside(available: number): boolean {
   if (!Number.isFinite(available) || available <= 0) return true;
-  return available - SIDE_PANEL_WIDTH >= WORKSPACE_TWO_PANE_WIDTH;
+  return available - SIDE_PANEL_MIN_WIDTH >= SIDE_PANEL_WORK_MIN;
+}
+
+/**
+ * The width a keyboard press on the panel's divider produces. The panel sits right of the
+ * divider, so moving it left widens the panel.
+ */
+export function sidePanelWidthAfterKey(width: number, key: string, large = false): number | null {
+  const step = large ? RAIL_STEP_LARGE : RAIL_STEP;
+  if (key === "ArrowLeft") return clampSidePanelWidth(width + step);
+  if (key === "ArrowRight") return clampSidePanelWidth(width - step);
+  if (key === "Home") return SIDE_PANEL_MIN_WIDTH;
+  if (key === "End") return SIDE_PANEL_MAX_WIDTH;
+  return null;
+}
+
+export const SIDE_PANEL_WIDTH_KEY = "penguin.activitySidePanelWidth";
+export const SIDE_PANEL_EXPANDED_KEY = "penguin.activitySidePanelExpanded";
+
+export function readSidePanelWidth(storage?: Pick<Storage, "getItem">): number {
+  try {
+    const raw = (storage ?? localStorage).getItem(SIDE_PANEL_WIDTH_KEY);
+    return raw ? clampSidePanelWidth(Number(raw)) : SIDE_PANEL_DEFAULT_WIDTH;
+  } catch {
+    return SIDE_PANEL_DEFAULT_WIDTH;
+  }
+}
+
+export function writeSidePanelWidth(width: number, storage?: Pick<Storage, "setItem">): void {
+  try {
+    (storage ?? localStorage).setItem(SIDE_PANEL_WIDTH_KEY, String(clampSidePanelWidth(width)));
+  } catch {
+    // As the rail width.
+  }
+}
+
+/** Whether the panel fills the workspace; only an explicit "expanded" expands. */
+export function readSidePanelExpanded(storage?: Pick<Storage, "getItem">): boolean {
+  try {
+    return (storage ?? localStorage).getItem(SIDE_PANEL_EXPANDED_KEY) === "expanded";
+  } catch {
+    return false;
+  }
+}
+
+export function writeSidePanelExpanded(
+  expanded: boolean,
+  storage?: Pick<Storage, "setItem">,
+): void {
+  try {
+    (storage ?? localStorage).setItem(SIDE_PANEL_EXPANDED_KEY, expanded ? "expanded" : "beside");
+  } catch {
+    // As above.
+  }
 }
 
 export const SIDE_PANEL_KEY = "penguin.activitySidePanel";

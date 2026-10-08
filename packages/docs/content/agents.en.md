@@ -15,7 +15,13 @@ An agent is a configured assistant in a Project. Each agent has its own instruct
 
 In the sidebar, select **Agents**. The page lists every agent in the current Project. Use the search box (**Search agents: id / name / description**) to filter the list.
 
-Every Project starts with the built-in agent `default_agent`. While it is the only agent, a card below it offers to create your first one: "No agent of your own yet".
+Every Project starts with three built-in agents, which cannot be deleted:
+
+- `default_agent`, the **General Agent**, the default agent for conversations.
+- `media_agent`, the **Media Agent**, which makes every activity's images. Put the media providers' keys (`GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`) in its Vault. Speech, music and sound effects are made from the same keys, but the server runs them directly: narrations, word recordings and sounds start no Media Agent Session.
+- `activity_agent`, the **Activity Agent**, which runs every Activities stage except media unless you pick another agent: the specification, script, media list, assessment, module and acceptance tests. It comes with the **waf-authoring** plugin's Skills installed. A Project created before it existed gets it the next time its agents are listed.
+
+While these are the only agents, a card below them offers to create your first one: "No agent of your own yet".
 
 Each agent card shows:
 

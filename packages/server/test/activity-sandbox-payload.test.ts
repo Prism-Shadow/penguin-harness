@@ -380,6 +380,17 @@ describe("the payload a preview serves", () => {
     await expect(service.build(PROJECT, ACTIVITY)).rejects.toThrow("No module has been built");
   });
 
+  it("does not offer a build when there is no module workspace", async () => {
+    const { service } = await build({ runs: [] });
+    expect(await service.status(PROJECT, ACTIVITY)).toMatchObject({
+      state: "pending_scaffold",
+      playable: false,
+      buildable: false,
+      message:
+        "No module has been built for this activity yet. Run Assemble module in Stages to build one.",
+    });
+  });
+
   it("refuses when nothing has been built, rather than serving an empty preview", async () => {
     const { service } = await build({ runs: [] });
     await expect(service.payload(PROJECT, ACTIVITY, {})).rejects.toThrow(HttpError);
@@ -496,6 +507,7 @@ describe("the payload a preview serves", () => {
         editable: true,
       },
       assessment: null,
+      definition: expect.objectContaining({ file: "definition.json", edited: false }),
       canonicalRefNum: null,
     });
     const { service: none } = await build({ runs: [] });
@@ -503,6 +515,7 @@ describe("the payload a preview serves", () => {
       source: null,
       configuration: null,
       assessment: null,
+      definition: null,
       canonicalRefNum: null,
     });
   });

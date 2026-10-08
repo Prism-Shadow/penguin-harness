@@ -9,6 +9,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import type { ActivitySandbox } from "./sandbox-service.js";
+import type { ModuleDocumentKind } from "./domain.js";
 import type { ActivitySummaries } from "./summary-service.js";
 import type { Config } from "../hmr/capabilities.js";
 import { hostOnly, requestAuthority, resolvePreviewTarget } from "../services/preview-token.js";
@@ -69,9 +70,9 @@ function stageRunner(body: Record<string, unknown>): {
 }
 
 /** Which module document a path names; anything else is a bad request. */
-function moduleDocumentKind(value: string | undefined): "configuration" | "assessment" {
-  if (value === "configuration" || value === "assessment") return value;
-  throw badRequest("kind must be configuration or assessment.");
+function moduleDocumentKind(value: string | undefined): ModuleDocumentKind {
+  if (value === "configuration" || value === "assessment" || value === "definition") return value;
+  throw badRequest("kind must be configuration, assessment or definition.");
 }
 
 /** A version id as the version store makes them. */
@@ -258,20 +259,22 @@ export class ActivityRoutes {
         202,
       );
     });
-    // With an agent, also which speech providers its Vault has keys for.
-    app.get("/speech-setup", async (c) => {
-      const agentId = c.req.query("agentId");
-      // An id, checked before it names a path, like every other agent id.
-      if (agentId !== undefined && (!agentId || agentId.length > 128 || !isValidId(agentId)))
-        throw badRequest("agentId must be an id of 1-128 letters, digits, _ or -.");
-      return c.json(await this.generation.speechSetup(requireValidId(c, "projectId"), agentId));
-    });
-    app.get("/sound-setup", async (c) => {
-      const agentId = c.req.query("agentId") ?? "";
-      if (!agentId || agentId.length > 128 || !isValidId(agentId))
-        throw badRequest("agentId must be an id of 1-128 letters, digits, _ or -.");
-      return c.json(await this.generation.soundSetup(requireValidId(c, "projectId"), agentId));
-    });
+    // Which speech and sound providers the Media Agent's Vault has keys for.
+    app.get("/speech-setup", async (c) =>
+      c.json(await this.generation.speechSetup(requireValidId(c, "projectId"))),
+    );
+    // The Media Agent's ElevenLabs voices for the picker; ?refresh=1 reads them again.
+    app.get("/elevenlabs-voices", async (c) =>
+      c.json(
+        await this.generation.elevenLabsVoices(
+          requireValidId(c, "projectId"),
+          c.req.query("refresh") === "1",
+        ),
+      ),
+    );
+    app.get("/sound-setup", async (c) =>
+      c.json(await this.generation.soundSetup(requireValidId(c, "projectId"))),
+    );
     // Whether the scene-video experiment is on: the studio shows nothing of it when it is not.
     app.get("/video-setup", (c) =>
       c.json({ enabled: this.generation.videoExperiment() } satisfies VideoSetup),
@@ -624,7 +627,7 @@ export class ActivityRoutes {
         ),
       );
     });
-    // An author's edit of the configuration or the shared assessment, kept in the draft.
+    // An author's edit of the configuration, or the shared assessment or definition, kept in the draft.
     app.put("/:activityId/module-documents/:kind", async (c) => {
       const kind = moduleDocumentKind(c.req.param("kind"));
       const body = await readJson(c);

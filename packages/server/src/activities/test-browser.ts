@@ -27,7 +27,7 @@ import type { Settings } from "../mechanisms/settings.js";
 import { hostOnly } from "../services/preview-token.js";
 import { playBase } from "./play-routes.js";
 import { clampLog, stopTree } from "./sandbox-build-runner.js";
-import type { ActivitySandbox } from "./sandbox-service.js";
+import type { ActivityPlayLinks } from "./play-links.js";
 import type { TestBrowserInstallError, TestBrowserStatus } from "./test-browser-types.js";
 
 export type {
@@ -263,6 +263,8 @@ export interface PlayUrlOptions {
   scene?: string;
   /** The language to play in; the default language when absent. */
   language?: string;
+  /** A module run of the activity to play, while it runs, instead of its playing build. */
+  runId?: string;
 }
 
 export abstract class TestBrowser extends Interface<{
@@ -280,7 +282,7 @@ export abstract class TestBrowser extends Interface<{
 export class TestBrowserService implements TestBrowser {
   @Use() private readonly config!: Config;
   @Use() private readonly settings!: Settings;
-  @Use() private readonly sandbox!: ActivitySandbox;
+  @Use() private readonly links!: ActivityPlayLinks;
   @Use() private readonly ports!: TestBrowserPorts;
 
   private installing = false;
@@ -425,7 +427,16 @@ export class TestBrowserService implements TestBrowser {
     const authority = loopbackAuthority(this.config);
     // Not shared: the page is opened by a browser holding no App session, so there is
     // nothing to sandbox it from, and an opaque origin would only break the player's storage.
-    const { token } = await this.sandbox.play(projectId, activityId, hostOnly(authority), false);
+    // Signed here rather than by the sandbox, which plays module runs and so cannot be
+    // depended on by the run that stages this link. Every caller has already loaded the
+    // activity, so the sandbox's existence check would add nothing.
+    const { token } = this.links.sign({
+      projectId,
+      activityId,
+      host: hostOnly(authority),
+      shared: false,
+      ...(options.runId ? { runId: options.runId } : {}),
+    });
     const query = new URLSearchParams();
     if (options.language) query.set("language", options.language);
     if (options.scene) query.set("scene", options.scene);

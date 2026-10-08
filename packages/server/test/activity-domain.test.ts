@@ -58,6 +58,22 @@ describe("native activity domain", () => {
     expect(() => validateActivitySpec(withAssets(7))).toThrow("targetPath must be a string");
   });
 
+  it("refuses media written straight on a scene, which no plan reads", () => {
+    const scene = (extra: Record<string, unknown>) => ({
+      ...activitySpec,
+      scenes: [{ id: "intro", description: "Choose a word", ...extra }],
+    });
+    expect(() =>
+      validateActivitySpec(scene({ tracks: [{ key: "a", description: "d", script: "hi" }] })),
+    ).toThrow("Scene intro: put tracks under audio.tracks.");
+    expect(() => validateActivitySpec(scene({ videos: [] }))).toThrow(
+      "put videos under media.video",
+    );
+    expect(() => validateActivitySpec(scene({ images: [] }))).toThrow(
+      "put images under media.images",
+    );
+  });
+
   it("treats a ref's display name as a label, absent rather than invalid when empty", () => {
     // The product code and ref number stay the address; a ref with no name shows that.
     expect(normalizeDisplayName("  Round one  ")).toBe("Round one");

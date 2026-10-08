@@ -12,8 +12,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SandboxBuilder } from "../src/activities/sandbox-builder.js";
+import { ActivityPlayLinksService } from "../src/activities/play-links.js";
 import { ActivitySandboxService } from "../src/activities/sandbox-service.js";
-import { checkoutOutputRoot } from "../src/activities/sandbox-source.js";
+import { checkoutOutputRoot, definitionMediaFolders } from "../src/activities/sandbox-source.js";
 
 const PROJECT = "proj";
 const ACTIVITY = "act_1";
@@ -263,6 +264,7 @@ describe("the link a played preview is served behind", () => {
   const service = new ActivitySandboxService();
   Object.assign(service, {
     activities: { getActivity: async () => ({ id: ACTIVITY }) },
+    links: new ActivityPlayLinksService(),
   });
 
   it("grants one activity on the host it was issued for", async () => {
@@ -289,10 +291,125 @@ describe("the link a played preview is served behind", () => {
     expect(service.verifyPlay("not-a-token", "127.0.0.1")).toBeNull();
   });
 
+  it("carries the module run a link plays, signed with the rest", async () => {
+    const { token } = await service.play(PROJECT, ACTIVITY, "127.0.0.1", false, undefined, "run_2");
+    expect(service.verifyPlay(token, "127.0.0.1")).toMatchObject({ runId: "run_2" });
+    const [body, mac] = token.split(".");
+    const altered = JSON.parse(Buffer.from(body!, "base64url").toString("utf8"));
+    altered.runId = "run_other";
+    const forged = `${Buffer.from(JSON.stringify(altered)).toString("base64url")}.${mac}`;
+    expect(service.verifyPlay(forged, "127.0.0.1")).toBeNull();
+  });
+
   it("refuses a link another server signed", async () => {
     const other = new ActivitySandboxService();
-    Object.assign(other, { activities: { getActivity: async () => ({ id: ACTIVITY }) } });
+    Object.assign(other, {
+      activities: { getActivity: async () => ({ id: ACTIVITY }) },
+      links: new ActivityPlayLinksService(),
+    });
     const { token } = await other.play(PROJECT, ACTIVITY, "127.0.0.1", false);
     expect(service.verifyPlay(token, "127.0.0.1")).toBeNull();
+  });
+});
+
+describe("playing a module run before it finishes", () => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+  });
+
+  /** The checkout's module, and a module run's workspace that has not finished. */
+  async function made(run: { kind: string; status: string }) {
+    const result = await setup();
+    roots.push(result.root);
+    const runModule = path.join(result.penguin, "activity-runs", "run_2", "module");
+    await write(path.join(runModule, "definition.json"), {
+      id: "runModule",
+      require: { entry: { type: "javascript", url: "entry.js" } },
+      themes: { park: { assets: {}, properties: {} } },
+    });
+    await write(path.join(runModule, "dist", "debug", "entry.js"), "window.fromRun = true;");
+    Object.assign(result.service, {
+      generation: {
+        moduleBuilds: async () => [],
+        run: async (_project: string, _activity: string, runId: string) => {
+          if (runId !== "run_2") throw new Error("run_not_found");
+          return { runId, ...run };
+        },
+      },
+    });
+    return result;
+  }
+
+  it("plays the running run a link names, and the checkout without one", async () => {
+    const { service } = await made({ kind: "module", status: "running" });
+    expect((await service.payload(PROJECT, ACTIVITY, { runId: "run_2" })).id).toBe(
+      "preview:runModule",
+    );
+    const entry = await service.moduleFile(PROJECT, ACTIVITY, "entry.js", "run_2");
+    expect(Buffer.from(entry.body!).toString()).toBe("window.fromRun = true;");
+    expect((await service.payload(PROJECT, ACTIVITY, {})).id).toBe("preview:sightWords");
+  });
+
+  it("counts a run build missing a file its definition requires as unbuilt", async () => {
+    // An assembly's own buildDebug copied res/style.scss and left no style.css; a build
+    // newer than its sources would otherwise never be redone.
+    const { service, penguin } = await made({ kind: "module", status: "running" });
+    const root = path.join(penguin, "activity-runs", "run_2", "module");
+    const builtAtMs = (source: unknown) =>
+      (service as unknown as { builtAtMs(s: unknown): Promise<number | null> }).builtAtMs(source);
+    expect(await builtAtMs({ kind: "run", root })).not.toBeNull();
+    await write(path.join(root, "definition.json"), {
+      id: "runModule",
+      require: {
+        entry: { type: "javascript", url: "entry.js" },
+        style: { type: "css", url: "style.css" },
+      },
+    });
+    expect(await builtAtMs({ kind: "run", root })).toBeNull();
+    await write(path.join(root, "dist", "debug", "style.css"), "body{}");
+    expect(await builtAtMs({ kind: "run", root })).not.toBeNull();
+  });
+
+  it("plays no run that failed, is not an assembly, or does not exist", async () => {
+    for (const run of [
+      { kind: "module", status: "failed" },
+      { kind: "spec", status: "running" },
+    ]) {
+      const { service } = await made(run);
+      await expect(service.payload(PROJECT, ACTIVITY, { runId: "run_2" })).rejects.toMatchObject({
+        code: "preview_not_built",
+      });
+    }
+    const { service } = await made({ kind: "module", status: "running" });
+    await expect(service.payload(PROJECT, ACTIVITY, { runId: "run_9" })).rejects.toMatchObject({
+      code: "preview_not_built",
+    });
+  });
+});
+
+describe("the shared media a module's definition loads", () => {
+  it("names the folder of every {{MEDIA}} url, once, and nothing else", () => {
+    expect(
+      definitionMediaFolders({
+        require: {
+          entry: { url: "entry.js" },
+          font: { url: "{{MEDIA}}/fonts/DimboRegular/DimboRegular.css" },
+        },
+        themes: {
+          standard: {
+            assets: {
+              help: { url: "{{MEDIA}}/images/navBar/standard/help.svg" },
+              pause: { url: "{{MEDIA}}/images/navBar/standard/pause.svg" },
+              audio: [{ url: "{{MEDIA}}/audio/english/shared/go_on.mp3" }],
+            },
+          },
+        },
+        remote: "https://example.org/{{MEDIA}}/x/y.png",
+        topLevel: "{{MEDIA}}/loose.png",
+        escape: "{{MEDIA}}/../secrets/key.pem",
+      }),
+    ).toEqual(["audio/english/shared", "fonts/DimboRegular", "images/navBar/standard"]);
+    expect(definitionMediaFolders(null)).toEqual([]);
   });
 });

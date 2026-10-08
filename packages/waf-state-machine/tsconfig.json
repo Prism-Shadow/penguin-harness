@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "lib": ["ES2017", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

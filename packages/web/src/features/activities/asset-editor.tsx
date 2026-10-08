@@ -11,39 +11,26 @@ import type {
   SoundProviderStatus,
   SpeechProviderId,
   SpeechProviderStatus,
+  ElevenLabsVoicesProblem,
   UploadedMedia,
   VoiceOption,
 } from "@prismshadow/penguin-server/api";
 import { Button } from "../../components/ui/button";
-import { Input, Textarea } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { S } from "../../lib/strings";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { ImagePreview } from "./image-preview";
 import { MediaBinding } from "./media-binding";
 import { MediaComparison } from "./media-comparison";
-import { AudioPlaybackFields } from "./audio-playback-fields";
+import { AudioAssetEditor, AudioViewToggle, type AudioView } from "./audio-asset-editor";
 import { isUploadPath } from "./media-library";
 import { MediaPlayer } from "./media-player";
 import { WaveformPlayer } from "./waveform-player";
-import { NarrationLanguages } from "./narration-languages";
 import { MediaTextReview } from "./media-text-review";
 import type { SceneAssetSelection } from "./scene-asset-tree";
-import { VoicePicker } from "./voice-picker";
-import {
-  SPEECH_PROVIDERS,
-  isElevenLabsVoiceId,
-  providerStatus,
-  supportsSpeechLanguage,
-  setProvider,
-  speechChoice,
-  voicesFor,
-} from "./speech-provider";
-import { WordTimingsView } from "./word-timings-view";
 import { MediaDetailsView } from "./media-details-view";
 import { fileFactsFor } from "./media-details";
-import { SoundFields } from "./sound-fields";
-import { soundCandidateLabel, soundFailure } from "./sound-model";
 import { BookWordFields } from "./book-word-fields";
 import { PhonemeTimelineView } from "./phoneme-timeline-view";
 import { isBookWord } from "./book-words";
@@ -68,12 +55,15 @@ export function AssetEditor({
   voices,
   defaultVoice,
   mediaDirty,
+  mediaSave = null,
   onChange,
   onSaveMedia,
   onGenerateAudio,
   onGenerateSound,
   soundProviders = null,
   speechProviders = null,
+  voiceLibrary = null,
+  onReloadVoices,
   onGenerateImage,
   onAcceptAudio,
   onAcceptImage,
@@ -84,7 +74,7 @@ export function AssetEditor({
   sceneNav,
   onTranslate,
   defaultLanguage = "en-US",
-  onLanguage,
+  languageName = (code) => code,
   mediaStats,
   savedManifest,
   onSaveSounds,
@@ -116,6 +106,8 @@ export function AssetEditor({
   defaultVoice: string;
   /** Whether the manifest holds edits the server has not seen. */
   mediaDirty: boolean;
+  /** Where the autosave of this editor's own edits stands; null before the first one. */
+  mediaSave?: "pending" | "saving" | "saved" | "failed" | null;
   onChange: (manifest: AssetManifest) => void;
   onSaveMedia: () => void;
   onGenerateAudio: (
@@ -130,19 +122,24 @@ export function AssetEditor({
   soundProviders?: readonly SoundProviderStatus[] | null;
   /** The speech providers the chosen agent can use; null while unknown or without one. */
   speechProviders?: readonly SpeechProviderStatus[] | null;
+  /** Whether the Media Agent's ElevenLabs library is loading, and why it could not be listed. */
+  voiceLibrary?: { problem: ElevenLabsVoicesProblem | null; loading: boolean } | null;
+  /** Read the ElevenLabs library again, past the server's ten-minute list. */
+  onReloadVoices?: () => void;
   onGenerateImage: (language: string, assetKey: string) => void;
-  onAcceptAudio: (runId: string) => void;
+  /** Bind a speech or sound take; the cards show "Saving…" until it settles. */
+  onAcceptAudio: (runId: string) => void | Promise<unknown>;
   onAcceptImage: (runId: string) => void;
   onGenerateText: (language: string, assetKey: string) => void;
   onAcceptText: (runId: string) => void;
   onUpload: (file: File) => Promise<UploadedMedia>;
   /** A file was copied in from another activity of the project. */
   onMediaCopied?: () => void;
-  /** Translate a narration from the default language; absent where there is nothing to translate from. */
+  /** Translate a narration into `language` from the default language. */
   onTranslate?: (language: string, assetKey: string) => void;
   defaultLanguage?: string;
-  /** Open this asset in another language. */
-  onLanguage?: (language: string) => void;
+  /** How a language is named to the author: its label, else its code. */
+  languageName?: (code: string) => string;
   /** The server's media stats for the saved draft: undefined while loading, null if unreadable. */
   mediaStats?: readonly MediaStat[] | null;
   /** The media plan as saved, which is what `mediaStats` describes. */
@@ -183,24 +180,18 @@ export function AssetEditor({
   const [decoded, setDecoded] = useState<{ src: string; seconds: number } | null>(null);
   const group = manifest.assets[language] ?? [];
   const asset = group.find((entry) => entry.key === selection?.key);
-  // A narration speaks with its own provider and saved voice; one naming none uses the
-  // page's default voice, or the provider's first.
-  const { provider, voice } = speechChoice(asset, voices, defaultVoice, language);
-  const providerVoices = voicesFor(voices, provider, group).filter(
-    (voice) => provider !== "kokoro" || voice.languages.includes(language),
-  );
-  const providerState = providerStatus(speechProviders, provider);
-  // An ElevenLabs voice id the author is typing, used once it is well formed.
-  const [typedVoice, setTypedVoice] = useState("");
-  // Where the accepted clip's player is, which word the timings preview marks.
+  // Narration, music and effects are edited in every language at once (audio-asset-editor);
+  // a book word keeps its own editor below.
+  const cards = asset?.type === "audio" && !isBookWord(asset);
+  // Which view the cards show; the page's own, never saved.
+  const [audioView, setAudioView] = useState<AudioView>("simplified");
+  // Where the recording's player is, which sound the word's timeline marks. Choosing another
+  // asset starts it afresh, so one clip's position is never marked on another's sounds.
   const [playhead, setPlayhead] = useState(0);
-  // Both belong to one narration: choosing another asset starts them afresh, so a voice id
-  // typed for one is never saved on the next, nor its clip's position marked on another's words.
   const shownAsset = `${language}/${asset?.key ?? ""}`;
   const [stateFor, setStateFor] = useState(shownAsset);
   if (stateFor !== shownAsset) {
     setStateFor(shownAsset);
-    setTypedVoice("");
     setPlayhead(0);
   }
   const imageUrl = `${endpoint}/media-image?${new URLSearchParams({
@@ -318,10 +309,7 @@ export function AssetEditor({
     pendingUpload && pendingUpload.language === language && pendingUpload.key === asset?.key
       ? pendingUpload.stored
       : null;
-  // Music and effects are audio, but not spoken: no voice, script help or translation.
-  const narration = asset?.type === "audio" && !asset.kind;
   const acceptedImage = runs.find((run) => run.runId === asset?.generatedImage?.runId)?.image;
-  const acceptedAudio = runs.find((run) => run.runId === asset?.generatedAudio?.runId)?.audio;
   const uploadSrc = asset?.path ? uploadUrl(asset.path) : "";
   const acceptedSrc = asset?.generatedAudio ? audioUrl(asset.generatedAudio.runId) : "";
   // Where the bound file plays from, which is where its details are read.
@@ -413,14 +401,15 @@ export function AssetEditor({
             </p>
           )}
         </div>
-        {asset && (
+        {cards && <AudioViewToggle value={audioView} onChange={setAudioView} />}
+        {asset && !cards && (
           <span
             className={`rounded px-2 py-0.5 text-xs ${asset.path ? toneSurface.success : toneSurface.attention}`}
           >
             {asset.path ? S.activities.boundMedia : S.activities.unboundMedia}
           </span>
         )}
-        {asset?.path?.startsWith("media/") && (
+        {!cards && asset?.path?.startsWith("media/") && (
           // Served as the player finds it: the draft's own media, then the checkout's.
           <a
             href={`${endpoint}/sandbox/media/${asset.path
@@ -438,6 +427,43 @@ export function AssetEditor({
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {!asset ? (
           <p className="text-sm text-gray-500">{S.activities.chooseSceneAsset}</p>
+        ) : cards ? (
+          <div className="mx-auto max-w-5xl">
+            <AudioAssetEditor
+              view={audioView}
+              manifest={manifest}
+              assetKey={asset.key}
+              defaultLanguage={defaultLanguage}
+              languageName={languageName}
+              onChange={onChange}
+              media={media}
+              mediaLoading={mediaLoading}
+              runs={runs}
+              endpoint={endpoint}
+              editable={editable}
+              disabled={disabled}
+              canGenerate={canGenerate}
+              canGenerateMedia={canGenerateMedia}
+              canAccept={canAccept}
+              revision={revision}
+              voices={voices}
+              defaultVoice={defaultVoice}
+              speechProviders={speechProviders}
+              soundProviders={soundProviders}
+              voiceLibrary={voiceLibrary}
+              onReloadVoices={onReloadVoices}
+              mediaStats={mediaStats}
+              savedManifest={savedManifest}
+              onGenerateAudio={onGenerateAudio}
+              onGenerateSound={onGenerateSound}
+              onAcceptAudio={onAcceptAudio}
+              onGenerateText={onGenerateText}
+              onAcceptText={onAcceptText}
+              onTranslate={onTranslate}
+              onUpload={onUpload}
+              onMediaCopied={onMediaCopied}
+            />
+          </div>
         ) : (
           <div className="mx-auto max-w-4xl space-y-3">
             {asset.type === "image" ? (
@@ -632,281 +658,6 @@ export function AssetEditor({
                 </section>
               </>
             )}
-            {asset.type === "audio" && !isBookWord(asset) && (
-              <>
-                <AudioPlaybackFields
-                  asset={asset}
-                  disabled={!editable || disabled}
-                  onChange={(playback) =>
-                    edit((entry) => {
-                      // Music and effects are not spoken, so they name no voice or speaker.
-                      if (playback) {
-                        delete entry.voice;
-                        delete entry.speechProvider;
-                      }
-                      delete entry.kind;
-                      delete entry.channel;
-                      delete entry.loop;
-                      delete entry.volume;
-                      if (playback) Object.assign(entry, playback);
-                      // Only music and effects ask for a length.
-                      else delete entry.targetDurationMs;
-                    })
-                  }
-                />
-                {asset.kind ? (
-                  <SoundFields
-                    key={`${language}/${asset.key}`}
-                    asset={{ ...asset, kind: asset.kind }}
-                    editable={editable}
-                    disabled={disabled}
-                    canGenerate={canGenerateMedia && !!onGenerateSound}
-                    generating={audioCandidates.some((run) => run.status === "running")}
-                    providers={soundProviders}
-                    onEdit={edit}
-                    onGenerate={(provider, model) =>
-                      onGenerateSound?.(language, asset.key, provider, model)
-                    }
-                  />
-                ) : (
-                  <Textarea
-                    size="sm"
-                    label={S.activities.speechScript}
-                    hint={S.activities.speechScriptHint}
-                    rows={4}
-                    maxLength={5000}
-                    value={asset.script ?? ""}
-                    disabled={!editable || disabled}
-                    onChange={(event) =>
-                      edit((entry) => {
-                        entry.script = event.target.value;
-                        delete entry.wordTimings;
-                      })
-                    }
-                  />
-                )}
-                {narration && editable && (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      disabled={!canGenerate}
-                      onClick={() => onGenerateText(language, asset.key)}
-                    >
-                      {S.activities.improveNarration}
-                    </Button>
-                    {onTranslate && (
-                      <Button
-                        size="sm"
-                        disabled={!canGenerate}
-                        onClick={() => onTranslate(language, asset.key)}
-                      >
-                        {S.activities.speechTranslation.translate}
-                      </Button>
-                    )}
-                  </div>
-                )}
-                {narration && onLanguage && (
-                  <NarrationLanguages
-                    manifest={manifest}
-                    assetKey={asset.key}
-                    language={language}
-                    defaultLanguage={defaultLanguage}
-                    onLanguage={onLanguage}
-                  />
-                )}
-                {asset.generatedAudio && (
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium">{S.activities.acceptedAudio}</p>
-                    {acceptedAudio && acceptedAudio.script !== asset.script && (
-                      <p className={`text-xs ${toneInk.attention}`}>
-                        {S.activities.mediaTextChanged}
-                      </p>
-                    )}
-                    <WaveformPlayer
-                      key={asset.generatedAudio.runId}
-                      src={acceptedSrc}
-                      label={S.activities.acceptedAudio}
-                      autoLoad
-                      onTrim={editable && !disabled ? trimTo : undefined}
-                      onDecoded={(seconds) => setDecoded({ src: acceptedSrc, seconds })}
-                      onTime={narration ? setPlayhead : undefined}
-                    />
-                    {narration && (
-                      <WordTimingsView timings={asset.wordTimings} seconds={playhead} />
-                    )}
-                    {details}
-                  </div>
-                )}
-                {narration && editable && (
-                  <>
-                    <Select
-                      size="sm"
-                      label={S.activities.speechProvider.label}
-                      hint={
-                        provider === "kokoro" ? S.activities.speechProvider.localInfo : undefined
-                      }
-                      value={provider}
-                      disabled={disabled}
-                      onChange={(event) =>
-                        edit((entry) =>
-                          setProvider(
-                            entry,
-                            event.target.value as SpeechProviderId,
-                            voices,
-                            language,
-                          ),
-                        )
-                      }
-                    >
-                      {SPEECH_PROVIDERS.map((id) => {
-                        const supported = supportsSpeechLanguage(voices, id, language);
-                        const status = providerStatus(speechProviders, id);
-                        const name = S.activities.speechProvider[id];
-                        return (
-                          <option
-                            key={id}
-                            value={id}
-                            disabled={
-                              !supported || (!!status && !status.available && id !== provider)
-                            }
-                          >
-                            {!supported
-                              ? `${name} (${S.activities.speechProvider.languageUnsupported})`
-                              : status && !status.available
-                                ? `${name} (${status.problem === "runtime_missing" ? S.activities.speechProvider.runtimeMissing : S.activities.speechProvider.keyMissing(status.credential)})`
-                                : name}
-                          </option>
-                        );
-                      })}
-                    </Select>
-                    {providerState && !providerState.available && (
-                      <p className={`text-xs ${toneInk.attention}`}>
-                        {providerState.problem === "runtime_missing"
-                          ? S.activities.speechProvider.runtimeMissing
-                          : S.activities.sound.problems.credential_missing(
-                              providerState.credential,
-                            )}
-                      </p>
-                    )}
-                    <VoicePicker
-                      options={providerVoices}
-                      value={voice || null}
-                      label={S.activities.voicePicker.label}
-                      disabled={disabled}
-                      hint={asset.path ? S.activities.voicePicker.appliesNext : undefined}
-                      onChange={(id) =>
-                        edit((entry) => {
-                          // The bound clip keeps the voice it was recorded in, and its timings.
-                          entry.voice = id;
-                        })
-                      }
-                    />
-                    {provider === "elevenlabs" && (
-                      <div className="flex flex-wrap items-end gap-2">
-                        <div className="min-w-48 flex-1">
-                          <Input
-                            size="sm"
-                            label={S.activities.speechProvider.voiceId}
-                            hint={S.activities.speechProvider.voiceIdHint}
-                            value={typedVoice}
-                            disabled={disabled}
-                            spellCheck={false}
-                            onChange={(event) => setTypedVoice(event.target.value.trim())}
-                          />
-                        </div>
-                        <Button
-                          size="sm"
-                          disabled={disabled || !isElevenLabsVoiceId(typedVoice)}
-                          onClick={() => {
-                            edit((entry) => {
-                              entry.voice = typedVoice;
-                            });
-                            setTypedVoice("");
-                          }}
-                        >
-                          {S.activities.speechProvider.useVoiceId}
-                        </Button>
-                      </div>
-                    )}
-                    {provider === "elevenlabs" && !voice && (
-                      <p className={`text-xs ${toneInk.attention}`}>
-                        {S.activities.speechProvider.noVoice}
-                      </p>
-                    )}
-                    <Button
-                      size="sm"
-                      disabled={
-                        !canGenerateMedia ||
-                        !voice ||
-                        (!!providerState && !providerState.available) ||
-                        !asset.script?.trim() ||
-                        asset.script.length > 5000
-                      }
-                      onClick={() => onGenerateAudio(language, asset.key, voice, provider)}
-                    >
-                      {asset.path ? S.activities.regenerateSpeech : S.activities.generateSpeech}
-                    </Button>
-                  </>
-                )}
-                {audioCandidates.length > 0 && (
-                  <section
-                    className="space-y-3"
-                    aria-label={
-                      narration ? S.activities.speechCandidates : S.activities.sound.candidates
-                    }
-                  >
-                    <h5 className="text-xs font-semibold">
-                      {narration ? S.activities.speechCandidates : S.activities.sound.candidates}
-                    </h5>
-                    {audioCandidates.map((run) => (
-                      <div
-                        key={run.runId}
-                        className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800"
-                      >
-                        <p className="text-xs">
-                          {soundCandidateLabel(run)} · {new Date(run.createdAt).toLocaleString()} ·{" "}
-                          {S.activities.speechStatus[run.status]}
-                        </p>
-                        {run.error && (
-                          <p className="break-words text-xs">
-                            {run.audio?.sound || run.audio?.provider === "elevenlabs"
-                              ? soundFailure(run.error)
-                              : run.error}
-                          </p>
-                        )}
-                        {run.hasCandidate &&
-                          (run.status === "succeeded" || run.status === "conflict") && (
-                            <WaveformPlayer
-                              key={run.runId}
-                              src={audioUrl(run.runId)}
-                              label={
-                                run.audio?.sound
-                                  ? S.activities.sound.player
-                                  : S.activities.speechCandidate
-                              }
-                            />
-                          )}
-                        {editable &&
-                          run.status === "succeeded" &&
-                          run.runId !== asset.generatedAudio?.runId && (
-                            <Button
-                              size="sm"
-                              disabled={!canAccept || run.inputRevision !== revision}
-                              onClick={() => onAcceptAudio(run.runId)}
-                            >
-                              {S.activities.acceptSpeech}
-                            </Button>
-                          )}
-                        {run.inputRevision !== revision &&
-                          run.runId !== asset.generatedAudio?.runId && (
-                            <p className="text-xs text-gray-500">{S.activities.olderSpeech}</p>
-                          )}
-                      </div>
-                    ))}
-                  </section>
-                )}
-              </>
-            )}
             {asset.type === "image" && (
               <>
                 {editable && (
@@ -1007,17 +758,25 @@ export function AssetEditor({
       </div>
       {editable && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-gray-200 px-4 py-2.5 dark:border-gray-800">
+          {/* Each language card shows its own binding. */}
           <p className="min-w-0 flex-1 truncate text-xs text-gray-500">
-            {asset?.path ? asset.path : S.activities.unboundMedia}
+            {cards ? "" : asset?.path ? asset.path : S.activities.unboundMedia}
           </p>
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={disabled || !mediaDirty}
-            onClick={onSaveMedia}
-          >
-            {S.activities.saveMedia}
-          </Button>
+          {/* Edits here save themselves; the button is for a save that failed, or for
+              manifest edits made elsewhere (the JSON in Media Library). */}
+          {mediaSave && (mediaDirty || mediaSave === "saved") && (
+            <p
+              role="status"
+              className={`text-xs ${mediaSave === "failed" ? toneInk.danger : "text-gray-500"}`}
+            >
+              {S.activities.studioScript.autosave[mediaSave]}
+            </p>
+          )}
+          {mediaDirty && mediaSave !== "pending" && mediaSave !== "saving" && (
+            <Button size="sm" variant="primary" disabled={disabled} onClick={onSaveMedia}>
+              {S.activities.saveMedia}
+            </Button>
+          )}
         </div>
       )}
     </section>

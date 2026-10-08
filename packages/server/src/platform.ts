@@ -125,8 +125,10 @@ import {
   TestBrowserService,
 } from "./activities/test-browser.js";
 import { TestBrowserRoutes } from "./activities/test-browser-routes.js";
+import { ActivityPlayLinksService } from "./activities/play-links.js";
 import { DefaultSoundModelPorts } from "./activities/sound-models.js";
 import { LocalAudioService } from "./activities/local-audio.js";
+import { DefaultMediaHelperPorts } from "./activities/media-helper-runner.js";
 import { DefaultMediaLibraryPorts } from "./activities/media-bundle.js";
 import {
   ActivityQuality,
@@ -429,7 +431,9 @@ export class CodingAgentsModule {}
     DefaultTestBrowserPorts,
     DefaultSoundModelPorts,
     LocalAudioService,
+    DefaultMediaHelperPorts,
     DefaultMediaLibraryPorts,
+    ActivityPlayLinksService,
     TestBrowserService,
     TestBrowserRoutes,
     DefaultQualityCheckPorts,

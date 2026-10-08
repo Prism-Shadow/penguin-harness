@@ -16,10 +16,11 @@ import type { Reassembly } from "../src/hmr/capabilities.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
-import { activitySpec, refMediaDir } from "./activity-fixtures.js";
-import { fakeMp3Encoding, mp3OfWave, speechWave } from "./audio-fixtures.js";
+import { activitySpec, refMediaDir, savedActivitySpec } from "./activity-fixtures.js";
+import { fakeMp3Encoding, fakeMediaHelper, mp3OfWave, speechWave } from "./audio-fixtures.js";
 import { imagePng } from "./image-fixtures.js";
 import { prepareModule, verifyMediaArtifacts } from "../src/activities/waf-module.js";
+import { IMAGE_STYLE, NARRATION_DELIVERY } from "../src/activities/media-style.js";
 
 function deferred() {
   let resolve!: () => void;
@@ -70,12 +71,7 @@ describe("activity generation through Harness sessions", () => {
           yield abortEvent();
           return;
         }
-        if (moduleOutput === "audio") {
-          await fs.writeFile(
-            path.join(row.workspace!, "speech.wav"),
-            output === "invalid" ? Buffer.from("invalid") : speechWave(),
-          );
-        } else if (moduleOutput === "image") {
+        if (moduleOutput === "image") {
           await fs.writeFile(
             path.join(row.workspace!, "image.png"),
             output === "invalid" ? Buffer.from("invalid") : imagePng(),
@@ -101,9 +97,6 @@ describe("activity generation through Harness sessions", () => {
             await fs.readFile(path.join(row.workspace!, "input.json"), "utf8"),
           ) as ActivityDetail;
           const files: Record<string, string> = {
-            "preview/index.html":
-              "<!doctype html><title>WAF</title><script src='./runtime.js'></script>",
-            "preview/runtime.js": "window.waf = true;",
             "module/dist/entry.js": "window.moduleBuilt = true;",
             "module/build.log": "typecheck and buildDebug completed",
           };
@@ -136,7 +129,9 @@ describe("activity generation through Harness sessions", () => {
         yield requestEnd(fatal ? "fatal" : "completed");
       },
     });
-    const t = await createTestApp(fakeMp3Encoding);
+    // Speech has no Session: the server runs its helper, which this fake stands in for.
+    const helper = fakeMediaHelper();
+    const t = await createTestApp({ ...fakeMp3Encoding, mediaHelperPorts: helper.ports });
     // Newly created sessions are adopted directly (the loader is only for resumes).
     // Substitute execution at that seam while retaining real creation and indexing.
     const adopt = t.deps.manager.adopt.bind(t.deps.manager);
@@ -196,15 +191,30 @@ describe("activity generation through Harness sessions", () => {
       await waitFor(() => waiting.has(run.sessionId!));
       return run;
     }
-    async function finish(run: ActivityRun, value = JSON.stringify(activitySpec), fail = false) {
-      output = value;
-      fatal = fail;
-      complete();
-      await waitFor(() => t.deps.manager.statusOf(run.sessionId!) === "idle");
-      await service.reconcile();
-      const summary = (
+    const summaryOf = async (run: ActivityRun) =>
+      (
         (await (await client.get(`${endpoint}/runs`)).json()) as { runs: ActivityRunSummary[] }
       ).runs.find((r) => r.runId === run.runId)!;
+    async function finish(run: ActivityRun, value = JSON.stringify(activitySpec), fail = false) {
+      let summary: ActivityRunSummary;
+      if (run.kind === "audio") {
+        await helper.finish({
+          "speech.wav": value === "invalid" ? Buffer.from("invalid") : speechWave(),
+        });
+        summary = await summaryOf(run);
+        const deadline = Date.now() + 5000;
+        while (summary.status === "running" && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          summary = await summaryOf(run);
+        }
+      } else {
+        output = value;
+        fatal = fail;
+        complete();
+        await waitFor(() => t.deps.manager.statusOf(run.sessionId!) === "idle");
+        await service.reconcile();
+        summary = await summaryOf(run);
+      }
       const { candidate } = (await (
         await client.get(`${endpoint}/runs/${run.runId}/candidate`)
       ).json()) as { candidate: string | null };
@@ -213,6 +223,8 @@ describe("activity generation through Harness sessions", () => {
     return {
       t,
       prompts,
+      waiting,
+      helper,
       client,
       activity,
       draft,
@@ -251,7 +263,7 @@ describe("activity generation through Harness sessions", () => {
         if (configure)
           expect(
             (
-              await client.put("/api/projects/generator-activities/agents/default_agent/vault", {
+              await client.put("/api/projects/generator-activities/agents/media_agent/vault", {
                 entries: [{ key: "GEMINI_API_KEY", value: "fake-test-only" }],
               })
             ).status,
@@ -262,12 +274,14 @@ describe("activity generation through Harness sessions", () => {
           language: "en-US",
           assetKey: "welcome",
           voice: "Kore",
+          // Kore is a Gemini voice, and a narration naming no provider is ElevenLabs'.
+          provider: "gemini",
         });
         if (!configure) return response;
         expect(response.status, await response.clone().text()).toBe(202);
         const run = (await response.clone().json()) as ActivityRun;
         expect(run.status, run.error ?? "").toBe("running");
-        await waitFor(() => waiting.has(run.sessionId!));
+        await waitFor(() => helper.waiting(run.runId) !== null);
         return response;
       },
       startImage: async (configure = true) => {
@@ -306,7 +320,7 @@ describe("activity generation through Harness sessions", () => {
           });
         expect(
           (
-            await client.put("/api/projects/generator-activities/agents/default_agent/vault", {
+            await client.put("/api/projects/generator-activities/agents/media_agent/vault", {
               entries: [{ key: "GEMINI_API_KEY", value: "fake-test-only" }],
             })
           ).status,
@@ -461,14 +475,24 @@ describe("activity generation through Harness sessions", () => {
     expect((await f.startAudio(false)).status).toBe(400);
     const run = (await (await f.startAudio()).json()) as ActivityRun;
     expect(run.kind).toBe("audio");
-    const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
-    expect(session.approvalMode).toBe("allow-all");
+    // No agent speaks it: the server runs the staged helper with the Media Agent's Vault.
+    expect(run.sessionId).toBeNull();
+    expect(f.helper.calls.at(-1)).toMatchObject({
+      install: true,
+      vault: { GEMINI_API_KEY: "fake-test-only" },
+    });
+    const runWorkspace = f.helper.waiting(run.runId)!;
+    expect(await fs.readFile(path.join(runWorkspace, "generate-speech.mjs"), "utf8")).toContain(
+      "AutoLLMClient",
+    );
+    expect(await fs.readFile(path.join(runWorkspace, "speech-input.json"), "utf8")).not.toContain(
+      "fake-test-only",
+    );
+    // Gemini reads the narration in the house style; the run itself does not carry it.
     expect(
-      await fs.readFile(path.join(session.workspace!, "generate-speech.mjs"), "utf8"),
-    ).toContain("AutoLLMClient");
-    expect(
-      await fs.readFile(path.join(session.workspace!, "speech-input.json"), "utf8"),
-    ).not.toContain("fake-test-only");
+      JSON.parse(await fs.readFile(path.join(runWorkspace, "speech-input.json"), "utf8")),
+    ).toMatchObject({ style: NARRATION_DELIVERY });
+    expect(run.audio).not.toHaveProperty("style");
     const result = await f.finish(run);
     expect(result.status, result.error ?? "").toBe("succeeded");
     const current = async () => (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
@@ -508,9 +532,8 @@ describe("activity generation through Harness sessions", () => {
       ),
     ).toEqual(speech);
     const second = (await (await f.startAudio()).json()) as ActivityRun;
-    const secondSession = f.t.deps.sessionsRepo.findById(second.sessionId!)!;
     const speechInput = JSON.parse(
-      await fs.readFile(path.join(secondSession.workspace!, "input.json"), "utf8"),
+      await fs.readFile(path.join(f.helper.waiting(second.runId)!, "input.json"), "utf8"),
     );
     expect(speechInput.draft.mediaPlan).toEqual({ manifest: saved.mediaPlan!.manifest });
     expect(speechInput.draft.mediaPlan.manifest.assets["en-US"][0].generatedAudio).toEqual(
@@ -541,15 +564,9 @@ describe("activity generation through Harness sessions", () => {
     );
     expect(exported).not.toContain("generatedAudio");
     expect(exported).toContain(voice.path!);
-    const previewAudio = path.join(workspace, "preview", voice.path!);
-    await fs.mkdir(path.dirname(previewAudio), { recursive: true });
-    await fs.writeFile(previewAudio, speech);
+    // The player serves the draft's accepted speech itself; the assembly copies none of it.
     const read = (file: string) => fs.readFile(file, "utf8");
     await verifyMediaArtifacts(workspace, await current(), read);
-    await fs.writeFile(previewAudio, mp3OfWave(speechWave(96)));
-    await expect(verifyMediaArtifacts(workspace, await current(), read)).rejects.toThrow(
-      "accepted speech audio",
-    );
     const updated = await f.client.patch(`${f.endpoint}/description`, {
       description: "Changed",
       expectedRevision: saved.contentRevision,
@@ -640,6 +657,11 @@ describe("activity generation through Harness sessions", () => {
     expect(
       await fs.readFile(path.join(session.workspace!, "image-input.json"), "utf8"),
     ).not.toContain("fake-test-only");
+    // Every image is drawn in the house style, sent beside the author's description.
+    expect(
+      JSON.parse(await fs.readFile(path.join(session.workspace!, "image-input.json"), "utf8")),
+    ).toMatchObject({ style: IMAGE_STYLE });
+    expect(run.image).not.toHaveProperty("style");
     const result = await f.finish(run);
     expect(result.status, result.error ?? "").toBe("succeeded");
     const current = async () => (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
@@ -727,15 +749,9 @@ describe("activity generation through Harness sessions", () => {
       await fs.mkdir(path.join(waf, name), { recursive: true });
     await fs.writeFile(path.join(waf, "framework/package.json"), "{}");
     await prepareModule(workspace, await current(), waf);
-    const previewImage = path.join(workspace, "preview", savedAsset.path!);
-    await fs.mkdir(path.dirname(previewImage), { recursive: true });
-    await fs.writeFile(previewImage, imagePng());
+    // The player serves the draft's accepted image itself; the assembly copies none of it.
     const read = (file: string) => fs.readFile(file, "utf8");
     await verifyMediaArtifacts(workspace, await current(), read);
-    await fs.writeFile(previewImage, Buffer.from("tampered"));
-    await expect(verifyMediaArtifacts(workspace, await current(), read)).rejects.toThrow(
-      "Image output must be a complete PNG",
-    );
   });
 
   it("retains a previewable image conflict without applying it when the draft changes", async () => {
@@ -925,9 +941,40 @@ describe("activity generation through Harness sessions", () => {
     };
     const result = await f.finish(await f.start(), JSON.stringify(validBook));
     expect(result.status, result.error ?? "").toBe("succeeded");
-    expect(((await (await f.client.get(f.endpoint)).json()) as ActivityDetail).draft.spec).toEqual(
-      validBook,
-    );
+    // Saved the way Loom normalizes a first specification: every scene in the canonical
+    // shape, and each asset keyed <scene>-<kind>-<subject>.
+    const media = (key: string, description: string) => ({
+      images: [{ key, description }],
+      video: [],
+      animations: [],
+    });
+    expect(((await (await f.client.get(f.endpoint)).json()) as ActivityDetail).draft.spec).toEqual({
+      ...validBook,
+      acceptance_criterias: [],
+      scenes: [
+        {
+          ...validBook.scenes[0],
+          media: media("cover-image-clear-cover", "A clear cover."),
+        },
+        {
+          ...validBook.scenes[1],
+          media: media("title-image-clear-title-page", "A clear title page."),
+        },
+        {
+          ...validBook.scenes[2],
+          media: media("story-1-image-clear-story-scene", "A clear story scene."),
+          audio: {
+            tracks: [
+              {
+                key: "story-1-audio-narration",
+                description: "Narration",
+                script: "Read the page.",
+              },
+            ],
+          },
+        },
+      ],
+    });
   });
 
   it("assembles an explicit read-along book, stages its compiled policy, and rejects mode tampering", async () => {
@@ -991,6 +1038,9 @@ describe("activity generation through Harness sessions", () => {
     }
     const run = await f.start(root, "readAlong");
     expect(run.bookMode).toBe("readAlong");
+    // Only a book's assembly is told about the reader its scaffold ships.
+    await waitFor(() => f.prompts.length > 0);
+    expect(f.prompts.at(-1)).toContain("native reader");
     const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
     const input = JSON.parse(
       await fs.readFile(path.join(session.workspace!, "input.json"), "utf8"),
@@ -1091,7 +1141,7 @@ describe("activity generation through Harness sessions", () => {
     expect(result.kind).toBe("module");
     expect(JSON.parse(result.candidate!).files).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: "preview/runtime.js", sha256: expect.any(String) }),
+        expect.objectContaining({ path: "module/dist/entry.js", sha256: expect.any(String) }),
       ]),
     );
     const detail = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
@@ -1168,7 +1218,7 @@ describe("activity generation through Harness sessions", () => {
     });
     const result = await f.finish(run);
     expect(result.status).toBe("conflict");
-    expect(JSON.parse(result.candidate!).previewPath).toBe("preview/index.html");
+    expect(JSON.parse(result.candidate!).modulePath).toBe("module");
   });
 
   it("does not mark module files from a failed Session as a successful assembly", async () => {
@@ -1324,11 +1374,82 @@ describe("activity generation through Harness sessions", () => {
     expect(input.draft.contentRevision).toBe(f.draft.contentRevision);
     expect((await f.finish(run)).status).toBe("succeeded");
     const reopened = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
-    expect(reopened.draft.spec).toEqual(activitySpec);
+    expect(reopened.draft.spec).toEqual(savedActivitySpec);
     expect(reopened.draft.status).toBe("valid");
     expect(await f.service.candidate("generator-activities", f.activity.id, run.runId)).toBe(
       JSON.stringify(activitySpec),
     );
+  });
+
+  it("lists the scenes' tagged media in a media pass, refusing media left beside a scene", async () => {
+    const f = await fixture();
+    const description = "Intro. <video>The treasure chest opens.</video> <audio>Let's go!</audio>";
+    const scenes = [{ id: "scene-1-intro", description }];
+    let current = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    expect(
+      (
+        await f.client.post(`${f.endpoint}/apply-generated-spec`, {
+          spec: { ...activitySpec, scenes },
+          expectedRevision: current.draft.contentRevision,
+        })
+      ).status,
+    ).toBe(200);
+    const startPass = async () => {
+      current = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+      const run = await f.service.start(
+        "generator-activities",
+        f.activity.id,
+        "default_agent",
+        current.draft.contentRevision,
+        { mediaSpec: true },
+      );
+      await waitFor(() => f.waiting.has(run.sessionId!));
+      return run;
+    };
+    const first = await startPass();
+    expect(first.kind).toBe("media-spec");
+    const workspace = path.join(f.t.root, "activity-runs", first.runId);
+    expect(
+      JSON.parse(await fs.readFile(path.join(workspace, "current-activity-spec.json"), "utf8")),
+    ).toMatchObject({ scenes });
+    expect(f.prompts.at(-1)).toContain('Expected scene IDs in order: [\\"scene-1-intro\\"]');
+    // test10's mistake: the media sits beside the scene, where nothing reads it.
+    const misplaced = await f.finish(
+      first,
+      JSON.stringify({
+        ...activitySpec,
+        scenes: [{ ...scenes[0], videos: [{ key: "chest", description: "Chest opens" }] }],
+      }),
+    );
+    expect(misplaced.status).toBe("failed");
+    expect(misplaced.error).toContain("description contains 1 <video> element(s)");
+    const second = await startPass();
+    const listed = await f.finish(
+      second,
+      JSON.stringify({
+        ...activitySpec,
+        scenes: [
+          {
+            ...scenes[0],
+            media: { video: [{ key: "scene-1-video-chest", description: "Chest opens" }] },
+            audio: { tracks: [{ key: "go", description: "Narration", script: "Let's go!" }] },
+          },
+        ],
+      }),
+    );
+    expect(listed.status, listed.error ?? "").toBe("succeeded");
+    current = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    const planned = (await (
+      await f.client.post(`${f.endpoint}/plan-media`, {
+        expectedRevision: current.draft.contentRevision,
+      })
+    ).json()) as ActivityDraft;
+    expect(
+      planned.mediaPlan!.manifest.assets["en-US"]!.map((asset) => [asset.key, asset.type]),
+    ).toEqual([
+      ["scene-1-video-chest", "video"],
+      ["scene-1-audio-narration", "audio"],
+    ]);
   });
 
   it("preserves a candidate when the draft changes, and starts a fresh retry", async () => {
@@ -1526,7 +1647,7 @@ describe("activity generation through Harness sessions", () => {
       await stopping;
       expect((await completion).status).toBe("succeeded");
       const current = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
-      expect(current.draft.spec).toEqual(activitySpec);
+      expect(current.draft.spec).toEqual(savedActivitySpec);
       expect((await f.service.list("generator-activities", f.activity.id))[0]?.status).toBe(
         "succeeded",
       );

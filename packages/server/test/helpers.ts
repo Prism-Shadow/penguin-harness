@@ -90,6 +90,10 @@ import {
   type QualityCheckPorts,
 } from "../src/activities/quality-check.js";
 import { DefaultSoundModelPorts, type SoundModelPorts } from "../src/activities/sound-models.js";
+import {
+  DefaultMediaHelperPorts,
+  type MediaHelperPorts,
+} from "../src/activities/media-helper-runner.js";
 import { DefaultEspeakPorts, type EspeakPorts } from "../src/activities/phonemes.js";
 import { DefaultDeployPorts, type DeployPorts } from "../src/activities/deploy-service.js";
 import { DefaultAudioEncodePorts, type AudioEncodePorts } from "../src/activities/ref-media.js";
@@ -295,6 +299,8 @@ export interface TestAppOptions {
   testBrowserPorts?: TestBrowserPorts;
   /** Test double: the model hub's sound catalogue, which this build ships empty. */
   soundModelPorts?: SoundModelPorts;
+  /** Test double: the speech and sound helpers' child processes, so a test never calls a provider. */
+  mediaHelperPorts?: MediaHelperPorts;
   /** Test double: espeak-ng, so a test never starts a program. */
   espeakPorts?: EspeakPorts;
   /** Test double: git and Jenkins for deploys, so a test never reaches a remote. */
@@ -408,6 +414,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   if (o.videoRenderPorts) out.push([DefaultVideoRenderPorts, o.videoRenderPorts]);
   if (o.mediaLibraryPorts) out.push([DefaultMediaLibraryPorts, o.mediaLibraryPorts]);
   if (o.soundModelPorts) out.push([DefaultSoundModelPorts, o.soundModelPorts]);
+  if (o.mediaHelperPorts) out.push([DefaultMediaHelperPorts, o.mediaHelperPorts]);
   if (o.espeakPorts) out.push([DefaultEspeakPorts, o.espeakPorts]);
   if (o.deployPorts) out.push([DefaultDeployPorts, o.deployPorts]);
   // Nothing clones at boot in a test: a test that wants preparing asks for it.

@@ -14,6 +14,12 @@ export const DEFAULT_PROJECT_ID = "default_project";
 /** Default Agent id used when none is specified. */
 export const DEFAULT_AGENT_ID = "default_agent";
 
+/** The builtin Agent every Activity speech, sound, image and alignment run belongs to. */
+export const MEDIA_AGENT_ID = "media_agent";
+
+/** The builtin Agent the Activities stages default to: specification, assessment, module and tests. */
+export const ACTIVITY_AGENT_ID = "activity_agent";
+
 /**
  * Resolves the local data root directory.
  * Prefers the `PENGUIN_HOME` environment variable, otherwise falls back to `~/.penguin/data`

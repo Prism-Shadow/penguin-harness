@@ -58,11 +58,16 @@ describe("the script a word is recorded from", () => {
     );
   });
 
-  it("follows the word's provider, Gemini when it names none, and needs sounds", () => {
+  it("follows the word's provider, ElevenLabs when it names none, and needs sounds", () => {
     const cat = word("cat", { phonemes: ["k", "æ", "t"] });
-    expect(wordScript(cat)).toBe(geminiScript("cat", ["k", "æ", "t"]));
-    expect(wordScript({ ...cat, speechProvider: "elevenlabs" })).toBe(
-      drawnOutScript("cat", ["k", "æ", "t"]),
+    expect(wordScript(cat)).toBe(drawnOutScript("cat", ["k", "æ", "t"]));
+    expect(wordScript({ ...cat, speechProvider: "gemini" })).toBe(
+      geminiScript("cat", ["k", "æ", "t"]),
+    );
+    // A generated take naming no provider predates providers: it is Gemini's, script and all.
+    const legacy = { runId: "run_1", sha256: "a".repeat(64) };
+    expect(wordScript({ ...cat, generatedAudio: legacy })).toBe(
+      geminiScript("cat", ["k", "æ", "t"]),
     );
     expect(wordScript(word("cat"))).toBeNull();
   });

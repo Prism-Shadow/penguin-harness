@@ -156,9 +156,12 @@ export function DeployPanel({
   const line = context ? readinessLine(context) : null;
   const rows = context ? readinessRows(context) : [];
   return (
-    <section className="space-y-4" aria-labelledby="activity-deploy-title">
+    <section className="space-y-5" aria-labelledby="activity-deploy-title">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id="activity-deploy-title" className="flex items-center gap-2 text-sm font-semibold">
+        <h3
+          id="activity-deploy-title"
+          className="flex items-center gap-2 text-lg font-semibold tracking-tight"
+        >
           {words.title}
           <InfoPopover label={words.title}>
             <p>{words.about}</p>
@@ -218,53 +221,42 @@ export function DeployPanel({
               {words.pinnedBuild}
             </p>
           )}
-          <div className={TABLE_WRAP}>
-            <table className={TABLE} aria-label={words.checksLabel}>
-              <thead>
-                <tr className={TABLE_HEAD_ROW}>
-                  <th className={TH}>{words.columns.check}</th>
-                  <th className={TH}>{words.columns.state}</th>
-                </tr>
-              </thead>
-              <tbody className={TBODY}>
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td className={`${TD} whitespace-nowrap font-medium`}>
-                      <span className="flex items-center gap-2">
-                        <span
-                          aria-hidden
-                          className={`size-1.5 shrink-0 rounded-full ${toneDot[row.tone]}`}
-                        />
-                        {row.label}
-                      </span>
-                    </td>
-                    <td className={`${TD} break-words text-xs`}>{row.state}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
           {context.problems.length > 0 && (
-            <section aria-labelledby="activity-deploy-problems" className="space-y-1">
-              <h4 id="activity-deploy-problems" className="text-xs font-semibold">
-                {words.problemsTitle}
-              </h4>
-              <ul className="list-disc space-y-1 pl-5 text-sm">
-                {context.problems.map((problem, index) => (
-                  <li key={`${problem.code}:${index}`}>{problemText(problem)}</li>
-                ))}
-              </ul>
-              {needsSettings(context) && (
-                <p className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                  {words.settingsHint}
-                  {user?.isAdmin === true && (
-                    <Button size="sm" onClick={() => settingsDialog.getState().open("deploy")}>
-                      {words.openSettings}
-                    </Button>
-                  )}
-                </p>
-              )}
-            </section>
+            <details className="rounded-xl border border-gray-200 dark:border-gray-800">
+              <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2">
+                {words.problemsTitle}{" "}
+                <span className="ml-2 text-xs tabular-nums text-gray-500 dark:text-gray-400">
+                  {context.problems.length}
+                </span>
+              </summary>
+              <div className="border-t border-gray-200 p-4 dark:border-gray-800">
+                {context.problems.length > 0 && (
+                  <section aria-labelledby="activity-deploy-problems" className="space-y-1">
+                    <h4 id="activity-deploy-problems" className="text-xs font-semibold">
+                      {words.problemsTitle}
+                    </h4>
+                    <ul className="list-disc space-y-1 pl-5 text-sm">
+                      {context.problems.map((problem, index) => (
+                        <li key={`${problem.code}:${index}`}>{problemText(problem)}</li>
+                      ))}
+                    </ul>
+                    {needsSettings(context) && (
+                      <p className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                        {words.settingsHint}
+                        {user?.isAdmin === true && (
+                          <Button
+                            size="sm"
+                            onClick={() => settingsDialog.getState().open("deploy")}
+                          >
+                            {words.openSettings}
+                          </Button>
+                        )}
+                      </p>
+                    )}
+                  </section>
+                )}
+              </div>
+            </details>
           )}
           {state && context.branches.deploy && (
             <DeployRelease
@@ -280,6 +272,39 @@ export function DeployPanel({
               onAnnounce={onAnnounce}
             />
           )}
+          <details className="rounded-xl border border-gray-200 dark:border-gray-800">
+            <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2">
+              {words.diagnostics}
+            </summary>
+            <div className="px-4 pb-4">
+              <div className={TABLE_WRAP}>
+                <table className={TABLE} aria-label={words.checksLabel}>
+                  <thead>
+                    <tr className={TABLE_HEAD_ROW}>
+                      <th className={TH}>{words.columns.check}</th>
+                      <th className={TH}>{words.columns.state}</th>
+                    </tr>
+                  </thead>
+                  <tbody className={TBODY}>
+                    {rows.map((row) => (
+                      <tr key={row.id}>
+                        <td className={`${TD} whitespace-nowrap font-medium`}>
+                          <span className="flex items-center gap-2">
+                            <span
+                              aria-hidden
+                              className={`size-1.5 shrink-0 rounded-full ${toneDot[row.tone]}`}
+                            />
+                            {row.label}
+                          </span>
+                        </td>
+                        <td className={`${TD} break-words text-xs`}>{row.state}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
           {state?.production && context.branches.deploy && (
             <DeployProd
               endpoint={endpoint}

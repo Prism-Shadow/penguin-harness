@@ -6,7 +6,7 @@
 import type { ModuleDocument, ModuleDocuments } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 
-export type ModuleDocumentKind = "configuration" | "assessment";
+export type ModuleDocumentKind = "configuration" | "assessment" | "definition";
 
 /** A document as the editor shows it. */
 export function documentText(value: unknown): string {

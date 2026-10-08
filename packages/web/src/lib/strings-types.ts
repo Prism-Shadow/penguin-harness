@@ -131,13 +131,17 @@ export type Strings = {
     studioPanels: {
       rail: string;
       close: string;
-      names: Record<"run" | "player" | "conversation" | "sessions", string>;
+      names: Record<"run" | "player" | "tests" | "quality" | "conversation" | "sessions", string>;
       sessionsEmpty: string;
       showTranscript: string;
       hideTranscript: string;
       /** Accessible name for a run's Show/Hide toggle: distinguishes same-kind runs for assistive tech. */
       transcriptToggle: (action: string, run: string, time: string) => string;
       openFullPage: string;
+      /** The divider between the work and the open panel. */
+      width: string;
+      expand: string;
+      restore: string;
     };
     /** Loom's refs: the product's refs in the header, and one ref's name and stability. */
     studioRefs: {
@@ -228,6 +232,7 @@ export type Strings = {
         mediaPlan: string;
         configuration: string;
         assessment: string;
+        definition: string;
         features: string;
       };
       mediaTitle: string;
@@ -321,8 +326,6 @@ export type Strings = {
       voiceUnchanged: string;
       keepAll: string;
       regenerateImages: string;
-      agent: string;
-      noAgent: string;
       columns: { asset: string; type: string; current: string; action: string; details: string };
       actions: { keep: string; regenerate: string; upload: string; library: string };
       actionsFor: (key: string) => string;
@@ -557,6 +560,11 @@ export type Strings = {
       };
       /** The module release: its stages, their states and why one cannot run, the log. */
       releaseTitle: string;
+      workflowTitle: string;
+      workflowSummary: string;
+      diagnostics: string;
+      phaseLabels: { module: string; data: string; qa: string };
+      stageProgress: (done: number, total: number) => string;
       releaseAbout: string;
       releaseModule: string;
       releasing: string;
@@ -866,6 +874,7 @@ export type Strings = {
       olderDraft: string;
       openSession: string;
       noRun: string;
+      ready: string;
     };
     /** Running the stages: Loom's stage picker and Run, and the panel that follows a run. */
     runLog: {
@@ -876,6 +885,7 @@ export type Strings = {
       all: string;
       steps: Record<
         | "spec"
+        | "mediaSpec"
         | "media"
         | "translations"
         | "speech"
@@ -924,19 +934,26 @@ export type Strings = {
       noAgent: string;
       with: (agent: string) => string;
       live: string;
+      skipped: (count: number) => string;
+      showLog: (step: string) => string;
       waitingForSession: string;
+      /** A speech or sound stage while it runs: no agent, so no transcript. */
+      runByServer: string;
       openInChat: string;
       noRun: string;
     };
-    /** The Activity Spec editor: the specification JSON, with a diff against the last save. */
-    studioSpec: {
+    /** Activity Spec's labels in the JSON editor. */
+    specEditor: {
       title: (subject: string) => string;
       editor: string;
       savedSide: string;
+      save: string;
+    };
+    /** The JSON editor Loom shows for a document: Diff and its toolbar, and why text cannot save. */
+    jsonEditor: {
       diff: string;
       diffHelp: string;
       diffHint: string;
-      save: string;
       toolbar: string;
       base: string;
       changes: string;
@@ -1102,7 +1119,8 @@ export type Strings = {
       removeChoiceOf: (n: number) => string;
       reset: string;
       save: string;
-      editAsJson: string;
+      /** The header toggle between editing the items and the JSON. */
+      view: { label: string; items: string; json: string };
       unsupported: string;
       blockers: {
         noItems: string;
@@ -1116,15 +1134,19 @@ export type Strings = {
     assessmentRun: string;
     /** Loom's Configuration Data and Assessment Data: the module's own documents, editable in place. */
     moduleDocuments: {
+      /** Loom's panel titles and save labels, by document. */
+      title: Record<"configuration" | "assessment" | "definition", (subject: string) => string>;
+      saveLabel: Record<"configuration" | "assessment" | "definition", string>;
+      savedSide: string;
       loading: string;
       unreadable: (reason: string) => string;
       none: string;
-      missing: Record<"configuration" | "assessment", string>;
+      missing: Record<"configuration" | "assessment" | "definition", string>;
       fromRun: (file: string) => string;
       fromCheckout: (file: string) => string;
       items: (n: number) => string;
       /** What editing does, per document; shown in the heading's popover. */
-      about: Record<"configuration" | "assessment", string>;
+      about: Record<"configuration" | "assessment" | "definition", string>;
       field: string;
       save: string;
       saving: string;
@@ -1133,7 +1155,7 @@ export type Strings = {
       discardConfirm: string;
       discarded: string;
       edited: string;
-      stale: Record<"configuration" | "assessment", string>;
+      stale: Record<"configuration" | "assessment" | "definition", string>;
       sharedOnCanonical: (ref: number) => string;
       notJson: (reason: string) => string;
       notObject: string;
@@ -1222,14 +1244,6 @@ export type Strings = {
       badge: Record<"main" | "scaffolding", string>;
       about: string;
     };
-    /** One narration across the activity's languages, as Loom's audio panel lists it. */
-    narrationLanguages: {
-      title: string;
-      absent: string;
-      spoken: string;
-      unspoken: string;
-      open: string;
-    };
     speechTranslation: Record<"missing" | "outdated" | "translating", string> & {
       translate: string;
       translateAll: (n: number) => string;
@@ -1266,12 +1280,6 @@ export type Strings = {
     mediaCategories: Record<"audio" | "image" | "video" | "animation", string>;
     speechScript: string;
     speechScriptHint: string;
-    acceptedAudio: string;
-    regenerateSpeech: string;
-    generateSpeech: string;
-    speechCandidates: string;
-    speechCandidate: string;
-    acceptSpeech: string;
     voicePicker: {
       label: string;
       search: string;
@@ -1287,6 +1295,7 @@ export type Strings = {
       pause: (voice: string) => string;
       mixed: string;
       default: string;
+      defaultNamed: (name: string) => string;
       applyToAll: string;
       applied: (n: number) => string;
       appliesNext: string;
@@ -1370,6 +1379,9 @@ export type Strings = {
       voiceIdHint: string;
       useVoiceId: string;
       noVoice: string;
+      reloadVoices: string;
+      loadingVoices: string;
+      libraryProblem: Record<"credential_missing" | "refused" | "unavailable", string>;
       applyToAll: string;
       mixed: string;
       applied: (n: number) => string;
@@ -1381,7 +1393,39 @@ export type Strings = {
       volume: string;
       percent: (n: number) => string;
       hint: Record<"music" | "sfx", (channel: string) => string>;
-      notSpoken: string;
+    };
+    /** A scene audio asset's editor: one card per language, Simplified or Advanced. */
+    audioEditor: {
+      view: string;
+      simplified: string;
+      advanced: string;
+      card: (language: string) => string;
+      script: (language: string) => string;
+      prompt: string;
+      generate: string;
+      regenerate: string;
+      generating: string;
+      translate: (from: string) => string;
+      translating: string;
+      needsSource: (from: string) => string;
+      save: string;
+      saving: string;
+      saveAbout: string;
+      upload: string;
+      uploading: string;
+      current: string;
+      candidate: string;
+      generatedCandidate: string;
+      uploadedCandidate: (name: string) => string;
+      trimmedCandidate: string;
+      noAudio: (language: string) => string;
+      noCandidate: string;
+      cannotPlay: (path: string) => string;
+      model: string;
+      models: Record<"eleven_v3" | "eleven_v4" | "eleven_multilingual_v2", string>;
+      sharedSound: string;
+      binding: string;
+      olderTakes: string;
     };
     /** Music and sound effects generated from a prompt. */
     sound: {
@@ -1578,21 +1622,13 @@ export type Strings = {
     testRun: string;
     moduleReady: string;
     specRun: string;
+    mediaSpecRun: string;
     assistRun: string;
     previewModule: string;
-    olderModule: string;
     previewTitle: string;
-    previewHelp: string;
-    sandboxTitle: string;
-    sandboxHelp: string;
-    sandboxBuild: string;
     sandboxBuilding: string;
-    sandboxRefresh: string;
+    sandboxBuildAgain: string;
     sandboxLog: string;
-    sandboxPlay: string;
-    sandboxPlayHelp: string;
-    sandboxPlayer: string;
-    sandboxStop: string;
     sandboxOpen: string;
     previewScene: string;
     previewSceneDefault: string;

@@ -39,8 +39,22 @@ describe("deploy settings", () => {
       moduleBuild: "Build WAF Modules",
       activityDeploy: "WAF Activity Deploy",
     });
-    expect(settings.qa).toMatchObject({ tier: "qa", environment: "loom" });
-    expect(settings.prod).toMatchObject({ tier: "prod", environment: "DEFAULT" });
+    expect(settings.qa).toEqual({
+      jenkinsUrl: "https://newjenkins.waterford.org",
+      username: "",
+      tier: "qa",
+      environment: "loom",
+      frameworkVersion: "2.24.1",
+      activityBaseUrl: "https://qademo.waterford.org/activity.html",
+    });
+    expect(settings.prod).toMatchObject({
+      tier: "prod",
+      environment: "DEFAULT",
+      frameworkVersion: "2.23.1",
+      jenkinsUrl: "",
+      username: "",
+    });
+    expect(settings.git).toEqual({ userName: "WAF Loom", userEmail: "waf-loom@waterford.org" });
     // The activity-data and media remotes are the WAF workspace's now.
     expect(settings.repos).toEqual({ mediaPublicBase: "{{MEDIA}}/" });
     expect(settings.timeouts).toEqual({ buildMinutes: 30, deployMinutes: 30 });
@@ -180,15 +194,26 @@ describe("deploy settings", () => {
   });
 
   it("names every setting a QA deploy still needs", () => {
-    expect(missingSettings(defaultDeploySettings(), {})).toEqual([
-      "qa.jenkinsUrl",
-      "qa.username",
-      "qa.token",
-      "qa.frameworkVersion",
-      "qa.activityBaseUrl",
-      "git.userName",
-      "git.userEmail",
-    ]);
+    expect(missingSettings(defaultDeploySettings(), {})).toEqual(["qa.username", "qa.token"]);
+  });
+
+  it("preserves saved overrides and explicitly cleared values", () => {
+    const saved = readDeploySettings(
+      JSON.stringify({
+        qa: {
+          jenkinsUrl: "https://custom.example.org",
+          frameworkVersion: "3.0.0",
+          activityBaseUrl: "",
+        },
+        git: { userName: "Custom Bot", userEmail: "bot@example.org" },
+      }),
+    );
+    expect(saved.qa).toMatchObject({
+      jenkinsUrl: "https://custom.example.org",
+      frameworkVersion: "3.0.0",
+      activityBaseUrl: "",
+    });
+    expect(saved.git).toEqual({ userName: "Custom Bot", userEmail: "bot@example.org" });
   });
 });
 

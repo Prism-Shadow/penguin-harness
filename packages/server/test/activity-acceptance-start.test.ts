@@ -21,6 +21,7 @@ import {
   runAcceptanceSource,
 } from "../src/activities/acceptance-harness.js";
 import { INSTALL_MARKER } from "../src/activities/test-browser.js";
+import { PLAYER_CHECK_DIR } from "../src/activities/waf-module.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { activitySpec, createCheckoutActivity } from "./activity-fixtures.js";
@@ -198,7 +199,24 @@ describe("acceptance test runs", () => {
       const settled = (await runs()).find((entry) => entry.runId === run.runId)!;
       return { run, settled, workspace: path.join(t.root, "activity-runs", run.runId) };
     };
-    return { t, client, endpoint, start, report, runs, runToEnd, prompts, seen, sessions, home };
+    const useAgent = (next: Agent) => {
+      agent = next;
+    };
+    return {
+      t,
+      client,
+      endpoint,
+      start,
+      report,
+      runs,
+      runToEnd,
+      prompts,
+      seen,
+      sessions,
+      home,
+      revision,
+      useAgent,
+    };
   }
 
   it("finishes skipped without a Session when the specification has no criteria", async () => {
@@ -389,5 +407,75 @@ describe("acceptance test runs", () => {
     expect(nothing.settled.status).toBe("failed");
     expect(nothing.settled.error).toBe("The session ended without acceptance-results.json.");
     expect((await report()).report).toBeNull();
+  });
+  it("gives a module run a player check over a link that plays the run's own module", async () => {
+    const assemble = async (f: Awaited<ReturnType<typeof setup>>) => {
+      await f.client.patch(`${f.endpoint}/description`, {
+        description: "Tap the cat, then celebrate.",
+        expectedRevision: await f.revision(),
+      });
+      const applied = await f.client.post(`${f.endpoint}/apply-generated-spec`, {
+        spec: { ...activitySpec, acceptance_criterias: CRITERIA },
+        expectedRevision: await f.revision(),
+      });
+      expect(applied.status, await applied.clone().text()).toBe(200);
+      const response = await f.client.post(`${f.endpoint}/assemble-module`, {
+        agentId: "default_agent",
+        expectedRevision: await f.revision(),
+      });
+      expect(response.status, await response.clone().text()).toBe(202);
+      const run = (await response.json()) as ActivityRun;
+      await waitFor(() => f.t.deps.manager.statusOf(run.sessionId!) === "idle");
+      return run;
+    };
+
+    const f = await setup();
+    let played: { status: number; body: string } | null = null;
+    f.useAgent(async (workspace) => {
+      const input = JSON.parse(
+        await fs.readFile(path.join(workspace, PLAYER_CHECK_DIR, "acceptance-input.json"), "utf8"),
+      ) as { playUrl: string };
+      // While the run is still going, its link serves the module in its own workspace.
+      const url = new URL("module/definition.json", input.playUrl);
+      const response = await f.t.app.request(url.toString(), { headers: { host: url.host } });
+      played = { status: response.status, body: await response.text() };
+    });
+    const run = await assemble(f);
+    const workspace = path.join(f.t.root, "activity-runs", run.runId);
+    const check = path.join(workspace, PLAYER_CHECK_DIR);
+    expect((await fs.readdir(check)).sort()).toEqual([
+      "acceptance-input.json",
+      "activity-harness.mjs",
+      "package.json",
+      "run-acceptance.mjs",
+    ]);
+    const input = JSON.parse(await fs.readFile(path.join(check, "acceptance-input.json"), "utf8"));
+    expect(input).toMatchObject({
+      criteria: CRITERIA,
+      scenes: activitySpec.scenes.map((scene) => scene.id),
+      browserPath: executableIn(f.home),
+    });
+    const token = new URL(input.playUrl).pathname.split("/")[3]!;
+    expect(
+      JSON.parse(Buffer.from(token.slice(0, token.indexOf(".")), "base64url").toString("utf8")),
+    ).toMatchObject({ runId: run.runId });
+    expect(await fs.readFile(path.join(check, "activity-harness.mjs"), "utf8")).toBe(
+      activityHarnessSource,
+    );
+    expect(played).not.toBeNull();
+    expect(played!.status).toBe(200);
+    expect(played!.body).toBe(
+      await fs.readFile(path.join(workspace, "module", "definition.json"), "utf8"),
+    );
+    expect(f.prompts.at(-1)).toContain(PLAYER_CHECK_DIR);
+    expect(f.prompts.at(-1)).not.toContain("preview/runtime.js");
+    expect(f.prompts.at(-1)).not.toContain("native reader");
+
+    // Without the test browser there is nothing to check with, and nothing is staged.
+    const bare = await setup({ installed: false });
+    bare.useAgent(async () => {});
+    const unchecked = await assemble(bare);
+    const files = await fs.readdir(path.join(bare.t.root, "activity-runs", unchecked.runId));
+    expect(files).not.toContain(PLAYER_CHECK_DIR);
   });
 });

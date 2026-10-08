@@ -1,34 +1,47 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestBegin, requestEnd } from "@prismshadow/penguin-core";
 import type {
   ActivityDetail,
   ActivityDraft,
   ActivityRun,
   ActivityRunSummary,
 } from "../src/activities/domain.js";
-import { ActivityGenerationService } from "../src/activities/generation.js";
 import { speechProviderFor, speechSetup } from "../src/activities/audio-providers.js";
 import { validateManifest } from "../src/activities/media.js";
+import { speechTargets } from "../src/activities/pipeline-run.js";
 import {
+  ELEVENLABS_BUILTIN_VOICE_ID,
+  ELEVENLABS_DEFAULT_OPTION,
   ELEVENLABS_DEFAULT_VOICE,
   isVoiceOf,
   speechCatalogue,
 } from "../src/activities/voice-catalogue.js";
-import type { SpeechSetup } from "../src/activities/speech-types.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { ElevenLabsVoices, SpeechSetup } from "../src/activities/speech-types.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { activitySpec } from "./activity-fixtures.js";
-import { fakeMp3Encoding, mp3OfWave, soundMp3, speechWave } from "./audio-fixtures.js";
+import {
+  fakeMp3Encoding,
+  fakeMediaHelper,
+  mp3OfWave,
+  soundMp3,
+  speechWave,
+} from "./audio-fixtures.js";
 
 const PROJECT = "speaker-activities";
 const VOICE_ID = "AbCdEfGhIj0123456789";
 
 describe("choosing who speaks a narration", () => {
-  it("picks the narration's provider, Gemini when it names none, and never substitutes", () => {
+  it("picks the narration's provider, ElevenLabs when it names none, and never substitutes", () => {
+    // A narration naming no provider is ElevenLabs', so Gemini's key alone does not speak it.
     expect(speechProviderFor({}, ["GEMINI_API_KEY"])).toEqual({
+      problem: "credential_missing",
+      credential: "ELEVENLABS_API_KEY",
+    });
+    expect(speechProviderFor({}, ["ELEVENLABS_API_KEY"])).toMatchObject({
+      provider: "elevenlabs",
+    });
+    expect(speechProviderFor({ speechProvider: "gemini" }, ["GEMINI_API_KEY"])).toEqual({
       provider: "gemini",
       credential: "GEMINI_API_KEY",
       timings: false,
@@ -70,15 +83,19 @@ describe("choosing who speaks a narration", () => {
         timings: false,
       },
     ]);
-    expect(new Set(speechCatalogue(null).map((option) => option.providerId))).toEqual(
-      new Set(["gemini", "kokoro"]),
+    // The ElevenLabs default is always offered: it has Loom's voice to stand for.
+    expect(new Set(speechCatalogue().map((option) => option.providerId))).toEqual(
+      new Set(["gemini", "kokoro", "elevenlabs"]),
     );
-    expect(speechCatalogue(["ELEVENLABS_VOICE_ID"]).at(-1)).toMatchObject({
+    expect(speechCatalogue().at(-1)).toMatchObject({
       id: ELEVENLABS_DEFAULT_VOICE,
       label: "ElevenLabs default",
       providerId: "elevenlabs",
       model: "eleven_v3",
     });
+    // The account's library, when listed, replaces the bare default.
+    const library = [{ ...speechCatalogue().at(-1)!, voiceName: "Sarah" }];
+    expect(speechCatalogue(library).at(-1)).toEqual(library[0]);
   });
 
   it("accepts only the voices each provider speaks with", () => {
@@ -117,41 +134,14 @@ describe("choosing who speaks a narration", () => {
 describe("speech through the provider seam", () => {
   const cleanups: (() => Promise<void>)[] = [];
   afterEach(async () => {
+    vi.restoreAllMocks();
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
   async function fixture() {
-    let complete: () => void = () => {};
-    const waiting = new Set<string>();
-    // What the fake Session writes, standing in for the helper; nothing reaches a provider.
-    let output: { files: Record<string, Buffer | string> } = { files: {} };
-    const prompts: string[] = [];
-    const fakeSession = (row: SessionRow): RuntimeSession => ({
-      sessionId: row.sessionId,
-      dispose: () => {},
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok",
-      steer: () => false,
-      skipReconnectWait: () => false,
-      async *compact() {},
-      async *run(input, options) {
-        prompts.push(JSON.stringify(input));
-        yield requestBegin();
-        await new Promise<void>((resolve) => {
-          complete = resolve;
-          waiting.add(row.sessionId);
-          if (options.signal.aborted) resolve();
-          else options.signal.addEventListener("abort", () => resolve(), { once: true });
-        });
-        for (const [name, bytes] of Object.entries(output.files))
-          await fs.writeFile(path.join(row.workspace!, name), bytes);
-        yield requestEnd("completed");
-      },
-    });
-    const t = await createTestApp(fakeMp3Encoding);
-    const adopt = t.deps.manager.adopt.bind(t.deps.manager);
-    vi.spyOn(t.deps.manager, "adopt").mockImplementation((row) => adopt(row, fakeSession(row)));
+    // The server runs the speech helper itself; this one writes what a test says it wrote.
+    const helper = fakeMediaHelper();
+    const t = await createTestApp({ ...fakeMp3Encoding, mediaHelperPorts: helper.ports });
     cleanups.push(t.cleanup);
     const owner = await provisionUser(t.app, "speaker");
     const client = apiClient(t.app, owner.cookie);
@@ -202,20 +192,17 @@ describe("speech through the provider seam", () => {
       expectedRevision: ((await saved.json()) as ActivityDraft).contentRevision,
     });
     expect(planned.status, await planned.clone().text()).toBe(200);
-    const service = t.deps.tree.api<ActivityGenerationService>(
-      "ActivitiesModule",
-      "ActivityGeneration",
-    );
     const current = async () => (await (await client.get(endpoint)).json()) as ActivityDetail;
     const hello = async () =>
       (await current()).draft.mediaPlan!.manifest.assets["en-US"]!.find(
         (asset) => asset.key === "hello",
       )!;
-    const setVault = async (keys: string[]) =>
+    /** Every key holds a fake value, unless `values` names one. */
+    const setVault = async (keys: string[], values: Record<string, string> = {}) =>
       expect(
         (
-          await client.put(`/api/projects/${PROJECT}/agents/default_agent/vault`, {
-            entries: keys.map((key) => ({ key, value: "fake-test-only" })),
+          await client.put(`/api/projects/${PROJECT}/agents/media_agent/vault`, {
+            entries: keys.map((key) => ({ key, value: values[key] ?? "fake-test-only" })),
           })
         ).status,
       ).toBe(200);
@@ -245,17 +232,28 @@ describe("speech through the provider seam", () => {
       const response = await generate(voice, provider);
       expect(response.status, await response.clone().text()).toBe(202);
       const run = (await response.json()) as ActivityRun;
-      await waitFor(() => waiting.has(run.sessionId!));
+      // No agent speaks it: the run has no Session, only the helper the server runs.
+      expect(run.sessionId).toBeNull();
+      await waitFor(() => helper.waiting(run.runId) !== null);
       return run;
     }
-    async function finish(run: ActivityRun, files: Record<string, Buffer | string>) {
-      output = { files };
-      complete();
-      await waitFor(() => t.deps.manager.statusOf(run.sessionId!) === "idle");
-      await service.reconcile();
-      return (
+    const runOf = async (run: ActivityRun) =>
+      (
         (await (await client.get(`${endpoint}/runs`)).json()) as { runs: ActivityRunSummary[] }
       ).runs.find((entry) => entry.runId === run.runId)!;
+    async function finish(
+      run: ActivityRun,
+      files: Record<string, Buffer | string>,
+      result?: { ok: false; error: string },
+    ) {
+      await helper.finish(files, result);
+      let summary = await runOf(run);
+      const deadline = Date.now() + 5000;
+      while (summary.status === "running" && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        summary = await runOf(run);
+      }
+      return summary;
     }
     const accept = async (run: ActivityRun) => {
       const response = await client.post(`${endpoint}/runs/${run.runId}/accept-audio`, {
@@ -264,9 +262,10 @@ describe("speech through the provider seam", () => {
       expect(response.status, await response.clone().text()).toBe(200);
     };
     return {
+      t,
       client,
       endpoint,
-      prompts,
+      helper,
       current,
       hello,
       setVault,
@@ -284,7 +283,7 @@ describe("speech through the provider seam", () => {
     { word: "cat", startMs: 900, endMs: 1200 },
   ];
 
-  it("refuses ElevenLabs without its key, naming it, and the default voice without one in the Vault", async () => {
+  it("refuses ElevenLabs without its key, naming it, and a voice it does not speak with", async () => {
     const f = await fixture();
     await f.setVault(["GEMINI_API_KEY"]);
     await f.choose("elevenlabs");
@@ -296,9 +295,6 @@ describe("speech through the provider seam", () => {
       detail: { credential: "ELEVENLABS_API_KEY" },
     });
     await f.setVault(["ELEVENLABS_API_KEY"]);
-    const noVoice = await f.generate(ELEVENLABS_DEFAULT_VOICE);
-    expect(noVoice.status).toBe(400);
-    expect(JSON.stringify(await noVoice.json())).toContain("ELEVENLABS_VOICE_ID");
     // A Gemini voice is not one ElevenLabs speaks with.
     expect((await f.generate("Kore")).status).toBe(422);
     const unknown = await f.generate(VOICE_ID, "unknown");
@@ -308,11 +304,87 @@ describe("speech through the provider seam", () => {
     expect(listed.runs).toEqual([]);
   });
 
-  it("reports the providers and voices for the chosen agent", async () => {
+  it("resolves the default voice when a run starts: the Vault's, else Loom's, handed to the helper", async () => {
+    const f = await fixture();
+    const spokenWith = async (run: ActivityRun) =>
+      JSON.parse(
+        await fs.readFile(path.join(f.helper.waiting(run.runId)!, "speech-input.json"), "utf8"),
+      ).voice;
+    await f.setVault(["ELEVENLABS_API_KEY"]);
+    await f.choose("elevenlabs");
+    const run = await f.started(ELEVENLABS_DEFAULT_VOICE);
+    // The run still says "default"; the helper is handed the voice it stands for.
+    expect(run.audio).toMatchObject({
+      voice: ELEVENLABS_DEFAULT_VOICE,
+      voiceId: ELEVENLABS_BUILTIN_VOICE_ID,
+    });
+    expect(await spokenWith(run)).toBe(ELEVENLABS_BUILTIN_VOICE_ID);
+    await f.finish(run, {}, { ok: false, error: "stopped by the test" });
+    await f.setVault(["ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"], {
+      ELEVENLABS_VOICE_ID: VOICE_ID,
+    });
+    const named = await f.started(ELEVENLABS_DEFAULT_VOICE);
+    expect(named.audio?.voiceId).toBe(VOICE_ID);
+    expect(await spokenWith(named)).toBe(VOICE_ID);
+    // A voice the author chose is spoken as it is.
+    await f.finish(named, {}, { ok: false, error: "stopped by the test" });
+    const chosen = await f.started(VOICE_ID);
+    expect(chosen.audio?.voiceId).toBeUndefined();
+    expect(await spokenWith(chosen)).toBe(VOICE_ID);
+  });
+
+  it("lists the Media Agent's ElevenLabs voices, the default first, and keeps the list a while", async () => {
+    const f = await fixture();
+    const voicesOf = async (query = "") =>
+      (await (
+        await f.client.get(`/api/projects/${PROJECT}/activities/elevenlabs-voices${query}`)
+      ).json()) as ElevenLabsVoices;
+    // Without the key there is nothing to ask: only the default, and why.
+    expect(await voicesOf()).toEqual({
+      voices: [ELEVENLABS_DEFAULT_OPTION],
+      problem: "credential_missing",
+    });
+    await f.setVault(["ELEVENLABS_API_KEY"]);
+    const real = globalThis.fetch;
+    const asked: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.startsWith("https://api.elevenlabs.io/")) return real(input, init);
+      asked.push((init?.headers as Record<string, string>)["xi-api-key"]!);
+      return new Response(
+        JSON.stringify({
+          voices: [
+            {
+              voice_id: ELEVENLABS_BUILTIN_VOICE_ID,
+              name: "Sarah",
+              preview_url: "https://x.test/s.mp3",
+            },
+            { voice_id: VOICE_ID, name: "Aaron" },
+          ],
+        }),
+      );
+    });
+    const listed = await voicesOf();
+    expect(listed.problem).toBeUndefined();
+    expect(listed.voices.map((voice) => [voice.id, voice.label, voice.voiceName])).toEqual([
+      [ELEVENLABS_DEFAULT_VOICE, ELEVENLABS_DEFAULT_OPTION.label, "Sarah"],
+      [VOICE_ID, "Aaron", undefined],
+    ]);
+    // The Vault value goes to ElevenLabs and nowhere else.
+    expect(asked).toEqual(["fake-test-only"]);
+    expect(JSON.stringify(listed)).not.toContain("fake-test-only");
+    // Kept a while; ?refresh=1 asks again.
+    await voicesOf();
+    expect(asked).toHaveLength(1);
+    await voicesOf("?refresh=1");
+    expect(asked).toHaveLength(2);
+  });
+
+  it("reports the providers and voices for the Media Agent", async () => {
     const f = await fixture();
     await f.setVault(["ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]);
     const setup = (await (
-      await f.client.get(`/api/projects/${PROJECT}/activities/speech-setup?agentId=default_agent`)
+      await f.client.get(`/api/projects/${PROJECT}/activities/speech-setup`)
     ).json()) as SpeechSetup;
     expect(setup.providers).toEqual([
       expect.objectContaining({ id: "gemini", available: false, problem: "credential_missing" }),
@@ -320,29 +392,11 @@ describe("speech through the provider seam", () => {
       expect.objectContaining({ id: "kokoro", timings: false }),
     ]);
     expect(setup.catalogue.map((option) => option.id)).toContain(ELEVENLABS_DEFAULT_VOICE);
-    // An agent id that is not an id is refused before it names a path.
-    for (const route of ["speech-setup", "sound-setup"]) {
-      const probed = await f.client.get(
-        `/api/projects/${PROJECT}/activities/${route}?agentId=${encodeURIComponent("../../other/agents/default_agent")}`,
-      );
-      expect(probed.status).toBe(400);
-    }
-    // Without an agent, the Gemini catalogue as before.
-    const plain = (await (
-      await f.client.get(`/api/projects/${PROJECT}/activities/speech-setup`)
+    // An agent named in the query changes nothing: the Media Agent's Vault answers.
+    const named = (await (
+      await f.client.get(`/api/projects/${PROJECT}/activities/speech-setup?agentId=default_agent`)
     ).json()) as SpeechSetup;
-    expect(plain.providers).toBeUndefined();
-    expect(plain.catalogue.map((option) => option.id)).toEqual([
-      "Kore",
-      "Puck",
-      "Charon",
-      "Fenrir",
-      "Aoede",
-      "af_heart",
-      "am_michael",
-      "bf_emma",
-      "bm_george",
-    ]);
+    expect(named).toEqual(setup);
     // Key names only: a Vault value never reaches the App.
     expect(JSON.stringify(setup)).not.toContain("fake-test-only");
   });
@@ -358,7 +412,11 @@ describe("speech through the provider seam", () => {
       voice: ELEVENLABS_DEFAULT_VOICE,
       script: "Hello, big [pause] cat!",
     });
-    expect(f.prompts.at(-1)).toContain("speech.mp3");
+    // ElevenLabs is called with Node's own fetch: nothing to install, the Vault as its env.
+    expect(f.helper.calls.at(-1)).toMatchObject({
+      install: false,
+      vault: { ELEVENLABS_API_KEY: "fake-test-only" },
+    });
     const summary = await f.finish(run, {
       "speech.mp3": soundMp3(40),
       "speech-timings.json": JSON.stringify(timings),
@@ -370,7 +428,36 @@ describe("speech through the provider seam", () => {
     await f.accept(run);
     const bound = await f.hello();
     expect(bound.path).toBe("media/loom/p/p-1/audios/english/hello.mp3");
-    expect(bound.generatedAudio).toMatchObject({ runId: run.runId, format: "mp3" });
+    // The model it was spoken with is kept, so a later model makes it again.
+    expect(bound.generatedAudio).toEqual({
+      runId: run.runId,
+      sha256: expect.any(String),
+      format: "mp3",
+      model: "eleven_v3",
+      // The default voice as it resolved: the Vault's ELEVENLABS_VOICE_ID is not a voice id here.
+      voice: ELEVENLABS_BUILTIN_VOICE_ID,
+    });
+    expect(speechTargets((await f.current()).draft.mediaPlan!.manifest)).toEqual([]);
+    // It saved no voice of its own, so a Vault naming another default voice keeps it: the
+    // stage would replace a clip the author accepted without their hearing it.
+    expect(
+      speechTargets((await f.current()).draft.mediaPlan!.manifest, { elevenLabsDefault: VOICE_ID }),
+    ).toEqual([]);
+    // It saved no voice of its own, so a run choosing another voice speaks it again.
+    expect(
+      speechTargets((await f.current()).draft.mediaPlan!.manifest, { chosen: VOICE_ID }),
+    ).toEqual([{ language: "en-US", assetKey: "hello" }]);
+    const chosen = await f.current();
+    const changed = structuredClone(chosen.draft.mediaPlan!.manifest);
+    changed.assets["en-US"]!.find((entry) => entry.key === "hello")!.speechModel = "eleven_v4";
+    const saved = await f.client.put(`${f.endpoint}/media`, {
+      manifest: changed,
+      expectedRevision: chosen.draft.contentRevision,
+    });
+    expect(saved.status, await saved.clone().text()).toBe(200);
+    expect(speechTargets((await f.current()).draft.mediaPlan!.manifest)).toEqual([
+      { language: "en-US", assetKey: "hello" },
+    ]);
     expect(bound.wordTimings).toEqual(timings);
     // 40 frames of 1152 samples at 44.1 kHz.
     expect(bound.durationMs).toBe(Math.round((40 * 1152 * 1000) / 44100));
@@ -391,11 +478,22 @@ describe("speech through the provider seam", () => {
     const strayed = await f.finish(stray, { "speech.wav": speechWave(2400) });
     expect(strayed.status).toBe("failed");
     expect(strayed.error).toContain("speech.wav");
+    // A helper that failed says why in its own words, and nothing it left behind is kept.
+    const refused = await f.started(VOICE_ID, "elevenlabs");
+    const settled = await f.finish(
+      refused,
+      { "speech.mp3": soundMp3(10) },
+      { ok: false, error: "provider refused: plan or key" },
+    );
+    expect(settled).toMatchObject({ status: "failed", error: "provider refused: plan or key" });
+    expect((await f.client.get(`${f.endpoint}/runs/${refused.runId}/audio`)).status).not.toBe(200);
   });
 
   it("keeps Gemini speech as MP3 made from its WAV, no provider on the run, and no timings even from a stray file", async () => {
     const f = await fixture();
     await f.setVault(["GEMINI_API_KEY"]);
+    // Gemini is no longer the default, so the narration names it.
+    await f.choose("gemini");
     const run = await f.started("Kore");
     expect(run.audio).toEqual({
       language: "en-US",
@@ -404,7 +502,11 @@ describe("speech through the provider seam", () => {
       voice: "Kore",
       model: "gemini-3.1-flash-tts-preview",
     });
-    expect(f.prompts.at(-1)).toContain("GEMINI_API_KEY");
+    // Gemini goes through agenthub, which the helper's package.json installs first.
+    expect(f.helper.calls.at(-1)).toMatchObject({
+      install: true,
+      vault: { GEMINI_API_KEY: "fake-test-only" },
+    });
     // A timings file on a Gemini run is not its provider's, so it is ignored.
     const summary = await f.finish(run, {
       "speech.wav": speechWave(4800),
@@ -415,7 +517,12 @@ describe("speech through the provider seam", () => {
     const bound = await f.hello();
     // The media repository keeps audio as MP3, so Gemini's WAV is converted.
     expect(bound.path).toBe("media/loom/p/p-1/audios/english/hello.mp3");
-    expect(bound.generatedAudio).toMatchObject({ runId: run.runId, format: "mp3" });
+    expect(bound.generatedAudio).toMatchObject({
+      runId: run.runId,
+      format: "mp3",
+      model: "gemini-3.1-flash-tts-preview",
+      voice: "Kore",
+    });
     const played = await f.client.get(`${f.endpoint}/runs/${run.runId}/audio`);
     expect(played.headers.get("content-type")).toBe("audio/mpeg");
     expect(Buffer.from(await played.arrayBuffer())).toEqual(mp3OfWave(speechWave(4800)));

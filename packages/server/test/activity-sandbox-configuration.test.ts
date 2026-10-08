@@ -18,6 +18,13 @@ describe("unwrapping a module's configuration", () => {
     });
   });
 
+  it("takes the contents wrapped in the product code, as Penguin's assembly writes them", () => {
+    const wrapped = { test10: { stateMachine: { id: "m" }, rounds: {} } };
+    expect(unwrapModuleConfiguration(wrapped, "act_1", ["test10"])).toEqual(wrapped.test10);
+    // Without the product code named, the same file is contents.
+    expect(unwrapModuleConfiguration(wrapped, "act_1")).toEqual(wrapped);
+  });
+
   it("leaves a configuration that merely has one key of its own", () => {
     // A single key named after something else is contents, not a wrapper.
     expect(unwrapModuleConfiguration({ scenes: [] }, "sightWords")).toEqual({ scenes: [] });

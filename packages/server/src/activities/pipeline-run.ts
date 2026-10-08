@@ -30,6 +30,7 @@
  * rolled back, and nothing after it runs.
  */
 import { isBookWord } from "./book-words.js";
+import { speechModelFor } from "./audio.js";
 import { KOKORO_VOICES } from "./local-audio-models.js";
 import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../http/errors.js";
@@ -38,7 +39,10 @@ import type { ActivitySandbox } from "./sandbox-service.js";
 import type { ActivityAcceptance } from "./acceptance-service.js";
 import { acceptanceCriteria } from "./acceptance-collect.js";
 import {
+  DEFAULT_SPEECH_PROVIDER,
+  ELEVENLABS_BUILTIN_VOICE_ID,
   ELEVENLABS_DEFAULT_VOICE,
+  wordSpeechProvider,
   SPEECH_VOICES,
   isSpeechVoice,
   isVoiceOf,
@@ -116,10 +120,49 @@ const TEXT_MAX = 5000;
 const usable = (text: string | undefined) => !!text?.trim() && text.length <= TEXT_MAX;
 
 /**
- * Unbound narration with a script the speech run accepts, in every language, in manifest order.
- * A book's word pronunciations are recorded with the words, not as narration.
+ * Whether a bound narration was spoken with another model or voice than it would be now,
+ * Loom's changed generation profile: its model, provider or voice changed since, or, for one
+ * with no voice of its own, the voice the run chose. What a clip did not record (an upload,
+ * or one accepted before models and voices were recorded) is not compared, and neither is the
+ * voice of one with no voice of its own when the run chose none: the author may have spoken
+ * it with any voice in the editor, and the stage accepts what it makes unheard.
  */
-export function speechTargets(manifest: AssetManifest): { language: string; assetKey: string }[] {
+function spokenDifferently(asset: MediaAsset, language: string, voices: SpeechVoices): boolean {
+  const recorded = asset.generatedAudio;
+  if (!recorded) return false;
+  const provider = asset.speechProvider ?? DEFAULT_SPEECH_PROVIDER;
+  const voiceCompared = !!asset.voice || !!voices.chosen;
+  const voice = voiceFor(provider, asset.voice, voices.chosen, language);
+  // The default ElevenLabs voice is compared as the voice it speaks with, as the clip records it.
+  const spoken =
+    voice === ELEVENLABS_DEFAULT_VOICE
+      ? (voices.elevenLabsDefault ?? ELEVENLABS_BUILTIN_VOICE_ID)
+      : voice;
+  return (
+    (recorded.model !== undefined && recorded.model !== speechModelFor(provider, asset)) ||
+    (voiceCompared && recorded.voice !== undefined && recorded.voice !== spoken)
+  );
+}
+
+/**
+ * The voices a speech step speaks with: the one the run chose for narration with none of its
+ * own, and the voice the default ElevenLabs voice resolves to (absent, Loom's).
+ */
+export interface SpeechVoices {
+  chosen?: string;
+  elevenLabsDefault?: string;
+}
+
+/**
+ * Narration with a script the speech run accepts, in every language, in manifest order: unbound,
+ * or spoken with another model or voice than it would be now, given the voice the run chose
+ * for narration with none of its own. A book's word pronunciations are recorded with the
+ * words, not as narration.
+ */
+export function speechTargets(
+  manifest: AssetManifest,
+  voices: SpeechVoices = {},
+): { language: string; assetKey: string }[] {
   return Object.entries(manifest.assets).flatMap(([language, assets]) =>
     assets
       .filter(
@@ -127,7 +170,7 @@ export function speechTargets(manifest: AssetManifest): { language: string; asse
           asset.type === "audio" &&
           !asset.kind &&
           !isBookWord(asset) &&
-          !asset.path &&
+          (!asset.path || spokenDifferently(asset, language, voices)) &&
           usable(asset.script),
       )
       .map((asset) => ({ language, assetKey: asset.key })),
@@ -197,10 +240,10 @@ export function validateSpeechLanguages(
   manifest: AssetManifest | undefined,
   input: PipelineInput,
 ): void {
-  if (!manifest || input.codingAgentId || !input.agentId) return;
+  if (!manifest) return;
   const steps = stepsFor(input.selection);
   const targets = [
-    ...(steps.includes("speech") ? speechTargets(manifest) : []),
+    ...(steps.includes("speech") ? speechTargets(manifest, { chosen: input.voice }) : []),
     ...(steps.includes("speech") && steps.includes("translations")
       ? translationTargets(manifest)
       : []),
@@ -409,22 +452,43 @@ export class PipelineRunner {
     const runtime = input.codingAgentId ? { codingAgentId: input.codingAgentId } : undefined;
     const current = () => activities.getActivity(projectId, activityId);
 
-    if (step.step === "spec") {
+    if (step.step === "spec" || step.step === "mediaSpec") {
       const activity = await current();
-      if (!activity.draft.description.trim())
+      if (step.step === "spec" && !activity.draft.description.trim())
         throw new Error("Write the activity script before generating the specification.");
-      await this.follow(
-        state,
-        step,
-        await generation.start(
-          projectId,
-          activityId,
-          input.agentId,
-          activity.draft.contentRevision,
-          undefined,
-          runtime,
-        ),
+      if (step.step === "mediaSpec" && (!activity.draft.spec || activity.draft.status !== "valid"))
+        throw new Error("Save a valid specification before listing its media.");
+      const pass = step.step === "mediaSpec" ? { mediaSpec: true as const } : {};
+      // Loom's retry: a pass that wrote the wrong thing runs once more, told why.
+      const first = await generation.start(
+        projectId,
+        activityId,
+        input.agentId,
+        activity.draft.contentRevision,
+        step.step === "mediaSpec" ? pass : undefined,
+        runtime,
       );
+      try {
+        await this.follow(state, step, first);
+      } catch (error) {
+        if (error instanceof Stopped || this.stopping.has(state.activityId)) throw error;
+        // Only a specification that failed its checks is retried; a Session, provider or
+        // workspace failure would fail the same way again.
+        const failed = await generation.run(projectId, activityId, first.runId).catch(() => null);
+        if (failed?.status !== "failed" || !failed.repairable) throw error;
+        await this.follow(
+          state,
+          step,
+          await generation.start(
+            projectId,
+            activityId,
+            input.agentId,
+            (await current()).draft.contentRevision,
+            { ...pass, repair: failed.error ?? (error as Error).message },
+            runtime,
+          ),
+        );
+      }
       return;
     }
 
@@ -479,19 +543,19 @@ export class PipelineRunner {
     }
 
     if (step.step === "speech" || step.step === "images") {
-      // Media is generated by a Penguin agent's model; a coding agent writes code.
-      if (input.codingAgentId || !input.agentId) {
-        step.status = "skipped";
-        step.note = "needsPenguinAgent";
-        return;
-      }
+      // Generated by the Media Agent whichever agent runs the stages (generation.start).
       const activity = await current();
       const manifest = activity.draft.mediaPlan?.manifest;
       if (!manifest) throw new Error("Plan media before generating it.");
       if (step.step === "speech")
         validateSpeechLanguages(manifest, { ...input, selection: "speech" });
       const targets = inScope(
-        step.step === "speech" ? speechTargets(manifest) : imageTargets(manifest),
+        step.step === "speech"
+          ? speechTargets(manifest, {
+              chosen: input.voice,
+              elevenLabsDefault: await generation.elevenLabsDefaultVoice(projectId),
+            })
+          : imageTargets(manifest),
         input.scope,
       );
       step.total = targets.length;
@@ -505,7 +569,7 @@ export class PipelineRunner {
           (item) => item.key === target.assetKey,
         );
         const voice = voiceFor(
-          narration?.speechProvider ?? "gemini",
+          narration?.speechProvider ?? DEFAULT_SPEECH_PROVIDER,
           narration?.voice,
           input.voice,
           target.language,
@@ -547,12 +611,7 @@ export class PipelineRunner {
     }
 
     if (step.step === "sounds") {
-      // Music and effects are made by a Penguin agent's helper; a coding agent writes code.
-      if (input.codingAgentId || !input.agentId) {
-        step.status = "skipped";
-        step.note = "needsPenguinAgent";
-        return;
-      }
+      // Made by the Media Agent's helper whichever agent runs the stages (generation.start).
       const activity = await current();
       const manifest = activity.draft.mediaPlan?.manifest;
       if (!manifest) throw new Error("Plan media before generating it.");
@@ -565,9 +624,9 @@ export class PipelineRunner {
       }
       const provider: SoundProviderId = input.soundProvider ?? "elevenlabs";
       // Asked once: a missing key or model is the same for every sound of a kind, and is not a
-      // failure of the sequence, only of this provider for this agent. A sound whose kind the
+      // failure of the sequence, only of this provider for the Media Agent. A sound whose kind the
       // provider cannot make now is left for another provider rather than failing the stages.
-      const status = (await generation.soundSetup(projectId, input.agentId)).providers.find(
+      const status = (await generation.soundSetup(projectId)).providers.find(
         (entry) => entry.id === provider,
       );
       const served = status
@@ -710,11 +769,6 @@ export class PipelineRunner {
       step.note = "notDecodable";
       return;
     }
-    if (input.codingAgentId || !input.agentId) {
-      step.status = "skipped";
-      step.note = "needsPenguinAgent";
-      return;
-    }
     if (!manifest) throw new Error("Plan media before recording the book's words.");
     validateSpeechLanguages(manifest, { ...input, selection: "words" });
     const waiting = inScope(unrecordedWithSounds(manifest), input.scope);
@@ -725,7 +779,7 @@ export class PipelineRunner {
         : "noWords";
       return;
     }
-    const speech = await generation.speechSetup(projectId, input.agentId);
+    const speech = await generation.speechSetup(projectId);
     const fallback: SpeechProviderId = speech.providers?.some(
       (entry) => entry.id === "elevenlabs" && entry.available,
     )
@@ -743,7 +797,7 @@ export class PipelineRunner {
     step.total = targets.length;
     for (const target of targets) {
       const word = ready.assets[target.language]?.find((item) => item.key === target.assetKey);
-      const provider = word?.speechProvider ?? "gemini";
+      const provider = word ? wordSpeechProvider(word) : DEFAULT_SPEECH_PROVIDER;
       step.detail = target.assetKey;
       const before = await current();
       const run = await generation.start(

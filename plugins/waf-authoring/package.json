@@ -1,7 +1,7 @@
 {
   "name": "@penguinharness/waf-authoring",
   "version": "0.2.13",
-  "description": "Authoring WAF activities: the activity-state contract, the XState-backed state machine, assessment, audio, video and asset patterns, element ids, style guardrails and the book module contract.",
+  "description": "Authoring WAF activities: the activity-state contract, the XState-backed state machine, assessment, audio, video, asset and layout patterns, element ids, style guardrails and the book module contract.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

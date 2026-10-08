@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestBegin, requestEnd } from "@prismshadow/penguin-core";
+import { afterEach, describe, expect, it } from "vitest";
 import type {
   ActivityDetail,
   ActivityDraft,
@@ -10,61 +9,25 @@ import type {
 } from "../src/activities/domain.js";
 import { ActivityGenerationService } from "../src/activities/generation.js";
 import type { ActivityAuthoring } from "../src/mechanisms/activities.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { SoundSetup } from "../src/activities/sound-types.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { activitySpec } from "./activity-fixtures.js";
-import { speechWave } from "./audio-fixtures.js";
+import { fakeMediaHelper, speechWave } from "./audio-fixtures.js";
 
 const PROJECT = "sounder-activities";
 const FIXTURE = new URL("./fixtures/sound-effect.mp3", import.meta.url);
 
-describe("sound generation through Harness sessions", () => {
+describe("sound generation without an agent", () => {
   const cleanups: (() => Promise<void>)[] = [];
   afterEach(async () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
   async function fixture() {
-    let complete: () => void = () => {};
-    const waiting = new Set<string>();
-    let output: "mp3" | "invalid" | "wav" = "mp3";
-    const prompts: string[] = [];
-    // Stands in for the Session that would run generate-sound.mjs: it writes what the helper
-    // would have, and nothing reaches a provider.
-    const fakeSession = (row: SessionRow): RuntimeSession => ({
-      sessionId: row.sessionId,
-      dispose: () => {},
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok",
-      steer: () => false,
-      skipReconnectWait: () => false,
-      async *compact() {},
-      async *run(input, options) {
-        prompts.push(JSON.stringify(input));
-        yield requestBegin();
-        await new Promise<void>((resolve) => {
-          complete = resolve;
-          waiting.add(row.sessionId);
-          if (options.signal.aborted) resolve();
-          else options.signal.addEventListener("abort", () => resolve(), { once: true });
-        });
-        // "wav" stands for audio the ElevenLabs helper never writes.
-        if (output === "wav")
-          await fs.writeFile(path.join(row.workspace!, "sound.wav"), speechWave(2400));
-        else
-          await fs.writeFile(
-            path.join(row.workspace!, "sound.mp3"),
-            output === "invalid" ? Buffer.from("not audio") : await fs.readFile(FIXTURE),
-          );
-        yield requestEnd("completed");
-      },
-    });
-    const t = await createTestApp();
-    const adopt = t.deps.manager.adopt.bind(t.deps.manager);
-    vi.spyOn(t.deps.manager, "adopt").mockImplementation((row) => adopt(row, fakeSession(row)));
+    // Stands in for generate-sound.mjs, which the server runs itself: it writes what the
+    // helper would have, and nothing reaches a provider.
+    const helper = fakeMediaHelper();
+    const t = await createTestApp({ mediaHelperPorts: helper.ports });
     cleanups.push(t.cleanup);
     const owner = await provisionUser(t.app, "sounder");
     const client = apiClient(t.app, owner.cookie);
@@ -128,7 +91,7 @@ describe("sound generation through Harness sessions", () => {
     const setVault = async (keys: string[]) =>
       expect(
         (
-          await client.put(`/api/projects/${PROJECT}/agents/default_agent/vault`, {
+          await client.put(`/api/projects/${PROJECT}/agents/media_agent/vault`, {
             entries: keys.map((key) => ({ key, value: "fake-test-only" })),
           })
         ).status,
@@ -145,19 +108,34 @@ describe("sound generation through Harness sessions", () => {
       const response = await generate(assetKey);
       expect(response.status, await response.clone().text()).toBe(202);
       const run = (await response.json()) as ActivityRun;
-      await waitFor(() => waiting.has(run.sessionId!));
+      // No agent makes it: the run has no Session, only the helper the server runs.
+      expect(run.sessionId).toBeNull();
+      await waitFor(() => helper.waiting(run.runId) !== null);
       return run;
     }
-    async function finish(run: ActivityRun, value: "mp3" | "invalid" | "wav" = "mp3") {
-      output = value;
-      complete();
-      await waitFor(() => t.deps.manager.statusOf(run.sessionId!) === "idle");
-      await service.reconcile();
-      return (
+    const runOf = async (run: ActivityRun) =>
+      (
         (await (await client.get(`${endpoint}/runs`)).json()) as { runs: ActivityRunSummary[] }
       ).runs.find((entry) => entry.runId === run.runId)!;
+    async function finish(run: ActivityRun, value: "mp3" | "invalid" | "wav" = "mp3") {
+      // "wav" stands for audio the ElevenLabs helper never writes.
+      await helper.finish(
+        value === "wav"
+          ? { "sound.wav": speechWave(2400) }
+          : {
+              "sound.mp3":
+                value === "invalid" ? Buffer.from("not audio") : await fs.readFile(FIXTURE),
+            },
+      );
+      let summary = await runOf(run);
+      const deadline = Date.now() + 5000;
+      while (summary.status === "running" && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        summary = await runOf(run);
+      }
+      return summary;
     }
-    return { t, client, endpoint, prompts, current, setVault, generate, started, finish, service };
+    return { t, client, endpoint, helper, current, setVault, generate, started, finish, service };
   }
 
   it("refuses without the provider's key, naming it, and for narration or an unknown provider", async () => {
@@ -175,26 +153,15 @@ describe("sound generation through Harness sessions", () => {
     const unknown = await f.generate("door", "musicgen");
     expect(unknown.status).toBe(422);
     expect(JSON.stringify(await unknown.json())).toContain("sound_kind_unsupported");
-    // External coding agents never see a Penguin agent's Vault.
-    await expect(
-      f.service.start(
-        PROJECT,
-        (await f.current()).id,
-        "default_agent",
-        (await f.current()).draft.contentRevision,
-        { sound: { language: "en-US", assetKey: "door", provider: "elevenlabs" } },
-        { codingAgentId: "claude" },
-      ),
-    ).rejects.toMatchObject({ code: "runtime_unsupported" });
     const listed = (await (await f.client.get(`${f.endpoint}/runs`)).json()) as { runs: unknown[] };
     expect(listed.runs).toEqual([]);
   });
 
-  it("reports which providers the chosen agent can use", async () => {
+  it("reports which providers the Media Agent can use", async () => {
     const f = await fixture();
     const setup = async () =>
       (await (
-        await f.client.get(`/api/projects/${PROJECT}/activities/sound-setup?agentId=default_agent`)
+        await f.client.get(`/api/projects/${PROJECT}/activities/sound-setup`)
       ).json()) as SoundSetup;
     expect((await setup()).providers).toEqual([
       expect.objectContaining({
@@ -218,9 +185,28 @@ describe("sound generation through Harness sessions", () => {
     ]);
     await f.setVault(["ELEVENLABS_API_KEY"]);
     expect((await setup()).providers[0]).toMatchObject({ id: "elevenlabs", available: true });
-    expect((await f.client.get(`/api/projects/${PROJECT}/activities/sound-setup`)).status).toBe(
-      400,
+  });
+
+  it("makes a sound on the Media Agent whoever asked, a coding agent included", async () => {
+    const f = await fixture();
+    await f.setVault(["ELEVENLABS_API_KEY"]);
+    const run = await f.service.start(
+      PROJECT,
+      (await f.current()).id,
+      "default_agent",
+      (await f.current()).draft.contentRevision,
+      { sound: { language: "en-US", assetKey: "door", provider: "elevenlabs" } },
+      { codingAgentId: "claude" },
     );
+    expect(run.agentId).toBe("media_agent");
+    expect(run.codingAgentId).toBeUndefined();
+    // Its Vault, not a Session, is what the Media Agent lends the run.
+    expect(run.sessionId).toBeNull();
+    await waitFor(() => f.helper.waiting(run.runId) !== null);
+    expect(f.helper.calls.at(-1)).toMatchObject({
+      script: "generate-sound.mjs",
+      vault: { ELEVENLABS_API_KEY: "fake-test-only" },
+    });
   });
 
   it("stages the helper, keeps the MP3 as a candidate, and binds it only when accepted", async () => {
@@ -235,9 +221,7 @@ describe("sound generation through Harness sessions", () => {
       prompt: "a wooden door creaks",
       targetDurationMs: 3000,
     });
-    const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
-    expect(session.approvalMode).toBe("always-ask");
-    const workspace = session.workspace!;
+    const workspace = f.helper.waiting(run.runId)!;
     expect(JSON.parse(await fs.readFile(path.join(workspace, "sound-input.json"), "utf8"))).toEqual(
       run.audio?.sound,
     );
@@ -251,7 +235,8 @@ describe("sound generation through Harness sessions", () => {
     expect(await fs.readFile(path.join(workspace, "generate-sound.mjs"), "utf8")).toContain(
       "api.elevenlabs.io",
     );
-    expect(f.prompts.at(-1)).toContain("generate-sound.mjs");
+    // ElevenLabs is called with Node's own fetch: nothing to install.
+    expect(f.helper.calls.at(-1)).toMatchObject({ script: "generate-sound.mjs", install: false });
 
     const summary = await f.finish(run);
     expect(summary.status, summary.error ?? "").toBe("succeeded");

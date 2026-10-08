@@ -1,13 +1,12 @@
 /**
  * A decodable book's word recordings through the service: the drawn-out script written from a
  * word's sounds, the recording accepted with its sounds' timings, a script change that unbinds
- * the recording, and the Build check. A fake Session stands in for the speech helper and a fake
- * runner for espeak-ng, so nothing reaches a provider or starts a program.
+ * the recording, and the Build check. A fake stands in for the speech helper the server runs and
+ * a fake runner for espeak-ng, so nothing reaches a provider or starts a program.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestBegin, requestEnd } from "@prismshadow/penguin-core";
+import { afterEach, describe, expect, it } from "vitest";
 import type {
   ActivityDetail,
   ActivityDraft,
@@ -15,17 +14,14 @@ import type {
   ActivityRunSummary,
 } from "../src/activities/domain.js";
 import type { BookWordsRefresh } from "../src/activities/book-word-types.js";
-import { ActivityGenerationService } from "../src/activities/generation.js";
 import type { EspeakRunner } from "../src/activities/phonemes.js";
 import { drawnOutScript, geminiScript } from "../src/activities/pronunciation.js";
 import type { ReadinessCheck } from "../src/activities/readiness-types.js";
 import { ELEVENLABS_DEFAULT_VOICE } from "../src/activities/voice-catalogue.js";
 import type { ActivityAuthoring } from "../src/mechanisms/activities.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { catBookSpec } from "./activity-fixtures.js";
-import { soundMp3 } from "./audio-fixtures.js";
+import { fakeMediaHelper, soundMp3 } from "./audio-fixtures.js";
 
 const PROJECT = "word_recorder-books";
 const SOUNDS: Record<string, string> = { the: "ð ə", cat: "k ˈæ t", sat: "s ˈæ t", ran: "ɹ æ n" };
@@ -38,44 +34,24 @@ describe("recording a decodable book's words", () => {
   });
 
   async function fixture() {
-    let complete: () => void = () => {};
-    const waiting = new Set<string>();
-    let output: Record<string, Buffer | string> = {};
+    const helper = fakeMediaHelper();
     const inputs: Record<string, unknown>[] = [];
-    const fakeSession = (row: SessionRow): RuntimeSession => ({
-      sessionId: row.sessionId,
-      dispose: () => {},
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok",
-      steer: () => false,
-      skipReconnectWait: () => false,
-      async *compact() {},
-      async *run(_input, options) {
-        yield requestBegin();
-        inputs.push(
-          JSON.parse(await fs.readFile(path.join(row.workspace!, "speech-input.json"), "utf8")),
-        );
-        await new Promise<void>((resolve) => {
-          complete = resolve;
-          waiting.add(row.sessionId);
-          if (options.signal.aborted) resolve();
-          else options.signal.addEventListener("abort", () => resolve(), { once: true });
-        });
-        for (const [name, bytes] of Object.entries(output))
-          await fs.writeFile(path.join(row.workspace!, name), bytes);
-        yield requestEnd("completed");
-      },
-    });
+    /** Waits for the run's helper call and keeps the speech input it was handed. */
+    const helperCalled = async (run: ActivityRun) => {
+      await waitFor(() => helper.waiting(run.runId) !== null);
+      inputs.push(
+        JSON.parse(
+          await fs.readFile(path.join(helper.waiting(run.runId)!, "speech-input.json"), "utf8"),
+        ),
+      );
+    };
     const run: EspeakRunner = async (_program, args) => {
       if (args[0] === "--version") return { ok: true, stdout: "eSpeak NG text-to-speech: 1.51" };
       const sounds = SOUNDS[args[args.length - 1]!];
       return sounds ? { ok: true, stdout: `${sounds}\n` } : { ok: false, stdout: "" };
     };
-    const t = await createTestApp({ espeakPorts: { run } });
+    const t = await createTestApp({ espeakPorts: { run }, mediaHelperPorts: helper.ports });
     cleanups.push(t.cleanup);
-    const adopt = t.deps.manager.adopt.bind(t.deps.manager);
-    vi.spyOn(t.deps.manager, "adopt").mockImplementation((row) => adopt(row, fakeSession(row)));
     const owner = await provisionUser(t.app, "word_recorder");
     const client = apiClient(t.app, owner.cookie);
     const project = await client.post("/api/projects", { projectId: PROJECT });
@@ -92,7 +68,7 @@ describe("recording a decodable book's words", () => {
         },
       ],
     });
-    const vault = await client.put(`/api/projects/${PROJECT}/agents/default_agent/vault`, {
+    const vault = await client.put(`/api/projects/${PROJECT}/agents/media_agent/vault`, {
       entries: ["GEMINI_API_KEY", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"].map((key) => ({
         key,
         value: "fake-test-only",
@@ -131,10 +107,6 @@ describe("recording a decodable book's words", () => {
     });
     expect(refreshed.status, await refreshed.clone().text()).toBe(200);
     expect(((await refreshed.json()) as BookWordsRefresh).missing).toEqual([]);
-    const service = t.deps.tree.api<ActivityGenerationService>(
-      "ActivitiesModule",
-      "ActivityGeneration",
-    );
     const authoring = t.deps.tree.api<ActivityAuthoring>("ActivitiesModule", "ActivityAuthoring");
     const current = async () => (await (await client.get(endpoint)).json()) as ActivityDetail;
     const cat = async () =>
@@ -152,14 +124,18 @@ describe("recording a decodable book's words", () => {
       });
       expect(response.status, await response.clone().text()).toBe(202);
       const started = (await response.json()) as ActivityRun;
-      await waitFor(() => waiting.has(started.sessionId!));
-      output = files;
-      complete();
-      await waitFor(() => t.deps.manager.statusOf(started.sessionId!) === "idle");
-      await service.reconcile();
-      const summary = (
-        (await (await client.get(`${endpoint}/runs`)).json()) as { runs: ActivityRunSummary[] }
-      ).runs.find((entry) => entry.runId === started.runId)!;
+      await helperCalled(started);
+      await helper.finish(files);
+      const summaryOf = async () =>
+        (
+          (await (await client.get(`${endpoint}/runs`)).json()) as { runs: ActivityRunSummary[] }
+        ).runs.find((entry) => entry.runId === started.runId)!;
+      let summary = await summaryOf();
+      const deadline = Date.now() + 5000;
+      while (summary.status === "running" && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        summary = await summaryOf();
+      }
       expect(summary.status, summary.error ?? "").toBe("succeeded");
       const accepted = await client.post(`${endpoint}/runs/${started.runId}/accept-audio`, {
         expectedRevision: (await current()).draft.contentRevision,
@@ -181,16 +157,15 @@ describe("recording a decodable book's words", () => {
       record,
       readiness,
       inputs,
-      waiting,
-      finish: () => complete(),
-      manager: t.deps.manager,
+      helper,
+      helperCalled,
     };
   }
 
   it("records a word from its drawn-out script and keeps its sounds' timings", async () => {
     const f = await fixture();
-    // Refreshed words carry the script for their provider: Gemini, as none is named yet.
-    expect((await f.cat()).script).toBe(geminiScript("cat", ["k", "æ", "t"]));
+    // Refreshed words carry the script for their provider: ElevenLabs, as none is named yet.
+    expect((await f.cat()).script).toBe(drawnOutScript("cat", ["k", "æ", "t"]));
     expect(await f.readiness()).toEqual([
       { id: "words", level: "warn", language: "en-US", recorded: 0, total: 4, timed: 0 },
     ]);
@@ -284,6 +259,15 @@ describe("recording a decodable book's words", () => {
 
   it("asks Gemini to follow a word's script as a direction, not read it out", async () => {
     const f = await fixture();
+    // A word naming no provider is spoken by ElevenLabs, so this one names Gemini.
+    const detail = await f.current();
+    const manifest = structuredClone(detail.draft.mediaPlan!.manifest);
+    manifest.assets["en-US"]!.find((a) => a.key === CAT_KEY)!.speechProvider = "gemini";
+    const saved = await f.client.put(`${f.endpoint}/media`, {
+      manifest,
+      expectedRevision: detail.draft.contentRevision,
+    });
+    expect(saved.status, await saved.clone().text()).toBe(200);
     const response = await f.client.post(`${f.endpoint}/generate-audio`, {
       agentId: "default_agent",
       expectedRevision: (await f.current()).draft.contentRevision,
@@ -293,13 +277,12 @@ describe("recording a decodable book's words", () => {
     });
     expect(response.status, await response.clone().text()).toBe(202);
     const started = (await response.json()) as ActivityRun;
-    await waitFor(() => f.waiting.has(started.sessionId!));
+    await f.helperCalled(started);
     expect(f.inputs.at(-1)).toMatchObject({
       script: geminiScript("cat", ["k", "æ", "t"]),
       delivery: "direction",
     });
-    f.finish();
-    await waitFor(() => f.manager.statusOf(started.sessionId!) === "idle");
+    await f.helper.finish({});
   });
 
   it("keeps a script the author wrote, whatever the sounds or provider", async () => {

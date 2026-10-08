@@ -6,6 +6,8 @@ import type { SoundProviderId } from "./sound-types.js";
 
 export const PIPELINE_STEPS = [
   "spec",
+  /** The media pass: the specification's media listed from its scenes' tags. */
+  "mediaSpec",
   "media",
   "translations",
   "speech",

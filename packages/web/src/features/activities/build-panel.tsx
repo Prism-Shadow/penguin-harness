@@ -81,6 +81,36 @@ function CheckRow({ level, text }: { level: ReadinessLevel; text: string }) {
   );
 }
 
+/** Only what stands in the way is listed; a draft with nothing in the way says so in a line. */
+function BuildChecks({
+  checks,
+  unsaved,
+  proposalOpen,
+}: {
+  checks: ReadinessCheck[];
+  unsaved: boolean;
+  proposalOpen: boolean;
+}) {
+  const words = S.activities.studioBuild;
+  const rows: { key: string; level: ReadinessLevel; text: string }[] = checks
+    .map((check, index) => ({
+      key: `${check.id}:${index}`,
+      level: check.level,
+      text: checkText(check),
+    }))
+    .filter((row) => row.level !== "ok");
+  if (unsaved) rows.push({ key: "unsaved", level: "fail", text: words.unsaved.fail });
+  if (proposalOpen) rows.push({ key: "proposal", level: "warn", text: words.proposal.warn });
+  if (!rows.length) return <p className={`text-xs ${toneInk.success}`}>{words.ready}</p>;
+  return (
+    <ul aria-label={words.title} className="divide-y divide-gray-100 dark:divide-gray-900">
+      {rows.map((row) => (
+        <CheckRow key={row.key} level={row.level} text={row.text} />
+      ))}
+    </ul>
+  );
+}
+
 export function BuildPanel({
   endpoint,
   revision,
@@ -136,16 +166,7 @@ export function BuildPanel({
       ) : !checks ? (
         <p className="text-xs text-gray-500">{words.checking}</p>
       ) : (
-        <ul aria-label={words.title} className="divide-y divide-gray-100 dark:divide-gray-900">
-          {checks.map((check, index) => (
-            <CheckRow key={`${check.id}:${index}`} level={check.level} text={checkText(check)} />
-          ))}
-          <CheckRow level={unsaved ? "fail" : "ok"} text={words.unsaved[unsaved ? "fail" : "ok"]} />
-          <CheckRow
-            level={proposalOpen ? "warn" : "ok"}
-            text={words.proposal[proposalOpen ? "warn" : "ok"]}
-          />
-        </ul>
+        <BuildChecks checks={checks} unsaved={unsaved} proposalOpen={proposalOpen} />
       )}
       {children?.(!!checks?.some((check) => check.level === "fail"))}
       <p className="text-xs text-gray-500">

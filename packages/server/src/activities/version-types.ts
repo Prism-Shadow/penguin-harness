@@ -41,7 +41,13 @@ export interface VersionSaveResult {
 
 /** The parts of an activity a compare shows as text, in the order it shows them. */
 export type VersionFileName =
-  "description" | "spec" | "mediaPlan" | "configuration" | "assessment" | "features";
+  | "description"
+  | "spec"
+  | "mediaPlan"
+  | "configuration"
+  | "assessment"
+  | "definition"
+  | "features";
 
 /**
  * One part that differs. `before` is the compared version's text and `after` the other

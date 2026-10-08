@@ -75,10 +75,22 @@ describe("speech provider model", () => {
     });
     expect(speechChoice(asset, voices, "af_heart", "fr-FR").voice).toBe("");
   });
-  it("reads Gemini for a narration naming no provider", () => {
-    expect(providerOf(narration())).toBe("gemini");
-    expect(providerOf(narration({ speechProvider: "elevenlabs" }))).toBe("elevenlabs");
-    expect(providerOf(undefined)).toBe("gemini");
+  it("reads ElevenLabs for a narration naming no provider, as Loom speaks", () => {
+    expect(providerOf(narration())).toBe("elevenlabs");
+    expect(providerOf(narration({ speechProvider: "gemini" }))).toBe("gemini");
+    expect(providerOf(undefined)).toBe("elevenlabs");
+    // A book word naming none is ElevenLabs', unless it holds an older (Gemini) recording.
+    expect(providerOf(narration({ role: "bookWord" }))).toBe("elevenlabs");
+    expect(
+      providerOf(narration({ role: "bookWord", generatedAudio: { runId: "r", sha256: "s" } })),
+    ).toBe("gemini");
+    // A narration's recording says nothing about its provider.
+    expect(providerOf(narration({ generatedAudio: { runId: "r", sha256: "s" } }))).toBe(
+      "elevenlabs",
+    );
+    expect(providerOf(narration({ role: "bookWord", speechProvider: "elevenlabs" }))).toBe(
+      "elevenlabs",
+    );
   });
 
   it("lists a provider's voices, keeping typed ElevenLabs ids choosable", () => {
@@ -93,13 +105,20 @@ describe("speech provider model", () => {
   });
 
   it("asks for the narration's voice, the fallback, or the provider's first", () => {
-    expect(speechChoice(narration({ voice: "Puck" }), OPTIONS, "Kore")).toEqual({
+    const geminiNarration = (voice?: string) =>
+      narration({ speechProvider: "gemini", ...(voice ? { voice } : {}) });
+    expect(speechChoice(geminiNarration("Puck"), OPTIONS, "Kore")).toEqual({
       provider: "gemini",
       voice: "Puck",
     });
-    expect(speechChoice(narration(), OPTIONS, "Kore")).toEqual({
+    expect(speechChoice(geminiNarration(), OPTIONS, "Kore")).toEqual({
       provider: "gemini",
       voice: "Kore",
+    });
+    // A narration naming no provider is ElevenLabs', with its default voice.
+    expect(speechChoice(narration(), OPTIONS, "Kore")).toEqual({
+      provider: "elevenlabs",
+      voice: "elevenlabs-default",
     });
     // A Gemini fallback is not an ElevenLabs voice: the Vault default is used instead.
     expect(speechChoice(narration({ speechProvider: "elevenlabs" }), OPTIONS, "Kore")).toEqual({
@@ -117,7 +136,7 @@ describe("speech provider model", () => {
 
   it("sets one provider on every narration and drops voices it cannot speak with", () => {
     const assets = [
-      narration({ key: "a", voice: "Kore" }),
+      narration({ key: "a", speechProvider: "gemini", voice: "Kore" }),
       narration({ key: "b", speechProvider: "elevenlabs", voice: TYPED }),
       { ...narration({ key: "c" }), kind: "music" as const },
     ];
@@ -163,13 +182,17 @@ describe("speech provider model", () => {
   it("words the Vault's default ElevenLabs voice itself, not with the server's label", () => {
     const worded = wordCatalogue([gemini("Kore"), vaultDefault]);
     expect(worded.map((option) => option.label)).toEqual(["Kore", "ElevenLabs · Default voice"]);
+    // Once the Media Agent's library names the voice the default stands for, so does the label.
+    expect(wordCatalogue([{ ...vaultDefault, voiceName: "Sarah" }])[0]!.label).toBe(
+      "ElevenLabs · Default voice (Sarah)",
+    );
   });
 
   it("names the key the narration's provider is missing, from the refusal's data", () => {
     const refusal = (detail?: Record<string, string>) =>
       new ApiError(400, "speech_credential_missing", "RAW", undefined, detail);
     expect(apiErrorText(refusal({ credential: "ELEVENLABS_API_KEY" }))).toBe(
-      "Add ELEVENLABS_API_KEY to the selected Agent’s Vault before generating speech.",
+      "Add ELEVENLABS_API_KEY to the Media Agent’s Vault before generating speech.",
     );
     // Without the key named, no particular key is claimed.
     expect(apiErrorText(refusal())).not.toContain("GEMINI_API_KEY");

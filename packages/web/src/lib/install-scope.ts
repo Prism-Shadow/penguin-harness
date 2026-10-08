@@ -157,6 +157,18 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.activitySidePanelWidth",
+    scope: "browser",
+    why: "Activity side panel width in px; layout preference of this browser, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.activitySidePanelExpanded",
+    scope: "browser",
+    why: "Whether the activity side panel fills the workspace; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
     key: "penguin.activityRailCollapsed",
     scope: "browser",
     why: "Whether the activity workspace rail is collapsed; chrome layout, holds no entity.",
@@ -184,6 +196,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.activityLayouts",
     scope: "browser",
     why: "An author's named activity workspace layouts and whether their Alt+number shortcuts are on; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.activitySpec.diffLayout",
+    scope: "browser",
+    why: "Whether the JSON document editors show a diff inline or side by side; a display choice of this browser, holds no entity.",
   },
   {
     kind: "exact",

@@ -16,7 +16,7 @@ Building a Benchmark and optimizing an agent run in two independent top-level Se
 | Evaluator | `agent-evaluation` | A leaf subagent created through `run_subagent` | Runs the Target Agent on one Case once and scores that run |
 | Optimizer | `agent-optimization` | A separate top-level Session | Changes the Target Agent under a falsifiable hypothesis and keeps a new version only when its score strictly improves |
 
-No built-in agent is reserved for a role: each role is a Skill, and all four Skills ship in the `agent-tuning` plugin. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
+No built-in agent is reserved for these roles: each role is a Skill, and all four Skills ship in the `agent-tuning` plugin. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
 
 ### How the roles call each other
 

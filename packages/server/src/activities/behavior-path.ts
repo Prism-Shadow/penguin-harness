@@ -48,6 +48,9 @@ const SEQUENCE_SHARED = [
   "waf-element-ids",
   "waf-asset-usage-patterns",
   "waf-style-guardrails",
+  // After the guardrails, which it defers to: a catalogue of how the existing sequence
+  // modules lay out, highlight and clean up, which is what editing one of them needs.
+  "waf-layout-patterns",
   "waf-audio-patterns",
   "waf-video-patterns",
 ] as const;

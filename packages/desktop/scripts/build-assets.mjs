@@ -32,6 +32,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { LOCAL_AUDIO_ASSETS } from "../../../scripts/local-audio-assets.mjs";
+import { MEDIA_PLACEHOLDER_ASSETS } from "../../../scripts/media-placeholder-assets.mjs";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = path.join(pkgDir, "dist");
@@ -57,7 +58,7 @@ const builtPlugins = await buildBuiltinPlugins({ log: (m) => console.log(`[build
 await stagePrefix(builtPlugins, path.join(pkgDir, "plugins"));
 
 const repoRoot = path.resolve(pkgDir, "..", "..");
-for (const { name, from } of LOCAL_AUDIO_ASSETS) {
+for (const { name, from } of [...LOCAL_AUDIO_ASSETS, ...MEDIA_PLACEHOLDER_ASSETS]) {
   fs.copyFileSync(path.join(repoRoot, from), path.join(distDir, name));
 }
 for (const name of ["install.sh", "install.ps1"]) {

@@ -917,7 +917,7 @@ html.dark .shiki span {
 .script-editor .cm-editor .cm-media-tag {
   @apply text-brand-700 dark:text-brand-300;
 }
-/* The Activity Spec editor's JSON (spec-editor.tsx), in the github-light / github-dark colours
+/* JSON in the JSON editor (json-editor.tsx), in the github-light / github-dark colours
    the app's other code views use (features/chat/highlighter-core.ts). */
 .script-editor .cm-editor .cm-json-key,
 .script-editor .cm-editor .cm-json-literal {
@@ -939,7 +939,7 @@ html.dark .script-editor .cm-editor .cm-json-string {
 html.dark .script-editor .cm-editor .cm-json-punctuation {
   color: #e1e4e8;
 }
-/* The Activity Spec's side-by-side diff: the pair scrolls as one, so its editors grow to their
+/* The JSON editor's side-by-side diff: the pair scrolls as one, so its editors grow to their
    text instead of filling the pane, and the saved side marks its lines as removed. */
 .spec-merge .cm-mergeView {
   height: 100%;

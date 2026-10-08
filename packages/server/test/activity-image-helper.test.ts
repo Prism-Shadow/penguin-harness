@@ -94,10 +94,41 @@ describe("image generation helper", () => {
       expect(request.request.config).toEqual({
         image_config: { aspect_ratio: "1:1", image_size: "1K" },
       });
-      expect(request.request.messages[0].content_items[0].text).toContain("cover");
-      expect(request.request.messages[0].content_items[0].text).toContain("A small blue penguin");
+      const text = request.request.messages[0].content_items[0].text;
+      expect(text).toContain("A small blue penguin");
+      // The asset key names the file; in the prompt it would invite the model to draw it.
+      expect(text).not.toContain("cover");
+      expect(text).not.toContain("Draw it in this style");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("draws in the style the input names, and refuses a style that is not short text", async () => {
+    const input = {
+      model: "gemini-3.1-flash-image",
+      prompt: "A small blue penguin",
+      language: "en-US",
+      assetKey: "cover",
+    };
+    const styled = await runHelper({ input: { ...input, style: "Flat, bright colours." } });
+    try {
+      expect(styled.processResult.status, styled.processResult.stderr).toBe(0);
+      const request = JSON.parse(await fs.readFile(path.join(styled.root, "request.json"), "utf8"));
+      expect(request.request.messages[0].content_items[0].text).toMatch(
+        /A small blue penguin\n\nDraw it in this style:\nFlat, bright colours\.$/,
+      );
+    } finally {
+      await fs.rm(styled.root, { recursive: true, force: true });
+    }
+    for (const style of [42, "x".repeat(2001)]) {
+      const refused = await runHelper({ input: { ...input, style } });
+      try {
+        expect(refused.processResult.status).toBe(1);
+        await expect(fs.access(path.join(refused.root, "request.json"))).rejects.toThrow();
+      } finally {
+        await fs.rm(refused.root, { recursive: true, force: true });
+      }
     }
   });
 

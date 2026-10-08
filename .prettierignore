@@ -18,3 +18,9 @@ specs/
 # Playwright e2e artifacts
 test-results/
 playwright-report/
+
+# Loom's placeholder Lottie, kept byte for byte
+packages/server/src/activities/animation-placeholder.json
+
+# Loom's waf-state-machine package, kept byte for byte with waf-loom/packages/waf-state-machine
+packages/waf-state-machine/

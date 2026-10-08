@@ -1,3 +1,4 @@
+import { stageAgent } from "./stage-agent";
 import { OpenModuleDialog } from "./open-module-dialog";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -26,6 +27,8 @@ import type {
   SoundSetup,
   SpeechProviderId,
   SpeechProviderStatus,
+  ElevenLabsVoices,
+  ElevenLabsVoicesProblem,
   SpeechSetup,
   UploadedMedia,
   VideoSetup,
@@ -94,11 +97,10 @@ import { DeployPanel } from "./deploy-panel";
 import { useAssistProposal } from "./use-assist-proposal";
 import { StudioTreeView } from "./studio-tree-view";
 import { runTitle, SessionsPanel } from "./sessions-panel";
-import { ModulePreview } from "./module-preview";
 import { SandboxPanel } from "./sandbox-panel";
 import { sandboxHasModule, type SandboxStatusLike } from "./sandbox";
-import { SpecEditor } from "./spec-editor";
-import { latestModuleRun } from "./preview";
+import { JsonEditor } from "./json-editor";
+import { latestModuleRun, playingModuleRunId } from "./preview";
 import { ActivityList } from "./activity-list";
 import { ProjectMediaView } from "./project-media-view";
 import type { GroupSort } from "./activity-groups";
@@ -114,6 +116,8 @@ import {
 
 const basePath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/activities`;
 const pretty = (value: unknown) => (value ? JSON.stringify(value, null, 2) : "");
+/** Speech, sound and image runs belong to the builtin Media Agent, whoever runs the stages. */
+const MEDIA_RUNNER = { agentId: "media_agent" };
 
 /** A stage sequence the panels can draw, or null for an answer that is not one. */
 function pipelineOrNull(value: unknown): PipelineState | null {
@@ -123,6 +127,8 @@ function pipelineOrNull(value: unknown): PipelineState | null {
 
 /** How long after the last keystroke the script saves itself: long enough not to save mid-word. */
 const SCRIPT_AUTOSAVE_MS = 5000;
+/** A provider or voice pick saves almost at once; typing a script waits for a pause. */
+const MEDIA_AUTOSAVE_MS = 1000;
 function announce({ kind, text }: Announcement) {
   if (kind === "success") toastSuccess(text);
   else if (kind === "error") toastError(text);
@@ -560,6 +566,8 @@ function ActivityEditor({
       spec !== pretty(detail.draft.spec) ||
       media !== pretty(detail.draft.mediaPlan?.manifest));
   const discard = useDiscardConfirm(() => dirty);
+  // Which activity and ref the editors are about, as Loom titles its panels.
+  const panelSubject = detail ? `${detail.title} - ${detail.productCode} [${detail.refNum}]` : "";
   state.current = { dirty, busy, revision: detail?.draft.contentRevision ?? "", available };
   // The conversation the panel has open, whose proposal the studio shows; until the panel
   // says otherwise, the newest.
@@ -711,7 +719,7 @@ function ActivityEditor({
       await onSaved();
     });
   }
-  const selectedAgent = agentId || currentAgent?.agentId || agents[0]?.agentId || "";
+  const selectedAgent = stageAgent(agentId, agents, currentAgent?.agentId);
   const codingAgentId = selectedAgent.startsWith("coding:") ? selectedAgent.slice(7) : null;
   /** Who runs a stage, as the stage routes take it. */
   // A coding agent's run is a Session too, owned by the Penguin agent the Project would use.
@@ -719,25 +727,21 @@ function ActivityEditor({
   const runner = codingAgentId
     ? { codingAgentId, ...(penguinAgent !== undefined ? { agentId: penguinAgent } : {}) }
     : { agentId: selectedAgent };
-  // Which sound providers the chosen Penguin agent can use; a coding agent can use none.
-  const [soundSetup, setSoundSetup] = useState<{
-    agentId: string;
-    providers: SoundProviderStatus[];
-  } | null>(null);
+  // Which sound providers the Media Agent can use: it makes every sound, whoever runs the
+  // other stages.
+  const [soundProviders, setSoundProviders] = useState<SoundProviderStatus[] | null>(null);
   useEffect(() => {
-    if (!available || !editable || !selectedAgent || codingAgentId) return;
+    if (!available || !editable) return;
     let cancelled = false;
-    void apiFetch<SoundSetup>(
-      `${basePath(projectId)}/sound-setup?${new URLSearchParams({ agentId: selectedAgent })}`,
-    )
+    void apiFetch<SoundSetup>(`${basePath(projectId)}/sound-setup`)
       .then((value) => {
-        if (!cancelled) setSoundSetup({ agentId: selectedAgent, providers: value.providers });
+        if (!cancelled) setSoundProviders(value.providers);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [available, editable, selectedAgent, codingAgentId, projectId]);
+  }, [available, editable, projectId]);
   // Whether the scene-video experiment is on; the studio shows nothing of it until it is.
   const [videoSetup, setVideoSetup] = useState<VideoSetup | null>(null);
   useEffect(() => {
@@ -752,34 +756,45 @@ function ActivityEditor({
       cancelled = true;
     };
   }, [available, editable, projectId]);
-  const soundProviders =
-    soundSetup && !codingAgentId && soundSetup.agentId === selectedAgent
-      ? soundSetup.providers
-      : null;
-  // The voices, and with a Penguin agent chosen, which speech providers its Vault has keys
-  // for and whether it names a default ElevenLabs voice.
-  const speechAgent = selectedAgent && !codingAgentId ? selectedAgent : "";
-  const [speechSetup, setSpeechSetup] = useState<{
-    agentId: string;
-    providers: SpeechProviderStatus[] | null;
-  } | null>(null);
+  // The voices, and which speech providers the Media Agent's Vault has keys for; then the
+  // Media Agent's ElevenLabs library, which replaces the bare ElevenLabs default once it loads.
+  const [speechProviders, setSpeechProviders] = useState<SpeechProviderStatus[] | null>(null);
+  const [voiceLibrary, setVoiceLibrary] = useState<{
+    problem: ElevenLabsVoicesProblem | null;
+    loading: boolean;
+  }>({ problem: null, loading: false });
+  // Bumped by "Reload voices": the next read skips the server's ten-minute list.
+  const [voiceLibraryReload, setVoiceLibraryReload] = useState(0);
   useEffect(() => {
     if (!available || !editable) return;
     let cancelled = false;
     void apiFetch<Partial<SpeechSetup> & { voices: string[] }>(
-      `${basePath(projectId)}/speech-setup${
-        speechAgent ? `?${new URLSearchParams({ agentId: speechAgent })}` : ""
-      }`,
+      `${basePath(projectId)}/speech-setup`,
     )
-      .then((value) => {
+      .then(async (value) => {
         if (cancelled) return;
         // An older server sends the bare names only.
-        setVoiceOptions(
-          Array.isArray(value.catalogue)
-            ? wordCatalogue(value.catalogue)
-            : optionsFromVoices(value.voices, value.model),
-        );
-        setSpeechSetup({ agentId: speechAgent, providers: value.providers ?? null });
+        const catalogue = Array.isArray(value.catalogue)
+          ? wordCatalogue(value.catalogue)
+          : optionsFromVoices(value.voices, value.model);
+        setVoiceOptions(catalogue);
+        setSpeechProviders(value.providers ?? null);
+        if (!Array.isArray(value.catalogue)) return;
+        setVoiceLibrary((state) => ({ ...state, loading: true }));
+        try {
+          const library = await apiFetch<ElevenLabsVoices>(
+            `${basePath(projectId)}/elevenlabs-voices${voiceLibraryReload ? "?refresh=1" : ""}`,
+          );
+          if (cancelled) return;
+          setVoiceOptions([
+            ...catalogue.filter((option) => option.providerId !== "elevenlabs"),
+            ...wordCatalogue(library.voices),
+          ]);
+          setVoiceLibrary({ problem: library.problem ?? null, loading: false });
+        } catch {
+          // An older server has no list: the bare default stays.
+          if (!cancelled) setVoiceLibrary({ problem: null, loading: false });
+        }
       })
       .catch((e) => {
         if (!cancelled) setError(apiErrorText(e));
@@ -787,11 +802,7 @@ function ActivityEditor({
     return () => {
       cancelled = true;
     };
-  }, [projectId, available, editable, speechAgent]);
-  const speechProviders =
-    speechSetup && speechAgent && speechSetup.agentId === speechAgent
-      ? speechSetup.providers
-      : null;
+  }, [projectId, available, editable, voiceLibraryReload]);
   const running = runs.some((run) => run.status === "running");
   const pipelineRunning = pipeline?.status === "running";
   // The script saves itself a few seconds after typing stops, and holds off while
@@ -812,6 +823,33 @@ function ActivityEditor({
     // `save` reads the latest text when it fires; the timer restarts on every edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [description, scriptDirty, editable, available, busy, autosaveHeld]);
+  // Edits made in the asset editor (a provider, a voice, a script) save themselves a moment
+  // after the last one, so Generate is never held by a save the author must remember. Edits
+  // to the manifest JSON in Media Library stay manual: half-typed JSON is never saved.
+  const [mediaAutosave, setMediaAutosave] = useState(false);
+  const [mediaSave, setMediaSave] = useState<"pending" | "saving" | "saved" | "failed" | null>(
+    null,
+  );
+  const mediaDirty = !!detail && media !== pretty(detail.draft.mediaPlan?.manifest);
+  useEffect(() => {
+    if (!mediaAutosave) return;
+    if (!mediaDirty) {
+      setMediaAutosave(false);
+      return;
+    }
+    if (!editable || !available || busy || autosaveHeld) return;
+    setMediaSave("pending");
+    const timer = setTimeout(() => {
+      setMediaAutosave(false);
+      setMediaSave("saving");
+      void save("media", true).then((ok) => {
+        if (alive.current) setMediaSave(ok ? "saved" : "failed");
+      });
+    }, MEDIA_AUTOSAVE_MS);
+    return () => clearTimeout(timer);
+    // `save` reads the latest manifest when it fires; the timer restarts on every edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media, mediaAutosave, mediaDirty, editable, available, busy, autosaveHeld]);
   const scriptStatus = scriptDirty
     ? autosaveHeld
       ? S.activities.studioScript.autosave.held
@@ -874,14 +912,14 @@ function ActivityEditor({
   }
   useEffect(() => {
     const next = speechQueue?.keys[0];
-    if (!next || running || busy || dirty || !selectedAgent || codingAgentId || !detail) return;
+    if (!next || running || busy || dirty || !detail) return;
     let cancelled = false;
     void (async () => {
       try {
         const run = await apiFetch<ActivityRun>(`${endpoint}/generate-audio`, {
           method: "POST",
           body: {
-            agentId: selectedAgent,
+            ...MEDIA_RUNNER,
             expectedRevision: detail.draft.contentRevision,
             language: speechQueue!.language,
             assetKey: next,
@@ -920,17 +958,7 @@ function ActivityEditor({
     return () => {
       cancelled = true;
     };
-  }, [
-    speechQueue,
-    running,
-    busy,
-    dirty,
-    selectedAgent,
-    codingAgentId,
-    detail,
-    endpoint,
-    voiceOptions,
-  ]);
+  }, [speechQueue, running, busy, dirty, detail, endpoint, voiceOptions]);
   let editedManifest: AssetManifest | null = null;
   try {
     const value = JSON.parse(media);
@@ -975,12 +1003,19 @@ function ActivityEditor({
   } catch {
     /* Preserve invalid JSON for correction without replacing it with a saved manifest. */
   }
-  /** Start one generation run and show it at the top of the history immediately. */
-  function startRun(path: string, body: Record<string, unknown>) {
+  /**
+   * Start one generation run and show it at the top of the history immediately. Speech,
+   * sound and image runs name the Media Agent, which makes them whoever runs the stages.
+   */
+  function startRun(
+    path: string,
+    body: Record<string, unknown>,
+    by: Record<string, string> = runner,
+  ) {
     void action(async () => {
       const run = await apiFetch<ActivityRun>(`${endpoint}/${path}`, {
         method: "POST",
-        body: { ...runner, expectedRevision: detail!.draft.contentRevision, ...body },
+        body: { ...by, expectedRevision: detail!.draft.contentRevision, ...body },
       });
       if (alive.current) {
         setRuns((previous) => [
@@ -1058,8 +1093,9 @@ function ActivityEditor({
     });
   }
   /** Accept a candidate, which replaces the draft rather than starting anything. */
+  /** Accept a run's candidate; settles once the draft has it, for a "Saving…" state. */
   function acceptRun(runId: string, path: string) {
-    void action(async () => {
+    return action(async () => {
       const draft = await apiFetch<ActivityDraft>(
         `${endpoint}/runs/${encodeURIComponent(runId)}/${path}`,
         { method: "POST", body: { expectedRevision: detail!.draft.contentRevision } },
@@ -1177,14 +1213,137 @@ function ActivityEditor({
           label: S.activities.studioPanels.names.run,
           icon: "M5 6h10M5 12h14M5 18h7",
           render: () => (
-            <PipelinePanel
-              pipeline={pipeline}
-              agentLabel={agentLabel}
-              onAddExcerpt={(text) => {
-                setExcerpt(text);
-                setShowPanel({ key: "conversation", at: Date.now() });
-              }}
-            />
+            <div className="flex h-full min-h-0 flex-col">
+              {editable && available && (
+                <>
+                  <div className="space-y-3 p-3">
+                    <Select
+                      size="sm"
+                      label={S.activities.agent}
+                      value={selectedAgent}
+                      onChange={(e) => setAgentId(e.target.value)}
+                      disabled={busy || running || pipelineRunning}
+                    >
+                      <optgroup label={S.activities.penguinAgents}>
+                        {agents.map((agent) => (
+                          <option key={agent.agentId} value={agent.agentId}>
+                            {agent.name ?? agent.agentId}
+                          </option>
+                        ))}
+                      </optgroup>
+                      {codingAgents.length > 0 && (
+                        <optgroup label={S.activities.codingAgents}>
+                          {codingAgents.map((agent) => (
+                            <option key={agent.id} value={`coding:${agent.id}`}>
+                              {agent.title}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </Select>
+                    {codingAgentId && (
+                      <p className="text-xs text-gray-500">{S.activities.codingAgentMedia}</p>
+                    )}
+                  </div>
+                  <PipelineControls
+                    choice={pipelineChoice}
+                    pipeline={pipeline}
+                    blocked={pipelineBlocked}
+                    onChoose={setPipelineChoice}
+                    onRun={() => runStages()}
+                    onStop={stopStages}
+                  />
+                </>
+              )}
+              <div className="min-h-0 flex-1">
+                <PipelinePanel
+                  pipeline={pipeline}
+                  runs={runs}
+                  agentLabel={agentLabel}
+                  onAddExcerpt={(text) => {
+                    setExcerpt(text);
+                    setShowPanel({ key: "conversation", at: Date.now() });
+                  }}
+                />
+              </div>
+              {/* Assembly is the last stage, as in Loom: what stands before it, and the button. */}
+              <div className="max-h-[50%] shrink-0 overflow-y-auto border-t border-gray-200 p-3 dark:border-gray-800">
+                <BuildPanel
+                  endpoint={endpoint}
+                  revision={detail.draft.contentRevision}
+                  runs={runs}
+                  unsaved={dirty}
+                  proposalOpen={!!proposal.read?.proposal?.changes.length}
+                >
+                  {(blocked) =>
+                    editable && (
+                      <div className="space-y-3">
+                        {detail.activityType === "book" && (
+                          <>
+                            <h3 className="flex items-center gap-2 text-xs font-semibold">
+                              {S.activities.readingMode}
+                              <InfoPopover label={S.activities.readingMode}>
+                                <p>{S.activities.readingModeHelp}</p>
+                              </InfoPopover>
+                            </h3>
+                            <Select
+                              size="sm"
+                              aria-label={S.activities.readingMode}
+                              hint={S.activities.readingModeHint}
+                              value={bookMode}
+                              onChange={(e) => setBookMode(e.target.value as typeof bookMode)}
+                              disabled={busy || running}
+                            >
+                              <option value="">{S.activities.chooseReadingMode}</option>
+                              <option value="readAlong">{S.activities.readAlong}</option>
+                              <option value="decodable">{S.activities.decodable}</option>
+                            </Select>
+                          </>
+                        )}
+                        <Button
+                          size="sm"
+                          disabled={
+                            blocked ||
+                            busy ||
+                            running ||
+                            dirty ||
+                            !selectedAgent ||
+                            detail.draft.status !== "valid" ||
+                            !detail.draft.spec ||
+                            (detail.activityType === "book" &&
+                              (!bookMode || !detail.draft.mediaPlan))
+                          }
+                          onClick={() =>
+                            void action(async () => {
+                              const run = await apiFetch<ActivityRun>(
+                                `${endpoint}/assemble-module`,
+                                {
+                                  method: "POST",
+                                  body: {
+                                    ...runner,
+                                    expectedRevision: detail.draft.contentRevision,
+                                    ...(detail.activityType === "book" ? { bookMode } : {}),
+                                  },
+                                },
+                              );
+                              if (alive.current) {
+                                setRuns((previous) => [
+                                  summarize(run),
+                                  ...previous.filter((item) => item.runId !== run.runId),
+                                ]);
+                                setRefreshVersion((value) => value + 1);
+                              }
+                            })
+                          }
+                        >
+                          {S.activities.assemble}
+                        </Button>
+                      </div>
+                    )
+                  }
+                </BuildPanel>
+              </div>
+            </div>
           ),
         },
         {
@@ -1192,10 +1351,12 @@ function ActivityEditor({
           label: S.activities.studioPanels.names.player,
           icon: "M8 5v14l11-7z",
           render: () => (
-            <div className="p-3">
+            <div className="space-y-6 p-3">
               <SandboxPanel
                 projectId={projectId}
                 activityId={detail.id}
+                revision={detail.draft.contentRevision}
+                moduleRunId={playingModuleRunId(runs, detail.draft.pinnedModuleRunId)}
                 spec={detail.draft.spec}
                 languages={languages}
                 hasMedia={!!editedManifest?.assets[language]?.length}
@@ -1216,6 +1377,55 @@ function ActivityEditor({
             </div>
           ),
         },
+        ...(available
+          ? [
+              {
+                key: "tests" as const,
+                label: S.activities.studioPanels.names.tests,
+                icon: "M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3",
+                render: () => (
+                  <div className="p-3">
+                    <TestResultsView
+                      endpoint={endpoint}
+                      runs={runs}
+                      editable={editable}
+                      runner={selectedAgent ? runner : null}
+                      revision={detail.draft.contentRevision}
+                      unsaved={dirty}
+                      onStarted={(run) => {
+                        setRuns((previous) => [
+                          summarize(run),
+                          ...previous.filter((item) => item.runId !== run.runId),
+                        ]);
+                        setRefreshVersion((value) => value + 1);
+                      }}
+                    />
+                  </div>
+                ),
+              },
+              {
+                key: "quality" as const,
+                label: S.activities.studioPanels.names.quality,
+                icon: "M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z M9 12l2 2 4-4",
+                render: () => (
+                  <div className="p-3">
+                    <QualityChecksView
+                      endpoint={endpoint}
+                      runs={runs}
+                      editable={editable}
+                      onStarted={(run) => {
+                        setRuns((previous) => [
+                          summarize(run),
+                          ...previous.filter((item) => item.runId !== run.runId),
+                        ]);
+                        setRefreshVersion((value) => value + 1);
+                      }}
+                    />
+                  </div>
+                ),
+              },
+            ]
+          : []),
         {
           key: "conversation",
           label: S.activities.studioPanels.names.conversation,
@@ -1439,16 +1649,6 @@ function ActivityEditor({
                 dismiss();
               }}
             />
-            {editable && available && (
-              <PipelineControls
-                choice={pipelineChoice}
-                pipeline={pipeline}
-                blocked={pipelineBlocked}
-                onChoose={setPipelineChoice}
-                onRun={() => runStages()}
-                onStop={stopStages}
-              />
-            )}
           </div>
         )}
       >
@@ -1496,7 +1696,7 @@ function ActivityEditor({
             endpoint={endpoint}
             editable={editable}
             disabled={busy || !available}
-            mediaDirty={!!editedManifest && media !== pretty(detail.draft.mediaPlan?.manifest)}
+            mediaDirty={!!editedManifest && mediaDirty}
             onSaveMedia={() => void save("media")}
             canGenerate={
               editable &&
@@ -1513,9 +1713,7 @@ function ActivityEditor({
               detail.draft.status === "valid" &&
               !busy &&
               !running &&
-              !dirty &&
-              !!selectedAgent &&
-              !codingAgentId
+              !dirty
             }
             revision={detail.draft.contentRevision}
             mediaStats={currentMediaStats}
@@ -1524,22 +1722,36 @@ function ActivityEditor({
             canPreview={editable && available && !busy && !dirty}
             voices={voiceOptions}
             defaultVoice={bulkVoice}
-            onChange={(value) => setMedia(pretty(value))}
+            onChange={(value) => {
+              setMedia(pretty(value));
+              setMediaAutosave(true);
+            }}
+            mediaSave={mediaSave}
             onGenerateAudio={(lang, assetKey, voice, provider) =>
-              startRun("generate-audio", { language: lang, assetKey, voice, provider })
+              startRun(
+                "generate-audio",
+                { language: lang, assetKey, voice, provider },
+                MEDIA_RUNNER,
+              )
             }
             soundProviders={soundProviders}
             speechProviders={speechProviders}
+            voiceLibrary={voiceLibrary}
+            onReloadVoices={() => setVoiceLibraryReload((value) => value + 1)}
             onGenerateSound={(lang, assetKey, provider, model) =>
-              startRun("generate-sound", {
-                language: lang,
-                assetKey,
-                provider,
-                ...(model !== undefined ? { model } : {}),
-              })
+              startRun(
+                "generate-sound",
+                {
+                  language: lang,
+                  assetKey,
+                  provider,
+                  ...(model !== undefined ? { model } : {}),
+                },
+                MEDIA_RUNNER,
+              )
             }
             onGenerateImage={(lang, assetKey) =>
-              startRun("generate-image", { language: lang, assetKey })
+              startRun("generate-image", { language: lang, assetKey }, MEDIA_RUNNER)
             }
             onAcceptAudio={(runId) => acceptRun(runId, "accept-audio")}
             onAcceptImage={(runId) => acceptRun(runId, "accept-image")}
@@ -1548,12 +1760,11 @@ function ActivityEditor({
             }
             onAcceptText={(runId) => acceptRun(runId, "accept-media-text")}
             defaultLanguage={languageSetup.defaultLanguage}
-            onLanguage={setLanguage}
-            onTranslate={
-              language === languageSetup.defaultLanguage
-                ? undefined
-                : (lang, assetKey) =>
-                    startRun("generate-media-text", { language: lang, assetKey, translate: true })
+            languageName={(code) =>
+              languageSetup.languages.find((entry) => entry.code === code)?.label ?? code
+            }
+            onTranslate={(lang, assetKey) =>
+              startRun("generate-media-text", { language: lang, assetKey, translate: true })
             }
             sceneNav={sceneNav}
             spec={detail?.draft.spec}
@@ -1613,74 +1824,14 @@ function ActivityEditor({
                   : undefined
               }
             />
-            {editable && (
-              <div className="max-h-[45%] shrink-0 overflow-y-auto border-t border-gray-200 p-4 dark:border-gray-800">
-                <div className="mx-auto max-w-4xl">
-                  <div className="space-y-3">
-                    <Select
-                      size="sm"
-                      label={S.activities.agent}
-                      value={selectedAgent}
-                      onChange={(e) => setAgentId(e.target.value)}
-                      disabled={busy || running}
-                    >
-                      <optgroup label={S.activities.penguinAgents}>
-                        {agents.map((agent) => (
-                          <option key={agent.agentId} value={agent.agentId}>
-                            {agent.name ?? agent.agentId}
-                          </option>
-                        ))}
-                      </optgroup>
-                      {codingAgents.length > 0 && (
-                        <optgroup label={S.activities.codingAgents}>
-                          {codingAgents.map((agent) => (
-                            <option key={agent.id} value={`coding:${agent.id}`}>
-                              {agent.title}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </Select>
-                    {codingAgentId && (
-                      <p className="text-xs text-gray-500">{S.activities.codingAgentMedia}</p>
-                    )}
-                    {dirty && (
-                      <p className={`text-xs ${toneInk.attention}`}>{S.activities.saveFirst}</p>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      disabled={busy || running || dirty || !selectedAgent || !description.trim()}
-                      onClick={() =>
-                        void action(async () => {
-                          const run = await apiFetch<ActivityRun>(`${endpoint}/generate-spec`, {
-                            method: "POST",
-                            body: {
-                              ...runner,
-                              expectedRevision: detail.draft.contentRevision,
-                            },
-                          });
-                          if (alive.current) {
-                            setRuns((previous) => [
-                              summarize(run),
-                              ...previous.filter((item) => item.runId !== run.runId),
-                            ]);
-                            setRefreshVersion((value) => value + 1);
-                          }
-                        })
-                      }
-                    >
-                      {S.activities.generate}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
           </section>
         ) : section === "specification" ? (
           <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <SpecEditor
-              subject={`${detail.title} - ${detail.productCode} [${detail.refNum}]`}
+            <JsonEditor
+              title={S.activities.specEditor.title(panelSubject)}
+              editorLabel={S.activities.specEditor.editor}
+              savedLabel={S.activities.specEditor.savedSide}
+              saveLabel={S.activities.specEditor.save}
               value={spec}
               saved={pretty(detail.draft.spec)}
               editable={editable && available}
@@ -1690,10 +1841,62 @@ function ActivityEditor({
               onSave={() => void save("spec")}
             />
           </section>
+        ) : section === "configuration" || section === "assessment" || section === "module" ? (
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <ModuleDocumentView
+              // One editor per document, so unsaved text never carries to the other kind.
+              key={section}
+              endpoint={endpoint}
+              kind={section === "module" ? "definition" : section}
+              subject={panelSubject}
+              revision={detail.draft.contentRevision}
+              editable={editable && available}
+              onSaved={(draft, text) => {
+                // Only the draft changed; unsaved script or specification text stays.
+                setDetail((current) => (current ? { ...current, draft } : current));
+                announce({ kind: "success", text });
+              }}
+              generation={
+                section === "assessment"
+                  ? {
+                      refNum: detail.refNum,
+                      usesAssessment,
+                      runs,
+                      blocked:
+                        running || pipelineRunning
+                          ? S.activities.studioRun.otherRun
+                          : !selectedAgent
+                            ? S.activities.studioRun.noAgent
+                            : null,
+                      onGenerate: () => startRun("generate-assessment", {}),
+                      onAccept: (runId) =>
+                        void action(async () => {
+                          const draft = await apiFetch<ActivityDraft>(
+                            `${endpoint}/runs/${encodeURIComponent(runId)}/accept-assessment`,
+                            {
+                              method: "POST",
+                              body: { expectedRevision: detail.draft.contentRevision },
+                            },
+                          );
+                          if (!alive.current) return;
+                          // Only the draft changed; unsaved script or specification text stays.
+                          setDetail((current) => (current ? { ...current, draft } : current));
+                          announce({
+                            kind: "success",
+                            text: S.activities.assessment.accepted,
+                          });
+                        }),
+                    }
+                  : undefined
+              }
+            />
+          </section>
         ) : (
           <section className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              <div className="mx-auto max-w-4xl space-y-5">
+              <div
+                className={`mx-auto space-y-5 ${section === "deploy" ? "max-w-6xl" : "max-w-4xl"}`}
+              >
                 {section === "scenes" && (
                   <>
                     <section className="space-y-3">
@@ -1779,12 +1982,7 @@ function ActivityEditor({
                     }
                     onAskModel={(words) => startRun("generate-phonemes", { language, words })}
                     canRecord={
-                      editable &&
-                      available &&
-                      !busy &&
-                      pipelineBlocked === null &&
-                      !codingAgentId &&
-                      !!selectedAgent
+                      editable && available && !busy && pipelineBlocked === null && !!selectedAgent
                     }
                     onRecord={() => runStages("words", { language })}
                     onUseSounds={(runId) =>
@@ -1817,15 +2015,7 @@ function ActivityEditor({
                     assets={withoutBookWords(editedManifest.assets[language] ?? [])}
                     language={language}
                     editable={editable}
-                    canGenerate={
-                      editable &&
-                      available &&
-                      !busy &&
-                      !running &&
-                      !dirty &&
-                      !!selectedAgent &&
-                      !codingAgentId
-                    }
+                    canGenerate={editable && available && !busy && !running && !dirty}
                     onSelect={(key) => {
                       const usage = (editedManifest.assets[language] ?? [])
                         .find((entry) => entry.key === key)
@@ -1939,16 +2129,20 @@ function ActivityEditor({
                       })
                     }
                     onRetry={(key) =>
-                      startRun("generate-audio", {
-                        language,
-                        assetKey: key,
-                        ...speechChoice(
-                          editedManifest.assets[language]?.find((asset) => asset.key === key),
-                          voiceOptions,
-                          bulkVoice,
+                      startRun(
+                        "generate-audio",
+                        {
                           language,
-                        ),
-                      })
+                          assetKey: key,
+                          ...speechChoice(
+                            editedManifest.assets[language]?.find((asset) => asset.key === key),
+                            voiceOptions,
+                            bulkVoice,
+                            language,
+                          ),
+                        },
+                        MEDIA_RUNNER,
+                      )
                     }
                   />
                 )}
@@ -1978,182 +2172,6 @@ function ActivityEditor({
                 {section === "stats" && (
                   <ActivityStatsView endpoint={endpoint} revision={detail.draft.contentRevision} />
                 )}
-                {(section === "configuration" || section === "assessment") && (
-                  <ModuleDocumentView
-                    // One editor per document, so unsaved text never carries to the other kind.
-                    key={section}
-                    endpoint={endpoint}
-                    kind={section}
-                    revision={detail.draft.contentRevision}
-                    editable={editable && available}
-                    onSaved={(draft, text) => {
-                      // Only the draft changed; unsaved script or specification text stays.
-                      setDetail((current) => (current ? { ...current, draft } : current));
-                      announce({ kind: "success", text });
-                    }}
-                    generation={
-                      section === "assessment"
-                        ? {
-                            refNum: detail.refNum,
-                            usesAssessment,
-                            runs,
-                            blocked:
-                              running || pipelineRunning
-                                ? S.activities.studioRun.otherRun
-                                : !selectedAgent
-                                  ? S.activities.studioRun.noAgent
-                                  : null,
-                            onGenerate: () => startRun("generate-assessment", {}),
-                            onAccept: (runId) =>
-                              void action(async () => {
-                                const draft = await apiFetch<ActivityDraft>(
-                                  `${endpoint}/runs/${encodeURIComponent(runId)}/accept-assessment`,
-                                  {
-                                    method: "POST",
-                                    body: { expectedRevision: detail.draft.contentRevision },
-                                  },
-                                );
-                                if (!alive.current) return;
-                                // Only the draft changed; unsaved script or specification text stays.
-                                setDetail((current) => (current ? { ...current, draft } : current));
-                                announce({
-                                  kind: "success",
-                                  text: S.activities.assessment.accepted,
-                                });
-                              }),
-                          }
-                        : undefined
-                    }
-                  />
-                )}
-                {section === "module" && (
-                  <>
-                    <BuildPanel
-                      endpoint={endpoint}
-                      revision={detail.draft.contentRevision}
-                      runs={runs}
-                      unsaved={dirty}
-                      proposalOpen={!!proposal.read?.proposal?.changes.length}
-                    >
-                      {(blocked) =>
-                        editable && (
-                          <div className="space-y-3">
-                            {detail.activityType === "book" && (
-                              <>
-                                <h3 className="flex items-center gap-2 text-xs font-semibold">
-                                  {S.activities.readingMode}
-                                  <InfoPopover label={S.activities.readingMode}>
-                                    <p>{S.activities.readingModeHelp}</p>
-                                  </InfoPopover>
-                                </h3>
-                                <Select
-                                  size="sm"
-                                  aria-label={S.activities.readingMode}
-                                  hint={S.activities.readingModeHint}
-                                  value={bookMode}
-                                  onChange={(e) => setBookMode(e.target.value as typeof bookMode)}
-                                  disabled={busy || running}
-                                >
-                                  <option value="">{S.activities.chooseReadingMode}</option>
-                                  <option value="readAlong">{S.activities.readAlong}</option>
-                                  <option value="decodable">{S.activities.decodable}</option>
-                                </Select>
-                              </>
-                            )}
-                            <Button
-                              size="sm"
-                              disabled={
-                                blocked ||
-                                busy ||
-                                running ||
-                                dirty ||
-                                !selectedAgent ||
-                                detail.draft.status !== "valid" ||
-                                !detail.draft.spec ||
-                                (detail.activityType === "book" &&
-                                  (!bookMode || !detail.draft.mediaPlan))
-                              }
-                              onClick={() =>
-                                void action(async () => {
-                                  const run = await apiFetch<ActivityRun>(
-                                    `${endpoint}/assemble-module`,
-                                    {
-                                      method: "POST",
-                                      body: {
-                                        ...runner,
-                                        expectedRevision: detail.draft.contentRevision,
-                                        ...(detail.activityType === "book" ? { bookMode } : {}),
-                                      },
-                                    },
-                                  );
-                                  if (alive.current) {
-                                    setRuns((previous) => [
-                                      summarize(run),
-                                      ...previous.filter((item) => item.runId !== run.runId),
-                                    ]);
-                                    setRefreshVersion((value) => value + 1);
-                                  }
-                                })
-                              }
-                            >
-                              {S.activities.assemble}
-                            </Button>
-                          </div>
-                        )
-                      }
-                    </BuildPanel>
-                    {available && (
-                      <QualityChecksView
-                        endpoint={endpoint}
-                        runs={runs}
-                        editable={editable}
-                        onStarted={(run) => {
-                          setRuns((previous) => [
-                            summarize(run),
-                            ...previous.filter((item) => item.runId !== run.runId),
-                          ]);
-                          setRefreshVersion((value) => value + 1);
-                        }}
-                      />
-                    )}
-                    {available && (
-                      <TestResultsView
-                        endpoint={endpoint}
-                        runs={runs}
-                        editable={editable}
-                        runner={selectedAgent ? runner : null}
-                        revision={detail.draft.contentRevision}
-                        unsaved={dirty}
-                        onStarted={(run) => {
-                          setRuns((previous) => [
-                            summarize(run),
-                            ...previous.filter((item) => item.runId !== run.runId),
-                          ]);
-                          setRefreshVersion((value) => value + 1);
-                        }}
-                      />
-                    )}
-                    <SandboxPanel
-                      projectId={projectId}
-                      activityId={detail.id}
-                      spec={detail.draft.spec}
-                      languages={Object.keys(detail.draft.mediaPlan?.manifest.assets ?? {})}
-                    />
-                    {available && (
-                      <ModulePreview
-                        runs={runs}
-                        spec={detail.draft.spec}
-                        languages={Object.keys(detail.draft.mediaPlan?.manifest.assets ?? {})}
-                        stale={(() => {
-                          const moduleRun = latestModuleRun(runs);
-                          return Boolean(
-                            moduleRun && moduleRun.inputRevision !== detail.draft.contentRevision,
-                          );
-                        })()}
-                      />
-                    )}
-                  </>
-                )}
                 {section === "newRef" && available && (
                   <CreateRefView
                     key={detail.id}
@@ -2164,8 +2182,6 @@ function ActivityEditor({
                     voices={voiceOptions}
                     uploads={uploads}
                     uploadsLoading={uploadsLoading}
-                    agents={agents}
-                    defaultAgent={currentAgent?.agentId ?? ""}
                     onIdentity={(record) => {
                       setDetail((current) => (current ? { ...current, ...record } : current));
                       void onSaved();

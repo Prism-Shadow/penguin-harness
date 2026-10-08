@@ -5248,6 +5248,8 @@ export type {
 } from "../activities/composition-types.js";
 export type { VideoProblemCode, VideoResult, VideoTarget } from "../activities/video-types.js";
 export type {
+  ElevenLabsVoices,
+  ElevenLabsVoicesProblem,
   SpeechProblem,
   SpeechProviderId,
   SpeechProviderStatus,

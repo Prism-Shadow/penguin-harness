@@ -1,6 +1,6 @@
 /**
  * An author's edit of a module document: the configuration a ref's module reads, or the
- * assessment every ref of a product shares.
+ * assessment and the module definition every ref of a product shares.
  *
  * Loom wrote these straight into the module folder of the WAF checkout. Penguin keeps them in
  * the draft instead, as an override the preview and every assembly use until the author
@@ -11,7 +11,12 @@
  */
 import { HttpError } from "../http/errors.js";
 import { assessmentProblems, type AssessmentItem } from "./assessment-session.js";
-import { contentRevision, type ActivityDraft, type ModuleDocumentOverride } from "./domain.js";
+import {
+  contentRevision,
+  type ActivityDraft,
+  type ModuleDocumentKind,
+  type ModuleDocumentOverride,
+} from "./domain.js";
 import { interactionType, isAssessmentData } from "./sandbox-assessment.js";
 
 /** The largest document an author may save, serialized. */
@@ -29,6 +34,25 @@ export function configurationBasis(draft: Pick<ActivityDraft, "mediaPlan">): str
 /** What an assessment is derived from: the specification, or nothing yet. */
 export function assessmentBasis(draft: Pick<ActivityDraft, "spec">): string | null {
   return draft.spec ? contentRevision(draft.spec) : null;
+}
+
+/**
+ * What a document of `kind` is derived from. The definition, like the assessment, follows the
+ * specification: its id, title and theme come from there.
+ */
+export function documentBasis(
+  kind: ModuleDocumentKind,
+  draft: Pick<ActivityDraft, "spec" | "mediaPlan">,
+): string | null {
+  return kind === "configuration" ? configurationBasis(draft) : assessmentBasis(draft);
+}
+
+/**
+ * Whether every ref of a product shares the document, so only the canonical ref, which owns
+ * the module code, may edit it: the assessment and the module definition.
+ */
+export function isSharedDocument(kind: ModuleDocumentKind): boolean {
+  return kind !== "configuration";
 }
 
 /** Whether what the edit was derived from has changed since. */
@@ -49,6 +73,25 @@ function plainObject(value: unknown): Record<string, unknown> {
 function withinSize(value: Record<string, unknown>): void {
   if (Buffer.byteLength(JSON.stringify(value), "utf8") > MODULE_DOCUMENT_MAX_BYTES)
     throw invalid(`The document must be ${MODULE_DOCUMENT_MAX_BYTES} bytes or smaller.`);
+}
+
+/**
+ * Validate a module definition an author saves: what an assembly checks it produced, a WAF 2
+ * HTML module whose entry is `entry.js`, so a save never makes the next assembly fail.
+ */
+export function validateDefinition(value: unknown): Record<string, unknown> {
+  const document = plainObject(value);
+  withinSize(document);
+  const require = document.require as { entry?: { url?: unknown } } | undefined;
+  if (
+    document.engine !== "html" ||
+    document.schemaVersion !== "2.0.0" ||
+    require?.entry?.url !== "entry.js"
+  )
+    throw invalid(
+      'A module definition needs engine "html", schemaVersion "2.0.0" and require.entry.url "entry.js".',
+    );
+  return document;
 }
 
 export function validateConfiguration(value: unknown): Record<string, unknown> {

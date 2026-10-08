@@ -7,6 +7,7 @@ import {
   scaffoldModule,
   prepareModule,
   collectModule,
+  stageSkills,
 } from "../src/activities/waf-module.js";
 import { readCandidate } from "../src/activities/generation.js";
 import type { ActivityDetail } from "../src/activities/domain.js";
@@ -85,6 +86,39 @@ describe("native WAF module boundary", () => {
       ),
     ).toMatchObject({ P: { "en-US": { cat: "{{MEDIA}}/cat.png" } } });
   });
+  it("stages the machine path's skills, in reading order, beside the module", async () => {
+    const workspace = await directory();
+    await prepareModule(workspace, activity, workspace);
+    const readme = await fs.readFile(path.join(workspace, "skills/README.md"), "utf8");
+    const order = [...readme.matchAll(/^\d+\. `([a-z0-9-]+)\/SKILL\.md`/gm)].map((m) => m[1]);
+    // The scaffold ships src/index.ts, so this is the state machine path, and the activity
+    // is not assessed, so the machine contract is the behaviour skill.
+    expect(order[0]).toBe("project-documentation");
+    expect(order[1]).toBe("waf-state-machine");
+    expect(order).toContain("xstate-v5");
+    expect(order).not.toContain("waf-sequence-implementation-patterns");
+    for (const name of order)
+      expect(
+        (await fs.readFile(path.join(workspace, "skills", name!, "SKILL.md"), "utf8")).length,
+      ).toBeGreaterThan(500);
+    // A skill's own reference files come with it, since its prose points at them.
+    expect((await fs.readdir(path.join(workspace, "skills/xstate-v5/references"))).length).toBe(5);
+    // Never inside module/, which is what gets collected and shipped.
+    await expect(fs.access(path.join(workspace, "module/skills"))).rejects.toThrow();
+  });
+
+  it("refuses a run whose skills are not installed, before writing any of them", async () => {
+    const workspace = await directory();
+    await expect(
+      stageSkills(
+        workspace,
+        ["waf-state-machine", "waf-layout-patterns"],
+        [{ name: "waf-state-machine", description: "The machine.", version: "1", content: "body" }],
+      ),
+    ).rejects.toThrow("missing waf-layout-patterns");
+    expect(await fs.readdir(workspace)).toEqual([]);
+  });
+
   it("discovers only a complete ancestor checkout and honors an explicit invalid root", async () => {
     const root = await directory();
     const child = path.join(root, "projects", "one");
@@ -184,9 +218,6 @@ describe("native WAF module boundary", () => {
   it("collects bounded artifact hashes and refuses traversal, duplicates and absent outputs", async () => {
     const root = await directory();
     await prepareModule(root, activity, root);
-    await fs.mkdir(path.join(root, "preview"));
-    await fs.writeFile(path.join(root, "preview/index.html"), "<!doctype html><title>WAF</title>");
-    await fs.writeFile(path.join(root, "preview/runtime.js"), "window.waf = true;");
     await fs.writeFile(path.join(root, "module/build.log"), "typecheck and buildDebug completed");
     await fs.mkdir(path.join(root, "module/dist"), { recursive: true });
     await fs.writeFile(path.join(root, "module/dist/entry.js"), "window.waf = true;");
@@ -195,8 +226,6 @@ describe("native WAF module boundary", () => {
       "module/definition.json",
       "module/src/index.ts",
       "module/res/layout.html",
-      "preview/index.html",
-      "preview/runtime.js",
       "module/build.log",
       "module/dist/entry.js",
     ];
@@ -204,7 +233,7 @@ describe("native WAF module boundary", () => {
       fs.writeFile(path.join(root, "module-result.json"), JSON.stringify({ files: names }));
     await manifest(files);
     const result = await collectModule(root, readCandidate);
-    expect(result.previewPath).toBe("preview/index.html");
+    expect(result.modulePath).toBe("module");
     expect(result.files[0]!.sha256).toMatch(/^[a-f0-9]{64}$/);
     for (const invalid of [
       [...files, "module/../secret"],
@@ -214,14 +243,20 @@ describe("native WAF module boundary", () => {
       await manifest(invalid);
       await expect(collectModule(root, readCandidate)).rejects.toThrow();
     }
-    await manifest([...files, "preview/missing.js"]);
+    await manifest([...files, "module/missing.js"]);
     await expect(collectModule(root, readCandidate)).rejects.toThrow();
+    // The player plays the module itself, so nothing outside module/ is an artifact.
+    await fs.mkdir(path.join(root, "preview"));
+    await fs.writeFile(path.join(root, "preview/index.html"), "<!doctype html><title>WAF</title>");
+    await manifest([...files, "preview/index.html"]);
+    await expect(collectModule(root, readCandidate)).rejects.toThrow("Invalid or duplicate");
     await manifest(files);
     const outside = await directory();
-    await fs.rename(path.join(root, "preview"), path.join(root, "saved-preview"));
+    await fs.cp(path.join(root, "module/dist"), outside, { recursive: true });
+    await fs.rm(path.join(root, "module/dist"), { recursive: true });
     await fs.symlink(
       outside,
-      path.join(root, "preview"),
+      path.join(root, "module/dist"),
       process.platform === "win32" ? "junction" : "dir",
     );
     await expect(collectModule(root, readCandidate)).rejects.toThrow("Linked artifact directories");

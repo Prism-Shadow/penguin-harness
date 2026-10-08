@@ -314,7 +314,8 @@ const missing = input.criteria.filter((text) => !covered.has(text));
 console.log(results.length + " checks ran; " + missing.length + " criteria have no check.");
 `;
 
-const HARNESS_API = `The harness (${ACCEPTANCE_HARNESS_FILE}) exports:
+/** The harness's API, as a test run and a module run's player check are told it. */
+export const HARNESS_API = `The harness (${ACCEPTANCE_HARNESS_FILE}) exports:
 - criteria: the acceptance criteria, in order; scenes: the specification's scene ids.
 - criterion(text, testName, fn): registers the check for one criterion; text must be the criterion exactly as it appears in criteria. The check passes when fn resolves and fails with the message of the Error it throws.
 - openActivity({ scene?, language? }): opens the played activity (on a scene when given) and waits until it starts; returns activity.

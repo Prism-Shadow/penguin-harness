@@ -11,8 +11,9 @@ const MAX_BYTES = 20 * 1024 * 1024;
 
 // Gemini voices only; ElevenLabs voices are ids.
 const GEMINI_VOICES = ["Kore", "Puck", "Charon", "Fenrir", "Aoede"];
-const ELEVENLABS_MODELS = ["eleven_v3", "eleven_multilingual_v2"];
-// Stands for the agent's Vault ELEVENLABS_VOICE_ID, read here from the environment.
+const ELEVENLABS_MODELS = ["eleven_v3", "eleven_v4", "eleven_multilingual_v2"];
+// Stands for the agent's Vault ELEVENLABS_VOICE_ID, read here from the environment, else the
+// input's defaultVoice.
 const ELEVENLABS_DEFAULT_VOICE = "elevenlabs-default";
 const VOICE_ID = /^[A-Za-z0-9]{10,40}$/;
 
@@ -27,19 +28,23 @@ function validScript(input) {
   );
 }
 
-// A script is read aloud as written, unless the run marks it as a direction to follow (a
-// word pronunciation: the word drawn out, then said normally), which is never read out.
+// A script is read aloud as written, in the run's style when it names one, unless the run
+// marks it as a direction to follow (a word pronunciation: the word drawn out, then said
+// normally), which is never read out.
 function geminiPrompt(input) {
-  return input.delivery === "direction"
-    ? `Speak in ${input.language}. Follow this direction, and say only the word it names, never the direction itself:\n${input.script}`
-    : `Read this script aloud in ${input.language}, without adding words:\n${input.script}`;
+  if (input.delivery === "direction")
+    return `Speak in ${input.language}. Follow this direction, and say only the word it names, never the direction itself:\n${input.script}`;
+  const style =
+    typeof input.style === "string" && input.style.trim() ? ` ${input.style.trim()}` : "";
+  return `Read this script aloud in ${input.language}, without adding words.${style}\n${input.script}`;
 }
 
 async function speakWithGemini(input) {
   if (
     input.model !== "gemini-3.1-flash-tts-preview" ||
     !GEMINI_VOICES.includes(input.voice) ||
-    !validScript(input)
+    !validScript(input) ||
+    (input.style !== undefined && (typeof input.style !== "string" || input.style.length > 1000))
   )
     throw new Error("invalid input");
   if (!process.env.GEMINI_API_KEY) throw new Error("missing credential");
@@ -150,8 +155,11 @@ async function speakWithElevenlabs(input) {
     throw new Error("invalid input");
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) throw new Error("missing credential");
+  // The default voice is the Vault's ELEVENLABS_VOICE_ID, else the one the input names.
   const voice =
-    input.voice === ELEVENLABS_DEFAULT_VOICE ? process.env.ELEVENLABS_VOICE_ID : input.voice;
+    input.voice === ELEVENLABS_DEFAULT_VOICE
+      ? process.env.ELEVENLABS_VOICE_ID || input.defaultVoice
+      : input.voice;
   if (!VOICE_ID.test(voice ?? "")) throw new Error("invalid voice");
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voice}/with-timestamps?output_format=mp3_44100_128`,
@@ -179,7 +187,7 @@ let credential = "GEMINI_API_KEY";
 try {
   const input = JSON.parse(await fs.readFile("speech-input.json", "utf8"));
   if (!input || typeof input !== "object") throw new Error("invalid input");
-  if (input.provider === "elevenlabs") credential = "ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID";
+  if (input.provider === "elevenlabs") credential = "ELEVENLABS_API_KEY";
   else if (input.provider !== undefined && input.provider !== "gemini")
     throw new Error("invalid input");
   const file =

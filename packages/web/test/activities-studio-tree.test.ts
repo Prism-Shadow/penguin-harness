@@ -13,8 +13,15 @@ import {
 } from "../src/features/activities/studio-tree";
 import {
   SIDE_PANEL_KEY,
-  SIDE_PANEL_WIDTH,
-  WORKSPACE_TWO_PANE_WIDTH,
+  SIDE_PANEL_MAX_WIDTH,
+  SIDE_PANEL_MIN_WIDTH,
+  SIDE_PANEL_WORK_MIN,
+  readSidePanelExpanded,
+  readSidePanelWidth,
+  sidePanelWidthAfterKey,
+  sidePanelWidthFor,
+  writeSidePanelExpanded,
+  writeSidePanelWidth,
   readSidePanel,
   sidePanelFitsBeside,
   workspaceSections,
@@ -79,10 +86,18 @@ describe("studio tree", () => {
 
   it("orders top-level rows by phase and names each row's phase", () => {
     expect(tree.map((node) => phaseOfNode(node))).toEqual([
-      "write", "write", "write",
-      "media", "media", "media",
-      "build", "build", "build", "build",
-      "more", "more",
+      "write",
+      "write",
+      "write",
+      "media",
+      "media",
+      "media",
+      "build",
+      "build",
+      "build",
+      "build",
+      "more",
+      "more",
     ]);
   });
 
@@ -215,12 +230,50 @@ describe("picking in the player", () => {
 });
 
 describe("side panel", () => {
-  it("sits beside the work only when the tree and the editor still fit", () => {
-    const needed = WORKSPACE_TWO_PANE_WIDTH + SIDE_PANEL_WIDTH;
+  it("sits beside the work only when the editor still fits beside its narrowest width", () => {
+    const needed = SIDE_PANEL_WORK_MIN + SIDE_PANEL_MIN_WIDTH;
     expect(sidePanelFitsBeside(needed)).toBe(true);
     expect(sidePanelFitsBeside(needed - 1)).toBe(false);
     // Unmeasured counts as wide, so the first paint is not the covering layout.
     expect(sidePanelFitsBeside(0)).toBe(true);
+  });
+
+  it("takes its stored width, short of crushing the editor", () => {
+    expect(sidePanelWidthFor(700, 0)).toBe(700);
+    expect(sidePanelWidthFor(700, 2000)).toBe(700);
+    expect(sidePanelWidthFor(1200, 1400)).toBe(1400 - SIDE_PANEL_WORK_MIN);
+    expect(sidePanelWidthFor(1200, 600)).toBe(SIDE_PANEL_MIN_WIDTH);
+    expect(sidePanelWidthFor(Number.NaN, 2000)).toBe(480);
+    expect(sidePanelWidthFor(99999, 99999)).toBe(SIDE_PANEL_MAX_WIDTH);
+  });
+
+  it("moves its divider by keyboard, left widening the panel", () => {
+    expect(sidePanelWidthAfterKey(500, "ArrowLeft")).toBe(516);
+    expect(sidePanelWidthAfterKey(500, "ArrowRight", true)).toBe(436);
+    expect(sidePanelWidthAfterKey(500, "Home")).toBe(SIDE_PANEL_MIN_WIDTH);
+    expect(sidePanelWidthAfterKey(500, "End")).toBe(SIDE_PANEL_MAX_WIDTH);
+    expect(sidePanelWidthAfterKey(500, "a")).toBeNull();
+  });
+
+  it("remembers its width and whether it fills the workspace", () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+    };
+    expect(readSidePanelWidth(storage)).toBe(480);
+    writeSidePanelWidth(900, storage);
+    expect(readSidePanelWidth(storage)).toBe(900);
+    expect(readSidePanelExpanded(storage)).toBe(false);
+    writeSidePanelExpanded(true, storage);
+    expect(readSidePanelExpanded(storage)).toBe(true);
+    const blocked = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(readSidePanelWidth(blocked)).toBe(480);
+    expect(readSidePanelExpanded(blocked)).toBe(false);
   });
 
   it("remembers the open panel and ignores anything it does not recognise", () => {

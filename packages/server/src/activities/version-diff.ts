@@ -26,6 +26,7 @@ export function versionTexts(manifest: VersionManifest): Record<VersionFileName,
     mediaPlan: pretty(draft.mediaPlan),
     configuration: pretty(draft.moduleDocuments?.configuration?.value),
     assessment: pretty(draft.moduleDocuments?.assessment?.value),
+    definition: pretty(draft.moduleDocuments?.definition?.value),
     features: pretty(manifest.implementationFeatures),
   };
 }
@@ -36,6 +37,7 @@ const ORDER: readonly VersionFileName[] = [
   "mediaPlan",
   "configuration",
   "assessment",
+  "definition",
   "features",
 ];
 

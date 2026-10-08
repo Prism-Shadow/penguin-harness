@@ -4,7 +4,7 @@
  */
 import type { VoiceOption } from "./voice-catalogue.js";
 
-/** Who speaks a narration. An asset or run naming none is spoken by Gemini. */
+/** Who speaks a narration. An asset naming none is spoken by ElevenLabs; a run naming none was Gemini's. */
 export type SpeechProviderId = "gemini" | "elevenlabs" | "kokoro";
 
 /** Why a provider cannot speak for the chosen agent now. The App words it. */
@@ -29,4 +29,16 @@ export interface SpeechSetup {
   catalogue: VoiceOption[];
   vaultKey: string;
   providers?: SpeechProviderStatus[];
+}
+
+/** Why the ElevenLabs voice list could not be read. The App words it. */
+export type ElevenLabsVoicesProblem = "credential_missing" | "refused" | "unavailable";
+
+/**
+ * `GET /elevenlabs-voices`: the Media Agent's ElevenLabs voices, the default first. With a
+ * `problem`, only the default is listed and the App says why.
+ */
+export interface ElevenLabsVoices {
+  voices: VoiceOption[];
+  problem?: ElevenLabsVoicesProblem;
 }

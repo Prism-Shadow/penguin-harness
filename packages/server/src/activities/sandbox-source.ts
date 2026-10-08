@@ -21,6 +21,29 @@ export type ModuleSource =
    */
   | { kind: "checkout"; root: string; output: string; moduleFolder: string };
 
+/**
+ * The media folders a module's definition loads from, as the sparse media checkout names
+ * them: the folder of every `{{MEDIA}}/...` url it requires. The navbar's fonts, icons and
+ * shared audio live in folders no activity's own `loom/<product>` folder covers.
+ */
+export function definitionMediaFolders(definition: unknown): string[] {
+  const folders = new Set<string>();
+  const visit = (value: unknown) => {
+    if (typeof value === "string") {
+      const match = /^\{\{MEDIA\}\}\/(.+)\/[^/]+$/.exec(value);
+      if (match && !match[1]!.split("/").includes("..")) folders.add(match[1]!);
+    } else if (Array.isArray(value)) value.forEach(visit);
+    else if (value && typeof value === "object") Object.values(value).forEach(visit);
+  };
+  visit(definition);
+  return [...folders].sort();
+}
+
+/** Where a run workspace's `buildDebug` writes the built module. */
+export function runBuildOutput(moduleRoot: string): string {
+  return path.join(moduleRoot, "dist", "debug");
+}
+
 /** The directory, under Penguin's root, that a checkout module is built into. */
 export function checkoutOutputRoot(penguinRoot: string, moduleFolder: string): string {
   return path.join(penguinRoot, "activity-sandbox", "modules", moduleFolder);
@@ -46,11 +69,11 @@ export function checkoutServable(relative: string): boolean {
  *
  * Loom's order: the build output (`entry.js`, `style.css`), then the module's `res`
  * (`layout.html`, which a definition names as if it sat beside it), then the module
- * itself. A run workspace is a single root because Penguin's assembly already lays its
- * built files where the definition names them.
+ * itself. A run workspace's build output is the scaffold's `dist/debug`, then the module,
+ * where older assemblies laid their built files.
  */
 export function moduleFileRoots(source: ModuleSource): string[] {
-  if (source.kind === "run") return [source.root];
+  if (source.kind === "run") return [runBuildOutput(source.root), source.root];
   return [source.output, path.join(source.root, "res"), source.root];
 }
 
