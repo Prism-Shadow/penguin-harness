@@ -210,15 +210,7 @@ describe("deploy context", () => {
     const fields = context.problems
       .filter((problem) => problem.code === "settings_missing")
       .map((problem) => (problem as { field: string }).field);
-    expect(fields).toEqual([
-      "qa.jenkinsUrl",
-      "qa.username",
-      "qa.token",
-      "qa.frameworkVersion",
-      "qa.activityBaseUrl",
-      "git.userName",
-      "git.userEmail",
-    ]);
+    expect(fields).toEqual(["qa.username", "qa.token"]);
   });
 
   it("names a WAF workspace that is not prepared, and looks at no clone", async () => {

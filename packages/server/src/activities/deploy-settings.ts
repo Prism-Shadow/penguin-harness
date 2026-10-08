@@ -59,28 +59,29 @@ export interface DeployTokenChanges {
   prod?: string | null;
 }
 
+/** WAF Loom's shared deployment defaults. Personal Jenkins credentials are configured separately. */
 export function defaultDeploySettings(): DeploySettings {
   return {
     qa: {
-      jenkinsUrl: "",
+      jenkinsUrl: "https://newjenkins.waterford.org",
       username: "",
       tier: "qa",
       environment: "loom",
-      frameworkVersion: "",
-      activityBaseUrl: "",
+      frameworkVersion: "2.24.1",
+      activityBaseUrl: "https://qademo.waterford.org/activity.html",
     },
     prod: {
       jenkinsUrl: "",
       username: "",
       tier: "prod",
       environment: "DEFAULT",
-      frameworkVersion: "",
+      frameworkVersion: "2.23.1",
     },
     jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
     repos: {
       mediaPublicBase: DEFAULT_MEDIA_PUBLIC_BASE,
     },
-    git: { userName: "", userEmail: "" },
+    git: { userName: "WAF Loom", userEmail: "waf-loom@waterford.org" },
     timeouts: { buildMinutes: 30, deployMinutes: 30 },
   };
 }
