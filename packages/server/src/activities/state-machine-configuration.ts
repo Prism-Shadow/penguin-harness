@@ -46,7 +46,10 @@ function isGeneralScene(scene: Json): boolean {
 
 /** Each scene's id, description and media keys, as `waf-state-machine`'s scene catalog reads them. */
 export function activitySceneCatalog(spec: unknown): Json[] {
-  const scenes = isRecord(spec) && Array.isArray(spec.scenes) ? spec.scenes.filter(isRecord) : [];
+  // A specification may still name its scenes `stages`; the scaffold builds the machine from
+  // either, so the catalog must too or the player rejects the machine's scene ids.
+  const rawScenes = isRecord(spec) ? (spec.scenes ?? spec.stages) : undefined;
+  const scenes = Array.isArray(rawScenes) ? rawScenes.filter(isRecord) : [];
   const entries = scenes.map((scene) => {
     const media = isRecord(scene.media) ? scene.media : {};
     const audio = isRecord(scene.audio) ? scene.audio : {};

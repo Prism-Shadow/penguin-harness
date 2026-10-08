@@ -117,6 +117,14 @@ describe("the state machine a ref's configuration carries", () => {
     ]);
   });
 
+  it("reads a specification that names its scenes stages", () => {
+    // The scaffold builds the machine from `scenes ?? stages`; a catalog that ignored `stages`
+    // would hold only the placeholder and the player would refuse the machine's scene ids.
+    expect(
+      activitySceneCatalog({ stages: [{ id: "s1" }, { id: "s2" }] }).map((scene) => scene.id),
+    ).toEqual(["s1", "s2"]);
+  });
+
   it("drops the legacy machine key and says nothing changed the second time", () => {
     const configuration: Record<string, unknown> = {
       stateMachine: {},
