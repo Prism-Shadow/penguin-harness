@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://waterford.org/schemas/activity-state-machine-1.1.json",
+  "title": "WAF Activity State Machine",
+  "description": "Event-driven WAF State machine dialect compiled by waf-state-machine to XState v5. This is not the native XState machine schema.",
+  "type": "object",
+  "required": ["version", "id", "initial", "states"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "enum": ["1.0", "1.1"] },
+    "id": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "metadata": { "type": "object" },
+    "initial": { "type": "string", "minLength": 1 },
+    "context": { "type": "object" },
+    "states": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/definitions/state" }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "implementationDescriptor": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "params": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "implementationReference": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "$ref": "#/definitions/implementationDescriptor" }
+      ]
+    },
+    "namedImplementation": {
+      "oneOf": [
+        { "$ref": "#/definitions/implementationReference" },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/implementationReference" }
+        }
+      ]
+    },
+    "transition": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "target": { "type": "string", "minLength": 1 },
+            "guard": { "$ref": "#/definitions/implementationReference" },
+            "actions": { "$ref": "#/definitions/namedImplementation" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "transitions": {
+      "oneOf": [
+        { "$ref": "#/definitions/transition" },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/transition" }
+        }
+      ]
+    },
+    "invoke": {
+      "type": "object",
+      "required": ["src"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "src": { "type": "string", "minLength": 1 },
+        "onDone": { "$ref": "#/definitions/transitions" },
+        "onError": { "$ref": "#/definitions/transitions" }
+      },
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "type": { "enum": ["atomic", "compound", "final"] },
+        "initial": { "type": "string", "minLength": 1 },
+        "states": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/definitions/state" }
+        },
+        "entry": { "$ref": "#/definitions/namedImplementation" },
+        "exit": { "$ref": "#/definitions/namedImplementation" },
+        "after": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[0-9]+$" },
+          "additionalProperties": { "$ref": "#/definitions/transitions" }
+        },
+        "invoke": { "$ref": "#/definitions/invoke" },
+        "on": {
+          "type": "object",
+          "propertyNames": { "minLength": 1 },
+          "additionalProperties": { "$ref": "#/definitions/transitions" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

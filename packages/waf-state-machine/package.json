@@ -1,0 +1,59 @@
+{
+  "name": "waf-state-machine",
+  "version": "1.4.17",
+  "description": "Typed state-machine runtime and WAF lifecycle adapter for Waterford activities",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./state-machine": {
+      "types": "./dist/state-machine-api.d.ts",
+      "import": "./dist/state-machine-api.js",
+      "default": "./dist/state-machine-api.js"
+    },
+    "./schema": "./schema/state-machine.schema.json"
+  },
+  "files": [
+    "dist",
+    "schema"
+  ],
+  "engines": {
+    "node": ">=24.19.0 <25",
+    "npm": ">=11.17.0 <12"
+  },
+  "packageManager": "npm@11.17.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/waterfordresearchinstitute/waf-loom.git",
+    "directory": "packages/waf-state-machine"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "npm run typecheck && npm test && npm run build",
+    "prepack": "npm run clean && npm run check",
+    "test": "node --test test/activity/*.test.ts test/state-machine/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "input-manager-system": ">=1.3.15 <2",
+    "pubsubsingleton": ">=1.0.7 <2",
+    "waf-utils": ">=2.0.20 <3"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2"
+  },
+  "publishConfig": {
+    "registry": "https://nexus.waterford.org/repository/npm-snapshot/"
+  },
+  "dependencies": {
+    "xstate": "5.32.5"
+  }
+}

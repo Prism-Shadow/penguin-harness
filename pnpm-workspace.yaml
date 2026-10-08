@@ -1,5 +1,10 @@
 packages:
   - "packages/*"
+  # Loom's state-machine runtime, copied byte for byte from waf-loom/packages/waf-state-machine.
+  # It is an npm package with its own lockfile, and its peers (input-manager-system,
+  # pubsubsingleton, waf-utils) exist only on Waterford's Nexus, so pnpm must not install it.
+  # Modules still get it from Nexus at the version the scaffold pins (waf-module.ts).
+  - "!packages/waf-state-machine"
   # Plugin packages a Project asks for (the [plugins] table of its config). They sit at the top
   # level, outside packages/, because they are not part of the harness: nothing under
   # packages/ depends on one, and the platform bundle carries none of them — what ships
