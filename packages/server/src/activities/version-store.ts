@@ -9,6 +9,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { renameOver } from "../internal/rename-over.js";
 import type { Db } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
 import { newId, type ActivityDraft } from "./domain.js";
@@ -63,7 +64,7 @@ export async function writeBlob(activityDir: string, bytes: Uint8Array): Promise
   const temp = `${file}.${newId("tmp")}`;
   try {
     await fs.writeFile(temp, bytes, { flag: "wx" });
-    await fs.rename(temp, file);
+    await renameOver(temp, file);
   } finally {
     await fs.rm(temp, { force: true });
   }

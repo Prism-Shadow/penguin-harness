@@ -19,6 +19,7 @@
 import { REF_FEATURES_FILE } from "./ref-files.js";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { renameOver } from "../internal/rename-over.js";
 import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
@@ -694,7 +695,7 @@ async function writeAtomic(file: string, data: string | Uint8Array): Promise<voi
   const temp = `${file}.${newId("tmp")}`;
   try {
     await fs.writeFile(temp, data, { flag: "wx" });
-    await fs.rename(temp, file);
+    await renameOver(temp, file);
   } finally {
     await fs.rm(temp, { force: true });
   }

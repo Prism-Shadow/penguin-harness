@@ -22,6 +22,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { renameOver } from "../internal/rename-over.js";
 import type { ActivityDraft, ModuleDocumentOverrides } from "./domain.js";
 import type { AssetManifest } from "./media.js";
 
@@ -117,8 +118,12 @@ export interface PenguinProductState {
 export async function writeFileAtomic(file: string, text: string): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(temp, text, "utf8");
-  await fs.rename(temp, file);
+  try {
+    await fs.writeFile(temp, text, "utf8");
+    await renameOver(temp, file);
+  } finally {
+    await fs.rm(temp, { force: true });
+  }
 }
 
 function json(value: unknown): string {

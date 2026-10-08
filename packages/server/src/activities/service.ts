@@ -11,6 +11,7 @@ import { DEFAULT_LANGUAGE_CODE, canAddLanguage } from "./languages.js";
 import type { ProposalChange } from "./assist.js";
 import { validateBookSpec } from "./book.js";
 import path from "node:path";
+import { renameOver } from "../internal/rename-over.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { projectDir } from "@prismshadow/penguin-core";
 import type { Config, Db } from "../hmr/capabilities.js";
@@ -171,7 +172,7 @@ export async function atomicJson(file: string, value: unknown): Promise<void> {
       encoding: "utf8",
       flag: "wx",
     });
-    await fs.rename(temp, file);
+    await renameOver(temp, file);
   } finally {
     await fs.rm(temp, { force: true });
   }
