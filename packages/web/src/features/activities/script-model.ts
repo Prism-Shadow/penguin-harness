@@ -23,6 +23,41 @@ export function isSceneHeading(line: string): boolean {
   return SCENE_HEADING.test(line);
 }
 
+/** How long a heading's `Scene N:` part is, before its title; 0 for a line that is no heading. */
+export function sceneHeadingPrefix(line: string): number {
+  const heading = SCENE_HEADING.exec(line);
+  return heading ? line.length - heading[2]!.length : 0;
+}
+
+/**
+ * A media element written on one line, from its opening tag to its closing one: what the
+ * script editor shades as narration, footage or a picture. Tags left open on their line, and
+ * self-closing ones, are only tags.
+ */
+export interface MediaElementSpan {
+  from: number;
+  to: number;
+  element: MediaElement;
+}
+
+export function mediaElementSpans(text: string): MediaElementSpan[] {
+  const open = new Map<MediaElement, number[]>();
+  const spans: MediaElementSpan[] = [];
+  for (const tag of mediaTagSpans(text)) {
+    const raw = text.slice(tag.from, tag.to);
+    if (/\/\s*>$/.test(raw)) continue;
+    const starts = open.get(tag.element) ?? [];
+    if (/^<\s*\//.test(raw)) {
+      const from = starts.pop();
+      if (from !== undefined) spans.push({ from, to: tag.to, element: tag.element });
+    } else {
+      starts.push(tag.from);
+      open.set(tag.element, starts);
+    }
+  }
+  return spans.sort((left, right) => left.from - right.from);
+}
+
 export interface ScriptScene {
   number: number;
   title: string;

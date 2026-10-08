@@ -79,6 +79,13 @@ export interface StreamRenderContext {
   hideReasoning?: boolean;
   /** Offers Copy and Show all on tool output. */
   toolOutputActions?: boolean;
+  /**
+   * A stage run's log, read for what the agent did: settled reasoning with no text folds into
+   * the step it led to, and a failed step is tinted so it can be found while scrolling.
+   */
+  runLog?: boolean;
+  /** Set by MessageItems in a run log: reasoning time folded into each tool call, by item id. */
+  thoughtBefore?: ReadonlyMap<number, number>;
 }
 
 /**
@@ -89,6 +96,11 @@ export interface StreamRenderContext {
 export function visibleStreamItems(items: ChatItem[], ctx: StreamRenderContext): ChatItem[] {
   if (!ctx.hideReasoning) return items;
   return items.filter((item, index) => !reasoningHidden(item, index, items, ctx));
+}
+
+/** Settled reasoning with nothing to read: in a run log it is only time, shown on the next step. */
+function blankThought(item: ChatItem): item is Extract<ChatItem, { kind: "thinking" }> {
+  return item.kind === "thinking" && !item.streaming && !item.thinking.trim();
 }
 
 /** Whether the "Show reasoning" switch leaves this item out (see visibleStreamItems). */
@@ -117,6 +129,8 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
   const segs: Seg[] = [];
   let run: ChatItem[] = [];
   let runKey: string | number | null = null;
+  let thoughtBefore: Map<number, number> | undefined;
+  let thoughtMs = 0;
   const flushRun = () => {
     if (runKey !== null) {
       segs.push({ type: "group", key: runKey, items: run });
@@ -127,13 +141,24 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
   items.forEach((item, index) => {
     if (isWorkItem(item)) {
       if (runKey === null) runKey = item.id;
+      if (ctx.runLog && blankThought(item)) {
+        thoughtMs += item.durationMs ?? 0;
+        return;
+      }
       if (!reasoningHidden(item, index, items, ctx)) run.push(item);
+      if (ctx.runLog && item.kind === "tool_call" && thoughtMs > 0) {
+        (thoughtBefore ??= new Map()).set(item.id, thoughtMs);
+        thoughtMs = 0;
+      }
     } else {
       flushRun();
+      // Reasoning that ended in a reply rather than a step belongs to no later step.
+      thoughtMs = 0;
       segs.push({ type: "single", item });
     }
   });
   flushRun();
+  const groupCtx = thoughtBefore ? { ...ctx, thoughtBefore } : ctx;
 
   const renderSeg = (seg: Seg, i: number): ReactNode =>
     seg.type === "group" ? (
@@ -141,7 +166,7 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
         <WorkGroup
           key={`wg-${seg.key}`}
           items={seg.items}
-          ctx={ctx}
+          ctx={groupCtx}
           isLast={i === segs.length - 1}
         />
       )

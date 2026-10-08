@@ -39,6 +39,13 @@ export type Strings = {
       fold: (name: string) => string;
       unfold: (name: string) => string;
       needsMedia: string;
+      /** A section row's state beside its name. */
+      trail: { unsaved: string; valid: string; invalid: string };
+      /** What a disabled section waits for: short beside the name, and in full on hover. */
+      waits: Record<"spec" | "plan" | "module", string>;
+      waitsHelp: Record<"spec" | "plan" | "module", string>;
+      /** A scene row named by the script, with the id the specification knows it by. */
+      sceneTitle: (number: number, title: string, id: string) => string;
     };
     /** What the playing activity reports about itself, under the player. */
     studioPlayer: {
@@ -146,6 +153,9 @@ export type Strings = {
     /** Loom's refs: the product's refs in the header, and one ref's name and stability. */
     studioRefs: {
       ref: string;
+      /** The ref menu: the product's refs, then what can be done to this one. */
+      menu: string;
+      refs: string;
       option: (refNum: number, name: string | null, stable: boolean) => string;
       stable: string;
       stableHint: string;
@@ -875,6 +885,12 @@ export type Strings = {
       openSession: string;
       noRun: string;
       ready: string;
+      /** An assembly in flight, from Build or from the Assemble module stage. */
+      assembling: string;
+      assemblingButton: string;
+      noFinishedRun: string;
+      /** The checks with nothing in the way, folded into one line. */
+      passed: (count: number) => string;
     };
     /** Running the stages: Loom's stage picker and Run, and the panel that follows a run. */
     runLog: {
@@ -933,7 +949,6 @@ export type Strings = {
       otherRun: string;
       noAgent: string;
       with: (agent: string) => string;
-      live: string;
       skipped: (count: number) => string;
       showLog: (step: string) => string;
       waitingForSession: string;
@@ -941,6 +956,10 @@ export type Strings = {
       runByServer: string;
       openInChat: string;
       noRun: string;
+      /** Finished stages folded into one row while a run goes on. */
+      doneFold: (count: number) => string;
+      /** The agent and the stages a running sequence uses, in one line. */
+      runningWith: (agent: string, stages: string) => string;
     };
     /** Activity Spec's labels in the JSON editor. */
     specEditor: {
@@ -1691,6 +1710,8 @@ export type Strings = {
     collection: string;
     breadcrumb: string;
     runningChip: (what: string) => string;
+    /** The running chip's action: open the panel that follows the run. */
+    followRun: string;
     refresh: string;
     status: {
       running: string;
@@ -3213,6 +3234,8 @@ export type Strings = {
     thinking: string;
     /** Stands in for reasoning a run log hides, while the agent is still thinking. */
     thinkingHidden: string;
+    /** A run log's blank reasoning, folded into the step it led to. */
+    thoughtFor: (duration: string) => string;
     copyToolOutput: string;
     showAllOutput: string;
     showLessOutput: string;

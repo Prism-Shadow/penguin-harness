@@ -13,7 +13,14 @@
  */
 import type { SceneAssetSelection } from "./scene-asset-tree";
 import type { SceneAssetTree, SceneAssetType } from "./scene-assets";
-import { phaseOf, type StudioPhase, type WorkspaceSection, type WorkspaceSectionEntry } from "./workspace-model";
+import type { ScriptScene } from "./script-model";
+import {
+  phaseOf,
+  type SectionPrerequisite,
+  type StudioPhase,
+  type WorkspaceSection,
+  type WorkspaceSectionEntry,
+} from "./workspace-model";
 
 /** What choosing a row does. */
 export type StudioTarget =
@@ -23,6 +30,10 @@ export type StudioTarget =
 /** The one piece of state a row may carry; the view owns the words and the colour. */
 export type StudioMark = "unbound" | null;
 
+/** What a section row says about its section beside its name; the view words it. */
+export type SectionTrail =
+  { kind: "unsaved" } | { kind: "valid" } | { kind: "invalid" } | { kind: "count"; count: number };
+
 export interface StudioNode {
   /** Stable across rebuilds, so open and closed branches survive a refresh. */
   id: string;
@@ -31,8 +42,49 @@ export interface StudioNode {
   /** Absent on a branch that only groups (a scene's "Audios"), which opens instead. */
   target?: StudioTarget;
   disabled: boolean;
+  /** Why a disabled section cannot be opened yet. */
+  waitsFor?: SectionPrerequisite;
   mark: StudioMark;
+  trail?: SectionTrail;
+  /** The id a scene row is known by in the specification, when its label is the script's title. */
+  sceneId?: string;
+  /** The scene's number in the script, shown before its title. */
+  sceneNumber?: number;
   children: StudioNode[];
+}
+
+/** What the page knows about its editors and draft, for the rail to say beside each section. */
+export interface SectionFacts {
+  descriptionDirty: boolean;
+  specDirty: boolean;
+  mediaDirty: boolean;
+  draftStatus: "draft" | "valid" | "invalid";
+  scenes: SceneAssetTree;
+}
+
+/**
+ * The rail's trails: unsaved edits first, then the specification's validity, then how many
+ * scenes and distinct audios the activity has. A section with nothing to say gets no entry.
+ */
+export function sectionTrails(
+  facts: SectionFacts,
+): Partial<Record<WorkspaceSection, SectionTrail>> {
+  const trails: Partial<Record<WorkspaceSection, SectionTrail>> = {};
+  if (facts.descriptionDirty) trails.description = { kind: "unsaved" };
+  if (facts.specDirty) trails.specification = { kind: "unsaved" };
+  else if (facts.draftStatus !== "draft") trails.specification = { kind: facts.draftStatus };
+  if (facts.mediaDirty) trails.library = { kind: "unsaved" };
+  const sceneCount = facts.scenes.scenes.filter((scene) => !scene.general).length;
+  if (sceneCount) trails.scenes = { kind: "count", count: sceneCount };
+  const audioKeys = new Set(
+    facts.scenes.scenes.flatMap((scene) =>
+      scene.categories
+        .filter((category) => category.type === "audio")
+        .flatMap((category) => category.assets.map((asset) => asset.key)),
+    ),
+  );
+  if (audioKeys.size) trails.speech = { kind: "count", count: audioKeys.size };
+  return trails;
 }
 
 /** The fixed rows' names, looked up in the dictionary by the view. */
@@ -61,17 +113,35 @@ function sectionRow(
   key: StudioLabel,
   section: WorkspaceSection,
   sections: readonly WorkspaceSectionEntry[],
+  trails: Partial<Record<WorkspaceSection, SectionTrail>>,
   children: StudioNode[] = [],
 ): StudioNode {
   const entry = sections.find((candidate) => candidate.key === section);
+  const trail = trails[section];
   return {
     id,
     label: { key },
     target: { kind: "section", section },
     disabled: !entry?.enabled,
+    ...(entry?.enabled === false && entry.waitsFor ? { waitsFor: entry.waitsFor } : {}),
     mark: null,
+    ...(trail ? { trail } : {}),
     children,
   };
+}
+
+/**
+ * The script scene a specification scene is, matched by the number its id ends in
+ * (`scene-3` is the script's `Scene 3:`). Ids that carry no number match nothing.
+ */
+export function scriptSceneFor(
+  sceneId: string,
+  scenes: readonly ScriptScene[],
+): ScriptScene | undefined {
+  const match = /(\d+)$/.exec(sceneId);
+  if (!match) return undefined;
+  const number = Number(match[1]);
+  return scenes.find((scene) => scene.number === number && scene.title);
 }
 
 function assetRow(
@@ -92,6 +162,8 @@ function assetRow(
 export function buildStudioTree(
   sections: readonly WorkspaceSectionEntry[],
   scenes: SceneAssetTree,
+  trails: Partial<Record<WorkspaceSection, SectionTrail>> = {},
+  scriptScenes: readonly ScriptScene[] = [],
 ): StudioNode[] {
   const sceneRows: StudioNode[] = scenes.scenes.map((scene) => {
     const groups = GROUP_ORDER.flatMap((type) => {
@@ -125,9 +197,12 @@ export function buildStudioTree(
           : []),
       ];
     });
+    // The script names its scenes; the specification only numbers them.
+    const named = scriptSceneFor(scene.sceneId, scriptScenes);
     return {
       id: `scene:${scene.sceneId}`,
-      label: { text: scene.sceneId },
+      label: { text: named?.title ?? scene.sceneId },
+      ...(named ? { sceneId: scene.sceneId, sceneNumber: named.number } : {}),
       disabled: false,
       // A scene is marked when anything under it is, so a closed scene still says so.
       mark: groups.some((group) => group.children.some((row) => row.mark)) ? "unbound" : null,
@@ -143,18 +218,18 @@ export function buildStudioTree(
       children: scenes.unassigned.map((asset) => assetRow("", asset)),
     });
   return [
-    sectionRow("script", "activityScript", "description", sections),
-    sectionRow("spec", "activitySpec", "specification", sections),
-    sectionRow("features", "implementationFeatures", "features", sections),
-    sectionRow("scenes", "scenes", "scenes", sections, sceneRows),
-    sectionRow("audios", "audios", "speech", sections),
-    sectionRow("library", "mediaLibrary", "library", sections),
-    sectionRow("module", "moduleDefinition", "module", sections),
-    sectionRow("configuration", "configurationData", "configuration", sections),
-    sectionRow("assessment", "assessmentData", "assessment", sections),
-    sectionRow("deploy", "deploy", "deploy", sections),
-    sectionRow("stats", "activityStats", "stats", sections),
-    sectionRow("history", "history", "history", sections),
+    sectionRow("script", "activityScript", "description", sections, trails),
+    sectionRow("spec", "activitySpec", "specification", sections, trails),
+    sectionRow("features", "implementationFeatures", "features", sections, trails),
+    sectionRow("scenes", "scenes", "scenes", sections, trails, sceneRows),
+    sectionRow("audios", "audios", "speech", sections, trails),
+    sectionRow("library", "mediaLibrary", "library", sections, trails),
+    sectionRow("module", "moduleDefinition", "module", sections, trails),
+    sectionRow("configuration", "configurationData", "configuration", sections, trails),
+    sectionRow("assessment", "assessmentData", "assessment", sections, trails),
+    sectionRow("deploy", "deploy", "deploy", sections, trails),
+    sectionRow("stats", "activityStats", "stats", sections, trails),
+    sectionRow("history", "history", "history", sections, trails),
   ];
 }
 

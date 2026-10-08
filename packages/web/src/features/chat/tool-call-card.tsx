@@ -27,6 +27,7 @@ import {
   DISCLOSURE_OUTPUT_PRE_CLASS,
   DISCLOSURE_OUTPUT_PRE_FULL_CLASS,
   DISCLOSURE_ROW_CLASS,
+  DISCLOSURE_ROW_FAILED_CLASS,
   DISCLOSURE_ROW_STICKY_CLASS,
   outputExpandable,
 } from "./disclosure-row";
@@ -310,6 +311,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
 
   const preview = previewArguments(item.name, item.argumentsText);
+  const thoughtMs = ctx.thoughtBefore?.get(item.id);
   // Display-only, and confined to the two render expressions below: every name-keyed
   // decision on this card (DESCRIBED_TOOLS, FILE_TOOLS, the argument previews, the subagent
   // chip) and everywhere else in the app (the tools config table, permission rules, the
@@ -421,7 +423,11 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           always on screen while one is pending — it names the tool, shows the arguments and
           carries the Allow/Deny buttons — so the row would only repeat it. The amber hourglass
           StatusIcon (labeled) marks the wait, at every breakpoint. */}
-      <div className={`${DISCLOSURE_ROW_STICKY_CLASS} ${DISCLOSURE_ROW_CLASS}`}>
+      <div
+        className={`${DISCLOSURE_ROW_STICKY_CLASS} ${
+          ctx.runLog && state === "failed" ? DISCLOSURE_ROW_FAILED_CLASS : DISCLOSURE_ROW_CLASS
+        }`}
+      >
         <button
           type="button"
           aria-expanded={open}
@@ -439,6 +445,12 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           {subtitle && (
             <span className="min-w-0 shrink truncate text-xs text-gray-500 dark:text-gray-400">
               {subtitle}
+            </span>
+          )}
+          {/* A run log's blank reasoning before this step, kept as time rather than as a row. */}
+          {thoughtMs !== undefined && (
+            <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+              {S.chat.thoughtFor(humanizeDuration(thoughtMs))}
             </span>
           )}
           <span className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400">

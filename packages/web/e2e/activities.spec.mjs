@@ -675,6 +675,17 @@ async function openPanel(page, name) {
   return panel;
 }
 
+/** The ref's menu, which opens on the ref's name beside the activity's title. */
+function refMenu(page) {
+  return page.locator('nav[aria-label="Breadcrumb"] button[aria-haspopup="menu"]');
+}
+
+/** Runs one of the ref's actions from its menu. */
+async function refAction(page, name) {
+  await refMenu(page).click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
+}
+
 async function generateSpecification(page) {
   const panel = await openPanel(page, "Stages");
   await panel.getByRole("button", { name: "Stage", exact: true }).click();
@@ -703,7 +714,14 @@ async function openSection(page, name) {
   const expand = page.getByRole("button", { name: "Expand the activity rail", exact: true });
   await expect(button.or(expand).first()).toBeVisible();
   const opened = !(await button.count());
-  if (opened) await expand.click();
+  // Entering the workspace can paint it narrow and then widen it as the sidebar folds, so
+  // an Expand clicked mid-change can land on the rail beside the work and fold it instead.
+  // Keep opening until the section is there.
+  if (opened)
+    await expect(async () => {
+      if (!(await button.count())) await expand.click();
+      await expect(button).toBeVisible({ timeout: 1_000 });
+    }).toPass();
   // Clicking the section already showing re-renders the rail under the click, but a rail
   // opened just now is covering the work and has to be dismissed by choosing anyway.
   if (opened || (await button.getAttribute("aria-current")) !== "true") await button.click();
@@ -803,7 +821,7 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   await expect(
     page.getByRole("button", { name: "Assemble WAF module", exact: true }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await refAction(page, "Reload draft");
   await page
     .getByRole("dialog", { name: "Discard unsaved changes?" })
     .getByRole("button", { name: "Cancel" })
@@ -1883,7 +1901,7 @@ test("polling preserves unsaved edits and exposes conflicting output for review"
   await expect(page.getByRole("textbox", { name: "Activity Script", exact: true })).toHaveText(
     "My unsaved edit",
   );
-  await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await refAction(page, "Reload draft");
   await page
     .getByRole("dialog", { name: "Discard unsaved changes?" })
     .getByRole("button", { name: "Discard" })
@@ -1972,11 +1990,9 @@ test("the studio header wraps its controls instead of overlapping them", async (
   };
   const headerControls = () => [
     page.locator('nav[aria-label="Breadcrumb"] h2'),
-    page.getByRole("button", { name: "Ref settings", exact: true }),
-    page.getByRole("button", { name: "Change number", exact: true }),
-    // The draft/unsaved status text: the aria-live paragraph right after the breadcrumb.
-    page.locator('nav[aria-label="Breadcrumb"] + p[aria-live]'),
-    page.getByRole("button", { name: "Reload draft", exact: true }),
+    refMenu(page),
+    // The draft/unsaved status pill beside the ref.
+    page.locator('nav[aria-label="Breadcrumb"] span[aria-live]'),
     page.getByRole("button", { name: "Layout", exact: true }),
   ];
 
@@ -2308,8 +2324,10 @@ test("the script editor folds scenes, diffs against the last save and shows an a
 
   // An edit reads against the last save, names its scene, and reverts where it stands.
   await box.fill(script.replace("Find d.", "Find lowercase d."));
-  await page.getByRole("button", { name: "Diff", exact: true }).click();
-  await page.getByRole("option", { name: "Diff: Since last save", exact: true }).click();
+  await page
+    .getByRole("group", { name: "Diff", exact: true })
+    .getByRole("button", { name: "Since last save", exact: true })
+    .click();
   await expect(page.getByText("+1 −1", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Scene 2", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Go to the change at line 6" })).toBeVisible();
@@ -2357,8 +2375,10 @@ test("the script editor folds scenes, diffs against the last save and shows an a
   await page.reload();
   await openSection(page, "Description");
   await expect(box.locator(".cm-proposed-hint")).toHaveText("proposed, not applied");
-  await page.getByRole("button", { name: "Diff", exact: true }).click();
-  await page.getByRole("option", { name: "Diff: Agent proposal", exact: true }).click();
+  await page
+    .getByRole("group", { name: "Diff", exact: true })
+    .getByRole("button", { name: "Agent proposal", exact: true })
+    .click();
   await expect(page.getByText("Agent proposal, read-only", { exact: true })).toBeVisible();
   await expect(box).toContainText("Scene 1: Welcome");
   await expect(box).toHaveAttribute("contenteditable", "false");
@@ -4023,13 +4043,15 @@ test("the header switches between a product's refs and names one, as Loom's Refs
     return route.fallback();
   });
   await page.reload();
-  const refs = page.getByRole("button", { name: "Ref", exact: true });
+  const refs = refMenu(page);
   await expect(refs).toContainText("Ref 12");
   await refs.click();
-  await expect(page.getByRole("option", { name: "Ref 13 · Round two · stable" })).toBeVisible();
+  await expect(
+    page.getByRole("menuitemradio", { name: "Ref 13 · Round two · stable" }),
+  ).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await page.getByRole("button", { name: "Ref settings", exact: true }).click();
+  await refAction(page, "Ref settings");
   const dialog = page.getByRole("dialog", { name: "words, ref 12" });
   await dialog.getByRole("textbox", { name: /^Display name/ }).fill("Round one");
   await dialog.getByRole("switch").click();
@@ -4040,7 +4062,7 @@ test("the header switches between a product's refs and names one, as Loom's Refs
   await expect(page.getByText("Stable", { exact: true }).first()).toBeVisible();
 
   await refs.click();
-  await page.getByRole("option", { name: "Ref 13 · Round two · stable" }).click();
+  await page.getByRole("menuitemradio", { name: "Ref 13 · Round two · stable" }).click();
   await expect(page).toHaveURL(/activities\/act_other$/);
   expect(f.errors).toEqual([]);
 });
@@ -4543,7 +4565,7 @@ test("tags a product, filters the list by tag, and deletes an activity after con
   });
   await page.reload();
 
-  await page.getByRole("button", { name: "Ref settings", exact: true }).click();
+  await refAction(page, "Ref settings");
   const settings = page.getByRole("dialog", { name: "words, ref 12" });
   const tagInput = settings.getByRole("textbox", { name: /^Tags/ });
   await tagInput.fill("Phonics");
@@ -4606,7 +4628,7 @@ test("tags a product, filters the list by tag, and deletes an activity after con
 
   await sight.click();
   await expect(page).toHaveURL(/activities\/act_test$/);
-  await page.getByRole("button", { name: "Ref settings", exact: true }).click();
+  await refAction(page, "Ref settings");
   await settings.getByRole("button", { name: "Delete activity", exact: true }).click();
   const confirm = page.getByRole("dialog", { name: "Delete activity" });
   await expect(confirm).toContainText('Delete "Sight words" (ref 12)?');
@@ -4928,8 +4950,7 @@ test("renumbers a ref from the header, and refuses while it is stable", async ({
   });
   await page.reload();
 
-  const change = page.getByRole("button", { name: "Change number", exact: true });
-  await change.click();
+  await refAction(page, "Change number");
   let dialog = page.getByRole("dialog", { name: "Change the number of words, ref 12" });
   await expect(dialog.getByText(/^This ref is marked stable/)).toBeVisible();
   await expect(dialog.getByRole("spinbutton", { name: /^New number/ })).toBeDisabled();
@@ -4939,7 +4960,7 @@ test("renumbers a ref from the header, and refuses while it is stable", async ({
 
   state.stable = false;
   await page.reload();
-  await change.click();
+  await refAction(page, "Change number");
   dialog = page.getByRole("dialog", { name: "Change the number of words, ref 12" });
   const number = dialog.getByRole("spinbutton", { name: /^New number/ });
   await expect(number).toBeEnabled();
@@ -4960,7 +4981,7 @@ test("renumbers a ref from the header, and refuses while it is stable", async ({
   expect(posts).toHaveLength(2);
   expect(posts[1]).toEqual({ refNum: 14, expectedRevision: current.draft.contentRevision });
   await expect(page.getByText("Ref 12 is now ref 14.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Ref", exact: true })).toContainText("Ref 14");
+  await expect(refMenu(page)).toContainText("Ref 14");
   expect(f.errors).toEqual([]);
 });
 
@@ -5081,7 +5102,7 @@ test("makes a ref from the template, keeping one image and regenerating a narrat
   });
   await page.goto(`${origin}/activities/act_test`);
 
-  await page.getByRole("button", { name: "New ref", exact: true }).click();
+  await refAction(page, "New ref");
   await expect(page).toHaveURL(/section=newRef/);
   await expect(page.getByRole("heading", { name: /^New ref from this template/ })).toBeVisible();
   await expect(page.getByRole("spinbutton", { name: /^Ref number/ })).toHaveValue("13");
@@ -5196,10 +5217,13 @@ test("the preview builds a module no one has built, plays it, and replays a save
 
   // Filling the workspace fits the whole screen of the module, height included.
   await panel.getByRole("button", { name: "Fill the workspace", exact: true }).click();
+  // The frame refits after the panel has taken the workspace, so read it once it has.
+  await expect
+    .poll(async () => (await frame.locator("xpath=..").boundingBox()).width)
+    .toBeGreaterThan(600);
   const box = await frame.locator("xpath=..").boundingBox();
   const shown = await panel.boundingBox();
   expect(box.y + box.height).toBeLessThanOrEqual(shown.y + shown.height);
-  expect(box.width).toBeGreaterThan(600);
   expect(f.errors).toEqual([]);
 });
 
