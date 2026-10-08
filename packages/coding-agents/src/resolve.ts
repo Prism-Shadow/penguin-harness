@@ -40,8 +40,40 @@ async function isExecutable(file: string): Promise<boolean> {
   return (stat.mode & 0o111) !== 0;
 }
 
-async function firstMatch(dirs: string[], basename: string): Promise<string | undefined> {
+/**
+ * Directory listings shared across lookups, keyed by dir: names lowercased on Windows (its
+ * filesystems ignore case), `null` for a dir that cannot be listed. Pass one map to every
+ * `resolveCommandPath` of a single scan and each dir is read once, instead of one `stat` per
+ * dir × extension × command — tens of thousands on a long Windows PATH, nearly all misses.
+ */
+export type DirListings = Map<string, Promise<Set<string> | null>>;
+
+function listingKey(name: string): string {
+  return process.platform === "win32" ? name.toLowerCase() : name;
+}
+
+function listDir(listings: DirListings, dir: string): Promise<Set<string> | null> {
+  let listing = listings.get(dir);
+  if (listing === undefined) {
+    listing = fs.readdir(dir).then(
+      (names) => new Set(names.map(listingKey)),
+      () => null,
+    );
+    listings.set(dir, listing);
+  }
+  return listing;
+}
+
+async function firstMatch(
+  dirs: string[],
+  basename: string,
+  listings: DirListings | undefined,
+): Promise<string | undefined> {
   for (const dir of dirs) {
+    // A listing only rules a name out; a name it holds is still stat'ed (a dir, a
+    // non-executable). An unlistable dir falls back to the stat alone.
+    const listing = listings === undefined ? null : await listDir(listings, dir);
+    if (listing !== null && !listing.has(listingKey(basename))) continue;
     const file = path.join(dir, basename);
     if (await isExecutable(file)) return file;
   }
@@ -52,17 +84,18 @@ async function firstMatch(dirs: string[], basename: string): Promise<string | un
  * Resolve a command to an absolute path by walking PATH (plus `extraDirs`, discovery's
  * version-manager install homes). A command carrying a directory separator is returned
  * unchanged — an explicit path means the caller (or the eventual spawn error) already
- * knows best, and the cwd is deliberately never searched.
+ * knows best, and the cwd is deliberately never searched. `listings` (see `DirListings`)
+ * lets a batch of lookups share directory reads.
  */
 export async function resolveCommandPath(
   command: string,
-  options: { env?: NodeJS.ProcessEnv; extraDirs?: string[] } = {},
+  options: { env?: NodeJS.ProcessEnv; extraDirs?: string[]; listings?: DirListings } = {},
 ): Promise<string> {
   const env = options.env ?? process.env;
   if (command.includes("/") || command.includes("\\")) return command;
   const dirs = [...pathDirs(env), ...(options.extraDirs ?? [])];
   for (const ext of candidateExtensions(env, command)) {
-    const found = await firstMatch(dirs, `${command}${ext}`);
+    const found = await firstMatch(dirs, `${command}${ext}`, options.listings);
     if (found !== undefined) return found;
   }
   return command;

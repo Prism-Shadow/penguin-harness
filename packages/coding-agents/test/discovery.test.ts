@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { discoverAgents } from "../src/discovery.js";
-import { resolveCommandPath } from "../src/resolve.js";
+import { resolveCommandPath, type DirListings } from "../src/resolve.js";
 
 const WIN = process.platform === "win32";
 
@@ -274,6 +274,22 @@ describe("resolveCommandPath", () => {
     const explicit = path.join(root, "somewhere", "agent");
     expect(await resolveCommandPath(explicit, { env: { PATH: bin } })).toBe(explicit);
     expect(await resolveCommandPath("no-such-tool", { env: { PATH: bin } })).toBe("no-such-tool");
+  });
+
+  // Shared listings only skip the stat for names a dir lacks: a match, a missing dir and a
+  // same-named directory resolve exactly as without them.
+  it("resolves the same with shared directory listings", async () => {
+    const listings: DirListings = new Map();
+    const missing = path.join(root, "gone");
+    const env = { PATH: [missing, bin].join(path.delimiter) };
+    await fs.mkdir(path.join(bin, WIN ? "dir.cmd" : "dir"));
+    const file = path.join(bin, WIN ? "Tool.CMD" : "tool");
+    await fs.writeFile(file, "", { mode: 0o755 });
+    const resolved = await resolveCommandPath("tool", { env, listings });
+    expect(resolved.toLowerCase()).toBe(file.toLowerCase());
+    expect(await resolveCommandPath("dir", { env, listings })).toBe("dir");
+    expect(await resolveCommandPath("no-such-tool", { env, listings })).toBe("no-such-tool");
+    expect([...listings.keys()].sort()).toEqual([bin, missing].sort());
   });
 
   // npm drops an extensionless POSIX shim beside the spawnable .cmd twin; on Windows

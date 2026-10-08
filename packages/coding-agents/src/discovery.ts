@@ -17,7 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { spawn, type ChildProcess } from "node:child_process";
-import { resolveCommandPath } from "./resolve.js";
+import { resolveCommandPath, type DirListings } from "./resolve.js";
 import { spawnTarget } from "./connection.js";
 import { sandboxedAgentEnv } from "./env.js";
 import { killProcessTree } from "./process-tree.js";
@@ -467,8 +467,10 @@ export async function discoverAgents(
   const extraDirs = await installDirCandidates(home, env);
   // Absolute path when found on the machine, undefined when not (resolveCommandPath
   // hands unresolved bare names back unchanged).
+  // One read per dir for the whole pass, shared by every recipe's lookups.
+  const listings: DirListings = new Map();
   const find = async (command: string) => {
-    const resolved = await resolveCommandPath(command, { env, extraDirs });
+    const resolved = await resolveCommandPath(command, { env, extraDirs, listings });
     return resolved === command ? undefined : resolved;
   };
 
