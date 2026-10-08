@@ -19,6 +19,9 @@ const EXPECTED = [
   "waf-audio-patterns",
   "waf-book-generation",
   "waf-element-ids",
+  // Not one of Loom's vendored skills: its backend `AgentsLayout.md`, a catalogue of how the
+  // real modules lay out, highlight and clean up elements, which no ported skill covered.
+  "waf-layout-patterns",
   // Loom labels these two legacy, and this port dropped them on that basis. Measuring the
   // real module corpus corrected that: 299 of the 303 implemented modules are built on
   // `src/sequence.js` and only 4 on the state machine. Opening an activity Loom already
@@ -50,7 +53,9 @@ describe("the waf-authoring plugin", () => {
 
   it("leaves behind what the port deliberately dropped", () => {
     const names = libraryPlugin("waf-authoring")!.skills.map((skill) => skill.name);
-    // test_activity is out of scope, so its test-writing skill has no reader.
+    // Loom's test-writing skill teaches a Python runner over Loom's own `test_activity`
+    // helpers. Acceptance runs here write against `activity-harness.mjs` instead, whose API
+    // the run's prompt describes, so this skill would teach the wrong one.
     expect(names).not.toContain("waf-playwright-test-writing");
   });
 

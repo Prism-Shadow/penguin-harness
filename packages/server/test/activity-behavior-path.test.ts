@@ -50,6 +50,14 @@ describe("the skills an implementation run reads", () => {
     expect(skills).not.toContain("xstate-v5");
   });
 
+  it("gives the sequence path the layout catalogue, after the guardrails it defers to", () => {
+    const skills = implementationSkills("sequence");
+    expect(skills.indexOf("waf-layout-patterns")).toBeGreaterThan(
+      skills.indexOf("waf-style-guardrails"),
+    );
+    expect(implementationSkills("machine")).not.toContain("waf-layout-patterns");
+  });
+
   it("gives the machine path XState and not the sequence patterns", () => {
     const skills = implementationSkills("machine");
     expect(skills).toContain("xstate-v5");
