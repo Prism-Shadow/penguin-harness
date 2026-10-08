@@ -499,7 +499,6 @@ async function fixture(page) {
       };
       return json(activity.draft);
     }
-    if (p === `${base}/act_test/readiness`) return json({ checks: [] });
     if (p === `${base}/language-setup`)
       return json({
         defaultLanguage: "en-US",
@@ -764,7 +763,7 @@ async function mediaAutosaved(page) {
   ).toHaveText("Saved");
 }
 
-async function create(page, { activityType = "standard" } = {}) {
+async function create(page, { activityType = "standard", readingMode = "Decodable" } = {}) {
   await page.goto(`${origin}/activities`);
   // Creation lives behind the landing's action, not inline on the page.
   await page.getByRole("button", { name: "New activity", exact: true }).click();
@@ -774,8 +773,19 @@ async function create(page, { activityType = "standard" } = {}) {
   if (activityType === "book") {
     await page.getByRole("button", { name: "Activity type", exact: true }).click();
     await page.getByRole("option", { name: "Book", exact: true }).click();
+    // A book is not created until its reading mode is chosen.
+    await expect(page.getByRole("button", { name: "Create activity", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "Reading mode", exact: true }).click();
+    await page.getByRole("option", { name: readingMode, exact: true }).click();
   }
+  const created = page.waitForRequest(
+    (request) => request.url().endsWith("/activities") && request.method() === "POST",
+  );
   await page.getByRole("button", { name: "Create activity", exact: true }).click();
+  const body = (await created).postDataJSON();
+  if (activityType === "book")
+    expect(body.bookMode).toBe(readingMode === "Decodable" ? "decodable" : "readAlong");
+  else expect(body).not.toHaveProperty("bookMode");
   await expect(page).toHaveURL(/activities\/act_test$/);
   await page
     .getByRole("textbox", { name: "Activity Script", exact: true })
@@ -817,10 +827,6 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   const manifest = JSON.parse(await editor.inputValue());
   manifest.assets["en-US"][0].path = "media/images/cat.png";
   await editor.fill(JSON.stringify(manifest));
-  await openPanel(page, "Stages");
-  await expect(
-    page.getByRole("button", { name: "Assemble WAF module", exact: true }),
-  ).toBeDisabled();
   await refAction(page, "Reload draft");
   await page
     .getByRole("dialog", { name: "Discard unsaved changes?" })
@@ -834,10 +840,6 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   await openSection(page, "Scenes and media");
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
   expect((await request).postDataJSON().manifest).toEqual(manifest);
-  await openPanel(page, "Stages");
-  await expect(
-    page.getByRole("button", { name: "Assemble WAF module", exact: true }),
-  ).toBeEnabled();
   await page.reload();
   await openManifest(page);
   await expect(editor).toHaveValue(JSON.stringify(manifest, null, 2));
@@ -1259,102 +1261,6 @@ test("previews only saved images and resets previews across edits and failures",
   f.member();
   await page.reload();
   await expect(page.getByRole("button", { name: "Preview image", exact: true })).toHaveCount(0);
-  expect(f.errors).toEqual([]);
-});
-
-test("assembles a saved spec and links to the Harness-isolated WAF preview", async ({ page }) => {
-  const f = await fixture(page);
-  await create(page);
-  const assemble = page.getByRole("button", { name: "Assemble WAF module", exact: true });
-  // Nothing to assemble from yet, so the Build stage is not open to choose.
-  await expect(
-    page.getByRole("treeitem", { name: "Module Definition", exact: true, level: 1 }),
-  ).toHaveAttribute("aria-disabled", "true");
-  await openSection(page, "Specification");
-  await page
-    .getByRole("textbox", { name: "Specification JSON", exact: true })
-    .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
-  await openPanel(page, "Stages");
-  await expect(assemble).toBeEnabled();
-  // The checkout is the server's WAF workspace, not something an author types.
-  await expect(page.getByRole("textbox", { name: /^WAF checkout/ })).toHaveCount(0);
-  const sent = page.waitForRequest((request) => request.url().endsWith("/assemble-module"));
-  await assemble.click();
-  const payload = (await sent).postDataJSON();
-  expect(payload).toMatchObject({ agentId: "default_agent" });
-  expect(payload).not.toHaveProperty("wafRoot");
-  expect(payload).not.toHaveProperty("bookMode");
-  await openSection(page, "Generation history");
-  await expect(page.getByText("Module assembly", { exact: true })).toBeVisible();
-  f.complete();
-  await page.reload();
-  await openSection(page, "Generation history");
-  await expect(
-    page.getByRole("link", { name: "Open WAF preview", exact: true }).first(),
-  ).toHaveAttribute(
-    "href",
-    "/api/sessions/session_test/files/preview-redirect?path=preview%2Findex.html",
-  );
-  await openSection(page, "Generation history");
-  await page.getByText("View candidate JSON", { exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Copy candidate into editor", exact: true }),
-  ).toHaveCount(0);
-  await openSection(page, "Description");
-  await page.getByRole("textbox", { name: "Activity Script", exact: true }).fill("A new revision");
-  await page.getByRole("button", { name: "Save script", exact: true }).click();
-  // An earlier draft's build is not called out: the preview rebuilds it on its own.
-  await openSection(page, "Generation history");
-  await expect(page.getByText("Built from an earlier draft", { exact: true })).toHaveCount(0);
-  expect(f.errors).toEqual([]);
-});
-
-test("requires an explicit reading mode for book assembly and sends it per run", async ({
-  page,
-}) => {
-  const f = await fixture(page);
-  await create(page, { activityType: "book" });
-  await openSection(page, "Specification");
-  await page.getByRole("textbox", { name: "Specification JSON", exact: true }).fill(
-    JSON.stringify({
-      ...spec,
-      scenes: [
-        {
-          id: "story",
-          role: "story",
-          description: "A penguin story",
-          media: { images: [{ key: "cover", description: "A penguin walking" }] },
-        },
-      ],
-    }),
-  );
-  await openSection(page, "Specification");
-  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
-  const assemble = page.getByRole("button", { name: "Assemble WAF module", exact: true });
-  await openPanel(page, "Stages");
-  await expect(assemble).toBeDisabled();
-  const readingMode = page.getByRole("button", { name: "Reading mode", exact: true });
-  await expect(readingMode).toHaveText("Choose a reading mode");
-  await readingMode.scrollIntoViewIfNeeded();
-  await readingMode.click();
-  await page.getByRole("option", { name: "Read-along", exact: true }).click();
-  await expect(assemble).toBeDisabled();
-  await openSection(page, "Scenes and media");
-  await planMedia(page);
-  await openPanel(page, "Stages");
-  await expect(assemble).toBeEnabled();
-  await expect(page.getByText("Validated", { exact: true })).toBeVisible();
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
-  const sent = page.waitForRequest(
-    (request) => request.url().endsWith("/assemble-module") && request.method() === "POST",
-  );
-  await assemble.click();
-  expect((await sent).postDataJSON()).toMatchObject({
-    agentId: "default_agent",
-    bookMode: "readAlong",
-  });
-  expect(f.assembleRequests).toEqual([expect.objectContaining({ bookMode: "readAlong" })]);
   expect(f.errors).toEqual([]);
 });
 
@@ -2927,61 +2833,6 @@ test("lists the live tap targets on the current state and keeps the map under th
   await play();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await expect(map).toHaveCount(0);
-  expect(f.errors).toEqual([]);
-});
-
-test("the Build stage lists what stands between the draft and a module", async ({ page }) => {
-  const f = await fixture(page);
-  await create(page);
-  await page.route("**/*", (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname !== `${base}/act_test/readiness`) return route.fallback();
-    return route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        checks: [
-          { id: "spec", level: "ok" },
-          { id: "plan", level: "fail", state: "stale" },
-          { id: "speech", level: "warn", language: "en-US", bound: 3, total: 5 },
-          { id: "coverage", level: "warn", language: "es-MX", covered: 4, total: 5 },
-          { id: "mediaKeys", level: "warn", keys: ["welcome"] },
-          { id: "assessment", level: "fail", state: "problems", problems: 2 },
-          { id: "checkout", level: "ok", found: true },
-        ],
-      }),
-    });
-  });
-  await openSection(page, "Specification");
-  await page
-    .getByRole("textbox", { name: "Specification JSON", exact: true })
-    .fill(JSON.stringify(spec));
-  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
-  await openPanel(page, "Stages");
-  const checks = page.getByRole("list", { name: "Build", exact: true });
-  await expect(
-    checks.getByText("The media plan is older than the specification. Rebuild it in Scenes."),
-  ).toBeVisible();
-  await expect(checks.getByText("Speech in en-US: 3 of 5 bound.")).toBeVisible();
-  await expect(
-    checks.getByText("es-MX has 4 of 5 narrations of the default language."),
-  ).toBeVisible();
-  await expect(
-    checks.getByText(
-      "This media key is described differently in different scenes: welcome. Give different media different keys.",
-    ),
-  ).toBeVisible();
-  await expect(
-    checks.getByText("The assessment has 2 problems. Fix them in Assessment Data."),
-  ).toBeVisible();
-  await expect(checks.getByRole("img", { name: "Blocks assembly" })).toHaveCount(2);
-  // Assemble is not offered while a check blocks it.
-  await expect(
-    page.getByRole("button", { name: "Assemble WAF module", exact: true }),
-  ).toBeDisabled();
-  // Only what stands in the way is listed.
-  await expect(checks.getByText("The specification is valid.")).toHaveCount(0);
-  await expect(checks.getByRole("listitem")).toHaveCount(5);
-  await expect(page.getByText("This activity has not been assembled yet.")).toBeVisible();
   expect(f.errors).toEqual([]);
 });
 

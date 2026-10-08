@@ -89,6 +89,49 @@ describe("book activity authoring contract", () => {
     expect(reread.draft.spec).toEqual(saved.spec);
   });
 
+  it("keeps the reading mode a book is created with, and refuses one for a standard activity", async () => {
+    const { client, base } = await setup();
+    const book = await client.post(base, {
+      productCode: "read-along-book",
+      refNum: 1,
+      title: "Read-along book",
+      activityType: "book",
+      bookMode: "readAlong",
+    });
+    expect(book.status, await book.clone().text()).toBe(201);
+    const { id } = (await book.json()) as ActivityDetail;
+    const state = (await (await client.get(`${base}/${id}/book-words`)).json()) as {
+      bookMode: string | null;
+    };
+    expect(state.bookMode).toBe("readAlong");
+    // A later ref joins the product and keeps its mode.
+    const later = await client.post(base, {
+      productCode: "read-along-book",
+      refNum: 2,
+      title: "Read-along book",
+      activityType: "book",
+      bookMode: "decodable",
+    });
+    expect(later.status, await later.clone().text()).toBe(201);
+    const laterId = ((await later.json()) as ActivityDetail).id;
+    const kept = (await (await client.get(`${base}/${laterId}/book-words`)).json()) as {
+      bookMode: string | null;
+    };
+    expect(kept.bookMode).toBe("readAlong");
+    for (const body of [
+      { activityType: "standard", bookMode: "decodable" },
+      { activityType: "book", bookMode: "sideways" },
+    ]) {
+      const refused = await client.post(base, {
+        productCode: "refused-book",
+        refNum: 1,
+        title: "Refused",
+        ...body,
+      });
+      expect(refused.status, JSON.stringify(body)).toBe(400);
+    }
+  });
+
   it("retains generic standard activities without book media requirements", async () => {
     const { client, endpoint, created } = await setup("standard");
     const applied = await client.post(`${endpoint}/apply-generated-spec`, {

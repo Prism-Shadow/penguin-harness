@@ -84,7 +84,6 @@ import { ScriptEditor } from "./script-editor";
 import { PipelineControls, PipelinePanel } from "./pipeline-panel";
 import { storyboardFrames, type StoryboardFrame } from "./storyboard";
 import { Storyboard } from "./storyboard-view";
-import { BuildPanel } from "./build-panel";
 import { QualityChecksView } from "./quality-checks-view";
 import { TestResultsView } from "./test-results-view";
 import { ModuleDocumentView } from "./module-document-view";
@@ -508,7 +507,6 @@ function ActivityEditor({
       cancelled = true;
     };
   }, []);
-  const [bookMode, setBookMode] = useState<"" | "readAlong" | "decodable">("");
   const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>([]);
   const voices = voiceOptions.map((option) => option.id);
   // The voice bulk speech, retries and the stage sequence speak with where a narration names
@@ -894,7 +892,6 @@ function ActivityEditor({
           ...scope,
           ...(soundProvider ? { soundProvider } : {}),
           ...(bulkVoice ? { voice: bulkVoice } : {}),
-          ...(detail.activityType === "book" && bookMode ? { bookMode } : {}),
         },
       });
       if (!alive.current) return;
@@ -1269,86 +1266,6 @@ function ActivityEditor({
                     setShowPanel({ key: "conversation", at: Date.now() });
                   }}
                 />
-              </div>
-              {/* Assembly is the last stage, as in Loom: what stands before it, and the button. */}
-              <div className="max-h-[50%] shrink-0 overflow-y-auto border-t border-gray-200 p-3 dark:border-gray-800">
-                <BuildPanel
-                  endpoint={endpoint}
-                  revision={detail.draft.contentRevision}
-                  runs={runs}
-                  unsaved={dirty}
-                  proposalOpen={!!proposal.read?.proposal?.changes.length}
-                >
-                  {(blocked, assembling) =>
-                    editable && (
-                      <div className="space-y-3">
-                        {detail.activityType === "book" && (
-                          <>
-                            <h3 className="flex items-center gap-2 text-xs font-semibold">
-                              {S.activities.readingMode}
-                              <InfoPopover label={S.activities.readingMode}>
-                                <p>{S.activities.readingModeHelp}</p>
-                              </InfoPopover>
-                            </h3>
-                            <Select
-                              size="sm"
-                              aria-label={S.activities.readingMode}
-                              hint={S.activities.readingModeHint}
-                              value={bookMode}
-                              onChange={(e) => setBookMode(e.target.value as typeof bookMode)}
-                              disabled={busy || running}
-                            >
-                              <option value="">{S.activities.chooseReadingMode}</option>
-                              <option value="readAlong">{S.activities.readAlong}</option>
-                              <option value="decodable">{S.activities.decodable}</option>
-                            </Select>
-                          </>
-                        )}
-                        <Button
-                          size="sm"
-                          disabled={
-                            blocked ||
-                            assembling ||
-                            busy ||
-                            running ||
-                            dirty ||
-                            !selectedAgent ||
-                            detail.draft.status !== "valid" ||
-                            !detail.draft.spec ||
-                            (detail.activityType === "book" &&
-                              (!bookMode || !detail.draft.mediaPlan))
-                          }
-                          onClick={() =>
-                            void action(async () => {
-                              const run = await apiFetch<ActivityRun>(
-                                `${endpoint}/assemble-module`,
-                                {
-                                  method: "POST",
-                                  body: {
-                                    ...runner,
-                                    expectedRevision: detail.draft.contentRevision,
-                                    ...(detail.activityType === "book" ? { bookMode } : {}),
-                                  },
-                                },
-                              );
-                              if (alive.current) {
-                                setRuns((previous) => [
-                                  summarize(run),
-                                  ...previous.filter((item) => item.runId !== run.runId),
-                                ]);
-                                setRefreshVersion((value) => value + 1);
-                              }
-                            })
-                          }
-                        >
-                          {assembling
-                            ? S.activities.studioBuild.assemblingButton
-                            : S.activities.assemble}
-                        </Button>
-                      </div>
-                    )
-                  }
-                </BuildPanel>
               </div>
             </div>
           ),
@@ -1964,7 +1881,6 @@ function ActivityEditor({
                     group={editedManifest.assets[language] ?? []}
                     runs={runs}
                     revision={detail.draft.contentRevision}
-                    chosenMode={bookMode}
                     editable={editable}
                     canChange={editable && available && !busy && !running && !dirty}
                     canGenerate={

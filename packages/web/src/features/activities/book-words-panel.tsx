@@ -41,7 +41,6 @@ export function BookWordsPanel({
   group,
   runs,
   revision,
-  chosenMode,
   editable,
   canChange,
   canGenerate,
@@ -57,8 +56,6 @@ export function BookWordsPanel({
   runs: readonly ActivityRunSummary[];
   /** The saved draft's revision, which a proposal must have been made against. */
   revision: string;
-  /** The reading mode chosen on this page, which counts only where the product records none. */
-  chosenMode: BookMode | "";
   editable: boolean;
   /** Whether a draft change can go now: nothing running and nothing unsaved. */
   canChange: boolean;
@@ -108,7 +105,7 @@ export function BookWordsPanel({
 
   const words = S.activities.bookWords;
   const all = bookWordAssets(group);
-  const decodable = isDecodable(state, chosenMode, all.length > 0);
+  const decodable = isDecodable(state, all.length > 0);
   const missing = wordsWithoutSounds(group);
   const tally = wordRecordingTally(group);
   const proposal = candidate && candidate.runId === wanted ? parseProposal(candidate.text) : null;

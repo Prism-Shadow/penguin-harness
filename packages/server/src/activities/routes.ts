@@ -869,6 +869,11 @@ export class ActivityRoutes {
         !["standard", "book"].includes(body.activityType as string)
       )
         throw badRequest("activityType must be standard or book.");
+      const bookMode = optionalString(body, "bookMode", { maxLen: 16 });
+      if (bookMode && bookMode !== "readAlong" && bookMode !== "decodable")
+        throw badRequest("bookMode must be readAlong or decodable.");
+      if (bookMode && body.activityType !== "book")
+        throw badRequest("bookMode only applies to books.");
       return c.json(
         await this.activities.createActivity(requireValidId(c, "projectId"), {
           collectionId: optionalString(body, "collectionId", { maxLen: 128 }),
@@ -876,6 +881,7 @@ export class ActivityRoutes {
           refNum: body.refNum,
           title: requireString(body, "title", { minLen: 1, maxLen: 200 }),
           activityType: body.activityType as "standard" | "book" | undefined,
+          ...(bookMode ? { bookMode: bookMode as "decodable" | "readAlong" } : {}),
         }),
         201,
       );

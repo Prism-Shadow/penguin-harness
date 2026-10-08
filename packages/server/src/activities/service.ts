@@ -769,6 +769,8 @@ export class ActivityService implements ActivityAuthoring {
       activityType?: "standard" | "book";
       /** Only read when this is the product's first ref; later refs join what exists. */
       moduleFolder?: unknown;
+      /** A book's reading mode; like the module folder, only read for the product's first ref. */
+      bookMode?: "decodable" | "readAlong";
     },
   ): Promise<ActivityRecord & { draft: ActivityDraft }> {
     let productCode: string, refNum: number;
@@ -825,6 +827,7 @@ export class ActivityService implements ActivityAuthoring {
           productCode,
           activityType,
           moduleFolder: input.moduleFolder,
+          bookMode: activityType === "book" ? (input.bookMode ?? null) : null,
           now,
         });
         const activity: ActivityRecord = {
@@ -2148,6 +2151,7 @@ export class ActivityService implements ActivityAuthoring {
     productCode: string;
     activityType: ActivityRecord["activityType"];
     moduleFolder?: unknown;
+    bookMode?: ActivityProduct["bookMode"];
     now: string;
   }): ActivityProduct {
     const existing = this.db
@@ -2162,7 +2166,7 @@ export class ActivityService implements ActivityAuthoring {
       moduleFolder: normalizeModuleFolder(input.moduleFolder, input.productCode),
       canonicalRefNum: null,
       activityType: input.activityType,
-      bookMode: null,
+      bookMode: input.bookMode ?? null,
       createdAt: input.now,
       updatedAt: input.now,
     };
@@ -2171,7 +2175,7 @@ export class ActivityService implements ActivityAuthoring {
         `INSERT INTO activity_products
            (product_id, project_id, collection_id, product_code, module_folder,
             canonical_ref_num, activity_type, book_mode, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
       )
       .run(
         product.productId,
@@ -2180,6 +2184,7 @@ export class ActivityService implements ActivityAuthoring {
         product.productCode,
         product.moduleFolder,
         product.activityType,
+        product.bookMode,
         product.createdAt,
         product.updatedAt,
       );

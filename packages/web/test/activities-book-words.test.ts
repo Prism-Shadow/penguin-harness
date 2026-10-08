@@ -72,15 +72,14 @@ describe("book words model", () => {
     expect(wordsWithoutSounds(group)).toEqual(["cat"]);
   });
 
-  it("follows the product's reading mode, and the page's only where the product has none", () => {
-    expect(isDecodable(null, "decodable")).toBe(false);
-    expect(isDecodable({ bookMode: "decodable" }, "")).toBe(true);
-    expect(isDecodable({ bookMode: "readAlong" }, "decodable")).toBe(false);
-    expect(isDecodable({ bookMode: null }, "decodable")).toBe(true);
-    expect(isDecodable({ bookMode: null }, "")).toBe(false);
+  it("follows the product's reading mode", () => {
+    expect(isDecodable(null)).toBe(false);
+    expect(isDecodable({ bookMode: "decodable" })).toBe(true);
+    expect(isDecodable({ bookMode: "readAlong" })).toBe(false);
+    expect(isDecodable({ bookMode: null })).toBe(false);
     // Refreshed before, then reloaded: the words already there say it is decodable.
-    expect(isDecodable({ bookMode: null }, "", true)).toBe(true);
-    expect(isDecodable({ bookMode: "readAlong" }, "", true)).toBe(false);
+    expect(isDecodable({ bookMode: null }, true)).toBe(true);
+    expect(isDecodable({ bookMode: "readAlong" }, true)).toBe(false);
   });
 
   it("finds the newest phonemes run of a language and reads its proposal", () => {

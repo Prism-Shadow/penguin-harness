@@ -51,7 +51,8 @@ export const en: Strings = {
         plan: "Opens once media is planned.",
         module: "Opens after the first assembly.",
       },
-      sceneTitle: (number: number, title: string, id: string) => `Scene ${number}: ${title} (${id})`,
+      sceneTitle: (number: number, title: string, id: string) =>
+        `Scene ${number}: ${title} (${id})`,
     },
     studioPlayer: {
       now: (state: string, scene: string) => `Now in ${state}, ${scene}`,
@@ -960,72 +961,6 @@ export const en: Strings = {
       duration: (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`),
       noTestName: "None",
     },
-    studioBuild: {
-      title: "Build",
-      checking: "Checking what the module needs…",
-      unreadable: (reason: string) => `Could not check the build: ${reason}`,
-      script: { ok: "The activity script is written.", warn: "The activity script is empty." },
-      spec: {
-        ok: "The specification is valid.",
-        fail: "Validate and save a specification first.",
-      },
-      plan: {
-        current: "The media plan matches the specification.",
-        missing: "There is no media plan, so the module will carry no media.",
-        stale: "The media plan is older than the specification. Rebuild it in Scenes.",
-      },
-      speech: (language: string, bound: number, total: number) =>
-        `Speech in ${language}: ${bound} of ${total} bound.`,
-      coverage: (language: string, covered: number, total: number) =>
-        `${language} has ${covered} of ${total} narrations of the default language.`,
-      media: (bound: number, total: number) =>
-        `Images, video and animation: ${bound} of ${total} bound.`,
-      words: {
-        ok: (language: string, total: number) =>
-          `Word pronunciations in ${language}: all ${total} recorded and timed sound by sound.`,
-        none: (language: string) =>
-          `This decodable book lists no word pronunciations in ${language} yet. Refresh words in Audios.`,
-        missing: (language: string, recorded: number, total: number, timed: number) =>
-          `Word pronunciations in ${language}: ${recorded} of ${total} recorded, ${timed} timed sound by sound. The reader cannot sound out the others.`,
-      },
-      mediaKeys: {
-        ok: "Every media key means the same thing in every scene.",
-        conflicting: (keys: string[]) =>
-          `${keys.length === 1 ? "This media key is" : "These media keys are"} described differently in different scenes: ${keys.join(", ")}. Give different media different keys.`,
-      },
-      assessment: {
-        ok: "The assessment is valid.",
-        missing:
-          "This activity is assessed, but it has no assessment. Generate one in Assessment Data.",
-        problems: (count: number) =>
-          `The assessment has ${count} ${count === 1 ? "problem" : "problems"}. Fix ${count === 1 ? "it" : "them"} in Assessment Data.`,
-        inherited: (count: number) =>
-          `The module's assessment already had ${count} ${count === 1 ? "problem" : "problems"}. Assembly keeps ${count === 1 ? "it" : "them"}; fix ${count === 1 ? "it" : "them"} in Assessment Data.`,
-      },
-      canonical: {
-        ok: "This ref owns the module code.",
-        fail: "Another ref owns this product's module code. Assemble from that ref.",
-      },
-      checkout: {
-        ok: "The WAF workspace is ready.",
-        fail: "The WAF workspace is not prepared. An admin can prepare it in Settings, under WAF workspace.",
-      },
-      unsaved: { ok: "No unsaved edits.", fail: "Save your edits first." },
-      proposal: {
-        ok: "No proposal is waiting.",
-        warn: "A proposal is waiting in the conversation.",
-      },
-      level: { ok: "Ready", warn: "Warning", fail: "Blocks assembly" },
-      lastRun: (status: string, when: string) => `Last assembly: ${status}, ${when}.`,
-      olderDraft: "It was built from an older draft.",
-      openSession: "Open session",
-      noRun: "This activity has not been assembled yet.",
-      ready: "Ready to assemble.",
-      assembling: "Assembling now.",
-      assemblingButton: "Assembling…",
-      noFinishedRun: "No finished assembly yet.",
-      passed: (count: number) => `${count} ${count === 1 ? "check passes" : "checks pass"}`,
-    },
     runLog: {
       showReasoning: "Show reasoning",
     },
@@ -1585,7 +1520,7 @@ export const en: Strings = {
       espeakMissing:
         "espeak-ng is not installed on the server, so no word was sounded out automatically.",
       notDecodable:
-        "Word pronunciations are for decodable books. Choose Decodable as the reading mode to list the story's words.",
+        "Word pronunciations are for decodable books. This book was created as read-along.",
       run: "Word sounds",
       record: (n: number) => `Record words (${n})`,
       recordAbout:
@@ -1935,14 +1870,6 @@ export const en: Strings = {
     saveMedia: "Validate and save media",
     mediaCounts: (total, bound) =>
       `${total} assets, ${bound} paths assigned, ${total - bound} unbound (saved plan)`,
-    readingMode: "Reading mode",
-    readingModeHint: "Choose a mode and build the media plan before assembly.",
-    readingModeHelp:
-      "Choose the reading behavior for this assembly. Read-along starts narration on the first visit to each page. Decodable waits for manually started narration after a reading delay and requires bound final-story audio.",
-    chooseReadingMode: "Choose a reading mode",
-    readAlong: "Read-along",
-    decodable: "Decodable",
-    assemble: "Assemble WAF module",
     moduleRun: "Module assembly",
     qualityRun: "Quality check",
     testRun: "Acceptance tests",
@@ -1986,6 +1913,12 @@ export const en: Strings = {
     type: "Activity type",
     standard: "Standard",
     book: "Book",
+    readingMode: "Reading mode",
+    readingModeHint:
+      "Read-along starts the narration on each page. Decodable lets a child tap a word to hear it sounded out. Every ref of the book uses this mode.",
+    chooseReadingMode: "Choose a reading mode",
+    readAlong: "Read-along",
+    decodable: "Decodable",
     empty: "No activities yet. Create one with its product code and reference number.",
     noProject: "Select a Project to author activities.",
     unavailable:

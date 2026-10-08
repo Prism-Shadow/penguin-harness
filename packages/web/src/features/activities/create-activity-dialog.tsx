@@ -23,6 +23,7 @@ export function CreateActivityDialog({
   const [refNum, setRefNum] = useState("");
   const [title, setTitle] = useState("");
   const [activityType, setActivityType] = useState("standard");
+  const [bookMode, setBookMode] = useState<"" | "readAlong" | "decodable">("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   async function create(event: React.FormEvent<HTMLFormElement>) {
@@ -34,12 +35,19 @@ export function CreateActivityDialog({
         `/api/projects/${encodeURIComponent(projectId)}/activities`,
         {
           method: "POST",
-          body: { productCode, refNum: Number(refNum), title, activityType },
+          body: {
+            productCode,
+            refNum: Number(refNum),
+            title,
+            activityType,
+            ...(activityType === "book" ? { bookMode } : {}),
+          },
         },
       );
       setProductCode("");
       setRefNum("");
       setTitle("");
+      setBookMode("");
       onCreated(result.id);
     } catch (e) {
       // A deleted ref still holds its number; say so rather than "already reserved".
@@ -67,7 +75,7 @@ export function CreateActivityDialog({
             variant="primary"
             type="submit"
             form="create-activity"
-            disabled={creating}
+            disabled={creating || (activityType === "book" && !bookMode)}
           >
             {creating ? S.activities.busy : S.activities.create}
           </Button>
@@ -114,6 +122,22 @@ export function CreateActivityDialog({
           <option value="standard">{S.activities.standard}</option>
           <option value="book">{S.activities.book}</option>
         </Select>
+        {activityType === "book" && (
+          <Select
+            size="sm"
+            label={S.activities.readingMode}
+            aria-label={S.activities.readingMode}
+            hint={S.activities.readingModeHint}
+            value={bookMode}
+            onChange={(e) => setBookMode(e.target.value as typeof bookMode)}
+            required
+            disabled={creating}
+          >
+            <option value="">{S.activities.chooseReadingMode}</option>
+            <option value="readAlong">{S.activities.readAlong}</option>
+            <option value="decodable">{S.activities.decodable}</option>
+          </Select>
+        )}
         {error && (
           <p role="alert" className={`text-xs ${toneInk.danger}`}>
             {error}

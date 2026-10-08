@@ -41,19 +41,17 @@ export function wordsWithoutSounds(group: readonly MediaAsset[]): string[] {
 }
 
 /**
- * Whether the book is decodable: the reading mode its product records, or, where it records
- * none, the one the author chose on this page. The server decides the same way, and records
- * the author's choice on the first refresh. A book that records none but already has word
- * pronunciations was refreshed as decodable, so it still counts as one after a reload.
+ * Whether the book is decodable: the reading mode its product records, chosen when the book
+ * was created. A book that records none but already has word pronunciations was refreshed
+ * as decodable, so it still counts as one after a reload.
  */
 export function isDecodable(
   state: Pick<BookWordsState, "bookMode"> | null,
-  chosen: BookMode | "",
   hasWords = false,
 ): boolean {
   if (!state) return false;
   if (state.bookMode) return state.bookMode === "decodable";
-  return chosen === "decodable" || hasWords;
+  return hasWords;
 }
 
 /** The newest phonemes run for a language, whatever its status. */

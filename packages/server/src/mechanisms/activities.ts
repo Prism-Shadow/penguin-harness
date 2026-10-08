@@ -443,6 +443,8 @@ export abstract class ActivityAuthoring extends Interface<{
       refNum: unknown;
       title: string;
       activityType?: "standard" | "book";
+      /** A book's reading mode, kept only when this ref creates the product. */
+      bookMode?: "decodable" | "readAlong";
     },
   ): Promise<ActivityRecord & { draft: ActivityDraft }>;
   getActivity(

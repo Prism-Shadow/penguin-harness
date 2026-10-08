@@ -847,51 +847,6 @@ export type Strings = {
       duration: (ms: number) => string;
       noTestName: string;
     };
-    /** The Build stage: what stands between the draft and an assembled module. */
-    studioBuild: {
-      title: string;
-      checking: string;
-      unreadable: (reason: string) => string;
-      script: Record<"ok" | "warn", string>;
-      spec: Record<"ok" | "fail", string>;
-      plan: Record<"current" | "missing" | "stale", string>;
-      speech: (language: string, bound: number, total: number) => string;
-      coverage: (language: string, covered: number, total: number) => string;
-      media: (bound: number, total: number) => string;
-      /** Media keys one scene describes differently from another. */
-      mediaKeys: { ok: string; conflicting: (keys: string[]) => string };
-      /** A decodable book's word pronunciations in one language: recorded, and timed. */
-      words: {
-        ok: (language: string, total: number) => string;
-        none: (language: string) => string;
-        missing: (language: string, recorded: number, total: number, timed: number) => string;
-      };
-      /** Only for an assessed activity. */
-      assessment: {
-        ok: string;
-        missing: string;
-        /** Problems the assessment in effect adds to the module's own file. */
-        problems: (count: number) => string;
-        /** Problems the module's own file already had. */
-        inherited: (count: number) => string;
-      };
-      canonical: Record<"ok" | "fail", string>;
-      checkout: Record<"ok" | "fail", string>;
-      unsaved: Record<"ok" | "fail", string>;
-      proposal: Record<"ok" | "warn", string>;
-      level: Record<"ok" | "warn" | "fail", string>;
-      lastRun: (status: string, when: string) => string;
-      olderDraft: string;
-      openSession: string;
-      noRun: string;
-      ready: string;
-      /** An assembly in flight, from Build or from the Assemble module stage. */
-      assembling: string;
-      assemblingButton: string;
-      noFinishedRun: string;
-      /** The checks with nothing in the way, folded into one line. */
-      passed: (count: number) => string;
-    };
     /** Running the stages: Loom's stage picker and Run, and the panel that follows a run. */
     runLog: {
       showReasoning: string;
@@ -1629,13 +1584,6 @@ export type Strings = {
     mediaPathHint: string;
     saveMedia: string;
     mediaCounts: (total: number, bound: number) => string;
-    readingMode: string;
-    readingModeHint: string;
-    readingModeHelp: string;
-    chooseReadingMode: string;
-    readAlong: string;
-    decodable: string;
-    assemble: string;
     moduleRun: string;
     qualityRun: string;
     testRun: string;
@@ -1679,6 +1627,11 @@ export type Strings = {
     type: string;
     standard: string;
     book: string;
+    readingMode: string;
+    readingModeHint: string;
+    chooseReadingMode: string;
+    readAlong: string;
+    decodable: string;
     empty: string;
     noProject: string;
     unavailable: string;
