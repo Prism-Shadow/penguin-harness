@@ -16,6 +16,20 @@ export const activitySpec = {
   scenes: [{ id: "intro", description: "Choose a word" }],
 };
 
+/** `activitySpec` as a specification run saves it: normalized onto the canonical scene shape. */
+export const savedActivitySpec = {
+  ...activitySpec,
+  acceptance_criterias: [],
+  scenes: [
+    {
+      id: "intro",
+      description: "Choose a word",
+      media: { images: [], video: [], animations: [] },
+      audio: { tracks: [] },
+    },
+  ],
+};
+
 /** A book with a cover and one story page per line of narration. */
 export function catBookSpec(stories: string[] = ["The cat sat.", "The cat ran."]) {
   return {

@@ -9,6 +9,12 @@ import {
 } from "./playback.js";
 import { mediaTargetPath } from "./languages.js";
 import type { SpeechProviderId } from "./speech-types.js";
+import {
+  SPEECH_PROVIDER_IDS,
+  isElevenLabsModel,
+  isVoiceOf,
+  type ElevenLabsSpeechModel,
+} from "./voice-catalogue.js";
 import type { PhonemeSource, PhonemeTiming, WholeWordTiming } from "./book-word-types.js";
 import {
   BOOK_WORD_MAX,
@@ -35,10 +41,15 @@ export interface MediaAsset {
    */
   voice?: string;
   /**
-   * Who speaks a narration the next time it is generated; absent is Gemini. Like the voice,
+   * Who speaks a narration the next time it is generated; absent is ElevenLabs. Like the voice,
    * the bound clip keeps whatever provider recorded it.
    */
   speechProvider?: SpeechProviderId;
+  /**
+   * The ElevenLabs model an ElevenLabs narration is spoken with the next time it is
+   * generated; absent is ELEVENLABS_DEFAULT_MODEL. Other providers ignore it.
+   */
+  speechModel?: ElevenLabsSpeechModel;
   /**
    * When each spoken word of a narration's clip starts and ends, which a read-along
    * highlights by, and the clip's length. They describe one recording of one script, so
@@ -86,8 +97,17 @@ export interface MediaAsset {
   /**
    * A clip a run made and the author accepted. `format` is absent for every WAV clip (all
    * speech, and every record older than sound generation); a sound run's MP3 says "mp3".
+   * `model` and `voice` are what a narration was spoken with, as Loom's sidecar fingerprint
+   * keeps them: the speech step makes the narration again when the model or voice it would use
+   * now differs. Clips accepted before they were recorded, and sounds, have neither.
    */
-  generatedAudio?: { runId: string; sha256: string; format?: GeneratedAudioFormat };
+  generatedAudio?: {
+    runId: string;
+    sha256: string;
+    format?: GeneratedAudioFormat;
+    model?: string;
+    voice?: string;
+  };
   generatedImage?: { runId: string; sha256: string };
   /**
    * A scene video a run recorded from a composition and the author accepted (experimental),
@@ -123,6 +143,35 @@ export function generatedMediaPath(
   });
   if (!target) throw new Error(`There is no media folder for a ${asset.type} in ${language}.`);
   return target;
+}
+
+/**
+ * The extension of Loom's placeholder for each media type Penguin does not generate yet:
+ * `empty.mp4` for videos, `empty.json` (a Lottie) for animations.
+ */
+export const PLACEHOLDER_EXTENSIONS = { video: "mp4", animation: "json" } as const;
+export type PlaceholderType = keyof typeof PLACEHOLDER_EXTENSIONS;
+
+export function hasPlaceholder(type: string): type is PlaceholderType {
+  return Object.hasOwn(PLACEHOLDER_EXTENSIONS, type);
+}
+
+/**
+ * Where a video or animation points until a real one replaces it: Loom's placeholder in the
+ * language's folder for the type, which Loom's `assets_configuration` seeds for every such
+ * asset it registers.
+ */
+export function placeholderPath(
+  address: ActivityAddress,
+  language: string,
+  type: PlaceholderType,
+): string {
+  return generatedMediaPath(
+    address,
+    language,
+    { key: "empty", type },
+    PLACEHOLDER_EXTENSIONS[type],
+  );
 }
 
 /** The extension an accepted clip is stored with: its format, WAV when unnamed. */
@@ -198,6 +247,7 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
               "translatedFrom",
               "voice",
               "speechProvider",
+              "speechModel",
               "wordTimings",
               "durationMs",
               "kind",
@@ -265,6 +315,15 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           asset.kind !== undefined)
       )
         throw new Error("Only a narration names a speech provider: gemini, elevenlabs or kokoro.");
+      if (
+        asset.speechModel !== undefined &&
+        (!isElevenLabsModel(asset.speechModel) ||
+          asset.type !== "audio" ||
+          asset.kind !== undefined)
+      )
+        throw new Error(
+          "Only a narration names an ElevenLabs model: eleven_v3, eleven_v4 or eleven_multilingual_v2.",
+        );
       if (
         asset.wordTimings !== undefined &&
         (asset.type !== "audio" ||
@@ -401,7 +460,15 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         const generated = object(asset.generatedAudio);
         if (
           asset.type !== "audio" ||
-          Object.keys(generated).some((key) => !["runId", "sha256", "format"].includes(key)) ||
+          Object.keys(generated).some(
+            (key) => !["runId", "sha256", "format", "model", "voice"].includes(key),
+          ) ||
+          (generated.model !== undefined &&
+            (typeof generated.model !== "string" ||
+              !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(generated.model))) ||
+          (generated.voice !== undefined &&
+            (typeof generated.voice !== "string" ||
+              !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(generated.voice))) ||
           typeof generated.runId !== "string" ||
           !/^run_[a-f0-9]{32}$/.test(generated.runId) ||
           typeof generated.sha256 !== "string" ||
@@ -476,6 +543,9 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         ...(asset.voice !== undefined ? { voice: String(asset.voice) } : {}),
         ...(asset.speechProvider !== undefined
           ? { speechProvider: asset.speechProvider as SpeechProviderId }
+          : {}),
+        ...(asset.speechModel !== undefined
+          ? { speechModel: asset.speechModel as ElevenLabsSpeechModel }
           : {}),
         ...(asset.wordTimings !== undefined
           ? {
@@ -565,6 +635,20 @@ export function planMedia(activity: ActivityDetail): MediaPlan {
           type,
           description: String(item.description),
           ...(type === "audio" && item.script !== undefined ? { script: String(item.script) } : {}),
+          ...(type === "audio" &&
+          !playbackFromScript(item.script as string | undefined) &&
+          // Only a voice some provider speaks: a described one ("warm, friendly") is not a
+          // voice to save, and would fail the manifest's own check.
+          SPEECH_PROVIDER_IDS.some((provider) => isVoiceOf(provider, item.voice))
+            ? {
+                voice: item.voice as string,
+                speechProvider: isVoiceOf("gemini", item.voice)
+                  ? ("gemini" as const)
+                  : isVoiceOf("kokoro", item.voice)
+                    ? ("kokoro" as const)
+                    : ("elevenlabs" as const),
+              }
+            : {}),
           ...(type === "audio" && typeof item.script === "string"
             ? (playbackFromScript(item.script) ?? {})
             : {}),
@@ -605,13 +689,29 @@ export function planMedia(activity: ActivityDetail): MediaPlan {
   for (const language of new Set(["en-US", ...Object.keys(previous)])) {
     assets[language] = [...entries.values()].flatMap((asset) => {
       const old = previous[language]?.find((entry) => entry.key === asset.key);
-      const unchanged =
-        activity.draft.mediaPlan?.requirements[asset.key] === requirements[asset.key];
-      if (old && unchanged && old.type === asset.type) return [{ ...old, usages: asset.usages }];
+      const stored = activity.draft.mediaPlan?.requirements[asset.key];
+      const unchanged = stored === requirements[asset.key];
+      // A requirement saved before the specification named this voice (or before voices
+      // counted at all) is the same media: it keeps its binding and takes the voice.
+      const voiced =
+        !unchanged && !!asset.voice && stored === contentRevision(requirement(asset, false));
+      if (old && (unchanged || voiced) && old.type === asset.type)
+        return [
+          {
+            ...old,
+            usages: asset.usages,
+            ...(voiced ? { voice: asset.voice, speechProvider: asset.speechProvider } : {}),
+          },
+        ];
       // Missing or changed translations fall back to the default language, never
       // label freshly copied English scripts as translated speech.
       return language === "en-US" ? [{ ...asset }] : [];
     });
+    // Penguin does not generate videos or animations yet, so, as in Loom, one nothing else
+    // binds uses the placeholder until a recording or an upload replaces it.
+    for (const asset of assets[language]!)
+      if (hasPlaceholder(asset.type) && !asset.path)
+        asset.path = placeholderPath(activity, language, asset.type);
     // A book's word pronunciations are not in the specification; they are planned from its
     // narration (book-words.ts) and survive a re-plan. Usages of scenes the specification no
     // longer has go, and a word left in no scene goes too, unless the author customized it.
@@ -658,8 +758,14 @@ export function validateMediaCoverage(manifest: AssetManifest, activity: Activit
         throw new Error("Media usage references an unknown scene.");
 }
 
-function requirement(asset: MediaAsset): string {
-  return JSON.stringify([asset.type, asset.description, asset.script ?? ""]);
+/** What makes two plans' assets the same media; `withVoice` false is the formula before voices counted. */
+function requirement(asset: MediaAsset, withVoice = true): string {
+  return JSON.stringify([
+    asset.type,
+    asset.description,
+    asset.script ?? "",
+    ...(withVoice && asset.voice ? [asset.voice, asset.speechProvider] : []),
+  ]);
 }
 
 export function mediaConfiguration(manifest: AssetManifest): Record<string, unknown> {

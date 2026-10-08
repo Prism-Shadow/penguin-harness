@@ -7,6 +7,10 @@ import {
   mediaConfiguration,
 } from "../src/activities/media.js";
 import { scaffoldModule, verifyMediaArtifacts } from "../src/activities/waf-module.js";
+import {
+  ACTIVITY_SCENES_CONFIGURATION_KEY,
+  STATE_MACHINE_CONFIGURATION_KEY,
+} from "../src/activities/state-machine-configuration.js";
 import { activitySpec } from "./activity-fixtures.js";
 
 function activity(): ActivityDetail {
@@ -295,7 +299,18 @@ describe("activity media planning", () => {
       assessment: { value: assessment, basis: null, editedAt: "now" },
     };
     const files = scaffoldModule(a);
-    expect(JSON.parse(files["configurations/P-1.json"]!)).toEqual(edited);
+    // The edit as written, plus the machine and scene catalog every assembly syncs into it.
+    const written = JSON.parse(files["configurations/P-1.json"]!) as {
+      P: Record<string, unknown>;
+    };
+    const {
+      [STATE_MACHINE_CONFIGURATION_KEY]: machine,
+      [ACTIVITY_SCENES_CONFIGURATION_KEY]: scenes,
+      ...authored
+    } = written.P;
+    expect({ P: authored }).toEqual(edited);
+    expect(machine).toBeDefined();
+    expect(scenes).toBeDefined();
     expect(JSON.parse(files["assessments/P-1.json"]!)).toEqual(assessment);
     const read = async (name: string) =>
       files[name.replaceAll("\\", "/").replace(/^module\//, "")]!;

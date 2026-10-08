@@ -15,7 +15,10 @@ import { contentRevision, type ActivityRun } from "../src/activities/domain.js";
 import type { AssetManifest, MediaAsset } from "../src/activities/media.js";
 import { drawnOutScript, geminiScript, syncWordScripts } from "../src/activities/pronunciation.js";
 import type { SpeechProviderId } from "../src/activities/speech-types.js";
-import { ELEVENLABS_DEFAULT_VOICE } from "../src/activities/voice-catalogue.js";
+import {
+  ELEVENLABS_BUILTIN_VOICE_ID,
+  ELEVENLABS_DEFAULT_VOICE,
+} from "../src/activities/voice-catalogue.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../src/mechanisms/activities.js";
 
 const usage = [{ sceneId: "intro", sourceKey: "k", occurrence: 1, sceneOccurrenceCount: 1 }];
@@ -111,9 +114,59 @@ describe("choosing the work", () => {
     expect(imageTargets(manifest())).toEqual([{ language: "en-US", assetKey: "cat" }]);
   });
 
+  it("speaks a bound narration again when the model it would use now is not the one it was spoken with", () => {
+    const media = manifest();
+    const bound = media.assets["en-US"]!.find((asset) => asset.key === "bound")!;
+    const take = { runId: `run_${"a".repeat(32)}`, sha256: "b".repeat(64), format: "mp3" as const };
+    const targets = () => speechTargets(media).map((target) => target.assetKey);
+    // Spoken with the default ElevenLabs model, which is still the one it would use.
+    bound.generatedAudio = { ...take, model: "eleven_v3" };
+    expect(targets()).toEqual(["hello", "hello"]);
+    // The author chose another model.
+    bound.speechModel = "eleven_v4";
+    expect(targets()).toEqual(["hello", "bound", "hello"]);
+    bound.generatedAudio = { ...take, model: "eleven_v4" };
+    expect(targets()).toEqual(["hello", "hello"]);
+    // Another provider means another model.
+    bound.speechProvider = "gemini";
+    expect(targets()).toEqual(["hello", "bound", "hello"]);
+    // A clip that names no model, as every one accepted before models were recorded, is kept.
+    bound.generatedAudio = take;
+    expect(targets()).toEqual(["hello", "hello"]);
+  });
+
+  it("speaks a bound narration again when the voice it would use now is not the one it was spoken with", () => {
+    const media = manifest();
+    const bound = media.assets["en-US"]!.find((asset) => asset.key === "bound")!;
+    const take = { runId: `run_${"a".repeat(32)}`, sha256: "b".repeat(64), format: "mp3" as const };
+    const other = "AbCdEfGhIj0123456789";
+    const targets = (chosen?: string, elevenLabsDefault?: string) =>
+      speechTargets(media, { chosen, elevenLabsDefault }).map((target) => target.assetKey);
+    // No voice of its own: spoken with the default, which still resolves to Loom's voice.
+    bound.generatedAudio = { ...take, model: "eleven_v3", voice: ELEVENLABS_BUILTIN_VOICE_ID };
+    expect(targets()).toEqual(["hello", "hello"]);
+    // With no voice of its own and none chosen by the run, its voice is not compared: the
+    // author may have spoken it with any voice, and the stage would replace it unheard.
+    expect(targets(undefined, other)).toEqual(["hello", "hello"]);
+    expect(targets(undefined, ELEVENLABS_BUILTIN_VOICE_ID)).toEqual(["hello", "hello"]);
+    // The run chose another voice for narration with none of its own.
+    expect(targets(other)).toEqual(["hello", "bound", "hello"]);
+    // Its own voice wins over the run's, so the clip stays whatever the run chose.
+    bound.voice = other;
+    bound.generatedAudio = { ...take, model: "eleven_v3", voice: other };
+    expect(targets(ELEVENLABS_DEFAULT_VOICE)).toEqual(["hello", "hello"]);
+    // The author chose another voice for it.
+    bound.voice = ELEVENLABS_DEFAULT_VOICE;
+    expect(targets()).toEqual(["hello", "bound", "hello"]);
+    // A clip that names no voice is not compared by it.
+    bound.generatedAudio = { ...take, model: "eleven_v3" };
+    expect(targets(other)).toEqual(["hello", "hello"]);
+  });
+
   it("runs every step for all, one step on its own, and refuses an unknown one", () => {
     expect(stepsFor(parseSelection(undefined))).toEqual([
       "spec",
+      "mediaSpec",
       "media",
       "translations",
       "speech",
@@ -215,9 +268,11 @@ function world(
             ? "image"
             : module?.mediaText
               ? "media-text"
-              : module
-                ? "module"
-                : "spec";
+              : module?.mediaSpec
+                ? "media-spec"
+                : module && module.repair === undefined
+                  ? "module"
+                  : "spec";
       const run = {
         kind,
         runId: `run_${runs.length + 1}`,
@@ -250,6 +305,8 @@ function world(
         if (options.fail === run.kind) {
           run.status = "failed";
           run.error = `${run.kind} broke`;
+          // A specification pass fails on what its agent wrote, as the real checks do.
+          if (run.kind === "spec" || run.kind === "media-spec") run.repairable = true;
           continue;
         }
         run.status = "succeeded";
@@ -258,11 +315,21 @@ function world(
           activity.draft.status = "valid";
           bump();
         }
+        // The media pass saves the specification again, with its media listed.
+        if (run.kind === "media-spec") {
+          activity.draft.spec = { ...spec, mediaListed: true };
+          bump();
+        }
       }
       return runs.map((run) => ({ ...run, hasCandidate: false }));
     },
-    async soundSetup(_p: string, agentId: string) {
-      soundSetups.push(agentId);
+    async run(_p: string, _a: string, runId: string) {
+      const run = runs.find((item) => item.runId === runId);
+      if (!run) throw new Error("run_not_found");
+      return run;
+    },
+    async soundSetup(projectId: string) {
+      soundSetups.push(projectId);
       return {
         providers: (["elevenlabs", "agenthub"] as const).map((id) => ({
           id,
@@ -282,6 +349,10 @@ function world(
             : {}),
         })),
       };
+    },
+    // No Vault voice: the default ElevenLabs voice is Loom's.
+    async elevenLabsDefaultVoice() {
+      return ELEVENLABS_BUILTIN_VOICE_ID;
     },
     async acceptAudio(_p: string, _a: string, runId: string, expected: string) {
       if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
@@ -425,12 +496,13 @@ describe("running the stages", () => {
   it("takes an activity from its script to an assembled module, accepting media on the way", async () => {
     const w = world();
     const { state, done } = w.runner.start("proj", "act", { selection: "all", agentId: "agent" });
-    expect(state.steps.map((step) => step.status)).toEqual(Array(10).fill("pending"));
+    expect(state.steps.map((step) => step.status)).toEqual(Array(11).fill("pending"));
     await done;
     const final = w.runner.status("act")!;
     expect(final.status).toBe("succeeded");
     expect(final.steps.map((step) => [step.step, step.status])).toEqual([
       ["spec", "succeeded"],
+      ["mediaSpec", "succeeded"],
       ["media", "succeeded"],
       ["translations", "skipped"],
       ["speech", "succeeded"],
@@ -445,13 +517,14 @@ describe("running the stages", () => {
     expect(final.steps.at(-1)!.note).toBe("noCriteria");
     expect(w.started).toEqual([
       "spec",
+      "media-spec",
       "audio:en-US:hello",
       "audio:es-MX:hello",
       "image:en-US:cat",
       "module",
     ]);
-    expect(final.steps[3]).toMatchObject({ done: 2, total: 2 });
-    expect(w.activity.draft.mediaPlan!.manifest.assets["es-MX"]![0]!.path).toBe("run_3.wav");
+    expect(final.steps[4]).toMatchObject({ done: 2, total: 2 });
+    expect(w.activity.draft.mediaPlan!.manifest.assets["es-MX"]![0]!.path).toBe("run_4.wav");
     expect(final.currentRunId).toBeNull();
     expect(final.finishedAt).toBe("2026-09-23T12:00:00Z");
   });
@@ -477,6 +550,7 @@ describe("running the stages", () => {
     expect(final.steps.map((step) => step.status)).toEqual([
       "succeeded",
       "succeeded",
+      "succeeded",
       "skipped",
       "failed",
       "cancelled",
@@ -486,7 +560,31 @@ describe("running the stages", () => {
       "cancelled",
       "cancelled",
     ]);
-    expect(w.started).toEqual(["spec", "audio:en-US:hello"]);
+    expect(w.started).toEqual(["spec", "media-spec", "audio:en-US:hello"]);
+  });
+
+  it("runs a failed media pass once more, told why, and stops when that fails too", async () => {
+    const w = world({ fail: "media-spec" });
+    const modules: unknown[] = [];
+    const start = w.generation.start.bind(w.generation);
+    (w.generation as { start: typeof start }).start = (p, a, agent, expected, module, runtime) => {
+      modules.push(module);
+      return start(p, a, agent, expected, module, runtime);
+    };
+    await w.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    const final = w.runner.status("act")!;
+    expect(w.started).toEqual(["spec", "media-spec", "media-spec"]);
+    expect(modules).toEqual([
+      undefined,
+      { mediaSpec: true },
+      { mediaSpec: true, repair: "media-spec broke" },
+    ]);
+    expect(final.steps[1]).toMatchObject({
+      step: "mediaSpec",
+      status: "failed",
+      runIds: ["run_2", "run_3"],
+    });
+    expect(final.error).toBe("media-spec broke");
   });
 
   it("refuses to start without a script, and says so", async () => {
@@ -498,7 +596,7 @@ describe("running the stages", () => {
     expect(w.started).toEqual([]);
   });
 
-  it("skips media with a coding agent and says why, still assembling with it", async () => {
+  it("generates media with a coding agent too, handing it no runtime, and assembles with it", async () => {
     const w = world();
     await w.runner.start("proj", "act", {
       selection: "all",
@@ -507,12 +605,18 @@ describe("running the stages", () => {
     }).done;
     const final = w.runner.status("act")!;
     expect(final.status).toBe("succeeded");
-    expect(final.steps[3]).toMatchObject({
-      status: "skipped",
-      note: "needsPenguinAgent",
-    });
-    expect(w.started).toEqual(["spec", "module"]);
-    expect(w.runs.map((run) => run.codingAgentId)).toEqual(["codex", "codex"]);
+    expect(final.steps.map((step) => step.note)).not.toContain("needsPenguinAgent");
+    // The same stages a Penguin agent runs, media included.
+    const penguin = world();
+    await penguin.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    expect(w.started).toEqual(penguin.started);
+    // The generation service gives media runs to the Media Agent; the sequence names no runtime.
+    const media = /^(audio|image|sound):/;
+    w.started.forEach((entry, i) =>
+      expect(w.runs[i]!.codingAgentId, String(entry)).toBe(
+        media.test(String(entry)) ? undefined : "codex",
+      ),
+    );
   });
 
   it("refuses a second sequence while one runs, and stops the run in flight on request", async () => {
@@ -535,7 +639,7 @@ describe("running the stages", () => {
     expect(w.cancelled).toEqual(["run_1"]);
     expect(final.status).toBe("cancelled");
     expect(final.error).toBeNull();
-    expect(final.steps.map((step) => step.status)).toEqual(Array(10).fill("cancelled"));
+    expect(final.steps.map((step) => step.status)).toEqual(Array(11).fill("cancelled"));
   });
 
   it("stops stepping when its component goes away, leaving the run in flight alone", async () => {
@@ -560,6 +664,7 @@ describe("running the stages", () => {
     // es-MX "Hola" has no recorded source, so it was written, not translated: left alone.
     expect(w.started).toEqual([
       "spec",
+      "media-spec",
       "media-text:ro-RO:hello",
       "audio:en-US:hello",
       "audio:es-MX:hello",
@@ -607,7 +712,11 @@ describe("running the stages", () => {
   it("speaks each narration in its own saved voice, and the run's voice where none is saved", async () => {
     const w = world();
     await w.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
-    for (const language of ["en-US", "es-MX"]) delete w.asset(language, "hello").path;
+    for (const language of ["en-US", "es-MX"]) {
+      delete w.asset(language, "hello").path;
+      // Gemini voices, so the narrations name Gemini rather than take the default.
+      w.asset(language, "hello").speechProvider = "gemini";
+    }
     w.asset("en-US", "hello").voice = "Fenrir";
     w.asset("es-MX", "hello").voice = "Retired voice";
     const before = w.runs.length;
@@ -630,17 +739,18 @@ describe("running the stages", () => {
     expect(final.steps.find((step) => step.step === "assessment")).toMatchObject({
       status: "succeeded",
       note: null,
-      runIds: ["run_5"],
+      runIds: ["run_6"],
     });
     expect(w.started).toEqual([
       "spec",
+      "media-spec",
       "audio:en-US:hello",
       "audio:es-MX:hello",
       "image:en-US:cat",
       "assessment",
       "module",
     ]);
-    expect(w.accepted).toEqual(["run_5"]);
+    expect(w.accepted).toEqual(["run_6"]);
     expect(w.assessmentInputs).toEqual([{ current: { items: ["current"] } }]);
   });
 
@@ -768,19 +878,20 @@ describe("the sounds step", () => {
       note: null,
       done: 1,
       total: 1,
-      runIds: ["run_4"],
+      runIds: ["run_5"],
     });
     expect(w.started).toEqual([
       "spec",
+      "media-spec",
       "audio:en-US:hello",
       "audio:es-MX:hello",
       "sound:elevenlabs:en-US:whoosh",
       "image:en-US:cat",
       "module",
     ]);
-    expect(w.asset("en-US", "whoosh").path).toBe("run_4.mp3");
+    expect(w.asset("en-US", "whoosh").path).toBe("run_5.mp3");
     expect(w.asset("en-US", "chime").path).toBe("media/chime.mp3");
-    expect(w.soundSetups).toEqual(["agent"]);
+    expect(w.soundSetups).toEqual(["proj"]);
   });
 
   it("uses the provider the sequence names", async () => {
@@ -856,7 +967,7 @@ describe("the sounds step", () => {
     expect(w.started.filter((entry) => entry.startsWith("sound:"))).toHaveLength(1);
   });
 
-  it("keeps to the scope's language, and skips for a coding agent", async () => {
+  it("keeps to the scope's language, and makes sounds for a coding agent too", async () => {
     const w = world({ sounds: true });
     await w.runner.start("proj", "act", { selection: "spec", agentId: "agent" }).done;
     await w.runner.start("proj", "act", { selection: "media", agentId: "agent" }).done;
@@ -871,11 +982,9 @@ describe("the sounds step", () => {
       agentId: "",
       codingAgentId: "codex",
     }).done;
-    expect(w.runner.status("act")!.steps[0]).toMatchObject({
-      status: "skipped",
-      note: "needsPenguinAgent",
-    });
-    expect(w.started).toEqual(["spec"]);
+    expect(w.runner.status("act")!.steps[0]).toMatchObject({ status: "succeeded", done: 1 });
+    expect(w.started.at(-1)).toBe("sound:elevenlabs:en-US:whoosh");
+    expect(w.runs.at(-1)?.codingAgentId).toBeUndefined();
   });
 });
 
@@ -961,6 +1070,10 @@ function wordWorld(
         ],
       };
     },
+    // No Vault voice: the default ElevenLabs voice is Loom's.
+    async elevenLabsDefaultVoice() {
+      return ELEVENLABS_BUILTIN_VOICE_ID;
+    },
     async acceptAudio(_p: string, _a: string, runId: string, expected: string) {
       if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
       const run = runs.find((item) => item.runId === runId)!;
@@ -1044,7 +1157,7 @@ describe("the words step", () => {
     });
   });
 
-  it("skips with a note for anything but a decodable book, a coding agent, or nothing to record", async () => {
+  it("skips with a note for anything but a decodable book or nothing to record", async () => {
     const skipped = async (world: ReturnType<typeof wordWorld>, input = {}) => {
       await world.runner.start("proj", "act", { selection: "words", agentId: "agent", ...input })
         .done;
@@ -1062,8 +1175,9 @@ describe("the words step", () => {
       await skipped(wordWorld({ bookMode: null, words: [] }), { bookMode: "readAlong" }),
     ).toMatchObject({ note: "notDecodable" });
     expect(await skipped(wordWorld({ bookMode: null }))).toMatchObject({ status: "succeeded" });
+    // A coding agent running the stages still records: the Media Agent speaks.
     expect(await skipped(wordWorld(), { agentId: "", codingAgentId: "codex" })).toMatchObject({
-      note: "needsPenguinAgent",
+      status: "succeeded",
     });
     const unsounded = wordWorld();
     unsounded.activity.draft.mediaPlan.manifest.assets["en-US"] = [unsounded.word("ran")];

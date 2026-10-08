@@ -2,7 +2,11 @@ import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AudioTarget, AudioResult } from "../activities/audio.js";
 import type { GeneratedAudioFormat } from "../activities/media.js";
 import type { SoundSetup } from "../activities/sound-types.js";
-import type { SpeechProviderId, SpeechSetup } from "../activities/speech-types.js";
+import type {
+  ElevenLabsVoices,
+  SpeechProviderId,
+  SpeechSetup,
+} from "../activities/speech-types.js";
 import type { ImageRequest } from "../activities/image.js";
 import type { CompositionFileContent } from "../activities/composition.js";
 import type { VideoProblemCode, VideoResult, VideoTarget } from "../activities/video-types.js";
@@ -80,6 +84,10 @@ export abstract class ActivityGeneration extends Interface<{
        * and bound images (experimental: refused while `activityVideoExperiment` is off).
        */
       composition?: { language: string; assetKey: string };
+      /** The media pass: list the media the scenes' tags ask for (`generate_media_spec`). */
+      mediaSpec?: true;
+      /** A specification or media pass run again, told why the previous attempt failed. */
+      repair?: string;
     },
     /** Run on an external coding agent instead of the Penguin agent `agentId` names. */
     runtime?: { codingAgentId?: string },
@@ -151,10 +159,14 @@ export abstract class ActivityGeneration extends Interface<{
     expectedRevision: string,
   ): Promise<ActivityDraft>;
   audioContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array>;
-  /** The sound providers an agent can use, judged by the keys its Vault holds. */
-  soundSetup(projectId: string, agentId: string): Promise<SoundSetup>;
-  /** The voices and, for an agent, the speech providers its Vault has keys for. */
-  speechSetup(projectId: string, agentId?: string): Promise<SpeechSetup>;
+  /** The sound providers the Media Agent can use, judged by the keys its Vault holds. */
+  soundSetup(projectId: string): Promise<SoundSetup>;
+  /** The voices, and the speech providers the Media Agent's Vault has keys for. */
+  speechSetup(projectId: string): Promise<SpeechSetup>;
+  /** The Media Agent's ElevenLabs voice library, the default first; `refresh` skips the cache. */
+  elevenLabsVoices(projectId: string, refresh?: boolean): Promise<ElevenLabsVoices>;
+  /** The voice the default ElevenLabs voice speaks with: the Vault's, else Loom's. */
+  elevenLabsDefaultVoice(projectId: string): Promise<string>;
   imageCandidateContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array>;
   acceptImage(
     projectId: string,

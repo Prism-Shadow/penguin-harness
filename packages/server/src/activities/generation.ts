@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import {
   RUN_FEATURES_FILE,
@@ -8,11 +9,17 @@ import path from "node:path";
 import { validateBookSpec } from "./book.js";
 import { compileBookConfiguration, type BookMode } from "./book-configuration.js";
 
-import { userText, libraryPlugin } from "@prismshadow/penguin-core";
+import {
+  DEFAULT_AGENT_ID,
+  libraryPlugin,
+  loadAgentVault,
+  MEDIA_AGENT_ID,
+  userText,
+} from "@prismshadow/penguin-core";
 import { Component, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { Config, Db, Channels, Log } from "../hmr/capabilities.js";
+import type { Config, Db, Channels, Log, Paths } from "../hmr/capabilities.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
-import type { AgentConfig } from "../mechanisms/agents.js";
+import type { AgentConfig, AgentLifecycle } from "../mechanisms/agents.js";
 import { CODING_AGENT_PROVIDER } from "../coding-agents/session-runtime.js";
 import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
@@ -23,25 +30,36 @@ import {
   SPEECH_OUTPUT_FILES,
   SPEECH_TIMINGS_FILE,
   audioTarget,
-  speechPrompt,
   speechProviderOf,
   type AudioResult,
   type AudioTarget,
 } from "./audio.js";
-import { SOUND_OUTPUT_FILES, soundPrompt, soundTarget } from "./sound.js";
+import { SOUND_OUTPUT_FILES, soundTarget } from "./sound.js";
 import { AGENTHUB_VERSION, SoundModelPorts } from "./sound-models.js";
 import { LocalAudio, type LocalAudioRequest } from "./local-audio.js";
+import { MediaHelperPorts, runMediaHelper, type MediaHelperScript } from "./media-helper-runner.js";
 import { isLocalAudioProvider } from "./local-audio-models.js";
 import { soundProviderFor, soundSetup, speechProviderFor, speechSetup } from "./audio-providers.js";
 import type { SoundFormat, SoundSetup } from "./sound-types.js";
-import type { SpeechSetup } from "./speech-types.js";
+import type { ElevenLabsVoices, SpeechSetup } from "./speech-types.js";
 import {
+  ELEVENLABS_DEFAULT_OPTION,
   ELEVENLABS_DEFAULT_VOICE,
   ELEVENLABS_VOICE_KEY,
+  elevenLabsDefaultVoiceId,
   SPEECH_MODEL,
   SPEECH_VOICES,
   speechCatalogue,
+  type VoiceOption,
 } from "./voice-catalogue.js";
+import {
+  ElevenLabsVoicesError,
+  listElevenLabsVoices,
+  withDefaultFirst,
+} from "./elevenlabs-voices.js";
+
+/** How long a Project's ElevenLabs voice list is reused before it is read again. */
+const VOICE_LIBRARY_TTL_MS = 10 * 60 * 1000;
 import { alignmentProblems, normalizeAlignment } from "./word-timings.js";
 import { readArtifactBytes } from "./artifact.js";
 import { soundPromptOf } from "./playback.js";
@@ -51,8 +69,17 @@ import {
   imagePrompt,
   type ImageResult,
 } from "./generated-image.js";
+import { IMAGE_STYLE, NARRATION_DELIVERY } from "./media-style.js";
 import type { WafWorkspace } from "./waf-workspace.js";
-import { prepareModule, collectModule, modulePrompt, verifyMediaArtifacts } from "./waf-module.js";
+import {
+  PLAYER_CHECK_DIR,
+  prepareModule,
+  collectModule,
+  moduleBookClause,
+  modulePrompt,
+  syncAssembledStateMachine,
+  verifyMediaArtifacts,
+} from "./waf-module.js";
 import {
   DISCARDED_PROPOSAL_FILE,
   PROPOSAL_FILE,
@@ -83,10 +110,15 @@ import {
 } from "./acceptance-harness.js";
 import {
   RESULTS_MAX_BYTES,
+  acceptanceCriteria,
   acceptanceReport,
   parseAcceptanceResults,
+  specSceneIds,
   testFileHash,
 } from "./acceptance-collect.js";
+import { playwrightVersion } from "./acceptance-service.js";
+import { playwrightCoreDir, type TestBrowser } from "./test-browser.js";
+import { viewportOf } from "./quality-check.js";
 import type { AcceptanceStage } from "./acceptance-types.js";
 import {
   PHONEMES_FILE,
@@ -136,6 +168,26 @@ import {
   type ActivityRunSummary,
   type DeterministicRunKind,
 } from "./domain.js";
+import {
+  expectedPrimarySceneCount,
+  mediaContractIssues,
+  mediaSpecSceneMismatch,
+  normalizeActivitySpec,
+  normalizeActivitySpecUpdate,
+  normalizeMediaSpec,
+  normalizeScenes,
+  normalizedSceneIds,
+  rawScenes,
+  specHasMediaEntries,
+} from "./spec-normalization.js";
+import {
+  CURRENT_SPEC_FILE,
+  SPEC_TEMPLATE,
+  SPEC_TEMPLATE_FILE,
+  activitySpecPrompt,
+  mediaSpecPrompt,
+  repairPrompt,
+} from "./spec-prompts.js";
 
 const MAX_CANDIDATE_BYTES = 2 * 1024 * 1024;
 
@@ -251,15 +303,19 @@ export class ActivityGenerationService implements ActivityGeneration {
   @Use() private readonly db!: Db;
   @Use() private readonly activities!: ActivityAuthoring;
   @Use() private readonly agents!: AgentConfig;
+  @Use() private readonly agentLifecycle!: AgentLifecycle;
+  @Use() private readonly paths!: Paths;
   @Use() private readonly sessions!: Sessions;
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly channels!: Channels;
   @Use() private readonly log!: Log;
   @Use() private readonly soundModels!: SoundModelPorts;
   @Use() private readonly localAudio!: LocalAudio;
+  @Use() private readonly mediaHelper!: MediaHelperPorts;
   private readonly localRuns = new Map<string, AbortController>();
   @Use() private readonly settings!: Settings;
   @Use() private readonly wafWorkspace!: WafWorkspace;
+  @Use() private readonly browser!: TestBrowser;
   private readonly locks = new ActivityLocks();
   private readonly observers = new Map<string, Observer>();
   private readonly operations = new Set<Promise<unknown>>();
@@ -316,6 +372,45 @@ export class ActivityGenerationService implements ActivityGeneration {
 
   private workspace(run: ActivityRun): string {
     return path.join(this.config.root, "activity-runs", run.runId);
+  }
+
+  /**
+   * Stages a module run's player check in `PLAYER_CHECK_DIR`: the acceptance harness and its
+   * runner, over a play link for this run's own module, so the agent checks what it built in
+   * the real framework rather than a page of its own. Nothing without the test browser or a
+   * Playwright to drive it; the prompt says what the agent does then.
+   */
+  private async stagePlayerCheck(
+    workspace: string,
+    projectId: string,
+    activityId: string,
+    runId: string,
+  ): Promise<void> {
+    const browserPath = await this.browser.executablePath();
+    if (!browserPath) return;
+    const version = await playwrightVersion(playwrightCoreDir());
+    if (!version) return;
+    const spec = (await this.activities.getActivity(projectId, activityId)).draft.spec;
+    const dir = path.join(workspace, PLAYER_CHECK_DIR);
+    await fs.mkdir(dir, { recursive: true });
+    await atomicJson(path.join(dir, ACCEPTANCE_INPUT_FILE), {
+      playUrl: await this.browser.playUrl(projectId, activityId, { runId }),
+      viewport: viewportOf(spec),
+      criteria: acceptanceCriteria(spec),
+      browserPath,
+      scenes: specSceneIds(spec),
+    });
+    await atomicJson(path.join(dir, "package.json"), {
+      private: true,
+      type: "module",
+      dependencies: { "playwright-core": version },
+    });
+    await fs.writeFile(path.join(dir, ACCEPTANCE_HARNESS_FILE), activityHarnessSource, {
+      flag: "wx",
+    });
+    await fs.writeFile(path.join(dir, ACCEPTANCE_RUNNER_FILE), runAcceptanceSource, {
+      flag: "wx",
+    });
   }
   private save(run: ActivityRun) {
     const { candidate, kind: _kind, ...metadata } = run;
@@ -438,35 +533,101 @@ export class ActivityGenerationService implements ActivityGeneration {
       });
   }
 
-  /** Which sound providers the agent can use now, judged by the keys its Vault holds. */
-  async soundSetup(projectId: string, agentId: string): Promise<SoundSetup> {
-    await this.agents.requireExists(projectId, agentId);
-    const keys = (await this.agents.getVault(projectId, agentId)).entries.map((entry) => entry.key);
+  /**
+   * Gives a Project created before the Media Agent existed that Agent, the Agents list's own
+   * way (AgentLifecycle.provisionMissingBuiltins); one already on disk is left as it is.
+   */
+  private async provisionMediaAgent(projectId: string): Promise<void> {
+    if (await this.agents.exists(projectId, MEDIA_AGENT_ID)) return;
+    await this.agentLifecycle.provisionMissingBuiltins(projectId);
+  }
+
+  /** Which sound providers the Media Agent can use now, judged by the keys its Vault holds. */
+  async soundSetup(projectId: string): Promise<SoundSetup> {
+    await this.provisionMediaAgent(projectId);
+    const keys = (await this.agents.getVault(projectId, MEDIA_AGENT_ID)).entries.map(
+      (entry) => entry.key,
+    );
     return {
       providers: soundSetup(keys, this.soundModels.agenthubModels, this.localAudio.availability()),
     };
   }
 
   /**
-   * The voices and speech providers the picker offers. With an agent, which providers its
-   * Vault has keys for and whether it names a default ElevenLabs voice: key names only, a
-   * value is never read.
+   * The voices and speech providers the picker offers: which providers the Media Agent's
+   * Vault has keys for. Key names only, a value is never read; the ElevenLabs library is
+   * `elevenLabsVoices`.
    */
-  async speechSetup(projectId: string, agentId?: string): Promise<SpeechSetup> {
+  async speechSetup(projectId: string): Promise<SpeechSetup> {
     const base = {
       provider: "Gemini",
       model: SPEECH_MODEL,
       voices: SPEECH_VOICES,
       vaultKey: "GEMINI_API_KEY",
     };
-    if (!agentId) return { ...base, catalogue: speechCatalogue(null) };
-    await this.agents.requireExists(projectId, agentId);
-    const keys = (await this.agents.getVault(projectId, agentId)).entries.map((entry) => entry.key);
+    await this.provisionMediaAgent(projectId);
+    const keys = (await this.agents.getVault(projectId, MEDIA_AGENT_ID)).entries.map(
+      (entry) => entry.key,
+    );
     return {
       ...base,
-      catalogue: speechCatalogue(keys),
+      catalogue: speechCatalogue(),
       providers: speechSetup(keys, this.localAudio.availability()),
     };
+  }
+
+  /** The last library read per Project, with the key and default voice it was read for. */
+  private readonly voiceLibraries = new Map<
+    string,
+    { fingerprint: string; at: number; voices: VoiceOption[] }
+  >();
+
+  /**
+   * The voice the default ElevenLabs voice speaks with in this Project: the Media Agent's
+   * Vault ELEVENLABS_VOICE_ID, else Loom's. The speech step compares bound clips with it.
+   */
+  async elevenLabsDefaultVoice(projectId: string): Promise<string> {
+    await this.provisionMediaAgent(projectId);
+    return this.defaultVoiceOf(projectId);
+  }
+
+  private async defaultVoiceOf(projectId: string): Promise<string> {
+    const vault = await loadAgentVault(this.paths.root, projectId, MEDIA_AGENT_ID);
+    return elevenLabsDefaultVoiceId(vault[ELEVENLABS_VOICE_KEY]);
+  }
+
+  /**
+   * The ElevenLabs voices the Media Agent's account can speak with, the default first and named,
+   * for the voice picker. The Media Agent's ELEVENLABS_API_KEY is sent to ElevenLabs' voice
+   * list and nowhere else; its ELEVENLABS_VOICE_ID says which voice the default is. A list is
+   * kept ten minutes per Project and key; `refresh` reads it again.
+   */
+  async elevenLabsVoices(projectId: string, refresh = false): Promise<ElevenLabsVoices> {
+    await this.provisionMediaAgent(projectId);
+    const vault = await loadAgentVault(this.paths.root, projectId, MEDIA_AGENT_ID);
+    const key = vault.ELEVENLABS_API_KEY?.trim();
+    if (!key) return { voices: [ELEVENLABS_DEFAULT_OPTION], problem: "credential_missing" };
+    const defaultVoiceId = elevenLabsDefaultVoiceId(vault[ELEVENLABS_VOICE_KEY]);
+    const fingerprint = createHash("sha256").update(`${key}\n${defaultVoiceId}`).digest("hex");
+    const cached = this.voiceLibraries.get(projectId);
+    if (
+      !refresh &&
+      cached?.fingerprint === fingerprint &&
+      Date.now() - cached.at < VOICE_LIBRARY_TTL_MS
+    )
+      return { voices: cached.voices };
+    try {
+      const voices = withDefaultFirst(
+        ELEVENLABS_DEFAULT_OPTION,
+        defaultVoiceId,
+        await listElevenLabsVoices(key),
+      );
+      this.voiceLibraries.set(projectId, { fingerprint, at: Date.now(), voices });
+      return { voices };
+    } catch (error) {
+      if (!(error instanceof ElevenLabsVoicesError)) throw error;
+      return { voices: [ELEVENLABS_DEFAULT_OPTION], problem: error.problem };
+    }
   }
 
   run(projectId: string, activityId: string, runId: string): Promise<ActivityRun> {
@@ -480,7 +641,7 @@ export class ActivityGenerationService implements ActivityGeneration {
   start(
     projectId: string,
     activityId: string,
-    agentId: string,
+    requestedAgentId: string,
     expectedRevision: string,
     module?: {
       bookMode?: string;
@@ -503,10 +664,18 @@ export class ActivityGenerationService implements ActivityGeneration {
       phonemes?: { language: string; words: unknown };
       /** A scene composition for a video or animation asset (experimental). */
       composition?: { language: string; assetKey: string };
+      /** The media pass: list the media the scenes' tags ask for (`generate_media_spec`). */
+      mediaSpec?: true;
+      /** A specification or media pass run again, told why the previous attempt failed. */
+      repair?: string;
     },
     runtime?: { codingAgentId?: string },
   ): Promise<ActivityRun> {
-    const codingAgentId = runtime?.codingAgentId;
+    // Speech, sound and image runs belong to the Media Agent whichever agent or coding agent
+    // the author chose: their helpers read the provider keys from its Vault.
+    const media = Boolean(module?.audio || module?.sound || module?.image);
+    const agentId = media ? MEDIA_AGENT_ID : requestedAgentId;
+    const codingAgentId = media ? undefined : runtime?.codingAgentId;
     return this.track(
       this.projectWork.run(projectId, () =>
         this.locks.run(activityId, async () => {
@@ -522,13 +691,22 @@ export class ActivityGenerationService implements ActivityGeneration {
               "Save or reload the draft before generating.",
             );
           const assist = module?.assist;
+          const mediaSpec = module?.mediaSpec === true;
+          const repair = module?.repair;
           const assessment = module?.assessment;
           const test = module?.test;
           const phonemes = module?.phonemes ? phonemesTarget(activity, module.phonemes) : undefined;
           // An author may ask for help writing the script, so an empty one is no reason
-          // to refuse a conversation; an assessment is written from the specification, and
-          // tests from its acceptance criteria.
-          if (!assist && !assessment && !test && !phonemes && !activity.draft.description.trim())
+          // to refuse a conversation; an assessment and the media pass are written from the
+          // specification, and tests from its acceptance criteria.
+          if (
+            !assist &&
+            !assessment &&
+            !test &&
+            !phonemes &&
+            !mediaSpec &&
+            !activity.draft.description.trim()
+          )
             throw new HttpError(
               400,
               "description_required",
@@ -548,9 +726,16 @@ export class ActivityGenerationService implements ActivityGeneration {
               module.test,
               module.phonemes,
               module.composition,
+              module.mediaSpec,
             ].filter(Boolean).length > 1
           )
             throw new HttpError(400, "generation_invalid", "Choose one media generation type.");
+          if (mediaSpec && (!activity.draft.spec || activity.draft.status !== "valid"))
+            throw new HttpError(
+              400,
+              "media_spec_spec_required",
+              "Save a valid specification before listing its media.",
+            );
           const audio = module?.audio ? audioTarget(activity, module.audio) : undefined;
           const sound = module?.sound
             ? soundTarget(activity, module.sound, this.soundModels.agenthubModels)
@@ -600,7 +785,9 @@ export class ActivityGenerationService implements ActivityGeneration {
             !assessment &&
             !test &&
             !phonemes &&
-            !composition
+            !composition &&
+            !mediaSpec &&
+            repair === undefined
           ) {
             if (!activity.draft.spec || activity.draft.status !== "valid")
               throw new HttpError(
@@ -639,20 +826,12 @@ export class ActivityGenerationService implements ActivityGeneration {
             }
             wafRoot = await this.wafWorkspace.requireRoot();
           }
-          if (codingAgentId && (audio || image || sound))
-            // Each calls its provider through a helper that reads the key from a Penguin
-            // agent's Vault, which an external agent's process never sees.
-            throw new HttpError(
-              400,
-              "runtime_unsupported",
-              `${image ? "Image" : sound ? "Sound" : "Speech"} generation runs on a Penguin agent. Choose one instead of a coding agent.`,
-            );
+          if (media) await this.provisionMediaAgent(projectId);
           // A coding agent's run is still a Session, filed under a Penguin Agent: the one
           // named, or the Project's default Agent when only the coding agent was.
-          const owner = agentId || (codingAgentId ? "default_agent" : agentId);
+          const owner = agentId || (codingAgentId ? DEFAULT_AGENT_ID : agentId);
           await this.agents.requireExists(projectId, owner);
           if (
-            !codingAgentId &&
             image &&
             !(await this.agents.getVault(projectId, agentId)).entries.some(
               (entry) => entry.key === "GEMINI_API_KEY",
@@ -661,7 +840,7 @@ export class ActivityGenerationService implements ActivityGeneration {
             throw new HttpError(
               400,
               "image_credential_missing",
-              "Add GEMINI_API_KEY to the selected Agent's Vault before generating an image.",
+              "Add GEMINI_API_KEY to the Media Agent's Vault before generating an image.",
             );
           if (audio) {
             const keys = (await this.agents.getVault(projectId, agentId)).entries.map(
@@ -686,17 +865,18 @@ export class ActivityGenerationService implements ActivityGeneration {
               throw new HttpError(
                 400,
                 "speech_credential_missing",
-                `Add ${credential ?? "the provider's key"} to the selected Agent's Vault before generating speech.`,
+                `Add ${credential ?? "the provider's key"} to the Media Agent's Vault before generating speech.`,
                 undefined,
                 credential ? { credential } : undefined,
               );
             }
-            if (audio.voice === ELEVENLABS_DEFAULT_VOICE && !keys.includes(ELEVENLABS_VOICE_KEY))
-              throw new HttpError(
-                400,
-                "speech_voice_missing",
-                `Add ${ELEVENLABS_VOICE_KEY} to the selected Agent's Vault, or type an ElevenLabs voice id, before generating speech.`,
-              );
+            // The default ElevenLabs voice is resolved now, as Loom's fingerprint does, so the
+            // clip records the voice it was really spoken with.
+            if (
+              speechProviderOf(audio) === "elevenlabs" &&
+              audio.voice === ELEVENLABS_DEFAULT_VOICE
+            )
+              audio.voiceId = await this.defaultVoiceOf(projectId);
           }
           if (sound) {
             const keys = (await this.agents.getVault(projectId, agentId)).entries.map(
@@ -723,7 +903,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               throw new HttpError(
                 400,
                 "sound_credential_missing",
-                `Add ${choice.credential ?? "the provider's key"} to the selected Agent's Vault before generating a sound.`,
+                `Add ${choice.credential ?? "the provider's key"} to the Media Agent's Vault before generating a sound.`,
               );
             sound.model = choice.model;
             sound.sound.model = choice.model;
@@ -758,9 +938,11 @@ export class ActivityGenerationService implements ActivityGeneration {
                           ? "image"
                           : audio || sound
                             ? "audio"
-                            : module
-                              ? "module"
-                              : "spec",
+                            : mediaSpec
+                              ? "media-spec"
+                              : module && repair === undefined
+                                ? "module"
+                                : "spec",
             ...(audio ? { audio } : sound ? { audio: sound } : {}),
             ...(image ? { image } : {}),
             ...(mediaText ? { mediaText } : {}),
@@ -885,6 +1067,8 @@ export class ActivityGenerationService implements ActivityGeneration {
                 expectedRevision,
               );
               await prepareModule(workspace, activity, wafRoot, bookMode);
+              if (run.kind === "module")
+                await this.stagePlayerCheck(workspace, projectId, activityId, run.runId);
             }
             if (audio || image) {
               const helperName = image ? "generate-image.mjs" : "generate-speech.mjs";
@@ -897,9 +1081,19 @@ export class ActivityGenerationService implements ActivityGeneration {
                   image ? "image_helper_missing" : "speech_helper_missing",
                   "The installed media helper is missing. Rebuild the bundled plugins.",
                 );
+              // The house style travels with the request, not the run: an image is drawn in it,
+              // and Gemini reads a narration in it (a word pronunciation follows its direction).
+              // The default ElevenLabs voice goes as the voice it resolved to.
+              const { voiceId, ...spoken } = audio ?? {};
               await atomicJson(
                 path.join(workspace, image ? "image-input.json" : "speech-input.json"),
-                image ?? audio,
+                image
+                  ? { ...image, style: IMAGE_STYLE }
+                  : audio && speechProviderOf(audio) === "gemini" && !audio.delivery
+                    ? { ...spoken, style: NARRATION_DELIVERY }
+                    : voiceId
+                      ? { ...spoken, voice: voiceId }
+                      : spoken,
               );
               // ElevenLabs is called with Node's own fetch, so nothing is installed for it;
               // images and Gemini speech go through agenthub.
@@ -937,6 +1131,30 @@ export class ActivityGenerationService implements ActivityGeneration {
               await fs.writeFile(path.join(workspace, "generate-sound.mjs"), helper, {
                 flag: "wx",
               });
+            }
+            if (audio || sound) {
+              // Speech and sound need no agent: the server runs the staged helper itself, as
+              // Loom's audio stage calls its provider, and collects the clip as a Session's
+              // would be. agenthub is installed first for Gemini speech and hub models.
+              if (this.stopped)
+                throw new HttpError(503, "activity_stopping", "Server is stopping.");
+              const controller = new AbortController();
+              this.localRuns.set(run.runId, controller);
+              const helper = sound
+                ? {
+                    script: "generate-sound.mjs" as const,
+                    install: sound.sound.provider === "agenthub",
+                  }
+                : {
+                    script: "generate-speech.mjs" as const,
+                    install: !!audio && speechProviderOf(audio) !== "elevenlabs",
+                  };
+              void this.track(this.generateAudio(run, helper, controller)).catch(
+                (error: unknown) => {
+                  this.log.line(`[activities] Audio settlement failed: ${String(error)}`);
+                },
+              );
+              return run;
             }
             if (mediaText)
               await atomicJson(path.join(workspace, "media-text-input.json"), mediaText);
@@ -1002,7 +1220,9 @@ export class ActivityGenerationService implements ActivityGeneration {
               !assessment &&
               !test &&
               !phonemes &&
-              !composition
+              !composition &&
+              !mediaSpec &&
+              repair === undefined
             ) {
               const chosen = await this.activities.implementationFeatures(projectId, activityId);
               features = chosen.features.filter((feature) =>
@@ -1011,11 +1231,20 @@ export class ActivityGenerationService implements ActivityGeneration {
               if (features.length)
                 await atomicJson(path.join(workspace, RUN_FEATURES_FILE), features);
             }
+            // The specification passes read the specification they start from, or, for a
+            // first specification, the template they fill in.
+            const specPass = run.kind === "spec" || run.kind === "media-spec";
+            const startingSpec = specPass ? activity.draft.spec : null;
+            if (startingSpec)
+              await atomicJson(path.join(workspace, CURRENT_SPEC_FILE), startingSpec);
+            else if (run.kind === "spec")
+              await atomicJson(path.join(workspace, SPEC_TEMPLATE_FILE), SPEC_TEMPLATE);
             if (this.stopped) {
               this.finish(run, "interrupted", "Server stopped before generation started.");
               return run;
             }
-            const prompt = composition
+            const expectedSceneIds = mediaSpec ? normalizedSceneIds(activity.draft.spec) : [];
+            const base = composition
               ? compositionPrompt
               : phonemes
                 ? phonemesPrompt
@@ -1031,13 +1260,24 @@ export class ActivityGenerationService implements ActivityGeneration {
                         ? mediaTextPrompt(mediaText)
                         : image
                           ? imagePrompt
-                          : audio
-                            ? speechPrompt(audio)
-                            : sound
-                              ? soundPrompt
-                              : module
-                                ? modulePrompt + featureClause(features)
-                                : generationPrompt;
+                          : mediaSpec
+                            ? mediaSpecPrompt(
+                                expectedSceneIds,
+                                specHasMediaEntries(activity.draft.spec),
+                                activity.activityType === "book",
+                              )
+                            : run.kind === "module"
+                              ? modulePrompt +
+                                (bookMode ? moduleBookClause : "") +
+                                featureClause(features)
+                              : activitySpecPrompt(
+                                  activity.draft.description,
+                                  !!activity.draft.spec,
+                                );
+            const prompt =
+              repair === undefined
+                ? base
+                : repairPrompt(base, repair, mediaSpec ? expectedSceneIds : undefined);
             const session = await this.sessionService.createSession({
               projectId,
               agentId: owner,
@@ -1156,6 +1396,120 @@ export class ActivityGenerationService implements ActivityGeneration {
     } finally {
       this.localRuns.delete(run.runId);
     }
+  }
+
+  /**
+   * A speech or sound run's helper, run by the server: no Session, no model request. What it
+   * wrote is collected as a Session's would be; a failure is the helper's own words.
+   */
+  private async generateAudio(
+    run: ActivityRun,
+    helper: { script: MediaHelperScript; install: boolean },
+    controller: AbortController,
+  ): Promise<void> {
+    const failed = async (error: unknown) => {
+      await this.locks.run(run.activityId, async () => {
+        const current = await this.getRun(run.projectId, run.activityId, run.runId);
+        if (current.status !== "running") return;
+        this.finish(
+          current,
+          this.stopped ? "interrupted" : "failed",
+          error instanceof Error ? error.message : "Audio generation failed.",
+        );
+      });
+    };
+    try {
+      const vault = await loadAgentVault(this.paths.root, run.projectId, MEDIA_AGENT_ID);
+      const runHelper = this.mediaHelper.runHelper ?? runMediaHelper;
+      const outcome = await runHelper({
+        workspace: this.workspace(run),
+        ...helper,
+        // agenthub is installed once per version and shared by every run.
+        cacheDir: path.join(this.config.root, "media-helper-cache"),
+        vault,
+        signal: controller.signal,
+      });
+      if (!outcome.ok) {
+        await failed(new Error(outcome.error));
+        return;
+      }
+      await this.locks.run(run.activityId, async () => {
+        const current = await this.getRun(run.projectId, run.activityId, run.runId);
+        if (current.status !== "running" || this.stopped || controller.signal.aborted) return;
+        try {
+          await this.keepAudio(current);
+        } catch (error) {
+          const conflict = error instanceof HttpError && error.code === "draft_conflict";
+          this.finish(
+            current,
+            conflict ? "conflict" : "failed",
+            (error as NodeJS.ErrnoException).code === "ENOENT"
+              ? `The ${helper.script} helper ended without ${
+                  current.audio?.sound
+                    ? SOUND_OUTPUT_FILES[current.audio.sound.format ?? "mp3"]
+                    : SPEECH_OUTPUT_FILES[speechProviderOf(current.audio ?? {})]
+                }.`
+              : error instanceof Error
+                ? error.message
+                : "Could not collect the clip.",
+          );
+        }
+      });
+    } catch (error) {
+      await failed(error);
+    } finally {
+      this.localRuns.delete(run.runId);
+    }
+  }
+
+  /**
+   * Keeps what an audio run wrote as its candidate: the provider's clip, and for a provider
+   * with timestamps the words' timings, checked before anything is stored. Throws when the
+   * output is missing or wrong, or the draft changed meanwhile.
+   */
+  private async keepAudio(run: ActivityRun): Promise<void> {
+    if (!run.audio) throw new Error("Audio target is missing.");
+    const sound = !!run.audio.sound;
+    const soundFormat = run.audio.sound
+      ? await soundOutputFormat(this.workspace(run), run.audio.sound.format ?? "mp3")
+      : undefined;
+    const file = soundFormat
+      ? SOUND_OUTPUT_FILES[soundFormat]
+      : await speechOutputFile(this.workspace(run), run.audio);
+    const format =
+      soundFormat ?? (speechProviderOf(run.audio) === "elevenlabs" ? "mp3" : undefined);
+    // Checked before the clip is kept, so a mismatch leaves nothing stored. Only a
+    // provider that returns timings is read; a timings file on any other run is
+    // not its provider's and is ignored.
+    const speech = run.audio.sound
+      ? undefined
+      : speechProviderFor({ speechProvider: speechProviderOf(run.audio) }, null);
+    const timings =
+      speech && "provider" in speech && speech.timings
+        ? await speechTimings(this.workspace(run), run.audio.script)
+        : undefined;
+    const bytes = await readArtifactBytes(path.join(this.workspace(run), file), AUDIO_MAX_BYTES);
+    const result = await this.activities.storeAudio(
+      run.projectId,
+      run.activityId,
+      run.runId,
+      bytes,
+      format,
+    );
+    run.candidate = JSON.stringify(timings?.length ? { ...result, wordTimings: timings } : result);
+    this.save(run);
+    await this.projectWork.run(run.projectId, async () => {
+      const current = await this.activities.getActivity(run.projectId, run.activityId);
+      if (current.draft.contentRevision !== run.inputRevision)
+        throw new HttpError(
+          409,
+          "draft_conflict",
+          sound
+            ? "The draft changed while the sound was being generated."
+            : "The draft changed during speech generation.",
+        );
+      this.finish(run, "succeeded");
+    });
   }
 
   openDeterministic(
@@ -1753,61 +2107,6 @@ export class ActivityGenerationService implements ActivityGeneration {
                 });
                 return;
               }
-              if (run.kind === "audio") {
-                const sound = !!run.audio?.sound;
-                const observer = this.observers.get(run.runId);
-                if (!observer?.completed)
-                  throw new Error(
-                    observer?.error ?? `${sound ? "Sound" : "Speech"} Session did not complete.`,
-                  );
-                if (!run.audio) throw new Error("Audio target is missing.");
-                const soundFormat = run.audio.sound
-                  ? await soundOutputFormat(this.workspace(run), run.audio.sound.format ?? "mp3")
-                  : undefined;
-                const file = soundFormat
-                  ? SOUND_OUTPUT_FILES[soundFormat]
-                  : await speechOutputFile(this.workspace(run), run.audio);
-                const format =
-                  soundFormat ?? (speechProviderOf(run.audio) === "elevenlabs" ? "mp3" : undefined);
-                // Checked before the clip is kept, so a mismatch leaves nothing stored. Only a
-                // provider that returns timings is read; a timings file on any other run is
-                // not its provider's and is ignored.
-                const speech = run.audio.sound
-                  ? undefined
-                  : speechProviderFor({ speechProvider: speechProviderOf(run.audio) }, null);
-                const timings =
-                  speech && "provider" in speech && speech.timings
-                    ? await speechTimings(this.workspace(run), run.audio.script)
-                    : undefined;
-                const bytes = await readArtifactBytes(
-                  path.join(this.workspace(run), file),
-                  AUDIO_MAX_BYTES,
-                );
-                const result = await this.activities.storeAudio(
-                  run.projectId,
-                  run.activityId,
-                  run.runId,
-                  bytes,
-                  format,
-                );
-                run.candidate = JSON.stringify(
-                  timings?.length ? { ...result, wordTimings: timings } : result,
-                );
-                this.save(run);
-                await this.projectWork.run(run.projectId, async () => {
-                  const current = await this.activities.getActivity(run.projectId, run.activityId);
-                  if (current.draft.contentRevision !== run.inputRevision)
-                    throw new HttpError(
-                      409,
-                      "draft_conflict",
-                      sound
-                        ? "The draft changed while the sound was being generated."
-                        : "The draft changed during speech generation.",
-                    );
-                  this.finish(run, "succeeded");
-                });
-                return;
-              }
               if (run.kind === "media-text") {
                 const observer = this.observers.get(run.runId);
                 if (!observer?.completed)
@@ -1975,6 +2274,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                     "module/src/book-reader/model.ts",
                     "module/src/book-reader/controller.ts",
                   );
+                await syncAssembledStateMachine(this.workspace(run), input, run.bookMode);
                 const result = await collectModule(
                   this.workspace(run),
                   readCandidate,
@@ -2002,7 +2302,15 @@ export class ActivityGenerationService implements ActivityGeneration {
                 });
                 return;
               }
-              const spec = validateActivitySpec(JSON.parse(run.candidate));
+              const current = await this.activities.getActivity(run.projectId, run.activityId);
+              let spec: Record<string, unknown>;
+              try {
+                spec = validateActivitySpec(specOfPass(run.kind, JSON.parse(run.candidate), current));
+              } catch (error) {
+                // What the agent wrote failed its checks: the one failure a repair run can fix.
+                run.repairable = true;
+                throw error;
+              }
               // Cancellation and completion share the activity lock. The authoring
               // service separately serializes this comparison against draft edits.
               if (this.stopped) return;
@@ -2024,23 +2332,19 @@ export class ActivityGenerationService implements ActivityGeneration {
                   ? `The session ended without ${
                       run.kind === "image"
                         ? "image.png"
-                        : run.kind === "audio"
-                          ? run.audio?.sound
-                            ? SOUND_OUTPUT_FILES[run.audio.sound.format ?? "mp3"]
-                            : SPEECH_OUTPUT_FILES[speechProviderOf(run.audio ?? {})]
-                          : run.kind === "module"
-                            ? "module-result.json or a required artifact"
-                            : run.kind === "media-text"
-                              ? "media-text.json"
-                              : run.kind === "assessment"
-                                ? `${ASSESSMENT_FILE} or ${ASSESSMENT_HINTS_FILE}`
-                                : run.kind === "test"
-                                  ? ACCEPTANCE_RESULTS_FILE
-                                  : run.kind === "phonemes"
-                                    ? PHONEMES_FILE
-                                    : run.kind === "composition"
-                                      ? `${COMPOSITION_FILE} or ${COMPOSITION_FRAMES_FILE}`
-                                      : "activity-spec.json"
+                        : run.kind === "module"
+                          ? "module-result.json or a required artifact"
+                          : run.kind === "media-text"
+                            ? "media-text.json"
+                            : run.kind === "assessment"
+                              ? `${ASSESSMENT_FILE} or ${ASSESSMENT_HINTS_FILE}`
+                              : run.kind === "test"
+                                ? ACCEPTANCE_RESULTS_FILE
+                                : run.kind === "phonemes"
+                                  ? PHONEMES_FILE
+                                  : run.kind === "composition"
+                                    ? `${COMPOSITION_FILE} or ${COMPOSITION_FRAMES_FILE}`
+                                    : "activity-spec.json"
                     }.`
                   : error instanceof Error
                     ? error.message
@@ -2055,6 +2359,53 @@ export class ActivityGenerationService implements ActivityGeneration {
       });
     }
   }
+}
+
+/**
+ * What a specification pass saves, Loom's way: the agent's JSON normalized onto the
+ * canonical scene shape. The first pass must write the scenes the script asks for; the media
+ * pass must keep the scenes it was given and list an asset for every tag. Throws, with
+ * the reason a repair attempt is told, when it does not.
+ */
+export function specOfPass(
+  kind: ActivityRun["kind"],
+  generated: unknown,
+  activity: Pick<ActivityDetail, "draft"> & Partial<Pick<ActivityDetail, "activityType">>,
+): Record<string, unknown> {
+  if (!generated || typeof generated !== "object" || Array.isArray(generated))
+    throw new Error("activity-spec.json must hold one JSON object.");
+  const written = generated as Record<string, unknown>;
+  const current = activity.draft.spec;
+  const description = activity.draft.description;
+  if (kind === "media-spec") {
+    const existing = current ?? {};
+    const mismatch = mediaSpecSceneMismatch(
+      normalizedSceneIds(existing),
+      normalizedSceneIds(written),
+    );
+    if (mismatch) throw new Error(mismatch);
+    // Book page media and narration come from the first pass's prose contract, not tags.
+    const enriched = normalizeMediaSpec(
+      existing,
+      activity.activityType === "book" ? existing : written,
+    );
+    const issues = mediaContractIssues(enriched);
+    if (issues.length)
+      throw new Error(`The listed media does not match the scene tags: ${issues.join("; ")}.`);
+    return enriched;
+  }
+  const count = normalizeScenes(rawScenes(written)).length;
+  const expected = expectedPrimarySceneCount(description);
+  if (count === 0 || (expected !== null && count !== expected))
+    throw new Error(
+      `The specification has ${count} scenes. It must include a non-empty top-level scenes list.` +
+        (expected !== null
+          ? ` The description defines ${expected} primary scenes, so it must contain exactly that many.`
+          : ""),
+    );
+  return current
+    ? normalizeActivitySpecUpdate(current, written, description)
+    : normalizeActivitySpec(written, description);
 }
 
 /** Validate and read the same opened file; never reopen a task-controlled path to read it. */
@@ -2079,22 +2430,6 @@ Write two files, each a JSON object without Markdown fences:
 2. ${ASSESSMENT_FILE}: {"items": [...]} with one item per entry of ${ASSESSMENT_HINTS_FILE}, in the same order, each keeping that entry's choices and correct answer. An item is {"interactionKey": "SIMPLE_CHOICE" or "MULTIPLE_RESPONSE_CHOICE", "configuration": {"shuffle": boolean, "question": {"text": "..."}, "simpleChoice" or "multipleResponseChoice": [{"id": "string id", "isCorrect": boolean, "value": {"text": "..."}}]}}. Use only those two interactions. Every item needs non-empty question text and at least two choices with unique non-empty string ids and non-empty text; a SIMPLE_CHOICE item has exactly one correct choice, a MULTIPLE_RESPONSE_CHOICE item at least one. Do not copy <items> or <item> tags into the assessment. Do not include qa_, prod_ or dev_ keys. Titles, scores and the assessment's configuration are derived; you may leave them out.
 Do not edit the input files. Do not delegate this task.
 Use Harness's normal approval flow for tool actions. Finish only after writing both files as valid JSON.`;
-
-const generationPrompt = `Generate a WAF HTML activity specification from description.md and input.json.
-Work in this workspace. Write activity-spec.json as a JSON object, without Markdown fences.
-Do not edit the input files or any activity collection. Do not delegate this task.
-The specification contract:
-- id: safe letters/numbers/dots/underscores/hyphens, starting and ending with a letter or number.
-- title: non-empty string; activityDescription: string.
-- moduleFolder, if present: waf-module- followed by a safe id.
-- runtime: { "engine": "html", "layout": "mainOnly", "theme": "park", "resolution": "640x480", "usesAssessment": false }. Choose layout, theme and resolution appropriate to the description.
-- scenes: a non-empty array of objects with string id and description.
-- Optional scene media: images, video and animations arrays of { key, description, targetPath? } with string values.
-- Optional scene audio: tracks array of { key, description, script?, targetPath?, interruptible? }; interruptible is boolean.
-- Optional acceptance_criterias: string array; audience: null or { gradeBand: string or null }.
-If input.json declares activityType book, scene order is page order. Give every page an explicit role: cover, title, or story. Cover is optional and first; title is optional and follows cover or is first; all remaining pages are story pages. Use unique scene IDs, exactly one image per page with a meaningful description, and no scene videos or animations. Each audio track must have a globally unique non-empty key. The first audio cue on a story page is its visible narration text and must contain words; later cues are hidden follow-up prompts. Cover/title lettering is baked into the image; story images contain no story text. Preserve authored narration order and wording.
-Describe the actual learning flow, interactions, feedback and media needs. Preserve useful existing draft details in input.json.
-Use Harness's normal approval flow for tool actions. Finish only after writing valid JSON.`;
 
 /** 403 while an admin has not turned the scene-video experiment on. */
 function experimentOff(): HttpError {
