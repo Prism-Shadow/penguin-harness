@@ -37,7 +37,11 @@ export function DraftStatus({
   );
 }
 
-/** Where each kind of run is followed; the rest are followed in Stages or Sessions. */
+/**
+ * Where each kind of run is followed. Stages follows the running sequence's own sessions, so
+ * it is only where to look while a sequence runs; a run started on its own (an Assemble
+ * pressed in Build) has its transcript in Sessions.
+ */
 const RUN_PANEL: Partial<Record<ActivityRunSummary["kind"], StudioPanel>> = {
   test: "tests",
   quality: "quality",
@@ -45,7 +49,7 @@ const RUN_PANEL: Partial<Record<ActivityRunSummary["kind"], StudioPanel>> = {
 };
 
 export function runPanel(run: ActivityRunSummary, pipelineRunning: boolean): StudioPanel {
-  return RUN_PANEL[run.kind] ?? (pipelineRunning || run.kind === "module" ? "run" : "sessions");
+  return RUN_PANEL[run.kind] ?? (pipelineRunning ? "run" : "sessions");
 }
 
 export function RunningChip({ run, onFollow }: { run: ActivityRunSummary; onFollow: () => void }) {

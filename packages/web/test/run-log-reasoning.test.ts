@@ -29,7 +29,7 @@ const ITEMS = [
   },
 ] as ChatItem[];
 
-function render(extra: Partial<StreamRenderContext>) {
+function render(extra: Partial<StreamRenderContext>, items: ChatItem[] = ITEMS) {
   const ctx: StreamRenderContext = {
     pendingApprovals: new Map(),
     onApprove: async () => {},
@@ -38,7 +38,7 @@ function render(extra: Partial<StreamRenderContext>) {
     taskRunning: true,
     ...extra,
   };
-  return renderToStaticMarkup(createElement(MessageItems, { items: ITEMS, ctx }));
+  return renderToStaticMarkup(createElement(MessageItems, { items, ctx }));
 }
 
 describe("run log reasoning", () => {
@@ -51,6 +51,14 @@ describe("run log reasoning", () => {
   it("leaves Chat's reasoning rows as they were", () => {
     const html = render({});
     expect(html).toContain(S.chat.thinking);
+    expect(html).not.toContain(S.chat.thoughtFor("49ms"));
+  });
+
+  it("drops reasoning that ended in a reply instead of giving it to a later step", () => {
+    const [thought, tool] = ITEMS;
+    const reply = { kind: "assistant_text", id: 3, text: "Built.", streaming: false } as ChatItem;
+    const html = render({ runLog: true }, [thought!, reply, { ...tool!, id: 4 } as ChatItem]);
+    expect(html).toContain("Built.");
     expect(html).not.toContain(S.chat.thoughtFor("49ms"));
   });
 });

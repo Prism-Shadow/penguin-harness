@@ -152,6 +152,8 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
       }
     } else {
       flushRun();
+      // Reasoning that ended in a reply rather than a step belongs to no later step.
+      thoughtMs = 0;
       segs.push({ type: "single", item });
     }
   });

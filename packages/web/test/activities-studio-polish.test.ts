@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stepSpan } from "../src/features/activities/pipeline-panel";
+import { runPanel } from "../src/features/activities/studio-status";
 import {
   mediaElementSpans,
   sceneHeadingPrefix,
@@ -147,5 +148,21 @@ describe("rail states", () => {
       },
     );
     expect(sectionTrails({ ...base, draftStatus: "draft" }).specification).toBeUndefined();
+  });
+});
+
+describe("following a run from the header", () => {
+  const run = (kind: string) => ({ kind }) as Parameters<typeof runPanel>[0];
+
+  it("opens Stages only while a sequence of stages runs", () => {
+    expect(runPanel(run("module"), true)).toBe("run");
+    // An Assemble pressed in Build has its transcript in Sessions, not in Stages.
+    expect(runPanel(run("module"), false)).toBe("sessions");
+  });
+
+  it("sends tests, quality checks and the conversation to their own panels", () => {
+    expect(runPanel(run("test"), true)).toBe("tests");
+    expect(runPanel(run("quality"), false)).toBe("quality");
+    expect(runPanel(run("assist"), false)).toBe("conversation");
   });
 });
