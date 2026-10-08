@@ -1,4 +1,11 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import type {
+  MediaHelperResult,
+  MediaHelperRun,
+  MediaHelperPorts,
+} from "../src/activities/media-helper-runner.js";
 
 export function speechWave(samples = 48): Buffer {
   const bytes = Buffer.alloc(44 + samples * 2);
@@ -56,3 +63,41 @@ export const fakeMp3Encoding = {
     },
   },
 };
+
+/**
+ * Stands in for the speech or sound helper the server runs: records each call, holds it until the test
+ * says what the helper wrote, and never starts a process or reaches a provider.
+ */
+export function fakeMediaHelper() {
+  const calls: MediaHelperRun[] = [];
+  let pending: { run: MediaHelperRun; resolve: (result: MediaHelperResult) => void } | null = null;
+  const ports: MediaHelperPorts = {
+    runHelper: (run) => {
+      calls.push(run);
+      return new Promise((resolve) => {
+        pending = { run, resolve };
+        run.signal.addEventListener(
+          "abort",
+          () => resolve({ ok: false, error: "Generation cancelled." }),
+          { once: true },
+        );
+      });
+    },
+  };
+  return {
+    ports,
+    calls,
+    /** The workspace of the call waiting to be finished, if it belongs to `runId`. */
+    waiting: (runId: string) =>
+      pending && path.basename(pending.run.workspace) === runId ? pending.run.workspace : null,
+    /** Writes `files` as the helper would, then ends the waiting call with `result`. */
+    async finish(files: Record<string, Buffer | string>, result: MediaHelperResult = { ok: true }) {
+      const current = pending;
+      if (!current) throw new Error("No speech helper call is waiting.");
+      pending = null;
+      for (const [name, bytes] of Object.entries(files))
+        await fs.writeFile(path.join(current.run.workspace, name), bytes);
+      current.resolve(result);
+    },
+  };
+}

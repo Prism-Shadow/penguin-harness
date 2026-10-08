@@ -1,23 +1,25 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestBegin, requestEnd } from "@prismshadow/penguin-core";
+import { afterEach, describe, expect, it } from "vitest";
 import type {
   ActivityDetail,
   ActivityDraft,
   ActivityRun,
   ActivityRunSummary,
 } from "../src/activities/domain.js";
-import type { ActivityGenerationService } from "../src/activities/generation.js";
 import type { AgenthubSoundModel } from "../src/activities/sound-models.js";
 import { AGENTHUB_VERSION } from "../src/activities/sound-models.js";
 import { soundProviderFor, soundSetup } from "../src/activities/audio-providers.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { SoundSetup } from "../src/activities/sound-types.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { activitySpec } from "./activity-fixtures.js";
-import { fakeMp3Encoding, mp3OfWave, soundMp3, speechWave } from "./audio-fixtures.js";
+import {
+  fakeMediaHelper,
+  fakeMp3Encoding,
+  mp3OfWave,
+  soundMp3,
+  speechWave,
+} from "./audio-fixtures.js";
 
 // The catalogue this build ships is empty. Tests pass a stand-in to prove that one entry is
 // all a hub sound model needs; nothing here reaches agenthub or a provider.
@@ -118,44 +120,14 @@ describe("sound generation through a model hub model", () => {
   type Output = "wav" | "mp3" | "both" | "invalid-wav";
 
   async function fixture(catalogue?: AgenthubSoundModel[]) {
-    let complete: () => void = () => {};
-    const waiting = new Set<string>();
-    let output: Output = "wav";
-    // Stands in for the Session that would install agenthub and run generate-sound.mjs: it
-    // writes what the helper would have.
-    const fakeSession = (row: SessionRow): RuntimeSession => ({
-      sessionId: row.sessionId,
-      dispose: () => {},
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok",
-      steer: () => false,
-      skipReconnectWait: () => false,
-      async *compact() {},
-      async *run(_input, options) {
-        yield requestBegin();
-        await new Promise<void>((resolve) => {
-          complete = resolve;
-          waiting.add(row.sessionId);
-          if (options.signal.aborted) resolve();
-          else options.signal.addEventListener("abort", () => resolve(), { once: true });
-        });
-        const workspace = row.workspace!;
-        if (output === "wav" || output === "both")
-          await fs.writeFile(path.join(workspace, "sound.wav"), speechWave(2400));
-        if (output === "invalid-wav")
-          await fs.writeFile(path.join(workspace, "sound.wav"), Buffer.from("RIFF-not-a-wave"));
-        if (output === "mp3" || output === "both")
-          await fs.writeFile(path.join(workspace, "sound.mp3"), soundMp3(5));
-        yield requestEnd("completed");
-      },
-    });
+    // Stands in for generate-sound.mjs, which the server runs itself after installing
+    // agenthub: it writes what the helper would have.
+    const helper = fakeMediaHelper();
     const t = await createTestApp({
       ...fakeMp3Encoding,
+      mediaHelperPorts: helper.ports,
       ...(catalogue ? { soundModelPorts: { agenthubModels: catalogue } } : {}),
     });
-    const adopt = t.deps.manager.adopt.bind(t.deps.manager);
-    vi.spyOn(t.deps.manager, "adopt").mockImplementation((row) => adopt(row, fakeSession(row)));
     cleanups.push(t.cleanup);
     const owner = await provisionUser(t.app, "hubsounder");
     const client = apiClient(t.app, owner.cookie);
@@ -210,15 +182,11 @@ describe("sound generation through a model hub model", () => {
       expectedRevision: ((await saved.json()) as ActivityDraft).contentRevision,
     });
     expect(planned.status, await planned.clone().text()).toBe(200);
-    const service = t.deps.tree.api<ActivityGenerationService>(
-      "ActivitiesModule",
-      "ActivityGeneration",
-    );
     const current = async () => (await (await client.get(endpoint)).json()) as ActivityDetail;
     const setVault = async (keys: string[]) =>
       expect(
         (
-          await client.put(`/api/projects/${PROJECT}/agents/default_agent/vault`, {
+          await client.put(`/api/projects/${PROJECT}/agents/media_agent/vault`, {
             entries: keys.map((key) => ({ key, value: "fake-test-only" })),
           })
         ).status,
@@ -236,23 +204,33 @@ describe("sound generation through a model hub model", () => {
       const response = await generate(extra);
       expect(response.status, await response.clone().text()).toBe(202);
       const run = (await response.json()) as ActivityRun;
-      await waitFor(() => waiting.has(run.sessionId!));
+      expect(run.sessionId).toBeNull();
+      await waitFor(() => helper.waiting(run.runId) !== null);
       return run;
     }
-    async function finish(run: ActivityRun, value: Output) {
-      output = value;
-      complete();
-      await waitFor(() => t.deps.manager.statusOf(run.sessionId!) === "idle");
-      await service.reconcile();
-      return (
+    const runOf = async (run: ActivityRun) =>
+      (
         (await (await client.get(`${endpoint}/runs`)).json()) as { runs: ActivityRunSummary[] }
       ).runs.find((entry) => entry.runId === run.runId)!;
+    async function finish(run: ActivityRun, value: Output) {
+      const files: Record<string, Buffer> = {};
+      if (value === "wav" || value === "both") files["sound.wav"] = speechWave(2400);
+      if (value === "invalid-wav") files["sound.wav"] = Buffer.from("RIFF-not-a-wave");
+      if (value === "mp3" || value === "both") files["sound.mp3"] = soundMp3(5);
+      await helper.finish(files);
+      let summary = await runOf(run);
+      const deadline = Date.now() + 5000;
+      while (summary.status === "running" && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        summary = await runOf(run);
+      }
+      return summary;
     }
     const tune = async () =>
       (await current()).draft.mediaPlan!.manifest.assets["en-US"]!.find(
         (asset) => asset.key === "tune",
       )!;
-    return { t, client, endpoint, setVault, generate, started, finish, tune };
+    return { t, client, endpoint, helper, setVault, generate, started, finish, tune };
   }
 
   it("lists the hub as unavailable and refuses a run with no_model while the catalogue is empty", async () => {
@@ -303,7 +281,13 @@ describe("sound generation through a model hub model", () => {
       credential: "GEMINI_API_KEY",
       format: "wav",
     });
-    const workspace = f.t.deps.sessionsRepo.findById(run.sessionId!)!.workspace!;
+    // agenthub is installed before the helper runs, with the Vault as its environment.
+    expect(f.helper.calls.at(-1)).toMatchObject({
+      script: "generate-sound.mjs",
+      install: true,
+      vault: { GEMINI_API_KEY: "fake-test-only" },
+    });
+    const workspace = f.helper.waiting(run.runId)!;
     expect(JSON.parse(await fs.readFile(path.join(workspace, "package.json"), "utf8"))).toEqual({
       private: true,
       type: "module",
@@ -360,7 +344,7 @@ describe("sound generation through a model hub model", () => {
       credential: "GEMINI_API_KEY",
       format: "wav",
     });
-    const workspace = f.t.deps.sessionsRepo.findById(run.sessionId!)!.workspace!;
+    const workspace = f.helper.waiting(run.runId)!;
     expect(
       JSON.parse(await fs.readFile(path.join(workspace, "sound-input.json"), "utf8")),
     ).toMatchObject({ model: "test-tune", credential: "GEMINI_API_KEY", format: "wav" });

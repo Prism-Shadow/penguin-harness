@@ -59,7 +59,8 @@ try {
     input.prompt.length > 5000 ||
     !/^[a-z]{2}-[A-Z]{2}$/.test(input.language) ||
     typeof input.assetKey !== "string" ||
-    !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(input.assetKey)
+    !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(input.assetKey) ||
+    (input.style !== undefined && (typeof input.style !== "string" || input.style.length > 2000))
   )
     throw new Error("invalid input");
   if (!process.env.GEMINI_API_KEY) throw new Error("missing credential");
@@ -80,8 +81,9 @@ try {
         content_items: [
           {
             type: "text",
-            text: `Create the image for ${input.assetKey} in ${input.language}:
-${input.prompt}`,
+            // The asset key names the file, not the picture: left out so it is never drawn.
+            text: `Create this image; any words in it are in ${input.language}:
+${input.prompt}${input.style?.trim() ? `\n\nDraw it in this style:\n${input.style}` : ""}`,
           },
         ],
       },

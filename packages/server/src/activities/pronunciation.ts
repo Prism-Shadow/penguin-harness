@@ -18,6 +18,7 @@ import { BOOK_WORD_ROLE, bookWordsOf, isBookWord, normalizeWord } from "./book-w
 import type { PhonemeTiming, WholeWordTiming } from "./book-word-types.js";
 import type { AssetManifest, MediaAsset } from "./media.js";
 import type { WordTiming } from "./word-timings.js";
+import { wordSpeechProvider } from "./voice-catalogue.js";
 
 /** The IPA symbols counted as vowels: the first sound holding one is the one drawn out. */
 export const VOWELS: ReadonlySet<string> = new Set(Array.from("aeiouyæɐɑɒɔəɛɜɞɚɝɪʊʌøœɵɘɤɯɶʉʏ"));
@@ -58,15 +59,18 @@ export function geminiScript(word: string, phonemes: readonly string[]): string 
 }
 
 /**
- * The script a word pronunciation is recorded from, for the provider it names (Gemini when it
- * names none, as for narration), or null when it has no sounds yet.
+ * The script a word pronunciation is recorded from, for its provider (`wordSpeechProvider`),
+ * or null when it has no sounds yet.
  */
 export function wordScript(
-  asset: Pick<MediaAsset, "word" | "normalizedWord" | "phonemes" | "speechProvider">,
+  asset: Pick<
+    MediaAsset,
+    "word" | "normalizedWord" | "phonemes" | "speechProvider" | "generatedAudio"
+  >,
 ): string | null {
   const word = asset.word ?? asset.normalizedWord;
   if (!word?.trim() || !asset.phonemes?.length) return null;
-  return asset.speechProvider === "elevenlabs"
+  return wordSpeechProvider(asset) === "elevenlabs"
     ? drawnOutScript(word, asset.phonemes)
     : geminiScript(word, asset.phonemes);
 }

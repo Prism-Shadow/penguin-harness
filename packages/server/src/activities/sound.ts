@@ -230,9 +230,3 @@ export function audioMimeType(bytes: Uint8Array): "audio/wav" | "audio/mpeg" {
     ? "audio/wav"
     : "audio/mpeg";
 }
-
-export const soundPrompt = `Generate the single sound candidate specified in sound-input.json.
-The supplied generate-sound.mjs helper calls the configured sound provider and reads its API key only from the Agent Vault-injected process environment. If package.json lists dependencies, install them first with npm install --ignore-scripts.
-Use normal Harness exec_command approval for that install and for node generate-sound.mjs. Do not print credentials or read them into your context. Do not edit the supplied helper, package.json or input files. Do not delegate or write outside this workspace.
-Run the helper once. It writes sound.mp3 or sound.wav. Do nothing else: never synthesize audio yourself or substitute another provider, model or prompt. If credentials or the provider fail, report the failure and stop; do not retry a billable provider request automatically.
-Finish only after the helper succeeds. The user will listen and explicitly accept the candidate; do not edit activity drafts or replace accepted media.`;

@@ -6,7 +6,7 @@ import type {
   SoundProviderStatus,
 } from "./sound-types.js";
 import type { SpeechProviderId, SpeechProviderStatus } from "./speech-types.js";
-import { SPEECH_PROVIDER_IDS } from "./voice-catalogue.js";
+import { DEFAULT_SPEECH_PROVIDER, SPEECH_PROVIDER_IDS } from "./voice-catalogue.js";
 import {
   LOCAL_AUDIO_MODELS,
   isLocalAudioProvider,
@@ -214,7 +214,7 @@ export function speechProviderFor(
       problem: "credential_missing" | "runtime_missing";
       credential: string;
     } {
-  const id = asset.speechProvider ?? "gemini";
+  const id = asset.speechProvider ?? DEFAULT_SPEECH_PROVIDER;
   if (id === "kokoro")
     return vaultKeys === null || local.kokoro
       ? { provider: "kokoro", credential: "", timings: false }

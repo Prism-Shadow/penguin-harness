@@ -65,6 +65,6 @@ describe("the speech setup route", () => {
       ...SPEECH_VOICES,
     ]);
     expect(body.catalogue.map((option) => option.id)).toContain("af_heart");
-    expect(body.catalogue).toEqual(JSON.parse(JSON.stringify(speechCatalogue(null))));
+    expect(body.catalogue).toEqual(JSON.parse(JSON.stringify(speechCatalogue())));
   });
 });

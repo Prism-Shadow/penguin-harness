@@ -7,6 +7,7 @@ import {
   parseMediaTextCandidate,
 } from "../src/activities/media-text.js";
 import { planMedia } from "../src/activities/media.js";
+import { IMAGE_STYLE, NARRATION_WRITING } from "../src/activities/media-style.js";
 import { activitySpec } from "./activity-fixtures.js";
 
 function activity(): ActivityDetail {
@@ -85,9 +86,18 @@ describe("activity media text candidates", () => {
       type: "audio",
       text: "Penguin",
     });
-    expect(mediaTextPrompt(mediaTextTarget(a, { language: "en-US", assetKey: "cover" }))).toContain(
-      "Improve only the selected image prompt",
+    const imagePrompt = mediaTextPrompt(
+      mediaTextTarget(a, { language: "en-US", assetKey: "cover" }),
     );
+    expect(imagePrompt).toContain("Improve only the selected image prompt");
+    // The house style: an image prompt leaves the drawing style to it, a script is written in it.
+    expect(imagePrompt).toContain(IMAGE_STYLE);
+    expect(imagePrompt).not.toContain(NARRATION_WRITING);
+    const scriptPrompt = mediaTextPrompt(
+      mediaTextTarget(a, { language: "en-US", assetKey: "voice" }),
+    );
+    expect(scriptPrompt).toContain(NARRATION_WRITING);
+    expect(scriptPrompt).not.toContain(IMAGE_STYLE);
   });
 
   it.each([
