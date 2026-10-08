@@ -30,15 +30,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * A configuration file may hold `{ "<moduleId>": { ... } }` or the contents directly.
  * Unwrapping only the single-key case is deliberate: a configuration that happens to have
  * one key named after the module is the wrapper, and one with several keys is the contents.
+ *
+ * `alsoKeyedBy` names other wrappers that count: Penguin's assembly wraps a configuration
+ * in the product code while its definition's id is the activity's, where Loom's modules
+ * use one name for both.
  */
 export function unwrapModuleConfiguration(
   configuration: unknown,
   moduleId: string,
+  alsoKeyedBy: readonly string[] = [],
 ): Record<string, unknown> {
   if (!isRecord(configuration)) return {};
   const keys = Object.keys(configuration);
-  if (keys.length === 1 && keys[0] === moduleId && isRecord(configuration[moduleId]))
-    return configuration[moduleId] as Record<string, unknown>;
+  const key = keys[0];
+  if (
+    keys.length === 1 &&
+    key !== undefined &&
+    (key === moduleId || alsoKeyedBy.includes(key)) &&
+    isRecord(configuration[key])
+  )
+    return configuration[key] as Record<string, unknown>;
   return configuration;
 }
 

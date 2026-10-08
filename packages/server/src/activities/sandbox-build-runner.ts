@@ -4,11 +4,15 @@
  * `SandboxBuilder` decides *whether* to build and makes sure only one build runs at a time.
  * This is the part it injects: the child process that actually does it.
  *
- * The module scaffold ships `webpack.config.cjs` and a `build` script, so the module's own
- * toolchain is what runs — not the harness's. A preview built by anything else would be a
+ * The module scaffold ships `webpack.config.cjs` and a `buildDebug` script (waf-module.ts),
+ * the same one the deploy runs, so the module's own toolchain is what runs — not the
+ * harness's. A preview built by anything else would be a
  * preview of something the deployment will never produce.
  */
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
 
 /** Long enough for a cold webpack build, short enough that a hung one is not forever. */
 export const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -135,7 +139,51 @@ ${trailer}`
 }
 
 /**
- * Runs `npm run build` in a module workspace and reports how it went.
+ * The script a module builds with: its own `build` when it has one, else the scaffold's
+ * `buildDebug`, which writes to `dist/debug`. Null when it has neither, or no readable
+ * package.json.
+ */
+export function moduleBuildScript(workspace: string): "build" | "buildDebug" | null {
+  let scripts: unknown;
+  try {
+    scripts = JSON.parse(readFileSync(path.join(workspace, "package.json"), "utf8"))?.scripts;
+  } catch {
+    return null;
+  }
+  if (!scripts || typeof scripts !== "object") return null;
+  const named = scripts as Record<string, unknown>;
+  if (typeof named.build === "string") return "build";
+  if (typeof named.buildDebug === "string") return "buildDebug";
+  return null;
+}
+
+/** Where this server's own `sass` is, handed to a child so a module need not have it. */
+export function sassPath(): string {
+  return createRequire(import.meta.url).resolve("sass");
+}
+
+/**
+ * Compiles `res/style.scss` to `res/style.css`, in the module's workspace as its cwd.
+ *
+ * WAF's module builder copies `res/` as it finds it and only rewrites `url()`s in `.css`, so
+ * a module whose stylesheet is SCSS builds without the `style.css` its definition requires.
+ * Deploy compiles it first (`prepare_deploy`), and so did Loom's sandbox.
+ */
+const STYLE_SCRIPT = String.raw`
+const fs = require('fs');
+const path = require('path');
+const res = path.resolve('res');
+const result = require(process.env.PENGUIN_SASS).compile(path.join(res, 'style.scss'), {
+    loadPaths: [res, path.resolve('node_modules')],
+    style: 'expanded',
+});
+fs.writeFileSync(path.join(res, 'style.css'), result.css);
+console.log('Compiled res/style.scss to res/style.css.');
+`;
+
+/**
+ * Runs the module's build script (see `moduleBuildScript`) in its workspace and reports how
+ * it went, compiling `res/style.scss` first as deploy does.
  *
  * Never throws. A build that could not start is a failed build with a reason — the author
  * asked to see their activity, and "npm is not installed" is an answer to that, while an
@@ -144,20 +192,40 @@ ${trailer}`
  * `npm_config_ignore_scripts` is not set here: the module's `.npmrc` already sets
  * `ignore-scripts`, and the build itself is a script.
  */
-export function spawnModuleBuild(
+export async function spawnModuleBuild(
   workspace: string,
   options: { timeoutMs?: number } = {},
 ): Promise<BuildOutcome> {
-  return runBuildChild(
+  const script = moduleBuildScript(workspace);
+  if (!script)
+    return { ok: false, log: "The module's package.json has no build or buildDebug script." };
+  let styleLog = "";
+  if (existsSync(path.join(workspace, "res", "style.scss"))) {
+    let sass: string;
+    try {
+      sass = sassPath();
+    } catch {
+      return { ok: false, log: "The server has no sass compiler installed." };
+    }
+    const style = await spawnNodeScript(
+      STYLE_SCRIPT,
+      { cwd: workspace, env: { PENGUIN_SASS: sass } },
+      options,
+    );
+    if (!style.ok) return style;
+    styleLog = style.log;
+  }
+  const build = await runBuildChild(
     {
       command: "npm",
-      args: ["run", "build"],
+      args: ["run", script],
       cwd: workspace,
       // Windows resolves npm through its shell wrapper.
       shell: process.platform === "win32",
     },
     options,
   );
+  return { ok: build.ok, log: clampLog(styleLog + build.log) };
 }
 
 /**

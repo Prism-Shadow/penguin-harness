@@ -1,5 +1,5 @@
 /**
- * Editing the module's configuration and assessment through the API: the edit is kept in the
+ * Editing the module's configuration, assessment and definition through the API: the edit is kept in the
  * draft, read back in place of the module's own document, reported stale when what it came
  * from changes, shared from the canonical ref, and discarded back to the exact old revision.
  */
@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ActivityDetail, ActivityDraft } from "../src/activities/domain.js";
 import type { ModuleDocuments } from "../src/activities/module-documents.js";
 import { ActivitySandboxService } from "../src/activities/sandbox-service.js";
+import { scaffoldModule } from "../src/activities/waf-module.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../src/mechanisms/activities.js";
 import { activitySpec, refFilesDir } from "./activity-fixtures.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
@@ -280,6 +281,66 @@ describe("module document edits", () => {
     expect(JSON.stringify(part)).toContain('"first"');
   });
 
+  it("edits the module definition on the canonical ref only, as an assembly would accept it", async () => {
+    const { t, create, documents, put, discard, specify } = await setup();
+    const one = await create(1);
+    const two = await create(2);
+    const specced = await specify(one.id, one.draft.contentRevision);
+    const definition = {
+      id: PRODUCT,
+      schemaVersion: "2.0.0",
+      specificationVersion: "2.0.0",
+      engine: "html",
+      require: { entry: { type: "javascript", url: "entry.js" } },
+      themes: {},
+    };
+
+    const refused = await put(two.id, "definition", definition, two.draft.contentRevision);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ error: { code: "not_canonical" } });
+
+    // What assembly checks it produced is what a save checks, so a save never breaks it.
+    const invalid = await put(
+      one.id,
+      "definition",
+      { ...definition, engine: "pixi" },
+      specced.contentRevision,
+    );
+    expect(invalid.status).toBe(422);
+    expect(await invalid.json()).toMatchObject({ error: { code: "document_invalid" } });
+
+    const saved = await put(one.id, "definition", definition, specced.contentRevision);
+    expect(saved.status, await saved.clone().text()).toBe(200);
+    const edited = (await saved.json()) as ActivityDraft;
+    expect((await documents(one.id)).definition).toEqual({
+      file: "definition.json",
+      value: definition,
+      edited: true,
+      stale: false,
+      editable: true,
+    });
+    // Every ref shares the canonical ref's module, and reads its edit without editing it.
+    expect((await documents(two.id)).definition).toMatchObject({
+      value: definition,
+      edited: true,
+      editable: false,
+    });
+
+    // Assembly writes the edit as the module's definition.
+    const files = scaffoldModule(
+      await t.deps.tree
+        .api<ActivityAuthoring>("ActivitiesModule", "ActivityAuthoring")
+        .getActivity("editor-work", one.id),
+    );
+    expect(JSON.parse(files["definition.json"]!)).toEqual(definition);
+
+    const back = await discard(one.id, "definition", edited.contentRevision);
+    expect(back.status, await back.clone().text()).toBe(200);
+    expect((await back.json()) as ActivityDraft).toMatchObject({
+      contentRevision: specced.contentRevision,
+    });
+  });
+
   it("lets a member read but not edit, and refuses an unknown document", async () => {
     const { t, client, base, create, documents, put } = await setup();
     const one = await create(1);
@@ -299,7 +360,7 @@ describe("module document edits", () => {
         })
       ).status,
     ).toBe(403);
-    expect((await put(one.id, "definition", {}, "x")).status).toBe(400);
+    expect((await put(one.id, "package", {}, "x")).status).toBe(400);
     expect((await put(one.id, "configuration", [1, 2], "x")).status).toBe(400);
   });
 

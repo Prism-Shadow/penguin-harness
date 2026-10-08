@@ -11,8 +11,7 @@
  * TypeScript are the module's and the framework's own versions, loaded from the checkout,
  * and a build that exhausts memory or never returns must not take the server with it.
  */
-import { createRequire } from "node:module";
-import { spawnNodeScript, type BuildOutcome } from "./sandbox-build-runner.js";
+import { sassPath, spawnNodeScript, type BuildOutcome } from "./sandbox-build-runner.js";
 
 /** What one checkout build needs to know. */
 export interface CheckoutBuildJob {
@@ -207,11 +206,6 @@ webpack(config(webpack), (error, stats) => {
     process.exit(stats.hasErrors() ? 1 : 0);
 });
 `;
-
-/** Where this server's own `sass` is, handed to the child so a module need not have it. */
-function sassPath(): string {
-  return createRequire(import.meta.url).resolve("sass");
-}
 
 /**
  * Builds a checkout module into its output directory, and reports how it went.

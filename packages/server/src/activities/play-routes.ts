@@ -97,6 +97,7 @@ export class ActivityPlayRoutes {
         {
           languageCode: c.req.query("language") ?? null,
           startSceneId: c.req.query("scene") ?? null,
+          runId: target.runId ?? null,
         },
         target.expiresAt,
         target.parentOrigin ?? null,
@@ -123,7 +124,12 @@ export class ActivityPlayRoutes {
     app.get("/:token/module/*", async (c) => {
       const target = c.get("target");
       return respond(
-        await this.sandbox.moduleFile(target.projectId, target.activityId, rest(c, "/module/")),
+        await this.sandbox.moduleFile(
+          target.projectId,
+          target.activityId,
+          rest(c, "/module/"),
+          target.runId ?? null,
+        ),
       );
     });
 
@@ -158,6 +164,7 @@ export class ActivityPlayRoutes {
         languageCode: c.req.query("languageCode") ?? null,
         startSceneId: c.req.query("startSceneId") ?? null,
         base: playBase(c.req.param("token") ?? ""),
+        runId: target.runId ?? null,
       });
       c.header("Cache-Control", "no-store");
       return c.json({ data: { attributes: { activity } } });
@@ -188,6 +195,7 @@ export class ActivityPlayRoutes {
         playBase(c.req.param("token") ?? ""),
         c.req.param("scoreId") ?? null,
         Array.isArray(data) ? data : [],
+        target.runId ?? null,
       );
       c.header("Cache-Control", "no-store");
       return c.json(part);

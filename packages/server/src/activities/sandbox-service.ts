@@ -14,14 +14,14 @@
  */
 import type { ModuleDocument, ModuleDocuments } from "./module-documents.js";
 import type { MediaStat } from "./media-stats.js";
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Component, Interface, Use, type Opaque } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import type { Config } from "../hmr/capabilities.js";
-import type { ActivityDraft, ActivityRecord } from "./domain.js";
+import type { ActivityDraft, ActivityRecord, ModuleDocumentKind } from "./domain.js";
 import { playingBuild } from "./module-builds.js";
 import {
   activityPayload,
@@ -59,11 +59,18 @@ import {
 import {
   checkoutOutputRoot,
   checkoutServable,
+  definitionMediaFolders,
   moduleFileRoots,
+  runBuildOutput,
   moduleSourceDirs,
   type ModuleSource,
 } from "./sandbox-source.js";
 import type { WafWorkspace } from "./waf-workspace.js";
+import type { ActivityPlayLinks, PlayTarget } from "./play-links.js";
+import {
+  readModuleStateMachine,
+  syncStateMachineConfiguration,
+} from "./state-machine-configuration.js";
 import {
   isAssessmentData,
   nextAssessmentPart,
@@ -128,43 +135,7 @@ const NAVBAR_CONFIGURATION = "none_navBar.json";
 const ASSESSMENT_SESSION_TTL_MS = 30 * 60 * 1000;
 const MAX_ASSESSMENT_SESSIONS = 500;
 
-/**
- * How long a play link works. Every file the page fetches rides on it, and a book fetches
- * its pages as they are turned, so it has to outlast a working session, not one play
- * through. The page says when it has run out (see `sandbox-player`); Reload issues a new one.
- */
-export const PLAY_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
-
-/** How finely a play link's expiry is rounded up; see `playLinkExpiry`. */
-const PLAY_TOKEN_STEP_MS = 60 * 60 * 1000;
-
-/**
- * When a link signed now stops working: at least the full lifetime, rounded up to the hour.
- *
- * Rounded so every link to the same activity signed within the hour is the SAME link. The
- * token is part of every URL the player fetches, and Reload signs a new one; without this,
- * each reload would start from an empty browser cache however long its media may be kept.
- */
-export function playLinkExpiry(nowMs: number): number {
-  return Math.ceil((nowMs + PLAY_TOKEN_TTL_MS) / PLAY_TOKEN_STEP_MS) * PLAY_TOKEN_STEP_MS;
-}
-
-/** What a play token grants: one activity's preview, on one host, until it expires. */
-export interface PlayTarget {
-  projectId: string;
-  activityId: string;
-  /** Host (no port) the preview must be served from; anything else is refused. */
-  host: string;
-  /** True when that host is the App's own, so the page must be sandboxed off its origin. */
-  shared: boolean;
-  expiresAt: number;
-  /**
-   * The App origin that asked for the link, which the page reports its state to (see the
-   * player's inspector bridge). Signed with the rest, so a page is never told to talk to
-   * an origin other than the one that opened it. Absent on links minted before it existed.
-   */
-  parentOrigin?: string;
-}
+export { PLAY_TOKEN_TTL_MS, playLinkExpiry, type PlayTarget } from "./play-links.js";
 
 export interface SandboxMediaResponse {
   status: number;
@@ -183,6 +154,8 @@ export interface PayloadOptions {
    * the authenticated API's; a played preview passes its own token-bearing path.
    */
   base?: string | null;
+  /** The module run to play instead of the activity's playing build; see `PlayTarget.runId`. */
+  runId?: string | null;
 }
 
 /** A player page, or the reason there is not one to show. */
@@ -202,7 +175,7 @@ type RangeRequest = {
 /** The sandbox as its callers see it. */
 export abstract class ActivitySandbox extends Interface<{
   status(projectId: string, activityId: string): Promise<SandboxStatus>;
-  /** The module's configuration and assessment for a ref; `canEdit` says whether the viewer owns the project. */
+  /** The module's configuration, assessment and definition for a ref; `canEdit` says whether the viewer owns the project. */
   moduleDocuments(
     projectId: string,
     activityId: string,
@@ -213,7 +186,13 @@ export abstract class ActivitySandbox extends Interface<{
   /** Every asset of the media plan with the size of the file it is bound to. */
   mediaStats(projectId: string, activityId: string): Promise<MediaStat[]>;
   payload(projectId: string, activityId: string, options: PayloadOptions): Promise<ActivityPayload>;
-  moduleFile(projectId: string, activityId: string, rawPath: string): Promise<SandboxMediaResponse>;
+  moduleFile(
+    projectId: string,
+    activityId: string,
+    rawPath: string,
+    /** The module run a play link names; see `PlayTarget.runId`. */
+    runId?: string | null,
+  ): Promise<SandboxMediaResponse>;
   /** One file of the checkout's navigation bar module, which every played layout carries. */
   navbarFile(rawPath: string): Promise<SandboxMediaResponse>;
   build(projectId: string, activityId: string, force?: boolean): Promise<SandboxBuildReport>;
@@ -233,6 +212,8 @@ export abstract class ActivitySandbox extends Interface<{
     shared: boolean,
     /** The App origin asking; the page reports its state there and nowhere else. */
     parentOrigin?: string,
+    /** A module run of this activity to play instead of its playing build. */
+    runId?: string,
   ): Promise<{ token: string; expiresAt: number }>;
   /** What a play token grants, or null when it is forged, expired or for another host. */
   verifyPlay(token: string, host: string): PlayTarget | null;
@@ -262,6 +243,8 @@ export abstract class ActivitySandbox extends Interface<{
     base: string,
     scoreId: string | null,
     responses: unknown[],
+    /** The module run a play link names; see `PlayTarget.runId`. */
+    runId?: string | null,
   ): Promise<Record<string, unknown>>;
 }>() {}
 
@@ -275,6 +258,7 @@ export class ActivitySandboxService implements ActivitySandbox {
   @Use() private readonly config!: Config;
 
   @Use() private readonly wafWorkspace!: WafWorkspace;
+  @Use() private readonly links!: ActivityPlayLinks;
 
   /** The WAF checkout, or null when there is none. A field so a test can point it. */
   private readonly locateWafRoot: () => Promise<string | null> = () => this.wafWorkspace.root();
@@ -301,9 +285,6 @@ export class ActivitySandboxService implements ActivitySandbox {
 
   /** A build of the player already under way, joined by anyone who asks meanwhile. */
   private playerBuilding: Promise<{ ok: boolean; log: string; dir: string }> | null = null;
-
-  /** Signs play links. Per process: a restart ends every open preview, which is fine. */
-  private readonly playSecret = randomBytes(32);
 
   /** Assessment sessions of played previews, keyed by activity and score id. */
   private readonly assessments = new Map<
@@ -340,7 +321,10 @@ export class ActivitySandboxService implements ActivitySandbox {
     projectId: string,
     // The draft, when the caller has it, names a pinned build.
     activity: ActivityRecord & { draft?: Pick<ActivityDraft, "pinnedModuleRunId"> },
+    // A play link that names a module run plays that run, and nothing else.
+    runId?: string | null,
   ): Promise<ModuleSource | null> {
+    if (runId) return this.runModule(projectId, activity.id, runId);
     const run = await this.builtModule(projectId, activity.id, activity.draft?.pinnedModuleRunId);
     if (run) return { kind: "run", root: run };
     const product = this.activities.productOf(activity);
@@ -358,6 +342,26 @@ export class ActivitySandboxService implements ActivitySandbox {
       root,
       output: checkoutOutputRoot(this.config.root, product.moduleFolder),
       moduleFolder: product.moduleFolder,
+    };
+  }
+
+  /**
+   * The workspace of one module run of this activity, while it runs or once it succeeded;
+   * null for any other run. A running assembly is played so its agent can check the module
+   * in the real player before it finishes; a failed one never is, for the reason
+   * `builtModule` gives.
+   */
+  private async runModule(
+    projectId: string,
+    activityId: string,
+    runId: string,
+  ): Promise<ModuleSource | null> {
+    const run = await this.generation.run(projectId, activityId, runId).catch(() => null);
+    if (!run || run.kind !== "module") return null;
+    if (run.status !== "running" && run.status !== "succeeded") return null;
+    return {
+      kind: "run",
+      root: sandboxModuleRoot(path.join(this.config.root, "activity-runs", run.runId)),
     };
   }
 
@@ -451,18 +455,27 @@ export class ActivitySandboxService implements ActivitySandbox {
         "configuration",
       ),
       assessment: await this.activities.effectiveModuleDocument(projectId, activity, "assessment"),
+      definition: await this.activities.effectiveModuleDocument(projectId, activity, "definition"),
     };
-    if (!source && !edits.configuration && !edits.assessment)
-      return { source: null, configuration: null, assessment: null, canonicalRefNum };
+    if (!source && !edits.configuration && !edits.assessment && !edits.definition)
+      return {
+        source: null,
+        configuration: null,
+        assessment: null,
+        definition: null,
+        canonicalRefNum,
+      };
+    const canonical = this.activities.isCanonicalRef(activity);
     const editable = {
       configuration: canEdit,
-      assessment: canEdit && this.activities.isCanonicalRef(activity),
+      assessment: canEdit && canonical,
+      definition: canEdit && canonical,
     };
     const read = async (folder: string, names: string[]) => {
       if (!source) return null;
       for (const name of names) {
         const value = await readJsonFile(path.join(source.root, folder, name));
-        if (value) return { file: `${folder}/${name}`, value };
+        if (value) return { file: folder ? `${folder}/${name}` : name, value };
       }
       return null;
     };
@@ -473,7 +486,7 @@ export class ActivitySandboxService implements ActivitySandbox {
         ? `${activity.productCode}-${canonicalRefNum}.json`
         : null;
     const document = async (
-      kind: "configuration" | "assessment",
+      kind: ModuleDocumentKind,
       folder: string,
       names: string[],
     ): Promise<ModuleDocument | null> => {
@@ -482,7 +495,7 @@ export class ActivitySandboxService implements ActivitySandbox {
       // canonical ref's assessment, which every ref shares.
       if (edit)
         return {
-          file: `${folder}/${names.at(-1)!}`,
+          file: folder ? `${folder}/${names.at(-1)!}` : names.at(-1)!,
           value: edit.value,
           edited: true,
           stale: edit.stale,
@@ -498,6 +511,7 @@ export class ActivitySandboxService implements ActivitySandbox {
         own,
         ...(sharedName ? [sharedName] : []),
       ]),
+      definition: await document("definition", "", ["definition.json"]),
       canonicalRefNum,
     };
   }
@@ -557,12 +571,39 @@ export class ActivitySandboxService implements ActivitySandbox {
 
   /** When a source was last built, from disk, so a restart does not forget it. */
   private async builtAtMs(source: ModuleSource): Promise<number | null> {
-    const marker =
+    // A run's built bundle is in dist/debug, or beside the definition for older assemblies.
+    const markers =
       source.kind === "run"
-        ? path.join(source.root, "definition.json")
-        : path.join(source.output, "entry.js");
-    const stat = await fs.stat(marker).catch(() => null);
-    return stat?.isFile() ? stat.mtimeMs : null;
+        ? [path.join(runBuildOutput(source.root), "entry.js"), path.join(source.root, "entry.js")]
+        : [path.join(source.output, "entry.js")];
+    const stats = await Promise.all(markers.map((marker) => fs.stat(marker).catch(() => null)));
+    const times = stats.filter((stat) => stat?.isFile()).map((stat) => stat!.mtimeMs);
+    if (!times.length) return null;
+    // A build without a file its definition requires is not a build. Before run builds
+    // compiled res/style.scss, an assembly's own buildDebug left dist/debug without the
+    // style.css every scaffold requires, newer than its sources and so never rebuilt.
+    if (source.kind === "run" && (await this.missingRequirement(source))) return null;
+    return Math.max(...times);
+  }
+
+  /** Whether a file the module's definition requires is in none of the roots it is served from. */
+  private async missingRequirement(source: ModuleSource): Promise<boolean> {
+    const definition = await readJsonFile(path.join(source.root, "definition.json"));
+    const required = Object.values((definition?.require ?? {}) as Record<string, { url?: unknown }>)
+      .map((entry) => entry?.url)
+      .filter((url): url is string => typeof url === "string" && !url.includes("{{"));
+    for (const url of required) {
+      const found = await Promise.all(
+        moduleFileRoots(source).map((root) =>
+          fs
+            .stat(path.join(root, url))
+            .then((stat) => stat.isFile())
+            .catch(() => false),
+        ),
+      );
+      if (!found.includes(true)) return true;
+    }
+    return false;
   }
 
   private async buildCheckout(moduleRoot: string) {
@@ -601,9 +642,21 @@ export class ActivitySandboxService implements ActivitySandbox {
       builtAtMs: source ? await this.builtAtMs(source) : null,
       sourceMtimesMs: source ? await this.mtimes(moduleSourceDirs(source)) : [],
     });
+    if (!source) {
+      // No assembly and no checkout folder: there is nothing a build could build, and a
+      // client told otherwise asks for one and gets refused.
+      const reply = sandboxStatus(state, null);
+      return state === "pending_scaffold"
+        ? {
+            ...reply,
+            buildable: false,
+            message: `${reply.message} Run Assemble module in Stages to build one.`,
+          }
+        : { ...reply, buildable: false };
+    }
     // The last build's output, so a failed build is visible rather than showing as a
     // preview that simply never appears.
-    return sandboxStatus(state, source ? this.builderFor(source).lastLog(source.root) : null);
+    return sandboxStatus(state, this.builderFor(source).lastLog(source.root));
   }
 
   async hasModule(projectId: string, activity: ActivityRecord): Promise<boolean> {
@@ -630,14 +683,17 @@ export class ActivitySandboxService implements ActivitySandbox {
     const spec = activity.draft.spec;
     if (!spec)
       throw new HttpError(409, "preview_not_ready", "Save a specification before previewing.");
-    const source = await this.moduleSource(projectId, activity);
+    const source = await this.moduleSource(projectId, activity, options.runId);
     if (!source)
       throw new HttpError(409, "preview_not_built", "No module has been built for this activity.");
     const workspace = source.root;
     const base = options.base ?? `/api/projects/${projectId}/activities/${activity.id}/sandbox/`;
 
     const runtime = (spec.runtime ?? {}) as Record<string, unknown>;
-    const definition = await readJsonFile(path.join(workspace, "definition.json"));
+    // An author's edit of the definition stands in for the module's own, as the configuration's does.
+    const definition =
+      (await this.activities.effectiveModuleDocument(projectId, activity, "definition"))?.value ??
+      (await readJsonFile(path.join(workspace, "definition.json")));
     if (!definition)
       throw new HttpError(409, "preview_not_built", "The built module has no definition.");
     const packageJson = await readJsonFile(path.join(workspace, "package.json"));
@@ -682,7 +738,19 @@ export class ActivitySandboxService implements ActivitySandbox {
       "configuration",
     );
     const raw = edited?.value ?? (await readJsonFile(configurationFile)) ?? {};
-    let configuration = unwrapModuleConfiguration(raw, declaration.id);
+    let configuration = unwrapModuleConfiguration(raw, declaration.id, [activity.productCode]);
+    // The machine and scene catalog as Loom keeps them synced, so an assembly made before
+    // Penguin synced them, or an edit that predates them, still boots its state machine.
+    // A book's configuration carries its reader's own catalog, compiled with the book.
+    const machine =
+      activity.activityType === "book"
+        ? null
+        : await readModuleStateMachine(workspace, activity.productCode, activity.refNum);
+    if (machine) {
+      const holder: Record<string, unknown> = { product: structuredClone(configuration) };
+      syncStateMachineConfiguration(holder, "product", machine, spec);
+      configuration = holder.product as Record<string, unknown>;
+    }
     configuration = applyAliasesToLanguageGroups(configuration, assets, aliases);
     configuration = versionMediaUrls(
       configuration,
@@ -741,13 +809,14 @@ export class ActivitySandboxService implements ActivitySandbox {
     projectId: string,
     activityId: string,
     rawPath: string,
+    runId: string | null = null,
   ): Promise<SandboxMediaResponse> {
     const invalid = () =>
       new HttpError(400, "module_path_invalid", "That is not a module file this preview serves.");
     const relative = moduleFilePath(rawPath);
     if (!relative) throw invalid();
     const activity = await this.activities.getActivity(projectId, activityId);
-    const source = await this.moduleSource(projectId, activity);
+    const source = await this.moduleSource(projectId, activity, runId);
     if (!source)
       throw new HttpError(409, "preview_not_built", "No module has been built for this activity.");
     if (source.kind === "checkout" && !checkoutServable(relative)) throw invalid();
@@ -921,52 +990,22 @@ export class ActivitySandboxService implements ActivitySandbox {
     host: string,
     shared: boolean,
     parentOrigin?: string,
+    runId?: string,
   ): Promise<{ token: string; expiresAt: number }> {
     // Refuses a link to an activity that does not exist while the caller can still be told.
     const activity = await this.activities.getActivity(projectId, activityId);
-    const target: PlayTarget = {
+    return this.links.sign({
       projectId,
       activityId: activity.id,
-      host: host.toLowerCase(),
+      host,
       shared,
-      expiresAt: playLinkExpiry(Date.now()),
       ...(parentOrigin ? { parentOrigin } : {}),
-    };
-    const body = Buffer.from(JSON.stringify(target), "utf8").toString("base64url");
-    return {
-      token: `${body}.${this.mac(body).toString("base64url")}`,
-      expiresAt: target.expiresAt,
-    };
-  }
-
-  private mac(body: string): Buffer {
-    return createHmac("sha256", this.playSecret).update(body).digest();
+      ...(runId ? { runId } : {}),
+    });
   }
 
   verifyPlay(token: string, host: string): PlayTarget | null {
-    const dot = token.indexOf(".");
-    if (dot <= 0 || dot === token.length - 1) return null;
-    const body = token.slice(0, dot);
-    const provided = Buffer.from(token.slice(dot + 1), "base64url");
-    const expected = this.mac(body);
-    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return null;
-    let target: PlayTarget;
-    try {
-      target = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as PlayTarget;
-    } catch {
-      return null;
-    }
-    if (
-      typeof target?.projectId !== "string" ||
-      typeof target.activityId !== "string" ||
-      typeof target.host !== "string" ||
-      typeof target.expiresAt !== "number"
-    )
-      return null;
-    if (Date.now() >= target.expiresAt) return null;
-    // The host binding is what keeps a preview on the origin it was issued for.
-    if (target.host !== host.toLowerCase()) return null;
-    return target;
+    return this.links.verify(token, host);
   }
 
   /**
@@ -987,7 +1026,7 @@ export class ActivitySandboxService implements ActivitySandbox {
     const activity = await this.activities.getActivity(projectId, activityId);
     const spec = activity.draft.spec;
     if (!spec) return failurePage(409, "Save a specification before previewing.");
-    const source = await this.moduleSource(projectId, activity);
+    const source = await this.moduleSource(projectId, activity, options.runId);
     if (!source) return failurePage(409, "No module has been built for this activity yet.");
     // A module Penguin assembled may be played before its configuration exists, and plays
     // empty. A Loom module without one was never finished -- Loom's own sandbox refused to
@@ -1011,6 +1050,25 @@ export class ActivitySandboxService implements ActivitySandbox {
     const navbarBuilt = navbar ? await this.ensureCurrent(navbar) : null;
     if (navbarBuilt && !navbarBuilt.ok)
       return failurePage(500, "The navigation bar did not build.", navbarBuilt.log);
+    // The media checkout is sparse: the shared files the navbar and the module require are
+    // added to it before the framework asks for them, or it fails to load the activity.
+    const definitions = await Promise.all(
+      [source, navbar].map((each) =>
+        each ? readJsonFile(path.join(each.root, "definition.json")) : null,
+      ),
+    );
+    const folders = definitions.flatMap((each) => definitionMediaFolders(each));
+    if (folders.length) {
+      try {
+        await this.wafWorkspace.ensureMedia(folders);
+      } catch (error) {
+        return failurePage(
+          500,
+          "The shared media this activity needs could not be fetched.",
+          (error as Error).message,
+        );
+      }
+    }
     const player = await this.ensurePlayer();
     if (!player.ok) return failurePage(500, "The player did not build.", player.log);
 
@@ -1122,6 +1180,7 @@ export class ActivitySandboxService implements ActivitySandbox {
     base: string,
     scoreId: string | null,
     responses: unknown[],
+    runId: string | null = null,
   ): Promise<Record<string, unknown>> {
     const activity = await this.activities.getActivity(projectId, activityId);
     const nextId = () => randomBytes(6).readUIntBE(0, 6) % 999_999_999_999;
@@ -1136,7 +1195,7 @@ export class ActivitySandboxService implements ActivitySandbox {
       return part;
     }
 
-    const source = await this.moduleSource(projectId, activity);
+    const source = await this.moduleSource(projectId, activity, runId);
     if (!source)
       throw new HttpError(409, "preview_not_built", "No module has been built for this activity.");
     // This ref's assessment, or the canonical ref's when this ref has none of its own.
