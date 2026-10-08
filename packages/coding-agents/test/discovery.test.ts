@@ -292,6 +292,18 @@ describe("resolveCommandPath", () => {
     expect([...listings.keys()].sort()).toEqual([bin, missing].sort());
   });
 
+  // A listing must not refuse what the stat would find: on a volume that ignores case (macOS's
+  // default, Windows) `claude` reaches a file listed as `Claude`, and on one that does not, it
+  // does not. Either way the shared listings answer exactly as the stat alone does.
+  it("resolves a name that differs from the file only in case as the stat alone does", async () => {
+    const file = path.join(bin, WIN ? "Mixed.CMD" : "Mixed");
+    await fs.writeFile(file, "", { mode: 0o755 });
+    const env = { PATH: bin };
+    const alone = await resolveCommandPath("mixed", { env });
+    const listed = await resolveCommandPath("mixed", { env, listings: new Map() });
+    expect(listed).toBe(alone);
+  });
+
   // npm drops an extensionless POSIX shim beside the spawnable .cmd twin; on Windows
   // the shim must lose, or discovery hands out a command Windows cannot start.
   it.skipIf(!WIN)("prefers the .cmd twin over npm's extensionless shim", async () => {
