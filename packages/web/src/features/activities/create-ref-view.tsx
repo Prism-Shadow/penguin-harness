@@ -109,8 +109,6 @@ export function CreateRefView({
   voices,
   uploads,
   uploadsLoading,
-  agents,
-  defaultAgent,
   onIdentity,
   onOpenAssessment,
   onCreated,
@@ -125,9 +123,6 @@ export function CreateRefView({
   /** The template's uploads, which a row may pick from. */
   uploads: readonly UploadedMedia[];
   uploadsLoading: boolean;
-  /** The Penguin agents that can generate speech and images. */
-  agents: readonly { agentId: string; name?: string | null }[];
-  defaultAgent: string;
   onIdentity: (record: ActivityRecord) => void;
   onOpenAssessment: () => void;
   /** The ref exists; `problem` says what failed after it was made, if anything did. */
@@ -146,12 +141,6 @@ export function CreateRefView({
   const typed = useRef(false);
   const [name, setName] = useState("");
   const [voice, setVoice] = useState("");
-  const [agentChoice, setAgent] = useState("");
-  const agent = agents.some((entry) => entry.agentId === agentChoice)
-    ? agentChoice
-    : agents.some((entry) => entry.agentId === defaultAgent)
-      ? defaultAgent
-      : (agents[0]?.agentId ?? "");
   const files = useRef(new Map<string, File>());
   const [picking, setPicking] = useState<RefPlanRow | null>(null);
   const [creating, setCreating] = useState(false);
@@ -186,13 +175,7 @@ export function CreateRefView({
   const generate = needsGeneration(rows);
   const canonical = suggestion?.canonical !== false;
   const ready =
-    editable &&
-    canonical &&
-    template.stable &&
-    !!manifest &&
-    !found.length &&
-    !creating &&
-    (!generate || !!agent);
+    editable && canonical && template.stable && !!manifest && !found.length && !creating;
 
   function chooseLanguage(next: string) {
     setLanguage(next);
@@ -256,11 +239,12 @@ export function CreateRefView({
         });
       }
       // Only the language decided here: other languages keep the template's assets and
-      // voices, so the chosen voice cannot reach narrations the page never showed.
+      // voices, so the chosen voice cannot reach narrations the page never showed. Speech and
+      // images are made by the builtin Media Agent.
       if (generate)
         await apiFetch(`${made}/pipeline`, {
           method: "POST",
-          body: { agentId: agent, stage: "assets", language, ...(voice ? { voice } : {}) },
+          body: { agentId: "media_agent", stage: "assets", language, ...(voice ? { voice } : {}) },
         });
     } catch (cause) {
       problem = apiErrorText(cause);
@@ -508,27 +492,6 @@ export function CreateRefView({
           {words.openAssessment}
         </Button>
       </p>
-      {generate && (
-        <div className="max-w-xs">
-          {agents.length ? (
-            <Select
-              size="sm"
-              label={words.agent}
-              value={agent}
-              disabled={creating}
-              onChange={(event) => setAgent(event.target.value)}
-            >
-              {agents.map((entry) => (
-                <option key={entry.agentId} value={entry.agentId}>
-                  {entry.name ?? entry.agentId}
-                </option>
-              ))}
-            </Select>
-          ) : (
-            <p className="text-xs text-gray-500">{words.noAgent}</p>
-          )}
-        </div>
-      )}
       {found.length > 0 && (
         <div role="status" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
           <p className="font-medium">{words.blockersTitle}</p>

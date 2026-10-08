@@ -79,3 +79,13 @@ export function latestModuleRun<
 >(runs: readonly T[]): T | undefined {
   return runs.find((run) => run.kind === "module" && run.status === "succeeded" && run.sessionId);
 }
+
+/** The pinned successful assembly, or the newest successful assembly when the pin is absent. */
+export function playingModuleRunId<
+  T extends { runId: string; kind: string; status: string; createdAt: string },
+>(runs: readonly T[], pinned?: string | null): string | null {
+  const builds = runs
+    .filter((run) => run.kind === "module" && run.status === "succeeded")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return (builds.find((run) => run.runId === pinned) ?? builds[0])?.runId ?? null;
+}

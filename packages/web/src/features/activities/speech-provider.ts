@@ -1,6 +1,6 @@
 /**
- * Who speaks a narration, and with which voice: the provider a narration names (Gemini when
- * it names none), the voices that provider offers, the voice a run is asked for, and the word
+ * Who speaks a narration, and with which voice: the provider a narration names (ElevenLabs
+ * when it names none, or Gemini for an older book-word recording that names none), the voices that provider offers, the voice a run is asked for, and the word
  * a clip is saying at a moment of playback. Pure, so it is tested without a DOM.
  */
 import type {
@@ -11,6 +11,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { isNarration } from "./voice-catalogue";
+import { isBookWord } from "./book-words";
 
 export const SPEECH_PROVIDERS: readonly SpeechProviderId[] = ["gemini", "elevenlabs", "kokoro"];
 
@@ -28,16 +29,22 @@ export function supportsSpeechLanguage(
 /** The id the server gives the Vault's default ElevenLabs voice. */
 export const ELEVENLABS_DEFAULT_VOICE = "elevenlabs-default";
 
-/** How the Vault's default ElevenLabs voice is named wherever it is listed. */
-export function elevenLabsDefaultLabel(): string {
-  return `${S.activities.speechProvider.elevenlabs} · ${S.activities.voicePicker.default}`;
+/**
+ * How the default ElevenLabs voice is named wherever it is listed, with the voice it stands
+ * for once the Media Agent's library names it.
+ */
+export function elevenLabsDefaultLabel(voiceName?: string): string {
+  const picker = S.activities.voicePicker;
+  return `${S.activities.speechProvider.elevenlabs} · ${
+    voiceName ? picker.defaultNamed(voiceName) : picker.default
+  }`;
 }
 
 /** The server's voice catalogue, with the voices it cannot name worded here. */
 export function wordCatalogue(options: readonly VoiceOption[]): VoiceOption[] {
   return options.map((option) =>
     option.id === ELEVENLABS_DEFAULT_VOICE
-      ? { ...option, label: elevenLabsDefaultLabel() }
+      ? { ...option, label: elevenLabsDefaultLabel(option.voiceName) }
       : option,
   );
 }
@@ -47,11 +54,19 @@ export function isElevenLabsVoiceId(text: string): boolean {
   return /^[A-Za-z0-9]{10,40}$/.test(text);
 }
 
-/** The provider a narration is spoken by the next time it is generated. */
+/** Who speaks a narration naming no provider; the server's DEFAULT_SPEECH_PROVIDER. */
+export const DEFAULT_SPEECH_PROVIDER: SpeechProviderId = "elevenlabs";
+
+/**
+ * The provider a narration is spoken by the next time it is generated; the server's
+ * `wordSpeechProvider` for a book word. A word naming none but holding a generated recording
+ * is a take from before providers were saved, which were all Gemini's.
+ */
 export function providerOf(
-  asset: Pick<MediaAsset, "speechProvider"> | undefined,
+  asset: Pick<MediaAsset, "speechProvider" | "role" | "generatedAudio"> | undefined,
 ): SpeechProviderId {
-  return asset?.speechProvider ?? "gemini";
+  if (asset?.speechProvider) return asset.speechProvider;
+  return asset && isBookWord(asset) && asset.generatedAudio ? "gemini" : DEFAULT_SPEECH_PROVIDER;
 }
 
 /** Which provider a voice belongs to; an older server's options are all Gemini's. */

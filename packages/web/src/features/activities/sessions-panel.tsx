@@ -26,6 +26,8 @@ export function runTitle(kind: ActivityRunSummary["kind"]): string {
   switch (kind) {
     case "module":
       return S.activities.moduleRun;
+    case "media-spec":
+      return S.activities.mediaSpecRun;
     case "audio":
       return S.activities.audioRun;
     case "image":

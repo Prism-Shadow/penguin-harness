@@ -1,12 +1,13 @@
 /**
- * The Activity Spec editor: the specification JSON on one full-height monospace surface, as
- * Loom shows it. Diff compares the text against the last save, inline or side by side, with
- * Loom's toolbar: change counts, previous and next, Revert all, and a minimap of the changes.
+ * The JSON editor Loom shows for a document: Activity Spec, Configuration Data, Module
+ * Definition and Assessment Data's JSON. One full-height monospace surface with JSON colours;
+ * Diff compares the text against the last save, inline or side by side, with Loom's toolbar:
+ * change counts, previous and next, Revert all, and a minimap of the changes.
  *
  * CodeMirror owns the document while the author types; `value` is pushed in only when it
  * changes from outside, as after a save, a reload, a restored candidate or Revert all.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -25,6 +26,7 @@ import { MergeView, goToNextChunk, goToPreviousChunk } from "@codemirror/merge";
 import { search, searchKeymap } from "@codemirror/search";
 import { tags } from "@lezer/highlight";
 import { Button } from "../../components/ui/button";
+import { InfoPopover } from "../../components/ui/info-popover";
 import { S } from "../../lib/strings";
 import { toneDot, toneInk } from "../../lib/tone";
 import { diffMarkers } from "./script-model";
@@ -41,6 +43,12 @@ const jsonHighlight = HighlightStyle.define([
     class: "cm-json-punctuation",
   },
 ]);
+
+/** The header row and the notes strip under it, shared by panels that sit beside this editor. */
+export const EDITOR_HEADER =
+  "flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2 dark:border-gray-800";
+export const EDITOR_NOTICES =
+  "space-y-1 border-b border-gray-200 px-4 py-2 text-xs dark:border-gray-800";
 
 /** Never a real setting, so a comparison against it always writes. */
 const STALE = "\u0000stale";
@@ -98,16 +106,16 @@ function accessExtensions(access: Access): Extension {
   ];
 }
 
-/** Why `text` is not a specification the server could take, or null when it parses. */
+/** Why `text` is not a document the server could take, or null when it parses. */
 function parseProblem(text: string): string | null {
-  if (!text.trim()) return S.activities.studioSpec.empty;
+  if (!text.trim()) return S.activities.jsonEditor.empty;
   try {
     const value: unknown = JSON.parse(text);
     return value !== null && typeof value === "object" && !Array.isArray(value)
       ? null
-      : S.activities.studioSpec.notObject;
+      : S.activities.jsonEditor.notObject;
   } catch (error) {
-    return S.activities.studioSpec.invalid(error instanceof Error ? error.message : String(error));
+    return S.activities.jsonEditor.invalid(error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -126,30 +134,53 @@ function goTo(view: EditorView | null | undefined, line: number) {
   view.focus();
 }
 
-export function SpecEditor({
-  subject,
+export function JsonEditor({
+  title,
+  editorLabel,
+  savedLabel,
+  saveLabel,
   value,
   saved,
   editable,
   readOnly,
   busy,
+  error = null,
+  about,
+  leading,
+  actions,
+  notices,
   onChange,
   onSave,
 }: {
-  /** Which activity and ref this is, for the title, as Loom names its panels. */
-  subject: string;
+  /** The panel's title, as Loom names it: "Activity Spec - title - pc [ref]". */
+  title: string;
+  /** The editor's accessible name. */
+  editorLabel: string;
+  /** The accessible name of the saved side of a side-by-side diff. */
+  savedLabel: string;
+  saveLabel: string;
   value: string;
-  /** The specification as last saved, pretty-printed. */
+  /** The document as last saved, pretty-printed. */
   saved: string;
   /** Whether this author may save, which shows the Save action. */
   editable: boolean;
   /** Text stays selectable but cannot change, as on a draft that is not available here. */
   readOnly: boolean;
   busy: boolean;
+  /** Why the last save failed, from the server. */
+  error?: string | null;
+  /** What the document is, behind a "?" beside the title. */
+  about?: ReactNode;
+  /** Controls right after the title, which stay put whatever follows them. */
+  leading?: ReactNode;
+  /** More header actions, before Diff. */
+  actions?: ReactNode;
+  /** Lines about the document, under the header. */
+  notices?: ReactNode;
   onChange: (value: string) => void;
   onSave: () => void;
 }) {
-  const words = S.activities.studioSpec;
+  const words = S.activities.jsonEditor;
   const host = useRef<HTMLDivElement>(null);
   const mergeHost = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -197,7 +228,7 @@ export function SpecEditor({
         doc: latest.current.value,
         extensions: [
           common(),
-          EditorView.contentAttributes.of({ "aria-label": words.editor }),
+          EditorView.contentAttributes.of({ "aria-label": editorLabel }),
           compartments.diff.of([]),
           compartments.access.of([]),
           reportEdits,
@@ -209,7 +240,7 @@ export function SpecEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [compartments, words.editor]);
+  }, [compartments, editorLabel]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -243,7 +274,7 @@ export function SpecEditor({
         extensions: [
           common(),
           EditorState.readOnly.of(true),
-          EditorView.contentAttributes.of({ "aria-label": words.savedSide }),
+          EditorView.contentAttributes.of({ "aria-label": savedLabel }),
         ],
       },
       b: {
@@ -251,7 +282,7 @@ export function SpecEditor({
         extensions: [
           common(),
           accessExtensions(access),
-          EditorView.contentAttributes.of({ "aria-label": words.editor }),
+          EditorView.contentAttributes.of({ "aria-label": editorLabel }),
           reportEdits,
         ],
       },
@@ -273,7 +304,7 @@ export function SpecEditor({
       merge.destroy();
       mergeRef.current = null;
     };
-  }, [sideBySide, saved, access, words.editor, words.savedSide]);
+  }, [sideBySide, saved, access, editorLabel, savedLabel, reportEdits]);
 
   useEffect(() => {
     const b = mergeRef.current?.b;
@@ -283,9 +314,16 @@ export function SpecEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2 dark:border-gray-800">
-        <h2 className="min-w-0 truncate text-sm font-semibold">{words.title(subject)}</h2>
+      <div className={EDITOR_HEADER}>
+        <h2
+          className={`min-w-0 text-sm font-semibold ${about ? "flex items-center gap-2" : "truncate"}`}
+        >
+          {title}
+          {about && <InfoPopover label={title}>{about}</InfoPopover>}
+        </h2>
+        {leading}
         <span className="flex-1" />
+        {actions}
         <Button
           size="sm"
           variant="ghost"
@@ -305,10 +343,11 @@ export function SpecEditor({
         </Button>
         {editable && (
           <Button size="sm" onClick={onSave} disabled={busy || !changed || problem !== null}>
-            {words.save}
+            {saveLabel}
           </Button>
         )}
       </div>
+      {notices && <div className={EDITOR_NOTICES}>{notices}</div>}
       {diffMode && (
         <div
           role="toolbar"
@@ -377,12 +416,12 @@ export function SpecEditor({
           )}
         </div>
       )}
-      {problem && (
+      {(problem ?? error) && (
         <p
           role="status"
-          className={`border-b border-gray-200 px-4 py-1.5 text-xs dark:border-gray-800 ${toneInk.attention}`}
+          className={`border-b border-gray-200 px-4 py-1.5 text-xs dark:border-gray-800 ${problem ? toneInk.attention : toneInk.danger}`}
         >
-          {problem}
+          {problem ?? error}
         </p>
       )}
       <div className={sideBySide ? "hidden" : "flex min-h-0 flex-1"}>

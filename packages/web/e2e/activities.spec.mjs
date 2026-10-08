@@ -288,7 +288,13 @@ async function fixture(page) {
       };
       return json(activity.draft);
     }
-    if (p === `${base}/act_test/generate-spec` || p === `${base}/act_test/assemble-module`) {
+    if (p === `${base}/act_test/pipeline` && request.method() === "GET")
+      return json({ pipeline: null });
+    if (
+      p === `${base}/act_test/generate-spec` ||
+      p === `${base}/act_test/assemble-module` ||
+      (p === `${base}/act_test/pipeline` && request.method() === "POST")
+    ) {
       if (p.endsWith("/assemble-module")) assembleRequests.push(request.postDataJSON());
       runs.unshift({
         kind: p.endsWith("/assemble-module") ? "module" : "spec",
@@ -302,6 +308,33 @@ async function fixture(page) {
         candidate: null,
         error: null,
       });
+      if (p.endsWith("/pipeline"))
+        return json(
+          {
+            pipelineId: "pipeline_spec",
+            projectId,
+            activityId: activity.id,
+            selection: "spec",
+            status: "running",
+            steps: [
+              {
+                step: "spec",
+                status: "running",
+                detail: null,
+                note: null,
+                done: 0,
+                total: 0,
+                runIds: ["run_test"],
+              },
+            ],
+            currentRunId: "run_test",
+            currentSessionId: null,
+            error: null,
+            startedAt: "2026-09-19T10:00:00Z",
+            finishedAt: null,
+          },
+          202,
+        );
       return json(runs[0], 202);
     }
     if (p === `${base}/act_test/generate-audio`) {
@@ -391,7 +424,10 @@ async function fixture(page) {
     }
     if (p.endsWith("/accept-audio")) {
       const run = runs.find((run) => p.includes(`/${run.runId}/`));
-      const asset = activity.draft.mediaPlan.manifest.assets["en-US"][0];
+      // The take's own language and key, as the server binds it.
+      const asset = activity.draft.mediaPlan.manifest.assets[run.audio.language].find(
+        (candidate) => candidate.key === run.audio.assetKey,
+      );
       asset.path = `media/generated/${run.runId}.wav`;
       asset.generatedAudio = { runId: run.runId, sha256: "test" };
       activity.draft.contentRevision = String(++revision);
@@ -622,9 +658,37 @@ const TREE_NAMES = {
   "Scenes and media": "Scenes",
   "Speech coverage": "Audios",
   "Media library": "Media Library",
-  "Module preview": "Module Definition",
+  "Module definition": "Module Definition",
   "Generation history": "Generation History",
 };
+
+/**
+ * Opens one of the right rail's panels (Stages, Player, Tests, Quality, ...), leaving it open
+ * when it already is: its tab toggles.
+ */
+async function openPanel(page, name) {
+  const tab = page.getByRole("button", { name, exact: true });
+  // The tab's state, not the panel's, decides: a remembered panel may not have drawn yet.
+  if ((await tab.getAttribute("aria-pressed")) !== "true") await tab.click();
+  const panel = page.getByRole("complementary", { name, exact: true });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+async function generateSpecification(page) {
+  const panel = await openPanel(page, "Stages");
+  await panel.getByRole("button", { name: "Stage", exact: true }).click();
+  await page.getByRole("option", { name: "Generate spec", exact: true }).click();
+  await panel.getByRole("button", { name: "Run", exact: true }).click();
+}
+
+/** Closes a rail panel and opens it again, so what it shows is read afresh. */
+async function reopenPanel(page, name) {
+  const tab = page.getByRole("button", { name, exact: true });
+  if ((await tab.getAttribute("aria-pressed")) === "true") await tab.click();
+  await expect(page.getByRole("complementary", { name, exact: true })).toHaveCount(0);
+  return openPanel(page, name);
+}
 
 async function openSection(page, name) {
   // Level 1: Loom's hierarchy repeats "Audios" as a group inside every scene.
@@ -675,6 +739,13 @@ async function openManifest(page) {
     await summary.click();
 }
 
+/** Edits made in the scene's asset editor save themselves a moment later; wait for that. */
+async function mediaAutosaved(page) {
+  await expect(
+    page.getByRole("region", { name: "Scene assets", exact: true }).getByRole("status"),
+  ).toHaveText("Saved");
+}
+
 async function create(page, { activityType = "standard" } = {}) {
   await page.goto(`${origin}/activities`);
   // Creation lives behind the landing's action, not inline on the page.
@@ -692,9 +763,7 @@ async function create(page, { activityType = "standard" } = {}) {
     .getByRole("textbox", { name: "Activity Script", exact: true })
     .fill("Practice common sight words");
   await page.getByRole("button", { name: "Save script", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Generate specification", exact: true }),
-  ).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Save script", exact: true })).toBeDisabled();
   await openSection(page, "Specification");
 }
 
@@ -730,7 +799,7 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   const manifest = JSON.parse(await editor.inputValue());
   manifest.assets["en-US"][0].path = "media/images/cat.png";
   await editor.fill(JSON.stringify(manifest));
-  await openSection(page, "Module preview");
+  await openPanel(page, "Stages");
   await expect(
     page.getByRole("button", { name: "Assemble WAF module", exact: true }),
   ).toBeDisabled();
@@ -747,7 +816,7 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   await openSection(page, "Scenes and media");
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
   expect((await request).postDataJSON().manifest).toEqual(manifest);
-  await openSection(page, "Module preview");
+  await openPanel(page, "Stages");
   await expect(
     page.getByRole("button", { name: "Assemble WAF module", exact: true }),
   ).toBeEnabled();
@@ -838,9 +907,11 @@ test("reports speech coverage and generates every missing narration at once", as
   await planMedia(page);
 
   // Three narrations: one already bound, one ready to generate, one still without a script.
+  // Gemini's, which this fixture's speech setup lists voices for.
   const narration = (key, extra) => ({
     key,
     type: "audio",
+    speechProvider: "gemini",
     description: `${key} line`,
     usages: [{ sceneId: "intro", sourceKey: key, occurrence: 1, sceneOccurrenceCount: 1 }],
     ...extra,
@@ -946,9 +1017,11 @@ test("chooses a narration's voice from the picker and applies one voice to every
       refNum: 12,
       assets: {
         "en-US": [
+          // Gemini's: the catalogue above is Gemini's alone.
           {
             key: "welcome",
             type: "audio",
+            speechProvider: "gemini",
             description: "Greeting",
             script: "Hello",
             usages: usages("welcome"),
@@ -956,6 +1029,7 @@ test("chooses a narration's voice from the picker and applies one voice to every
           {
             key: "prompt",
             type: "audio",
+            speechProvider: "gemini",
             description: "Prompt",
             script: "Pick one",
             usages: usages("prompt"),
@@ -1016,9 +1090,9 @@ test("chooses a narration's voice from the picker and applies one voice to every
   await own.click();
   await page.getByRole("dialog", { name: "Voice" }).getByRole("option", { name: /^Puck/ }).click();
   await expect(own).toHaveAccessibleName("Voice: Puck");
-  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  // The pick saves itself, without the save button.
   await expect.poll(() => saved.at(-1).assets["en-US"][0].voice).toBe("Puck");
-  await page.getByRole("button", { name: "Generate speech", exact: true }).click();
+  await page.getByRole("button", { name: "Generate audio", exact: true }).click();
   await expect.poll(() => f.audioRequests.at(-1)?.voice).toBe("Puck");
   f.completeAudio();
 
@@ -1083,7 +1157,7 @@ test("uploads media into the ref's uploads and binds it from the library", async
   await expect(binding).toHaveValue(/^media\/loom\/words\/words-1\/uploads\/cat-[a-f0-9]{8}\.png$/);
   await expect(page.getByText("Stored with this activity.")).toBeVisible();
 
-  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await mediaAutosaved(page);
   await openSection(page, "Media library");
   await expect(page.getByText(/1 assets, 1 paths assigned, 0 unbound/)).toBeVisible();
 
@@ -1132,7 +1206,7 @@ test("previews only saved images and resets previews across edits and failures",
   await binding.fill("media/images/cat.png");
   await expect(page.getByRole("button", { name: "Preview image", exact: true })).toHaveCount(0);
   expect(f.imageRequests).toHaveLength(0);
-  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await mediaAutosaved(page);
   await page.getByRole("button", { name: "Preview image", exact: true }).click();
   await expect(page.getByRole("img", { name: "A cat", exact: true })).toBeVisible();
   await expect(page.getByText("1 × 1 pixels", { exact: true })).toBeVisible();
@@ -1183,7 +1257,7 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
-  await openSection(page, "Module preview");
+  await openPanel(page, "Stages");
   await expect(assemble).toBeEnabled();
   // The checkout is the server's WAF workspace, not something an author types.
   await expect(page.getByRole("textbox", { name: /^WAF checkout/ })).toHaveCount(0);
@@ -1197,7 +1271,7 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   await expect(page.getByText("Module assembly", { exact: true })).toBeVisible();
   f.complete();
   await page.reload();
-  await openSection(page, "Module preview");
+  await openSection(page, "Generation history");
   await expect(
     page.getByRole("link", { name: "Open WAF preview", exact: true }).first(),
   ).toHaveAttribute(
@@ -1212,11 +1286,9 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   await openSection(page, "Description");
   await page.getByRole("textbox", { name: "Activity Script", exact: true }).fill("A new revision");
   await page.getByRole("button", { name: "Save script", exact: true }).click();
-  // The runs list and the embedded preview both carry the staleness notice.
-  await openSection(page, "Module preview");
-  await expect(
-    page.getByText("Built from an earlier draft", { exact: true }).first(),
-  ).toBeVisible();
+  // An earlier draft's build is not called out: the preview rebuilds it on its own.
+  await openSection(page, "Generation history");
+  await expect(page.getByText("Built from an earlier draft", { exact: true })).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
 
@@ -1242,7 +1314,7 @@ test("requires an explicit reading mode for book assembly and sends it per run",
   await openSection(page, "Specification");
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   const assemble = page.getByRole("button", { name: "Assemble WAF module", exact: true });
-  await openSection(page, "Module preview");
+  await openPanel(page, "Stages");
   await expect(assemble).toBeDisabled();
   const readingMode = page.getByRole("button", { name: "Reading mode", exact: true });
   await expect(readingMode).toHaveText("Choose a reading mode");
@@ -1252,7 +1324,7 @@ test("requires an explicit reading mode for book assembly and sends it per run",
   await expect(assemble).toBeDisabled();
   await openSection(page, "Scenes and media");
   await planMedia(page);
-  await openSection(page, "Module preview");
+  await openPanel(page, "Stages");
   await expect(assemble).toBeEnabled();
   await expect(page.getByText("Validated", { exact: true })).toBeVisible();
   await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
@@ -1289,6 +1361,7 @@ test("edits scripts and explicitly accepts speech while regeneration keeps the a
         {
           key: "welcome",
           type: "audio",
+          speechProvider: "gemini",
           description: "Greeting",
           script: "Hello",
           usages: [{ sceneId: "intro" }],
@@ -1299,16 +1372,14 @@ test("edits scripts and explicitly accepts speech while regeneration keeps the a
   await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(JSON.stringify(manifest));
   await openSection(page, "Scenes and media");
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
-  await page.getByRole("textbox", { name: /^Speech script/ }).fill("Hello there");
-  await expect(page.getByRole("button", { name: "Generate speech", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "Reload draft", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "Discard unsaved changes?" })
-    .getByRole("button", { name: "Cancel" })
-    .click();
-  await expect(page.getByRole("textbox", { name: /^Speech script/ })).toHaveValue("Hello there");
-  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
-  await page.getByRole("button", { name: "Generate speech", exact: true }).click();
+  const card = page.getByRole("region", { name: "English audio", exact: true });
+  const script = card.getByRole("textbox", { name: /^English script/ });
+  await script.fill("Hello there");
+  // Speech waits for the edited script to save itself.
+  await expect(card.getByRole("button", { name: "Generate audio", exact: true })).toBeDisabled();
+  await mediaAutosaved(page);
+  await expect(script).toHaveValue("Hello there");
+  await card.getByRole("button", { name: "Generate audio", exact: true }).click();
   f.completeAudio();
   // The run settles while the page watches, and says so wherever the author is.
   await expect(page.getByText("Speech · welcome finished.", { exact: true })).toBeVisible({
@@ -1316,26 +1387,144 @@ test("edits scripts and explicitly accepts speech while regeneration keeps the a
   });
   await page.reload();
   await openSection(page, "Scenes and media");
-  await expect(page.locator('audio[aria-label="Accepted audio"]')).toHaveCount(0);
-  await expect(page.locator('audio[aria-label="Speech candidate"]')).toHaveCount(1);
-  await page.getByRole("button", { name: "Accept this audio", exact: true }).click();
-  const accepted = page.locator('audio[aria-label="Accepted audio"]');
-  const source = await accepted.getAttribute("src");
-  await page.getByRole("button", { name: "Regenerate speech", exact: true }).click();
-  await expect(accepted).toHaveAttribute("src", source);
+  // Nothing is bound yet: the take is the card's candidate until Save makes it current.
+  const current = card.locator('audio[aria-label="Current audio"]');
+  await expect(current).toHaveCount(0);
+  await expect(card.locator('audio[aria-label="Generated candidate"]')).toHaveCount(1);
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(current).toHaveCount(1);
+  const source = await current.getAttribute("src");
+  await expect(card.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await card.getByRole("button", { name: "Regenerate audio", exact: true }).click();
+  await expect(current).toHaveAttribute("src", source);
   f.completeAudio();
   await page.reload();
   await openSection(page, "Scenes and media");
-  await expect(accepted).toHaveAttribute("src", source);
-  await expect(page.locator('audio[aria-label="Speech candidate"]')).toHaveCount(2);
-  await expect(page.getByRole("button", { name: "Accept this audio", exact: true })).toBeEnabled();
-  // The new take is heard beside the accepted one, and replaces it only on request.
-  const comparison = page.getByRole("region", { name: "Current and new", exact: true });
-  await expect(comparison.locator('audio[aria-label="Current"]')).toHaveAttribute("src", source);
-  await expect(comparison.locator('audio[aria-label="New"]')).toHaveCount(1);
-  await comparison.getByRole("button", { name: "Keep current", exact: true }).click();
-  await expect(comparison).toHaveCount(0);
-  await expect(accepted).toHaveAttribute("src", source);
+  // Advanced hears the new take beside the current one; it replaces it only on Save.
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(current).toHaveAttribute("src", source);
+  const candidate = card.locator('audio[aria-label="Generated candidate"]');
+  await expect(candidate).toHaveCount(1);
+  const next = await candidate.getAttribute("src");
+  expect(next).not.toBe(source);
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(current).toHaveAttribute("src", next);
+  await expect(
+    card.getByText("Generate or upload a candidate to compare before saving.", { exact: true }),
+  ).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("stacks a card per language: Save accepts that language's take, and an upload waits for Save", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  const clip = toneWav(1);
+  const saved = [];
+  const accepts = [];
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    if (p === `${base}/act_test/media` && request.method() === "PUT")
+      saved.push(request.postDataJSON().manifest);
+    if (p.endsWith("/accept-audio")) accepts.push(p);
+    if (p === `${base}/act_test/media-uploads` && request.method() === "POST") {
+      const input = request.postDataJSON();
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path: "media/loom/words/words-1/uploads/hello-1234abcd.wav",
+          name: input.name,
+          kind: "audio",
+          mimeType: "audio/wav",
+          byteLength: Buffer.from(input.dataBase64, "base64").byteLength,
+          sha256: "c".repeat(64),
+          updatedAt: "2026-09-21T10:00:00.000Z",
+        }),
+      });
+    }
+    if (p === `${base}/act_test/media-upload` || /\/runs\/[^/]+\/audio$/.test(p))
+      return route.fulfill({ contentType: "audio/wav", body: clip });
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  await openManifest(page);
+  // Gemini's, which this fixture's speech setup lists voices for.
+  const welcome = (script) => ({
+    key: "welcome",
+    type: "audio",
+    speechProvider: "gemini",
+    description: "Greeting",
+    script,
+    usages: [{ sceneId: "intro" }],
+  });
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(
+    JSON.stringify({
+      productCode: "words",
+      refNum: 12,
+      assets: { "en-US": [welcome("Hello")], "es-MX": [welcome("Hola")] },
+    }),
+  );
+  await openSection(page, "Scenes and media");
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  const english = page.getByRole("region", { name: "English audio", exact: true });
+  const spanish = page.getByRole("region", { name: "Spanish audio", exact: true });
+
+  // Simplified shows voice, script and audio; Advanced adds the provider and the comparison.
+  await expect(spanish.getByRole("textbox", { name: /^Spanish script/ })).toHaveValue("Hola");
+  await expect(english.getByRole("button", { name: /^Voice: / })).toBeVisible();
+  await expect(english.getByRole("button", { name: "Provider", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(english.getByRole("button", { name: "Provider", exact: true })).toBeVisible();
+  await expect(english.getByRole("region", { name: "Candidate", exact: true })).toContainText(
+    "Generate or upload a candidate to compare before saving.",
+  );
+  await page.getByRole("button", { name: "Simplified", exact: true }).click();
+  await expect(english.getByRole("button", { name: "Provider", exact: true })).toHaveCount(0);
+
+  // Spanish is generated on its own; the take waits on its card for Save.
+  await spanish.getByRole("button", { name: "Generate audio", exact: true }).click();
+  await expect
+    .poll(() => f.audioRequests.at(-1))
+    .toMatchObject({ language: "es-MX", assetKey: "welcome" });
+  await expect(spanish.getByRole("button", { name: "Generating…", exact: true })).toBeDisabled();
+  f.completeAudio();
+  await expect(spanish.locator('audio[aria-label="Generated candidate"]')).toHaveCount(1, {
+    timeout: 15_000,
+  });
+  await expect(english.locator('audio[aria-label="Generated candidate"]')).toHaveCount(0);
+  await expect(english.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await spanish.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(() => accepts.length).toBe(1);
+  await expect(spanish.locator('audio[aria-label="Current audio"]')).toHaveCount(1);
+  await expect(
+    spanish.getByRole("button", { name: "Regenerate audio", exact: true }),
+  ).toBeVisible();
+  await expect(english.getByText("No audio yet for English.", { exact: true })).toBeVisible();
+
+  // An upload is English's candidate, heard in place of nothing, until Save binds it.
+  await english
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles({ name: "hello.wav", mimeType: "audio/wav", buffer: clip });
+  const uploaded = english.locator('audio[aria-label="Uploaded candidate · hello.wav"]');
+  await expect(uploaded).toHaveCount(1);
+  const savesBefore = saved.length;
+  await english.getByRole("button", { name: "Save", exact: true }).click();
+  await expect
+    .poll(() => (saved.length > savesBefore ? saved.at(-1).assets["en-US"][0].path : null))
+    .toBe("media/loom/words/words-1/uploads/hello-1234abcd.wav");
+  expect(saved.at(-1).assets["es-MX"][0].path).toMatch(/^media\/generated\/run_audio_/);
+  await expect(english.locator('audio[aria-label="Current audio"]')).toHaveCount(1);
+  await expect(english.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   expect(f.errors).toEqual([]);
 });
 
@@ -1372,23 +1561,16 @@ test("edits image descriptions and explicitly accepts images while failed regene
   const description = page.getByRole("textbox", { name: /^Image description/ });
   await openSection(page, "Scenes and media");
   await description.fill("A friendly orange cat wearing a blue scarf");
-  await openSection(page, "Scenes and media");
   await expect(page.getByRole("button", { name: "Generate image", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "Reload draft", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "Discard unsaved changes?" })
-    .getByRole("button", { name: "Cancel" })
-    .click();
-  await openSection(page, "Scenes and media");
+  // The edited description saves itself, and then the image can be generated from it.
+  await mediaAutosaved(page);
   await expect(description).toHaveValue("A friendly orange cat wearing a blue scarf");
-  await openSection(page, "Scenes and media");
-  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
   const generated = page.waitForRequest(
     (request) => request.url().endsWith("/generate-image") && request.method() === "POST",
   );
   await page.getByRole("button", { name: "Generate image", exact: true }).click();
   expect((await generated).postDataJSON()).toMatchObject({
-    agentId: "default_agent",
+    agentId: "media_agent",
     expectedRevision: expect.any(String),
     language: "en-US",
     assetKey: "cat",
@@ -1463,17 +1645,10 @@ test("reviews and accepts an improved image prompt without changing its saved me
   const improve = page.getByRole("button", { name: "Improve image prompt", exact: true });
   await openSection(page, "Scenes and media");
   await description.fill("Unsaved prompt");
-  await openSection(page, "Scenes and media");
   await expect(improve).toBeDisabled();
-  await page.getByRole("button", { name: "Reload draft", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "Discard unsaved changes?" })
-    .getByRole("button", { name: "Cancel" })
-    .click();
-  await openSection(page, "Scenes and media");
+  // The edited prompt saves itself before it can be improved.
+  await mediaAutosaved(page);
   await expect(description).toHaveValue("Unsaved prompt");
-  await openSection(page, "Scenes and media");
-  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
   const sent = page.waitForRequest(
     (request) => request.url().endsWith("/generate-media-text") && request.method() === "POST",
   );
@@ -1534,6 +1709,8 @@ test("reviews narration suggestions, preserves existing audio provenance, and bl
   await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(JSON.stringify(manifest));
   await openSection(page, "Scenes and media");
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  // Script help is in the Advanced view.
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
   const improve = page.getByRole("button", { name: "Improve narration script", exact: true });
   await improve.click();
   f.completeMediaText("Hello there, sight word friends.");
@@ -1544,9 +1721,10 @@ test("reviews narration suggestions, preserves existing audio provenance, and bl
   await expect(suggestions).toContainText("Hello");
   await expect(suggestions).toContainText("Hello there, sight word friends.");
   await suggestions.getByRole("button", { name: "Use this text", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: /^Speech script/ })).toHaveValue(
+  await expect(page.getByRole("textbox", { name: /^English script/ })).toHaveValue(
     "Hello there, sight word friends.",
   );
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(page.getByRole("textbox", { name: /^Media path/ })).toHaveValue(
     "media/generated/run_audio_accepted.wav",
   );
@@ -1655,7 +1833,7 @@ test("create, save, generate, leave and reopen a completed specification", async
   const f = await fixture(page);
   await create(page);
   await openSection(page, "Description");
-  await page.getByRole("button", { name: "Generate specification", exact: true }).click();
+  await generateSpecification(page);
   await openSection(page, "Generation history");
   await expect(page.getByRole("link", { name: "Open Session" })).toHaveAttribute(
     "href",
@@ -1686,7 +1864,7 @@ test("polling preserves unsaved edits and exposes conflicting output for review"
   const f = await fixture(page);
   await create(page);
   await openSection(page, "Description");
-  await page.getByRole("button", { name: "Generate specification", exact: true }).click();
+  await generateSpecification(page);
   await openSection(page, "Generation history");
   await expect(page.getByRole("button", { name: "Cancel generation" })).toBeVisible();
   await openSection(page, "Description");
@@ -1818,7 +1996,7 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   const f = await fixture(page);
   await create(page);
   await openSection(page, "Description");
-  await page.getByRole("button", { name: "Generate specification", exact: true }).click();
+  await generateSpecification(page);
   const description = page.getByRole("textbox", { name: "Activity Script", exact: true });
   await openSection(page, "Scenes and media");
   await openSection(page, "Description");
@@ -1894,7 +2072,7 @@ test("idle history polls slowly and candidate text is fetched only on expansion"
   await page.waitForTimeout(2500);
   expect(f.historyReads).toBe(reads);
   await openSection(page, "Description");
-  await page.getByRole("button", { name: "Generate specification", exact: true }).click();
+  await generateSpecification(page);
   await expect.poll(() => f.historyReads).toBeGreaterThan(reads);
   f.complete();
   f.secondCandidate();
@@ -2192,7 +2370,7 @@ test("the script editor folds scenes, diffs against the last save and shows an a
   expect(f.errors).toEqual([]);
 });
 
-test("runs every stage from the hierarchy and follows the run in its panel", async ({ page }) => {
+test("runs every stage from Stages and follows the run in its panel", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
   const posts = [];
@@ -2237,8 +2415,17 @@ test("runs every stage from the hierarchy and follows the run in its panel", asy
     });
   });
   await page.reload();
+  await openPanel(page, "Stages");
   const stage = page.getByRole("button", { name: "Stage", exact: true });
   await expect(stage).toContainText("All stages");
+  const stages = page.getByRole("complementary", { name: "Stages", exact: true });
+  await expect(stages.getByRole("button", { name: "Generation agent", exact: true })).toBeVisible();
+  await expect(stages.getByRole("button", { name: "Run", exact: true })).toBeVisible();
+  await openSection(page, "Description");
+  await expect(
+    page.getByRole("button", { name: "Generate specification", exact: true }),
+  ).toHaveCount(0);
+  await openPanel(page, "Stages");
   await page.getByRole("button", { name: "Run", exact: true }).click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toMatchObject({ stage: "all", agentId: "default_agent" });
@@ -2247,12 +2434,17 @@ test("runs every stage from the hierarchy and follows the run in its panel", asy
   // The page keeps reading the run while it is in flight, and shows how it ended.
   await expect(panel.getByText("All chosen stages finished.", { exact: true })).toBeVisible();
   await expect(panel.getByText("Generate speech", { exact: true })).toBeVisible();
-  await expect(panel.getByText("No image is missing.", { exact: true })).toBeVisible();
+  // A stage with nothing to do folds into one line, which says why when opened.
+  await panel.getByText("1 skipped: Generate images", { exact: true }).click();
+  await expect(
+    panel.getByText("Generate images — No image is missing.", { exact: true }),
+  ).toBeVisible();
   expect(reads).toBeGreaterThan(0);
 
   // One stage on its own is the same control.
   await stage.click();
   await page.getByRole("option", { name: "Generate images", exact: true }).click();
+  await openPanel(page, "Stages");
   await page.getByRole("button", { name: "Run", exact: true }).click();
   await expect.poll(() => posts.length).toBe(2);
   expect(posts[1]).toMatchObject({ stage: "images" });
@@ -2352,6 +2544,7 @@ test("hides reasoning in the run log and expands a long tool output", async ({ p
     return route.fallback();
   });
   await page.reload();
+  await openPanel(page, "Stages");
   await page.getByRole("button", { name: "Run", exact: true }).click();
   const panel = page.getByRole("complementary", { name: "Stages", exact: true });
   const reasoning = panel.getByRole("switch", { name: "Show reasoning", exact: true });
@@ -2505,7 +2698,7 @@ test("the script saves itself after a pause, and waits while a run is in flight"
   expect(saves.map((body) => body.description)).toEqual(["Scene 1: Intro"]);
 
   // A run moves the draft, so the script holds its edits until the run ends.
-  await page.getByRole("button", { name: "Generate specification", exact: true }).click();
+  await generateSpecification(page);
   await box.fill("Scene 1: Welcome");
   await expect(
     page.getByText("Unsaved, saves when the running work ends", { exact: true }),
@@ -2568,9 +2761,8 @@ test("the player draws the module's behavior map and follows the phase it report
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify({ ...spec, scenes: [{ id: "rocks", description: "Find d" }] }));
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
-  await page.getByRole("button", { name: "Player", exact: true }).click();
-  const panel = page.getByRole("complementary", { name: "Player", exact: true });
-  await panel.getByRole("button", { name: "Play", exact: true }).click();
+  // The preview plays as soon as it opens; there is nothing to press.
+  const panel = await openPanel(page, "Preview");
 
   const map = panel.getByRole("group", { name: "Behavior of rocks", exact: true });
   await expect(map).toBeVisible();
@@ -2614,7 +2806,9 @@ test("the player draws the module's behavior map and follows the phase it report
   expect(f.errors).toEqual([]);
 });
 
-test("lists the live tap targets on the current state and resizes the map", async ({ page }) => {
+test("lists the live tap targets on the current state and keeps the map under the player", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1800, height: 1000 });
   const f = await fixture(page);
   await create(page);
@@ -2677,10 +2871,7 @@ test("lists the live tap targets on the current state and resizes the map", asyn
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify({ ...spec, scenes: [{ id: "rocks", description: "Find d" }] }));
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
-  const play = async () => {
-    await openSection(page, "Module preview");
-    await page.getByRole("button", { name: "Play", exact: true }).click();
-  };
+  const play = () => openPanel(page, "Preview");
   await play();
 
   // The live phase names how many targets it has and lists the first three.
@@ -2701,54 +2892,21 @@ test("lists the live tap targets on the current state and resizes the map", asyn
   await page.mouse.move(0, 0);
   await expect.poll(async () => (await seen()).at(-1)).toBe(null);
 
-  // Wide enough: the map sits beside the player behind a divider.
+  // The player is a rail panel, too narrow for the map beside it: the map sits under the
+  // player, with no divider between them.
   const divider = page.getByRole("separator", { name: "Resize the behavior map", exact: true });
-  await expect(divider).toHaveAttribute("aria-valuenow", "360");
-  await divider.focus();
-  await page.keyboard.press("ArrowLeft");
-  await expect(divider).toHaveAttribute("aria-valuenow", "380");
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("ArrowRight");
-  await expect(divider).toHaveAttribute("aria-valuenow", "340");
-  const box = await divider.boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + 40);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 - 100, box.y + 40, { steps: 5 });
-  await page.mouse.up();
-  await expect(divider).toHaveAttribute("aria-valuenow", "440");
-  // Dragging far past the end holds the map at its maximum.
-  const moved = await divider.boundingBox();
-  await page.mouse.move(moved.x + moved.width / 2, moved.y + 40);
-  await page.mouse.down();
-  await page.mouse.move(0, moved.y + 40, { steps: 5 });
-  await page.mouse.up();
-  const widest = Number(await divider.getAttribute("aria-valuenow"));
-  expect(widest).toBeLessThanOrEqual(880);
-  expect(widest).toBe(Number(await divider.getAttribute("aria-valuemax")));
-  const frameBox = await page.locator('iframe[title="Player"]').boundingBox();
-  expect(frameBox.width).toBeGreaterThanOrEqual(320);
+  await expect(divider).toHaveCount(0);
+  await expect(map).toBeVisible();
 
-  // The width survives a reload.
-  await page.reload();
-  await play();
-  await expect(divider).toHaveAttribute("aria-valuenow", String(widest));
-
-  // Hiding the map survives a reload too, and a hidden map needs no divider.
+  // Hiding the map survives a reload.
   const toggle = page.getByRole("button", { name: "Behavior map", exact: true });
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await expect(divider).toHaveCount(0);
+  await expect(map).toHaveCount(0);
   await page.reload();
   await play();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await expect(map).toHaveCount(0);
-
-  // Narrower than side by side allows: the map goes back under the player.
-  await toggle.click();
-  await expect(divider).toBeVisible();
-  await page.setViewportSize({ width: 1000, height: 1000 });
-  await expect(divider).toHaveCount(0);
-  await expect(map).toBeVisible();
   expect(f.errors).toEqual([]);
 });
 
@@ -2778,7 +2936,7 @@ test("the Build stage lists what stands between the draft and a module", async (
     .getByRole("textbox", { name: "Specification JSON", exact: true })
     .fill(JSON.stringify(spec));
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
-  await openSection(page, "Module preview");
+  await openPanel(page, "Stages");
   const checks = page.getByRole("list", { name: "Build", exact: true });
   await expect(
     checks.getByText("The media plan is older than the specification. Rebuild it in Scenes."),
@@ -2800,7 +2958,9 @@ test("the Build stage lists what stands between the draft and a module", async (
   await expect(
     page.getByRole("button", { name: "Assemble WAF module", exact: true }),
   ).toBeDisabled();
-  await expect(checks.getByText("No unsaved edits.")).toBeVisible();
+  // Only what stands in the way is listed.
+  await expect(checks.getByText("The specification is valid.")).toHaveCount(0);
+  await expect(checks.getByRole("listitem")).toHaveCount(5);
   await expect(page.getByText("This activity has not been assembled yet.")).toBeVisible();
   expect(f.errors).toEqual([]);
 });
@@ -2905,16 +3065,18 @@ test("edits the module's configuration, saves it, and discards the edit", async 
     page.getByText("configurations/words-12.json, from the module in the WAF checkout."),
   ).toBeVisible();
   const field = page.getByRole("textbox", { name: /^Document JSON/ });
-  await expect(field).toHaveValue(JSON.stringify(own, null, 2));
-  const save = page.getByRole("button", { name: "Save", exact: true });
+  // CodeMirror draws each line as its own element, so its text runs the lines together.
+  const shown = (value) => JSON.stringify(value, null, 2).replaceAll("\n", "");
+  await expect(field).toHaveText(shown(own));
+  const save = page.getByRole("button", { name: "Save Configuration Data", exact: true });
   // Nothing to save until the document says something else.
   await expect(save).toBeDisabled();
   await expect(page.getByRole("button", { name: "Discard edit", exact: true })).toHaveCount(0);
 
-  // Text that is not JSON is refused before anything is sent.
+  // Text that is not JSON cannot be saved, and says why.
   await field.fill("{ maxRounds: 5 }");
-  await save.click();
   await expect(page.getByText(/^This is not valid JSON: /)).toBeVisible();
+  await expect(save).toBeDisabled();
   expect(documentWrites).toEqual([]);
 
   await field.fill('{ "maxRounds": 5 }');
@@ -2928,7 +3090,7 @@ test("edits the module's configuration, saves it, and discards the edit", async 
   await expect(
     page.getByText("Edited here: the preview and the next assembly use this version."),
   ).toBeVisible();
-  await expect(field).toHaveValue(JSON.stringify({ maxRounds: 5 }, null, 2));
+  await expect(field).toHaveText(shown({ maxRounds: 5 }));
 
   // Discarding asks first, then goes back to the module's own document.
   await page.getByRole("button", { name: "Discard edit", exact: true }).click();
@@ -2942,7 +3104,7 @@ test("edits the module's configuration, saves it, and discards the edit", async 
     kind: "discard",
     body: { expectedRevision: `${detail.draft.contentRevision}-edited` },
   });
-  await expect(field).toHaveValue(JSON.stringify(own, null, 2));
+  await expect(field).toHaveText(shown(own));
   await expect(
     page.getByText("Edited here: the preview and the next assembly use this version."),
   ).toHaveCount(0);
@@ -2954,8 +3116,8 @@ test("edits the module's configuration, saves it, and discards the edit", async 
   await expect(
     page.getByText("assessments/words-12.json, from the module in the WAF checkout. 2 items."),
   ).toBeVisible();
-  await expect(field).toHaveValue(JSON.stringify({ items: [{ id: "q1" }, { id: "q2" }] }, null, 2));
-  await expect(save).toBeDisabled();
+  await expect(field).toHaveText(shown({ items: [{ id: "q1" }, { id: "q2" }] }));
+  await expect(page.getByRole("button", { name: "Save Assessment", exact: true })).toBeDisabled();
   expect(documentWrites).toHaveLength(2);
   // Loom's third document: the features the module assembly reproduces.
   await openSection(page, "Implementation Features");
@@ -3015,10 +3177,10 @@ test("shows the shared assessment read-only on a ref that is not canonical", asy
     ),
   ).toBeVisible();
   await expect(page.getByRole("textbox", { name: /^Document JSON/ })).toHaveAttribute(
-    "readonly",
-    "",
+    "aria-readonly",
+    "true",
   );
-  await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save Assessment", exact: true })).toHaveCount(0);
   await openSection(page, "Configuration Data");
   await expect(page.getByText("The module has no configuration file for this ref.")).toBeVisible();
   expect(f.errors).toEqual([]);
@@ -3204,6 +3366,31 @@ test("generates an assessment, accepts it, and edits a question and its correct 
   });
   await expect(page.getByText("Saved the document.")).toBeVisible();
   await expect(save).toBeDisabled();
+
+  // The header toggles between the items and the same document as JSON.
+  const view = page.getByRole("group", { name: "Assessment view", exact: true });
+  await expect(view.getByRole("button", { name: "Items", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  // Switching views moves neither the toggle nor the notes under the header.
+  const origin = page.getByText(/^assessments\/words-12\.json, from /);
+  const where = async () => ({
+    toggle: await view.boundingBox(),
+    notes: await origin.boundingBox(),
+  });
+  const before = await where();
+  await view.getByRole("button", { name: "JSON", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save Assessment", exact: true })).toBeVisible();
+  expect(await where()).toEqual(before);
+  // CodeMirror draws only the lines in view, so this checks the first item.
+  await expect(page.getByRole("textbox", { name: /^Document JSON/ })).toContainText(
+    '"text": "Which is cat?"',
+  );
+  await expect(save).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save Assessment", exact: true })).toBeDisabled();
+  await view.getByRole("button", { name: "Items", exact: true }).click();
+  await expect(save).toBeVisible();
   expect(f.errors).toEqual([]);
 });
 
@@ -3428,7 +3615,7 @@ test("a run's session transcript opens in place in the Sessions panel", async ({
   const f = await fixture(page);
   await create(page);
   await openSection(page, "Description");
-  await page.getByRole("button", { name: "Generate specification", exact: true }).click();
+  await generateSpecification(page);
   await page.route("**/*", (route) => {
     const p = new URL(route.request().url()).pathname;
     if (p === "/api/sessions/session_test/messages")
@@ -3473,7 +3660,9 @@ function toneWav(seconds, rate = 8000) {
   return bytes;
 }
 
-test("trims a stretch out of a narration and binds the shorter clip", async ({ page }) => {
+test("trims a stretch out of a narration into a candidate, and Save binds the shorter clip", async ({
+  page,
+}) => {
   const f = await fixture(page);
   await create(page);
   const clip = toneWav(2);
@@ -3535,8 +3724,9 @@ test("trims a stretch out of a narration and binds the shorter clip", async ({ p
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
-  await page.getByRole("button", { name: "Show waveform", exact: true }).click();
-  const wave = page.getByRole("slider", { name: /^Waveform: hello/ });
+  // The card draws the clip it is working on straight away.
+  const card = page.getByRole("region", { name: "English audio", exact: true });
+  const wave = card.getByRole("slider", { name: /^Waveform: Current audio/ });
   await expect(wave).toBeVisible();
   await expect(page.getByText("Drag across the waveform", { exact: false })).toBeVisible();
 
@@ -3564,9 +3754,20 @@ test("trims a stretch out of a narration and binds the shorter clip", async ({ p
   // Half the clip is gone, at the clip's own rate: a second of an 8 kHz, 16-bit mono tone.
   expect(stored[0].byteLength).toBeGreaterThan(44 + 7000 * 2);
   expect(stored[0].byteLength).toBeLessThan(44 + 9000 * 2);
-  await expect(page.getByRole("textbox", { name: /^Media path/ })).toHaveValue(
-    "media/loom/words/words-1/uploads/hello-trimmed-1234abcd.wav",
+  // The shorter clip is a candidate: heard in place of the current one, bound only on Save.
+  const trimmed = card.locator('audio[aria-label="Trimmed candidate"]');
+  await expect(trimmed).toHaveAttribute(
+    "src",
+    `${base}/act_test/media-upload?path=${encodeURIComponent(stored[0].path)}`,
   );
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  const path = card.getByRole("textbox", { name: /^Media path/ });
+  await expect(path).toHaveValue("media/loom/words/words-1/uploads/hello-00000000.wav");
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(path).toHaveValue("media/loom/words/words-1/uploads/hello-trimmed-1234abcd.wav");
+  await expect(
+    card.getByText("Generate or upload a candidate to compare before saving."),
+  ).toBeVisible();
   expect(f.errors).toEqual([]);
 });
 
@@ -3979,10 +4180,18 @@ test("adds a language, translates a narration into it, and translates the rest a
   expect(f.errors).toEqual([]);
 });
 
-test("a narration shows every language's script, and opens another language from there", async ({
+test("a narration shows a card for every language, the default first, and translates an empty one", async ({
   page,
 }) => {
   const f = await fixture(page);
+  const translations = [];
+  page.on("request", (request) => {
+    if (
+      new URL(request.url()).pathname === `${base}/act_test/generate-media-text` &&
+      request.method() === "POST"
+    )
+      translations.push(request.postDataJSON());
+  });
   await create(page);
   const narration = (key, script, extra = {}) => ({
     key,
@@ -4018,24 +4227,35 @@ test("a narration shows every language's script, and opens another language from
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
-  const languages = page.getByRole("region", { name: "In every language" });
-  await expect(languages.getByRole("listitem")).toHaveText([
-    /^en-USHelloBound$/,
-    /^es-MXNeeds translationNeeds speechOpen$/,
-  ]);
-  // The bound recording can be downloaded as the player would fetch it.
-  await expect(page.getByRole("link", { name: "Download current", exact: true })).toHaveAttribute(
+  // One card per language, the default first, each named by the product's language label.
+  const cards = page.getByRole("region", { name: /^(English|Spanish) audio$/ });
+  await expect(cards).toHaveCount(2);
+  await expect(cards.first()).toHaveAccessibleName("English audio");
+  const english = page.getByRole("region", { name: "English audio", exact: true });
+  const spanish = page.getByRole("region", { name: "Spanish audio", exact: true });
+  await expect(english.getByRole("textbox", { name: /^English script/ })).toHaveValue("Hello");
+  await expect(
+    english.getByRole("button", { name: "Regenerate audio", exact: true }),
+  ).toBeVisible();
+  // Spanish has no script yet: it is translated from English before it can be spoken.
+  await expect(spanish.getByRole("textbox", { name: /^Spanish script/ })).toHaveValue("");
+  await expect(spanish.getByText("No audio yet for Spanish.", { exact: true })).toBeVisible();
+  await expect(spanish.getByRole("button", { name: /^(Generate|Regenerate) audio$/ })).toHaveCount(
+    0,
+  );
+  // The bound recording can be downloaded as the player would fetch it, from Advanced.
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(
+    english.getByRole("link", { name: "Download current", exact: true }),
+  ).toHaveAttribute(
     "href",
     `${base}/act_test/sandbox/media/loom/words/words-1/uploads/hello-1234abcd.wav`,
   );
-  await languages.getByRole("button", { name: "Open", exact: true }).click();
   // Spanish has no recording yet, so there is nothing to download.
-  await expect(page.getByRole("link", { name: "Download current", exact: true })).toHaveCount(0);
-  // Spanish is open now: its row has nothing to open, and English's has.
-  await expect(languages.getByRole("listitem")).toHaveText([
-    /^en-USHelloBoundOpen$/,
-    /^es-MXNeeds translationNeeds speech$/,
-  ]);
+  await expect(spanish.getByRole("link", { name: "Download current", exact: true })).toHaveCount(0);
+  await spanish.getByRole("button", { name: "Translate from English", exact: true }).click();
+  await expect.poll(() => translations.length).toBe(1);
+  expect(translations[0]).toMatchObject({ language: "es-MX", assetKey: "hello", translate: true });
   expect(f.errors).toEqual([]);
 });
 
@@ -4055,6 +4275,11 @@ test("marks an audio asset as music or a sound effect, with how the module plays
   page,
 }) => {
   const f = await fixture(page);
+  const saved = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === `${base}/act_test/media` && request.method() === "PUT")
+      saved.push(request.postDataJSON().manifest);
+  });
   await create(page);
   await openSection(page, "Specification");
   await page
@@ -4083,7 +4308,9 @@ test("marks an audio asset as music or a sound effect, with how the module plays
   );
   await openSection(page, "Scenes and media");
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Generate speech", exact: true })).toBeVisible();
+  // Narration shows a voice; the audio type is chosen in the Advanced view.
+  await expect(page.getByRole("button", { name: /^Voice: / })).toBeVisible();
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
 
   // Music loops quietly by default, and is not spoken.
   await page.getByRole("button", { name: "Audio type", exact: true }).click();
@@ -4093,29 +4320,28 @@ test("marks an audio asset as music or a sound effect, with how the module plays
     "true",
   );
   await expect(page.getByRole("slider", { name: "Volume", exact: true })).toHaveValue("0.4");
-  await expect(page.getByRole("button", { name: "Generate speech", exact: true })).toHaveCount(0);
-  await expect(page.getByText(/not spoken/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Voice: / })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: /^Generation prompt/ })).toBeVisible();
   await page.getByRole("switch", { name: "Loop", exact: true }).click();
   await page.getByRole("slider", { name: "Volume", exact: true }).fill("0.25");
   await expect(page.getByText("25%", { exact: true })).toBeVisible();
 
-  const saved = page.waitForRequest(
-    (request) => request.url().endsWith("/media") && request.method() === "PUT",
-  );
-  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
-  expect((await saved).postDataJSON().manifest.assets["en-US"][0]).toMatchObject({
-    key: "welcome",
-    kind: "music",
-    channel: "music",
-    loop: false,
-    volume: 0.25,
-  });
+  // Each pause between these edits may save on its own; the last save carries all of them.
+  await expect
+    .poll(() => saved.at(-1)?.assets["en-US"][0])
+    .toMatchObject({
+      key: "welcome",
+      kind: "music",
+      channel: "music",
+      loop: false,
+      volume: 0.25,
+    });
 
   // Back to narration drops all four together.
   await page.getByRole("button", { name: "Audio type", exact: true }).click();
   await page.getByRole("option", { name: "Narration", exact: true }).click();
   await expect(page.getByRole("switch", { name: "Loop", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Generate speech", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Voice: / })).toBeVisible();
   expect(f.errors).toEqual([]);
 });
 
@@ -4212,7 +4438,7 @@ test("opens an image full size and closes it with Escape", async ({ page }) => {
   await openSection(page, "Scenes and media");
   await planMedia(page);
   await page.getByRole("textbox", { name: /^Media path/ }).fill("media/images/cat.png");
-  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await mediaAutosaved(page);
   await page.getByRole("button", { name: "Preview image", exact: true }).click();
   await expect(page.getByText("1 × 1 pixels", { exact: true })).toBeVisible();
   await expect(page.getByText("Select the image to see it full size.")).toBeVisible();
@@ -4907,8 +5133,120 @@ test("makes a ref from the template, keeping one image and regenerating a narrat
     },
   ]);
   expect(pipelines).toEqual([
-    { agentId: "default_agent", stage: "assets", language: "en-US", voice: "Puck" },
+    { agentId: "media_agent", stage: "assets", language: "en-US", voice: "Puck" },
   ]);
+  expect(f.errors).toEqual([]);
+});
+
+test("the preview builds a module no one has built, plays it, and replays a saved draft", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1700, height: 900 });
+  const f = await fixture(page);
+  await create(page);
+  let built = false;
+  const builds = [];
+  let plays = 0;
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value) =>
+      route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/act_test/sandbox/status`)
+      return json(
+        built
+          ? { state: "ready", playable: true, buildable: false, message: "Ready.", buildLog: null }
+          : {
+              state: "pending_scaffold",
+              playable: false,
+              buildable: true,
+              message: "No module has been built for this activity yet.",
+              buildLog: null,
+            },
+      );
+    if (p === `${base}/act_test/sandbox/build`) {
+      builds.push(request.postDataJSON());
+      built = true;
+      return json({ ok: true, joined: false, skipped: false, message: "Built.", log: "" });
+    }
+    if (p === `${base}/act_test/sandbox/payload`) return json({ configuration: {} });
+    if (p === `${base}/act_test/sandbox/play`) {
+      plays += 1;
+      return route.fulfill({ contentType: "text/html", body: "<!doctype html><p>module</p>" });
+    }
+    return route.fallback();
+  });
+  const panel = await openPanel(page, "Preview");
+  const frame = panel.locator('iframe[title="Preview"]');
+  await expect(frame).toBeVisible();
+  expect(builds).toEqual([{ force: false }]);
+  await expect.poll(() => plays).toBe(1);
+  // None of the old captions: no status line for a module that plays.
+  await expect(panel.getByText("Ready.", { exact: true })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Play", exact: true })).toHaveCount(0);
+
+  // Saving the draft plays the new module, without asking.
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Save Spec", exact: true }).click();
+  await expect.poll(() => plays).toBe(2);
+  expect(builds).toHaveLength(1);
+
+  // Filling the workspace fits the whole screen of the module, height included.
+  await panel.getByRole("button", { name: "Fill the workspace", exact: true }).click();
+  const box = await frame.locator("xpath=..").boundingBox();
+  const shown = await panel.boundingBox();
+  expect(box.y + box.height).toBeLessThanOrEqual(shown.y + shown.height);
+  expect(box.width).toBeGreaterThan(600);
+  expect(f.errors).toEqual([]);
+});
+
+test("resizes the side panel by drag and keyboard, and lets it fill the workspace", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1700, height: 1000 });
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("group", { name: "Activity panels" })
+    .getByRole("button", { name: "Preview" })
+    .click();
+  const player = page.getByRole("complementary", { name: "Preview", exact: true });
+  const divider = page.getByRole("separator", { name: "Panel width", exact: true });
+  await expect(divider).toHaveAttribute("aria-valuenow", "480");
+
+  // Dragging the divider left widens the panel, and the width outlives a reload.
+  const box = await divider.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 300, box.y + 100, { steps: 5 });
+  await page.mouse.up();
+  const dragged = Number(await divider.getAttribute("aria-valuenow"));
+  expect(dragged).toBeGreaterThan(740);
+  expect(Math.round((await player.boundingBox()).width)).toBe(dragged);
+  await page.reload();
+  await expect(divider).toHaveAttribute("aria-valuenow", String(dragged));
+
+  // The keyboard moves it too; End takes as much as the editor can spare.
+  await divider.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(divider).toHaveAttribute("aria-valuenow", String(dragged - 16));
+  await page.keyboard.press("End");
+  const widest = Number(await divider.getAttribute("aria-valuenow"));
+  expect(widest).toBeGreaterThan(dragged);
+  expect(widest).toBeLessThan(1700);
+
+  // Filling the workspace covers the work; putting it back restores the divider.
+  await page.getByRole("button", { name: "Fill the workspace", exact: true }).click();
+  await expect(divider).toHaveCount(0);
+  const body = await player.boundingBox();
+  expect(body.width).toBeGreaterThan(1600);
+  await page
+    .getByRole("button", { name: "Put the panel back beside the work", exact: true })
+    .click();
+  await expect(divider).toHaveAttribute("aria-valuenow", String(widest));
   expect(f.errors).toEqual([]);
 });
 
@@ -4928,7 +5266,11 @@ test("switches the studio to the Reviewing layout and saves a layout of its own"
   await expect(
     page.getByRole("button", { name: "Expand the activity rail", exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("complementary", { name: "Player", exact: true })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Preview", exact: true })).toBeVisible();
+  await expect(page.getByRole("separator", { name: "Panel width", exact: true })).toHaveAttribute(
+    "aria-valuenow",
+    "820",
+  );
   await layoutMenu.click();
   await expect(item("Reviewing")).toContainText("Current");
   await expect(item("Writing")).not.toContainText("Current");
@@ -4969,7 +5311,7 @@ test("switches the studio to the Reviewing layout and saves a layout of its own"
   await layoutMenu.click();
   await item("Audio pass").click();
   await expect(page).toHaveURL(/section=description/);
-  await expect(page.getByRole("complementary", { name: "Player", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: "Preview", exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("separator", { name: "Activity rail width", exact: true }),
   ).toBeVisible();
@@ -5383,8 +5725,8 @@ test("checks quality and lists what must be fixed", async ({ page }) => {
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
 
   // Without the test browser, Check quality is not offered, and the page says why.
-  await openSection(page, "Module preview");
-  await expect(page.getByRole("heading", { name: /^Quality/ })).toBeVisible();
+  await openPanel(page, "Quality");
+  await expect(page.getByRole("heading", { name: /^Quality/, level: 3 })).toBeVisible();
   const check = page.getByRole("button", { name: "Check quality", exact: true });
   await expect(check).toBeDisabled();
   await expect(
@@ -5397,8 +5739,7 @@ test("checks quality and lists what must be fixed", async ({ page }) => {
 
   // Installed, it checks; the reports appear once the run settles.
   browserInstalled = true;
-  await openSection(page, "Description");
-  await openSection(page, "Module preview");
+  await reopenPanel(page, "Quality");
   await expect(check).toBeEnabled();
   await check.click();
   await expect(page.getByText("Checking quality…", { exact: true })).toBeVisible();
@@ -5529,7 +5870,7 @@ test("runs the tests and lists each criterion's result", async ({ page }) => {
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
 
   // Without the test browser, Run tests is not offered, and the page says why.
-  await openSection(page, "Module preview");
+  await openPanel(page, "Tests");
   await expect(page.getByRole("heading", { name: /^Test results/ })).toBeVisible();
   const runTests = page.getByRole("button", { name: "Run tests", exact: true });
   await expect(runTests).toBeDisabled();
@@ -5545,8 +5886,7 @@ test("runs the tests and lists each criterion's result", async ({ page }) => {
 
   // Installed, it runs; the results appear once the run settles.
   browserInstalled = true;
-  await openSection(page, "Description");
-  await openSection(page, "Module preview");
+  await reopenPanel(page, "Tests");
   await expect(runTests).toBeEnabled();
   await runTests.click();
   await expect(page.getByText("Running tests…", { exact: true })).toBeVisible();
@@ -5572,8 +5912,7 @@ test("runs the tests and lists each criterion's result", async ({ page }) => {
 
   // Once the specification changes, the old results are marked out of date.
   stale = true;
-  await openSection(page, "Description");
-  await openSection(page, "Module preview");
+  await reopenPanel(page, "Tests");
   await expect(page.getByTestId("tests-stale")).toHaveText(
     "Out of date: the specification changed since these tests ran. Run tests again to check it.",
   );
@@ -5717,64 +6056,66 @@ test("writes a prompt for a sound effect, generates it, and keeps the new clip",
   await openSection(page, "Scenes and media");
   await planMedia(page);
 
-  // Without the key, the editor names the Vault key to add and will not generate.
-  const prompt = page.getByRole("textbox", { name: /^Prompt/ });
+  // Without the key, the card names the Vault key to add and will not generate.
+  const card = page.getByRole("region", { name: "English audio", exact: true });
+  const prompt = card.getByRole("textbox", { name: /^Generation prompt/ });
   await expect(prompt).toHaveValue("a door");
   await expect(
-    page.getByText("Add ELEVENLABS_API_KEY to the selected agent's Vault.", { exact: true }),
+    card.getByText("Add ELEVENLABS_API_KEY to the Media Agent's Vault.", { exact: true }),
   ).toBeVisible();
-  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  const generate = card.getByRole("button", { name: /^(Generate|Regenerate) audio$/ });
   await expect(generate).toBeDisabled();
   // Uploading and the library stay available.
+  await expect(card.getByText("Upload audio", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(
-    page.getByText(
-      "Music and effects are not spoken: generate one from a prompt, or upload a file.",
-      { exact: true },
-    ),
+    card.getByRole("button", { name: "Choose from media library", exact: true }),
   ).toBeVisible();
 
   keyed = true;
   await page.reload();
   await openSection(page, "Scenes and media");
+  // The length is asked for in the Advanced view.
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
   await prompt.fill("a heavy wooden door creaks open");
-  await page.getByRole("spinbutton", { name: /^Length/ }).fill("3");
+  await card.getByRole("spinbutton", { name: /^Length/ }).fill("3");
   await expect(generate).toBeDisabled();
-  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
-  await expect.poll(() => savedManifests.length).toBe(1);
-  expect(savedManifests[0].assets["en-US"][0]).toMatchObject({
-    script: '<audio kind="sfx">a heavy wooden door creaks open</audio>',
-    targetDurationMs: 3000,
-    kind: "sfx",
-  });
+  // The two edits save themselves, perhaps one at a time; the last save carries both.
+  await expect
+    .poll(() => savedManifests.at(-1)?.assets["en-US"][0])
+    .toMatchObject({
+      script: '<audio kind="sfx">a heavy wooden door creaks open</audio>',
+      targetDurationMs: 3000,
+      kind: "sfx",
+    });
   await expect(generate).toBeEnabled();
   await generate.click();
   await expect.poll(() => generated.length).toBe(1);
   expect(generated[0]).toMatchObject({
-    agentId: "default_agent",
+    agentId: "media_agent",
     language: "en-US",
     assetKey: "door",
     provider: "elevenlabs",
   });
-  await expect(page.getByRole("button", { name: "Generating…", exact: true })).toBeDisabled();
+  await expect(card.getByRole("button", { name: "Generating…", exact: true })).toBeDisabled();
 
   soundRuns[0] = { ...soundRuns[0], status: "succeeded", hasCandidate: true };
-  // The take plays beside the current file, and replaces it only on request.
-  const comparison = page.getByRole("region", { name: "Current and new", exact: true });
-  await expect(comparison).toBeVisible({ timeout: 15_000 });
-  await expect(comparison.locator('audio[aria-label="New"]')).toHaveAttribute(
-    "src",
-    `${base}/act_test/runs/run_sound_1/audio`,
-  );
-  await expect(page.getByText(/^ElevenLabs · 3 s · /)).toBeVisible();
-  await comparison.getByRole("button", { name: "Use new", exact: true }).click();
+  // The take plays beside the current file, and replaces it only on Save.
+  const candidate = card.locator('audio[aria-label="Generated candidate"]');
+  await expect(candidate).toHaveAttribute("src", `${base}/act_test/runs/run_sound_1/audio`, {
+    timeout: 15_000,
+  });
+  await card.getByRole("button", { name: "Save", exact: true }).click();
   await expect
     .poll(() => accepted?.mediaPlan.manifest.assets["en-US"][0].path)
     .toBe("media/generated/run_sound_1.mp3");
-  await expect(page.locator('audio[aria-label="Accepted audio"]')).toHaveAttribute(
+  await expect(card.locator('audio[aria-label="Current audio"]')).toHaveAttribute(
     "src",
     `${base}/act_test/runs/run_sound_1/audio`,
   );
-  await expect(page.getByText("media/generated/run_sound_1.mp3", { exact: true })).toBeVisible();
+  await expect(card.getByRole("textbox", { name: /^Media path/ })).toHaveValue(
+    "media/generated/run_sound_1.mp3",
+  );
   expect(f.errors).toEqual([]);
 });
 
@@ -5885,6 +6226,8 @@ test("lists the model hub as a sound provider, disabled until it offers a model"
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
+  // The provider and model are chosen in the Advanced view.
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
 
   // Shown, never hidden: the option is there, disabled, with the reason in its name.
   const provider = page.getByRole("button", { name: "Provider", exact: true });
@@ -5911,6 +6254,7 @@ test("lists the model hub as a sound provider, disabled until it offers a model"
   await page.reload();
   await setupLoaded;
   await openSection(page, "Scenes and media");
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
   // Centred first: scrolling to reach a menu row would move the trigger and close the menu.
   await provider.evaluate((element) => element.scrollIntoView({ block: "center" }));
   await provider.click();
@@ -5921,10 +6265,10 @@ test("lists the model hub as a sound provider, disabled until it offers a model"
   await model.click();
   await page.getByRole("option", { name: "tune-pro", exact: true }).click();
   await expect(model).toHaveText("tune-pro");
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await page.getByRole("button", { name: /^(Generate|Regenerate) audio$/ }).click();
   await expect.poll(() => generated.length).toBe(1);
   expect(generated[0]).toMatchObject({
-    agentId: "default_agent",
+    agentId: "media_agent",
     language: "en-US",
     assetKey: "tune",
     provider: "agenthub",
@@ -6117,6 +6461,8 @@ test("speaks a narration with ElevenLabs and keeps its word timings", async ({ p
                 type: "audio",
                 description: "Greeting",
                 script: "Hello, big cat!",
+                // Written for Gemini, which this agent has no key for.
+                speechProvider: "gemini",
                 usages: [usage],
               },
             ],
@@ -6140,9 +6486,35 @@ test("speaks a narration with ElevenLabs and keeps its word timings", async ({ p
     const p = url.pathname;
     const json = (value, status = 200) =>
       route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/elevenlabs-voices`)
+      // The Media Agent's library: the default named after the voice it stands for, then the rest.
+      return json({
+        voices: [
+          {
+            id: "elevenlabs-default",
+            label: "ElevenLabs default",
+            voiceName: "Sarah",
+            provider: "ElevenLabs",
+            providerId: "elevenlabs",
+            model: "eleven_v3",
+            languages: ["en-US"],
+            previewUrl: null,
+          },
+          {
+            id: "AbCdEfGhIj0123456789",
+            label: "Aaron",
+            provider: "ElevenLabs",
+            providerId: "elevenlabs",
+            model: "eleven_v3",
+            languages: ["en-US"],
+            previewUrl: null,
+            description: "american · middle aged · male",
+          },
+        ],
+      });
     if (p === `${base}/speech-setup`) {
-      const agent = url.searchParams.get("agentId");
-      setupQueries.push(agent);
+      // The Media Agent answers, whoever runs the stages: the App names no agent.
+      setupQueries.push(url.search);
       return json({
         provider: "Gemini",
         model: "gemini-3.1-flash-tts-preview",
@@ -6150,40 +6522,32 @@ test("speaks a narration with ElevenLabs and keeps its word timings", async ({ p
         catalogue: [
           gemini("Kore"),
           gemini("Puck"),
-          ...(agent
-            ? [
-                {
-                  id: "elevenlabs-default",
-                  label: "ElevenLabs default",
-                  provider: "ElevenLabs",
-                  providerId: "elevenlabs",
-                  model: "eleven_v3",
-                  languages: [],
-                  previewUrl: null,
-                },
-              ]
-            : []),
+          {
+            id: "elevenlabs-default",
+            label: "ElevenLabs default",
+            provider: "ElevenLabs",
+            providerId: "elevenlabs",
+            model: "eleven_v3",
+            languages: [],
+            previewUrl: null,
+          },
         ],
         vaultKey: "GEMINI_API_KEY",
-        ...(agent
-          ? {
-              providers: [
-                {
-                  id: "gemini",
-                  credential: "GEMINI_API_KEY",
-                  available: false,
-                  problem: "credential_missing",
-                  timings: false,
-                },
-                {
-                  id: "elevenlabs",
-                  credential: "ELEVENLABS_API_KEY",
-                  available: true,
-                  timings: true,
-                },
-              ],
-            }
-          : {}),
+        providers: [
+          {
+            id: "gemini",
+            credential: "GEMINI_API_KEY",
+            available: false,
+            problem: "credential_missing",
+            timings: false,
+          },
+          {
+            id: "elevenlabs",
+            credential: "ELEVENLABS_API_KEY",
+            available: true,
+            timings: true,
+          },
+        ],
       });
     }
     if (/\/runs\/[^/]+\/audio$/.test(p)) {
@@ -6263,36 +6627,55 @@ test("speaks a narration with ElevenLabs and keeps its word timings", async ({ p
   await page.getByRole("button", { name: "Save Spec", exact: true }).click();
   await openSection(page, "Scenes and media");
   await planMedia(page);
-  // The editor asks which providers the chosen agent can use.
-  await expect.poll(() => setupQueries.includes("default_agent")).toBe(true);
+  // The editor asks which providers the Media Agent can use, naming no agent.
+  await expect.poll(() => setupQueries.includes("")).toBe(true);
 
-  // The narration names no provider, so Gemini, which this agent has no key for.
-  const provider = page.getByRole("button", { name: "Provider", exact: true });
+  // The provider and model are chosen in the Advanced view.
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  const card = page.getByRole("region", { name: "English audio", exact: true });
+  const provider = card.getByRole("button", { name: "Provider", exact: true });
   await expect(provider).toContainText("Gemini (needs GEMINI_API_KEY)");
-  const generate = page.getByRole("button", { name: "Generate speech", exact: true });
+  const generate = card.getByRole("button", { name: /^(Generate|Regenerate) audio$/ });
   await expect(generate).toBeDisabled();
+  // Only ElevenLabs offers a choice of model.
+  const model = card.getByRole("button", { name: "Model", exact: true });
+  await expect(model).toHaveCount(0);
   // Bring the picker into view first: a scroll while its menu is open closes the menu.
   await provider.scrollIntoViewIfNeeded();
   await page.waitForTimeout(200);
   await provider.click();
   await page.getByRole("option", { name: "ElevenLabs", exact: true }).click();
   await expect(provider).toContainText("ElevenLabs");
-  // The voice picker offers ElevenLabs' voices, and the Vault's default is the one used.
-  await expect(page.getByRole("button", { name: /^Voice/ }).first()).toContainText(
-    "ElevenLabs · Default voice",
-  );
-  await expect(page.getByRole("textbox", { name: /^ElevenLabs voice ID/ })).toBeVisible();
-  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await expect(model).toHaveText("Eleven v3");
+  // The voice picker offers the Media Agent's ElevenLabs library, and its default is the one
+  // used, named after the voice it stands for.
+  const voicePicker = card.getByRole("button", { name: /^Voice/ }).first();
+  await expect(voicePicker).toContainText("ElevenLabs · Default voice (Sarah)");
+  await voicePicker.click();
+  await expect(
+    page.getByRole("option", { name: /^Aaron · american · middle aged · male/ }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(card.getByRole("button", { name: "Reload voices", exact: true })).toBeVisible();
+  await expect(card.getByRole("textbox", { name: /^ElevenLabs voice ID/ })).toBeVisible();
+  // Choosing the provider saved it, without the save button.
   await expect.poll(() => savedManifests.length).toBe(1);
   expect(savedManifests[0].assets["en-US"][0]).toMatchObject({
     key: "hello",
     speechProvider: "elevenlabs",
   });
+  expect(savedManifests[0].assets["en-US"][0]).not.toHaveProperty("speechModel");
+  // Another model is saved with the narration too; the server speaks with it.
+  await model.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await model.click();
+  await page.getByRole("option", { name: "Eleven v4", exact: true }).click();
+  await expect(model).toHaveText("Eleven v4");
+  await expect.poll(() => savedManifests.at(-1).assets["en-US"][0].speechModel).toBe("eleven_v4");
   await expect(generate).toBeEnabled();
   await generate.click();
   await expect.poll(() => generated.length).toBe(1);
   expect(generated[0]).toMatchObject({
-    agentId: "default_agent",
+    agentId: "media_agent",
     language: "en-US",
     assetKey: "hello",
     provider: "elevenlabs",
@@ -6300,19 +6683,21 @@ test("speaks a narration with ElevenLabs and keeps its word timings", async ({ p
   });
 
   speechRuns[0] = { ...speechRuns[0], status: "succeeded", hasCandidate: true };
-  await expect(page.getByText(/^ElevenLabs · Default voice · /)).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: "Accept this audio", exact: true }).click();
+  await expect(card.locator('audio[aria-label="Generated candidate"]')).toHaveCount(1, {
+    timeout: 15_000,
+  });
+  await card.getByRole("button", { name: "Save", exact: true }).click();
   await expect
     .poll(() => accepted?.mediaPlan.manifest.assets["en-US"][0].path)
     .toBe("media/generated/run_speech_1.mp3");
 
-  // The accepted recording lists its words, marking the one spoken where the player is.
+  // The current recording lists its words, marking the one spoken where the player is.
   const words = page.getByRole("list", {
     name: "Words, highlighted as the recording plays",
     exact: true,
   });
   await expect(words.getByRole("listitem")).toHaveText(["Hello", "big", "cat"]);
-  const player = page.locator('audio[aria-label="Accepted audio"]');
+  const player = card.locator('audio[aria-label="Current audio"]');
   await expect(player).toHaveAttribute("src", `${base}/act_test/runs/run_speech_1/audio`);
   const seekedTo = await player.evaluate(
     (audio) =>
@@ -6915,6 +7300,7 @@ test("shows what a deploy still needs", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /^Deploy More info/, level: 3 })).toBeVisible();
   const status = page.getByTestId("deploy-readiness");
   await expect(status).toHaveText("Not ready to deploy: 4 things are missing.");
+  await page.locator("summary").filter({ hasText: "What is missing" }).click();
   const problems = page.getByRole("region", { name: "What is missing" });
   await expect(problems.getByText("QA Jenkins address is empty.", { exact: true })).toBeVisible();
   await expect(
@@ -6930,6 +7316,7 @@ test("shows what a deploy still needs", async ({ page }) => {
       exact: true,
     }),
   ).toBeVisible();
+  await page.getByText("Repository & branch details", { exact: true }).click();
   const checks = page.getByRole("table", { name: "Deploy checks" });
   await expect(checks.getByRole("row", { name: /^Media clone/ })).toContainText("Not cloned yet");
   await expect(checks.getByRole("row", { name: /^Ref/ })).toContainText("The canonical ref");
@@ -7052,6 +7439,7 @@ test("an admin opens the deploy settings from what a deploy still needs", async 
   });
   await create(page);
   await openSection(page, "Deploy");
+  await page.locator("summary").filter({ hasText: "What is missing" }).click();
   const problems = page.getByRole("region", { name: "What is missing" });
   await expect(problems.getByText("QA Jenkins address is empty.", { exact: true })).toBeVisible();
 
@@ -7326,9 +7714,12 @@ test("releases the module and follows the log", async ({ page }) => {
   });
   await create(page);
   await openSection(page, "Deploy");
-  const table = page.getByRole("table", { name: "Release stages" });
-  await expect(table.getByRole("row", { name: /^Verify the module/ })).toContainText("Not run");
-  await expect(table.getByRole("row", { name: /^Wait for the release tag/ })).toContainText(
+  const table = page.getByRole("list", { name: "Deployment stages" });
+  await page.getByRole("button", { name: "Run one stage", exact: true }).click();
+  await expect(table.getByRole("listitem", { name: /^Verify the module/ })).toContainText(
+    "Not run",
+  );
+  await expect(table.getByRole("listitem", { name: /^Wait for the release tag/ })).toContainText(
     "Waits for Push and start the build to finish.",
   );
 
@@ -7366,7 +7757,7 @@ test("releases the module and follows the log", async ({ page }) => {
     /^Prepare the deploy branch/,
     /^Wait for the release tag/,
   ])
-    await expect(table.getByRole("row", { name })).toContainText("Done");
+    await expect(table.getByRole("listitem", { name })).toContainText("Done");
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
   const settledPolls = polls;
   await page.waitForTimeout(1500);
@@ -7507,11 +7898,12 @@ test("deploys to QA and links to the activity there", async ({ page }) => {
   });
   await create(page);
   await openSection(page, "Deploy");
-  const table = page.getByRole("table", { name: "Release stages" });
-  await expect(table.getByRole("row", { name: /^Export the activity data/ })).toContainText(
+  const table = page.getByRole("list", { name: "Deployment stages" });
+  await page.getByRole("button", { name: "Run one stage", exact: true }).click();
+  await expect(table.getByRole("listitem", { name: /^Export the activity data/ })).toContainText(
     "Waits for Wait for the release tag to finish.",
   );
-  await expect(table.getByRole("row", { name: /^Wait for the QA deploy/ })).toContainText(
+  await expect(table.getByRole("listitem", { name: /^Wait for the QA deploy/ })).toContainText(
     "Not run",
   );
   await expect(page.getByTestId("deploy-qa-result")).toHaveCount(0);
@@ -7534,8 +7926,23 @@ test("deploys to QA and links to the activity there", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Open on QA" })).toHaveAttribute("href", qaUrl);
   await expect(page.getByTestId("deploy-qa-result")).toContainText("On QA with module 1.5.0.");
   for (const name of [/^Export the activity data/, /^Publish the media/, /^Wait for the QA deploy/])
-    await expect(table.getByRole("row", { name })).toContainText("Done");
+    await expect(table.getByRole("listitem", { name })).toContainText("Done");
   expect(starts).toHaveLength(1);
+  await page.getByRole("button", { name: "Run one stage", exact: true }).click();
+  await expect(page.getByRole("progressbar", { name: "QA deployment" })).toHaveAttribute(
+    "aria-valuenow",
+    "2",
+  );
+  await page.setViewportSize({ width: 1600, height: 1100 });
+  await page.screenshot({ path: test.info().outputPath("deploy-light.png"), fullPage: true });
+  await page.evaluate(() => document.documentElement.classList.add("dark"));
+  await page.screenshot({ path: test.info().outputPath("deploy-dark.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(table).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: test.info().outputPath("deploy-mobile.png"), fullPage: true });
   expect(f.errors).toEqual([]);
 });
 

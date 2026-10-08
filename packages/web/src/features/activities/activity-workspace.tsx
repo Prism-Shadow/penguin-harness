@@ -10,7 +10,9 @@
  *
  * On the right, a thin icon rail opens one side panel at a time (the player, the agent
  * sessions) beside the work, the way Loom's right rail does, so the main panel stays the
- * only large thing on screen until an author asks for more.
+ * only large thing on screen until an author asks for more. That panel has a divider of its
+ * own, like Loom's split views, and can fill the whole workspace: the player is what an
+ * author most needs to see large.
  *
  * Given the open section, the header also carries the Layout menu (layout-menu.tsx): named
  * arrangements of the rail, the side panel, the section, the player's map and the run log,
@@ -24,10 +26,18 @@ import { CloseIcon } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import {
-  SIDE_PANEL_WIDTH,
+  SIDE_PANEL_MAX_WIDTH,
+  SIDE_PANEL_MIN_WIDTH,
+  clampSidePanelWidth,
   readSidePanel,
+  readSidePanelExpanded,
+  readSidePanelWidth,
   sidePanelFitsBeside,
+  sidePanelWidthAfterKey,
+  sidePanelWidthFor,
   writeSidePanel,
+  writeSidePanelExpanded,
+  writeSidePanelWidth,
   type StudioPanel,
   RAIL_MAX_WIDTH,
   RAIL_MIN_WIDTH,
@@ -45,6 +55,11 @@ import { LayoutMenu } from "./layout-menu";
 import { applyOrder, type LayoutPreset, type LayoutState } from "./layout-presets";
 import { setMapVisible, setMapWidth, useMapVisible, useMapWidth } from "./map-prefs";
 import { setShowReasoning, useShowReasoning } from "./run-log-prefs";
+import { SidePanelFill } from "./side-panel-fill";
+
+/** Four corners pointing out, and in: fill the workspace, and put the panel back. */
+const EXPAND_ICON = "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5";
+const RESTORE_ICON = "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5";
 
 /** One entry of the right rail: its icon, and what its panel shows once opened. */
 export interface StudioPanelEntry {
@@ -90,6 +105,11 @@ export function ActivityWorkspace({
     writeSidePanel(showPanel.key);
   }, [showPanel]);
   const openPanel = panels.find((entry) => entry.key === panel) ?? null;
+  const [panelWidth, setPanelWidth] = useState(() => readSidePanelWidth());
+  const [expanded, setExpanded] = useState(() => readSidePanelExpanded());
+  const [panelDragging, setPanelDragging] = useState(false);
+  const endPanelDrag = useRef<(() => void) | null>(null);
+  const [panelBody, setPanelBody] = useState<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(() => readRailWidth());
   const [collapsed, setCollapsed] = useState(() => readRailCollapsed());
   const [dragging, setDragging] = useState(false);
@@ -122,8 +142,11 @@ export function ActivityWorkspace({
 
   // The side panel takes its width before the tree is measured against what is left, so
   // opening the player never pushes the tree into its narrow, menu-over-the-work form.
+  // A panel that fills the workspace lies over the work, which keeps its own layout under it.
   const sideBeside = sidePanelFitsBeside(available);
-  const reserved = openPanel && sideBeside ? SIDE_PANEL_WIDTH : 0;
+  const panelApplied = sidePanelWidthFor(panelWidth, available);
+  const panelInline = !!openPanel && sideBeside && !expanded;
+  const reserved = panelInline ? panelApplied : 0;
   const beside = railFitsBeside(available > 0 ? available - reserved : available);
   const open = beside ? !collapsed : narrowOpen;
   const applied = !open
@@ -134,7 +157,13 @@ export function ActivityWorkspace({
 
   // A drag that never sees its pointerup — the system claiming a touch gesture, or this
   // workspace unmounting mid-drag — would otherwise leave the move listener installed.
-  useEffect(() => () => endDrag.current?.(), []);
+  useEffect(
+    () => () => {
+      endDrag.current?.();
+      endPanelDrag.current?.();
+    },
+    [],
+  );
 
   // Opening the rail on a narrow workspace is a temporary answer to having no room for
   // both. Once there is room the answer no longer applies, and keeping it would cover
@@ -185,6 +214,53 @@ export function ActivityWorkspace({
     writeRailWidth(next);
   }
 
+  // The panel's divider: the same drag as the rail's, measured from the workspace's right
+  // edge because the panel sits on that side.
+  const onPanelPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const body = bodyRef.current;
+    if (!body) return;
+    endPanelDrag.current?.();
+    event.preventDefault();
+    setPanelDragging(true);
+    const box = body.getBoundingClientRect();
+    const widthAt = (point: PointerEvent) =>
+      sidePanelWidthFor(box.right - point.clientX, box.width);
+    const move = (point: PointerEvent) => setPanelWidth(widthAt(point));
+    const release = () => {
+      setPanelDragging(false);
+      endPanelDrag.current = null;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", done);
+      window.removeEventListener("pointercancel", release);
+    };
+    const done = (point: PointerEvent) => {
+      const next = widthAt(point);
+      setPanelWidth(next);
+      writeSidePanelWidth(next);
+      release();
+    };
+    endPanelDrag.current = release;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", done);
+    window.addEventListener("pointercancel", release);
+  }, []);
+
+  function onPanelKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    const next = sidePanelWidthAfterKey(panelApplied, event.key, event.shiftKey);
+    if (next === null) return;
+    event.preventDefault();
+    const fitted = sidePanelWidthFor(next, available);
+    setPanelWidth(fitted);
+    writeSidePanelWidth(fitted);
+  }
+
+  function toggleExpanded() {
+    setExpanded((current) => {
+      writeSidePanelExpanded(!current);
+      return !current;
+    });
+  }
+
   function choosePanel(key: StudioPanel) {
     const next = panel === key ? null : key;
     setPanel(next);
@@ -199,6 +275,7 @@ export function ActivityWorkspace({
         railWidth: width,
         railCollapsed: collapsed,
         sidePanel: panel,
+        sidePanelWidth: panelWidth,
         section: layout.section,
         mapWidth,
         mapVisible,
@@ -219,6 +296,12 @@ export function ActivityWorkspace({
       } else if (write.kind === "sidePanel") {
         setPanel(write.value);
         writeSidePanel(write.value);
+      } else if (write.kind === "sidePanelWidth") {
+        setPanelWidth(write.value);
+        writeSidePanelWidth(write.value);
+        // A layout that sizes the panel means it beside the work.
+        setExpanded(false);
+        writeSidePanelExpanded(false);
       } else if (write.kind === "mapVisible") setMapVisible(write.value);
       else if (write.kind === "mapWidth") setMapWidth(write.value);
       else if (write.kind === "showReasoning") setShowReasoning(write.value);
@@ -319,20 +402,64 @@ export function ActivityWorkspace({
         )}
         {/* Too narrow for both, and the rail is open: the rail has the workspace. */}
         {(beside || !open) && children}
+        {panelInline && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={S.activities.studioPanels.width}
+            aria-valuenow={panelApplied}
+            aria-valuemin={SIDE_PANEL_MIN_WIDTH}
+            aria-valuemax={SIDE_PANEL_MAX_WIDTH}
+            title={S.activities.studioPanels.width}
+            tabIndex={0}
+            onPointerDown={onPanelPointerDown}
+            onKeyDown={onPanelKeyDown}
+            className={`w-1.5 shrink-0 cursor-col-resize outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400/60 ${
+              panelDragging
+                ? "bg-gray-300 dark:bg-gray-600"
+                : "bg-transparent hover:bg-gray-200 dark:hover:bg-gray-700"
+            }`}
+          />
+        )}
+        {/* While dragging, the player's frame would swallow the pointer; a cover keeps it. */}
+        {(dragging || panelDragging) && <div className="absolute inset-0 z-50 cursor-col-resize" />}
         {openPanel && (
           <aside
             aria-label={openPanel.label}
-            // Too narrow to sit beside the work: it covers the editor, up to the rail.
-            style={{
-              width: `${SIDE_PANEL_WIDTH}px`,
-              ...(sideBeside ? {} : { right: 0 }),
-            }}
-            className={`flex min-h-0 max-w-full shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 ${
-              sideBeside ? "" : "absolute inset-y-0 z-50 shadow-lg"
+            // Expanded, it fills the workspace; too narrow to sit beside the work, it covers
+            // the editor from the right.
+            style={
+              expanded
+                ? undefined
+                : {
+                    width: `${sideBeside ? panelApplied : clampSidePanelWidth(panelWidth)}px`,
+                    ...(sideBeside ? {} : { right: 0 }),
+                  }
+            }
+            className={`flex min-h-0 max-w-full shrink-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 ${
+              expanded
+                ? "absolute inset-0 z-40"
+                : sideBeside
+                  ? "border-l"
+                  : "absolute inset-y-0 z-40 border-l shadow-lg"
             }`}
           >
             <div className="flex h-10 shrink-0 items-center gap-2 border-b border-gray-200 px-3 dark:border-gray-800">
               <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{openPanel.label}</h2>
+              <button
+                type="button"
+                aria-pressed={expanded}
+                aria-label={
+                  expanded ? S.activities.studioPanels.restore : S.activities.studioPanels.expand
+                }
+                title={
+                  expanded ? S.activities.studioPanels.restore : S.activities.studioPanels.expand
+                }
+                onClick={toggleExpanded}
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              >
+                <GlyphIcon d={expanded ? RESTORE_ICON : EXPAND_ICON} size={14} />
+              </button>
               <button
                 type="button"
                 aria-label={S.activities.studioPanels.close}
@@ -343,7 +470,11 @@ export function ActivityWorkspace({
                 <CloseIcon />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">{openPanel.render()}</div>
+            <div ref={setPanelBody} className="min-h-0 flex-1 overflow-y-auto">
+              <SidePanelFill.Provider value={{ expanded, body: panelBody }}>
+                {openPanel.render()}
+              </SidePanelFill.Provider>
+            </div>
           </aside>
         )}
       </div>

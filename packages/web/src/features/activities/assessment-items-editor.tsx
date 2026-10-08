@@ -35,21 +35,34 @@ function blockerText(blocker: AssessmentBlocker): string {
 
 export function AssessmentItemsEditor({
   value,
+  savedValue = value,
+  onChange,
   editable,
   busy,
   onSave,
 }: {
   /** The assessment document as saved. */
   value: unknown;
+  savedValue?: unknown;
+  onChange?: (value: Record<string, unknown>) => void;
   /** Whether this viewer may change it here. */
   editable: boolean;
   busy: boolean;
   onSave: (value: Record<string, unknown>) => void;
 }) {
   const words = S.activities.assessment;
-  const saved = useMemo(() => readItems(value), [value]);
-  const [items, setItems] = useState<AssessmentDraftItem[]>(() => saved ?? []);
-  if (!saved) return <p className="text-xs text-gray-500">{words.unsupported}</p>;
+  const saved = useMemo(() => readItems(savedValue), [savedValue]);
+  const current = useMemo(() => readItems(value), [value]);
+  const [localItems, setLocalItems] = useState<AssessmentDraftItem[]>(() => current ?? []);
+  const items = onChange ? (current ?? []) : localItems;
+  const setItems = (
+    update: AssessmentDraftItem[] | ((items: AssessmentDraftItem[]) => AssessmentDraftItem[]),
+  ) => {
+    const next = typeof update === "function" ? update(items) : update;
+    if (onChange) onChange(writeItems(next, value));
+    else setLocalItems(next);
+  };
+  if (!saved || !current) return <p className="text-xs text-gray-500">{words.unsupported}</p>;
   const found = blockers(items);
   const changed = itemsChanged(items, saved);
   const locked = !editable || busy;

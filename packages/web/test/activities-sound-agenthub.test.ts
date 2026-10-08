@@ -55,7 +55,7 @@ describe("the model hub in the Provider picker", () => {
     expect(music!.problem).toBeNull();
     expect(music!.models).toEqual([
       { id: "tune-a", problem: null },
-      { id: "tune-b", problem: "Add OTHER_KEY to the selected agent's Vault." },
+      { id: "tune-b", problem: "Add OTHER_KEY to the Media Agent's Vault." },
     ]);
     // A model that cannot run is never chosen, even when asked for.
     expect(chosenModel(music!, "tune-b")?.id).toBe("tune-a");
@@ -72,7 +72,7 @@ describe("the model hub in the Provider picker", () => {
       modelChoices: [{ id: "tune-b", kinds: ["music"], credential: "OTHER_KEY", available: false }],
     });
     const [music] = providerOptions([status], "music");
-    expect(music!.problem).toBe("Add OTHER_KEY to the selected agent's Vault.");
+    expect(music!.problem).toBe("Add OTHER_KEY to the Media Agent's Vault.");
     expect(chosenModel(music!, null)).toBeNull();
     // A kind no model makes is worded as no model, not as a missing key.
     expect(providerOptions([status], "sfx")[0]!.problem).toContain("No music or sound model");

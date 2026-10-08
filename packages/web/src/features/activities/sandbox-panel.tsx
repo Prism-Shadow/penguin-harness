@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SandboxBuildReport, SandboxStatus } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
 import { StateMapView } from "./state-map-view";
 import { S } from "../../lib/strings";
 import { toneStrip } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
-import { InfoPopover } from "../../components/ui/info-popover";
 import { Select } from "../../components/ui/select";
 import { PREVIEW_RESOLUTIONS, fitScale, parseResolution, sceneIds } from "./preview";
-import { canBuild, playUrl, sandboxTone } from "./sandbox";
+import { playUrl } from "./sandbox";
+import { SidePanelFill } from "./side-panel-fill";
 import {
   highlightMessage,
   pickModeMessage,
@@ -43,16 +43,18 @@ const SILENT_AFTER_MS = 8000;
 export type OnPick = (pick: PlayerPick, sceneId: string | null) => string | null;
 
 /**
- * What the harness knows about this activity's module, and the one action an author has.
+ * The activity's preview, the way Loom's is: it builds what it needs and plays, with nothing
+ * to press. A module no one has built yet is built on sight; a stale one is rebuilt by the
+ * play page itself. A saved draft changes `revision`, which plays the new module.
  *
- * Separate from `ModulePreview`, which runs the bundle an assembly agent produced. This
- * reports the harness's own build of the same module and lets an author rebuild it, so a
- * failed build is something they can see and act on rather than a preview that never
- * appears -- and plays it, including a module Loom left in the WAF checkout.
+ * Only what an author can act on is said: why there is nothing to play, a build running, a
+ * build that failed with its output. A preview that plays needs no caption.
  */
 export function SandboxPanel({
   projectId,
   activityId,
+  revision,
+  moduleRunId = null,
   spec,
   languages,
   onPick,
@@ -60,6 +62,10 @@ export function SandboxPanel({
 }: {
   projectId: string;
   activityId: string;
+  /** The draft's revision; a new one rebuilds and replays. */
+  revision: string;
+  /** The successful assembly the sandbox selects, honoring a pinned build. */
+  moduleRunId?: string | null;
   spec: Record<string, unknown> | null;
   languages: string[];
   onPick?: OnPick;
@@ -71,90 +77,95 @@ export function SandboxPanel({
   const [report, setReport] = useState<SandboxBuildReport | null>(null);
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The revision the panel last built on sight for, so a failed build is not retried in a
+  // loop: the author's next save, or Build again, is what tries again.
+  const tried = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await apiFetch<SandboxStatus>(`${base}/status`));
+      const next = await apiFetch<SandboxStatus>(`${base}/status`);
+      setStatus(next);
       setError(null);
+      return next;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      return null;
     }
   }, [base]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const build = useCallback(
+    async (force: boolean) => {
+      setBuilding(true);
+      setError(null);
+      try {
+        setReport(
+          await apiFetch<SandboxBuildReport>(`${base}/build`, { method: "POST", body: { force } }),
+        );
+        await refresh();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setBuilding(false);
+      }
+    },
+    [base, refresh],
+  );
 
-  const build = async () => {
-    setBuilding(true);
+  useEffect(() => {
+    let live = true;
+    setReport(null);
     setError(null);
-    try {
-      // Forced: an author pressing Build after a build they believe failed is asking for a
-      // build, not a freshness opinion.
-      setReport(
-        await apiFetch<SandboxBuildReport>(`${base}/build`, {
-          method: "POST",
-          body: { force: true },
-        }),
-      );
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBuilding(false);
-    }
-  };
+    void refresh().then((next) => {
+      if (!live || !next) return;
+      // Nothing to play yet but something to build: build it, once per revision.
+      const buildKey = `${base}:${revision}:${moduleRunId ?? ""}`;
+      if (!next.playable && next.buildable && tried.current !== buildKey) {
+        tried.current = buildKey;
+        void build(false);
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [refresh, build, revision, moduleRunId, base]);
 
   if (!status && !error) return null;
-  // The last build's output, whichever call produced it. A failed build is only readable in
-  // full, so it is shown rather than summarised.
-  const log = report?.ok === false ? report.log : (status?.buildLog ?? null);
+  const failed = report?.ok === false;
+  const log = failed ? report.log : null;
 
   return (
     <section className="space-y-3">
-      <h3 className="flex items-center gap-2 text-sm font-semibold">
-        {S.activities.sandboxTitle}
-        <InfoPopover label={S.activities.sandboxTitle}>
-          <p>{S.activities.sandboxHelp}</p>
-        </InfoPopover>
-      </h3>
-      {status && (
-        <p
-          role="status"
-          className={`rounded-md border p-3 text-xs ${toneStrip[sandboxTone(status)]}`}
-        >
-          {status.message}
+      {building ? (
+        <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.muted}`}>
+          {S.activities.sandboxBuilding}
         </p>
+      ) : (
+        status &&
+        !status.playable &&
+        !failed && (
+          <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.muted}`}>
+            {status.message}
+          </p>
+        )
       )}
-      {report && (
-        <p
-          role="status"
-          className={`rounded-md border p-3 text-xs ${toneStrip[report.ok ? "success" : "danger"]}`}
-        >
-          {report.message}
-        </p>
+      {failed && (
+        <div role="alert" className={`space-y-2 rounded-md border p-3 text-xs ${toneStrip.danger}`}>
+          <p>{report.message}</p>
+          <Button size="sm" onClick={() => void build(true)} disabled={building}>
+            {S.activities.sandboxBuildAgain}
+          </Button>
+        </div>
       )}
       {error && (
         <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
           {error}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          onClick={() => void build()}
-          disabled={building || !status || !canBuild(status)}
-        >
-          {building ? S.activities.sandboxBuilding : S.activities.sandboxBuild}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => void refresh()} disabled={building}>
-          {S.activities.sandboxRefresh}
-        </Button>
-      </div>
-      {status?.playable && (
+      {status?.playable && !building && (
         <SandboxPlayer
           projectId={projectId}
           activityId={activityId}
+          revision={`${revision}:${moduleRunId ?? ""}`}
           spec={spec}
           languages={languages}
           onPick={onPick}
@@ -162,7 +173,7 @@ export function SandboxPanel({
         />
       )}
       {log && (
-        <details>
+        <details open>
           <summary className="cursor-pointer text-xs text-gray-500">
             {S.activities.sandboxLog}
           </summary>
@@ -176,12 +187,13 @@ export function SandboxPanel({
 }
 
 /**
- * The activity, playing. Nothing loads until an author presses Play: the first play of a
- * module builds it, and a panel that built on sight would build every module anyone opened.
+ * The activity, playing as soon as the panel opens. In a panel that fills the workspace it
+ * fits the height left under its controls as well as the width, so the whole screen shows.
  */
 function SandboxPlayer({
   projectId,
   activityId,
+  revision,
   spec,
   languages,
   onPick,
@@ -189,6 +201,7 @@ function SandboxPlayer({
 }: {
   projectId: string;
   activityId: string;
+  revision: string;
   spec: Record<string, unknown> | null;
   languages: string[];
   onPick?: OnPick;
@@ -199,7 +212,6 @@ function SandboxPlayer({
   const [resolution, setResolution] = useState("");
   const viewport = resolution ? parseResolution(resolution) : own;
   const scenes = sceneIds(spec);
-  const [playing, setPlaying] = useState(false);
   const [scene, setScene] = useState("");
   const [language, setLanguage] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
@@ -233,7 +245,6 @@ function SandboxPlayer({
   // nothing for a while is not going to, and "not yet" would be a promise it cannot keep.
   const [silent, setSilent] = useState(false);
   useEffect(() => {
-    if (!playing) return;
     const receive = (event: MessageEvent) => {
       const frame = frameRef.current?.contentWindow;
       const next = readPlayerReport(event.data, event.source, frame);
@@ -256,7 +267,7 @@ function SandboxPlayer({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [playing]);
+  }, []);
   function togglePicking() {
     const next = !picking;
     setPicking(next);
@@ -272,10 +283,9 @@ function SandboxPlayer({
     setPicking(false);
     setPicked(null);
     setSilent(false);
-    if (!playing) return;
     const timer = setTimeout(() => setSilent(true), SILENT_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [playing, reloadKey, scene, language]);
+  }, [reloadKey, revision, scene, language]);
   function sendOutline(id: string | null) {
     // The page may sit on the preview origin or, sandboxed, on no origin at all, so there
     // is no origin to name. The message is an id and nothing else; the page accepts it
@@ -312,7 +322,7 @@ function SandboxPlayer({
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [playing]);
+  }, []);
   // The player's whole area, measured to decide whether the map fits beside the player.
   const areaRef = useRef<HTMLDivElement | null>(null);
   const [areaWidth, setAreaWidth] = useState(0);
@@ -325,7 +335,28 @@ function SandboxPlayer({
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [playing]);
+  }, []);
+  // Filling the workspace, the player also fits the height under its controls: the panel
+  // body's height, less where the player starts in it and a margin below.
+  const fill = useContext(SidePanelFill);
+  const [fitHeight, setFitHeight] = useState(0);
+  useLayoutEffect(() => {
+    const body = fill.body;
+    const element = boxRef.current;
+    if (!fill.expanded || !body || !element) {
+      setFitHeight(0);
+      return;
+    }
+    const measure = () => {
+      const top =
+        element.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
+      setFitHeight(Math.max(120, body.clientHeight - top - 16));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [fill.expanded, fill.body]);
   const split = showMap && sideBySide(areaWidth);
   const appliedMapWidth = clampMapWidth(mapWidth, areaWidth);
   // The drag in progress: the divider holding the pointer, and where the drag started.
@@ -393,19 +424,13 @@ function SandboxPlayer({
     setMapWidth(next);
     rememberMapWidth(next);
   }
-  const scale = fitScale(viewport, { width: boxWidth, height: viewport.height });
+  const scale = fitScale(viewport, { width: boxWidth, height: fitHeight || viewport.height });
   const url = playUrl(projectId, activityId, {
     scene: scene || undefined,
     language: language || undefined,
   });
   return (
     <div className="space-y-3">
-      <h4 className="flex items-center gap-2 text-sm font-semibold">
-        {S.activities.sandboxPlayer}
-        <InfoPopover label={S.activities.sandboxPlayer}>
-          <p>{S.activities.sandboxPlayHelp}</p>
-        </InfoPopover>
-      </h4>
       <div className="flex flex-wrap items-center gap-2">
         {scenes.length > 0 && (
           <Select
@@ -437,25 +462,14 @@ function SandboxPlayer({
             ))}
           </Select>
         )}
-        {playing ? (
-          <>
-            {onPick && (
-              <Button size="sm" aria-pressed={picking} onClick={togglePicking}>
-                {picking ? S.activities.studioPlayer.picking : S.activities.studioPlayer.pick}
-              </Button>
-            )}
-            <Button size="sm" onClick={() => setReloadKey((value) => value + 1)}>
-              {S.activities.previewReload}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setPlaying(false)}>
-              {S.activities.sandboxStop}
-            </Button>
-          </>
-        ) : (
-          <Button size="sm" variant="primary" onClick={() => setPlaying(true)}>
-            {S.activities.sandboxPlay}
+        {onPick && (
+          <Button size="sm" aria-pressed={picking} onClick={togglePicking}>
+            {picking ? S.activities.studioPlayer.picking : S.activities.studioPlayer.pick}
           </Button>
         )}
+        <Button size="sm" onClick={() => setReloadKey((value) => value + 1)}>
+          {S.activities.previewReload}
+        </Button>
         <a className="text-xs underline" target="_blank" rel="noopener noreferrer" href={url}>
           {S.activities.sandboxOpen}
         </a>
@@ -477,120 +491,121 @@ function SandboxPlayer({
           )}
         </Select>
       </div>
-      {playing && (
-        <div
-          ref={areaRef}
-          className={split ? "grid items-stretch gap-x-2" : "grid grid-cols-1"}
-          style={
-            split
-              ? {
-                  gridTemplateColumns: `minmax(${PLAYER_MIN}px, 1fr) ${MAP_GUTTER - 16}px ${appliedMapWidth}px`,
-                }
-              : undefined
-          }
-        >
-          <div ref={boxRef} className="min-w-0">
-            <div
-              className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-black"
-              style={{ height: Math.round(viewport.height * scale) }}
-            >
-              <iframe
-                ref={frameRef}
-                key={`${reloadKey}:${url}`}
-                src={url}
-                title={S.activities.sandboxPlayer}
-                allow="autoplay; fullscreen"
-                className="block border-0"
-                style={{
-                  width: viewport.width,
-                  height: viewport.height,
-                  transform: `scale(${scale})`,
-                  transformOrigin: "top left",
-                }}
-              />
-            </div>
-            <div className="mt-3 space-y-2 text-sm">
-              {picked && (
-                <p role="status" className="text-gray-600 dark:text-gray-300">
-                  {picked}
-                </p>
-              )}
-              <p aria-live="polite" className="text-gray-600 dark:text-gray-300">
-                {report
-                  ? S.activities.studioPlayer.now(report.state.state, report.state.sceneId)
-                  : silent
-                    ? S.activities.studioPlayer.silent
-                    : S.activities.studioPlayer.waiting}
-              </p>
-              {report && report.interactables.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs text-gray-500">
-                    {S.activities.studioPlayer.tapTargets}
-                  </span>
-                  {report.interactables.map((entry) => (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      aria-pressed={outlined === entry.id}
-                      title={entry.description ?? entry.id}
-                      onClick={() => outline(entry.id)}
-                      className={`rounded-md border px-2 py-0.5 text-xs ${
-                        outlined === entry.id
-                          ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-200"
-                          : "border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
-                      }`}
-                    >
-                      {entry.id}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          {split && (
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label={S.activities.studioPlayer.map.resizeMap}
-              title={S.activities.studioPlayer.map.resizeMap}
-              aria-valuenow={appliedMapWidth}
-              aria-valuemin={MAP_MIN}
-              aria-valuemax={mapMaxFor(areaWidth)}
-              tabIndex={0}
-              onPointerDown={onDividerDown}
-              onPointerMove={onDividerMove}
-              onPointerUp={onDividerUp}
-              onPointerCancel={() => endDrag(true)}
-              onLostPointerCapture={() => endDrag(true)}
-              onKeyDown={onDividerKey}
-              className={`min-h-24 cursor-col-resize touch-none rounded-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400/60 ${
-                dragging
-                  ? "bg-gray-300 dark:bg-gray-600"
-                  : "bg-gray-100 hover:bg-gray-200 dark:bg-gray-900 dark:hover:bg-gray-700"
-              }`}
-            />
-          )}
+      <div
+        ref={areaRef}
+        className={split ? "grid items-stretch gap-x-2" : "grid grid-cols-1"}
+        style={
+          split
+            ? {
+                gridTemplateColumns: `minmax(${PLAYER_MIN}px, 1fr) ${MAP_GUTTER - 16}px ${appliedMapWidth}px`,
+              }
+            : undefined
+        }
+      >
+        <div ref={boxRef} className="min-w-0">
           <div
-            className={`min-w-0 text-sm ${
-              split ? "" : "mt-2 border-t border-gray-200 pt-2 dark:border-gray-800"
-            }`}
+            className="mx-auto max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-black"
+            style={{
+              height: Math.round(viewport.height * scale),
+              width: Math.round(viewport.width * scale) + 2,
+            }}
           >
-            <StateMapView
-              open={showMap}
-              onToggle={toggleMap}
-              base={`/api/projects/${encodeURIComponent(projectId)}/activities/${encodeURIComponent(activityId)}/sandbox`}
-              language={language}
-              reportedScene={report?.state.sceneId ?? null}
-              reportedPhase={report?.state.phase ?? null}
-              startScene={scene}
-              interactables={report?.interactables ?? []}
-              outlined={outlined}
-              onOutline={preview}
-              onPin={outline}
+            <iframe
+              ref={frameRef}
+              key={`${reloadKey}:${revision}:${url}`}
+              src={url}
+              title={S.activities.previewTitle}
+              allow="autoplay; fullscreen"
+              className="block border-0"
+              style={{
+                width: viewport.width,
+                height: viewport.height,
+                transform: `scale(${scale})`,
+                transformOrigin: "top left",
+              }}
             />
+          </div>
+          <div className="mt-3 space-y-2 text-sm">
+            {picked && (
+              <p role="status" className="text-gray-600 dark:text-gray-300">
+                {picked}
+              </p>
+            )}
+            <p aria-live="polite" className="text-gray-600 dark:text-gray-300">
+              {report
+                ? S.activities.studioPlayer.now(report.state.state, report.state.sceneId)
+                : silent
+                  ? S.activities.studioPlayer.silent
+                  : S.activities.studioPlayer.waiting}
+            </p>
+            {report && report.interactables.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-gray-500">
+                  {S.activities.studioPlayer.tapTargets}
+                </span>
+                {report.interactables.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    aria-pressed={outlined === entry.id}
+                    title={entry.description ?? entry.id}
+                    onClick={() => outline(entry.id)}
+                    className={`rounded-md border px-2 py-0.5 text-xs ${
+                      outlined === entry.id
+                        ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-200"
+                        : "border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
+                    }`}
+                  >
+                    {entry.id}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      )}
+        {split && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={S.activities.studioPlayer.map.resizeMap}
+            title={S.activities.studioPlayer.map.resizeMap}
+            aria-valuenow={appliedMapWidth}
+            aria-valuemin={MAP_MIN}
+            aria-valuemax={mapMaxFor(areaWidth)}
+            tabIndex={0}
+            onPointerDown={onDividerDown}
+            onPointerMove={onDividerMove}
+            onPointerUp={onDividerUp}
+            onPointerCancel={() => endDrag(true)}
+            onLostPointerCapture={() => endDrag(true)}
+            onKeyDown={onDividerKey}
+            className={`min-h-24 cursor-col-resize touch-none rounded-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400/60 ${
+              dragging
+                ? "bg-gray-300 dark:bg-gray-600"
+                : "bg-gray-100 hover:bg-gray-200 dark:bg-gray-900 dark:hover:bg-gray-700"
+            }`}
+          />
+        )}
+        <div
+          className={`min-w-0 text-sm ${
+            split ? "" : "mt-2 border-t border-gray-200 pt-2 dark:border-gray-800"
+          }`}
+        >
+          <StateMapView
+            open={showMap}
+            onToggle={toggleMap}
+            base={`/api/projects/${encodeURIComponent(projectId)}/activities/${encodeURIComponent(activityId)}/sandbox`}
+            language={language}
+            reportedScene={report?.state.sceneId ?? null}
+            reportedPhase={report?.state.phase ?? null}
+            startScene={scene}
+            interactables={report?.interactables ?? []}
+            outlined={outlined}
+            onOutline={preview}
+            onPin={outline}
+          />
+        </div>
+      </div>
     </div>
   );
 }

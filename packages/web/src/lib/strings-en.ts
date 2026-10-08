@@ -50,7 +50,7 @@ export const en: Strings = {
       waiting: "The activity has not reported its state yet.",
       tapTargets: "Tap targets",
       pick: "Pick",
-      picking: "Click something in the player",
+      picking: "Click something in the preview",
       opened: (name: string) => `Opened ${name}.`,
       noMatch: (id: string) => `Nothing in this activity is named ${id}.`,
       noMedia: "Plan media first: picking opens an asset, and this activity has none yet.",
@@ -143,7 +143,9 @@ export const en: Strings = {
       close: "Close the panel",
       names: {
         run: "Stages",
-        player: "Player",
+        player: "Preview",
+        tests: "Tests",
+        quality: "Quality",
         conversation: "Chat",
         sessions: "Sessions",
       },
@@ -152,6 +154,9 @@ export const en: Strings = {
       hideTranscript: "Hide",
       transcriptToggle: (action: string, run: string, time: string) => `${action}: ${run}, ${time}`,
       openFullPage: "Open full page",
+      width: "Panel width",
+      expand: "Fill the workspace",
+      restore: "Put the panel back beside the work",
     },
     studioRefs: {
       ref: "Ref",
@@ -249,6 +254,7 @@ export const en: Strings = {
         mediaPlan: "Media plan",
         configuration: "Configuration Data",
         assessment: "Assessment Data",
+        definition: "Module Definition",
         features: "Implementation features",
       },
       mediaTitle: "Media files",
@@ -357,8 +363,6 @@ export const en: Strings = {
       voiceUnchanged: "Each narration's own voice",
       keepAll: "Keep all",
       regenerateImages: "Regenerate all images",
-      agent: "Agent that generates",
-      noAgent: "Add an agent to the project to generate speech and images.",
       columns: {
         asset: "Asset",
         type: "Type",
@@ -645,6 +649,11 @@ export const en: Strings = {
         git_unavailable: "git could not be run on this server.",
       },
       releaseTitle: "Module release",
+      workflowTitle: "Deploy to QA",
+      workflowSummary: "Release the module and deploy every ref to QA.",
+      diagnostics: "Repository & branch details",
+      phaseLabels: { module: "Module release", data: "Activity data & media", qa: "QA deployment" },
+      stageProgress: (done, total) => `${done} of ${total} stages complete`,
       releaseAbout:
         "Release module builds and checks the module in its clone on this server, makes the deploy branch's commit, pushes that branch, asks Jenkins to build the module, and waits for the release tag the build makes. Each stage runs only after the one before it has finished since it was last run, and Prepare runs once per Verify. Verify first puts the module clone back to main as origin has it, so a release can always start again. Stop ends the release at once; what a stage already pushed stays pushed.",
       releaseModule: "Release module",
@@ -665,7 +674,7 @@ export const en: Strings = {
       logEmpty: "Nothing logged yet.",
       resolvedVersion: (version) => `Released as ${version}.`,
       openBuild: "Open the Jenkins build",
-      stagesLabel: "Release stages",
+      stagesLabel: "Deployment stages",
       stageColumns: { stage: "Stage", state: "State" },
       advanced: "Run one stage",
       runStage: (stage) => `Run ${stage}`,
@@ -1001,6 +1010,7 @@ export const en: Strings = {
       olderDraft: "It was built from an older draft.",
       openSession: "Open session",
       noRun: "This activity has not been assembled yet.",
+      ready: "Ready to assemble.",
     },
     runLog: {
       showReasoning: "Show reasoning",
@@ -1010,6 +1020,7 @@ export const en: Strings = {
       all: "All stages",
       steps: {
         spec: "Generate spec",
+        mediaSpec: "Generate media spec",
         media: "Plan media",
         translations: "Translate",
         speech: "Generate speech",
@@ -1046,7 +1057,7 @@ export const en: Strings = {
           "The words without a recording have no sounds yet. Give them sounds in Audios first.",
         noSounds: "No music or sound effect is missing.",
         soundProviderUnavailable:
-          "The sound provider cannot be used by this agent. Add its key to the agent's Vault.",
+          "The sound provider cannot be used by the Media Agent. Add its key to the Media Agent's Vault.",
         noAssessment: "The specification says this activity has no assessment.",
         notCanonical: "The assessment is shared by every ref and is written on the canonical ref.",
         noCriteria: "The specification has no acceptance criteria to test.",
@@ -1061,18 +1072,23 @@ export const en: Strings = {
       noAgent: "Choose an agent under the Activity Script first.",
       with: (agent: string) => `With ${agent}`,
       live: "Current stage",
+      skipped: (count: number) => `${count} skipped`,
+      showLog: (step: string) => `Show the ${step} session`,
       waitingForSession: "Waiting for the stage's session to start…",
+      runByServer: "The server makes each clip itself, so this stage has no session to show.",
       openInChat: "Open in chat",
       noRun: "No stages have run in this session of the server.",
     },
-    studioSpec: {
+    specEditor: {
       title: (subject) => `Activity Spec - ${subject}`,
       editor: "Specification JSON",
       savedSide: "Saved specification",
+      save: "Save Spec",
+    },
+    jsonEditor: {
       diff: "Diff",
       diffHelp: "Show the changes since the last save",
       diffHint: "Unsaved changes: show them against the last save",
-      save: "Save Spec",
       toolbar: "Diff controls",
       base: "Since last save",
       changes: "Diff changes",
@@ -1087,13 +1103,13 @@ export const en: Strings = {
       inlineHelp: "Switch to the inline diff",
       sideBySide: "Side by side",
       sideBySideHelp: "Switch to the side-by-side diff",
-      sideBySideLabel: "Specification side-by-side diff",
+      sideBySideLabel: "Side-by-side diff",
       revertAll: "Revert all",
       revertAllHelp: "Revert every change back to the last save",
       minimap: "Change overview",
       jump: (n) => `Jump to change ${n}`,
-      empty: "The specification is empty.",
-      notObject: "The specification must be a JSON object.",
+      empty: "The document is empty.",
+      notObject: "The document must be a JSON object.",
       invalid: (reason) => `This is not valid JSON: ${reason}`,
     },
     studioScript: {
@@ -1202,7 +1218,7 @@ export const en: Strings = {
       stats: "Activity stats",
       speech: "Speech coverage",
       library: "Media library",
-      module: "Module preview",
+      module: "Module definition",
       history: "Generation history",
       deploy: "Deploy",
       newRef: "New ref",
@@ -1272,8 +1288,9 @@ export const en: Strings = {
       removeChoiceOf: (n: number) => `Remove choice ${n}`,
       reset: "Reset",
       save: "Save items",
-      editAsJson: "Edit as JSON",
-      unsupported: "This assessment has items this editor does not show. Edit it as JSON below.",
+      view: { label: "Assessment view", items: "Items", json: "JSON" },
+      unsupported:
+        "This assessment has items this editor does not show. Switch to JSON to edit it.",
       blockers: {
         noItems: "Add at least one item.",
         fewChoices: (item: number) => `Item ${item} needs at least two choices.`,
@@ -1286,12 +1303,24 @@ export const en: Strings = {
     },
     assessmentRun: "Assessment",
     moduleDocuments: {
+      title: {
+        configuration: (subject) => `Configuration Data - ${subject}`,
+        assessment: (subject) => `Assessment Data - ${subject}`,
+        definition: (subject) => `Module Definition - ${subject}`,
+      },
+      saveLabel: {
+        configuration: "Save Configuration Data",
+        assessment: "Save Assessment",
+        definition: "Save Definition",
+      },
+      savedSide: "Saved document",
       loading: "Reading the module…",
       unreadable: (reason: string) => `The module could not be read: ${reason}`,
-      none: "There is no module to read yet. Assemble one in Module Definition.",
+      none: "There is no module to read yet. Assemble one from Stages.",
       missing: {
         configuration: "The module has no configuration file for this ref.",
         assessment: "The module has no assessment file for this ref.",
+        definition: "The module has no definition.json.",
       },
       fromRun: (file: string) => `${file}, from the module this activity assembled.`,
       fromCheckout: (file: string) => `${file}, from the module in the WAF checkout.`,
@@ -1301,6 +1330,8 @@ export const en: Strings = {
           "What the module reads for this ref: its media and settings. Your edit replaces the generated document in the preview and in every assembly until you discard it.",
         assessment:
           "The questions the module asks. Every ref of this product shares one assessment, so it is edited on the canonical ref. Your edit is used in the preview and in every assembly until you discard it.",
+        definition:
+          "The module's definition.json: its engine, the files it loads and its themes. Every ref of this product shares one module, so it is edited on the canonical ref. Your edit is used in the preview and in every assembly until you discard it.",
       },
       field: "Document JSON",
       save: "Save",
@@ -1314,6 +1345,8 @@ export const en: Strings = {
         configuration: "The media plan changed after this was edited. Check it still matches.",
         assessment:
           "The specification changed after this was edited. Check the questions still match.",
+        definition:
+          "The specification changed after this was edited. Check the id, title and theme still match.",
       },
       sharedOnCanonical: (ref: number) => `Shared by every ref. Edit it on ref ${ref}.`,
       notJson: (reason: string) => `This is not valid JSON: ${reason}`,
@@ -1423,13 +1456,6 @@ export const en: Strings = {
       about:
         "Sorted by the words in each line's key, description and script: lines that tell the learner to tap, select, or press and hold are main instructions; hints, retries and corrections are scaffolding. Everything else shows only under All.",
     },
-    narrationLanguages: {
-      title: "In every language",
-      absent: "Not in this language's media plan.",
-      spoken: "Bound",
-      unspoken: "Needs speech",
-      open: "Open",
-    },
     speechTranslation: {
       missing: "Needs translation",
       outdated: "English changed",
@@ -1485,12 +1511,6 @@ export const en: Strings = {
     },
     speechScript: "Speech script",
     speechScriptHint: "1–5000 characters.",
-    acceptedAudio: "Accepted audio",
-    regenerateSpeech: "Regenerate speech",
-    generateSpeech: "Generate speech",
-    speechCandidates: "Speech candidates",
-    speechCandidate: "Speech candidate",
-    acceptSpeech: "Accept this audio",
     voicePicker: {
       label: "Voice",
       search: "Search name or ID",
@@ -1506,6 +1526,7 @@ export const en: Strings = {
       pause: (voice: string) => `Pause ${voice}`,
       mixed: "Multiple voices",
       default: "Default voice",
+      defaultNamed: (name: string) => `Default voice (${name})`,
       applyToAll: "Voice for every narration",
       applied: (n: number) =>
         n === 1 ? "Voice set on 1 narration." : `Voice set on ${n} narrations.`,
@@ -1553,7 +1574,7 @@ export const en: Strings = {
       run: "Word sounds",
       record: (n: number) => `Record words (${n})`,
       recordAbout:
-        "Records each word that has sounds and no recording yet: said slowly, sound by sound, then normally. ElevenLabs is used when the agent's Vault has its key, and times each sound so the book can highlight it; Gemini records without timings. Each recording is a paid request made by the selected agent.",
+        "Records each word that has sounds and no recording yet: said slowly, sound by sound, then normally. ElevenLabs is used when the Media Agent's Vault has its key, and times each sound so the book can highlight it; Gemini records without timings. Each recording is a paid request made by the Media Agent.",
       recordBlocked: "Save your edits and choose a Penguin agent to record words.",
       recordTitle: "Record words",
       recordConfirm: (n: number, language: string) =>
@@ -1598,8 +1619,17 @@ export const en: Strings = {
       voiceId: "ElevenLabs voice ID",
       voiceIdHint: "10 to 40 letters and digits, from your ElevenLabs voice library",
       useVoiceId: "Use this voice",
-      noVoice:
-        "No ElevenLabs voice yet. Add ELEVENLABS_VOICE_ID to the agent's Vault, or enter a voice ID.",
+      noVoice: "Choose an ElevenLabs voice, or enter a voice ID.",
+      reloadVoices: "Reload voices",
+      loadingVoices: "Loading voices…",
+      libraryProblem: {
+        credential_missing:
+          "Add ELEVENLABS_API_KEY to the Media Agent's Vault to list your ElevenLabs voices.",
+        refused:
+          "ElevenLabs refused the Media Agent's key, so your voices can't be listed. The default voice and typed voice IDs still work.",
+        unavailable:
+          "ElevenLabs didn't answer, so your voices can't be listed right now. The default voice and typed voice IDs still work.",
+      },
       applyToAll: "Provider for every narration",
       mixed: "Several providers",
       applied: (n: number) =>
@@ -1616,7 +1646,44 @@ export const en: Strings = {
           `Plays in the background on the ${channel} channel, under narration.`,
         sfx: (channel: string) => `Plays on the ${channel} channel, over whatever else plays.`,
       },
-      notSpoken: "Music and effects are not spoken: generate one from a prompt, or upload a file.",
+    },
+    audioEditor: {
+      view: "Editor view",
+      simplified: "Simplified",
+      advanced: "Advanced",
+      card: (language: string) => `${language} audio`,
+      script: (language: string) => `${language} script`,
+      prompt: "Generation prompt",
+      generate: "Generate audio",
+      regenerate: "Regenerate audio",
+      generating: "Generating…",
+      translate: (from: string) => `Translate from ${from}`,
+      translating: "Translating…",
+      needsSource: (from: string) => `Write the ${from} script first.`,
+      save: "Save",
+      saving: "Saving…",
+      saveAbout:
+        "Script, voice and settings save as you edit. Save makes the candidate this language's audio: a generated take, an uploaded file or a trimmed clip.",
+      upload: "Upload audio",
+      uploading: "Uploading…",
+      current: "Current audio",
+      candidate: "Candidate",
+      generatedCandidate: "Generated candidate",
+      uploadedCandidate: (name: string) => `Uploaded candidate · ${name}`,
+      trimmedCandidate: "Trimmed candidate",
+      noAudio: (language: string) => `No audio yet for ${language}.`,
+      noCandidate: "Generate or upload a candidate to compare before saving.",
+      cannotPlay: (path: string) => `Bound to ${path}, which cannot be played here.`,
+      model: "Model",
+      models: {
+        eleven_v3: "Eleven v3",
+        eleven_v4: "Eleven v4",
+        eleven_multilingual_v2: "Eleven Multilingual v2",
+      },
+      sharedSound:
+        "Music and sound effects are shared across languages. You only need to author them once.",
+      binding: "Media binding",
+      olderTakes: "Earlier takes stay in Generation History.",
     },
     sound: {
       prompt: "Prompt",
@@ -1641,7 +1708,7 @@ export const en: Strings = {
         "Runs on the server and downloads model weights on first use. MusicGen supports up to 30 seconds; AudioGen and AudioLDM support up to 10 seconds.",
       problems: {
         runtime_missing: "Install the local audio dependencies on the server to use this provider.",
-        credential_missing: (key: string) => `Add ${key} to the selected agent's Vault.`,
+        credential_missing: (key: string) => `Add ${key} to the Media Agent's Vault.`,
         kind_unsupported: "This provider does not make this kind of sound.",
         provider_unknown: "This provider is not available in this version.",
         no_model: "No music or sound model is available through the model hub in this version.",
@@ -1660,9 +1727,9 @@ export const en: Strings = {
       bulkTally: (ready: number, total: number) => `${ready} of ${total} sounds bound`,
       bulk: (count: number) => `Generate missing sounds (${count})`,
       bulkConfirm: (count: number, provider: string, language: string) =>
-        `Generate ${count} ${count === 1 ? "sound" : "sounds"} in ${language} with ${provider}? Each sound is a paid request to ${provider}, made by the selected agent, and each result is kept on its sound.`,
+        `Generate ${count} ${count === 1 ? "sound" : "sounds"} in ${language} with ${provider}? Each sound is a paid request to ${provider}, made by the Media Agent, and each result is kept on its sound.`,
       bulkUnavailable: (provider: string) =>
-        `${provider} cannot be used by the selected agent. Add its key to the agent's Vault, or choose a Penguin agent that has it.`,
+        `${provider} cannot be used by the Media Agent. Add its key to the Media Agent's Vault.`,
       statuses: {
         ready: "Bound",
         missing: "Missing",
@@ -1803,7 +1870,7 @@ export const en: Strings = {
     invalidTextCandidate: "This text suggestion does not match the selected asset.",
     textRun: "Media text",
     imageHelp:
-      "Images use Gemini through a Session of the selected Agent. Add GEMINI_API_KEY to that Agent's Vault. Preview a candidate before accepting it; regeneration keeps your accepted image.",
+      "Images use Gemini through a Session of the Media Agent. Add GEMINI_API_KEY to the Media Agent's Vault. Preview a candidate before accepting it; regeneration keeps your accepted image.",
     generateImage: "Generate image",
     regenerateImage: "Regenerate image",
     imageCandidates: "Image candidates",
@@ -1815,7 +1882,7 @@ export const en: Strings = {
     imageRun: "Image",
     speechReady: "Ready to review",
     speechHelp:
-      "Speech uses Gemini TTS through a Session of the selected Agent. Add GEMINI_API_KEY to that Agent’s Vault. Listen to a candidate before accepting it; regeneration keeps your accepted audio.",
+      "Speech uses Gemini TTS through a Session of the Media Agent. Add GEMINI_API_KEY to the Media Agent’s Vault. Listen to a candidate before accepting it; regeneration keeps your accepted audio.",
     invalidMediaEditor: "Fix or reload the manifest JSON before using the asset editor.",
     mediaTypes: {
       all: "All media",
@@ -1866,24 +1933,13 @@ export const en: Strings = {
     testRun: "Acceptance tests",
     moduleReady: "Assembled",
     specRun: "Specification",
+    mediaSpecRun: "Media specification",
     assistRun: "Conversation",
     previewModule: "Open WAF preview",
-    olderModule: "Built from an earlier draft",
     previewTitle: "Preview",
-    previewHelp:
-      "Runs the assembled module in place; Reload picks up a rebuilt module. Scene and language overrides apply to modules assembled after this feature shipped — older previews ignore them and can always be opened in a new tab.",
-    sandboxTitle: "Module build",
-    sandboxHelp:
-      "The harness's own build of this activity's module, separate from the bundle an assembly agent produced. Build runs the module's toolchain and reports its output, so a build that fails is visible rather than a preview that never appears.",
-    sandboxBuild: "Build module",
-    sandboxBuilding: "Building…",
-    sandboxRefresh: "Refresh",
+    sandboxBuilding: "Building the preview…",
+    sandboxBuildAgain: "Build again",
     sandboxLog: "Build output",
-    sandboxPlay: "Play",
-    sandboxPlayHelp:
-      "Plays the module in the WAF learner runtime, built from the checkout's framework. A module Loom generated plays straight from the checkout; the first play builds it, which takes a few seconds.",
-    sandboxPlayer: "Player",
-    sandboxStop: "Stop",
     sandboxOpen: "Open in a new tab",
     previewScene: "Start scene",
     previewSceneDefault: "Module default",
@@ -1925,8 +1981,7 @@ export const en: Strings = {
     agent: "Generation agent",
     penguinAgents: "Penguin agents",
     codingAgents: "Coding agents",
-    codingAgentMedia:
-      "Speech and images are generated by a Penguin agent. Choose one to generate them.",
+    codingAgentMedia: "Speech, sound and images are still generated by the Media Agent.",
     runs: "Generation history",
     noRuns: "No generation attempts yet.",
     openSession: "Open Session",
@@ -6443,7 +6498,7 @@ Scenarios:
     modelCredentialMissing: (modelId: string) =>
       `Model ${modelId} has no API key yet — configure it on the Models page first`,
     speechCredentialMissing: (key: string) =>
-      `Add ${key} to the selected Agent’s Vault before generating speech.`,
+      `Add ${key} to the Media Agent’s Vault before generating speech.`,
     noDefaultModel: "This project has no default model yet — add one on the Models page first",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
@@ -6494,7 +6549,7 @@ Scenarios:
       media_stale:
         "Rebuild the media plan from the saved specification before saving bindings or assembling a module.",
       speech_credential_missing:
-        "Add the speech provider’s key to the selected Agent’s Vault before generating speech.",
+        "Add the speech provider’s key to the Media Agent’s Vault before generating speech.",
       speech_helper_missing:
         "The speech helper is missing. Rebuild the bundled plugins and restart the server.",
       audio_invalid:

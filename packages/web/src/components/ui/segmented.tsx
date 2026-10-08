@@ -36,6 +36,7 @@ export function Segmented<T extends string>({
           key={opt.value}
           type="button"
           onClick={() => onChange(opt.value)}
+          aria-pressed={value === opt.value}
           // An aria-label replaces every descendant in the accessible name, so it is only set
           // where there is a badge to fold in — otherwise the label's own text is the name.
           aria-label={opt.badge ? `${opt.label} · ${opt.badge.name}` : undefined}

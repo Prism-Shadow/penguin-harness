@@ -15,6 +15,7 @@ export type Announcement = {
 export function runKindLabel(run: Pick<ActivityRunSummary, "kind">): string {
   const words = S.activities;
   if (run.kind === "module") return words.moduleRun;
+  if (run.kind === "media-spec") return words.mediaSpecRun;
   if (run.kind === "audio") return words.audioRun;
   if (run.kind === "image") return words.imageRun;
   if (run.kind === "media-text") return words.textRun;

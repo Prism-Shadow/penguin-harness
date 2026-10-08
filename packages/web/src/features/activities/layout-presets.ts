@@ -1,5 +1,5 @@
 /**
- * Named workspace layouts: the rail, the side panel, the open section, the player's map and
+ * Named workspace layouts: the rail, the side panel and its width, the open section, the player's map and
  * the run log's reasoning switch, saved together under a name so an author can switch the
  * studio between arrangements suited to writing, reviewing or media work.
  *
@@ -9,8 +9,10 @@
  */
 import { clampMapWidth } from "./map-split";
 import {
+  SIDE_PANEL_DEFAULT_WIDTH,
   STUDIO_PANELS,
   clampRailWidth,
+  clampSidePanelWidth,
   sectionFromParam,
   type StudioPanel,
   type WorkspaceSection,
@@ -27,6 +29,7 @@ export interface LayoutState {
   railWidth: number;
   railCollapsed: boolean;
   sidePanel: StudioPanel | null;
+  sidePanelWidth: number;
   section: WorkspaceSection;
   mapWidth: number;
   mapVisible: boolean;
@@ -78,6 +81,7 @@ export const BUILT_IN_PRESETS: readonly BuiltInPreset[] = [
     state: {
       railCollapsed: true,
       sidePanel: "player",
+      sidePanelWidth: 820,
       section: "scenes",
       mapVisible: true,
       mapWidth: 420,
@@ -101,6 +105,7 @@ const DEFAULT_STATE: LayoutState = {
   railWidth: 300,
   railCollapsed: false,
   sidePanel: null,
+  sidePanelWidth: SIDE_PANEL_DEFAULT_WIDTH,
   section: "description",
   mapWidth: 360,
   mapVisible: true,
@@ -124,6 +129,7 @@ export function sanitize(value: unknown): LayoutState | null {
     railWidth: clampRailWidth(number("railWidth", DEFAULT_STATE.railWidth)),
     railCollapsed: flag("railCollapsed", DEFAULT_STATE.railCollapsed),
     sidePanel: panel,
+    sidePanelWidth: clampSidePanelWidth(number("sidePanelWidth", DEFAULT_STATE.sidePanelWidth)),
     section:
       sectionFromParam(typeof raw.section === "string" ? raw.section : null) ??
       DEFAULT_STATE.section,
@@ -288,6 +294,7 @@ export type LayoutWrite =
   | { kind: "railCollapsed"; value: boolean }
   | { kind: "railWidth"; value: number }
   | { kind: "sidePanel"; value: StudioPanel | null }
+  | { kind: "sidePanelWidth"; value: number }
   | { kind: "mapVisible"; value: boolean }
   | { kind: "mapWidth"; value: number }
   | { kind: "showReasoning"; value: boolean }
@@ -308,6 +315,8 @@ export function applyOrder(state: Partial<LayoutState>): LayoutWrite[] {
       kind: "sidePanel",
       value: STUDIO_PANELS.find((key) => key === state.sidePanel) ?? null,
     });
+  if (typeof state.sidePanelWidth === "number")
+    writes.push({ kind: "sidePanelWidth", value: clampSidePanelWidth(state.sidePanelWidth) });
   if (typeof state.mapVisible === "boolean")
     writes.push({ kind: "mapVisible", value: state.mapVisible });
   if (typeof state.mapWidth === "number")
@@ -321,12 +330,13 @@ export function applyOrder(state: Partial<LayoutState>): LayoutWrite[] {
 
 /**
  * Whether the arrangement on screen is this layout. A width that is not showing does not
- * count against it: a collapsed rail's width, or a hidden map's.
+ * count against it: a collapsed rail's width, a closed panel's, or a hidden map's.
  */
 export function matchesPreset(state: LayoutState, preset: LayoutPreset): boolean {
   const wanted = preset.state;
   for (const write of applyOrder(wanted)) {
     if (write.kind === "railWidth" && state.railCollapsed) continue;
+    if (write.kind === "sidePanelWidth" && !state.sidePanel) continue;
     if (write.kind === "mapWidth" && !state.mapVisible) continue;
     if (state[write.kind] !== write.value) return false;
   }

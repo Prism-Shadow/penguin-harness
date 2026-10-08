@@ -123,9 +123,6 @@ export function GenerationHistory({
                   {S.activities.previewModule}
                 </a>
               )}
-              {run.kind === "module" && run.inputRevision !== draftRevision && (
-                <span className={`text-xs ${toneInk.attention}`}>{S.activities.olderModule}</span>
-              )}
               {run.sessionId && (
                 <Link
                   className="text-xs underline"

@@ -1,11 +1,12 @@
 /**
- * Configuration Data and Assessment Data: the module's own configuration and assessment
- * files for this ref, edited in place. An edit is kept in the draft and replaces the
- * generated document in the preview and in every assembly until it is discarded; the
- * assessment is shared by every ref, so only the canonical ref edits it.
+ * Configuration Data, Assessment Data and Module Definition: the module's own configuration,
+ * assessment and `definition.json` for this ref, edited in place, as Loom's editor did. An edit
+ * is kept in the draft and replaces the generated document in the preview and in every
+ * assembly until it is discarded; the assessment and the definition are shared by every ref,
+ * so only the canonical ref edits them.
  *
- * The assessment is also generated here, and its items are edited without JSON; the JSON
- * stays one fold away for what the items editor does not show.
+ * Each is Loom's full-height JSON editor. The assessment is also generated here, and a toggle
+ * in its header switches between editing its items without JSON and that same JSON editor.
  */
 import { useEffect, useRef, useState } from "react";
 import type {
@@ -20,18 +21,18 @@ import { toneInk, toneStrip } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { InfoPopover } from "../../components/ui/info-popover";
-import { Textarea } from "../../components/ui/input";
+import { Segmented } from "../../components/ui/segmented";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { AssessmentItemsEditor } from "./assessment-items-editor";
 import { assessmentRunState, readItems } from "./assessment-items";
 import {
   assessmentItemCount,
-  documentChanged,
   documentOrigin,
   documentText,
   parseDocument,
   type ModuleDocumentKind,
 } from "./module-document";
+import { EDITOR_HEADER, EDITOR_NOTICES, JsonEditor } from "./json-editor";
 import { SpecDiffView } from "./spec-diff-view";
 
 /** What the Assessment Data section needs to generate an assessment and offer the result. */
@@ -51,6 +52,7 @@ export interface AssessmentGenerationProps {
 export function ModuleDocumentView({
   endpoint,
   kind,
+  subject,
   revision,
   editable,
   onSaved,
@@ -58,6 +60,8 @@ export function ModuleDocumentView({
 }: {
   endpoint: string;
   kind: ModuleDocumentKind;
+  /** Which activity and ref this is, for the title, as Loom names its panels. */
+  subject: string;
   /** The draft revision: a save sends it, and a new one can mean a new assembly, so read again. */
   revision: string;
   /** Whether this viewer may change the activity at all (a project owner, with it open). */
@@ -74,6 +78,8 @@ export function ModuleDocumentView({
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+  // The assessment's view, once the author picks one; until then, whichever shows the document.
+  const [view, setView] = useState<"items" | "json" | null>(null);
   // The text the editor last loaded; while the author has not changed it, a fresh read
   // replaces it, and once they have, their words stay.
   const loaded = useRef<string | null>(null);
@@ -97,10 +103,12 @@ export function ModuleDocumentView({
     };
   }, [endpoint, revision, kind]);
 
-  if (error) return <p className={`text-sm ${toneInk.danger}`}>{words.unreadable(error)}</p>;
+  // Each document fills the pane, so what stands in for one is padded.
+  const pad = "p-4";
+  if (error) return <p className={`text-sm ${pad} ${toneInk.danger}`}>{words.unreadable(error)}</p>;
   if (!documents)
     return (
-      <div role="status" aria-label={words.loading}>
+      <div role="status" aria-label={words.loading} className={pad}>
         <SkeletonList rows={3} />
       </div>
     );
@@ -119,7 +127,7 @@ export function ModuleDocumentView({
     ) : null;
   if (!document)
     return (
-      <div className="space-y-3">
+      <div className={`space-y-3 ${pad}`}>
         <p className="text-sm text-gray-500">
           {!documents.source ? words.none : words.missing[kind]}
         </p>
@@ -128,7 +136,10 @@ export function ModuleDocumentView({
     );
   const items = kind === "assessment" ? assessmentItemCount(document.value) : null;
   const canEdit = editable && document.editable;
-  const changed = documentChanged(text, document.value);
+  const title =
+    kind === "definition" ? S.activities.sectionNames.module : S.activities.sectionNames[kind];
+  const saved = documentText(document.value);
+  const parsedDraft = parseDocument(text);
   const canonicalRefNum = documents.canonicalRefNum;
 
   async function put(value: Record<string, unknown>): Promise<boolean> {
@@ -178,109 +189,138 @@ export function ModuleDocumentView({
     }
   }
 
-  const discardButton = document.edited && (
+  const discardButton = canEdit && document.edited && (
     <Button size="sm" disabled={busy} onClick={() => setDiscarding(true)}>
       {words.discard}
     </Button>
   );
-  const jsonEditor = (
+  // Shown behind a "?" beside the title, in either view.
+  const about = (
     <>
-      <Textarea
-        size="sm"
-        label={words.field}
-        rows={20}
-        className="font-mono"
-        value={text}
-        onChange={(event) => {
-          setText(event.target.value);
-          setProblem(null);
-        }}
-        readOnly={!canEdit}
-        disabled={canEdit && busy}
-        spellCheck={false}
-        error={problem ?? undefined}
-      />
-      {canEdit && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={busy || !changed}
-            onClick={() => void save()}
-          >
-            {busy ? words.saving : words.save}
-          </Button>
-          {/* The assessment offers its discard beside the items, outside the JSON fold. */}
-          {kind !== "assessment" && discardButton}
-        </div>
-      )}
+      <p>{words.about[kind]}</p>
+      {kind === "assessment" && <p>{S.activities.assessment.generateAbout}</p>}
     </>
   );
-
-  return (
-    <section className="space-y-2">
-      <h3 className="flex items-center gap-2 text-sm font-semibold">
-        {S.activities.sectionNames[kind]}
-        <InfoPopover label={S.activities.sectionNames[kind]}>
-          <p>{words.about[kind]}</p>
-          {kind === "assessment" && <p>{S.activities.assessment.generateAbout}</p>}
-        </InfoPopover>
-      </h3>
-      <p className="text-xs text-gray-500">
+  const notices = (
+    <>
+      <p className="text-gray-500">
         {documentOrigin(documents.source, document)}
         {items !== null && ` ${words.items(items)}.`}
       </p>
-      {document.edited && (
-        <p className="text-xs text-gray-700 dark:text-gray-300">{words.edited}</p>
-      )}
+      {document.edited && <p className="text-gray-700 dark:text-gray-300">{words.edited}</p>}
       {document.stale && (
-        <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
+        <p role="status" className={`rounded-md border p-3 ${toneStrip.attention}`}>
           {words.stale[kind]}
         </p>
       )}
-      {editable && !document.editable && kind === "assessment" && canonicalRefNum !== null && (
-        <p className="text-xs text-gray-500">{words.sharedOnCanonical(canonicalRefNum)}</p>
+      {editable && !document.editable && kind !== "configuration" && canonicalRefNum !== null && (
+        <p className="text-gray-500">{words.sharedOnCanonical(canonicalRefNum)}</p>
       )}
-      {generate}
-      {kind === "assessment" ? (
+    </>
+  );
+  // A document the items editor cannot show whole opens as JSON.
+  const shownView = view ?? (readItems(document.value) === null ? "json" : "items");
+  const viewToggle = kind === "assessment" && (
+    <div role="group" aria-label={S.activities.assessment.view.label} className="w-36">
+      <Segmented
+        cols={2}
+        options={[
+          { value: "items", label: S.activities.assessment.view.items },
+          { value: "json", label: S.activities.assessment.view.json },
+        ]}
+        value={shownView}
+        onChange={setView}
+      />
+    </div>
+  );
+  const jsonEditor = (
+    <JsonEditor
+      title={words.title[kind](subject)}
+      editorLabel={words.field}
+      savedLabel={words.savedSide}
+      saveLabel={words.saveLabel[kind]}
+      value={text}
+      saved={saved}
+      editable={canEdit}
+      readOnly={!canEdit}
+      busy={busy}
+      error={problem}
+      about={about}
+      leading={viewToggle}
+      actions={discardButton}
+      notices={
         <>
+          {notices}
+          {generate}
+        </>
+      }
+      onChange={(value) => {
+        setText(value);
+        setProblem(null);
+      }}
+      onSave={() => void save()}
+    />
+  );
+  const discardModal = discarding && (
+    <ConfirmModal
+      open
+      title={words.discard}
+      confirmLabel={words.discard}
+      onClose={() => setDiscarding(false)}
+      onConfirm={() => {
+        setDiscarding(false);
+        void discard();
+      }}
+    >
+      <p>{words.discardConfirm}</p>
+    </ConfirmModal>
+  );
+
+  if (kind !== "assessment" || shownView === "json")
+    return (
+      <>
+        {jsonEditor}
+        {discardModal}
+      </>
+    );
+  // The items, under the JSON editor's own header and notes strip, so switching views moves
+  // neither the toggle nor the content.
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className={EDITOR_HEADER}>
+        <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+          {words.title[kind](subject)}
+          <InfoPopover label={title}>{about}</InfoPopover>
+        </h2>
+        {viewToggle}
+        <span className="flex-1" />
+        {discardButton}
+      </div>
+      <div className={EDITOR_NOTICES}>
+        {notices}
+        {generate}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <div className="max-w-4xl space-y-3">
           <AssessmentItemsEditor
             // A saved or generated document starts the items over; unsaved item edits of
             // the same document survive a re-read.
-            key={documentText(document.value)}
-            value={document.value}
+            key={saved}
+            value={"error" in parsedDraft ? null : parsedDraft.value}
+            savedValue={document.value}
+            onChange={(value) => {
+              setText(documentText(value));
+              setProblem(null);
+            }}
             editable={canEdit}
             busy={busy}
             onSave={(value) => void put(value)}
           />
           {problem && <p className={`text-xs ${toneInk.danger}`}>{problem}</p>}
-          {canEdit && discardButton && <div>{discardButton}</div>}
-          {/* A document the items editor cannot show whole is edited as JSON, so it opens. */}
-          <details className="space-y-2" open={readItems(document.value) === null || undefined}>
-            <summary className="cursor-pointer text-xs font-medium">
-              {S.activities.assessment.editAsJson}
-            </summary>
-            {jsonEditor}
-          </details>
-        </>
-      ) : (
-        jsonEditor
-      )}
-      {discarding && (
-        <ConfirmModal
-          open
-          title={words.discard}
-          confirmLabel={words.discard}
-          onClose={() => setDiscarding(false)}
-          onConfirm={() => {
-            setDiscarding(false);
-            void discard();
-          }}
-        >
-          <p>{words.discardConfirm}</p>
-        </ConfirmModal>
-      )}
-    </section>
+        </div>
+      </div>
+      {discardModal}
+    </div>
   );
 }
 
