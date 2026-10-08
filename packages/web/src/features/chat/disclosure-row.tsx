@@ -9,14 +9,23 @@
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chevron } from "../../components/ui/chevron";
+import { toneSurface } from "../../lib/tone";
 
 /**
  * The row itself (collapsed and expanded state share it; the hover tone is the "open or
  * close me" affordance). Byte-identical to the class the thinking block and tool-card rows
  * carried before the extraction.
  */
-export const DISCLOSURE_ROW_CLASS =
-  "flex w-full items-center gap-2 bg-white px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800";
+const DISCLOSURE_ROW_LAYOUT =
+  "flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors duration-150";
+
+export const DISCLOSURE_ROW_CLASS = `${DISCLOSURE_ROW_LAYOUT} bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800`;
+
+/**
+ * The same row for a step that failed, where a run log tints it so it can be found while
+ * scrolling. The surface comes from the shared danger tone; it stays opaque for sticking.
+ */
+export const DISCLOSURE_ROW_FAILED_CLASS = `${DISCLOSURE_ROW_LAYOUT} ${toneSurface.danger}`;
 
 /**
  * Stacked-sticky positioning for rows living inside the work group: while a row's expanded

@@ -81,33 +81,61 @@ function CheckRow({ level, text }: { level: ReadinessLevel; text: string }) {
   );
 }
 
-/** Only what stands in the way is listed; a draft with nothing in the way says so in a line. */
+/**
+ * What stands in the way is listed; the checks that pass fold into one line beside the title,
+ * so they can still be read. While an assembly runs, "Ready to assemble" would offer a second
+ * one, so the line says it is assembling instead.
+ */
 function BuildChecks({
   checks,
   unsaved,
   proposalOpen,
+  assembling,
 }: {
   checks: ReadinessCheck[];
   unsaved: boolean;
   proposalOpen: boolean;
+  assembling: boolean;
 }) {
   const words = S.activities.studioBuild;
-  const rows: { key: string; level: ReadinessLevel; text: string }[] = checks
-    .map((check, index) => ({
-      key: `${check.id}:${index}`,
-      level: check.level,
-      text: checkText(check),
-    }))
-    .filter((row) => row.level !== "ok");
+  const all: { key: string; level: ReadinessLevel; text: string }[] = checks.map(
+    (check, index) => ({ key: `${check.id}:${index}`, level: check.level, text: checkText(check) }),
+  );
+  const rows = all.filter((row) => row.level !== "ok");
+  const passed = all.filter((row) => row.level === "ok");
   if (unsaved) rows.push({ key: "unsaved", level: "fail", text: words.unsaved.fail });
   if (proposalOpen) rows.push({ key: "proposal", level: "warn", text: words.proposal.warn });
-  if (!rows.length) return <p className={`text-xs ${toneInk.success}`}>{words.ready}</p>;
   return (
-    <ul aria-label={words.title} className="divide-y divide-gray-100 dark:divide-gray-900">
-      {rows.map((row) => (
-        <CheckRow key={row.key} level={row.level} text={row.text} />
-      ))}
-    </ul>
+    <div className="space-y-2">
+      {assembling ? (
+        <p className={`flex items-center gap-2 text-xs ${toneInk.busy}`}>
+          <span
+            aria-hidden
+            className={`size-1.5 shrink-0 animate-pulse rounded-full ${toneDot.busy}`}
+          />
+          {words.assembling}
+        </p>
+      ) : (
+        !rows.length && <p className={`text-xs ${toneInk.success}`}>{words.ready}</p>
+      )}
+      {rows.length > 0 && (
+        <ul aria-label={words.title} className="divide-y divide-gray-100 dark:divide-gray-900">
+          {rows.map((row) => (
+            <CheckRow key={row.key} level={row.level} text={row.text} />
+          ))}
+        </ul>
+      )}
+      {passed.length > 0 && (
+        <details className="text-xs text-gray-500">
+          <summary className="cursor-pointer select-none">{words.passed(passed.length)}</summary>
+          <ul className="mt-1 divide-y divide-gray-100 dark:divide-gray-900">
+            {passed.map((row) => (
+              <CheckRow key={row.key} level={row.level} text={row.text} />
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -127,15 +155,18 @@ export function BuildPanel({
   proposalOpen: boolean;
   /**
    * The controls that assemble: reading mode, Assemble. Told whether a check has
-   * failed, so Assemble is not offered until what blocks it is fixed.
+   * failed, so Assemble is not offered until what blocks it is fixed, and whether an
+   * assembly is already running, so a second one is not offered beside it.
    */
-  children?: (blocked: boolean) => ReactNode;
+  children?: (blocked: boolean, assembling: boolean) => ReactNode;
 }) {
   const words = S.activities.studioBuild;
   const [checks, setChecks] = useState<ReadinessCheck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lastRun = latestModuleRun(runs);
-  const settled = lastRun?.status !== "running";
+  // Started here or by the Assemble module stage: either way it is the one assembly running.
+  const inFlight = runs.find((run) => run.kind === "module" && run.status === "running");
+  const settled = !inFlight;
   useEffect(() => {
     let cancelled = false;
     // Checked once edits pause, not per keystroke.
@@ -166,9 +197,14 @@ export function BuildPanel({
       ) : !checks ? (
         <p className="text-xs text-gray-500">{words.checking}</p>
       ) : (
-        <BuildChecks checks={checks} unsaved={unsaved} proposalOpen={proposalOpen} />
+        <BuildChecks
+          checks={checks}
+          unsaved={unsaved}
+          proposalOpen={proposalOpen}
+          assembling={!!inFlight}
+        />
       )}
-      {children?.(!!checks?.some((check) => check.level === "fail"))}
+      {children?.(!!checks?.some((check) => check.level === "fail"), !!inFlight)}
       <p className="text-xs text-gray-500">
         {lastRun ? (
           <>
@@ -186,6 +222,8 @@ export function BuildPanel({
               </Link>
             )}
           </>
+        ) : inFlight ? (
+          words.noFinishedRun
         ) : (
           words.noRun
         )}

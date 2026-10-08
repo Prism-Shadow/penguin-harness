@@ -14,12 +14,12 @@ import { ApiError, apiFetch } from "../../api/client";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { CloseIcon } from "../../components/ui/icons";
 import { FieldLabel } from "../../components/ui/field";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Input } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { Select } from "../../components/ui/select";
+import { Dropdown, menuItemClass } from "../../components/ui/dropdown";
+import { CheckIcon, ChevronDown, CloseIcon } from "../../components/ui/icons";
 import { Switch } from "../../components/ui/switch";
 import { apiErrorText } from "../../lib/api-error";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -69,6 +69,7 @@ export function RefSwitcher({
   onRenumbered,
   onDeleted,
   onNewRef,
+  onReload,
 }: {
   /** The project's activities API path. */
   base: string;
@@ -84,6 +85,8 @@ export function RefSwitcher({
   /** Open the page that makes a new ref from this one, the product's template; absent until
    *  the ref has a media plan, which that page walks. */
   onNewRef?: () => void;
+  /** Load the saved draft again; absent while it cannot be. The caller confirms a discard. */
+  onReload?: () => void;
 }) {
   const words = S.activities.studioRefs;
   const tagWords = S.activities.tags;
@@ -101,6 +104,7 @@ export function RefSwitcher({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [renumbering, setRenumbering] = useState(false);
   const [numberText, setNumberText] = useState("");
   const [numberError, setNumberError] = useState<string | null>(null);
@@ -245,65 +249,129 @@ export function RefSwitcher({
     }
   }
 
+  // Every action on the ref, and the way to another ref, behind the ref's own name: the
+  // header row stays a title with marks beside it, not a row of look-alike text buttons.
+  const actions: { key: string; label: string; run: () => void }[] = [
+    ...(editable
+      ? [
+          {
+            key: "settings",
+            label: words.settings,
+            run: () => {
+              setName(activity.displayName ?? "");
+              setStable(activity.stable);
+              setTags([...(activity.tags ?? [])]);
+              setTagText("");
+              setTagError("");
+              setError(null);
+              setEditing(true);
+            },
+          },
+          {
+            key: "number",
+            label: words.changeNumber,
+            run: () => {
+              setNumberText(String(activity.refNum));
+              setNumberError(null);
+              setRenumbering(true);
+            },
+          },
+        ]
+      : []),
+    ...(editable && canonical && onNewRef
+      ? [{ key: "new", label: S.activities.createRef.newRef, run: onNewRef }]
+      : []),
+  ];
+  const choose = (run: () => void) => {
+    setMenuOpen(false);
+    run();
+  };
+
   return (
     <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
-      {others ? (
-        <span className="w-44">
-          <Select
+      <Dropdown
+        open={menuOpen}
+        setOpen={setMenuOpen}
+        portal={{ direction: "down", align: "left" }}
+        menuClass="w-64 max-w-[calc(100vw-1.5rem)]"
+        button={
+          <Button
             size="sm"
-            aria-label={words.ref}
-            value={activity.id}
-            onChange={(event) => {
-              if (event.target.value !== activity.id)
-                navigate(`/activities/${encodeURIComponent(event.target.value)}`);
-            }}
+            variant="ghost"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title={words.menu}
+            onClick={() => setMenuOpen(!menuOpen)}
           >
-            {refs.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {label(entry)}
-              </option>
-            ))}
-          </Select>
-        </span>
-      ) : (
-        <span className="truncate">{label(activity)}</span>
-      )}
+            <span className="max-w-48 truncate">{label(activity)}</span>
+            <ChevronDown className="text-gray-400" />
+          </Button>
+        }
+      >
+        <div role="menu" aria-label={words.menu} className="max-h-[60vh] overflow-y-auto py-1">
+          {others && (
+            <>
+              <p className="px-3.5 pt-1 pb-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                {words.refs}
+              </p>
+              {refs.map((entry) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={entry.id === activity.id}
+                  onClick={() =>
+                    choose(() => {
+                      if (entry.id !== activity.id)
+                        navigate(`/activities/${encodeURIComponent(entry.id)}`);
+                    })
+                  }
+                  className={`${menuItemClass} flex items-center gap-2`}
+                >
+                  <span className="min-w-0 flex-1 truncate">{label(entry)}</span>
+                  {entry.id === activity.id && <CheckIcon className="shrink-0 text-gray-500" />}
+                </button>
+              ))}
+              {(actions.length > 0 || onReload) && (
+                <div
+                  role="separator"
+                  className="my-1 border-t border-gray-100 dark:border-gray-800"
+                />
+              )}
+            </>
+          )}
+          {actions.map((entry) => (
+            <button
+              key={entry.key}
+              type="button"
+              role="menuitem"
+              onClick={() => choose(entry.run)}
+              className={menuItemClass}
+            >
+              {entry.label}
+            </button>
+          ))}
+          {onReload && (
+            <>
+              {actions.length > 0 && (
+                <div
+                  role="separator"
+                  className="my-1 border-t border-gray-100 dark:border-gray-800"
+                />
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => choose(onReload)}
+                className={menuItemClass}
+              >
+                {S.activities.reload}
+              </button>
+            </>
+          )}
+        </div>
+      </Dropdown>
       {activity.stable && <Badge tone="gray">{words.stable}</Badge>}
-      {editable && (
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            setName(activity.displayName ?? "");
-            setStable(activity.stable);
-            setTags([...(activity.tags ?? [])]);
-            setTagText("");
-            setTagError("");
-            setError(null);
-            setEditing(true);
-          }}
-        >
-          {words.settings}
-        </Button>
-      )}
-      {editable && (
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            setNumberText(String(activity.refNum));
-            setNumberError(null);
-            setRenumbering(true);
-          }}
-        >
-          {words.changeNumber}
-        </Button>
-      )}
-      {editable && canonical && onNewRef && (
-        <Button size="sm" variant="ghost" onClick={onNewRef}>
-          {S.activities.createRef.newRef}
-        </Button>
-      )}
       <Modal
         open={renumbering}
         title={words.changeNumberTitle(activity.productCode, activity.refNum)}

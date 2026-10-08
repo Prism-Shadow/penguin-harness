@@ -910,12 +910,50 @@ html.dark .shiki span {
 .script-editor .cm-editor.cm-focused .cm-selectionBackground {
   @apply bg-brand-100 dark:bg-brand-900;
 }
+/* A scene opens under a hairline, its "Scene N:" set small so the title leads. Padding, not
+   margin: CodeMirror measures its lines and margins would throw that off. */
 .script-editor .cm-editor .cm-scene-heading {
   font-weight: 600;
-  @apply text-gray-900 dark:text-gray-100;
+  padding-top: 0.5rem;
+  border-top: 1px solid;
+  @apply border-gray-200 font-sans text-[13px] text-gray-900 dark:border-gray-800 dark:text-gray-100;
 }
-.script-editor .cm-editor .cm-media-tag {
-  @apply text-brand-700 dark:text-brand-300;
+.script-editor .cm-editor .cm-scene-number {
+  @apply font-mono text-[11px] text-gray-500 uppercase dark:text-gray-400;
+}
+/* Prose wraps at a readable width however wide the pane is. */
+.activity-script .cm-editor .cm-content {
+  max-width: 92ch;
+}
+/* Media elements, one categorical hue per kind (which element, never a status): the tags in
+   that hue, and the words between them on a soft wash of it. */
+.script-editor .cm-editor .cm-media-span {
+  border-radius: 3px;
+  padding: 1px 0;
+}
+.script-editor .cm-editor .cm-media-span-audio {
+  @apply bg-violet-50 dark:bg-violet-950/50;
+}
+.script-editor .cm-editor .cm-media-span-video {
+  @apply bg-cyan-50 dark:bg-cyan-950/50;
+}
+.script-editor .cm-editor .cm-media-span-image {
+  @apply bg-sky-50 dark:bg-sky-950/50;
+}
+.script-editor .cm-editor .cm-media-span-animation {
+  @apply bg-rose-50 dark:bg-rose-950/50;
+}
+.script-editor .cm-editor .cm-media-audio {
+  @apply text-violet-700 dark:text-violet-300;
+}
+.script-editor .cm-editor .cm-media-video {
+  @apply text-cyan-700 dark:text-cyan-300;
+}
+.script-editor .cm-editor .cm-media-image {
+  @apply text-sky-700 dark:text-sky-300;
+}
+.script-editor .cm-editor .cm-media-animation {
+  @apply text-rose-700 dark:text-rose-300;
 }
 /* JSON in the JSON editor (json-editor.tsx), in the github-light / github-dark colours
    the app's other code views use (features/chat/highlighter-core.ts). */

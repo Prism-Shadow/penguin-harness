@@ -39,7 +39,7 @@ import { toastAttention, toastError, toastInfo, toastSuccess } from "../../compo
 import { discoverCodingAgents, listCodingAgents } from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
+import { toneInk, toneStrip } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
@@ -75,7 +75,8 @@ import {
   sectionFromParam,
   type WorkspaceSection,
 } from "./workspace-model";
-import { assetForPick, buildStudioTree } from "./studio-tree";
+import { assetForPick, buildStudioTree, sectionTrails } from "./studio-tree";
+import { sceneRanges } from "./script-model";
 import { ConversationPanel } from "./conversation-panel";
 import { focusFor, latestConversation } from "./conversation";
 import { applyMediaChange, type ProposalChange } from "./proposal";
@@ -96,7 +97,8 @@ import { GenerationHistory } from "./history-section";
 import { DeployPanel } from "./deploy-panel";
 import { useAssistProposal } from "./use-assist-proposal";
 import { StudioTreeView } from "./studio-tree-view";
-import { runTitle, SessionsPanel } from "./sessions-panel";
+import { SessionsPanel } from "./sessions-panel";
+import { DraftStatus, RunningChip, runPanel } from "./studio-status";
 import { SandboxPanel } from "./sandbox-panel";
 import { sandboxHasModule, type SandboxStatusLike } from "./sandbox";
 import { JsonEditor } from "./json-editor";
@@ -1216,7 +1218,8 @@ function ActivityEditor({
             <div className="flex h-full min-h-0 flex-col">
               {editable && available && (
                 <>
-                  <div className="space-y-3 p-3">
+                  {/* While stages run, the controls below fold to one line naming the agent. */}
+                  <div className={pipelineRunning ? "hidden" : "space-y-3 p-3"}>
                     <Select
                       size="sm"
                       label={S.activities.agent}
@@ -1248,6 +1251,7 @@ function ActivityEditor({
                   <PipelineControls
                     choice={pipelineChoice}
                     pipeline={pipeline}
+                    agentLabel={agentLabel}
                     blocked={pipelineBlocked}
                     onChoose={setPipelineChoice}
                     onRun={() => runStages()}
@@ -1275,7 +1279,7 @@ function ActivityEditor({
                   unsaved={dirty}
                   proposalOpen={!!proposal.read?.proposal?.changes.length}
                 >
-                  {(blocked) =>
+                  {(blocked, assembling) =>
                     editable && (
                       <div className="space-y-3">
                         {detail.activityType === "book" && (
@@ -1304,6 +1308,7 @@ function ActivityEditor({
                           size="sm"
                           disabled={
                             blocked ||
+                            assembling ||
                             busy ||
                             running ||
                             dirty ||
@@ -1336,7 +1341,9 @@ function ActivityEditor({
                             })
                           }
                         >
-                          {S.activities.assemble}
+                          {assembling
+                            ? S.activities.studioBuild.assemblingButton
+                            : S.activities.assemble}
                         </Button>
                       </div>
                     )
@@ -1486,6 +1493,14 @@ function ActivityEditor({
       </p>
     );
   const runningRun = runs.find((run) => run.status === "running");
+  // What the rail says beside each section: edits not yet saved, and how much there is.
+  const railTrails = sectionTrails({
+    descriptionDirty: description !== detail.draft.description,
+    specDirty: spec !== pretty(detail.draft.spec),
+    mediaDirty: media !== pretty(detail.draft.mediaPlan?.manifest),
+    draftStatus: detail.draft.status,
+    scenes: fullTree,
+  });
   return (
     <>
       <WorkspaceShell
@@ -1507,15 +1522,20 @@ function ActivityEditor({
               <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">
                 /
               </span>
-              <span
-                className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400"
-                title={`${S.activities.collection}: ${detail.collectionId}`}
-              >
-                {detail.productCode}
-              </span>
-              <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">
-                /
-              </span>
+              {/* The product code earns its place only when the title does not already say it. */}
+              {detail.productCode !== detail.title && (
+                <>
+                  <span
+                    className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400"
+                    title={`${S.activities.collection}: ${detail.collectionId}`}
+                  >
+                    {detail.productCode}
+                  </span>
+                  <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">
+                    /
+                  </span>
+                </>
+              )}
               <h2 className="min-w-0 truncate font-semibold" title={detail.title}>
                 {detail.title}
               </h2>
@@ -1553,37 +1573,31 @@ function ActivityEditor({
                 onDeleted={() => onDeleted(detail.title)}
                 // The new-ref table walks the media plan, so the way in waits for one.
                 onNewRef={detail.draft.mediaPlan ? () => setSection("newRef") : undefined}
+                // Reloading can throw edits away, so it sits in the ref's menu behind the
+                // discard confirmation rather than in the header's busiest row.
+                onReload={
+                  busy || !available
+                    ? undefined
+                    : () =>
+                        discard.ask(
+                          () =>
+                            void action(async () => {
+                              const value = await apiFetch<ActivityDetail>(endpoint);
+                              if (alive.current) accept(value);
+                            }),
+                        )
+                }
               />
+              <DraftStatus status={detail.draft.status} dirty={dirty} />
               {runningRun && (
-                <span
-                  className={`ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-current/20 px-2 py-0.5 text-xs ${toneInk.busy}`}
-                >
-                  <span aria-hidden className={`size-1.5 rounded-full ${toneDot.busy}`} />
-                  {S.activities.runningChip(runTitle(runningRun.kind))}
-                </span>
+                <RunningChip
+                  run={runningRun}
+                  onFollow={() =>
+                    setShowPanel({ key: runPanel(runningRun, pipelineRunning), at: Date.now() })
+                  }
+                />
               )}
             </nav>
-            <p
-              aria-live="polite"
-              className={`whitespace-nowrap text-xs ${dirty ? toneInk.attention : toneInk.muted}`}
-            >
-              {dirty ? S.activities.unsaved : S.activities.draftStatus[detail.draft.status]}
-            </p>
-            <Button
-              size="sm"
-              disabled={busy || !available}
-              onClick={() =>
-                discard.ask(
-                  () =>
-                    void action(async () => {
-                      const value = await apiFetch<ActivityDetail>(endpoint);
-                      if (alive.current) accept(value);
-                    }),
-                )
-              }
-            >
-              {S.activities.reload}
-            </Button>
           </>
         }
         notices={
@@ -1634,7 +1648,7 @@ function ActivityEditor({
               </div>
             )}
             <StudioTreeView
-              nodes={buildStudioTree(sections, tree)}
+              nodes={buildStudioTree(sections, tree, railTrails, sceneRanges(description))}
               section={section}
               selection={section === "scenes" && !board ? selection : null}
               onChoose={(target) => {

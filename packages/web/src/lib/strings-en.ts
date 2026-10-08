@@ -44,6 +44,14 @@ export const en: Strings = {
       fold: (name: string) => `Fold ${name}`,
       unfold: (name: string) => `Unfold ${name}`,
       needsMedia: "Needs media",
+      trail: { unsaved: "Unsaved", valid: "Valid", invalid: "Invalid" },
+      waits: { spec: "after spec", plan: "after media plan", module: "after assembly" },
+      waitsHelp: {
+        spec: "Opens once a specification is saved.",
+        plan: "Opens once media is planned.",
+        module: "Opens after the first assembly.",
+      },
+      sceneTitle: (number: number, title: string, id: string) => `Scene ${number}: ${title} (${id})`,
     },
     studioPlayer: {
       now: (state: string, scene: string) => `Now in ${state}, ${scene}`,
@@ -160,6 +168,8 @@ export const en: Strings = {
     },
     studioRefs: {
       ref: "Ref",
+      menu: "Ref actions",
+      refs: "Refs",
       option: (refNum: number, name: string | null, stable: boolean) =>
         `Ref ${refNum}${name ? ` · ${name}` : ""}${stable ? " · stable" : ""}`,
       stable: "Stable",
@@ -1011,6 +1021,10 @@ export const en: Strings = {
       openSession: "Open session",
       noRun: "This activity has not been assembled yet.",
       ready: "Ready to assemble.",
+      assembling: "Assembling now.",
+      assemblingButton: "Assembling…",
+      noFinishedRun: "No finished assembly yet.",
+      passed: (count: number) => `${count} ${count === 1 ? "check passes" : "checks pass"}`,
     },
     runLog: {
       showReasoning: "Show reasoning",
@@ -1071,13 +1085,14 @@ export const en: Strings = {
       otherRun: "Another run is in progress.",
       noAgent: "Choose an agent under the Activity Script first.",
       with: (agent: string) => `With ${agent}`,
-      live: "Current stage",
       skipped: (count: number) => `${count} skipped`,
       showLog: (step: string) => `Show the ${step} session`,
       waitingForSession: "Waiting for the stage's session to start…",
       runByServer: "The server makes each clip itself, so this stage has no session to show.",
       openInChat: "Open in chat",
       noRun: "No stages have run in this session of the server.",
+      doneFold: (count: number) => `${count} ${count === 1 ? "stage" : "stages"} done`,
+      runningWith: (agent: string, stages: string) => `${agent} · ${stages}`,
     },
     specEditor: {
       title: (subject) => `Activity Spec - ${subject}`,
@@ -2004,6 +2019,7 @@ export const en: Strings = {
     collection: "Collection",
     breadcrumb: "Breadcrumb",
     runningChip: (what: string) => `${what} running`,
+    followRun: "Follow the run",
     refresh: "Refresh list",
     status: {
       running: "Running",
@@ -4488,6 +4504,7 @@ Scenarios:
     decisionPolicy: "policy",
     thinking: "Thinking",
     thinkingHidden: "Thinking…",
+    thoughtFor: (duration: string) => `thought ${duration}`,
     copyToolOutput: "Copy output",
     showAllOutput: "Show all",
     showLessOutput: "Show less",

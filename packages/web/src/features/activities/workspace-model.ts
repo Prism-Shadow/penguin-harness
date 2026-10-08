@@ -23,9 +23,14 @@ export type WorkspaceSection =
 
 export interface WorkspaceSectionEntry {
   key: WorkspaceSection;
-  /** Whether the section can be opened yet, and why not when it cannot. */
+  /** Whether the section can be opened yet. */
   enabled: boolean;
+  /** What a disabled section is waiting for, which the rail says beside it. */
+  waitsFor?: SectionPrerequisite;
 }
+
+/** What a section can wait for: a saved specification, a media plan, an assembled module. */
+export type SectionPrerequisite = "spec" | "plan" | "module";
 
 export interface WorkspaceState {
   /** A saved specification exists, so scenes and media have something to describe. */
@@ -47,7 +52,7 @@ export interface WorkspaceState {
  * does, and an author would not know what is missing.
  */
 export function workspaceSections(state: WorkspaceState): WorkspaceSectionEntry[] {
-  return [
+  const entries: WorkspaceSectionEntry[] = [
     { key: "description", enabled: true },
     { key: "specification", enabled: true },
     // A checklist for the module assembly; choosing features needs no module yet.
@@ -72,6 +77,20 @@ export function workspaceSections(state: WorkspaceState): WorkspaceSectionEntry[
     // table walks the media plan, so it waits for one.
     { key: "newRef", enabled: state.hasPlan },
   ];
+  // The first thing still missing, in the order an author makes them.
+  const missing: SectionPrerequisite = !state.hasSpec ? "spec" : !state.hasPlan ? "plan" : "module";
+  const needs: Partial<Record<WorkspaceSection, SectionPrerequisite>> = {
+    speech: !state.hasSpec ? "spec" : "plan",
+    module: "spec",
+    configuration: "module",
+    assessment: "module",
+    deploy: "module",
+    stats: "plan",
+    newRef: "plan",
+  };
+  return entries.map((entry) =>
+    entry.enabled ? entry : { ...entry, waitsFor: needs[entry.key] ?? missing },
+  );
 }
 
 /** The rail's phases, top to bottom: what an author does first sits first. */

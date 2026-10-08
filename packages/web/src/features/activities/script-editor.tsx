@@ -37,14 +37,17 @@ import {
 import { goToNextChunk, goToPreviousChunk, unifiedMergeView } from "@codemirror/merge";
 import { search, searchKeymap } from "@codemirror/search";
 import { Button } from "../../components/ui/button";
-import { Select } from "../../components/ui/select";
+import { ChipGroup } from "../../components/ui/chip-group";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import {
   diffMarkers,
+  mediaElementSpans,
   mediaTagSpans,
+  sceneHeadingPrefix,
   sceneRanges,
   scenesTouched,
+  type MediaElement,
   type ScriptScene,
 } from "./script-model";
 import { diffLines, diffStats } from "./spec-diff";
@@ -110,7 +113,23 @@ class ProposedHint extends WidgetType {
 }
 
 const headingLine = Decoration.line({ class: "cm-scene-heading" });
-const tagMark = Decoration.mark({ class: "cm-media-tag" });
+const headingNumber = Decoration.mark({ class: "cm-scene-number" });
+/**
+ * Each kind of media keeps its own hue, tag and all, so narration and footage read apart in a
+ * long scene. The hues are categorical (which element this is), never a status.
+ */
+const tagMarks = Object.fromEntries(
+  (["audio", "video", "image", "animation"] as const).map((element) => [
+    element,
+    Decoration.mark({ class: `cm-media-tag cm-media-${element}` }),
+  ]),
+) as Record<MediaElement, Decoration>;
+const spanMarks = Object.fromEntries(
+  (["audio", "video", "image", "animation"] as const).map((element) => [
+    element,
+    Decoration.mark({ class: `cm-media-span cm-media-span-${element}` }),
+  ]),
+) as Record<MediaElement, Decoration>;
 
 function decorate(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
@@ -127,8 +146,15 @@ function decorate(view: EditorView): DecorationSet {
       done = line.number;
       const scene = scenes.get(line.number);
       if (scene) builder.add(line.from, line.from, headingLine);
-      for (const span of mediaTagSpans(line.text))
-        builder.add(line.from + span.from, line.from + span.to, tagMark);
+      const prefix = scene ? sceneHeadingPrefix(line.text) : 0;
+      // Marks go in by where they start, a whole element before the tag that opens it.
+      const marks = [
+        ...(prefix ? [{ from: 0, to: prefix, mark: headingNumber }] : []),
+        ...mediaElementSpans(line.text).map((span) => ({ ...span, mark: spanMarks[span.element] })),
+        ...mediaTagSpans(line.text).map((span) => ({ ...span, mark: tagMarks[span.element] })),
+      ].sort((left, right) => left.from - right.from || right.to - left.to);
+      for (const { from: start, to: end, mark } of marks)
+        builder.add(line.from + start, line.from + end, mark);
       if (scene && proposed.has(scene.number))
         builder.add(
           line.to,
@@ -384,12 +410,15 @@ export function ScriptEditor({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2 dark:border-gray-800">
         <h2 className="text-sm font-semibold">{words.label}</h2>
-        {status && (
-          <span aria-live="polite" className="text-xs text-gray-500">
-            {status}
-          </span>
-        )}
-        <span className="flex-1" />
+        {/* The status takes what room is left and gives it up first, so the controls stay on
+            one row beside the title rather than wrapping under it. */}
+        <span
+          aria-live="polite"
+          title={status ?? undefined}
+          className="min-w-0 flex-1 basis-0 truncate text-xs text-gray-500"
+        >
+          {status}
+        </span>
         {base !== "off" && (
           <span aria-live="polite" className="text-xs text-gray-500 tabular-nums">
             {stats.added || stats.removed
@@ -406,22 +435,30 @@ export function ScriptEditor({
         >
           {words.scenes}
         </Button>
-        <div className="w-40">
-          <Select
-            size="sm"
-            aria-label={words.diff}
-            value={base}
-            onChange={(event) => setChoice(event.target.value as ScriptDiffBase)}
-          >
-            <option value="off">{`${words.diff}: ${words.diffOff}`}</option>
-            <option value="saved">{`${words.diff}: ${words.diffSaved}`}</option>
-            <option value="proposal" disabled={proposal === null}>
-              {`${words.diff}: ${words.diffProposal}`}
-            </option>
-          </Select>
-        </div>
+        <span aria-hidden className="text-xs text-gray-500 dark:text-gray-400">
+          {words.diff}
+        </span>
+        <ChipGroup<ScriptDiffBase>
+          label={words.diff}
+          value={base}
+          onChange={setChoice}
+          options={[
+            { value: "off", label: words.diffOff },
+            { value: "saved", label: words.diffSaved },
+            // Offered only while there is a proposal to compare with.
+            ...(proposal === null
+              ? []
+              : [{ value: "proposal" as const, label: words.diffProposal }]),
+          ]}
+        />
         {canSave && (
-          <Button size="sm" onClick={onSave} disabled={saveDisabled || base === "proposal"}>
+          // Save stands out only when there is something to save.
+          <Button
+            size="sm"
+            variant={saveDisabled || base === "proposal" ? "secondary" : "primary"}
+            onClick={onSave}
+            disabled={saveDisabled || base === "proposal"}
+          >
             {words.save}
           </Button>
         )}
@@ -460,7 +497,7 @@ export function ScriptEditor({
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <div ref={host} className="script-editor min-h-0 min-w-0 flex-1" />
+        <div ref={host} className="script-editor activity-script min-h-0 min-w-0 flex-1" />
         {markers.length > 0 && (
           <div
             role="group"
