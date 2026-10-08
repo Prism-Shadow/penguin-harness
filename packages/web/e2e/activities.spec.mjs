@@ -5218,7 +5218,9 @@ test("the preview builds a module no one has built, plays it, and replays a save
   // Filling the workspace fits the whole screen of the module, height included.
   await panel.getByRole("button", { name: "Fill the workspace", exact: true }).click();
   // The frame refits after the panel has taken the workspace, so read it once it has.
-  await expect.poll(async () => (await frame.locator("xpath=..").boundingBox()).width).toBeGreaterThan(600);
+  await expect
+    .poll(async () => (await frame.locator("xpath=..").boundingBox()).width)
+    .toBeGreaterThan(600);
   const box = await frame.locator("xpath=..").boundingBox();
   const shown = await panel.boundingBox();
   expect(box.y + box.height).toBeLessThanOrEqual(shown.y + shown.height);
