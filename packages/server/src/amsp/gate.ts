@@ -13,6 +13,9 @@
  *    accepted only when the Agent allows keyless access, 401 otherwise.
  *
  * Any other path under the prefix passes through untouched, to the group's 404 tail.
+ *
+ * The first two checks are also the API tab's try route's (try-route.ts), which stands the
+ * owner's sign-in where the key would be.
  */
 import { isValidId } from "@prismshadow/penguin-core";
 import type { MiddlewareHandler } from "hono";
@@ -56,6 +59,29 @@ export const sessionNotFound = (): HttpError =>
 
 const unauthorized = (message: string): HttpError => new HttpError(401, "unauthorized", message);
 
+/** The admin's switch: off refuses every request 403 `agent_api_disabled`. */
+export function requireAgentApiOn(settings: Pick<Settings, "getAgentApiEnabled">): void {
+  if (!settings.getAgentApiEnabled()) {
+    throw new HttpError(403, "agent_api_disabled", "The Agent API is turned off on this server.");
+  }
+}
+
+/**
+ * The Agent a path names, once it is exposed: valid ids, its API switch on, and the Agent there.
+ * Anything else is the one 404 `agent_not_found`, which says nothing about which it was.
+ */
+export async function requireExposedAgent(
+  deps: Pick<AmspGateDeps, "agentApi" | "agentConfig">,
+  projectId: string,
+  agentId: string,
+): Promise<AgentApiRow> {
+  if (!isValidId(projectId) || !isValidId(agentId)) throw agentNotFound();
+  const api = deps.agentApi.get(projectId, agentId);
+  if (api === null || !api.enabled) throw agentNotFound();
+  if (!(await deps.agentConfig.exists(projectId, agentId))) throw agentNotFound();
+  return api;
+}
+
 /** The path below the group prefix, split into decoded segments; null when a segment does not decode. */
 function segmentsOf(path: string, prefix: string): string[] | null {
   const rest = path.startsWith(prefix) ? path.slice(prefix.length) : path;
@@ -91,17 +117,12 @@ export function amspGate(prefix: string, deps: AmspGateDeps): MiddlewareHandler<
   };
 
   return async (c, next) => {
-    if (!deps.settings.getAgentApiEnabled()) {
-      throw new HttpError(403, "agent_api_disabled", "The Agent API is turned off on this server.");
-    }
+    requireAgentApiOn(deps.settings);
     const segments = segmentsOf(c.req.path, prefix);
     const header = c.req.header("authorization");
     if (segments !== null && segments[0] === "agents" && segments.length >= 3) {
       const [, projectId, agentId] = segments as [string, string, string];
-      if (!isValidId(projectId) || !isValidId(agentId)) throw agentNotFound();
-      const api = deps.agentApi.get(projectId, agentId);
-      if (api === null || !api.enabled) throw agentNotFound();
-      if (!(await deps.agentConfig.exists(projectId, agentId))) throw agentNotFound();
+      const api = await requireExposedAgent(deps, projectId, agentId);
       const keyId = authenticate(header, api, agentNotFound);
       c.set("amsp", { projectId, agentId, keyId, session: null });
     } else if (segments !== null && segments[0] === "sessions" && segments.length >= 2) {

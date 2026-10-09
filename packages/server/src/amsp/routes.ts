@@ -12,6 +12,10 @@
  * CORS (cors.ts): a preflight is always answered; `Access-Control-Allow-Origin: *` goes only on
  * requests that carry `Authorization`, the global 413/415 refusals included. The `/api/*` CSRF
  * guard (JSON-only writes) stays in force; nothing here reads a cookie.
+ *
+ * One route of the family sits behind the cookie gate instead: the API tab's Try it,
+ * `POST /api/projects/:projectId/agents/:agentId/api/try` (try-route.ts), the runs route's
+ * handler for the Project owner's sign-in in place of a key.
  */
 import { Hono } from "hono";
 import type { AgentResponse, SessionResponse } from "@prismshadow/amsp";

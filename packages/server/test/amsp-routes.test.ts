@@ -48,6 +48,22 @@
  * - Given 15 s of silence, a `: keep-alive` comment is written (fake timers).
  * - Given a failure of the server's own while driving, the stream ends with run.done fatal
  *   `internal` and [DONE], and the run is stopped.
+ *
+ * Scenarios — the API tab's try route (`POST /api/projects/:p/agents/:a/api/try`, the owner's
+ * sign-in in place of a key):
+ * - Given the owner's cookie, the try route streams what a keyed run streams, event type for
+ *   event type: run.started names a Session with client `api`, source `api` and the Agent's API
+ *   approval mode, then run.done and [DONE]; no key's last use moves.
+ * - Given a member who is not the owner, the answer is 403 `owner_required`; a user outside the
+ *   Project gets 404, a signed-out request 401; none of them creates anything.
+ * - Given the Agent's switch off, or no such Agent, the answer is 404 `agent_not_found`; given
+ *   the admin's switch off, 403 `agent_api_disabled` — the public routes' own refusals.
+ * - Given a session_id, an API Session of the Agent continues; a web Session's id is 404
+ *   `session_not_found`.
+ * - Given four runs of the Agent going through the try route, a fifth is 429 there and on the
+ *   public route alike.
+ * - Given a malformed body, the answer is the public route's 400 `bad_request`, byte for byte.
+ * - Given a caller that disconnects from the try stream, the run is aborted.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
@@ -60,10 +76,15 @@ import {
 import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
 import { readSse } from "@prismshadow/amsp";
 import type { AmspEvent } from "@prismshadow/amsp";
-import type { AgentApiKeyCreateResponse, ApprovalMode, SessionResponse } from "../src/api/types.js";
+import type {
+  AgentApiKeyCreateResponse,
+  AgentApiResponse,
+  ApprovalMode,
+  SessionResponse,
+} from "../src/api/types.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
 import { bodyLimitBytes } from "../src/services/attachment-limits.js";
-import { apiClient, createTestApp, loginAdmin, waitFor } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import {
@@ -878,6 +899,196 @@ describe("Agent API: runs", () => {
       error: { code: "internal" },
     });
     expect(rest.at(-1)).toBe("[DONE]");
+    await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle");
+    expect(runs[0]!.signal.aborted).toBe(true);
+  });
+});
+
+describe("Agent API: the try route", () => {
+  let t: TestApp;
+  let admin: Admin;
+  let member: Admin;
+  let outsider: Admin;
+  let key: string;
+  let mock: MockLLM;
+  const tryPath = (agentId = A) => `/api/projects/${P}/agents/${agentId}/api/try`;
+
+  beforeAll(async () => {
+    mock = await startMockLLM((n) => `reply ${n}`);
+    // Titles stay off, so the model is asked for the runs alone.
+    t = await createTestApp({ titles: { maybeGenerate: () => {} } });
+    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    const models = await admin.put(`/api/projects/${P}/models`, {
+      defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
+      models: [
+        {
+          provider: "custom",
+          modelId: MOCK_MODEL_ID,
+          apiKey: "sk-mock",
+          baseUrl: mock.url,
+          contextWindow: 200_000,
+        },
+      ],
+    });
+    expect(models.status).toBe(200);
+    key = await expose(admin, A, { approvalMode: "read-only" });
+    member = apiClient(t.app, (await provisionUser(t.app, "try_member")).cookie);
+    outsider = apiClient(t.app, (await provisionUser(t.app, "try_outsider")).cookie);
+    expect((await admin.post(`/api/projects/${P}/members`, { userId: "try_member" })).status).toBe(
+      201,
+    );
+  });
+  afterAll(async () => {
+    await t.deps.manager.shutdown();
+    await t.cleanup();
+    await mock.close();
+  });
+
+  const lastUses = async (): Promise<Array<string | null>> =>
+    (
+      (await (await admin.get(`/api/projects/${P}/agents/${A}/api`)).json()) as AgentApiResponse
+    ).api.keys.map((k) => k.lastUsedAt);
+
+  const types = (items: Array<AmspEvent | "[DONE]">) =>
+    items.map((e) => (e === "[DONE]" ? e : e.type));
+
+  it("the owner's sign-in streams what a keyed run streams; the Session is an API Session with the Agent's approval mode, and no key's last use moves", async () => {
+    const keyed = await stream(
+      await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { input: "What time is it now?" } }),
+    ).rest();
+    const used = await lastUses();
+    expect(used[0]).not.toBeNull();
+
+    const res = await admin.post(tryPath(), { input: "What time is it now?" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
+    expect(res.headers.get("x-accel-buffering")).toBe("no");
+    const items = await stream(res).rest();
+    expect(types(items)).toEqual(types(keyed));
+    expect(items.slice(-2)).toEqual([
+      expect.objectContaining({ type: "run.done", status: "completed", requests: 1 }),
+      "[DONE]",
+    ]);
+    const started = items[0] as Extract<AmspEvent, { type: "run.started" }>;
+    expect(started).toMatchObject({ type: "run.started", agent: `${P}/${A}` });
+    const created = (
+      (await (await admin.get(`/api/sessions/${started.session_id}`)).json()) as SessionResponse
+    ).session;
+    expect(created).toMatchObject({
+      client: "api",
+      source: "api",
+      agentId: A,
+      approvalMode: "read-only",
+    });
+    expect(await lastUses()).toEqual(used);
+  });
+
+  it("a member who is not the owner is refused 403 owner_required, a non-member 404, a signed-out request 401, and nothing is created", async () => {
+    const before = t.deps.sessionsRepo.listByAgent(P, A).length;
+    const body = { input: "What time is it now?" };
+    expect(await errorOf(await member.post(tryPath(), body))).toMatchObject({
+      status: 403,
+      code: "owner_required",
+    });
+    expect((await outsider.post(tryPath(), body)).status).toBe(404);
+    const signedOut = await t.app.request(tryPath(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(signedOut.status).toBe(401);
+    expect(t.deps.sessionsRepo.listByAgent(P, A)).toHaveLength(before);
+  });
+
+  it("an Agent whose switch is off, or no such Agent, is 404 agent_not_found; the admin's switch off is 403 agent_api_disabled", async () => {
+    await createAgent(admin, "dark_try_agent");
+    const body = { input: "hi" };
+    const dark = await errorOf(await admin.post(tryPath("dark_try_agent"), body));
+    const ghost = await errorOf(await admin.post(tryPath("ghost_try_agent"), body));
+    expect(dark).toMatchObject({ status: 404, code: "agent_not_found" });
+    expect(ghost.body).toBe(dark.body);
+    expect((await admin.put("/api/admin/settings", { agentApiEnabled: false })).status).toBe(200);
+    try {
+      expect(await errorOf(await admin.post(tryPath(), body))).toMatchObject({
+        status: 403,
+        code: "agent_api_disabled",
+      });
+    } finally {
+      await admin.put("/api/admin/settings", { agentApiEnabled: true });
+    }
+  });
+
+  it("a try run with session_id continues an API Session of the Agent; a web Session's id is 404 session_not_found", async () => {
+    const sessionId = uniqueSessionId();
+    const { session: runtime, runs, release } = blocking(sessionId);
+    adoptSession(t.deps, runtime, { projectId: P, agentId: A, client: "api" });
+    const events = stream(
+      await admin.post(tryPath(), { session_id: sessionId, input: "And now?" }),
+    );
+    expect(await events.next()).toMatchObject({ type: "run.started", session_id: sessionId });
+    await events.until("text.delta");
+    release();
+    expect((await events.rest()).at(-1)).toBe("[DONE]");
+    expect(runs.map((r) => r.input.map((m) => (m.payload as { text?: string }).text))).toEqual([
+      ["And now?"],
+    ]);
+
+    const web = uniqueSessionId();
+    adoptSession(t.deps, fakeSession(web), { projectId: P, agentId: A, client: "web" });
+    expect(
+      await errorOf(await admin.post(tryPath(), { session_id: web, input: "hi" })),
+    ).toMatchObject({ status: 404, code: "session_not_found" });
+  });
+
+  it("try runs count toward the Agent's four: the fifth is 429 on the try route and the public route alike", async () => {
+    await createAgent(admin, "busy_try_agent");
+    const busyKey = await expose(admin, "busy_try_agent");
+    const running = Array.from({ length: 4 }, () => blocking(uniqueSessionId()));
+    const streams = [];
+    for (const r of running) {
+      adoptSession(t.deps, r.session, { projectId: P, agentId: "busy_try_agent", client: "api" });
+      const s = stream(
+        await admin.post(tryPath("busy_try_agent"), {
+          session_id: r.session.sessionId,
+          input: "go",
+        }),
+      );
+      await s.until("text.delta");
+      streams.push(s);
+    }
+    const before = t.deps.sessionsRepo.listByAgent(P, "busy_try_agent").length;
+    const viaTry = await admin.post(tryPath("busy_try_agent"), { input: "fifth" });
+    const viaKey = await amsp(t, `/agents/${P}/busy_try_agent/runs`, {
+      key: busyKey,
+      body: { input: "fifth" },
+    });
+    for (const res of [viaTry, viaKey]) {
+      expect(res.headers.get("retry-after")).toBe("2");
+      expect(await errorOf(res)).toMatchObject({ status: 429, code: "too_many_runs" });
+    }
+    expect(t.deps.sessionsRepo.listByAgent(P, "busy_try_agent")).toHaveLength(before);
+    for (const r of running) r.release();
+    for (const s of streams) await s.rest();
+  });
+
+  it.each([
+    ["no input", {}],
+    ["a session_id that is not an id", { input: "hi", session_id: "../x" }],
+    ["a file item", { input: [{ type: "file", fileName: "a.txt", dataBase64: "aGk=" }] }],
+  ])("%s is the public route's 400 bad_request, byte for byte", async (_case, body) => {
+    const viaTry = await errorOf(await admin.post(tryPath(), body));
+    const viaKey = await errorOf(await amsp(t, `/agents/${P}/${A}/runs`, { key, body }));
+    expect(viaTry).toMatchObject({ status: 400, code: "bad_request" });
+    expect(viaTry.body).toBe(viaKey.body);
+  });
+
+  it("a client that disconnects from the try stream aborts the run", async () => {
+    const sessionId = uniqueSessionId();
+    const { session: runtime, runs } = blocking(sessionId);
+    adoptSession(t.deps, runtime, { projectId: P, agentId: A, client: "api" });
+    const events = stream(await admin.post(tryPath(), { session_id: sessionId, input: "go" }));
+    await events.until("text.delta");
+    await events.disconnect();
     await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle");
     expect(runs[0]!.signal.aborted).toBe(true);
   });
