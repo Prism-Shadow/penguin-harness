@@ -2,9 +2,11 @@
  * The composer's permission button: an icon-only square like the + button, wearing lucide's
  * shield icon for the level (see lib/permission-level.ts) — a different icon per level, coloured
  * by it, so the level never depends on colour alone. The menu lists the server's sandbox presets
- * that are in the menu — each a named mode, network level and approval mode — and, for an
- * administrator, More…, which opens the Settings page's Sandbox card, where the presets are
- * renamed, remapped and put in or out of the menu, and where the full settings stay.
+ * that are in the menu — each a named mode, network level and approval mode, its name led by the
+ * shield of the level it sets, so a row shows beforehand the mark the button takes once it is
+ * picked — and, for an administrator, More…, which opens the Settings page's Sandbox card, where
+ * the presets are renamed, remapped and put in or out of the menu, and where the full settings
+ * stay.
  *
  * A pick edits the Session's own policy and approval mode in one save: a Session keeps the
  * policy it was created with, so the Settings page only decides what NEW Sessions start from.
@@ -15,7 +17,8 @@
  * (`aboveCeiling`), which the server would refuse: marked admin-only, unless it is the current one.
  *
  * With the server's Sandbox switch off, new Sessions start unconfined and the menu lists the
- * approval modes alone (permissionMenu); a pick changes only the approval mode.
+ * approval modes alone (permissionMenu), each led by its level's shield the same way; a pick
+ * changes only the approval mode.
  *
  * The menu offers only presets whose approval mode is among the modes the composer passes in
  * (see approval-mode.ts): an organization's Session is not offered an `always-ask` preset unless
@@ -33,6 +36,8 @@ import type {
 import {
   Dropdown,
   GlyphIcon,
+  ICONS,
+  ICON_SIZE,
   Menu,
   MenuItem,
   MenuRadioItem,
@@ -46,6 +51,7 @@ import {
   approvalModePick,
   firstUnavailableBackend,
   matchPreset,
+  menuRowLevel,
   permissionLevel,
   permissionMenu,
   presetBlock,
@@ -54,19 +60,34 @@ import {
   presetsOf,
   sandboxSwitchOff,
 } from "../../lib/permission-level";
-import type { PermissionPick, PresetBlock } from "../../lib/permission-level";
+import type { PermissionLevel, PermissionPick, PresetBlock } from "../../lib/permission-level";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { localizedText } from "./skill-use";
 import { SettingsDialog } from "../settings/settings-dialog";
 
 /**
- * One preset row: its name, and a check when it is the Session's level. Its tooltip says what
- * it blocks and allows and whether this machine can enforce it; an unenforceable one stays
- * listed, greyed out, with a short note.
+ * A level's shield in the level's tone: the button's mark, and the mark ahead of each row's name.
+ * Not decorative — the shape and the tone are the level, which the row's name does not say.
+ */
+function LevelGlyph({ level, size }: { level: PermissionLevel; size: number }) {
+  return (
+    <GlyphIcon
+      d={PERMISSION_LEVEL_GLYPH[level]}
+      size={size}
+      className={toneInk[PERMISSION_LEVEL_TONE[level]]}
+    />
+  );
+}
+
+/**
+ * One preset row: the shield of the level it sets, its name, and a check when it is the
+ * Session's level. Its tooltip says what it blocks and allows and whether this machine can
+ * enforce it; an unenforceable one stays listed, greyed out, with a short note.
  */
 function Choice({
   label,
+  level,
   selected,
   onPick,
   hint,
@@ -74,6 +95,7 @@ function Choice({
   note,
 }: {
   label: string;
+  level: PermissionLevel;
   selected: boolean;
   onPick: () => void;
   hint: string;
@@ -82,6 +104,7 @@ function Choice({
 }) {
   return (
     <MenuRadioItem
+      glyph={<LevelGlyph level={level} size={ICON_SIZE.inlineGlyph} />}
       label={label}
       checked={selected}
       disabled={unavailable}
@@ -207,7 +230,10 @@ export function PermissionSelect({
       <Dropdown
         open={open}
         setOpen={setOpen}
-        menuClass="w-max min-w-44"
+        // A row's name does not widen a `w-max` panel (it sits in a `flex-1` column), so the
+        // floor is what keeps the longest built-in row whole in Chinese: its shield, the
+        // Workspace Write name, an "Admin only" note and the check.
+        menuClass="w-max min-w-50"
         portal={{ direction, align: "left" }}
         button={
           <button
@@ -224,11 +250,7 @@ export function PermissionSelect({
           >
             {/* Keyed by level: a new level mounts a new icon, which swaps in. */}
             <span key={level} className={animate ? "anim-icon-swap" : undefined}>
-              <GlyphIcon
-                d={PERMISSION_LEVEL_GLYPH[level]}
-                size={15}
-                className={toneInk[PERMISSION_LEVEL_TONE[level]]}
-              />
+              <LevelGlyph level={level} size={ICON_SIZE.iconButton} />
             </span>
           </button>
         }
@@ -249,6 +271,9 @@ export function PermissionSelect({
               return (
                 <MenuRadioItem
                   key={row.mode}
+                  glyph={
+                    <LevelGlyph level={menuRowLevel(row, sandbox)} size={ICON_SIZE.inlineGlyph} />
+                  }
                   label={S.chat.approvalModeNames[row.mode] ?? row.mode}
                   checked={row.mode === approvalMode}
                   onSelect={() => pickMode(row.mode)}
@@ -261,6 +286,7 @@ export function PermissionSelect({
               <Choice
                 key={p.id}
                 label={nameOf(p)}
+                level={menuRowLevel(row, sandbox)}
                 selected={current?.id === p.id}
                 hint={hintOf(p, block)}
                 unavailable={block !== null}
@@ -275,8 +301,10 @@ export function PermissionSelect({
             <>
               <MenuSeparator />
               {/* More…: the presets table and the full settings (masked paths, the temp
-                directory, the backends) are on the Settings page's Sandbox card. */}
+                directory, the backends) are on the Settings page's Sandbox card. Its gear keeps
+                its name in the column the level rows' names start in. */}
               <MenuItem
+                glyph={ICONS.gear}
                 label={P.more}
                 onSelect={() => {
                   setOpen(false);
