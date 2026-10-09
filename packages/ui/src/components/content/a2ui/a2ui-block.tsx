@@ -13,10 +13,14 @@
  * and a block that draws arrives under `data-reveal`, the theme's entrance for content appearing
  * in a settled surface, so it never pops in where the placeholder stood. The fallback for a block
  * that cannot be drawn takes no entrance: it is a notice, not the block.
+ *
+ * A block that draws also gets its source's hash (draft.ts), the key a form or a multi-select
+ * keeps its answers in progress under.
  */
 import { Component, useMemo } from "react";
 import type { ReactNode } from "react";
 import { parseA2ui } from "@prismshadow/penguin-core/a2ui";
+import { A2uiBlockKey, blockHash } from "./draft";
 import { A2uiInvalid, A2uiPending, oneLine } from "./parts";
 import { useA2uiRenderer } from "./registry";
 
@@ -52,6 +56,7 @@ class RenderGuard extends Component<
 
 function ParsedBlock({ source }: { source: string }) {
   const parsed = useMemo(() => parseA2ui(source), [source]);
+  const key = useMemo(() => blockHash(source), [source]);
   const Renderer = useA2uiRenderer(parsed.spec?.type ?? "");
   const invalid = (reason: string) => (
     <A2uiInvalid language="a2ui" source={source} reason={reason} />
@@ -67,7 +72,9 @@ function ParsedBlock({ source }: { source: string }) {
   return (
     <RenderGuard source={source} fallback={invalid}>
       <div data-reveal>
-        <Renderer spec={parsed.spec} />
+        <A2uiBlockKey.Provider value={key}>
+          <Renderer spec={parsed.spec} />
+        </A2uiBlockKey.Provider>
       </div>
     </RenderGuard>
   );

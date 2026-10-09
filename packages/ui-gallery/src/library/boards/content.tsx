@@ -79,10 +79,15 @@ const PATCH = `diff --git a/src/limits.ts b/src/limits.ts
  };
 `;
 
-/** The board's A2UI actions, one stable object per language: a fill shows up as a toast. */
+/** A fill shows up as a toast; the empty fill of "Other…" (a cleared composer) shows nothing. */
+const showFill = (text: string): void => {
+  if (text !== "") toastInfo(text);
+};
+
+/** The board's A2UI actions, one stable object per language. */
 const A2UI_ACTIONS: Readonly<Record<"zh" | "en", A2uiActions>> = {
-  zh: { interactive: true, fill: toastInfo, lang: "zh" },
-  en: { interactive: true, fill: toastInfo, lang: "en" },
+  zh: { interactive: true, fill: showFill, lang: "zh" },
+  en: { interactive: true, fill: showFill, lang: "en" },
 };
 
 /** A block the grammar refuses (no such type), the same in both languages. */

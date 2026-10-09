@@ -52,6 +52,15 @@ clock. Two new skill scripts print real weather and system data as ready-made bl
   block. Both are hand-written and dependency-free, run on Windows, macOS and Linux, and print a
   fence to paste as is, or the bare JSON with `--json`. The skill tells the model to use them
   instead of numbers from memory.
+- **Weather fallback:** when Open-Meteo fails or finds no such place, `weather.mjs` falls back
+  to wttr.in and maps its weather codes onto the same conditions; `--source open-meteo|wttr`
+  forces one.
+- **"Other…" clears the composer:** picking "Other…" became a fill of nothing: it empties the
+  composer and focuses it. Text left by an earlier pick clears at once; text the user typed asks
+  first, as every fill does.
+- **Form drafts:** the answers of an open form and the picks of an open multi-select choice were
+  kept in the browser's localStorage, so a reload or a trip to another conversation no longer
+  loses them. A draft expires after 7 days, and at most 50 are kept.
 - **Skill and docs:** the a2ui skill and its component reference covered the four widgets with
   examples, and the plugin moved to `2026.10.09.1`. The chat page's "Rich output blocks" section
   listed the widgets, and the UI gallery's content board gained samples of them.

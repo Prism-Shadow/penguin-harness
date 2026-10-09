@@ -32,7 +32,7 @@ export interface A2uiStrings {
   lang: "zh" | "en";
   /** The button that puts a multi-select choice's picks, or a form's answers, in the composer. */
   fill: string;
-  /** A choice's own-answer control: it moves focus to the composer and fills nothing. */
+  /** A choice's own-answer control: it empties the composer for the reader's own answer. */
   other: string;
   /** The mark on the option the model recommends. */
   recommended: string;

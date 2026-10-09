@@ -8,8 +8,6 @@
   "quick_start": {
     "prompt": "Ask me which of three weekend plans I prefer as a choice block, then show the one I pick as a short procedure in steps.",
     "prompt_zh": "用选项组件问我三个周末计划中更喜欢哪一个，再把我选中的那个写成一份简短的分步操作。",
-    "skills": [
-      "a2ui"
-    ]
+    "skills": ["a2ui"]
   }
 }

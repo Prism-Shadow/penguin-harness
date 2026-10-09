@@ -3187,6 +3187,10 @@ Benchmark：
     replaceTypedTitle: "替换输入框内容",
     replaceTyped: "替换",
     replaceTypedBody: "用这条提示词替换输入框里已有的内容？你输入的文字会被清掉。",
+    /** A choice's "Other…" about to empty the composer of text the user typed. */
+    clearTypedTitle: "清空输入框内容",
+    clearTyped: "清空",
+    clearTypedBody: "清空输入框里已输入的文字，另写自己的回答？",
     statTokens: "Token 累计",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "总 Token",
@@ -3408,7 +3412,7 @@ Benchmark：
       lang: "zh" as "zh" | "en",
       /** The button that puts a multi-select pick, or a form's answers, in the composer. */
       fill: "填入输入框",
-      /** A choice's own-answer control: focuses the composer. */
+      /** A choice's own-answer control: empties the composer for the user's own answer. */
       other: "其他…",
       /** The mark on the option the model recommends. */
       recommended: "推荐",

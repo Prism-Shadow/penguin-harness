@@ -3105,6 +3105,10 @@ Scenarios:
     replaceTyped: "Replace",
     replaceTypedBody:
       "Replace what you typed with this prompt? Your text in the composer is cleared.",
+    /** A choice's "Other…" about to empty the composer of text the user typed. */
+    clearTypedTitle: "Clear composer text",
+    clearTyped: "Clear",
+    clearTypedBody: "Clear what you typed to write your own answer?",
     statTokens: "Total Tokens",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "Total Tokens",

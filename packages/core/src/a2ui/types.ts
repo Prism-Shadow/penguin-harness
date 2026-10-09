@@ -28,7 +28,7 @@ export interface A2uiChoice {
   question: string;
   options: A2uiOption[];
   multiple?: boolean;
-  /** Adds an "Other…" control that fills nothing and focuses the composer. */
+  /** Adds an "Other…" control that clears the composer and focuses it, for the user's own answer. */
   allowOther?: boolean;
 }
 

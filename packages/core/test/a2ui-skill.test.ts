@@ -86,10 +86,22 @@ type Block = Record<string, unknown>;
 
 interface WeatherScript {
   wmoToCondition(code: number, windSpeedKmh?: number): string;
+  wwoToCondition(code: number | string, windSpeedKmh?: number): string;
   buildWeatherBlock(
     geo: object,
     forecast: object,
     opts: { days: number; hours: number; unit: "C" | "F"; lang: "zh" | "en" },
+  ): Block;
+  buildWeatherBlockFromWttr(
+    data: object,
+    opts: {
+      place: string;
+      days: number;
+      hours: number;
+      unit: "C" | "F";
+      lang: "zh" | "en";
+      now: number;
+    },
   ): Block;
 }
 
@@ -129,6 +141,48 @@ const FIXTURE_FORECAST = {
   },
 };
 
+/**
+ * A minimal wttr.in j1 answer as the service sends it now: strings throughout, and no
+ * `localObsDateTime`. Beijing, observed at 11:41 UTC (19:41 local), read at 12:00 UTC.
+ */
+const FIXTURE_WTTR = {
+  current_condition: [
+    {
+      observation_time: "11:41 AM",
+      temp_C: "24",
+      FeelsLikeC: "21",
+      humidity: "27",
+      weatherCode: "149",
+      windspeedKmph: "8",
+      winddirDegree: "159",
+    },
+  ],
+  nearest_area: [{ areaName: [{ value: "Beijing" }], longitude: "116.388" }],
+  weather: [
+    {
+      date: "2026-10-09",
+      maxtempC: "27",
+      mintempC: "17",
+      astronomy: [{ sunrise: "06:18 AM", sunset: "05:45 PM" }],
+      hourly: [
+        { time: "1200", tempC: "25", weatherCode: "116", chanceofrain: "0" },
+        { time: "2100", tempC: "23", weatherCode: "113", chanceofrain: "9" },
+      ],
+    },
+    {
+      date: "2026-10-10",
+      maxtempC: "28",
+      mintempC: "18",
+      astronomy: [{ sunrise: "06:19 AM", sunset: "05:43 PM" }],
+      hourly: [
+        { time: "0", tempC: "21", weatherCode: "122", chanceofrain: "10" },
+        { time: "300", tempC: "19", weatherCode: "296", chanceofrain: "60" },
+        { time: "1200", tempC: "26", weatherCode: "113", chanceofrain: "1" },
+      ],
+    },
+  ],
+};
+
 describe("the skill's data scripts", () => {
   it("weather.mjs maps WMO codes and turns an Open-Meteo answer into a valid weather block", async () => {
     const weather = await importScript<WeatherScript>("weather.mjs");
@@ -163,6 +217,43 @@ describe("the skill's data scripts", () => {
       "19:00",
     ]);
     expect(block.daily).toHaveLength(3);
+  });
+
+  it("weather.mjs maps WWO codes and turns a wttr.in answer into a valid weather block", async () => {
+    const weather = await importScript<WeatherScript>("weather.mjs");
+    expect([113, 122, 296, 389, 999].map((code) => weather.wwoToCondition(code))).toEqual([
+      "clear",
+      "cloudy",
+      "rain",
+      "thunder",
+      "cloudy",
+    ]);
+    expect(weather.wwoToCondition("116", 55)).toBe("wind");
+
+    const block = weather.buildWeatherBlockFromWttr(FIXTURE_WTTR, {
+      place: "Beijing",
+      days: 3,
+      hours: 12,
+      unit: "C",
+      lang: "en",
+      now: Date.UTC(2026, 9, 9, 12, 0),
+    });
+    expect(parseA2ui(JSON.stringify(block)).issues).toEqual([]);
+    expect(block).toMatchObject({
+      place: "Beijing",
+      condition: "fog",
+      temp: 24,
+      night: true,
+      windDirection: "SSE",
+      asOf: "2026-10-09T19:41+08:00",
+      source: "wttr.in",
+    });
+    expect((block.hourly as Array<{ time: string }>).map((hour) => hour.time)).toEqual([
+      "21:00",
+      "00:00",
+      "03:00",
+    ]);
+    expect(block.daily).toHaveLength(2);
   });
 
   it("sysinfo.mjs takes a snapshot of this machine and builds a metrics block without errors", async () => {

@@ -23,7 +23,7 @@ One question, 2–7 options; the user picks one (or several with `multiple`), th
 | `options[].description` | string | optional, ≤ 160 |
 | `options[].recommended` | boolean | optional; at most ONE option may carry `true` |
 | `multiple` | boolean | optional; several picks, joined with 、 (zh) or ", " (en) |
-| `allowOther` | boolean | optional; adds an "Other…" control that focuses the composer |
+| `allowOther` | boolean | optional; adds an "Other…" control that clears the composer and focuses it |
 
 ```a2ui
 {
@@ -188,7 +188,7 @@ stateDiagram-v2
 
 ## weather
 
-The conditions at one place now, optionally with the next hours and the coming days. A snapshot: it shows the time in `asOf` and never updates. The Web App draws a line illustration of the condition that moves (rain falls, clouds drift) and stays still under reduced motion. Take the data from `scripts/weather.mjs`, never from memory.
+The conditions at one place now, optionally with the next hours and the coming days. A snapshot: it shows the time in `asOf` and never updates. The Web App draws a line illustration of the condition that moves (rain falls, clouds drift) and stays still under reduced motion. Take the data from `scripts/weather.mjs`, never from memory. The script reads Open-Meteo and falls back to wttr.in when Open-Meteo fails; `source` names the one that answered.
 
 | Field | Type | Rule |
 | --- | --- | --- |
@@ -217,7 +217,7 @@ The conditions at one place now, optionally with the next hours and the coming d
 | `daily[].condition` | condition | required |
 | `daily[].precip` | number | optional, 0–100 |
 | `asOf` | string | optional, an ISO 8601 date-time; without it the checker warns (`no_as_of`) |
-| `source` | string | optional, ≤ 40, e.g. `"Open-Meteo"` |
+| `source` | string | optional, ≤ 40, e.g. `"Open-Meteo"` or `"wttr.in"` |
 
 ```a2ui
 {

@@ -60,7 +60,7 @@ The fence is ```` ```a2ui ```` (or ```` ```a2ui json ````); one JSON object per 
 - A choice or a form **ends the reply**. Nothing follows it — no closing sentence, no second question. Write what the reader needs to decide BEFORE the block; the block is the question.
 - Every block is **introduced by a sentence** right before it ("Which store do you want?", "The request passes through three stages."). A block that arrives unexplained is a warning.
 - The pick comes back as the **user's next message in plain text**: for a choice, the option's `value` (default: its `label`), several picks joined with 、 or ", "; for a form, one line per field, `label: answer`. The user can edit that text before sending, or ignore the block and type anything. Read it as you would read any user message; never expect a marker.
-- `allowOther: true` adds an "Other…" control that just focuses the composer. Use it when your options may not cover the answer.
+- `allowOther: true` adds an "Other…" control that clears the composer and focuses it. Use it when your options may not cover the answer.
 - Blocks in older turns are read-only; only the latest reply is interactive. Do not refer to "the buttons above" in a later turn.
 - **Widgets** (weather, clock, countdown, metrics) are read-only and do not end the reply: prose may follow them. Nothing in them is clickable. The weather art moves, the clock ticks and the countdown counts down. Weather and metrics show the moment in `asOf` and never update: do not promise that they will.
 
@@ -73,7 +73,7 @@ node <skill dir>/scripts/weather.mjs "Beijing" --days 3
 node <skill dir>/scripts/sysinfo.mjs --lang zh
 ```
 
-- `weather.mjs <place>` reads Open-Meteo (no key): the current conditions, the next hours and the coming days, in the place's own time zone. Options: `--days 0-7` (default 5), `--hours 0-24` (default 12), `--unit C|F`, `--lang zh|en|auto` (auto picks zh for a Chinese place name). It names the place it matched on stderr: check that it is the place the user meant.
+- `weather.mjs <place>` reads Open-Meteo (no key): the current conditions, the next hours and the coming days, in the place's own time zone. If Open-Meteo fails, the script asks wttr.in (no key, 3 days in 3-hour steps); `--source open-meteo|wttr` forces one source. Options: `--days 0-7` (default 5), `--hours 0-24` (default 12), `--unit C|F`, `--lang zh|en|auto` (auto picks zh for a Chinese place name). On stderr it names the place it matched and the source that answered: check that it is the place the user meant.
 - `sysinfo.mjs` reads the machine the agent runs on: CPU, memory, disk, load and uptime. Options: `--disk <path>`, `--lang zh|en`. That machine may not be the user's own computer; say which machine the numbers describe.
 - Paste the printed fence as it is. Do not retype, round or extend the numbers. Then run the checker on the whole draft.
 - `--json` prints the bare object, for a block you assemble from several readings.

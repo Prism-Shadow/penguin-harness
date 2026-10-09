@@ -6,14 +6,17 @@
  *
  * Static markup only: a pick's fill and the diagram's drawing run in the browser. The pieces of
  * that logic which decide something — the form's gate and its answers, a number's step, the
- * arrow-key walk, which options fit one row — are pure and called directly.
+ * arrow-key walk, which options fit one row — are pure and called directly. A form's draft is
+ * read on its first render, so a fake store shows what comes back.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import type { A2uiForm } from "@prismshadow/penguin-core/a2ui";
 import { A2uiActionsProvider } from "../src/components/content/a2ui/actions";
-import type { A2uiActions } from "../src/components/content/a2ui/actions";
+import type { A2uiActions, A2uiDrafts } from "../src/components/content/a2ui/actions";
 import { A2uiBlock } from "../src/components/content/a2ui/a2ui-block";
 import { filledAnswers, formReady } from "../src/components/content/a2ui/form-answers";
 import { MermaidBlock } from "../src/components/content/a2ui/mermaid-block";
@@ -23,6 +26,7 @@ import { a2uiRendererFor, registerA2uiRenderer } from "../src/components/content
 import { Md } from "../src/components/content/prose/prose";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { classTokens, renderStatic } from "../src/testing";
+import { SRC_DIR } from "./helpers/paths";
 
 const LIVE: A2uiActions = { interactive: true, fill: () => {}, lang: "en" };
 
@@ -109,6 +113,13 @@ describe("ChoiceBlock", () => {
     expect(html).toContain("Fill in");
     expect(fill).toContain('disabled=""');
     expect(block({ ...CHOICE, multiple: true })).not.toContain("Fill in");
+  });
+
+  it("fills nothing from either Other…, which empties the composer", () => {
+    // A static render cannot press a button: the two controls' handlers are read from source.
+    const source = readFileSync(join(SRC_DIR, "components/content/a2ui/choice-block.tsx"), "utf8");
+    expect(source.match(/actions\.fill\(""\)/g)).toHaveLength(2);
+    expect(source).not.toContain("actions.focus");
   });
 
   it("sets a few short options as a row of chips, and longer ones as cards led by a disc", () => {
@@ -206,6 +217,27 @@ describe("FormBlock", () => {
     expect(stepNumber("", replicas, 1)).toBe("1");
     expect(stepNumber("12", replicas, -1)).toBe("10");
     expect(stepNumber("0.1", { ...replicas, min: 0, max: 1, step: 0.2 }, 1)).toBe("0.3");
+  });
+
+  it("brings back an open form's draft, keeping only the answers the form still accepts", () => {
+    const keys: string[] = [];
+    const drafts: A2uiDrafts = {
+      load: (key) => {
+        keys.push(key);
+        return { region: "eu-west", name: "billing", replicas: "12", retired: "x" };
+      },
+      save: () => {},
+      clear: () => {},
+    };
+    const html = block(FORM, { ...LIVE, drafts, draftScope: "s1" });
+    expect(keys).toEqual([expect.stringMatching(/^s1:[0-9a-z]+$/)]);
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html).toMatch(/<input[^>]*value="billing"/);
+    // Twelve replicas is past the field's maximum of ten: dropped rather than shown.
+    expect(html).not.toContain('value="12"');
+    // A read-only reply reads no draft.
+    block(FORM, { ...LIVE, interactive: false, drafts, draftScope: "s1" });
+    expect(keys).toHaveLength(1);
   });
 
   it("gates on required fields and numbers in range, and fills only what was answered", () => {

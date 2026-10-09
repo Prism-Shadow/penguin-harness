@@ -13,8 +13,11 @@
  * pick, so a single-select reads as one. A multi-select is a column of the same cards around its
  * checkboxes.
  *
- * `allowOther` adds an "Other…" control that fills nothing and moves focus to the composer, where
- * the reader writes an answer of their own. The option the model recommends carries a mark.
+ * `allowOther` adds an "Other…" control that fills the composer with nothing, clearing what an
+ * earlier pick put there, so the reader writes an answer of their own. The option the model
+ * recommends carries a mark. A multi-select's ticks are kept as a draft while it is the open
+ * question (draft.ts), so a reload brings them back; a single pick has filled already and keeps
+ * nothing.
  *
  * Read-only (the default — an older reply, a Trace), the options stay on screen with every
  * control disabled and no fill button: the question is still part of the record.
@@ -32,6 +35,7 @@ import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { useA2uiActions } from "./actions";
 import type { A2uiActions } from "./actions";
+import { useA2uiDraft } from "./draft";
 import {
   A2UI_CARD,
   A2UI_CHIP,
@@ -50,6 +54,18 @@ function fillFor(spec: A2uiChoice, options: readonly A2uiOption[], lang: A2uiAct
     options.map((option) => option.label),
     lang,
   );
+}
+
+/** A multi-select's draft: the ticked labels, or null when none is. */
+function persistPicks(picked: ReadonlySet<string>): string[] | null {
+  return picked.size > 0 ? [...picked] : null;
+}
+
+/** A saved draft's labels that the choice still offers; anything else ticks nothing. */
+function restorePicks(spec: A2uiChoice, saved: unknown): ReadonlySet<string> {
+  if (!Array.isArray(saved)) return new Set();
+  const labels = spec.options.map((option) => option.label);
+  return new Set(labels.filter((label) => saved.includes(label)));
 }
 
 /** A single-select whose options fit one row of chips: four at most, short, none described. */
@@ -161,7 +177,11 @@ function SingleChoice({
           tabIndex={stop === spec.options.length ? 0 : -1}
           disabled={disabled}
           onFocus={() => setStop(spec.options.length)}
-          onClick={() => actions.focus?.()}
+          onClick={() => {
+            // The reader's own words replace the pick, in the composer and on the disc.
+            setPicked(null);
+            actions.fill("");
+          }}
           className={`${shape} ${pressLook(false)} text-fg-muted`}
         >
           {compact ? (
@@ -208,24 +228,27 @@ function MultiChoice({
   actions: A2uiActions;
   strings: A2uiStrings;
 }) {
-  const [picked, setPicked] = useState<ReadonlySet<number>>(() => new Set());
+  const [picked, setPicked] = useA2uiDraft<ReadonlySet<string>>(
+    (saved) => restorePicks(spec, saved),
+    persistPicks,
+  );
   const disabled = !actions.interactive;
-  const toggle = (i: number, on: boolean) =>
+  const toggle = (label: string, on: boolean) =>
     setPicked((current) => {
       const next = new Set(current);
-      if (on) next.add(i);
-      else next.delete(i);
+      if (on) next.add(label);
+      else next.delete(label);
       return next;
     });
 
   return (
     <fieldset aria-labelledby={questionId} disabled={disabled} className="min-w-0">
       <div className="flex flex-col gap-2">
-        {spec.options.map((option, i) => (
+        {spec.options.map((option) => (
           <Checkbox
             key={option.label}
-            checked={picked.has(i)}
-            onChange={(on) => toggle(i, on)}
+            checked={picked.has(option.label)}
+            onChange={(on) => toggle(option.label, on)}
             label={<OptionLabel option={option} strings={strings} />}
             hint={
               option.description !== undefined ? (
@@ -236,7 +259,7 @@ function MultiChoice({
             }
             size="base"
             disabled={disabled}
-            className={rowClass(picked.has(i), disabled)}
+            className={rowClass(picked.has(option.label), disabled)}
           />
         ))}
       </div>
@@ -247,14 +270,14 @@ function MultiChoice({
             size="sm"
             disabled={picked.size === 0}
             onClick={() => {
-              const chosen = spec.options.filter((_, i) => picked.has(i));
+              const chosen = spec.options.filter((option) => picked.has(option.label));
               actions.fill(fillFor(spec, chosen, actions.lang));
             }}
           >
             {strings.fill}
           </Button>
           {spec.allowOther === true && (
-            <Button variant="ghost" size="sm" onClick={() => actions.focus?.()}>
+            <Button variant="ghost" size="sm" onClick={() => actions.fill("")}>
               {strings.other}
             </Button>
           )}

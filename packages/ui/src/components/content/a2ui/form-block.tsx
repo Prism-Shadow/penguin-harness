@@ -11,9 +11,11 @@
  * mark, and the fill button stays disabled until each has an answer and every number is in range.
  * Enter in a text or number field fills, as a form submits.
  *
+ * While the form is the open question its answers are kept as a draft (draft.ts), so a reload
+ * brings them back; filling leaves them on screen and in the draft.
+ *
  * Read-only, the fields show with every control disabled and no fill button.
  */
-import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { formFillText } from "@prismshadow/penguin-core/a2ui";
 import type { A2uiForm, A2uiFormField, A2uiOption } from "@prismshadow/penguin-core/a2ui";
@@ -27,7 +29,8 @@ import { Input } from "../../forms/input/input";
 import { RadioGroup } from "../../forms/radio/radio";
 import { Segmented } from "../../forms/segmented/segmented";
 import { useA2uiActions } from "./actions";
-import { filledAnswers, formReady } from "./form-answers";
+import { useA2uiDraft } from "./draft";
+import { draftAnswers, filledAnswers, formReady, restoreAnswers } from "./form-answers";
 import type { A2uiFormAnswer, A2uiFormAnswers } from "./form-answers";
 import { NumberField } from "./number-field";
 import {
@@ -223,7 +226,10 @@ function FormField({
 export function FormBlock({ spec }: { spec: A2uiForm }) {
   const actions = useA2uiActions();
   const strings = useUiStrings().a2ui;
-  const [answers, setAnswers] = useState<A2uiFormAnswers>({});
+  const [answers, setAnswers] = useA2uiDraft<A2uiFormAnswers>(
+    (saved) => restoreAnswers(spec, saved),
+    draftAnswers,
+  );
   const disabled = !actions.interactive;
   const ready = actions.interactive && formReady(spec, answers);
 
