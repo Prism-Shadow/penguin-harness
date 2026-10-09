@@ -58,7 +58,6 @@ export const en: Strings = {
     noneInUse: "No machine in use yet.",
     sshHint:
       "A machine can be added when this server's account can ssh into it by key (`ssh <alias>` works in a terminal here). Whoever set up ssh can put it in ~/.ssh/config.",
-    now: "now",
     allHosts: (count: number) => `${count} more in ~/.ssh/config`,
     expand: "Expand",
     fewer: "Collapse",
@@ -94,14 +93,9 @@ export const en: Strings = {
     updateAll: (count: number) => `Update all (${count})`,
     updateAllConfirm: (count: number) =>
       `Update ${count === 1 ? "this machine" : `these ${count} machines`} to this server's version? Each one reinstalls the program, restarts its server and reconnects, so anyone using it is briefly cut off.`,
-    /** Asked before letting machines go: the connection drops, the install stays. */
+    /** Asked before letting a machine go: the connection drops, the install stays. */
     stopUsingOne: (alias: string) =>
       `Disable ${alias}? This Project disconnects from it and stops listing it; whatever is running through it is cut off. The program stays on that machine, so you can enable it again later.`,
-    stopUsingMany: (count: number) =>
-      `Disable these ${count} machines? This Project disconnects from them and stops listing them; whatever is running through them is cut off. The program stays on those machines, so you can enable them again later.`,
-    selectedCount: (count: number) => `${count} selected`,
-    pickAll: "all",
-    pickNone: "none",
     state: {
       serving: "Serving",
       queued: "Queued",
@@ -135,7 +129,6 @@ export const en: Strings = {
       `Force install on ${alias}? Whatever is on that machine now, this server's build is installed and its server restarted; anyone using it will be interrupted.`,
     refusedSelf: (alias: string) => `${alias} is the machine this server runs on; nothing to add.`,
     refusedUnknown: (alias: string) => `${alias} is not in this server's ssh config.`,
-    details: "Details",
     detailInstalled: "Installed",
     detailSince: "Since",
     detailVersion: "Version",
@@ -145,9 +138,47 @@ export const en: Strings = {
     detailMachineId: "Machine id",
     detailRoot: "Server root",
     serverUpOn: (port: number) => `up on port ${port}`,
-    output: "Output",
     agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
+    updateNotice: (count: number) =>
+      count === 1 ? "1 machine to update" : `${count} machines to update`,
+    card: {
+      local: "local",
+      localTitle: "The machine this server runs on, reached without ssh",
+      ssh: "ssh",
+      sshTitle: (alias: string) => `Reached over ssh as ${alias}`,
+      port: (port: number) => `API port ${port}`,
+      checked: (time: string) => `Last checked: ${time}`,
+      updateNeeded: "Update needed",
+      update: "Update",
+    },
+    detail: {
+      connection: "Connection",
+      job: "Job",
+      actions: "Actions",
+      alias: "ssh alias",
+      host: "Host",
+      state: "State",
+      copyMachineId: "Copy machine id",
+      jobDone: "Finished",
+      retry: "Retry",
+    },
+    verbs: {
+      install: "Install",
+      installWhy: "Install or update the program on that machine; skipped when its version matches",
+      connect: "Connect",
+      connectWhy: "Start that machine's server and hold a connection to it",
+      restart: "Restart",
+      restartWhy: "Restart that machine's server so what runs matches what is on its disk",
+      disconnect: "Disconnect",
+      disconnectWhy: "Drop the connection to that machine; its server keeps running",
+      release: "Remove from Project",
+      releaseWhy: "This Project stops using the machine; the program and the connection stay",
+      disconnectConfirm: (alias: string) =>
+        `Disconnect from ${alias}? Every Project using it shares this connection, and whatever is running through it is cut off; the server over there keeps running, and you can connect again later.`,
+      releaseConfirm: (alias: string) =>
+        `Remove ${alias} from this Project? It is no longer listed here and no longer receives this Project's Model config; the program and the connection over there stay as they are, and you can enable it again from Add machines….`,
+    },
   },
 
   /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */

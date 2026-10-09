@@ -66,7 +66,6 @@ export const zh = {
     noneInUse: "还没有在用的机器。",
     sshHint:
       "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
-    now: "刚刚",
     /** The chevron row at the foot of the picker's list: the matches it has not shown yet. */
     allHosts: (count: number) => `ssh 配置中另有 ${count} 台`,
     expand: "展开",
@@ -108,16 +107,10 @@ export const zh = {
     updateAll: (count: number) => `全部更新（${count}）`,
     updateAllConfirm: (count: number) =>
       `把这 ${count} 台机器更新到本服务端的版本？每台都会重装程序、重启服务并重新连接，期间正在用它的人会短暂断开。`,
-    /** Asked before letting machines go: the connection drops, the install stays. */
+    /** Asked before letting a machine go: the connection drops, the install stays. */
     stopUsingOne: (alias: string) =>
       `停用 ${alias}？本 Project 会断开与它的连接并不再列出它，正在经它进行的工作会中断。程序仍留在那台机器上，之后可以重新启用。`,
-    stopUsingMany: (count: number) =>
-      `停用这 ${count} 台机器？本 Project 会断开与它们的连接并不再列出它们，正在经它们进行的工作会中断。程序仍留在那些机器上，之后可以重新启用。`,
-    /** The floating bar over a selection. */
-    selectedCount: (count: number) => `已选 ${count} 台`,
-    pickAll: "全选",
-    pickNone: "清空",
-    /** The one word in a row's State column, keyed by the row's reading; `serving` is this server's. */
+    /** The one word for a machine's state, keyed by its reading; `serving` is this server's. */
     state: {
       serving: "服务中",
       queued: "排队中",
@@ -154,8 +147,7 @@ export const zh = {
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
     refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
-    /** The detail pane. */
-    details: "详情",
+    /** The record in the Machine dialog's Connection section. */
     detailInstalled: "已安装",
     detailSince: "安装于",
     /** This server's own card says what build it runs and since when, not what was installed. */
@@ -166,10 +158,52 @@ export const zh = {
     detailMachineId: "机器 ID",
     detailRoot: "服务端根目录",
     serverUpOn: (port: number) => `运行中，端口 ${port}`,
-    /** The progress log's own heading, so the block is not an unlabelled wall of text. */
-    output: "输出",
     agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
+    /** The notice under the title while machines carry another build; its action updates them all. */
+    updateNotice: (count: number) => `${count} 台机器待更新`,
+    /** A machine's card (machine-card.tsx): the stats line and the verbs beside it. */
+    card: {
+      /** How this server reaches the machine, and what that means on hover. */
+      local: "本机",
+      localTitle: "本服务端所在的机器，不经 ssh",
+      ssh: "ssh",
+      sshTitle: (alias: string) => `经 ssh 别名「${alias}」连接`,
+      port: (port: number) => `API 端口 ${port}`,
+      checked: (time: string) => `上次检查：${time}`,
+      /** The pill beside the version of a machine on another build. */
+      updateNeeded: "需要更新",
+      update: "更新",
+    },
+    /** The Machine dialog (machine-detail-dialog.tsx): three ruled sections. */
+    detail: {
+      connection: "连接",
+      job: "任务",
+      actions: "操作",
+      alias: "ssh 别名",
+      host: "主机",
+      state: "状态",
+      copyMachineId: "复制机器 ID",
+      jobDone: "已完成",
+      retry: "重试",
+    },
+    /** The single steps the dialog offers beside Enable and Disable, each with what it does. */
+    verbs: {
+      install: "安装",
+      installWhy: "安装或更新那台机器上的程序；版本已一致时跳过",
+      connect: "连接",
+      connectWhy: "启动那台机器上的服务，并保持一条通往它的连接",
+      restart: "重启",
+      restartWhy: "重启那台机器上的服务，让运行的程序与磁盘上的一致",
+      disconnect: "断开",
+      disconnectWhy: "关闭通往那台机器的连接，那边的服务继续运行",
+      release: "移出 Project",
+      releaseWhy: "本 Project 不再使用这台机器；那边的程序与连接保持不变",
+      disconnectConfirm: (alias: string) =>
+        `断开与 ${alias} 的连接？这条连接由使用它的所有 Project 共用，正在经它进行的工作会中断；那台机器上的服务继续运行，之后可以重新连接。`,
+      releaseConfirm: (alias: string) =>
+        `把 ${alias} 移出本 Project？它不再列在这里，本 Project 的模型配置也不再同步给它；那台机器上的程序与连接保持不变，之后可以从「添加机器…」重新启用。`,
+    },
   },
 
   /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */

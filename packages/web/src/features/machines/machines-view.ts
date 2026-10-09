@@ -1,6 +1,6 @@
 /**
  * What the Machines page derives from the server's answer: which machines are in use, the
- * one sentence each row says, and what the batch selects by default.
+ * one reading each card gives, and which machines the update notice counts.
  *
  * A row's reading follows a fixed precedence. The server's job for that machine is the
  * freshest word (queued, working, failed); a held connection settles "ready" whatever an
@@ -177,6 +177,25 @@ export function outOfDate(machine: MachineInfo, imageVersion: string | null): bo
 /** The machines in use that carry another build — what "update all" brings forward, in list order. */
 export function behindMachines(state: MachinesResponse): MachineInfo[] {
   return installedMachines(state).filter((machine) => outOfDate(machine, state.imageVersion));
+}
+
+/**
+ * The notice under the title while machines in use carry another build than this server's: which
+ * machines, and the keys that waving it away records — each machine at this server's build.
+ *
+ * Waved away, the notice stays down while every machine behind was already behind at that build,
+ * and comes back when another machine falls behind or this server moves to a newer build. The
+ * keys live as long as the page does: nothing is stored.
+ */
+export function updateNotice(
+  state: MachinesResponse,
+  dismissed: ReadonlySet<string>,
+): { ids: string[]; keys: string[] } | null {
+  const behind = behindMachines(state);
+  if (behind.length === 0) return null;
+  const keys = behind.map((machine) => `${machine.id} ${state.imageVersion}`);
+  if (keys.every((key) => dismissed.has(key))) return null;
+  return { ids: behind.map((machine) => machine.id), keys };
 }
 
 /** Whether any job is still to come, which is when the page keeps polling. */

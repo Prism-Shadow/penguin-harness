@@ -8,6 +8,8 @@
  * tool / skill / hook / memory / vault-key / schedule counts deep-link to the settings page's
  * matching tab (?tab=tools|skills|hooks|memory|vault|schedules) and appear in the settings tabs'
  * order.
+ * The whole card is the link to the Agent's settings page (lib/card-open.ts): a click anywhere on
+ * its body, or Enter while it has focus, goes there, and every control inside it acts on its own.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
  * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
@@ -19,7 +21,7 @@
  * otherwise starts with none.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
   AgentCreateRequest,
@@ -58,6 +60,7 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { OPENS_DETAIL_CLASS, pageCardProps } from "../../lib/card-open";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -130,6 +133,34 @@ export function AgentApiMark({ enabled }: { enabled: boolean }) {
       <GlyphIcon d={ICONS.plug} size={ICON_SIZE.inlineGlyph} />
       <span className="sr-only">{S.agent.apiOn}</span>
     </span>
+  );
+}
+
+/**
+ * An Agent's card: one band that is the link to the Agent's settings page — a click anywhere on
+ * its body, or Enter while it has focus, goes there — while each control inside it (New chat,
+ * Settings, the stat links, Usage, Delete, the update pill) acts on its own. An Agent that lives
+ * only on a machine has no settings page on this server, so its card opens nothing.
+ */
+export function AgentCardLink({
+  name,
+  onOpen,
+  children,
+}: {
+  /** The Agent's display name, which names the link. */
+  name: string;
+  /** Enters the Agent's settings page; null for an Agent this server does not have. */
+  onOpen: (() => void) | null;
+  children: ReactNode;
+}) {
+  return (
+    <Card
+      padding="md"
+      className={`flex flex-wrap items-center gap-x-6 gap-y-2 ${onOpen === null ? "" : OPENS_DETAIL_CLASS}`}
+      {...(onOpen === null ? {} : pageCardProps(onOpen, name))}
+    >
+      {children}
+    </Card>
   );
 }
 
@@ -436,6 +467,12 @@ export function AgentsPage() {
     navigate(`/agents/${agentId}?tab=${tab}`);
   };
 
+  /** Where a click on a card's body goes: the page its "Settings" button opens. */
+  const openSettings = (agentId: string) => {
+    setCurrentAgentId(agentId);
+    navigate(`/agents/${agentId}`);
+  };
+
   const doDelete = async () => {
     if (!projectId || !deleting) return;
     setBusy(true);
@@ -568,10 +605,10 @@ export function AgentsPage() {
             const elsewhere = machineName !== null;
             const elsewhereTitle = machineName === null ? "" : S.agent.livesOnMachine(machineName);
             return (
-              <Card
+              <AgentCardLink
                 key={a.agentId}
-                padding="md"
-                className="flex flex-wrap items-center gap-x-6 gap-y-2"
+                name={agentDisplayName(a)}
+                onOpen={elsewhere ? null : () => openSettings(a.agentId)}
               >
                 {/* Info column: once it can't fit within 14rem, everything after it
                     (sparkline/buttons) wraps as a whole. The avatar counts as the first line
@@ -789,7 +826,7 @@ export function AgentsPage() {
                     </Button>
                   )}
                 </div>
-              </Card>
+              </AgentCardLink>
             );
           })}
           {/* Until the Project has an agent of its own, the list ends in the AI path's call to
