@@ -432,7 +432,7 @@ describe("plugin import and export", () => {
 });
 
 describe("npm, through the installer itself", () => {
-  let root: string | null = null;
+  let real: string | null = null;
   const saved = new Map<string, string | undefined>();
 
   afterEach(async () => {
@@ -441,8 +441,11 @@ describe("npm, through the installer itself", () => {
       else process.env[key] = value;
     }
     saved.clear();
-    if (root !== null) await fs.rm(root, { recursive: true, force: true });
-    root = null;
+    if (real !== null) {
+      await fs.rm(`${real}-link`, { force: true });
+      await fs.rm(real, { recursive: true, force: true });
+    }
+    real = null;
   });
 
   // Windows is left out: Node refuses to spawn npm.cmd without a shell there, so this path is
@@ -451,7 +454,11 @@ describe("npm, through the installer itself", () => {
     "packs an uploaded package without its scripts, installs the tarball and keeps it where the prefix records it",
     { timeout: 120_000 },
     async () => {
-      root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-npm-wire-"));
+      // The data root is reached through a symlink, as macOS's temp directory is: what npm
+      // records must not depend on the path's spelling.
+      real = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-npm-wire-"));
+      const root = `${real}-link`;
+      await fs.symlink(real, root, "dir");
       // A package without dependencies needs no registry: offline, with a cache of its own.
       for (const [key, value] of [
         ["npm_config_offline", "true"],

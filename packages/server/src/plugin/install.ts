@@ -192,8 +192,11 @@ export async function installPluginFiles(
       ["pack", "--ignore-scripts", "--json", "--pack-destination", archives],
       dir,
     );
-    const tarball = path.join(archives, packedFileName(packed));
-    await install(prefix, tarball);
+    // Named relative to the prefix, so npm records `file:archives/<tarball>` whatever the data
+    // root's path goes through: given an absolute path, npm records it relative to the prefix's
+    // real path, which climbs to the filesystem root wherever a symlink sits on the way (macOS's
+    // temp directory, a data root on a linked disk).
+    await install(prefix, `./${ARCHIVES_DIR}/${packedFileName(packed)}`);
     const name = await readPackageName(path.join(dir, "package.json"));
     await pruneArchives(prefix);
     return { name, version: await readInstalledVersion(prefix, name) };
