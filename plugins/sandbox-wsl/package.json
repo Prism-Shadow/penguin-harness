@@ -24,6 +24,8 @@
     "dist",
     "setup",
     "README.md",
+    "plugin.json",
+    "icon.svg",
     "ifaces.json",
     "LICENSE"
   ],

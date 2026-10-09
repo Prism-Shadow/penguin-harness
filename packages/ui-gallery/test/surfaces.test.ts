@@ -104,7 +104,6 @@ describe("the surfaces", () => {
     expect(surfaceById("settings")?.route).toBe(`/chat/${IDS.sessions.done}`);
     expect(surfaceById("agent-settings")?.route).toBe(`/agents/${IDS.agents.docs}`);
     expect(surfaceById("schedules")?.route).toBe(`/agents/${IDS.agents.docs}?tab=schedules`);
-    expect(surfaceById("plugin-detail")?.route).toBe(`/plugins/registry/${IDS.plugins.registry}`);
     expect(surfaceById("benchmark-detail")?.route).toBe(`/benchmark/${IDS.benchmarks.docs}`);
   });
 });

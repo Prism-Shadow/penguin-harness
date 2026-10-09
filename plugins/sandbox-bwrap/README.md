@@ -13,7 +13,7 @@ and closing the temporary directory (a policy that does not grant temp leaves `/
   asked. Ubuntu 23.10 and later (24.04 by default) grant them only to AppArmor-profiled programs
   (`kernel.apparmor_restrict_unprivileged_userns=1`): the desktop `.deb` installs such a profile;
   the CLI package, the one-line installer, npm and Docker cannot, because the profile needs root.
-  There `@penguinharness/sandbox-dsh`, which the Sandbox card installs beside this backend,
+  There `@penguinharness/sandbox-dsh`, which the Agent Sandbox card installs beside this backend,
   confines file writes through Landlock with no host step. The optional one-time root step that
   lets this backend run, adding network isolation and masked paths, is in the CLI quickstart's
   "Sandbox on Ubuntu" section.
@@ -50,7 +50,7 @@ than restrict it.
 
 ## Settings
 
-On **Settings → Plugins**, inside the Sandbox card: the **bwrap program** (a path or a command on PATH; empty uses `bwrap`) and the **probe timeout** in seconds (1–30, default 5; the confine-time probe blocks the server while it runs). Both apply at the next command spawn; a changed program is probed afresh. If bwrap failed its check at boot (a wrong program, or bubblewrap installed later), saving the card loads it again, no restart.
+On **Settings → Plugins**, inside the Agent Sandbox card: the **bwrap program** (a path or a command on PATH; empty uses `bwrap`) and the **probe timeout** in seconds (1–30, default 5; the confine-time probe blocks the server while it runs). Both apply at the next command spawn; a changed program is probed afresh. If bwrap failed its check at boot (a wrong program, or bubblewrap installed later), saving the card loads it again, no restart.
 
 ## Install
 

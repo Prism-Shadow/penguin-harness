@@ -83,7 +83,12 @@ export function pluginFiles(plugin: LibraryPlugin): Record<string, string> {
   return files;
 }
 
-/** A library plugin as the listing describes it. Its skills go without their icon: it is the plugin's, sent once on the plugin itself. */
+/**
+ * A library plugin as the listing describes it: its npm version, and each part's dated version
+ * (every skill's, the hook package's) for the update dialog to name what changes. Its skills go
+ * without their icon: it is the plugin's, sent once on the plugin itself. Every library plugin
+ * is one this build ships.
+ */
 export function toPluginItem(plugin: LibraryPlugin): PluginItem {
   return {
     name: plugin.name,
@@ -94,8 +99,10 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
       ? { shortDescriptionZh: plugin.shortDescriptionZh }
       : {}),
     version: plugin.version,
+    source: "builtin",
     skills: plugin.skills.map(({ icon: _icon, ...skill }) => toSkillItem(skill)),
     hooks: plugin.hooks ? hookEvents(plugin.hooks.manifest) : [],
+    ...(plugin.hooks !== undefined ? { hookVersion: plugin.hooks.manifest.version } : {}),
     ...(plugin.icon !== undefined ? { icon: plugin.icon } : {}),
     ...(plugin.quickStart !== undefined ? { quickStart: plugin.quickStart } : {}),
   };

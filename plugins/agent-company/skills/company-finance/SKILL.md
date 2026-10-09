@@ -1,6 +1,7 @@
 ---
 name: company-finance
 description: Run finance for a PenguinHarness organization — set and adjust monthly budgets along the reporting line, audit spend daily with penguin org finance and penguin cost, explain budget alerts in the all-hands channel with savings proposals, and handle budget pauses.
+version: 2026.10.04.1
 ---
 
 # Company Finance

@@ -5,9 +5,12 @@
  *   a non-array or one malformed entry fails the document, naming the source or the position
  *   (unlike a plugin list's per-entry tolerance).
  * - The builtin catalogue lists the sandbox backends that live in plugins/, each named,
- *   versioned, described and licensed as the package names itself, and serves each one's own
- *   shipped README.md; a listed package not on this machine, a name it does not list and a
- *   remote registry have no readme.
+ *   versioned, described and licensed as the package names itself, described in both languages
+ *   and drawn with the icon of its own plugin.json and icon.svg (which it publishes), and serves
+ *   each one's own shipped README.md; a listed package not on this machine, a name it does not
+ *   list and a remote registry have no readme.
+ * - A package on this machine describes itself in the listing over what its row says; a row
+ *   whose package is not here stays as the index wrote it.
  * - The HTTP registry fetches its index URL and runs the document through the same validator;
  *   an HTTP error, non-JSON and a malformed document fail it; a failed connection is tried
  *   again, an answer is not. No network: fetch is the suite's fetch fake.
@@ -70,6 +73,8 @@ describe("parsePluginIndex", () => {
       { ...VALID_ENTRY, authors: "Example" },
       { ...VALID_ENTRY, keywords: [1] },
       { ...VALID_ENTRY, updatedAt: "yesterday" },
+      { ...VALID_ENTRY, icon: { svg: "<svg/>" } },
+      { ...VALID_ENTRY, descriptionZh: 1 },
     ]) {
       expect(() => parsePluginIndex([VALID_ENTRY, bad], "test")).toThrow(
         /malformed entry at index 1/,
@@ -244,6 +249,35 @@ describe("the builtin catalogue and the packages it lists", () => {
       expect(pkg!.manifest.version, entry.name).toBe(entry.version);
       expect(pkg!.manifest.description, entry.name).toBe(entry.description);
       expect(pkg!.manifest.license, entry.name).toBe(entry.license);
+    }
+  });
+
+  /**
+   * The row is the card on a server the package is not installed on, so it repeats what the
+   * package says of itself — its plugin.json's descriptions and its icon.svg — and the package
+   * publishes both, for the card of a server it is installed on.
+   */
+  it("describes each backend in both languages with the package's own plugin.json and icon.svg", async () => {
+    for (const entry of await builtinPluginRegistry().index()) {
+      const pkg = packages.get(entry.name)!;
+      const own = JSON.parse(readFileSync(`${PLUGINS_DIR}${pkg.dir}/plugin.json`, "utf8")) as {
+        description: string;
+        description_zh: string;
+        short_description: string;
+        short_description_zh: string;
+        category: string;
+      };
+      expect(entry, entry.name).toMatchObject({
+        description: own.description,
+        descriptionZh: own.description_zh,
+        shortDescription: own.short_description,
+        shortDescriptionZh: own.short_description_zh,
+        icon: readFileSync(`${PLUGINS_DIR}${pkg.dir}/icon.svg`, "utf8"),
+        categories: [own.category],
+      });
+      expect(pkg.manifest.files, entry.name).toEqual(
+        expect.arrayContaining(["plugin.json", "icon.svg"]),
+      );
     }
   });
 
@@ -467,5 +501,49 @@ describe("the route's own merge", () => {
     const body = (await res.json()) as PluginIndexResponse;
     expect(body.plugins).toEqual(await builtinPluginRegistry().index());
     expect(body.failures).toEqual([]);
+  });
+
+  it("lets a package on this machine describe itself over its row, and leaves a row whose package is not here as it is", async () => {
+    // A published row that carries only English and no icon, for a package an admin installed
+    // into the data root's prefix with its own plugin.json and icon.svg.
+    const installedHere: PluginIndexEntry = {
+      ...VALID_ENTRY,
+      name: "@example/penguin-plugin-here",
+    };
+    const elsewhere: PluginIndexEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-away" };
+    const prefix = await mkdtemp(path.join(tmpdir(), "penguin-prefix-"));
+    try {
+      await writeFile(path.join(prefix, "package.json"), '{"name":"prefix","private":true}');
+      const dir = path.join(prefix, "node_modules", "@example", "penguin-plugin-here");
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, "package.json"), JSON.stringify({ name: installedHere.name }));
+      await writeFile(
+        path.join(dir, "plugin.json"),
+        JSON.stringify({
+          description: "A demo plugin.",
+          description_zh: "一个示例插件。",
+          short_description: "Demo.",
+          short_description_zh: "示例。",
+        }),
+      );
+      await writeFile(path.join(dir, "icon.svg"), '<svg viewBox="0 0 24 24"></svg>\n');
+      const routes = pluginRegistryRoutes({
+        registries: [stubRegistry("published", [installedHere, elsewhere]).registry],
+        bases: () => [{ file: path.join(prefix, "package.json"), builtin: false }],
+      });
+      const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
+      expect(body.plugins).toEqual([
+        {
+          ...installedHere,
+          descriptionZh: "一个示例插件。",
+          shortDescription: "Demo.",
+          shortDescriptionZh: "示例。",
+          icon: '<svg viewBox="0 0 24 24"></svg>\n',
+        },
+        elsewhere,
+      ]);
+    } finally {
+      await rm(prefix, { recursive: true, force: true });
+    }
   });
 });

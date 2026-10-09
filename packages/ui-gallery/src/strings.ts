@@ -131,13 +131,8 @@ export const zh = {
     },
     plugins: {
       title: "插件市场",
-      description: "插件库按分类列出，带搜索与筛选；已安装的 Skill 与钩子按智能体显示。",
+      description: "插件按分类列出，可换分组、按分类、包含与状态筛选；点卡片看详情。",
       how: "侧栏 › 插件市场。",
-    },
-    "plugin-detail": {
-      title: "插件详情",
-      description: "一个插件的详情页：说明、它带来的 Skill、文件浏览器与安装入口。",
-      how: "插件市场 › 任意一个插件。",
     },
     models: {
       title: "模型库",

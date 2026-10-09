@@ -1,6 +1,7 @@
 ---
 name: skill-porting
 description: Install skills from external ecosystems into this agent's agent_state/skills/ — resolve Claude Code plugin marketplaces, the Codex plugin repo, skills.sh registry names, GitHub repos, or local folders to their skill directories, review every file, and normalize SKILL.md frontmatter to the Penguin format.
+version: 2026.10.04.1
 ---
 
 # Skill Porting

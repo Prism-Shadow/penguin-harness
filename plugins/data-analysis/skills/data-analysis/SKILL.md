@@ -1,6 +1,7 @@
 ---
 name: data-analysis
 description: Complete data-analysis tasks with bounded inspection, correct data semantics, native artifact handling, complete delivery, and risk-based verification.
+version: 2026.10.04.1
 ---
 
 # Data Analysis

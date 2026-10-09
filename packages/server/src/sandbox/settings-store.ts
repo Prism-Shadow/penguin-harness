@@ -26,12 +26,14 @@ export const SANDBOX_GROUP = "sandbox";
       {
         id: "sandbox",
         order: 0,
-        title: "Sandbox",
-        titleZh: "沙盒",
+        // The name the Plugins page gives the sandbox backends' category, so the card and the
+        // plugins it is enforced by read as one thing.
+        title: "Agent Sandbox",
+        titleZh: "Agent 运行沙箱",
         description:
           "The confinement new sessions start with, enforced by a sandbox backend plugin. A session keeps the policy it started with; change it from that session's permission button.",
         descriptionZh:
-          "新建会话的初始封禁策略，由沙盒后端插件实施。已有会话保留创建时的策略，可在该会话的权限按钮中修改。",
+          "新建会话的初始封禁策略，由沙箱后端插件实施。已有会话保留创建时的策略，可在该会话的权限按钮中修改。",
         // Off, the card shows the switch alone: the presets, notices and backends' own settings
         // matter only to a confined Session.
         switch: "enabled",

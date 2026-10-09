@@ -1,38 +1,56 @@
 /**
- * The Plugins page's pure decisions (features/plugins/plugins-page.tsx). One file, so the page
- * module is imported once.
+ * The Plugins page's pure decisions: its rows, how they are grouped and filtered, and the
+ * update-everything plan (features/plugins/plugin-groups.ts, plugins-page.tsx).
  *
- * - All machines: every plugin is listed, and a machine-only one says where it runs. This
- *   server: what it is asked for, a shared plugin not removable from its table. Another
+ * - All machines: every module is listed, and a machine-only one says where it runs. This
+ *   server: what it is asked for, a shared module not removable from its table. Another
  *   machine: the state that machine reports, and what it has not received yet.
- * - A plugin is installed on an Agent once any part of it is there (a skill, or its hook
- *   package), read off the two installed lists; nothing is installed for an Agent with no
- *   snapshot or for a plugin that ships nothing.
- * - The installed version is the hook package's where there is one, else the first installed
- *   skill's, and undefined where the plugin is not installed.
- * - The per-plugin reminder names the Agents the server lists as behind on it, in list order
- *   (versions are never compared here).
+ * - Every plugin is one row: a library plugin and the module published as its package are one;
+ *   a module sits under the first category of its entry the page knows, else Other.
+ * - Rows are grouped by category until the reader picks another grouping — in the categories'
+ *   order, Agent Sandbox after the library's and Other last — and the same rows regroup by
+ *   status (what wants a look first), by contents, or into one untitled section. The grouping
+ *   and the folded sections are remembered per browser; nothing usable stored reads as
+ *   category with nothing folded.
+ * - The filters (category, contents, status) and the search box narrow the rows together.
  * - The "update all" plan is empty when no Agent is behind, sends one request per Agent with
  *   every plugin it is behind on, and counts distinct plugins as the notice does.
  */
-import { describe, expect, it } from "vitest";
-import type { InstalledPluginsResponse } from "@prismshadow/penguin-server/api";
+import { beforeEach, describe, expect, it } from "vitest";
+import type {
+  InstalledPluginsResponse,
+  PluginGroupItem,
+  PluginIndexEntry,
+  PluginItem,
+} from "@prismshadow/penguin-server/api";
 import {
-  availablePluginRows,
-  installedPluginRows,
-  installedPluginVersion,
-  outdatedAgentIds,
-  pluginInstalled,
-  pluginUpdatePlan,
-  type AgentInstalls,
-  type PluginParts,
+  NO_FILTERS,
+  foldKey,
+  groupRows,
+  initialFoldedGroups,
+  initialPluginsGroupBy,
+  moduleParts,
+  pluginCategories,
+  pluginRows,
+  rowMatches,
+  storeFoldedGroups,
+  storePluginsGroupBy,
+  type PluginRow,
   type PluginView,
-} from "../src/features/plugins/plugins-page";
+} from "../src/features/plugins/plugin-groups";
+import { pluginStatus, type PluginStatus } from "../src/features/plugins/plugin-status";
+import { pluginUpdatePlan } from "../src/features/plugins/plugins-page";
+import { setActiveStrings } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
+
+beforeEach(() => {
+  setActiveStrings(en);
+});
 
 const SELF = "Self000000000000";
 const GPU = "Gpu0000000000000";
 
-const row = (
+const listed = (
   specifier: string,
   where: { everywhere: boolean; machines: string[]; here: boolean },
   active = where.here,
@@ -47,8 +65,8 @@ const row = (
 
 const deployment: InstalledPluginsResponse = {
   plugins: [
-    row("@acme/shared", { everywhere: true, machines: [], here: true }),
-    row("@acme/gpu-only", { everywhere: false, machines: [GPU], here: false }),
+    listed("@acme/shared", { everywhere: true, machines: [], here: true }),
+    listed("@acme/gpu-only", { everywhere: false, machines: [GPU], here: false }),
   ],
   shipped: [],
   file: ".project_config.toml",
@@ -57,118 +75,232 @@ const deployment: InstalledPluginsResponse = {
 };
 
 const nameOf = (id: string) => (id === GPU ? "gpu-box" : "this server");
-const modules = (rows: ReturnType<typeof installedPluginRows>) =>
-  rows.flatMap((r) => (r.kind === "module" ? [r] : []));
 
-describe("plugin rows per machine", () => {
-  it("all machines: every plugin, and a machine-only one says where it runs", () => {
+describe("server modules per machine", () => {
+  it("all machines: every module, and a machine-only one says where it runs", () => {
     const view: PluginView = { machineId: null, remote: null, nameOf };
-    const rows = modules(installedPluginRows([], "en", deployment, [], view));
-    expect(rows.map((r) => [r.specifier, r.state, r.onlyOn])).toEqual([
+    expect(moduleParts(deployment, [], view).map((m) => [m.specifier, m.state, m.onlyOn])).toEqual([
       ["@acme/shared", "active", undefined],
       ["@acme/gpu-only", "elsewhere", ["gpu-box"]],
     ]);
-    // Offered for all machines, since the shared table does not list it.
-    expect(availablePluginRows(deployment, [], view)).toEqual([]);
   });
 
-  it("this server: what it is asked for, and a shared plugin cannot be removed from its table", () => {
+  it("this server: what it is asked for, and a shared module cannot be removed from its table", () => {
     const view: PluginView = { machineId: SELF, remote: null, nameOf };
-    const rows = modules(installedPluginRows([], "en", deployment, [], view));
-    expect(rows.map((r) => r.specifier)).toEqual(["@acme/shared"]);
-    expect(rows[0]!.removeBlocked).toBeDefined();
+    const parts = moduleParts(deployment, [], view);
+    expect(parts.map((m) => m.specifier)).toEqual(["@acme/shared"]);
+    expect(parts[0]!.removeBlocked).toBeDefined();
   });
 
   it("another machine: the state it reports, and what it has not received yet", () => {
     const remote: InstalledPluginsResponse = {
       ...deployment,
       machineId: GPU,
-      plugins: [row("@acme/gpu-only", { everywhere: true, machines: [], here: true }, false)],
+      plugins: [listed("@acme/gpu-only", { everywhere: true, machines: [], here: true }, false)],
     };
     remote.plugins[0]!.error = "npm: 404";
     const view: PluginView = { machineId: GPU, remote, nameOf };
-    const rows = modules(installedPluginRows([], "en", deployment, [], view));
-    expect(rows.map((r) => [r.specifier, r.state, r.removeBlocked === undefined])).toEqual([
+    expect(
+      moduleParts(deployment, [], view).map((m) => [
+        m.specifier,
+        m.state,
+        m.removeBlocked === undefined,
+      ]),
+    ).toEqual([
       ["@acme/shared", "unsynced", false],
       ["@acme/gpu-only", "failed", true],
     ]);
   });
-});
 
-const skill = (name: string) => ({ name, description: "", version: "2026.08.01.1" });
-
-/** A plugin shipping two skills and a stop hook, one with a skill only, and one with a hook only. */
-const FULL: PluginParts = {
-  name: "orchestration",
-  skills: [skill("plan"), skill("run")],
-  hooks: ["stop"],
-};
-const SKILL_ONLY: PluginParts = { name: "web-design", skills: [skill("web-design")], hooks: [] };
-const HOOK_ONLY: PluginParts = { name: "goal", skills: [], hooks: ["stop"] };
-
-const installs = (
-  skills: Record<string, string>,
-  hooks: Record<string, string>,
-): AgentInstalls => ({
-  skills: new Map(Object.entries(skills)),
-  hooks: new Map(Object.entries(hooks)),
-});
-
-describe("pluginInstalled", () => {
-  it("counts a plugin as installed once any part of it is there, so a partial copy can be updated", () => {
-    const whole = installs(
-      { plan: "2026.08.01.1", run: "2026.08.01.1" },
-      { orchestration: "2026.08.01.1" },
-    );
-    expect(pluginInstalled(FULL, whole)).toBe(true);
-    // An older version that shipped one skill fewer, or a copy missing its hook package, is
-    // what the server lists as behind: an installed plugin an update completes.
-    expect(
-      pluginInstalled(FULL, installs({ plan: "2026.08.01.1" }, { orchestration: "2026.08.01.1" })),
-    ).toBe(true);
-    expect(pluginInstalled(FULL, installs({ plan: "2026.08.01.1", run: "2026.08.01.1" }, {}))).toBe(
-      true,
-    );
-    expect(pluginInstalled(FULL, installs({ other: "2026.08.01.1" }, {}))).toBe(false);
-  });
-
-  it("reads a skill-only plugin off the skills list and a hook-only one off the hooks list", () => {
-    expect(pluginInstalled(SKILL_ONLY, installs({ "web-design": "2026.07.30.1" }, {}))).toBe(true);
-    expect(pluginInstalled(SKILL_ONLY, installs({}, { "web-design": "2026.07.30.1" }))).toBe(false);
-    expect(pluginInstalled(HOOK_ONLY, installs({}, { goal: "2026.08.29.1" }))).toBe(true);
-    expect(pluginInstalled(HOOK_ONLY, installs({ goal: "2026.08.29.1" }, {}))).toBe(false);
-  });
-
-  it("is false for an Agent with no snapshot yet, and for a plugin that ships nothing", () => {
-    expect(pluginInstalled(SKILL_ONLY, undefined)).toBe(false);
-    expect(pluginInstalled({ name: "empty", skills: [], hooks: [] }, installs({}, {}))).toBe(false);
+  it("offers what the index lists and the build ships that the Project does not ask for", () => {
+    const entry = (name: string): PluginIndexEntry => ({
+      name,
+      version: "0.2.3",
+      description: name,
+      authors: [],
+      license: "Apache-2.0",
+    });
+    const parts = moduleParts({ ...deployment, shipped: ["@penguinharness/sandbox-dsh"] }, [
+      entry("@acme/shared"),
+      entry("@penguinharness/sandbox-bwrap"),
+    ]);
+    expect(parts.filter((m) => m.state === "none").map((m) => [m.specifier, m.shipped])).toEqual([
+      ["@penguinharness/sandbox-bwrap", false],
+      ["@penguinharness/sandbox-dsh", true],
+    ]);
   });
 });
 
-describe("installedPluginVersion", () => {
-  it("reads the hook package's version where there is one, else the first skill's", () => {
-    expect(
-      installedPluginVersion(
-        FULL,
-        installs({ plan: "2026.07.01.1", run: "2026.07.01.1" }, { orchestration: "2026.07.02.1" }),
-      ),
-    ).toBe("2026.07.02.1");
-    expect(installedPluginVersion(SKILL_ONLY, installs({ "web-design": "2026.07.30.1" }, {}))).toBe(
-      "2026.07.30.1",
+const plugin = (name: string, extra: Partial<PluginItem> = {}): PluginItem => ({
+  name,
+  description: `${name}.`,
+  version: "0.2.13",
+  source: "builtin",
+  skills: [{ name, description: "", version: "2026.10.04.1" }],
+  hooks: [],
+  ...extra,
+});
+
+const GROUPS: PluginGroupItem[] = [
+  {
+    id: "office-productivity",
+    title: "Office Productivity",
+    titleZh: "办公效率",
+    plugins: [plugin("goal", { skills: [], hooks: ["stop"], hookVersion: "2026.10.04.1" })],
+  },
+  {
+    id: "software-development",
+    title: "Software Development",
+    plugins: [plugin("software-development")],
+  },
+  { id: "other", title: "Other", titleZh: "其他", plugins: [plugin("mystery")] },
+];
+
+const sandbox = (name: string, categories: string[]): PluginIndexEntry => ({
+  name,
+  version: "0.2.3",
+  description: `${name} backend`,
+  descriptionZh: `${name} 后端`,
+  authors: ["Prism Shadow"],
+  license: "Apache-2.0",
+  keywords: ["linux"],
+  categories,
+});
+
+describe("the page's rows", () => {
+  it("makes one row of a library plugin and the module published as its package", () => {
+    const rows = pluginRows(
+      [{ id: "software-development", title: "Software Development", plugins: [plugin("both")] }],
+      [{ specifier: "@penguinharness/both", entry: undefined, state: "active", shipped: true }],
     );
+    expect(rows.map((r) => [r.key, r.category, r.library?.name, r.module?.state])).toEqual([
+      ["library:both", "software-development", "both", "active"],
+    ]);
   });
 
-  it("is undefined where the plugin is not installed, and reads a partial copy's first installed skill", () => {
-    expect(installedPluginVersion(SKILL_ONLY, undefined)).toBeUndefined();
-    expect(
-      installedPluginVersion(SKILL_ONLY, installs({ other: "2026.07.01.1" }, {})),
-    ).toBeUndefined();
-    expect(
-      installedPluginVersion(
-        { name: "pair", skills: [skill("plan"), skill("run")], hooks: [] },
-        installs({ run: "2026.07.01.1" }, {}),
-      ),
-    ).toBe("2026.07.01.1");
+  it("files a module under the first category of its entry the page knows, and under Other otherwise", () => {
+    const rows = pluginRows(GROUPS, [
+      {
+        specifier: "@penguinharness/sandbox-bwrap",
+        entry: sandbox("bwrap", ["linux", "sandbox"]),
+        state: "none",
+        shipped: true,
+      },
+      {
+        specifier: "@acme/feishu",
+        entry: sandbox("feishu", ["messaging"]),
+        state: "none",
+        shipped: false,
+      },
+      { specifier: "@acme/bare", entry: undefined, state: "none", shipped: true },
+    ]);
+    expect(rows.filter((r) => r.module).map((r) => [r.name, r.category])).toEqual([
+      ["sandbox-bwrap", "sandbox"],
+      ["feishu", "other"],
+      ["bare", "other"],
+    ]);
+  });
+});
+
+/** The page's rows for the grouping and filter scenarios, with their statuses fixed. */
+function pageRows(): { rows: PluginRow[]; statusOf: (row: PluginRow) => PluginStatus } {
+  const rows = pluginRows(GROUPS, [
+    {
+      specifier: "@penguinharness/sandbox-bwrap",
+      entry: sandbox("bwrap", ["sandbox"]),
+      state: "active",
+      shipped: true,
+    },
+    {
+      specifier: "@penguinharness/sandbox-wsl",
+      entry: sandbox("wsl", ["sandbox"]),
+      state: "none",
+      shipped: true,
+    },
+  ]);
+  const statuses: Record<string, PluginStatus> = {
+    "library:goal": "update",
+    "library:software-development": "installed",
+    "library:mystery": "available",
+  };
+  const statusOf = (row: PluginRow) => statuses[row.key] ?? pluginStatus(row, null);
+  return { rows, statusOf };
+}
+
+const titles = (groups: ReturnType<typeof groupRows>) =>
+  groups.map((g) => [g.title, g.rows.map((r) => r.name)]);
+
+describe("grouping", () => {
+  it("groups by category unless told otherwise: the library's in order, then Agent Sandbox, then Other", () => {
+    expect(initialPluginsGroupBy(memoryStorage())).toBe("category");
+    const { rows, statusOf } = pageRows();
+    const categories = pluginCategories(GROUPS, "en");
+    expect(titles(groupRows(rows, statusOf, "category", categories))).toEqual([
+      ["Office Productivity", ["goal"]],
+      ["Software Development", ["software-development"]],
+      ["Agent Sandbox", ["sandbox-bwrap", "sandbox-wsl"]],
+      ["Other", ["mystery"]],
+    ]);
+    expect(pluginCategories(GROUPS, "zh").map((c) => c.title)).toContain("办公效率");
+  });
+
+  it("regroups the same rows by status, what wants a look first, by contents, or into one section", () => {
+    const { rows, statusOf } = pageRows();
+    const categories = pluginCategories(GROUPS, "en");
+    expect(titles(groupRows(rows, statusOf, "status", categories))).toEqual([
+      ["Update available", ["goal"]],
+      ["Installed", ["sandbox-bwrap", "software-development"]],
+      ["Available", ["mystery", "sandbox-wsl"]],
+    ]);
+    expect(titles(groupRows(rows, statusOf, "kind", categories))).toEqual([
+      ["Skills", ["mystery", "software-development"]],
+      ["Hooks", ["goal"]],
+      ["Server modules", ["sandbox-bwrap", "sandbox-wsl"]],
+    ]);
+    const none = groupRows(rows, statusOf, "none", categories);
+    expect(none).toHaveLength(1);
+    expect(none[0]!.rows).toHaveLength(rows.length);
+  });
+
+  it("remembers the grouping and the folded sections in this browser, and survives storage it cannot use", () => {
+    const storage = memoryStorage();
+    storePluginsGroupBy("status", storage);
+    storeFoldedGroups(new Set([foldKey("category", "sandbox")]), storage);
+    expect(initialPluginsGroupBy(storage)).toBe("status");
+    expect([...initialFoldedGroups(storage)]).toEqual(["category:sandbox"]);
+
+    const garbage = memoryStorage();
+    garbage.setItem("penguin.pluginsGroupBy", "by-color");
+    garbage.setItem("penguin.pluginsGroupsFolded", "{not json");
+    expect(initialPluginsGroupBy(garbage)).toBe("category");
+    expect(initialFoldedGroups(garbage).size).toBe(0);
+    const blocked = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(() => storePluginsGroupBy("kind", blocked)).not.toThrow();
+    expect(initialPluginsGroupBy(blocked)).toBe("category");
+  });
+});
+
+describe("filters", () => {
+  it("narrow the rows by category, contents and status together with the search box", () => {
+    const { rows, statusOf } = pageRows();
+    const keep = (filters: typeof NO_FILTERS, query = "") =>
+      rows.filter((row) => rowMatches(row, statusOf(row), filters, query)).map((r) => r.name);
+    expect(keep({ ...NO_FILTERS, category: "sandbox" })).toEqual(["sandbox-bwrap", "sandbox-wsl"]);
+    expect(keep({ ...NO_FILTERS, kind: "hooks" })).toEqual(["goal"]);
+    expect(keep({ ...NO_FILTERS, category: "sandbox", status: "available" })).toEqual([
+      "sandbox-wsl",
+    ]);
+    // The search reads names, descriptions in both languages and keywords.
+    expect(keep(NO_FILTERS, "wsl 后端")).toEqual(["sandbox-wsl"]);
+    expect(keep(NO_FILTERS, "LINUX")).toEqual(["sandbox-bwrap", "sandbox-wsl"]);
+    expect(keep({ ...NO_FILTERS, kind: "skills" }, "linux")).toEqual([]);
   });
 });
 
@@ -176,24 +308,6 @@ describe("installedPluginVersion", () => {
 const agent = (agentId: string, ...updates: Array<{ name: string; version: string }>) => ({
   agentId,
   pluginUpdates: updates,
-});
-
-describe("outdatedAgentIds", () => {
-  it("names the Agents the server lists as behind on that plugin, in list order", () => {
-    const agents = [
-      agent("stale", { name: "web-design", version: "2026.08.01.1" }),
-      agent("current"),
-      agent("other", { name: "vllm", version: "2026.08.01.1" }),
-      agent(
-        "also_stale",
-        { name: "web-design", version: "2026.08.01.1" },
-        { name: "vllm", version: "2026.08.01.1" },
-      ),
-    ];
-    expect(outdatedAgentIds(agents, "web-design")).toEqual(["stale", "also_stale"]);
-    expect(outdatedAgentIds(agents, "vllm")).toEqual(["other", "also_stale"]);
-    expect(outdatedAgentIds(agents, "goal")).toEqual([]);
-  });
 });
 
 describe("pluginUpdatePlan", () => {
@@ -236,3 +350,11 @@ describe("pluginUpdatePlan", () => {
     expect(plan.perAgent).toHaveLength(3);
   });
 });
+
+function memoryStorage() {
+  const data = new Map<string, string>();
+  return {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => void data.set(key, value),
+  };
+}

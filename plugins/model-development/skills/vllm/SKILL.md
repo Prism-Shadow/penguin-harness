@@ -1,6 +1,7 @@
 ---
 name: vllm
 description: Deploy and serve LLMs with vLLM behind an OpenAI-compatible endpoint, with tool calling enabled for agent workloads.
+version: 2026.10.04.1
 ---
 
 # vLLM Serving

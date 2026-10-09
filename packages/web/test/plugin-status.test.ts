@@ -1,0 +1,124 @@
+/**
+ * A plugin's install status on the Plugins page (features/plugins/plugin-status.ts).
+ *
+ * - A plugin of Skills and hooks is installed once one Agent of the Project carries all of it;
+ *   a partial copy is not — unless the server lists that Agent as behind on it, which is an
+ *   update (the update completes it). With no Agent carrying it, it is available.
+ * - An Agent the server lists as behind whose snapshot shows nothing of the plugin any more
+ *   (just uninstalled here) is neither behind nor using it; a plugin that ships nothing is on
+ *   no Agent.
+ * - A server module is installed when this server runs it, and otherwise waits for a restart,
+ *   failed to load, runs elsewhere (or has not reached the machine in view yet), or is not
+ *   listed; the module's state decides for a plugin that also ships Skills, whose Agents are
+ *   still counted.
+ * - The update dialog lists, per Agent, each part whose installed version differs from the
+ *   library's — older, or raised by a local edit — and no part the Agent does not carry.
+ */
+import { describe, expect, it } from "vitest";
+import {
+  changedParts,
+  libraryUsage,
+  pluginStatus,
+  type AgentInstalls,
+  type InstalledMap,
+  type ModuleState,
+  type PluginParts,
+} from "../src/features/plugins/plugin-status";
+
+const skill = (name: string, version = "2026.10.04.1") => ({ name, description: "", version });
+
+/** Two Skills and a stop hook: what agent-company-like plugins look like. */
+const PAIR: PluginParts & { hookVersion: string } = {
+  name: "pair",
+  skills: [skill("plan"), skill("run", "2026.10.09.1")],
+  hooks: ["stop"],
+  hookVersion: "2026.10.04.1",
+};
+
+const installs = (skills: Record<string, string>, hooks: Record<string, string> = {}) =>
+  ({
+    skills: new Map(Object.entries(skills)),
+    hooks: new Map(Object.entries(hooks)),
+  }) satisfies AgentInstalls;
+
+const agent = (agentId: string, ...behindOn: string[]) => ({
+  agentId,
+  pluginUpdates: behindOn.map((name) => ({ name, version: "2026.10.09.1" })),
+});
+
+const statusOf = (installed: InstalledMap, agents: ReturnType<typeof agent>[]) =>
+  pluginStatus({}, libraryUsage(PAIR, agents, installed));
+
+describe("a plugin of Skills and hooks", () => {
+  it("is installed once one Agent carries every part, and available while nobody does", () => {
+    const whole = installs({ plan: "2026.10.04.1", run: "2026.10.09.1" }, { pair: "2026.10.04.1" });
+    expect(statusOf(new Map([["a", whole]]), [agent("a"), agent("b")])).toBe("installed");
+    expect(libraryUsage(PAIR, [agent("a"), agent("b")], new Map([["a", whole]]))).toEqual({
+      usedBy: ["a"],
+      behind: [],
+    });
+    expect(statusOf(new Map(), [agent("a")])).toBe("available");
+  });
+
+  it("counts a partial copy as not installed, unless the server lists it as behind — then it is an update", () => {
+    // A skill added to the library after the install: the copy lacks it, and nothing is behind.
+    const partial = new Map([["a", installs({ plan: "2026.10.04.1" }, { pair: "2026.10.04.1" })]]);
+    expect(statusOf(partial, [agent("a")])).toBe("available");
+    expect(statusOf(partial, [agent("a", "pair")])).toBe("update");
+    expect(libraryUsage(PAIR, [agent("a", "pair")], partial)).toEqual({
+      usedBy: ["a"],
+      behind: ["a"],
+    });
+  });
+
+  it("drops an Agent the server lists as behind once its snapshot shows nothing of the plugin", () => {
+    const usage = libraryUsage(PAIR, [agent("gone", "pair")], new Map([["gone", installs({})]]));
+    expect(usage).toEqual({ usedBy: [], behind: [] });
+  });
+
+  it("puts a plugin that ships nothing on no Agent", () => {
+    const empty: PluginParts = { name: "empty", skills: [], hooks: [] };
+    expect(libraryUsage(empty, [agent("a")], new Map([["a", installs({})]])).usedBy).toEqual([]);
+  });
+});
+
+describe("a server module", () => {
+  it.each<[ModuleState, string]>([
+    ["active", "installed"],
+    ["pending", "restart"],
+    ["failed", "failed"],
+    ["elsewhere", "not-here"],
+    ["unsynced", "not-here"],
+    ["none", "available"],
+  ])("in state %s reads as %s", (state, status) => {
+    expect(pluginStatus({ module: { state } }, null)).toBe(status);
+  });
+
+  it("decides for a plugin that also ships Skills, whose Agents still count", () => {
+    const behind = libraryUsage(
+      PAIR,
+      [agent("a", "pair")],
+      new Map([["a", installs({ plan: "1" })]]),
+    );
+    expect(pluginStatus({ module: { state: "active" } }, behind)).toBe("installed");
+    expect(behind.usedBy).toEqual(["a"]);
+  });
+});
+
+describe("what an update rewrites", () => {
+  it("names each carried part whose version differs, older or locally raised, and nothing else", () => {
+    const copy = installs(
+      // plan is behind; run was edited by the Agent and raised past the library's.
+      { plan: "2026.09.01.1", run: "2026.10.12.4" },
+      { pair: "2026.10.04.1" },
+    );
+    expect(changedParts(PAIR, copy)).toEqual([
+      { kind: "skill", name: "plan", installed: "2026.09.01.1", library: "2026.10.04.1" },
+      { kind: "skill", name: "run", installed: "2026.10.12.4", library: "2026.10.09.1" },
+    ]);
+    expect(changedParts(PAIR, installs({}, { pair: "2026-09-01.1" }))).toEqual([
+      { kind: "hooks", name: "pair", installed: "2026-09-01.1", library: "2026.10.04.1" },
+    ]);
+    expect(changedParts(PAIR, undefined)).toEqual([]);
+  });
+});

@@ -1,0 +1,8 @@
+{
+  "description": "WSL sandbox backend for PenguinHarness on Windows: commands run in a dedicated WSL2 distro under bubblewrap, with Windows interop switched off.",
+  "description_zh": "PenguinHarness 在 Windows 上的 WSL 沙箱后端：命令在专用的 WSL2 发行版中经 bubblewrap 运行，并关闭 Windows 互操作。",
+  "short_description": "Windows: run commands in a confined WSL2 distro.",
+  "short_description_zh": "Windows：在受限的 WSL2 发行版中运行命令。",
+  "category": "sandbox",
+  "preinstall": false
+}

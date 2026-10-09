@@ -7,7 +7,9 @@
  *
  * Two implementations, one contract:
  *   - the builtin registry serves the index embedded in this package
- *     (builtin-index.json — the four sandbox backends the workspace ships);
+ *     (builtin-index.json — the four sandbox backends the workspace ships, each row carrying
+ *     the descriptions and icon of the package's own plugin.json and icon.svg, so its card
+ *     renders on a server the package is not installed on);
  *   - the HTTP registry fetches an `index.json` URL and runs it through the same
  *     validator, so a remote index is trusted no further than the embedded one.
  *
@@ -51,7 +53,14 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
   ) {
     return null;
   }
-  for (const key of ["repository", "homepage"] as const) {
+  for (const key of [
+    "repository",
+    "homepage",
+    "descriptionZh",
+    "shortDescription",
+    "shortDescriptionZh",
+    "icon",
+  ] as const) {
     if (e[key] !== undefined && typeof e[key] !== "string") return null;
   }
   for (const key of ["keywords", "categories"] as const) {
@@ -107,6 +116,49 @@ export function builtinPluginRegistry(
       }
     },
   };
+}
+
+/** The display fields an index entry may carry, which a package can also carry itself. */
+export type PluginDisplay = Pick<
+  PluginIndexEntry,
+  "descriptionZh" | "shortDescription" | "shortDescriptionZh" | "icon"
+>;
+
+/**
+ * What a package on this machine says about itself for its card: the Chinese and short
+ * descriptions of its own `plugin.json` and its `icon.svg`, beside its package.json — the same
+ * manifest kind a library plugin carries. Empty when the package is not here (an index row is
+ * then all there is) or carries neither file. A malformed plugin.json gives nothing rather than
+ * failing the listing: the card falls back to what the index says.
+ */
+export async function localPluginDisplay(
+  name: string,
+  bases: readonly PluginBase[],
+): Promise<PluginDisplay> {
+  const found = resolvePluginPackage(name, bases);
+  if (found === null) return {};
+  const display: PluginDisplay = {};
+  try {
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(found.dir, "plugin.json"), "utf8"),
+    ) as Record<string, unknown>;
+    for (const [from, to] of [
+      ["description_zh", "descriptionZh"],
+      ["short_description", "shortDescription"],
+      ["short_description_zh", "shortDescriptionZh"],
+    ] as const) {
+      const value = manifest[from];
+      if (typeof value === "string" && value !== "") display[to] = value;
+    }
+  } catch {
+    // No plugin.json, or one that does not parse: nothing to add.
+  }
+  try {
+    display.icon = await fs.readFile(path.join(found.dir, "icon.svg"), "utf8");
+  } catch {
+    // No icon: the card draws the puzzle piece.
+  }
+  return display;
 }
 
 /** How a published index is fetched: `fetchImpl` and `delay` are injectable for tests. */

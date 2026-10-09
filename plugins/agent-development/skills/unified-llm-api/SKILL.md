@@ -1,6 +1,7 @@
 ---
 name: unified-llm-api
 description: Call model APIs through @prismshadow/mmsp (MMSP) — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.
+version: 2026.10.09.1
 ---
 
 # Unified LLM API (MMSP)

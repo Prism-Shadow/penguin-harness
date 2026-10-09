@@ -15,11 +15,15 @@
  * path — never a silently smaller library. Only the category manifest (id and titles) is
  * code; install / uninstall / scan live in core's state layer.
  *
- * Versions are dates with a sequence number, `YYYY.MM.DD.N` (see PLUGIN_VERSION_PATTERN,
- * parsePluginVersion and comparePluginVersions). plugin.json is the single metadata holder: a library SKILL.md's frontmatter
- * carries only `name` and `description`, and the loader stamps the plugin's version and UI short
- * descriptions into each skill's metadata and installable content (the installed copy carries the
- * full frontmatter, generated — the way hooks.json is).
+ * A plugin's version is its npm version: the `version` of the `package.json` beside
+ * `plugin.json`, which follows the release. Dated versions, `YYYY.MM.DD.N` (see
+ * PLUGIN_VERSION_PATTERN, parsePluginVersion and comparePluginVersions), belong to what an Agent
+ * may edit locally once installed: each skill carries its own in its SKILL.md frontmatter, and a
+ * hook package carries `plugin.json`'s `hooks.version`, which the installer writes into
+ * hooks.json. A `version` left in plugin.json is ignored. plugin.json holds the rest of the
+ * metadata: a library SKILL.md's frontmatter carries `name`, `description` and `version`, and the
+ * loader stamps the plugin's UI short descriptions into each skill's metadata and installable
+ * content (the installed copy carries the full frontmatter, generated — the way hooks.json is).
  *
  * Docs: packages/docs/content/skills.{zh,en}.md (site path /docs/skills) documents the plugin
  * format, the versions and the built-in library.
@@ -29,7 +33,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
-/** A skill's metadata. A library SKILL.md's frontmatter carries only `name` and `description`; the short descriptions and `version` are stamped from plugin.json by the loader (installed copies then carry the full generated frontmatter, which is what the installed-side readers parse). */
+/** A skill's metadata. A library SKILL.md's frontmatter carries `name`, `description` and the skill's own `version`; the short descriptions are stamped from plugin.json by the loader (installed copies then carry the full generated frontmatter, which is what the installed-side readers parse). */
 export interface SkillMetadata {
   /** Skill name (matches its containing directory name). */
   name: string;
@@ -39,7 +43,7 @@ export interface SkillMetadata {
   shortDescription?: string;
   /** Chinese short description (frontmatter `short_description_zh`, optional). */
   shortDescriptionZh?: string;
-  /** Version, `YYYY.MM.DD.N` (an installed copy may still carry the legacy `YYYY-MM-DD.N`); an absent or malformed frontmatter version reads as "" (older than any real version). */
+  /** The skill's own version, `YYYY.MM.DD.N` (an installed copy may still carry the legacy `YYYY-MM-DD.N`); an absent or malformed frontmatter version reads as "" (older than any real version). A library skill always carries a real one. */
   version: string;
 }
 
@@ -85,6 +89,7 @@ export interface HookManifest {
   name: string;
   description: string;
   description_zh?: string;
+  /** The package's own version, `YYYY.MM.DD.N` — a library plugin's `hooks.version` (an installed copy may carry the legacy `YYYY-MM-DD.N`, a hand-written one anything). */
   version: string;
   /** Stop commands, consulted after every Task of a run. */
   stop: HookCommand[];
@@ -124,7 +129,11 @@ export interface LibraryPlugin {
   /** UI short descriptions (plugin.json `short_description(_zh)`, optional). */
   shortDescription?: string;
   shortDescriptionZh?: string;
-  /** `YYYY.MM.DD.N`. */
+  /**
+   * The plugin's npm version: `package.json`'s `version`, beside plugin.json (it follows the
+   * release). What an installed copy is compared against is not this but the dated version of
+   * each part — every skill's, and the hook package's (see pluginContentVersion).
+   */
   version: string;
   /** Category id (see PLUGIN_CATEGORIES); absent or unknown → the "other" group. */
   category?: string;
@@ -153,7 +162,7 @@ export interface ResolvedPluginGroup extends PluginCategory {
 /** Character rule for plugin, skill and hook names (directory names): prevents path traversal (exported for the server's archive-install validation). */
 export const PLUGIN_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-/** Version format: a dotted date and a sequence number, e.g. `2026.08.29.1`. What a library manifest must carry. */
+/** Dated version format: a dotted date and a sequence number, e.g. `2026.08.29.1`. What every library skill and hook package must carry. */
 export const PLUGIN_VERSION_PATTERN = /^\d{4}\.\d{2}\.\d{2}\.\d+$/;
 
 /** The spelling used before this format, `2026-08-29.1`: still read wherever an installed copy carries it (see parsePluginVersion). */
@@ -188,6 +197,23 @@ export function comparePluginVersions(a: string, b: string): number {
   if (!va || !vb) return Number(va !== null) - Number(vb !== null);
   if (va.date !== vb.date) return va.date < vb.date ? -1 : 1;
   return va.seq - vb.seq;
+}
+
+/**
+ * The newest dated version among a library plugin's parts — its skills and its hook package:
+ * the date of the last change to what an install writes. Only a label (the update badge's
+ * "which update" and the update dialog's "new"); whether an installed copy is behind is decided
+ * part by part. "" for a plugin with no parts.
+ */
+export function pluginContentVersion(plugin: Pick<LibraryPlugin, "skills" | "hooks">): string {
+  let newest = "";
+  for (const version of [
+    ...plugin.skills.map((s) => s.version),
+    ...(plugin.hooks !== undefined ? [plugin.hooks.manifest.version] : []),
+  ]) {
+    if (comparePluginVersions(version, newest) > 0) newest = version;
+  }
+  return newest;
 }
 
 /**
@@ -284,7 +310,7 @@ function workspaceRootAbove(from: string): string | null {
  * The workspace installs every `workspace:*` package as an injected copy (a snapshot pnpm
  * takes at install time and refreshes only after the package's `build` script runs — which
  * plugins have none of), so `require.resolve` lands on a copy that misses every file added
- * since the last install, and an edited `plugin.json` version stays invisible to a running
+ * since the last install, and a skill's edited `version` stays invisible to a running
  * `pnpm dev`. The plugin directory itself is the source of truth in a checkout, so that is
  * what a checkout reads; nothing changes for an npm install or the packed desktop app,
  * which have no workspace file above them and keep resolving their own copy.
@@ -477,31 +503,33 @@ function readDirFiles(dir: string, except: readonly string[]): Record<string, st
 /**
  * Reads one skill directory: name from the directory (overriding frontmatter), SKILL.md verbatim,
  * and every other file as auxiliary content. The icon is not read here: a skill has none of
- * its own, and stampSkill gives it the plugin's.
+ * its own, and stampSkill gives it the plugin's. A library skill must carry its own dated
+ * `version` in the current spelling — it is what an installed copy is compared against.
  */
 function readSkillDir(dir: string, name: string): LibrarySkill {
   const file = path.join(dir, "SKILL.md");
   const content = fs.readFileSync(file, "utf8");
   const meta = parseSkillFrontmatter(content);
   if (!meta) throw new Error(`Library skill ${file} has no frontmatter with a name`);
+  if (!PLUGIN_VERSION_PATTERN.test(meta.version)) {
+    throw new Error(`Library skill ${file}: version must be YYYY.MM.DD.N`);
+  }
   const files = readDirFiles(dir, ["SKILL.md", "icon.svg"]);
   return { ...meta, name, content, ...(files !== undefined ? { files } : {}) };
 }
 
 /**
- * Resolves a library skill against its plugin: the plugin's version and UI short descriptions
- * are the skill's (a library SKILL.md carries only `name` and `description`), its icon
- * becomes the skill's, and the installable `content` gets the full frontmatter regenerated in
- * canonical field order — the installed copy is self-describing (update checks read its
- * `version`, the UI its short descriptions and icon) the same way an installed hook package's
- * hooks.json is generated.
+ * Resolves a library skill against its plugin: the plugin's UI short descriptions are the
+ * skill's, its icon becomes the skill's, and the installable `content` gets the full frontmatter
+ * regenerated in canonical field order, carrying the skill's own `version` — the installed copy
+ * is self-describing (update checks read its `version`, the UI its short descriptions and icon)
+ * the same way an installed hook package's hooks.json is generated.
  */
 function stampSkill(
   skill: LibrarySkill,
   plugin: {
     shortDescription?: string;
     shortDescriptionZh?: string;
-    version: string;
     icon?: string;
   },
 ): LibrarySkill {
@@ -512,7 +540,7 @@ function stampSkill(
     `description: ${skill.description}`,
     ...(shortDescription !== undefined ? [`short_description: ${shortDescription}`] : []),
     ...(shortDescriptionZh !== undefined ? [`short_description_zh: ${shortDescriptionZh}`] : []),
-    `version: ${plugin.version}`,
+    `version: ${skill.version}`,
     "---",
   ].join("\n");
   const body = skill.content.replace(/^\ufeff?---\r?\n[\s\S]*?\r?\n---/, "");
@@ -520,46 +548,56 @@ function stampSkill(
     ...skill,
     ...(shortDescription !== undefined ? { shortDescription } : {}),
     ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
-    version: plugin.version,
     ...(plugin.icon !== undefined ? { icon: plugin.icon } : {}),
     content: `${front}${body}`,
   };
 }
 
-/** The plugin.json shape: the single metadata holder of a plugin (see the module header). */
+/**
+ * The plugin.json shape: the plugin's metadata besides its version (see the module header). A
+ * top-level `version`, which manifests carried before the npm version became the plugin's, is
+ * ignored rather than refused, so a plugin written for an older harness still loads.
+ */
 interface PluginManifestFile {
   description: string;
   description_zh?: string;
   short_description?: string;
   short_description_zh?: string;
-  /** `YYYY.MM.DD.N` — the library's manifests carry the current spelling only. */
-  version: string;
   category?: string;
   /** Default true. */
   preinstall?: boolean;
   quick_start?: { prompt?: unknown; prompt_zh?: unknown; skills?: unknown; goal?: unknown };
-  /** One command list per hook point the plugin's hook package answers at. */
+  /** The hook package: its dated version and one command list per hook point it answers at. */
   hooks?: {
+    /** `YYYY.MM.DD.N`, required when the plugin ships `hooks/`; the installer writes it into hooks.json. */
+    version?: string;
     stop?: HookCommand[];
     pre_tool_use?: HookCommand[];
     user_prompt?: HookCommand[];
   };
 }
 
+/** The `version` of the plugin's own npm manifest, the `package.json` beside plugin.json. */
+function readPackageVersion(dir: string): string {
+  const file = path.join(dir, "package.json");
+  const version = (JSON.parse(fs.readFileSync(file, "utf8")) as { version?: unknown }).version;
+  if (typeof version !== "string" || version === "") {
+    throw new Error(`${file}: the plugin's package carries no version`);
+  }
+  return version;
+}
+
 /** Reads one plugin directory. */
 function readPluginDir(name: string, dir: string): LibraryPlugin {
   const manifestFile = path.join(dir, "plugin.json");
   const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")) as PluginManifestFile;
-  if (!PLUGIN_VERSION_PATTERN.test(manifest.version)) {
-    throw new Error(`${manifestFile}: version must be YYYY.MM.DD.N, got ${manifest.version}`);
-  }
   const {
     description,
     description_zh: descriptionZh,
     short_description: shortDescription,
     short_description_zh: shortDescriptionZh,
-    version,
   } = manifest;
+  const version = readPackageVersion(dir);
   const skills: LibrarySkill[] = [];
   const skillsDir = path.join(dir, "skills");
   if (fs.existsSync(skillsDir)) {
@@ -577,21 +615,26 @@ function readPluginDir(name: string, dir: string): LibraryPlugin {
   }
   const hooksDir = path.join(dir, "hooks");
   const hookFiles = fs.existsSync(hooksDir) ? readDirFiles(hooksDir, []) : undefined;
-  const hooks: LibraryHooks | undefined =
-    hookFiles !== undefined
-      ? {
-          manifest: {
-            name,
-            description,
-            ...(descriptionZh !== undefined ? { description_zh: descriptionZh } : {}),
-            version,
-            stop: manifest.hooks?.stop ?? [],
-            pre_tool_use: manifest.hooks?.pre_tool_use ?? [],
-            user_prompt: manifest.hooks?.user_prompt ?? [],
-          },
-          files: hookFiles,
-        }
-      : undefined;
+  let hooks: LibraryHooks | undefined;
+  if (hookFiles !== undefined) {
+    // The package's own dated version: what an installed hooks.json is compared against.
+    const hooksVersion = manifest.hooks?.version;
+    if (typeof hooksVersion !== "string" || !PLUGIN_VERSION_PATTERN.test(hooksVersion)) {
+      throw new Error(`${manifestFile}: hooks.version must be YYYY.MM.DD.N, got ${hooksVersion}`);
+    }
+    hooks = {
+      manifest: {
+        name,
+        description,
+        ...(descriptionZh !== undefined ? { description_zh: descriptionZh } : {}),
+        version: hooksVersion,
+        stop: manifest.hooks?.stop ?? [],
+        pre_tool_use: manifest.hooks?.pre_tool_use ?? [],
+        user_prompt: manifest.hooks?.user_prompt ?? [],
+      },
+      files: hookFiles,
+    };
+  }
   return {
     name,
     description,
@@ -606,7 +649,6 @@ function readPluginDir(name: string, dir: string): LibraryPlugin {
       stampSkill(skill, {
         ...(shortDescription !== undefined ? { shortDescription } : {}),
         ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
-        version,
         ...(icon !== undefined ? { icon } : {}),
       }),
     ),
@@ -675,6 +717,21 @@ export function libraryPlugin(name: string): LibraryPlugin | undefined {
   return dir !== undefined ? readPluginDir(name, dir) : undefined;
 }
 
+/**
+ * The README.md at a library plugin's package root, as npm ships it: undefined when the
+ * library has no such plugin, null when the package has no readme. Read on request rather than
+ * with the listing — a readme is long and wanted only for the plugin someone opened.
+ */
+export function libraryPluginReadme(name: string): string | null | undefined {
+  const dir = pluginRoots().get(name);
+  if (dir === undefined) return undefined;
+  try {
+    return fs.readFileSync(path.join(dir, "README.md"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
 /** Finds a library skill by its own name (across every plugin), with the plugin that ships it. */
 export function librarySkill(
   name: string,
@@ -689,7 +746,9 @@ export function librarySkill(
 /**
  * Category manifest, in display order. Categories group by audience, not by technology: a
  * hook-only plugin sits with the skills it serves the same audience as (goal mode and
- * continual learning are office productivity), and agent tuning is AI app development.
+ * continual learning are office productivity), and agent tuning is AI app development. The
+ * last one, `sandbox`, is where the server modules that confine every Agent command sit — the
+ * sandbox backends, whose index rows name it (`categories: ["sandbox"]`).
  * Docs: /docs/skills § "Built-in library".
  */
 export const PLUGIN_CATEGORIES: PluginCategory[] = [
@@ -697,6 +756,7 @@ export const PLUGIN_CATEGORIES: PluginCategory[] = [
   { id: "software-development", title: "Software Development", titleZh: "软件开发" },
   { id: "ai-app-development", title: "AI App Development", titleZh: "AI 应用开发" },
   { id: "agent-company", title: "Agent Company", titleZh: "Agent 公司" },
+  { id: "sandbox", title: "Agent Sandbox", titleZh: "Agent 运行沙箱" },
 ];
 
 /**

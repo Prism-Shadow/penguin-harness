@@ -1,6 +1,7 @@
 ---
 name: llamafactory
 description: Fine-tune LLMs with LlamaFactory — register datasets, train via YAML configs, merge LoRA adapters and serve the result.
+version: 2026.10.04.1
 ---
 
 # LlamaFactory Fine-Tuning

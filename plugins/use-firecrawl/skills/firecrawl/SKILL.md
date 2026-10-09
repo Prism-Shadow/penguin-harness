@@ -1,6 +1,7 @@
 ---
 name: firecrawl
 description: Search the web and scrape pages into clean markdown with the Firecrawl API — query-based discovery, single-URL extraction including public PDFs, driven by curl with a vault-stored API key.
+version: 2026.10.04.1
 ---
 
 # Firecrawl

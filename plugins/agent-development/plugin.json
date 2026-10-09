@@ -3,7 +3,6 @@
   "description_zh": "基于 PenguinHarness 的智能体开发：用 SDK 构建应用或经 Agent API 接入智能体、经统一的 LLM API 调用任意模型、管理模型与密钥、编排智能体/会话/成本/定时任务。",
   "short_description": "SDK, Agent API, unified LLM API, config and orchestration.",
   "short_description_zh": "SDK、Agent API、统一 LLM API、配置与编排。",
-  "version": "2026.10.09.1",
   "category": "ai-app-development",
   "quick_start": {
     "prompt": "Use the penguin CLI to list the agents in this Project and the five most recent sessions, then tell me in one line each what every agent is for.",

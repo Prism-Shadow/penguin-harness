@@ -50,6 +50,14 @@ web/server 消费的是快照副本，只有当该包的 `build` 脚本经由 pn
 `packages/core/dist`，却把那些快照——以及任何已经填充的 Vite 依赖缓存——留在旧构建上；如果手工重建
 之后，正在运行的开发 Web App 仍在提供陈旧的 core，删掉 `packages/web/node_modules/.vite` 再重启。
 
+插件不受快照规则约束：在工作区检出里，core 的 loader 直接读取仓库的 `plugins/<name>/` 目录，而非
+pnpm 注入的副本（插件没有 `build` 脚本，副本永远不会重新同步），因此 `plugins/` 下的改动——新增的
+Skill、改过的 SKILL.md、改过的 `plugin.json`——在 `pnpm dev` 与测试中立即生效。插件自身的版本就是
+它的 npm 版本（`package.json`，随发行递增）；日期版本（`YYYY.MM.DD.N`）属于安装时写进 Agent 的部件：
+改了 `skills/<name>/` 下的任何文件，就要递增该 Skill 的 SKILL.md frontmatter 中的 `version`；改了钩子
+脚本或 `hooks` 中的命令，就要递增 `plugin.json` 的 `hooks.version`。已装副本正是靠这些版本得知自己
+落后，部件改动而版本未递增的 PR 会被 CI 拒绝（`scripts/check-plugin-versions.mjs`）。
+
 会触及数据的开发入口默认使用各自独立的数据根目录，与已安装 CLI/server 的 `~/.penguin/data`
 分开——在仓库上折腾永远不会把状态与你真实的 Agent 混在一起。`pnpm dev`、`pnpm dev:server` 与
 `pnpm desktop` 共用 `~/.penguin/dev-data`；`pnpm penguin` 独占 `~/.penguin/dev-data-cli`，因为一个
