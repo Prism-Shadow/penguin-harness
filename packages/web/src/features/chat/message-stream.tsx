@@ -77,6 +77,14 @@ export interface StreamRenderContext {
   onFork?: (target: ForkTarget) => Promise<void>;
   /** Leaves reasoning out of the stream (a run log's "Show reasoning" switch). */
   hideReasoning?: boolean;
+  /**
+   * Separates what a surface appended to a message the user typed (the activity studio's brief
+   * to its agent) from the user's own words, so the brief folds under the bubble rather than
+   * standing in for the question. Null when the message carries no such tail.
+   */
+  splitUserContext?: (text: string) => { body: string; context: string } | null;
+  /** Author-facing wording for a group of steps: sentence case, no monospace counts. */
+  plainWorkHeader?: boolean;
   /** Offers Copy and Show all on tool output. */
   toolOutputActions?: boolean;
   /**

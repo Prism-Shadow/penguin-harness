@@ -106,6 +106,7 @@ import { ActivityList } from "./activity-list";
 import { ProjectMediaView } from "./project-media-view";
 import type { GroupSort } from "./activity-groups";
 import { useDiscardConfirm } from "./use-discard-confirm";
+import { usePanelBadges } from "./panel-badges";
 import { applyVoice, optionsFromVoices } from "./voice-catalogue";
 import {
   applyProvider,
@@ -477,6 +478,8 @@ function ActivityEditor({
   }, [projectId]);
   // The Scenes section opens on the storyboard; opening an asset leaves it for the editor.
   const [board, setBoard] = useState(true);
+  /** A scene the rail asked the script to show; `at` tells a second ask from the first. */
+  const [revealScene, setRevealScene] = useState<{ scene: number; at: number } | null>(null);
   const [boardScene, setBoardScene] = useState<string | null>(null);
   const [showPanel, setShowPanel] = useState<{ key: StudioPanel; at: number } | null>(null);
   // An excerpt on its way to the conversation's composer, from another panel.
@@ -1205,6 +1208,12 @@ function ActivityEditor({
         }
       : undefined;
   const languages = Object.keys(detail?.draft.mediaPlan?.manifest.assets ?? {});
+  const badges = usePanelBadges(
+    endpoint,
+    runs,
+    detail?.draft.contentRevision ?? "",
+    !!detail && available,
+  );
   const panels: StudioPanelEntry[] = detail
     ? [
         {
@@ -1306,6 +1315,7 @@ function ActivityEditor({
               {
                 key: "tests" as const,
                 label: S.activities.studioPanels.names.tests,
+                badge: badges.tests,
                 icon: "M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3",
                 render: () => (
                   <div className="p-3">
@@ -1330,6 +1340,7 @@ function ActivityEditor({
               {
                 key: "quality" as const,
                 label: S.activities.studioPanels.names.quality,
+                badge: badges.quality,
                 icon: "M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z M9 12l2 2 4-4",
                 render: () => (
                   <div className="p-3">
@@ -1576,6 +1587,10 @@ function ActivityEditor({
                   setSelected(target.selection);
                   setBoard(false);
                   setSection("scenes");
+                } else {
+                  // A scene lives in the script; its row opens the script at its heading.
+                  setSection("description");
+                  setRevealScene({ scene: target.sceneNumber, at: Date.now() });
                 }
                 dismiss();
               }}
@@ -1747,6 +1762,7 @@ function ActivityEditor({
               canSave={editable}
               saveDisabled={busy || description === detail.draft.description}
               acceptBlocked={dirty ? S.activities.studioProposal.saveFirst : null}
+              reveal={revealScene}
               onChange={setDescription}
               onSave={() => void save("description")}
               onAcceptProposal={

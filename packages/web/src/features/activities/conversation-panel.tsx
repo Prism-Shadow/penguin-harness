@@ -25,6 +25,8 @@ import {
   focusLabel,
   followUpText,
   latestConversation,
+  splitStudioBrief,
+  threadTime,
   type AssistFocus,
 } from "./conversation";
 import { Select } from "../../components/ui/select";
@@ -179,7 +181,13 @@ function Conversation({
   } = useSessionTranscript(sessionId, initialStatus);
   const [showReasoning, setShowReasoning] = useShowReasoning();
   const ctx = useMemo(
-    () => ({ ...transcriptCtx, hideReasoning: !showReasoning, toolOutputActions: true }),
+    () => ({
+      ...transcriptCtx,
+      hideReasoning: !showReasoning,
+      toolOutputActions: true,
+      splitUserContext: splitStudioBrief,
+      plainWorkHeader: true,
+    }),
     [transcriptCtx, showReasoning],
   );
   const [draft, setDraft] = useState("");
@@ -254,7 +262,7 @@ function Conversation({
                 <option key={thread.runId} value={thread.sessionId!}>
                   {words.thread(
                     focusLabel(thread.assist?.focus ?? null),
-                    new Date(thread.createdAt).toLocaleString(),
+                    threadTime(thread.createdAt),
                   )}
                 </option>
               ))}

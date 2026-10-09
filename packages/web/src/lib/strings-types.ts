@@ -135,6 +135,13 @@ export type Strings = {
       empty: string;
     };
     /** The icon rail on the right and the panels it opens. */
+    panelBadges: {
+      running: string;
+      failed: (n: number) => string;
+      passed: (n: number) => string;
+      stale: (n: number) => string;
+      findings: (n: number) => string;
+    };
     studioPanels: {
       rail: string;
       close: string;
@@ -1004,6 +1011,7 @@ export type Strings = {
       openInChat: string;
       threads: string;
       thread: (about: string, when: string) => string;
+      today: (time: string) => string;
       empty: string;
       readOnly: string;
       noAgent: string;
@@ -3341,6 +3349,9 @@ export type Strings = {
     workDone: string;
     workGroupSteps: (n: number) => string;
     approvalWaiting: string;
+    contextSent: string;
+    workPlainRunning: string;
+    workPlainDone: string;
     copyCode: string;
     copyReply: string;
     forkSession: string;

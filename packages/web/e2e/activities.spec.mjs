@@ -665,8 +665,15 @@ const TREE_NAMES = {
  * Opens one of the right rail's panels (Stages, Player, Tests, Quality, ...), leaving it open
  * when it already is: its tab toggles.
  */
+/** A rail panel's chip, whose name may carry its badge after a comma ("Tests , 2 failed"). */
+function panelTab(page, name) {
+  return page
+    .getByRole("group", { name: "Activity panels", exact: true })
+    .getByRole("button", { name: new RegExp(`^${name}( ?,|$)`) });
+}
+
 async function openPanel(page, name) {
-  const tab = page.getByRole("button", { name, exact: true });
+  const tab = panelTab(page, name);
   // The tab's state, not the panel's, decides: a remembered panel may not have drawn yet.
   if ((await tab.getAttribute("aria-pressed")) !== "true") await tab.click();
   const panel = page.getByRole("complementary", { name, exact: true });
@@ -694,7 +701,7 @@ async function generateSpecification(page) {
 
 /** Closes a rail panel and opens it again, so what it shows is read afresh. */
 async function reopenPanel(page, name) {
-  const tab = page.getByRole("button", { name, exact: true });
+  const tab = panelTab(page, name);
   if ((await tab.getAttribute("aria-pressed")) === "true") await tab.click();
   await expect(page.getByRole("complementary", { name, exact: true })).toHaveCount(0);
   return openPanel(page, name);
@@ -2221,7 +2228,7 @@ test("the script editor folds scenes, diffs against the last save and shows an a
   await expect(box.locator(".cm-media-tag").first()).toHaveText("<video>");
 
   // Scenes fold to their headings and open again.
-  const scenes = page.getByRole("button", { name: "Scenes", exact: true });
+  const scenes = page.getByRole("button", { name: "Fold scenes", exact: true });
   await scenes.click();
   await expect(box).not.toContainText("An island.");
   await expect(box).toContainText("Scene 2: Rocks");
@@ -2231,8 +2238,8 @@ test("the script editor folds scenes, diffs against the last save and shows an a
   // An edit reads against the last save, names its scene, and reverts where it stands.
   await box.fill(script.replace("Find d.", "Find lowercase d."));
   await page
-    .getByRole("group", { name: "Diff", exact: true })
-    .getByRole("button", { name: "Since last save", exact: true })
+    .getByRole("group", { name: "Compare", exact: true })
+    .getByRole("button", { name: "Last save", exact: true })
     .click();
   await expect(page.getByText("+1 −1", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Scene 2", exact: true })).toBeVisible();
@@ -2282,7 +2289,7 @@ test("the script editor folds scenes, diffs against the last save and shows an a
   await openSection(page, "Description");
   await expect(box.locator(".cm-proposed-hint")).toHaveText("proposed, not applied");
   await page
-    .getByRole("group", { name: "Diff", exact: true })
+    .getByRole("group", { name: "Compare", exact: true })
     .getByRole("button", { name: "Agent proposal", exact: true })
     .click();
   await expect(page.getByText("Agent proposal, read-only", { exact: true })).toBeVisible();

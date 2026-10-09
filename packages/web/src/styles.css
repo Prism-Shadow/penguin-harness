@@ -925,35 +925,28 @@ html.dark .shiki span {
 .activity-script .cm-editor .cm-content {
   max-width: 92ch;
 }
-/* Media elements, one categorical hue per kind (which element, never a status): the tags in
-   that hue, and the words between them on a soft wash of it. */
-.script-editor .cm-editor .cm-media-span {
-  border-radius: 3px;
-  padding: 1px 0;
-}
+/* Media elements in two categorical hues: what is heard (audio) and what is seen (video, image,
+   animation). They say which kind of element a span is, never a status. The words carry the hue
+   and the tags recede in it; no background wash, so a scene full of media does not read as one
+   long highlight and the selection stays the only tinted ground in the editor. */
 .script-editor .cm-editor .cm-media-span-audio {
-  @apply bg-violet-50 dark:bg-violet-950/50;
+  @apply text-violet-700 dark:text-violet-300;
 }
-.script-editor .cm-editor .cm-media-span-video {
-  @apply bg-cyan-50 dark:bg-cyan-950/50;
-}
-.script-editor .cm-editor .cm-media-span-image {
-  @apply bg-sky-50 dark:bg-sky-950/50;
-}
+.script-editor .cm-editor .cm-media-span-video,
+.script-editor .cm-editor .cm-media-span-image,
 .script-editor .cm-editor .cm-media-span-animation {
-  @apply bg-rose-50 dark:bg-rose-950/50;
+  @apply text-teal-700 dark:text-teal-300;
+}
+.script-editor .cm-editor .cm-media-tag {
+  opacity: 0.7;
 }
 .script-editor .cm-editor .cm-media-audio {
   @apply text-violet-700 dark:text-violet-300;
 }
-.script-editor .cm-editor .cm-media-video {
-  @apply text-cyan-700 dark:text-cyan-300;
-}
-.script-editor .cm-editor .cm-media-image {
-  @apply text-sky-700 dark:text-sky-300;
-}
+.script-editor .cm-editor .cm-media-video,
+.script-editor .cm-editor .cm-media-image,
 .script-editor .cm-editor .cm-media-animation {
-  @apply text-rose-700 dark:text-rose-300;
+  @apply text-teal-700 dark:text-teal-300;
 }
 /* JSON in the JSON editor (json-editor.tsx), in the github-light / github-dark colours
    the app's other code views use (features/chat/highlighter-core.ts). */

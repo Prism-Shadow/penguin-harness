@@ -106,6 +106,8 @@ describe("rail states", () => {
     expect(scene?.label).toEqual({ text: "Intro" });
     expect(scene?.sceneNumber).toBe(1);
     expect(scene?.sceneId).toBe("scene-1");
+    // A named scene opens the script at its heading.
+    expect(scene?.target).toEqual({ kind: "scene", sceneNumber: 1 });
   });
 
   it("says unsaved before valid, and counts scenes and distinct audios", () => {

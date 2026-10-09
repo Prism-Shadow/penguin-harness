@@ -115,8 +115,8 @@ class ProposedHint extends WidgetType {
 const headingLine = Decoration.line({ class: "cm-scene-heading" });
 const headingNumber = Decoration.mark({ class: "cm-scene-number" });
 /**
- * Each kind of media keeps its own hue, tag and all, so narration and footage read apart in a
- * long scene. The hues are categorical (which element this is), never a status.
+ * What is heard and what is seen keep a hue each, tag and all, so narration and footage read
+ * apart in a long scene. The hues are categorical (which element this is), never a status.
  */
 const tagMarks = Object.fromEntries(
   (["audio", "video", "image", "animation"] as const).map((element) => [
@@ -247,6 +247,7 @@ export function ScriptEditor({
   saveDisabled,
   status = null,
   acceptBlocked,
+  reveal = null,
   onChange,
   onSave,
   onAcceptProposal,
@@ -264,6 +265,8 @@ export function ScriptEditor({
   status?: string | null;
   /** Why the proposal cannot be accepted right now, if it cannot. */
   acceptBlocked: string | null;
+  /** A scene to bring into view, by its number in the script; `at` repeats a request. */
+  reveal?: { scene: number; at: number } | null;
   onChange: (value: string) => void;
   onSave: () => void;
   onAcceptProposal?: () => void;
@@ -382,6 +385,16 @@ export function ScriptEditor({
       view.dispatch({ effects: compartments.hints.reconfigure(proposedScenes.of(hinted)) });
     applied.current = { base, saved, access, hints };
   }, [base, proposal, saved, value, access, hinted, compartments]);
+
+  // Runs after the document is in place, so a scene asked for as the editor opens is found.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!reveal || !view) return;
+    const scene = scenesOf(view.state.doc).list.find((entry) => entry.number === reveal.scene);
+    if (scene) goTo(scene.heading);
+    // goTo reads only the view, which the ref holds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal]);
 
   function goTo(line: number) {
     const view = viewRef.current;

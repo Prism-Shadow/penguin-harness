@@ -92,3 +92,28 @@ export function followUpText(
     ? message
     : `${message}\n\n${S.activities.studioConversation.movedTo(focusLabel(focus))}`;
 }
+
+/**
+ * The brief the server appends to an assist run's first message (`assistPrompt` in the
+ * server's `assist.ts`): a rule, then the studio context and the proposal instructions. The
+ * author never typed it, so the panel folds it under their question.
+ */
+const BRIEF_RULE = "\n\n---\n";
+const BRIEF_OPENING = "Context from the activity studio";
+
+export function splitStudioBrief(text: string): { body: string; context: string } | null {
+  const at = text.lastIndexOf(BRIEF_RULE);
+  if (at < 0) return null;
+  const context = text.slice(at + BRIEF_RULE.length);
+  if (!context.startsWith(BRIEF_OPENING)) return null;
+  return { body: text.slice(0, at).trimEnd(), context };
+}
+
+/** When a conversation started, to the minute: "Today 23:58", or the date and time. */
+export function threadTime(iso: string, now: Date = new Date()): string {
+  const when = new Date(iso);
+  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (when.toDateString() === now.toDateString())
+    return S.activities.studioConversation.today(time);
+  return `${when.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${time}`;
+}

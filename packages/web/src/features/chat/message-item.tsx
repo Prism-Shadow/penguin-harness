@@ -13,6 +13,7 @@ import { splitAttachments } from "../../lib/attachments";
 import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
 import { Md } from "./md";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { HelpFold } from "../../components/ui/help-fold";
 import { CopyButton } from "../../components/ui/copy-button";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { MessageFilesCard } from "./message-files-card";
@@ -223,7 +224,13 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // the vision-model path (user_text + user_image as separate messages) in shape: one
       // bubble for the text, one bubble per image, styled the same as user_image. Uploaded
       // files come out of the same pass and collapse into one banner naming them.
-      const { text, images, files } = splitAttachments(skills ? skills.rest : afterScheduled);
+      const {
+        text: typed,
+        images,
+        files,
+      } = splitAttachments(skills ? skills.rest : afterScheduled);
+      const split = typed ? (ctx.splitUserContext?.(typed) ?? null) : null;
+      const text = split ? split.body : typed;
       return (
         <>
           {orgTrigger && <OrgTriggerBanner origin={orgTrigger.origin} />}
@@ -237,6 +244,17 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
                   {text}
                 </p>
               </div>
+              {split && (
+                <HelpFold
+                  title={S.chat.contextSent}
+                  flush
+                  className="mt-1.5 max-w-[88%] text-xs text-gray-500 md:max-w-[75%] dark:text-gray-400"
+                >
+                  <pre className="mt-1 max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-2 font-mono text-xs whitespace-pre-wrap text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+                    {split.context}
+                  </pre>
+                </HelpFold>
+              )}
               <MessageMeta
                 {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
                 text={text}

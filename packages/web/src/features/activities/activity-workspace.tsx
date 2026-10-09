@@ -56,6 +56,30 @@ import { applyOrder, type LayoutPreset, type LayoutState } from "./layout-preset
 import { setMapVisible, setMapWidth, useMapVisible, useMapWidth } from "./map-prefs";
 import { setShowReasoning, useShowReasoning } from "./run-log-prefs";
 import { SidePanelFill } from "./side-panel-fill";
+import type { PanelBadge } from "./panel-badges";
+import { toneDot, toneSurface } from "../../lib/tone";
+
+/** A chip's figure, or a dot while its run is in progress; the words go to a reader. */
+function ChipBadge({ badge }: { badge: PanelBadge }) {
+  return (
+    <>
+      {badge.text ? (
+        <span
+          aria-hidden
+          className={`rounded-full px-1.5 text-[11px] leading-4 tabular-nums ${toneSurface[badge.tone]}`}
+        >
+          {badge.text}
+        </span>
+      ) : (
+        <span
+          aria-hidden
+          className={`size-1.5 rounded-full motion-safe:animate-pulse ${toneDot[badge.tone]}`}
+        />
+      )}
+      <span className="sr-only">{`, ${badge.label}`}</span>
+    </>
+  );
+}
 
 /** Four corners pointing out, and in: fill the workspace, and put the panel back. */
 const EXPAND_ICON = "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5";
@@ -67,6 +91,8 @@ export interface StudioPanelEntry {
   label: string;
   /** A stroke icon path in a 24-unit box. */
   icon: string;
+  /** What the panel holds that needs the author, said on the chip. */
+  badge?: PanelBadge | null;
   render: () => ReactNode;
 }
 
@@ -340,6 +366,7 @@ export function ActivityWorkspace({
                   <GlyphIcon d={entry.icon} size={14} />
                   <span className="hidden sm:inline">{entry.label}</span>
                   <span className="sr-only sm:hidden">{entry.label}</span>
+                  {entry.badge && <ChipBadge badge={entry.badge} />}
                 </>
               ),
             }))}

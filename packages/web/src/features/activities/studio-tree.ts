@@ -25,7 +25,9 @@ import {
 /** What choosing a row does. */
 export type StudioTarget =
   | { kind: "section"; section: WorkspaceSection }
-  | { kind: "asset"; selection: SceneAssetSelection };
+  | { kind: "asset"; selection: SceneAssetSelection }
+  /** A scene the script names: its row opens the script at its heading. */
+  | { kind: "scene"; sceneNumber: number };
 
 /** The one piece of state a row may carry; the view owns the words and the colour. */
 export type StudioMark = "unbound" | null;
@@ -202,7 +204,13 @@ export function buildStudioTree(
     return {
       id: `scene:${scene.sceneId}`,
       label: { text: named?.title ?? scene.sceneId },
-      ...(named ? { sceneId: scene.sceneId, sceneNumber: named.number } : {}),
+      ...(named
+        ? {
+            sceneId: scene.sceneId,
+            sceneNumber: named.number,
+            target: { kind: "scene" as const, sceneNumber: named.number },
+          }
+        : {}),
       disabled: false,
       // A scene is marked when anything under it is, so a closed scene still says so.
       mark: groups.some((group) => group.children.some((row) => row.mark)) ? "unbound" : null,

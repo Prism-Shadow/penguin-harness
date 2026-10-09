@@ -95,6 +95,20 @@ export function WorkGroup({
   // A pending approval must stay actionable: expand the group body regardless of collapsed state (the approval row lives inside it).
   const shown = open || pending;
   const { steps, durationMs, startMs } = summarizeWork(items);
+  // An author-facing surface reads the header as a sentence; the chat page keeps its labels.
+  const plain = ctx.plainWorkHeader === true;
+  const header = plain
+    ? {
+        titleClass: "shrink-0 text-xs font-medium",
+        title: active ? S.chat.workPlainRunning : S.chat.workPlainDone,
+        figureClass: "shrink-0 text-xs text-gray-500",
+      }
+    : {
+        titleClass: DISCLOSURE_HEADER_TITLE_CLASS,
+        title: active ? S.chat.workRunning : S.chat.workDone,
+        figureClass: "shrink-0 font-mono text-xs text-gray-400",
+      };
+  const { figureClass } = header;
 
   return (
     // overflow-clip (not overflow-hidden): the header below is position:sticky, and an
@@ -141,17 +155,15 @@ export function WorkGroup({
         <StatusIcon state={active ? "running" : "done"} />
         {/* The title doubles as status: "Running" while in progress, "Done" when finished. */}
         <span
-          className={`${DISCLOSURE_HEADER_TITLE_CLASS} ${active ? toneInk.busy : "text-gray-500 dark:text-gray-400"}`}
+          className={`${header.titleClass} ${active ? toneInk.busy : "text-gray-500 dark:text-gray-400"}`}
         >
-          {active ? S.chat.workRunning : S.chat.workDone}
+          {header.title}
         </span>
         {/* A pure-thinking group (no tool calls) doesn't show "0 steps"; below sm the count is
             dropped entirely (title on the header carries nothing extra — the header must stay
             a single uncut line on phones). */}
         {steps > 0 && (
-          <span className="hidden shrink-0 font-mono text-xs text-gray-400 sm:inline">
-            {S.chat.workGroupSteps(steps)}
-          </span>
+          <span className={`hidden sm:inline ${figureClass}`}>{S.chat.workGroupSteps(steps)}</span>
         )}
         {/* Both states show the same quantity: the summarizeWork span (earliest item start →
             latest item end). That's the canonical definition here — it's what work-summary.ts
@@ -165,15 +177,11 @@ export function WorkGroup({
             snap backwards the moment the group settles. */}
         {itemsRunning
           ? startMs !== undefined && (
-              <span className="shrink-0 font-mono text-xs text-gray-400">
+              <span className={figureClass}>
                 <LiveDuration sinceMs={startMs} />
               </span>
             )
-          : durationMs > 0 && (
-              <span className="shrink-0 font-mono text-xs text-gray-400">
-                {humanizeDuration(durationMs)}
-              </span>
-            )}
+          : durationMs > 0 && <span className={figureClass}>{humanizeDuration(durationMs)}</span>}
         {pending && !shown && (
           <>
             {/* Below sm the pill collapses to a bare amber dot (title/aria carry the meaning):

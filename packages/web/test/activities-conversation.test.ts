@@ -7,6 +7,8 @@ import {
   followUpText,
   latestConversation,
   sameFocus,
+  splitStudioBrief,
+  threadTime,
 } from "../src/features/activities/conversation";
 import { runTitle } from "../src/features/activities/sessions-panel";
 import { STUDIO_PANELS, readSidePanel } from "../src/features/activities/workspace-model";
@@ -65,7 +67,7 @@ describe("conversation panel", () => {
       "cat in intro",
     );
     expect(focusLabel({ section: "scenes", assetKey: "lost" })).toBe("lost");
-    expect(focusLabel({ section: "specification" })).toBe("Specification");
+    expect(focusLabel({ section: "specification" })).toBe("Activity Spec");
   });
 
   it("repeats where the author is only after they have moved", () => {
@@ -73,7 +75,7 @@ describe("conversation panel", () => {
     expect(sameFocus(cat, { ...cat })).toBe(true);
     expect(followUpText("Shorter?", cat, { ...cat })).toBe("Shorter?");
     expect(followUpText("And this?", { section: "description" }, cat)).toBe(
-      "And this?\n\n(I am now looking at Description.)",
+      "And this?\n\n(I am now looking at Activity Script.)",
     );
     // A resumed conversation has no remembered focus, so the first follow-up says it.
     expect(followUpText("Hi", cat, null)).toContain("cat in intro");
@@ -84,5 +86,43 @@ describe("conversation panel", () => {
     expect(runTitle("assessment")).toBe("Assessment");
     expect(STUDIO_PANELS).toContain("conversation");
     expect(readSidePanel({ getItem: () => "conversation" })).toBe("conversation");
+  });
+});
+
+describe("the studio brief", () => {
+  it("folds the context the server appends to the first message", () => {
+    const text = [
+      "What is this activity about?",
+      "",
+      "---",
+      "Context from the activity studio: the author is looking at the activity script.",
+      "Read them.",
+    ].join("\n");
+    expect(splitStudioBrief(text)).toEqual({
+      body: "What is this activity about?",
+      context:
+        "Context from the activity studio: the author is looking at the activity script.\nRead them.",
+    });
+  });
+
+  it("leaves a rule the author typed alone", () => {
+    expect(splitStudioBrief("Part one\n\n---\nPart two")).toBeNull();
+    expect(splitStudioBrief("Just a question")).toBeNull();
+  });
+});
+
+describe("thread times", () => {
+  const now = new Date(2026, 9, 9, 18, 0);
+
+  it("says Today for a conversation started today, to the minute", () => {
+    const label = threadTime(new Date(2026, 9, 9, 9, 12, 45).toISOString(), now);
+    expect(label.startsWith("Today ")).toBe(true);
+    expect(label).not.toMatch(/45/);
+  });
+
+  it("gives the date for an older conversation", () => {
+    expect(threadTime(new Date(2026, 9, 8, 23, 58).toISOString(), now).startsWith("Today")).toBe(
+      false,
+    );
   });
 });
