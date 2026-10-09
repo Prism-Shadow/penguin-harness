@@ -111,8 +111,9 @@ export * from "./components/content/typography/typography";
 export * from "./components/content/diff-viewer/diff-viewer";
 
 // A2UI — the components a model writes into a reply: the ```a2ui block that parses and dispatches
-// through the renderer registry, the four built-in blocks, the actions a host hands them, and the
-// ```mermaid diagram. Mermaid itself is imported on the first diagram, never by this barrel.
+// through the renderer registry, the four built-in blocks and the four widgets (with the surface
+// they share and the weather drawing), the actions a host hands them, and the ```mermaid diagram.
+// Mermaid itself is imported on the first diagram, never by this barrel.
 export * from "./components/content/a2ui/actions";
 export * from "./components/content/a2ui/registry";
 export * from "./components/content/a2ui/a2ui-block";
@@ -121,6 +122,12 @@ export * from "./components/content/a2ui/form-block";
 export * from "./components/content/a2ui/steps-block";
 export * from "./components/content/a2ui/callout-block";
 export * from "./components/content/a2ui/mermaid-block";
+export * from "./components/content/a2ui/widget";
+export * from "./components/content/a2ui/weather-art";
+export * from "./components/content/a2ui/weather-block";
+export * from "./components/content/a2ui/clock-block";
+export * from "./components/content/a2ui/countdown-block";
+export * from "./components/content/a2ui/metrics-block";
 
 // W4-A — navigation, notices and readings: the tab bar, the grouped list's header, folder, more
 // row and pager, the create pair, the notice with its variants and the page to-do built on it,
