@@ -399,7 +399,11 @@ export const zh = {
     /** The pairing dialog, and the same three steps inline in the panel while no Chrome is paired. */
     pairTitle: "连接你的 Chrome",
     pairStepInstall:
-      "下载扩展并解压。在 Chrome 中打开 chrome://extensions，开启「开发者模式」，选择「加载已解压的扩展程序」并选中解压出的文件夹，再把扩展固定到工具栏。",
+      "安装扩展并把它固定到工具栏。推荐从 Chrome 应用商店安装，Chrome 会自动更新它。",
+    pairStore: "打开 Chrome 应用商店",
+    /** Under the store link: the zip, for a network that cannot reach the store. */
+    pairStepInstallZip:
+      "打不开商店时，也可以下载 zip 并解压，在 chrome://extensions 开启「开发者模式」，选择「加载已解压的扩展程序」并选中解压出的文件夹。",
     pairDownload: "下载扩展（zip）",
     pairStepOpen: "点工具栏上的 PenguinHarness Browser 图标，选择「设置」，打开扩展的配对页。",
     pairStepPaste: "把下面的服务器地址和配对码粘贴进去，选择「连接」。",

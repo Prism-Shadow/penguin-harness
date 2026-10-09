@@ -205,8 +205,8 @@ jobs:
 
       # The Chrome extension (PenguinHarness Browser), zipped by its own build above. It ships
       # under its versioned name and a version-less copy, so the docs and the Web App's pairing
-      # dialog can link to releases/latest/download/penguin-browser-extension.zip. Users load it
-      # unpacked for now; a Chrome Web Store listing comes later, and the manifest's pinned key
+      # dialog can link to releases/latest/download/penguin-browser-extension.zip, for users who
+      # cannot reach the Chrome Web Store listing and load it unpacked; the manifest's pinned key
       # keeps the extension id the same across both. Tags from before the extension have no
       # zip and skip this step, so they stay rebuildable.
       - name: Collect the Chrome extension

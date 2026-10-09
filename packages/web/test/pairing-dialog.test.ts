@@ -3,8 +3,9 @@
  * pairing-code.ts): the steps rendered to static markup (node env, no DOM), the window's one
  * pairing code against the fetch fake, and when the dialog counts the Chrome as connected.
  *
- * - The steps give the release zip to install, this page's own address and the code, each with
- *   Copy, and the code's expiry as a local time with New code beside it.
+ * - The steps give the Chrome Web Store listing to install from, the release zip after it, this
+ *   page's own address and the code, each with Copy, and the code's expiry as a local time with
+ *   New code beside it.
  * - A code that has lapsed is not shown; New code is offered instead. A code the server refused
  *   to make says why.
  * - The window asks the server for one code: a second surface showing it asks for none while the
@@ -17,6 +18,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   EXTENSION_DOWNLOAD_URL,
+  EXTENSION_STORE_URL,
   PairingStatus,
   PairingSteps,
   connectedSince,
@@ -54,15 +56,20 @@ afterEach(() => {
 });
 
 describe("the pairing steps", () => {
-  it("give the zip to install, this page's address and the code, each to copy, and when it expires", async () => {
+  it("give the store, then the zip, to install, this page's address and the code, each to copy, and when it expires", async () => {
     vi.useFakeTimers({ now: new Date(2026, 9, 3, 14, 0) });
     minting();
     await ensurePairingCode();
     const html = steps();
-    expect(html).toContain(`href="${EXTENSION_DOWNLOAD_URL}"`);
-    // The download opens in a new tab, so the pairing steps stay where the user left them.
-    const download = html.slice(html.lastIndexOf("<a", html.indexOf(EXTENSION_DOWNLOAD_URL)));
-    expect(download.slice(0, download.indexOf(">"))).toContain('target="_blank"');
+    expect(html.indexOf(`href="${EXTENSION_STORE_URL}"`)).toBeGreaterThan(-1);
+    expect(html.indexOf(`href="${EXTENSION_DOWNLOAD_URL}"`)).toBeGreaterThan(
+      html.indexOf(`href="${EXTENSION_STORE_URL}"`),
+    );
+    // Both open in a new tab, so the pairing steps stay where the user left them.
+    for (const url of [EXTENSION_STORE_URL, EXTENSION_DOWNLOAD_URL]) {
+      const link = html.slice(html.lastIndexOf("<a", html.indexOf(url)));
+      expect(link.slice(0, link.indexOf(">"))).toContain('target="_blank"');
+    }
     expect(textOf(html, "browser-pairing-server")).toBe(ORIGIN);
     expect(textOf(html, "browser-pairing-code")).toBe(CODE);
     expect(html).toContain(`aria-label="${S.common.copy}: ${S.builtinBrowser.pairServer}"`);
