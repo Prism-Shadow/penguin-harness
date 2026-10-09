@@ -223,10 +223,23 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
   /** Types `line` and waits until `done` shows on the screen. */
   async function run(session: TerminalSession, line: string, done: string): Promise<string[]> {
     session.write(`${line}\r`);
-    await waitUntil(
-      () => screen(session).includes(done),
-      () => `no ${done}; screen: ${screen(session).join(" | ")}`,
-    );
+    try {
+      await waitUntil(
+        () => screen(session).includes(done),
+        () => `no ${done}`,
+        5_000,
+      );
+    } catch {
+      // pwsh on macOS can print its prompt before PSReadLine takes the terminal: the typed
+      // line lands in its buffer but the Enter that came with it is lost, and the line sits
+      // there unsubmitted. A second Enter submits it; on a shell that already ran it, it is
+      // one empty command line.
+      session.write("\r");
+      await waitUntil(
+        () => screen(session).includes(done),
+        () => `no ${done}; screen: ${screen(session).join(" | ")}`,
+      );
+    }
     return screen(session);
   }
 
