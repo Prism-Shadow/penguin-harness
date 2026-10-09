@@ -3,6 +3,7 @@
 - **Date:** 2026-10-09
 - **Type:** fix
 - **Scope:** `web`, `ui`
+- **PR:** [#1007](https://github.com/Prism-Shadow/penguin-harness/pull/1007)
 
 [中文版](2026-10-09-ui-polish-batch.zh.md)
 
