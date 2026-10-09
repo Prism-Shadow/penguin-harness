@@ -404,7 +404,8 @@ export class SessionService {
    * shard once when the file first appeared, so no file is touched here. A head that records
    * no source is read with the row's client (readRecordedSource). A Session with no Trace yet
    * is NOT cached — its meta appears with the first run — and reads as its row says
-   * (unrunSource): the organization runtime's as `company`, any other as unknown.
+   * (unrunSource): the organization runtime's as `company`, the Agent API's as `api`, any other
+   * as unknown.
    */
   private async sourceOf(row: SessionRow, hasTrace: boolean): Promise<SessionSource | undefined> {
     const known = this.deps.sources.get(row.sessionId);

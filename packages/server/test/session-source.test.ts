@@ -27,7 +27,7 @@
  *   way.
  * - Given a Session company mode opened before the source was required (a head without one, the
  *   row's client `org`), it reads as `company` and is in no category; so does an `org` row that
- *   has not run yet.
+ *   has not run yet. An `api` row that has not run yet reads as `api`, in Background.
  * - Given company mode opening a desk Session (`company`, client `org`), the Session is
  *   `company`, keeps its `org` client and is in no category; a child it spawns is `subagent`,
  *   in Background.
@@ -289,27 +289,35 @@ describe("session source", () => {
     expect(counted.counts).toEqual({ active: 0, background: 0, archived: 0 });
   });
 
-  it("reads an org row that has not run yet as company, in no category", async () => {
-    // A desk opened at a hire and never run, after a restart: no Trace, nothing in the
-    // registry. (Its first run records `company` too: session-loader.test.ts.)
-    const sessionId = `session-2026-07-21-09-${String(cases).padStart(2, "0")}-00-0de5c001`;
-    const stamp = "2026-07-21T09:00:00.000Z";
-    t.deps.sessionsRepo.insert({
-      sessionId,
-      projectId,
-      agentId,
-      provider: "anthropic",
-      modelId: "claude-sonnet-4-6",
-      workspace: t.root,
-      approvalMode: "allow-all",
-      title: null,
-      client: "org",
-      createdAt: stamp,
-      lastActiveAt: stamp,
-    });
-    expect(sourceIn(await list(""), sessionId)).toBe("company");
-    expect((await list("?counts=1")).counts).toEqual({ active: 0, background: 0, archived: 0 });
-  });
+  it.each([
+    // A desk opened at a hire and never run.
+    ["an org row", "org", "company", { active: 0, background: 0, archived: 0 }],
+    // An API Session whose first run never got as far as its Trace.
+    ["an api row", "api", "api", { active: 0, background: 1, archived: 0 }],
+  ] as const)(
+    "reads %s that has not run yet as the source its client stands for",
+    async (_row, client, source, counts) => {
+      // After a restart: no Trace, nothing in the registry. (Its first run records that source
+      // too: session-loader.test.ts.)
+      const sessionId = `session-2026-07-21-09-${String(cases).padStart(2, "0")}-00-0de5c001`;
+      const stamp = "2026-07-21T09:00:00.000Z";
+      t.deps.sessionsRepo.insert({
+        sessionId,
+        projectId,
+        agentId,
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        workspace: t.root,
+        approvalMode: "allow-all",
+        title: null,
+        client,
+        createdAt: stamp,
+        lastActiveAt: stamp,
+      });
+      expect(sourceIn(await list(""), sessionId)).toBe(source);
+      expect((await list("?counts=1")).counts).toEqual(counts);
+    },
+  );
 
   it("opens a company-mode desk Session as company, keeping its org client, in no category", async () => {
     await configureModels();
