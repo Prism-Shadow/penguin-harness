@@ -5,8 +5,9 @@
  *   failed are themselves), version and origin, lists a Benchmark that never ran but not a
  *   directory without a manifest, and is empty when nothing is configured. A staging copy an
  *   interrupted seeding left and the Harbor checkouts are never listed. A Benchmark whose
- *   manifest cannot be read is still listed, under its directory name, as published and with no
- *   version.
+ *   manifest says something unusable (not JSON, a field out of shape, another directory's id)
+ *   is listed under its directory name as failed, with the reason and no version, never as
+ *   usable; a manifest the filesystem cannot read fails the request instead.
  * - compat(0.3.0): a Benchmark with only the legacy benchmark_config.toml lists once, as its
  *   config says, and has a benchmark.json from then on; the TOML stays.
  * - scoreboard.yaml v2's evaluations pass through: the summary, the Agent each tested, the
@@ -23,7 +24,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkCasesResponse,
@@ -500,7 +501,7 @@ describe("benchmarks api", () => {
     ]);
   });
 
-  it("still lists a Benchmark whose manifest cannot be read, under its directory name, as published and with no version", async () => {
+  it("lists a Benchmark whose manifest cannot be used as broken, saying why, never as usable", async () => {
     const dir = benchmarksDir(t.root, projectId);
     await fs.mkdir(path.join(dir, "broken-json"), { recursive: true });
     await fs.writeFile(path.join(dir, "broken-json", "benchmark.json"), "{ title: nope");
@@ -510,11 +511,28 @@ describe("benchmarks api", () => {
     await writeManifest(path.join(dir, "mistyped-bench"), { status: "drafted", title: "Mistyped" });
 
     const res = (await (await member.get(base)).json()) as BenchmarksResponse;
-    expect(res.benchmarks.map((b) => [b.id, b.title, b.status, b.version, b.origin])).toEqual([
-      ["broken-json", "broken-json", "published", undefined, undefined],
-      ["copied-bench", "copied-bench", "published", undefined, undefined],
-      ["mistyped-bench", "mistyped-bench", "published", undefined, undefined],
+    expect(
+      res.benchmarks.map((b) => [b.id, b.title, b.status, b.version, b.manifestError?.code]),
+    ).toEqual([
+      ["broken-json", "broken-json", "failed", undefined, "benchmark_manifest_invalid"],
+      ["copied-bench", "copied-bench", "failed", undefined, "benchmark_id_mismatch"],
+      ["mistyped-bench", "mistyped-bench", "failed", undefined, "benchmark_manifest_invalid"],
     ]);
+    // The reason names what is wrong, for the person who has to fix the file.
+    expect(res.benchmarks[1]!.manifestError?.message).toContain("report-writing-v1");
+    expect(res.benchmarks[2]!.manifestError?.message).toContain("status");
+  });
+
+  it("fails the request when a manifest cannot be read from disk at all, rather than listing it as healthy", async () => {
+    const dir = benchmarksDir(t.root, projectId);
+    // A directory where the file should be: no content to judge, only a filesystem error.
+    await fs.mkdir(path.join(dir, "odd-bench", "benchmark.json"), { recursive: true });
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect((await member.get(base)).status).toBe(500);
+    } finally {
+      quiet.mockRestore();
+    }
   });
 
   it("compat(0.3.0): a Benchmark with only the legacy config lists once, as its config says, and has a benchmark.json from then on", async () => {

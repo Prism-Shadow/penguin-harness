@@ -25,9 +25,10 @@ const git = (...args) => execFileSync("git", args, { encoding: "utf8" });
  * The Benchmarks a new Project is seeded with carry date versions too: the example's in
  * example-benchmark.ts, each built-in's in builtin-benchmarks-data.ts, whose rows
  * builtin-benchmarks.ts writes into statements. The built-ins are also published as packages in
- * the benchmark repository, where a version names one exact content. So a change to any of these
- * files must change at least one of the `version: "YYYY.MM.DD.N"` literals in the file that holds
- * the versions; a file that did not exist at the base commit is new and passes.
+ * the benchmark repository, where a version names one exact content. So a change to what any of
+ * these files says must change at least one of the `version: "YYYY.MM.DD.N"` literals in the
+ * file that holds the versions. Lines that are comments or blank do not count as a change, and a
+ * file that did not exist at the base commit is new and passes.
  */
 const SEEDED_BENCHMARKS = [
   {
@@ -44,9 +45,17 @@ const SEEDED_BENCHMARKS = [
 ];
 const dateVersions = (text) =>
   [...text.matchAll(/\bversion:\s*"(\d{4}\.\d{2}\.\d{2}\.\d+)"/g)].map((m) => m[1]).join(",");
+/** A line that is a comment (`//`, or part of a `/* … *\/` block) or blank. */
+const COMMENT_OR_BLANK = /^\s*(\/\/|\/\*|\*|$)/;
+/** Whether `file` changed since the base in a line that is not a comment or blank. */
+const changesContent = (file) =>
+  git("diff", "-U0", `${base}...HEAD`, "--", file)
+    .split("\n")
+    .filter((line) => /^[+-]/.test(line) && !/^(\+\+\+|---) /.test(line))
+    .some((line) => !COMMENT_OR_BLANK.test(line.slice(1)));
 const unversioned = [];
 for (const { sources, versions } of SEEDED_BENCHMARKS) {
-  if (git("diff", "--name-only", `${base}...HEAD`, "--", ...sources).trim() === "") continue;
+  if (!sources.some(changesContent)) continue;
   let before;
   try {
     before = dateVersions(git("show", `${base}:${versions}`));

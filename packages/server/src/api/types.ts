@@ -3988,6 +3988,16 @@ export type BenchmarkStatus = "draft" | "published" | "failed";
  */
 export type BenchmarkOriginKind = "builtin" | "manual" | "agent" | "git" | "zip";
 
+/**
+ * Why a Benchmark's manifest cannot be read: the code of core's `BenchmarkManifestError`
+ * (`benchmark_manifest_invalid`, `benchmark_id_mismatch`, or `benchmark_config_invalid` for a
+ * legacy TOML that does not parse) and its message, which names the field or the file.
+ */
+export interface BenchmarkManifestProblem {
+  code: string;
+  message: string;
+}
+
 /** The `origin` of a Benchmark's benchmark.json. */
 export interface BenchmarkOrigin {
   kind: BenchmarkOriginKind;
@@ -4015,7 +4025,8 @@ export interface BenchmarkSummary {
    * Benchmark is frozen and its Formal Baseline recorded; `failed` when calibration ended
    * without a Pilot result that could be frozen, which leaves the Benchmark unusable — the Web
    * App masks it too and says it has to be deleted and created again. benchmark.json must say
-   * one of the three; a Benchmark whose manifest cannot be read lists as published.
+   * one of the three; a Benchmark whose manifest cannot be read lists as failed, with
+   * `manifestError`.
    */
   status: BenchmarkStatus;
   /**
@@ -4025,6 +4036,12 @@ export interface BenchmarkSummary {
   version?: string;
   /** Where this copy came from; absent with `version`. */
   origin?: BenchmarkOrigin;
+  /**
+   * Set when the manifest cannot be read. Such a Benchmark lists under its directory name, as
+   * `failed`, with no version or origin, and nothing may use or export it until the file is
+   * fixed; the Web App masks it with this reason.
+   */
+  manifestError?: BenchmarkManifestProblem;
   /** Case count (number of case subfolders). */
   caseCount: number;
   /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */

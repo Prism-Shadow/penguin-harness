@@ -12,9 +12,10 @@
  * or care.
  * A manifest is what makes a directory a Benchmark: `list` skips one without it. A Benchmark
  * from before benchmark.json has `benchmark_config.toml` instead, which the read converts
- * (compat(0.3.0), in core). Files that are there but corrupt degrade gracefully (the title
- * falls back to the directory name, there is no version, scores come back empty) rather than
- * throwing.
+ * (compat(0.3.0), in core). A manifest that is there but says something unusable lists the
+ * Benchmark as failed, under its directory name, with `manifestError` saying why, so nothing
+ * offers to use it; a corrupt scoreboard degrades to no scores. A filesystem error reading a
+ * manifest is not a fact about the Benchmark and fails the request.
  *
  * Case and Evaluation averages are authoritative file values. The server validates
  * the current shape but never recomputes aggregates and does not migrate or backfill
@@ -25,6 +26,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
+  BenchmarkManifestError,
   benchmarksDir,
   nextDateVersion,
   readBenchmarkManifest,
@@ -466,33 +468,41 @@ export class BenchmarkService implements Benchmarks {
 
   /**
    * The manifest of `benchDir` (a legacy TOML is converted on the way, in core): null when the
-   * directory is not a Benchmark, undefined when it is one whose manifest cannot be read — not
-   * JSON, a field out of shape, an id that is not its directory's, a TOML that does not parse.
-   * Such a Benchmark is still listed, under its directory name, rather than hidden.
+   * directory is not a Benchmark, the BenchmarkManifestError when it is one whose manifest says
+   * something unusable — not JSON, a field out of shape, an id that is not its directory's, a
+   * TOML that does not parse. Such a Benchmark is listed as broken rather than hidden. Any other
+   * error (the file cannot be read at all) is thrown.
    */
-  private async manifestOf(benchDir: string): Promise<BenchmarkManifest | null | undefined> {
+  private async manifestOf(
+    benchDir: string,
+  ): Promise<BenchmarkManifest | BenchmarkManifestError | null> {
     try {
       return await readBenchmarkManifest(benchDir);
-    } catch {
-      return undefined;
+    } catch (error) {
+      if (error instanceof BenchmarkManifestError) return error;
+      throw error;
     }
   }
 
   private async summarize(
     benchDir: string,
     id: string,
-    manifest: BenchmarkManifest | undefined,
+    manifest: BenchmarkManifest | BenchmarkManifestError,
   ): Promise<BenchmarkSummary> {
     // The manifest: title, description, per-case run count, build status, version and origin.
     // The model isn't part of it — each evaluation carries the Model actually used for that
-    // run. One that cannot be read lists under the directory name, as published, with neither a
-    // version nor an origin.
+    // run. One that cannot be read lists under the directory name as failed — unusable until
+    // the file is fixed — with the reason, and neither a version nor an origin.
     const described: Pick<
       BenchmarkSummary,
-      "title" | "description" | "runs" | "status" | "version" | "origin"
+      "title" | "description" | "runs" | "status" | "version" | "origin" | "manifestError"
     > =
-      manifest === undefined
-        ? { title: id, status: "published" }
+      manifest instanceof BenchmarkManifestError
+        ? {
+            title: id,
+            status: "failed",
+            manifestError: { code: manifest.code, message: manifest.message },
+          }
         : {
             title: manifest.title,
             ...(manifest.description !== undefined ? { description: manifest.description } : {}),

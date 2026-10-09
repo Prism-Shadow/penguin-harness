@@ -19,7 +19,9 @@
 
 The `agent-evaluation` and `agent-optimization` Skills read `benchmark.json`, or the TOML until it is converted, so a data root no list has touched yet still evaluates. Installed agent-tuning copies from earlier releases keep reading and writing the TOML, which stays; the plugin update the Agents page offers brings them to the new Skills.
 
-**A user is not required to do anything.** Every existing Benchmark keeps listing, now with a version. The built-in Benchmarks of an existing Project carry the day their TOML was written as their version, not the version the newly seeded ones carry.
+**Existing Benchmarks need nothing.** Every one keeps listing, now with a version. The built-in Benchmarks of an existing Project carry the day their TOML was written as their version, not the version the newly seeded ones carry.
+
+**Update agent-tuning on an Agent before it evaluates a Benchmark made after the upgrade.** Such a Benchmark (seeded into a new Project, created by hand, or written by the updated `benchmark-design`) has only `benchmark.json`, and an Agent whose installed agent-tuning predates this release requires `benchmark_config.toml`, so it refuses that Benchmark until the plugin update the Agents page offers is applied. No TOML is written beside a new manifest.
 
 ## When this can be removed
 

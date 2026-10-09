@@ -19,7 +19,9 @@
 
 `agent-evaluation` 与 `agent-optimization` 两个 Skill 读取 `benchmark.json`，在转换之前读取 TOML，因此还没被列出过的数据根照样能评测。早先版本已安装的 agent-tuning 副本继续读写保留下来的 TOML；Agents 页面提示的插件更新会把它们换成新的 Skill。
 
-**用户无需任何操作。** 每个既有 Benchmark 照常列出，并多了一个版本。既有 Project 里的内置 Benchmark 以其 TOML 写入的那一天为版本，而不是新预置的内置 Benchmark 所带的版本。
+**既有的 Benchmark 无需任何操作。** 它们照常列出，并多了一个版本。既有 Project 里的内置 Benchmark 以其 TOML 写入的那一天为版本，而不是新预置的内置 Benchmark 所带的版本。
+
+**评估升级之后建的 Benchmark 之前，先更新 Agent 的 agent-tuning。** 这类 Benchmark（新建 Project 预置的、手动创建的，或由更新后的 `benchmark-design` 写入的）只有 `benchmark.json`；已安装的 agent-tuning 早于本版本的 Agent 要求有 `benchmark_config.toml`，因此在应用 Agents 页面提示的插件更新之前会拒绝它。新清单旁不会另写 TOML。
 
 ## 何时可以移除
 

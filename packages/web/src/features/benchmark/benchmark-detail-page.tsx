@@ -8,7 +8,11 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import type { BenchmarkSummary, ModelsResponse } from "@prismshadow/penguin-server/api";
+import type {
+  BenchmarkManifestProblem,
+  BenchmarkSummary,
+  ModelsResponse,
+} from "@prismshadow/penguin-server/api";
 import {
   Button,
   CopyButton,
@@ -32,10 +36,28 @@ import { UseBenchmarkModal } from "./use-benchmark-modal";
 
 /**
  * What stands in place of the detail for a Benchmark that is not published: still being built,
- * or creation failed. Deleting and creating again is a failed Benchmark's only way out, and only
- * the owner may delete, so a member is told what happened without being sent to that step.
+ * creation failed, or a manifest that cannot be read, with the reason the server gave. Deleting
+ * and creating again is a failed Benchmark's only way out, and only the owner may delete, so a
+ * member is told what happened without being sent to that step.
  */
-export function UnpublishedNotice({ failed, isOwner }: { failed: boolean; isOwner: boolean }) {
+export function UnpublishedNotice({
+  failed,
+  isOwner,
+  manifestError,
+}: {
+  failed: boolean;
+  isOwner: boolean;
+  manifestError?: BenchmarkManifestProblem;
+}) {
+  if (manifestError !== undefined) {
+    const hint = isOwner ? S.benchmark.manifestBrokenHint : S.benchmark.manifestBrokenHintMember;
+    return (
+      <EmptyState
+        title={S.benchmark.manifestBroken}
+        description={S.benchmark.manifestBrokenDetail(hint, manifestError.message)}
+      />
+    );
+  }
   if (!failed) {
     return <EmptyState title={S.benchmark.building} description={S.benchmark.buildingDetail} />;
   }
@@ -203,7 +225,13 @@ export function BenchmarkDetailPage() {
       </div>
     );
   } else if (masked) {
-    body = <UnpublishedNotice failed={failed} isOwner={isOwner} />;
+    body = (
+      <UnpublishedNotice
+        failed={failed}
+        isOwner={isOwner}
+        manifestError={benchmark.manifestError}
+      />
+    );
   } else {
     body = (
       <BenchmarkDetail projectId={projectId} benchmark={benchmark} machineNameOf={machineNameOf} />

@@ -8,7 +8,8 @@
  *   directory's is `benchmark_id_mismatch`); a field it does not know is ignored.
  * - A manifest the reader would refuse is never written.
  * - Versions: a new revision is the day's `.1`; another the same day takes the next number
- *   (`.10` after `.9`); a later day starts again at `.1`; a version never goes backwards.
+ *   (`.10` after `.9`); a later day starts again at `.1`; a version never goes backwards; a
+ *   previous version that does not parse counts for nothing.
  * - compat(0.3.0), a Benchmark from before benchmark.json:
  *   - a TOML-only Benchmark reads as its TOML says and gets a benchmark.json beside the TOML,
  *     which stays; its version is the day the TOML was last written, `.1`; a seeded id is
@@ -157,6 +158,14 @@ describe("benchmark.json", () => {
       { ...manifest(), origin: { kind: "git", url: "javascript:alert(1)" } },
       "benchmark_manifest_invalid",
     ],
+    [
+      "an origin ref that is a branch, not a commit",
+      {
+        ...manifest(),
+        origin: { kind: "git", url: "https://github.com/o/r/tree/main/x", ref: "main" },
+      },
+      "benchmark_manifest_invalid",
+    ],
   ])("a manifest with %s is refused", async (_case, fields, code) => {
     const dir = await benchDir("report-writing-v1");
     await writeRaw(dir, fields);
@@ -202,6 +211,11 @@ describe("Benchmark versions", () => {
 
   it("a version never goes backwards: one dated after today takes its next number", () => {
     expect(nextDateVersion("2026.10.11.2", oct9)).toBe("2026.10.11.3");
+  });
+
+  it("a previous version that does not parse counts for nothing: the day's .1", () => {
+    expect(nextDateVersion("v2", oct9)).toBe("2026.10.09.1");
+    expect(nextDateVersion("", oct9)).toBe("2026.10.09.1");
   });
 });
 

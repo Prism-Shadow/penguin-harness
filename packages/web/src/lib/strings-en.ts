@@ -4143,6 +4143,10 @@ Scenarios:
     copyPath: "Copy directory path",
     versionLabel: "Version",
     sourceLabel: "Source",
+    manifestBroken: "Manifest can't be read",
+    manifestBrokenHint: "Fix its benchmark.json to use it, or delete it",
+    manifestBrokenHintMember: "It can be used once its benchmark.json is fixed",
+    manifestBrokenDetail: (hint: string, reason: string): string => `${hint}. Reason: ${reason}`,
     deleteBenchmark: "Delete Benchmark",
     deleteConfirm: (title: string): string =>
       `Delete "${title}"? All of its cases and evaluation records will be removed; this cannot be undone.`,

@@ -144,7 +144,7 @@ Whatever an agent may edit on disk carries a date version, Skills and Benchmarks
 
 A Benchmark's **package** is `benchmark.json` and its case directories. `scoreboard.yaml`, the `.jobs/` trials, other entries whose names start with a dot, and symlinks belong to the copy on this disk and are never part of it. Large source files stay out of a package too: a statement links them in a repository at a pinned commit, as the built-in Benchmarks' statements do. The five built-in Benchmarks are also published in this format under `packages/` in the public repository Prism-Shadow/penguin-harness-benchmark.
 
-A Benchmark from an earlier release has a `benchmark_config.toml` instead. The first time the server lists it, it writes the matching `benchmark.json` beside it, versioned with the day the TOML was last written, and reads that from then on; the TOML is left in place for agents whose installed agent-tuning plugin predates the manifest. A Benchmark that is still a draft is converted once its TOML says it is published or failed. Nothing needs doing by hand.
+A Benchmark from an earlier release has a `benchmark_config.toml` instead. The first time the server lists it, it writes the matching `benchmark.json` beside it, versioned with the day the TOML was last written, and reads that from then on; the TOML is left in place for agents whose installed agent-tuning plugin predates the manifest. A Benchmark that is still a draft is converted once its TOML says it is published or failed. The one thing to do by hand: update agent-tuning on an agent before it evaluates a Benchmark made after the upgrade, because an older copy looks for a `benchmark_config.toml`, which new Benchmarks do not have.
 
 ### Benchmark status
 
@@ -156,7 +156,7 @@ A Benchmark from an earlier release has a `benchmark_config.toml` instead. The f
 | `published` | The Formal Baseline is recorded | Usable |
 | `failed` | `benchmark-design` reports `calibration_failed` | Masked as a failed creation, with a request to delete it and create it again |
 
-A failed Benchmark cannot be used. A Benchmark created by hand, the built-in example and the built-in Benchmarks are published from the start. A manifest the server cannot read (not JSON, or a field out of shape) still lists under its directory name, as published and without a version.
+A failed Benchmark cannot be used. A Benchmark created by hand, the built-in example and the built-in Benchmarks are published from the start. A Benchmark whose manifest the server cannot use (not JSON, a field out of shape, or an `id` that is not its directory's) still lists under its directory name, as failed: the Evaluation Center masks it and shows why, and it cannot be used until the file is fixed.
 
 ### Evaluation records
 

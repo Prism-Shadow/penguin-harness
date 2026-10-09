@@ -4253,6 +4253,12 @@ Benchmark：
     /** The Benchmark page's header: its manifest's version, and the repository folder it was imported from. */
     versionLabel: "版本",
     sourceLabel: "来源",
+    /** A Benchmark whose benchmark.json cannot be read: masked like a failed one, the reason behind an icon. */
+    manifestBroken: "清单无法读取",
+    manifestBrokenHint: "修好它的 benchmark.json 即可使用，也可以删除它",
+    manifestBrokenHintMember: "修好它的 benchmark.json 后即可使用",
+    /** The Benchmark page's notice: the hint, then the reason the server gave. */
+    manifestBrokenDetail: (hint: string, reason: string): string => `${hint}。原因：${reason}`,
     deleteBenchmark: "删除 Benchmark",
     deleteConfirm: (title: string): string =>
       `确定删除「${title}」吗？它的全部题目与评估记录都会被删除，无法恢复。`,

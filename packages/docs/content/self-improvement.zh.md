@@ -144,7 +144,7 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 
 Benchmark 的**包**是 `benchmark.json` 加上各题目录。`scoreboard.yaml`、`.jobs/` 下的 trial、其他以点开头的条目和符号链接都属于这块磁盘上的副本，永远不属于包。原始大文件同样不进包：题干以固定提交的仓库链接引用它们，内置 Benchmark 的题干就是这样写的。五个内置 Benchmark 另以同一格式发布在公开仓库 Prism-Shadow/penguin-harness-benchmark 的 `packages/` 下。
 
-早先版本的 Benchmark 只有 `benchmark_config.toml`。服务端第一次列出它时，在旁边写入对应的 `benchmark.json`，版本取 TOML 最后写入的那一天，此后就读这份清单；TOML 留在原处，供已安装的 agent-tuning 插件还早于清单的 Agent 使用。仍是草稿的 Benchmark，要等它的 TOML 写明已发布或失败后才转换。这一切都无需手动处理。
+早先版本的 Benchmark 只有 `benchmark_config.toml`。服务端第一次列出它时，在旁边写入对应的 `benchmark.json`，版本取 TOML 最后写入的那一天，此后就读这份清单；TOML 留在原处，供已安装的 agent-tuning 插件还早于清单的 Agent 使用。仍是草稿的 Benchmark，要等它的 TOML 写明已发布或失败后才转换。唯一需要手动处理的：Agent 评估升级之后建的 Benchmark 之前，先更新它的 agent-tuning 插件，因为旧副本找的是 `benchmark_config.toml`，而新的 Benchmark 没有这个文件。
 
 ### Benchmark 状态
 
@@ -156,7 +156,7 @@ Benchmark 的**包**是 `benchmark.json` 加上各题目录。`scoreboard.yaml`�
 | `published` | Formal Baseline 已经记录 | 可以使用 |
 | `failed` | `benchmark-design` 报告了 `calibration_failed` | 遮罩显示为创建失败，并提示删除后重新创建 |
 
-`failed` 的 Benchmark 不能使用。手动创建的 Benchmark、内置示例和内置 Benchmark 一开始就是 `published`。服务端读不了的清单（不是合法的 JSON，或某个字段不合规）仍以目录名列出，按 `published` 处理，不显示版本。
+`failed` 的 Benchmark 不能使用。手动创建的 Benchmark、内置示例和内置 Benchmark 一开始就是 `published`。清单不可用（不是合法的 JSON、某个字段不合规，或 `id` 与所在目录不符）的 Benchmark 仍以目录名列出，按 `failed` 处理：评估中心把它遮罩并说明原因，修好文件之前不能使用。
 
 ### 评估记录
 

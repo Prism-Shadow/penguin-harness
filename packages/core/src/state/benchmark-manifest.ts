@@ -139,6 +139,10 @@ function parseOrigin(raw: unknown): BenchmarkOrigin {
   if (origin.url !== undefined && !isWebLink(origin.url)) {
     throw invalid(`"origin.url" must be an http(s) link.`);
   }
+  // The commit an import resolved its link to, never a branch or a tag that moves.
+  if (origin.ref !== undefined && !/^[0-9a-f]{40}$/.test(origin.ref)) {
+    throw invalid(`"origin.ref" must be a 40-character commit id.`);
+  }
   return origin;
 }
 
