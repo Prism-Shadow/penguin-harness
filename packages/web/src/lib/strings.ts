@@ -541,6 +541,14 @@ export const zh = {
     chromeExtensionTitle: "Chrome 扩展",
     chromeExtensionInfo:
       "开启时，这台服务器上的每个用户都可以配对自己的 Chrome，让 Agent 在其中操作；关闭时，所有扩展断开，已有的配对保留。",
+    /** Settings › Server › Agent API: the admin's switch over every Agent's public API, and the question before it goes off. */
+    agentApiTitle: "Agent API",
+    agentApiToggle: "允许 Agent API",
+    agentApiHint: "关闭后所有 Agent 的 API 请求均被拒绝；各 Agent 的开关、审批模式与密钥保留。",
+    agentApiOffTitle: "关闭 Agent API？",
+    agentApiOffConfirm:
+      "这台服务器上所有 Agent 的 API 会立即拒绝请求，调用它们的外部程序都会失败，直到重新开启。各 Agent 的开关、审批模式与密钥保留。",
+    agentApiOff: "关闭",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
@@ -1382,6 +1390,7 @@ export const zh = {
     tabHooks: "钩子",
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
+    tabApi: "API",
     stateDir: "State 路径",
     copyStateDir: "复制 State 路径",
     agentsMd: "AGENTS.md",
@@ -1561,6 +1570,70 @@ export const zh = {
         : `内核已更新至 ${version}，设置页均已是当前默认或保持自定义`,
     kernelUpdateKeptIntro: "以下设置页因自定义被整体保留：",
     kernelListSeparator: "、",
+    /** The API tab: this server's switch for the Agent's public API, its approval mode, keys and examples. */
+    apiEnable: "开启 API 访问",
+    apiEnableHint:
+      "外部程序可通过 URL、密钥与 Agent ID 与此 Agent 对话；对话归入侧栏的「后台会话」。",
+    apiOwnerOnly: "只有 Project 所有者可以更改这些设置。",
+    apiAdminOff:
+      "管理员已在服务器设置中关闭 Agent API：所有 API 请求都会被拒绝，这里的设置与密钥保留。",
+    apiApprovalMode: "API 会话的审批模式",
+    apiApprovalModeHint:
+      "应用于之后新建的 API 会话；需要确认时，确认请求会发给调用方，也可在 Web App 中回答。",
+    apiConnection: "连接",
+    apiBaseUrl: "Base URL",
+    apiAgentId: "Agent ID",
+    /** A copy button beside a connection value, named for what it copies. */
+    apiCopy: (what: string): string => `复制 ${what}`,
+    apiKeys: "密钥",
+    apiKeysEmpty: "还没有密钥。",
+    apiNewKey: "新建密钥",
+    apiKeyName: "密钥名称",
+    apiKeyCreated: "创建",
+    apiKeyLastUsed: "最近使用",
+    apiKeyNever: "从未",
+    apiKeyShownOnce: "此密钥只显示一次，请立即复制。",
+    apiCopySecret: "复制密钥",
+    apiKeyDone: "完成",
+    apiDeleteKey: "删除密钥",
+    apiDeleteKeyBody: (name: string): string =>
+      `删除密钥「${name}」？使用它的程序会立即被拒绝，此操作不可撤销。`,
+    apiOpen: "允许无密钥访问",
+    apiOpenHint: "任何能访问此地址的程序都能与该 Agent 对话；仅建议本机使用。",
+    apiExamples: "示例",
+    /** Turning the Agent's API off asks first: every program using it is refused from then on. */
+    apiOpenTitle: "允许无密钥访问？",
+    apiOpenBody:
+      "开启后，任何能访问此服务器地址的程序都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据，工具按 API 会话的审批模式执行。仅建议在只监听本机的服务器上开启。",
+    apiOpenConfirm: "仍然开启",
+    apiOffTitle: "关闭 API 访问？",
+    apiOffBody: "外部程序会立即无法与此 Agent 对话。审批模式与密钥保留，重新开启后照常可用。",
+    apiOff: "关闭",
+    /** The Agents list's plug mark on an Agent whose API is on. */
+    apiOn: "已开启 API 访问",
+    /** The tab's Try it: one real API run on the owner's sign-in, shown as a program receives it. */
+    apiTry: "试一试",
+    apiTryHint:
+      "以你的登录身份走程序用的同一条运行路由，收到的就是程序会收到的事件流；开出的会话归入侧栏的「后台会话」。",
+    apiTryExample: "现在几点了？",
+    apiTryRun: "运行",
+    apiTryStop: "停止",
+    /** The input's placeholder once a run has named its Session: the next run continues it. */
+    apiTryFollowUp: "继续这个会话…",
+    apiTryNewSession: "新会话",
+    /** The output's two views: the stream with fragments merged, and its `data:` lines as received. */
+    apiTryRendered: "渲染",
+    apiTryRaw: "原始",
+    apiTryCopyRaw: "复制原始行",
+    /** The output before the first run. */
+    apiTryEmpty: "运行后，事件流显示在这里。",
+    apiTryStatus: "状态",
+    apiTryRequests: "Request",
+    apiTryTokens: "Token（输出 / 合计）",
+    apiTryCacheRead: "缓存读",
+    apiTryCacheWrite: "缓存写",
+    apiTryElapsed: "用时",
+    apiTryStreamBroken: "事件流在 run.done 之前结束。",
   },
 
   models: {

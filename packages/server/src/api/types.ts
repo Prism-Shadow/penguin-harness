@@ -267,6 +267,12 @@ export interface ServerSettings {
    * kept, so turning it on again lets the extensions reconnect.
    */
   browserExtensionsEnabled: boolean;
+  /**
+   * Whether external programs may talk to Agents through the Agent API (default on). Off answers
+   * every `/api/amsp/v1` request 403 `agent_api_disabled` (a CORS preflight excepted); every
+   * Agent's API switch, approval mode and keys are kept, so turning it on again restores them.
+   */
+  agentApiEnabled: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -281,6 +287,8 @@ export interface ServerSettingsUpdateRequest {
   companyMode?: boolean;
   /** Chrome extension switch; see `ServerSettings.browserExtensionsEnabled`. */
   browserExtensionsEnabled?: boolean;
+  /** Agent API switch; see `ServerSettings.agentApiEnabled`. */
+  agentApiEnabled?: boolean;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -1248,6 +1256,8 @@ export interface AgentSummary {
   pluginUpdates: PluginUpdateRef[];
   /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
   memoryCount: number;
+  /** Whether the Agent's API tab switch is on (this server's web.db, see AgentApiSettings.enabled): the list card's API mark. */
+  apiEnabled: boolean;
 }
 
 export interface AgentsResponse {
@@ -1440,6 +1450,72 @@ export interface AgentConfigUpdateRequest {
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
   };
+}
+
+// ---------------------------------------------------------------------------
+// Agent API (/api/projects/:projectId/agents/:agentId/api; the stream itself is AMSP,
+// /api/amsp/v1, whose snake_case wire types live in @prismshadow/amsp)
+// ---------------------------------------------------------------------------
+
+/** One API key of an Agent, as listed: the secret itself is shown once, at creation, and never again. */
+export interface AgentApiKeyInfo {
+  keyId: string;
+  /** 1-64 characters, given by whoever created it. */
+  name: string;
+  /** The key's first 16 characters (`penguin_` + 8), enough to tell keys apart. */
+  prefix: string;
+  /** user_id of the Project owner who created it. */
+  createdBy: string;
+  createdAt: string;
+  /** Last run request that authenticated with it; null = never used. */
+  lastUsedAt: string | null;
+}
+
+/**
+ * One Agent's public API settings — this server's, kept in web.db, never in the Agent State or
+ * the Project file, so the Agent cannot expose itself or loosen its own approvals. An Agent
+ * never configured reads as disabled, keyed, allow-all, with no keys.
+ */
+export interface AgentApiSettings {
+  /** The API tab's switch; off = every AMSP request for this Agent is 404 `agent_not_found`. */
+  enabled: boolean;
+  /** Keyless access: a request without `Authorization` is accepted; off = 401 `unauthorized`. */
+  open: boolean;
+  /**
+   * The approval mode an API Session is created with. It is copied onto each API Session when
+   * that Session is created, and the Session's own mode is what every decision reads, so a
+   * change here applies to API Sessions created afterwards.
+   */
+  approvalMode: ApprovalMode;
+  keys: AgentApiKeyInfo[];
+}
+
+export interface AgentApiResponse {
+  api: AgentApiSettings;
+  /**
+   * The admin's server-wide switch (`ServerSettings.agentApiEnabled`), which only an admin can
+   * read through /api/admin/settings: off, every Agent's API is refused (403) whatever `api` says.
+   */
+  serverEnabled: boolean;
+}
+
+/** PUT body (owner only): every field optional, omitted fields keep their current value. */
+export interface AgentApiUpdateRequest {
+  enabled?: boolean;
+  open?: boolean;
+  approvalMode?: ApprovalMode;
+}
+
+/** POST …/api/keys body (owner only). */
+export interface AgentApiKeyCreateRequest {
+  /** 1-64 characters. */
+  name: string;
+}
+
+/** The one response that carries the secret (`penguin_` + 43 base64url characters); only its hash is stored. */
+export interface AgentApiKeyCreateResponse {
+  key: AgentApiKeyInfo;
+  secret: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1758,14 +1834,14 @@ export interface SessionInfo {
   /**
    * Which client opened the Session, as stored on the index row: "cli" from the CLI (a
    * Session adopted from a legacy CLI-direct Trace included), "org" from the organization
-   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "web"
-   * otherwise. Absent only on a row that
-   * predates the column, which reads as "web". Unlike {@link SessionInfo.orgId} — projected
-   * from the organization caches, so it disappears with the organization and is not read
-   * while company mode is off — this is a durable stamp on the row: development mode's list
-   * hides an "org" Session either way.
+   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "api"
+   * from an Agent API run (the only Sessions the API may continue), "web" otherwise. Absent
+   * only on a row that predates the column, which reads as "web". Unlike
+   * {@link SessionInfo.orgId} — projected from the organization caches, so it disappears with
+   * the organization and is not read while company mode is off — this is a durable stamp on
+   * the row: development mode's list hides an "org" Session either way.
    */
-  client?: "web" | "cli" | "org";
+  client?: "web" | "cli" | "org" | "api";
   /**
    * Background work the Session's loaded runtime still owns: command sessions running past
    * their yield window (`exec_command` promotions and `run_in_background` launches) and

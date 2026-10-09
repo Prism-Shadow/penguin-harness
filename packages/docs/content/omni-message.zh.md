@@ -448,6 +448,8 @@ type StopReason = "completed" | "aborted" | "retryable" | "fatal";
 | 落盘的 Trace | `session_meta` + 完整 `model_msg` + 全部 `event_msg`（不存分片，也不存带 `origin` 的消息） |
 | Server 的 SSE 推送 | 与 SDK 边界相同，原样的单行 JSON，见 [Server API](/server-api) |
 
+[Agent API](/agent-api) 不推送 OmniMessage，它的事件流是 [AMSP](/amsp)：服务器为 PenguinHarness 之外的程序，对同一条实时流所做的投影。OmniMessage 不因此改变，没有新增任何字段、类型或取值。
+
 消息沿这些通道传递的机制与各项顺序保证，见[消息流转与时序](/message-flow)。
 
 ## 构造与判别

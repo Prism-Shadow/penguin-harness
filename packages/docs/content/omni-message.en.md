@@ -448,6 +448,8 @@ The payload is opaque to PenguinHarness: it passes through and persists verbatim
 | Trace on disk | `session_meta` + complete `model_msg` + all `event_msg` (no partials, no `origin`-tagged messages) |
 | Server SSE stream | same as the SDK boundary, verbatim single-line JSON — see [Server API](/server-api) |
 
+The [Agent API](/agent-api) does not stream OmniMessage: its stream is [AMSP](/amsp), a projection the server makes of the same live stream for programs outside PenguinHarness. Nothing in OmniMessage changes for it: no field, type or value is added.
+
 How messages travel along these surfaces, and every ordering guarantee, is covered on [Message Flow & Ordering](/message-flow).
 
 ## Builders and guards

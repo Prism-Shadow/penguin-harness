@@ -44,13 +44,16 @@ export function readRecordedSource(
 /**
  * The source of a Session that has not run yet, read from its index row. Its session_meta is
  * written by its first run, so once the process that created it is gone nothing on disk names
- * its source. The organization runtime opens only company Sessions under its `org` client (a
- * desk opened at a hire can wait days for its first run; the children its Sessions spawn run,
- * and so record their own source, at once), so such a row is `company`, and the loader rebuilds
- * it as one. Any other row stays unclassified until its first run records a source.
+ * its source. Two clients are written by the server alone, each for one source: the organization
+ * runtime opens only company Sessions under its `org` client (a desk opened at a hire can wait
+ * days for its first run; the children its Sessions spawn run, and so record their own source,
+ * at once), and the Agent API opens only `api` Sessions under its `api` client. Such a row reads
+ * as that source, and the loader rebuilds it as one. Any other row stays unclassified until its
+ * first run records a source.
  */
 export function unrunSource(client: SessionRow["client"]): SessionSource | undefined {
-  return client === "org" ? "company" : undefined;
+  if (client === "org") return "company";
+  return client === "api" ? "api" : undefined;
 }
 
 /**

@@ -43,6 +43,7 @@ import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
 import type { ErrorLog, UsageStore } from "../mechanisms/observability.js";
 import type { TraceIndex } from "../mechanisms/traces.js";
 import type { OrgCache } from "../mechanisms/organization.js";
+import type { AgentApi } from "../mechanisms/agent-api.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -78,6 +79,8 @@ export class ProjectService implements ProjectLifecycle {
   @Use() private readonly manager!: ProjectRuns;
   /** Trace-index cleanup on Project destruction (rows describe files removed with the Project dir). */
   @Use() private readonly traceIndex!: TraceIndex;
+  /** The Project's Agents' API settings and keys (web.db): a destroyed Project exposes nothing. */
+  @Use() private readonly agentApi!: AgentApi;
 
   // Access control lives in ProjectAccess (services/project-access.ts); these delegate so
   // in-package callers keep one entry point.
@@ -292,6 +295,9 @@ export class ProjectService implements ProjectLifecycle {
     this.usage.deleteByProject(projectId);
     this.errors.deleteByProject(projectId);
     this.schedules.deleteByProject(projectId);
+    // Before the owner's user row can go (deleteUser destroys their Projects first): a key
+    // names its creator.
+    this.agentApi.deleteByProject(projectId);
     this.orgCache.deleteProject(projectId);
     this.traceIndex.removeProject(projectId);
     await fs.rm(projectDir(this.root, projectId), { recursive: true, force: true });

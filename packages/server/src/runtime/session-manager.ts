@@ -375,7 +375,8 @@ export function createCoreSessionLoader(
         );
       }
       // The source this process recorded at creation, else the one the row stands for: the
-      // organization runtime's are `company` (unrunSource), the list's reading of the same row.
+      // organization runtime's are `company`, the Agent API's `api` (unrunSource), the list's
+      // reading of the same row.
       const knownSource = sources?.get(row.sessionId) ?? unrunSource(row.client);
       try {
         return await agent.createSession({

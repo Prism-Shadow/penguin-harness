@@ -462,6 +462,14 @@ export const en: Strings = {
     chromeExtensionTitle: "Chrome extension",
     chromeExtensionInfo:
       "When on, every user of this server can pair their own Chrome for agents to work in. When off, every extension disconnects; pairings are kept.",
+    agentApiTitle: "Agent API",
+    agentApiToggle: "Allow the Agent API",
+    agentApiHint:
+      "Off refuses every agent's API requests; per-agent switches, approval modes and keys are kept.",
+    agentApiOffTitle: "Turn the Agent API off?",
+    agentApiOffConfirm:
+      "Every agent's API on this server refuses requests at once, and the programs calling them fail until it is on again. Per-agent switches, approval modes and keys are kept.",
+    agentApiOff: "Turn off",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -1318,6 +1326,7 @@ export const en: Strings = {
     tabHooks: "Hooks",
     tabVault: "Vault",
     tabSchedules: "Schedules",
+    tabApi: "API",
     stateDir: "State path",
     copyStateDir: "Copy State path",
     agentsMd: "AGENTS.md",
@@ -1518,6 +1527,64 @@ export const en: Strings = {
         : `Kernel updated to ${version}; every tab was already current or kept as customized`,
     kernelUpdateKeptIntro: "Kept whole because customized:",
     kernelListSeparator: ", ",
+    apiEnable: "Enable API access",
+    apiEnableHint:
+      "External programs can talk to this agent with the URL, a key and the Agent ID; the conversations appear in the sidebar's Background folder.",
+    apiOwnerOnly: "Only the Project owner can change these settings.",
+    apiAdminOff:
+      "An admin has turned the Agent API off for this server: every API request is refused, and the settings and keys here are kept.",
+    apiApprovalMode: "Approval mode for API conversations",
+    apiApprovalModeHint:
+      "Applies to API conversations created from now on; when a mode asks, the request goes to the caller and can also be answered here.",
+    apiConnection: "Connection",
+    apiBaseUrl: "Base URL",
+    apiAgentId: "Agent ID",
+    apiCopy: (what: string): string => `Copy ${what}`,
+    apiKeys: "Keys",
+    apiKeysEmpty: "No keys yet.",
+    apiNewKey: "New key",
+    apiKeyName: "Key name",
+    apiKeyCreated: "Created",
+    apiKeyLastUsed: "Last used",
+    apiKeyNever: "never",
+    apiKeyShownOnce: "This key is shown once; copy it now.",
+    apiCopySecret: "Copy key",
+    apiKeyDone: "Done",
+    apiDeleteKey: "Delete key",
+    apiDeleteKeyBody: (name: string): string =>
+      `Delete the key "${name}"? Programs using it are refused at once; this cannot be undone.`,
+    apiOpen: "Allow keyless access",
+    apiOpenHint:
+      "Anything that can reach this address can talk to the agent; recommended for loopback use only.",
+    apiExamples: "Examples",
+    apiOpenTitle: "Allow keyless access?",
+    apiOpenBody:
+      "Once on, anything that can reach this server's address can talk to this agent without a key, on the Project's models and credentials, with tools run under the API conversations' approval mode. Turn it on only for a server that listens on loopback.",
+    apiOpenConfirm: "Allow anyway",
+    apiOffTitle: "Turn API access off?",
+    apiOffBody:
+      "External programs can no longer talk to this agent. The approval mode and the keys are kept and work again once it is back on.",
+    apiOff: "Turn off",
+    apiOn: "API access on",
+    apiTry: "Try it",
+    apiTryHint:
+      "Runs the route a program calls, your sign-in in place of a key, and shows what it receives; filed under Background.",
+    apiTryExample: "What time is it now?",
+    apiTryRun: "Run",
+    apiTryStop: "Stop",
+    apiTryFollowUp: "Continue this conversation…",
+    apiTryNewSession: "New conversation",
+    apiTryRendered: "Rendered",
+    apiTryRaw: "Raw",
+    apiTryCopyRaw: "Copy the raw lines",
+    apiTryEmpty: "The stream shows here once you run.",
+    apiTryStatus: "Status",
+    apiTryRequests: "Requests",
+    apiTryTokens: "Tokens (output / total)",
+    apiTryCacheRead: "Cache read",
+    apiTryCacheWrite: "Cache write",
+    apiTryElapsed: "Elapsed",
+    apiTryStreamBroken: "The stream ended before run.done.",
   },
 
   models: {

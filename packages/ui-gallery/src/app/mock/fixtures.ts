@@ -7,6 +7,7 @@
  * data in step with the app that reads it.
  */
 import type {
+  AgentApiSettings,
   AgentConfigResponse,
   AgentSummary,
   BenchmarkCaseSummary,
@@ -56,6 +57,8 @@ import {
   presetPromotions,
   presetProviderTable,
 } from "../../../../core/dist/state/model-catalog.js";
+// The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
+import type { AmspEvent } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
 import type { Lang } from "./types";
@@ -152,6 +155,8 @@ export interface DemoFixtures {
   update: UpdateCheckResponse;
   memory: Record<string, { overview: MemoryOverviewResponse; files: MemoryFileResponse[] }>;
   vault: Record<string, VaultResponse>;
+  /** Each Agent's public API settings, keyed by Agent id; an Agent missing here never had them set. */
+  agentApi: Record<string, AgentApiSettings>;
   workspace: { entries: Record<string, WorkspaceFileEntry[]>; content: Record<string, string> };
   chatDefaults: ChatDefaultsDto;
   commandPolicy: CommandPolicyDto;
@@ -231,6 +236,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       hookCount: 1,
       pluginUpdates: [{ name: IDS.plugins.registry, version: "2026.09.20.1" }],
       memoryCount: 4,
+      // Its API is on: see `agentApi` below.
+      apiEnabled: true,
     },
     {
       agentId: IDS.agents.notes,
@@ -253,6 +260,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       hookCount: 0,
       pluginUpdates: [],
       memoryCount: 0,
+      apiEnabled: false,
     },
   ];
 
@@ -1276,6 +1284,33 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     [IDS.agents.notes]: { entries: [] },
   };
 
+  // The docs Agent answers programs: one key in daily use, one minted and never used.
+  const agentApi: DemoFixtures["agentApi"] = {
+    [IDS.agents.docs]: {
+      enabled: true,
+      open: false,
+      approvalMode: "allow-all",
+      keys: [
+        {
+          keyId: "kq3VtX9cRb2LmN0a",
+          name: L("文档站检索", "docs-site search"),
+          prefix: "penguin_Zr8kQ2vT",
+          createdBy: user.userId,
+          createdAt: iso(ago(21)),
+          lastUsedAt: iso(ago(0, 12)),
+        },
+        {
+          keyId: "Hc7pW2sYd4EfJ6uB",
+          name: L("每周报告脚本", "weekly report script"),
+          prefix: "penguin_4mGxL7pA",
+          createdBy: user.userId,
+          createdAt: iso(ago(2)),
+          lastUsedAt: null,
+        },
+      ],
+    },
+  };
+
   const file = (name: string, sizeBytes: number, days: number): WorkspaceFileEntry => ({
     name,
     kind: "file",
@@ -1592,6 +1627,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       attachmentTotalMb: 120,
       companyMode: false,
       browserExtensionsEnabled: true,
+      agentApiEnabled: true,
     },
     project,
     members: [
@@ -1620,6 +1656,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     update,
     memory,
     vault,
+    agentApi,
     workspace,
     chatDefaults,
     commandPolicy,
@@ -1630,4 +1667,162 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     usage,
     usageErrors,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The API tab's Try it: one run's AMSP stream
+// ---------------------------------------------------------------------------------------------
+
+/** The Session the demo's Try it runs open. */
+export const TRY_SESSION_ID = "session-2026-10-09-09-30-00-7d2e41c8";
+
+/** `date`'s own format, in UTC: `Fri Oct  9 09:30:00 UTC 2026`. */
+function dateOutput(ms: number): string {
+  const d = new Date(ms);
+  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+  const month = d.toLocaleString("en", { month: "short", timeZone: "UTC" });
+  const date = String(d.getUTCDate()).padStart(2, " ");
+  const time = d.toISOString().slice(11, 19);
+  return `${day} ${month} ${date} ${time} UTC ${d.getUTCFullYear()}`;
+}
+
+/**
+ * The body the try route streams, as `data:` lines and `[DONE]`: the example question answered
+ * by running `date` over two Requests — the tool call's fragments and the complete call, its
+ * result, then the answer's fragments and the complete answer, so the rendered view has
+ * fragments to merge; a run that continues a Session gets one answer in one Request.
+ */
+export function amspTryStream(
+  body: unknown,
+  run: { agent: string; lang: Lang; now: number },
+): string {
+  const { agent, lang, now } = run;
+  const L = <T>(zh: T, en: T): T => (lang === "zh" ? zh : en);
+  const sessionField = (body as { session_id?: unknown } | null)?.session_id;
+  const sessionId = typeof sessionField === "string" ? sessionField : TRY_SESSION_ID;
+  let clock = now;
+  const at = (stepMs: number) => new Date((clock += stepMs)).toISOString();
+  const usage = (output: number, total: number, cacheRead: number) => ({
+    cache_read: cacheRead,
+    cache_write: 0,
+    output,
+    total,
+  });
+  const started: AmspEvent = {
+    type: "run.started",
+    at: at(0),
+    session_id: sessionId,
+    agent,
+  };
+  let events: AmspEvent[];
+  if (typeof sessionField === "string") {
+    const answer = usage(38, 3120, 2944);
+    events = [
+      started,
+      { type: "request.started", at: at(120), request: 1 },
+      {
+        type: "text.done",
+        at: at(1400),
+        role: "assistant",
+        text: L(
+          "演示数据只回答第一个问题；真实的 Agent 会在这里接着同一个会话作答。",
+          "The demo answers only the first question; a real agent would carry on this conversation here.",
+        ),
+        stop_reason: "completed",
+      },
+      { type: "request.done", at: at(20), request: 1, status: "completed", usage: answer },
+      {
+        type: "run.done",
+        at: at(10),
+        status: "completed",
+        requests: 1,
+        usage: answer,
+        session_usage: usage(124, 5848, 5184),
+      },
+    ];
+  } else {
+    const call = usage(31, 1376, 1152);
+    const answer = usage(55, 1352, 1088);
+    const clockText = dateOutput(now + 1900);
+    const answerText = L(
+      `现在是 ${clockText.slice(11, 16)}（UTC），${new Date(now).getUTCFullYear()} 年 ${new Date(now).getUTCMonth() + 1} 月 ${new Date(now).getUTCDate()} 日。`,
+      `It is ${clockText.slice(11, 16)} UTC on ${clockText.slice(0, 10)}, ${new Date(now).getUTCFullYear()}.`,
+    );
+    // The answer as a model streams it: three fragments, then the complete text.
+    const third = Math.ceil(answerText.length / 3);
+    const fragments = [0, 1, 2].map((i) => answerText.slice(i * third, (i + 1) * third));
+    events = [
+      started,
+      {
+        type: "context.opened",
+        at: at(60),
+        session_id: sessionId,
+        provider: "anthropic",
+        model_id: "claude-sonnet-5",
+        context_window: 200000,
+      },
+      {
+        type: "tools.ready",
+        at: at(20),
+        tools: ["exec_command", "read_file", "write_file", "edit_file", "web_fetch"].map(
+          (name) => ({ name, description: "" }),
+        ),
+      },
+      { type: "request.started", at: at(40), request: 1 },
+      {
+        type: "tool_call.delta",
+        at: at(1200),
+        tool_call_id: "toolu_try_date",
+        name: "exec_command",
+        arguments: '{"cmd": ',
+      },
+      {
+        type: "tool_call.delta",
+        at: at(200),
+        tool_call_id: "toolu_try_date",
+        name: "",
+        arguments: '"date"}',
+      },
+      {
+        type: "tool_call.done",
+        at: at(100),
+        tool_call_id: "toolu_try_date",
+        name: "exec_command",
+        arguments: '{"cmd":"date"}',
+        stop_reason: "completed",
+      },
+      {
+        type: "tool_result.done",
+        at: at(260),
+        tool_call_id: "toolu_try_date",
+        output: `${clockText}\n`,
+        stop_reason: "completed",
+      },
+      { type: "request.done", at: at(10), request: 1, status: "completed", usage: call },
+      { type: "request.started", at: at(30), request: 2 },
+      ...fragments.map((text): AmspEvent => ({
+        type: "text.delta",
+        at: at(400),
+        role: "assistant",
+        text,
+      })),
+      {
+        type: "text.done",
+        at: at(10),
+        role: "assistant",
+        text: answerText,
+        stop_reason: "completed",
+      },
+      { type: "request.done", at: at(20), request: 2, status: "completed", usage: answer },
+      {
+        type: "run.done",
+        at: at(10),
+        status: "completed",
+        requests: 2,
+        usage: usage(86, 2728, 2240),
+        session_usage: usage(86, 2728, 2240),
+      },
+    ];
+  }
+  return [...events.map((e) => JSON.stringify(e)), "[DONE]"].map((d) => `data: ${d}\n\n`).join("");
 }

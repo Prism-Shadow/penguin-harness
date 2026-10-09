@@ -359,7 +359,7 @@ The right-click menu replaces the browser's own menu only on conversation rows a
 | --- | --- |
 | Turning hourglass | The Session is running |
 | Squeezing bar | The Session is compacting |
-| Green dot | A run finished that you have not looked at yet |
+| Green dot | A run finished that you have not looked at yet; only on your own conversations, never in **Background** |
 | Small green activity trace | The Session still has background tasks: commands running past their wait time, or background subagents mid-round. The tooltip counts them, such as "2 background tasks" |
 | Amber count | Tool calls waiting for approval |
 | Pin | The conversation is pinned |

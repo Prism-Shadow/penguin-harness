@@ -11,7 +11,7 @@ The CLI is a thin client of the server. Every session-facing command (`run`, `ch
 
 ## Server connection
 
-A CLI that talks to the server on the local machine needs no login. The CLI picks its server in this order, and the first match wins:
+A CLI that talks to the server on the local machine needs no login, except to change an agent's exposure (see [penguin agent api](#penguin-agent-api)). The CLI picks its server in this order, and the first match wins:
 
 1. `--server <url>`: an explicit target.
 2. `PENGUIN_API_URL`: the same, from the environment. Server-driven sessions inject it into every tool subprocess, together with `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID`, so an agent's own `penguin` calls reach the server that runs them.
@@ -19,6 +19,8 @@ A CLI that talks to the server on the local machine needs no login. The CLI pick
 4. Auto-start: the CLI spawns a detached local server on an ephemeral port, waits for it and attaches. The server's output goes to `<root>/logs/server-auto-<date>.log`. If two CLIs race, the losing spawn exits and both attach to the winner.
 
 The CLI authenticates with the local API token. The server writes a fresh token to `<root>/api-token` on every boot (owner-only), and the CLI sends it as `Authorization: Bearer`. `PENGUIN_API_TOKEN` overrides the file. The CLI reads the file only for loopback targets, so a remote `--server` needs `PENGUIN_API_TOKEN` set explicitly. Holding the file grants admin authority by design, because local filesystem access to the data root already does. `penguin server reset-admin-password` relies on the same rule.
+
+A few writes take a person's sign-in instead, such as those that change an agent's exposure (see [penguin agent api](#penguin-agent-api)). The server refuses the token on them with `403` `human_required`, and the CLI then sends that request once more with your sign-in from [`penguin auth login`](#penguin-auth-login) or [`penguin auth token`](#penguin-auth-token), stored in `<root>/cli-session.json` and sent as the session cookie. It does so only for a server on this machine, only when the sign-in itself is to a server on this machine, and never from inside a Session, where the command is an agent's. Every other request carries the token alone.
 
 ## Global conventions
 
@@ -204,7 +206,7 @@ penguin logs 402a2e24 -f
 
 ## penguin agent
 
-`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent.
+`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -223,6 +225,51 @@ Options of `agent create`:
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent api
+
+Manages an agent's [Agent API](/agent-api), the way its **API** tab does: whether programs may call it, keyless access, the approval mode its API conversations start with, and its keys. Any member can run `status` and `keys ls`; the server takes every change from the Project's owner only, and `server` from an admin only.
+
+Every change also takes a person's sign-in. The server refuses the local API token on them with `human_required`, because every agent's commands carry that token and an agent must not expose itself. Run `penguin auth login` once, or `penguin auth token` on the server's machine; outside a Session the CLI then sends a refused change again with that sign-in. Without one, or when the server no longer accepts it, a change prints that hint and exits 1.
+
+```bash
+penguin agent api status        --agent-id <id> [--project-id <id>] [--json] [--server <url>]
+penguin agent api enable        --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
+penguin agent api disable       --agent-id <id> [...]
+penguin agent api set           --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
+penguin agent api keys ls       --agent-id <id> [...]
+penguin agent api keys create   --agent-id <id> --name <name> [...]
+penguin agent api keys rm <keyId> --agent-id <id> [...]
+penguin agent api server on|off [--json] [--server <url>]
+```
+
+| Command | What it does |
+| --- | --- |
+| `status` | Prints whether the API is on, keyless access, the approval mode, the Base URL (the server's address followed by `/api/amsp/v1`), the Agent ID (`<projectId>/<agentId>`), the number of keys and the server-wide switch. `--json` prints `{agent, baseUrl, api, serverEnabled}` |
+| `enable` | Turns the API on; `--open` / `--no-open` and `--approve` set keyless access and the approval mode in the same request. Prints the status it left |
+| `disable` | Turns the API off. Keyless access, the approval mode and the keys are kept. Prints the status it left |
+| `set` | Changes keyless access or the approval mode and leaves the switch as it is. Given neither, it sends nothing and exits non-zero |
+| `keys ls` | Lists the keys: id, name, prefix, created and last used (`never` until a run uses it). `--json` prints the array |
+| `keys create` | Creates a key. The key alone is printed to stdout, and the confirmation to stderr, so `KEY=$(penguin agent api keys create …)` captures exactly the key. It is shown this once. `--json` prints `{key, secret}` |
+| `keys rm` | Deletes a key by its id; a program presenting it is refused from its next request. An unknown id fails with `key_not_found` |
+| `server` | Turns the Agent API on or off for the whole server (`agentApiEnabled`). Off refuses every agent's API requests and keeps their settings and keys. Any state other than `on` or `off` sends nothing and fails |
+
+Options:
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--agent-id <id>` | The agent. Required: unlike other commands, it never falls back to `PENGUIN_AGENT_ID` or `default_agent`, so no agent is exposed by default. | — |
+| `--open` / `--no-open` | Allows keyless access / requires a key (`enable`, `set`). | Unchanged |
+| `--approve <mode>` | The approval mode new API conversations start with; see [Approval modes (--approve)](#approval-modes---approve). A mode that asks sends the question to the calling program (`enable`, `set`). An unknown mode fails before any request. | Unchanged |
+| `--name <name>` | The key's name, 1–64 characters (`keys create`, required). | — |
+| `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
+
+```bash
+penguin auth login
+penguin agent api enable --agent-id helper --approve read-only
+KEY=$(penguin agent api keys create --agent-id helper --name ci)
+penguin agent api status --agent-id helper --json
 ```
 
 ## penguin project
@@ -809,7 +856,7 @@ When run interactively, `login` asks for the account first and then the password
 
 ### penguin auth status / penguin auth logout
 
-The session is stored in `<root>/cli-session.json` with mode 0600. `login` writes it, and so does `token` when a server is running on the data root. `status` reads it. `logout` revokes the session and deletes the file: it tells the server first, so the session ends on the server rather than merely being forgotten locally. If the server cannot be reached, `logout` says so and deletes the local file anyway.
+The session is stored in `<root>/cli-session.json` with mode 0600. `login` writes it, and so does `token` when a server is running on the data root. `status` reads it. Outside a Session, the other commands send it to a server on this machine only to repeat a request the server refused to the local API token with `human_required`; see [Server connection](#server-connection). `logout` revokes the session and deletes the file: it tells the server first, so the session ends on the server rather than merely being forgotten locally. If the server cannot be reached, `logout` says so and deletes the local file anyway.
 
 ## penguin update
 

@@ -4,7 +4,8 @@
  * missing session_meta) all collapse into HttpError(409, session_unrecoverable),
  * preserving the original core message instead of bubbling up as a 500. A Session rebuilt
  * without a Trace records the source this process knows, else the one its row stands for
- * (`company` on the organization runtime's `org` row), else core's default.
+ * (`company` on the organization runtime's `org` row, `api` on the Agent API's `api` row), else
+ * core's default.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -103,7 +104,7 @@ describe("session-loader", () => {
     expect((err as HttpError).code).toBe("workspace_missing");
   });
 
-  it("self-heal rebuild re-records a registry-known source in the fresh session_meta; an unknown one is company on an org row, user on any other", async () => {
+  it("self-heal rebuild re-records a registry-known source in the fresh session_meta; an unknown one is company on an org row, api on an api row, user on any other", async () => {
     // The anthropic pair constructs without a credential (the same pair session-index
     // creates over HTTP); custom/m1 would demand a key at client construction.
     await saveProjectConfig(root, PROJECT, {
@@ -137,15 +138,21 @@ describe("session-loader", () => {
     expect(unknownMeta.payload.source).toBe("user");
     (unknown as unknown as { dispose(): void }).dispose();
 
-    // The same on a row the organization runtime opened (a desk waiting for its first run):
-    // the row says what the Session is, a company Session.
-    const desk = await createCoreSessionLoader(root, new SessionSources()).load({
-      ...healRow,
-      client: "org",
-    });
-    const deskMeta = (desk as unknown as { metaMessage: { payload: { source?: string } } })
-      .metaMessage;
-    expect(deskMeta.payload.source).toBe("company");
-    (desk as unknown as { dispose(): void }).dispose();
+    // The same on a row only the server writes, waiting for its first run: the row says what
+    // the Session is — a company Session on the organization runtime's, an API Session on the
+    // Agent API's.
+    for (const [client, source] of [
+      ["org", "company"],
+      ["api", "api"],
+    ] as const) {
+      const rebuilt = await createCoreSessionLoader(root, new SessionSources()).load({
+        ...healRow,
+        client,
+      });
+      const rebuiltMeta = (rebuilt as unknown as { metaMessage: { payload: { source?: string } } })
+        .metaMessage;
+      expect(rebuiltMeta.payload.source, client).toBe(source);
+      (rebuilt as unknown as { dispose(): void }).dispose();
+    }
   });
 });

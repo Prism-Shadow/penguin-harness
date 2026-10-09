@@ -3,7 +3,7 @@ title: Server API
 description: Reference for the PenguinHarness server's HTTP API, covering authentication, every route group, the SSE streaming protocol and DTO type imports.
 ---
 
-The PenguinHarness server exposes a same-origin HTTP API that the bundled Web App and any other HTTP client use. This page covers authentication first, then the routes grouped by area, each with a route table followed by details, and ends with the SSE streaming protocol. To start the server, see the [Quickstart](/quickstart).
+The PenguinHarness server exposes a same-origin HTTP API that the bundled Web App and any other HTTP client use. This page covers authentication first, then the routes grouped by area, each with a route table followed by details, and ends with the SSE streaming protocol. To start the server, see the [Quickstart](/quickstart). The API that programs outside PenguinHarness call with an agent's key is on its own page, [Agent API](/agent-api).
 
 ## Overview
 
@@ -42,7 +42,7 @@ The API accepts two credentials: a cookie session and the local API token.
 - Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 30 days with sliding renewal.
 - Passwords are stored as scrypt hashes. A session is a row in `auth_sessions`, keyed by the sha256 of a random cookie token; the raw token is never stored. A session survives a restart and renews in place, and logout deletes the row.
 - There is no open registration. At startup the server seeds the built-in admin `admin` with a random password, which it hashes and discards without anyone seeing it. Until a password is set, every start prints a first-login link that claims the account. For automation, `PENGUIN_SEED_ADMIN_PASSWORD` pins a known password instead. An admin creates all other accounts.
-- Same-origin only: no CORS middleware is enabled.
+- Same-origin only: no CORS middleware is enabled, except on the Agent API's `/api/amsp/v1`, which answers a preflight from any origin and sends `Access-Control-Allow-Origin: *` on a request that carries `Authorization`. That group takes neither credential above: a request presents the agent's API key, or none when the agent allows keyless access. See [Agent API](/agent-api).
 - Routes marked admin only answer other users with `403` `admin_required`.
 
 ```bash
@@ -59,6 +59,7 @@ Every protected route also accepts `Authorization: Bearer <token>` with the **lo
 - The server mints a fresh token at every boot and writes it to `<root>/api-token` with owner-only permissions (`0600`). The previous boot's token stops working as soon as the new one is minted.
 - A valid Bearer token authenticates as the built-in `admin`. This is the authorization model by design: local filesystem access to the data root already is admin authority, since whoever can read `api-token` can also read `web.db` next to it. `penguin server reset-admin-password` relies on the same rule.
 - Server-driven sessions inject the current token into every tool subprocess as `PENGUIN_API_TOKEN`, together with `PENGUIN_API_URL`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID`. That is what authorizes an agent's own `penguin` and API calls to reach the server that runs them.
+- The token cannot change an agent's exposure. `PUT …/agents/:agentId/api`, `POST …/api/keys`, `DELETE …/api/keys/:keyId`, `POST …/api/try`, and a `PUT /api/admin/settings` whose body carries `agentApiEnabled` answer it `403` `human_required` and write nothing; they take a cookie session. It is the same refusal the [agent browser](#agent-browser) gives the token for choosing a backend and minting a pairing code. The reads stay open to it. Since every tool subprocess holds the token, an agent could otherwise open itself to the network from its own shell. This narrows the credential an agent is handed; it is not a boundary. A process that runs as the data root's OS account outside the sandbox can mint a session itself with `penguin auth token`. The sandbox is the boundary.
 - SSE endpoints accept the header like any other route. Consume them with `fetch`, not `EventSource`, which cannot send headers.
 - The JSON-only Content-Type check on writes applies to Bearer requests too.
 
@@ -106,11 +107,11 @@ In desktop mode (a server spawned by the desktop app), every route in this group
 
 ## Server Settings (admin only)
 
-Server-wide proxy, attachment, company-mode and Chrome extension settings, and the settings groups plugins declare.
+Server-wide proxy, attachment, company-mode, Chrome extension and Agent API settings, and the settings groups plugins declare.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled}}` |
+| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled, agentApiEnabled}}` |
 | PUT | `/api/admin/settings` | Updates settings; omitted fields keep their current value, and an invalid field rejects the whole PUT. Returns the full updated settings |
 | GET | `/api/admin/settings/proxy-probe` | The reachability probe's targets: `{targets: [{provider, url}]}`. Makes no request |
 | POST | `/api/admin/settings/proxy-probe/:provider` | Probes one target over the server's outbound path, sending no credential: `{probe: {provider, url, outcome, ms, status?}}` |
@@ -166,6 +167,10 @@ Two limits cannot be changed: the number of files per message (20) and the inlin
 ### Chrome extension switch
 
 `browserExtensionsEnabled` is the server's **Allow Chrome extension connections** switch, on by default. Turning it off closes every connected PenguinHarness Browser extension at once (WebSocket close code `4009`), refuses new connections and pairing codes, and makes the Chrome backend unavailable for every user (`extension_disabled`). Pairings are kept, so turning it back on lets the extensions reconnect. See [Agent Browser](#agent-browser).
+
+### Agent API switch
+
+`agentApiEnabled` is the server's **Allow the Agent API** switch, on by default. Off, every request under `/api/amsp/v1` but a CORS preflight is refused with `403` `agent_api_disabled`. Each agent's API switch, approval mode and keys are kept, and the routes under [Agent API settings](#agent-api-settings) keep working. A change applies from the next request, with no restart. Changing it takes a sign-in: the local API token may change every other setting here, but a body that carries `agentApiEnabled` is refused to it with `403` `human_required`, and none of that body's fields is written. Every member reads the switch as `serverEnabled` in an agent's API settings. See [The admin switch](/agent-api#the-admin-switch).
 
 ### Plugin settings
 
@@ -425,6 +430,9 @@ The paths below omit the `/api/projects/:projectId` prefix, except the two globa
 | POST | `/agents/:agentId/hooks/archive` | Installs a hook package from a zip: `{dataBase64, overwrite?}` |
 | GET | `/agents/:agentId/hooks/:name/archive` | Exports an installed hook package as a zip |
 | DELETE | `/agents/:agentId/hooks/:name` | Uninstalls a hook package |
+| GET / PUT | `/agents/:agentId/api` | The agent's API settings: its switch, keyless access, the approval mode and the keys (PUT is owner only) |
+| POST | `/agents/:agentId/api/keys` | Creates an API key: `{name}` → 201 `{key, secret}` (owner only) |
+| DELETE | `/agents/:agentId/api/keys/:keyId` | Deletes an API key (owner only) |
 | GET | `/api/plugins` (global) | The plugin library by category (any signed-in user) |
 | GET | `/api/plugins/:plugin/files` (global) | The files one library plugin ships, as text keyed by path (any signed-in user) |
 
@@ -452,6 +460,38 @@ The paths below omit the `/api/projects/:projectId` prefix, except the two globa
 - `POST …/hooks/archive` expects `hooks.json` and its scripts at the root of the zip or inside one top-level directory, and every listed command must name a file inside the package. Without `overwrite`, an installed package of the same name returns 409 `hook_exists`. The zip that `GET …/hooks/:name/archive` exports can be installed again through this route.
 - `GET /api/plugins` returns every library plugin by category, with its Skills' metadata and hook points.
 - `GET /api/plugins/:plugin/files` returns everything one library plugin ships, as text keyed by path: each Skill's installable `SKILL.md` and reference files under `skills/<name>/`, and the hook scripts under `hooks/`. The plugin detail view's file browser uses it.
+
+### Agent API settings
+
+These routes back the agent's **API** tab and `penguin agent api`. The settings belong to this server and live in its database, outside the Agent State and the Project file, so an agent can neither expose itself nor loosen its own approval mode. Any member reads them. Writes and keys are the Project owner's; a member gets `403` `owner_required`. They also take a sign-in: the local API token gets `403` `human_required`, as described under [Local API token (Bearer)](#local-api-token-bearer).
+
+```ts
+interface AgentApiResponse {
+  api: {
+    enabled: boolean;      // the API tab's switch; off = every /api/amsp/v1 request for the agent is 404 agent_not_found
+    open: boolean;         // keyless access: a request without Authorization is accepted
+    approvalMode: "allow-all" | "deny-all" | "read-only" | "always-ask";
+    keys: AgentApiKeyInfo[];
+  };
+  serverEnabled: boolean;  // the admin's agentApiEnabled, readable by every member
+}
+
+interface AgentApiKeyInfo {
+  keyId: string;
+  name: string;            // 1-64 characters
+  prefix: string;          // the key's first 16 characters
+  createdBy: string;       // the owner who created it
+  createdAt: string;
+  lastUsedAt: string | null; // null until a run authenticates with it
+}
+```
+
+- An agent never configured reads as off, keyed and `allow-all`, with no keys.
+- `PUT …/api` takes `{enabled?, open?, approvalMode?}` and answers the whole `AgentApiResponse`. Omitted fields keep their value, and every field is checked before any is written. Each API Session copies `approvalMode` when it is created, so a change applies to API Sessions created afterwards.
+- `POST …/api/keys` takes `{name}` and answers 201 `{key, secret}`. The `secret`, `penguin_` followed by 43 characters, is in this answer and nowhere else: the server stores its SHA-256 and lists the key by `prefix`.
+- `DELETE …/api/keys/:keyId` answers 204, and the key is refused from its next request. An unknown key returns `404` `key_not_found`.
+- `GET /agents` marks each agent with `apiEnabled`, the same switch, which the Agents page shows as an icon. Deleting an agent deletes its API settings and keys; deleting a Project deletes those of all its agents.
+- What a program does with a key is on [Agent API](/agent-api), and the stream it reads is [AMSP](/amsp).
 
 ## Plugin Registry and Project Plugins
 
@@ -647,7 +687,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 - `excludeOrg=1` leaves an organization's desk, ticket and subagent Sessions out of the page and out of the `counts=1` totals together, which is what development mode's list asks for. Any other value is a 400.
 - On creation, `modelId` and `provider` go together: send the complete pair to pick a model, or omit both to use the Project's default model. Sending only one is a 400.
 - An explicit `workspace` must be an existing directory; it is never created. When omitted, the Workspace is a temporary one created automatically. The approval mode defaults to `allow-all`.
-- `client` is a provenance hint stored on the row: `"cli"` from the CLI, `"web"` by default. The server itself writes `"org"` on an organization's desk and ticket sessions, and a client cannot send that value. Only `excludeOrg` reads it as a filter, and only to drop those rows. An `"org"` row whose Trace records no `source` (written by an older release, or not run yet) reads as a `company` Session.
+- `client` is a provenance hint stored on the row: `"cli"` from the CLI, `"web"` by default. The server itself writes `"org"` on an organization's desk and ticket sessions and `"api"` on a Session an Agent API run created, and a client can send neither. `excludeOrg` reads it to drop the `org` rows, and the Agent API continues only `api` Sessions; see [Agent API](/agent-api#conversations). An `"org"` row whose Trace records no `source` (written by an older release, or not run yet) reads as a `company` Session.
 - A Session's `source` says what kind of conversation it is (see [session_meta](/omni-message#sessionmeta)). Its category follows from it: a `company` Session is in no category, archived or not, so a request with `category`, `workspaceGroup` or `counts=1` leaves it out of the page and every total; only the plain list serves it. Otherwise an archived Session is `archived` whatever its source; a `user` Session is `active`, and an `api`, `schedule`, `subagent` or `cli` Session is `background`. A row whose Trace head has not been read yet carries no `source` and counts as `active`.
 - On creation, `source` accepts only `"cli"`, which `penguin run` sends. Every other source is the server's own to write, and omitting it creates a `user` Session. The retired `"benchmark"` is still accepted, as `"cli"`.
 - `GET /dirs` starts at the home directory when `path` is omitted; an explicit `path` must be absolute. It answers `{path, parent, entries, platform}`: every entry carries its `kind` (`dir` or `file`) and `mtime`, and on Windows an entry the system hides (the hidden attribute: `AppData`, `NTUSER.DAT`) carries `hidden: true`. A bare drive such as `D:` is taken as its root `D:\`. The home request with `places=1` adds what the picker's sidebar shows: `standardFolders` (Desktop, Documents, Downloads and Pictures as the machine resolves them — Windows known folders, Linux XDG user directories — omitted when they could not be read) and `locations` (Windows drives, macOS volumes, the Linux root and its mounts under `/media`, `/run/media` and `/mnt`, each with its `kind` and, when it has one, its `label`). A directory the server may not read answers `403 dir_permission_denied` rather than an empty list — on macOS that is usually a Files and Folders permission the user has not granted.

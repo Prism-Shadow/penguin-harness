@@ -11,7 +11,7 @@ CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`�
 
 ## 服务器连接
 
-与本机服务器通信的 CLI 无需登录。CLI 按以下顺序确定要连接的服务器，命中第一项即停止：
+与本机服务器通信的 CLI 无需登录，只有改变 Agent 的对外暴露时例外（见 [penguin agent api](#penguin-agent-api)）。CLI 按以下顺序确定要连接的服务器，命中第一项即停止：
 
 1. `--server <url>`：显式指定的目标。
 2. `PENGUIN_API_URL`：同样指定目标，但取自环境变量。服务器驱动的会话会把它注入每个工具子进程，同时注入的还有 `PENGUIN_API_TOKEN`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`，这样 Agent 自己调用 `penguin` 时，请求就能到达运行它的那台服务器。
@@ -19,6 +19,8 @@ CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`�
 4. 自动启动：CLI 在临时端口上拉起一个独立运行的本地服务器，等它就绪后接入。服务器输出写入 `<root>/logs/server-auto-<date>.log`。如果两个 CLI 同时抢着启动，落败一方的启动进程会退出，双方都接入先成功的那台。
 
 CLI 使用本地 API token 认证。服务器每次启动都会把一个新 token 写入 `<root>/api-token`（仅所有者可读），CLI 以 `Authorization: Bearer` 的形式发送它。`PENGUIN_API_TOKEN` 优先于这个文件。CLI 只对回环地址目标读取这个文件，因此远程 `--server` 需要显式设置 `PENGUIN_API_TOKEN`。按设计，持有这个文件就等于持有管理员权限——能直接访问数据根目录的本地文件系统，本来就拥有同样的权限。`penguin server reset-admin-password` 依据的也是同一条规则。
+
+少数修改只接受人的登录，例如改变 Agent 对外暴露的修改（见 [penguin agent api](#penguin-agent-api)）。服务器以 `403` `human_required` 拒绝携带 token 的这类请求，CLI 随即改用你通过 [`penguin auth login`](#penguin-auth-login) 或 [`penguin auth token`](#penguin-auth-token) 保存的登录把同一请求再发一次：登录存放在 `<root>/cli-session.json`，以会话 Cookie 发送。CLI 只对本机上的服务器这样做，只在登录的对象本身就是本机服务器时使用，且从不在 Session 内使用——那里的命令属于 Agent。其余请求一律只带 token。
 
 ## 全局约定
 
@@ -204,7 +206,7 @@ penguin logs 402a2e24 -f
 
 ## penguin agent
 
-`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。
+`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。`agent api` 管理 Agent 的 API，见 [penguin agent api](#penguin-agent-api)。
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -223,6 +225,51 @@ penguin agent create --agent-id <id> [options]
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent api
+
+管理 Agent 的 [Agent API](/agent-api)，作用与它的 **API** 标签页相同：是否允许程序调用、无密钥访问、API 会话起始的审批模式，以及密钥。任何成员都能执行 `status` 和 `keys ls`；所有修改，服务器只接受 Project 所有者发起，`server` 只接受管理员发起。
+
+所有修改还需要人的登录。服务器以 `human_required` 拒绝携带本地 API token 的修改：每个 Agent 的命令都带着这个 token，而 Agent 不得自行对外开放。先运行一次 `penguin auth login`，或在服务器本机运行 `penguin auth token`；此后在 Session 之外，被拒的修改会由 CLI 带着这个登录再发一次。没有登录，或服务器不再接受它时，修改命令打印这条提示并以退出码 1 退出。
+
+```bash
+penguin agent api status        --agent-id <id> [--project-id <id>] [--json] [--server <url>]
+penguin agent api enable        --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
+penguin agent api disable       --agent-id <id> [...]
+penguin agent api set           --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
+penguin agent api keys ls       --agent-id <id> [...]
+penguin agent api keys create   --agent-id <id> --name <name> [...]
+penguin agent api keys rm <keyId> --agent-id <id> [...]
+penguin agent api server on|off [--json] [--server <url>]
+```
+
+| 命令 | 作用 |
+| --- | --- |
+| `status` | 打印 API 是否开启、无密钥访问、审批模式、Base URL（服务器地址加上 `/api/amsp/v1`）、Agent ID（`<projectId>/<agentId>`）、密钥数量和服务器总开关。`--json` 打印 `{agent, baseUrl, api, serverEnabled}` |
+| `enable` | 开启 API；`--open` / `--no-open` 和 `--approve` 在同一个请求里设置无密钥访问和审批模式。打印执行后的状态 |
+| `disable` | 关闭 API。无密钥访问、审批模式和密钥都会保留。打印执行后的状态 |
+| `set` | 修改无密钥访问或审批模式，不改变开关。两者都没给时不发送任何请求，以非零码退出 |
+| `keys ls` | 列出密钥：id、名称、前缀、创建时间和最近使用时间（尚未被运行使用时为 `从未`）。`--json` 打印数组 |
+| `keys create` | 新建密钥。stdout 上只有密钥本身，确认信息写到 stderr，所以 `KEY=$(penguin agent api keys create …)` 恰好取到密钥。密钥只显示这一次。`--json` 打印 `{key, secret}` |
+| `keys rm` | 按 id 删除密钥；出示它的程序从下一个请求起即被拒绝。id 不存在时以 `key_not_found` 失败 |
+| `server` | 为整台服务器开启或关闭 Agent API（`agentApiEnabled`）。关闭后所有 Agent 的 API 请求都被拒绝，各 Agent 的设置和密钥保留。`on`、`off` 以外的状态不发送任何请求，直接失败 |
+
+选项：
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--agent-id <id>` | 目标 Agent。必填：与其他命令不同，它不会回退到 `PENGUIN_AGENT_ID` 或 `default_agent`，任何 Agent 都不会因默认值而被对外开放。 | — |
+| `--open` / `--no-open` | 允许无密钥访问 / 要求密钥（`enable`、`set`）。 | 不变 |
+| `--approve <mode>` | 新建 API 会话起始的审批模式，见[审批模式（--approve）](#审批模式--approve)。需要确认时，确认请求发给调用方程序（`enable`、`set`）。模式未知时，在发出任何请求之前失败。 | 不变 |
+| `--name <name>` | 密钥名称，1–64 个字符（`keys create`，必填）。 | — |
+| `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
+
+```bash
+penguin auth login
+penguin agent api enable --agent-id helper --approve read-only
+KEY=$(penguin agent api keys create --agent-id helper --name ci)
+penguin agent api status --agent-id helper --json
 ```
 
 ## penguin project
@@ -809,7 +856,7 @@ penguin auth token                      # no password: minted from this data roo
 
 ### penguin auth status / penguin auth logout
 
-会话保存在 `<root>/cli-session.json`，文件权限为 0600。`login` 写入它；数据根目录上有服务器在运行时，`token` 也会写入。`status` 读取它。`logout` 吊销会话并删除文件：它会先通知服务器，因此会话在服务器端结束，而不只是本地把它忘掉。连不上服务器时，`logout` 会说明情况，然后照样删除本地文件。
+会话保存在 `<root>/cli-session.json`，文件权限为 0600。`login` 写入它；数据根目录上有服务器在运行时，`token` 也会写入。`status` 读取它。在 Session 之外，其他命令只在本机上的服务器以 `human_required` 拒绝本地 API token 时才发送它，用来把被拒的请求再发一次，见[服务器连接](#服务器连接)。`logout` 吊销会话并删除文件：它会先通知服务器，因此会话在服务器端结束，而不只是本地把它忘掉。连不上服务器时，`logout` 会说明情况，然后照样删除本地文件。
 
 ## penguin update
 

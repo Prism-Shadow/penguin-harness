@@ -213,6 +213,70 @@ describe("the mocked API", () => {
     expect(store.f.models.models.find((m) => m.isDefault)?.modelId).toBe("claude-sonnet-5");
   });
 
+  it("keeps an Agent's API settings without reaching into an answer the app already holds", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[1]!.agentId;
+    const before = await api.getAgentApi(project, agent);
+    expect(before.api).toMatchObject({ enabled: false, keys: [] });
+    const on = await api.putAgentApi(project, agent, { enabled: true, approvalMode: "read-only" });
+    expect(on.api).toMatchObject({ enabled: true, approvalMode: "read-only" });
+    expect((await api.listAgents(project)).agents[1]!.apiEnabled).toBe(true);
+    const created = await api.createAgentApiKey(project, agent, { name: "ci" });
+    // The app appends the new key to what it read: the earlier answers must not already hold it.
+    expect(before.api.keys).toEqual([]);
+    expect(on.api.keys).toEqual([]);
+    expect(created.secret.startsWith(created.key.prefix)).toBe(true);
+    await api.deleteAgentApiKey(project, agent, created.key.keyId);
+    expect((await api.getAgentApi(project, agent)).api.keys).toEqual([]);
+  });
+
+  it("tells an Agent's API tab when the admin has turned the Agent API off server-wide", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    expect((await api.getAgentApi(project, agent)).serverEnabled).toBe(true);
+    await api.adminPutSettings({ agentApiEnabled: false });
+    expect((await api.getAgentApi(project, agent)).serverEnabled).toBe(false);
+    expect((await api.putAgentApi(project, agent, { open: true })).serverEnabled).toBe(false);
+  });
+
+  it("streams a Try run as the try route does: the example run, then a continued one", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    /** The body's `data:` payloads, in order. */
+    const payloads = async (res: Response) =>
+      (await res.text())
+        .split("\n\n")
+        .filter((block) => block !== "")
+        .map((block) => block.replace(/^data: /, ""));
+    const typeOf = (payload: string) => (JSON.parse(payload) as { type: string }).type;
+
+    const first = await api.tryAgentApi(project, agent, { input: "What time is it now?" });
+    expect(first.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    const run = await payloads(first);
+    expect(run.at(-1)).toBe("[DONE]");
+    const types = run.slice(0, -1).map(typeOf);
+    expect(types[0]).toBe("run.started");
+    expect(types).toContain("tool_call.done");
+    expect(types).toContain("tool_result.done");
+    expect(types.at(-1)).toBe("run.done");
+
+    const sessionId = (JSON.parse(run[0]!) as { session_id: string }).session_id;
+    const next = await payloads(
+      await api.tryAgentApi(project, agent, { input: "And now?", session_id: sessionId }),
+    );
+    expect(next.slice(0, -1).map(typeOf)).toEqual([
+      "run.started",
+      "request.started",
+      "text.done",
+      "request.done",
+      "run.done",
+    ]);
+    expect(JSON.parse(next[0]!)).toMatchObject({ session_id: sessionId });
+  });
+
   it("serves the group tables a new Project writes, and takes a protocol or a cleared key on any group", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
