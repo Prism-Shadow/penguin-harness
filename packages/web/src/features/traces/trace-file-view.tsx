@@ -584,9 +584,10 @@ export function TraceFileBody({
             Splitting into columns fills the width and keeps it to three rows tall.
             Side by side only where the card itself has the room — it is the container
             queried, not the viewport: the Trace tab is a dock panel, a few hundred pixels
-            wide on a wide screen, where three columns cut every value short. Narrower, the
-            groups stack. */}
-        <div className="grid grid-cols-1 gap-x-6 gap-y-4 @xl:grid-cols-3">
+            wide on a wide screen, where three columns cut every value short. `@2xl` leaves
+            each column about a third wider than its longest label and value need; narrower,
+            the groups stack. */}
+        <div className="grid grid-cols-1 gap-x-6 gap-y-4 @2xl:grid-cols-3">
           {/* Counts */}
           <div>
             {/* Rounds = every round in the file (a compaction round counts as

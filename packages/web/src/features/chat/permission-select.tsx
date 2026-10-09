@@ -302,9 +302,17 @@ export function PermissionSelect({
               <MenuSeparator />
               {/* More…: the presets table and the full settings (masked paths, the temp
                 directory, the backends) are on the Settings page's Sandbox card. Its gear keeps
-                its name in the column the level rows' names start in. */}
+                its name in the column the level rows' names start in — so it is a node, not a
+                registry path: a path is drawn as a decorative mark, which a theme may drop
+                (Console does), and the name would then step out of line. */}
               <MenuItem
-                glyph={ICONS.gear}
+                glyph={
+                  <GlyphIcon
+                    d={ICONS.gear}
+                    size={ICON_SIZE.inlineGlyph}
+                    className="text-fg-subtle"
+                  />
+                }
                 label={P.more}
                 onSelect={() => {
                   setOpen(false);
