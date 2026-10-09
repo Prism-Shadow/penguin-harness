@@ -8,7 +8,8 @@
  *     given), stat-ing only the returned page for fresh sizes, and resolves per group a
  *     display title (sessions DB title, else the registration-time first-prompt
  *     fallback) plus its sidebar category / Workspace and per-category totals. Every
- *     Session is listed whichever client created it.
+ *     Session is listed whichever client created it, but a company Session, which no category
+ *     holds (company mode's own views list it).
  *     The listing consults the sessions table read-only (titles, archived, workspace,
  *     client); discovery itself still comes from the Trace directory tree via the index.
  *   - GET /api/projects/:p/agents/:a/traces/:sessionId/:index (including /analysis, /download) —
@@ -48,13 +49,7 @@ export interface AgentTracesRouteDeps {
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;
 
 /** Accepted `category` query values of the paginated listing (SessionCategory, spelled out for validation — same as the sessions list route). */
-const SESSION_CATEGORIES: readonly SessionCategory[] = [
-  "active",
-  "subagent",
-  "schedule",
-  "benchmark",
-  "archived",
-];
+const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "background", "archived"];
 
 export function agentTracesRoutes(deps: AgentTracesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();

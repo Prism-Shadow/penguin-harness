@@ -141,13 +141,7 @@ const serverRecent = (
           ? -1
           : 0;
 
-const zeroCounts = (): SessionCategoryCounts => ({
-  active: 0,
-  subagent: 0,
-  schedule: 0,
-  benchmark: 0,
-  archived: 0,
-});
+const zeroCounts = (): SessionCategoryCounts => ({ active: 0, background: 0, archived: 0 });
 
 /** One page of an Agent's rows as the list route answers it: order, cursor, filters, counts. */
 function servedPage(rows: readonly SessionInfo[], query: URLSearchParams): Response {
@@ -174,8 +168,10 @@ function servedPage(rows: readonly SessionInfo[], query: URLSearchParams): Respo
     const counts = zeroCounts();
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     for (const s of rows) {
-      counts[sessionCategory(s)] += 1;
-      (workspaceCounts[s.workspace] ??= zeroCounts())[sessionCategory(s)] += 1;
+      const category = sessionCategory(s);
+      if (category === null) continue;
+      counts[category] += 1;
+      (workspaceCounts[s.workspace] ??= zeroCounts())[category] += 1;
     }
     Object.assign(body, { counts, workspaceCounts });
   }
@@ -215,7 +211,7 @@ function session(sessionId: string, over: Partial<SessionInfo> = {}): SessionInf
 const row = (sessionId: string, createdAt: string, agentId = "a1") =>
   session(sessionId, { agentId, createdAt, lastActiveAt: createdAt });
 
-const COUNTS = { active: 1, subagent: 1, schedule: 0, benchmark: 0, archived: 0 };
+const COUNTS = { active: 1, background: 1, archived: 0 };
 
 const page = (
   sessions: SessionInfo[],
@@ -224,7 +220,7 @@ const page = (
 ): SessionsResponse =>
   ({
     sessions,
-    counts: { active, subagent: 0, schedule: 0, benchmark: 0, archived: 0 },
+    counts: { active, background: 0, archived: 0 },
     ...(workspaceCounts === undefined ? {} : { workspaceCounts }),
   }) as SessionsResponse;
 
@@ -415,9 +411,9 @@ describe("the list fetches the user's own rows only", () => {
     const store = boot();
     await store.getState().reload();
     fetch.requests.length = 0;
-    await store.getState().loadMoreFor(["a1"], "subagent");
+    await store.getState().loadMoreFor(["a1"], "background");
     expect(fetch.requests).toHaveLength(1);
-    expect(fetch.requests[0]!.query.get("category")).toBe("subagent");
+    expect(fetch.requests[0]!.query.get("category")).toBe("background");
     expect(fetch.requests[0]!.query.get("excludeOrg")).toBe("1");
   });
 });

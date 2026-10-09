@@ -70,6 +70,7 @@ function metaPayload(over: Partial<SessionMetaPayload> = {}): SessionMetaPayload
     system_prompt: "sp",
     agent_state: "/tmp/a",
     workspace: "/tmp/w",
+    source: "user",
     ...over,
   };
 }

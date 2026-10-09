@@ -3507,10 +3507,15 @@ Benchmark：
     loadMoreSessions: "加载更多会话",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
-      subagent: (n: number) => `子智能体（${n}）`,
-      schedule: (n: number) => `定时任务（${n}）`,
-      benchmark: (n: number) => `评估任务（${n}）`,
+      background: (n: number) => `后台会话（${n}）`,
       archived: (n: number) => `已归档（${n}）`,
+    },
+    /** A Background row's source mark: the program that opened the Session, as its tooltip and hidden text. */
+    sessionSource: {
+      api: "API",
+      schedule: "定时任务",
+      subagent: "子智能体",
+      cli: "CLI",
     },
     /**
      * Tooltip of a folder-only group's header — a group with no active conversation of its

@@ -106,7 +106,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
 
-  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions are never conversations of this list. */
+  /** Newest loaded conversation across the current Project (the user's own only — archived and background rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions are never conversations of this list. */
   const lastSession = useMemo(() => latestConversation(withoutOrgSessions(sessions)), [sessions]);
 
   /** Mirrors Sidebar.openSession: the current Agent follows the opened Session's Agent. */

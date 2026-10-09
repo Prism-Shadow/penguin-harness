@@ -605,6 +605,8 @@ export function orgDeskTranscript(lang: Lang, now: number, ref: ModelRef): Trans
         "You are Release Notes. Draft release notes from the changelog, in both languages.",
       agent_state: `/home/demo/.penguin/data/projects/${IDS.project}/agents/${IDS.agents.notes}/agent_state`,
       workspace: "/home/demo/projects/release-notes",
+      // A desk Session is a person's conversation; its row's `org` client is what marks it.
+      source: "user",
     },
   };
   return {

@@ -365,15 +365,18 @@ The right-click menu replaces the browser's own menu only on conversation rows a
 | Pin | The conversation is pinned |
 | Remote control icon | A messaging connection is enabled for the conversation |
 | Alarm clock | A scheduled task bound to the conversation will still fire; see [Scheduled tasks](/schedules) |
+| Plug, calendar, two robots or `>_` prompt | In the **Background** folder: what opened the Session, the Agent API, a scheduled task's run, a parent agent or `penguin run` |
 
 The background-task mark does not depend on the others: an idle conversation whose dev server is still running keeps it, and it disappears as soon as the last task ends, without a refresh.
 
 ### Folders
 
-Below each group's active conversations are its folders: **Subagents**, **Scheduled**, **Evaluations** and **Archived**, each loading its rows only when opened. When grouped by time, one set of folders covers the whole Project, and **Load more chats** fetches older conversations.
+Below each group's active conversations are its two folders, **Background** and **Archived**, each loading its rows only when opened. When grouped by time, one set of folders covers the whole Project, and **Load more chats** fetches older conversations.
 
-- **Evaluations** holds the Test Sessions an evaluation starts for every case and run, so they do not crowd the tested agent's list. The conversation that **Use** opens in the [Evaluation Center](/evaluation-center) is an ordinary conversation and is not filed there.
-- Opening a subagent, scheduled or evaluation conversation opens its folder.
+- **Background** holds the Sessions a program opened rather than you: those an external program opened through the Agent API, a scheduled task's runs, subagent Sessions, and those `penguin run` created, including the Test Sessions an evaluation starts for every case and run. Each row carries a mark naming its source (API, Scheduled, Subagent or CLI), shown on hover.
+- **Archived** holds every archived conversation, whatever its source.
+- Company mode's desk and ticket Sessions are in none of these, archived or not, in either mode: they are listed only in [company mode](/company-mode)'s own views.
+- Opening a background conversation opens its folder. **Last conversation** and a deleted conversation's successor are only ever your own conversations, never background or company ones.
 - A group with nothing but folder rows, such as an agent that has only run evaluations, starts collapsed and sorts after the other groups (pinned groups excepted), with a dimmed header counting the folded rows. Once you open it, it stays open for that Project.
 
 A group's active conversations, and each open folder, show ten conversations at a time. **Show N more chats** reveals ten more; rows already loaded come first, and more are fetched from the server only when they run out. Once more than ten show, **Show less** folds back to the first ten. With more than ten groups, the list shows ten groups per page, with a pager below it.

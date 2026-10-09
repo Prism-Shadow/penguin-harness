@@ -1,7 +1,8 @@
 /**
  * Server-backed command wiring, driven through `cli()` in-process against the fake
- * server: run (foreground/background/json, goal exit codes and round lines), ls, input
- * (steer vs task), logs, agent ls/create, project ls, cost, schedule ls.
+ * server: run (foreground/background/json, goal exit codes and round lines, the `cli` source
+ * of every Session it creates and the retired `--source`), ls, input (steer vs task), logs,
+ * agent ls/create, project ls, cost, schedule ls.
  */
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -72,6 +73,25 @@ describe("penguin run", () => {
     expect(out()).toContain("hello from the model");
   });
 
+  it("records every Session it creates as a cli Session", async () => {
+    expect(await cli(["run", "-m", "q", "--background"])).toBe(0);
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect(create?.body?.source).toBe("cli");
+  });
+
+  it("accepts the retired --source benchmark as a no-op with a note, and refuses any other value", async () => {
+    expect(await cli(["run", "-m", "q", "--background", "--source", "benchmark"])).toBe(0);
+    expect(stderr.join("")).toContain(t.run.sourceIgnored());
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect(create?.body?.source).toBe("cli");
+
+    stderr.length = 0;
+    expect(await cli(["run", "-m", "q", "--source", "schedule"])).toBe(1);
+    expect(stderr.join("")).toContain("--source");
+    // Refused before anything reached the server: still the one Session from above.
+    expect(server.sessions.size).toBe(1);
+  });
+
   it("--background posts and exits with the session id, no stream", async () => {
     const code = await cli(["run", "-m", "long job", "--background"]);
     expect(code).toBe(0);
@@ -134,16 +154,6 @@ describe("penguin run", () => {
     const session = [...server.sessions.values()][0]!;
     expect(session.patches).toContainEqual({ thinkingLevel: "high" });
     expect("thinkingLevel" in (session.tasks[0] as object)).toBe(false);
-  });
-
-  it("--source benchmark creates the Session as an evaluation's Test Session; a plain run creates it with no origin", async () => {
-    // How agent-evaluation launches each Test Session, then an ordinary run.
-    expect(await cli(["run", "-m", "case 1, run 1", "--source", "benchmark"])).toBe(0);
-    expect(await cli(["run", "-m", "an ordinary task"])).toBe(0);
-    const creates = server.requests.filter(
-      (r) => r.method === "POST" && r.path.endsWith("/sessions"),
-    );
-    expect(creates.map((r) => r.body?.source)).toEqual(["benchmark", undefined]);
   });
 });
 

@@ -43,11 +43,22 @@ interface SessionMetaPayload {
   system_prompt: string;                  // fully assembled, placeholders substituted
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
-  source?: "subagent" | "schedule" | "benchmark"; // spawned by a subagent / a scheduled task / a Benchmark run; absent = user-created
+  source: "user" | "api" | "schedule" | "subagent" | "cli" | "company"; // what kind of conversation this is
 }
 ```
 
 Workspace 在整个 Session 生命周期内不变，模型与系统提示词则按上下文固定：会话内切换模型时，新上下文开在另一个模型上，所用模型只记在这条记录里。
+
+`source` 表示这个 Session 是哪一类会话，同样在整个生命周期内不变：
+
+- `user`：人发起的对话，包括 Web App 的输入框、`penguin chat`，以及分叉出的会话；
+- `api`：外部程序经 Agent API 开出的会话；
+- `schedule`：定时任务的一次运行；
+- `subagent`：`run_subagent` 派生的子会话；
+- `cli`：`penguin run` 创建的会话；
+- `company`：[公司模式](/company-mode)开出的工位会话与工单会话。
+
+旧版本写下的 Trace 可能没有 `source`，读作 `user`；若服务器的索引行表明它由公司模式开出，则读作 `company`。也可能是已停用的 `benchmark`，读作 `cli`。文件本身从不改写。
 
 每个 Trace 文件都以一条 `session_meta` 开头。压缩开启新上下文时，新文件的 `session_meta` 记录的系统提示词，按当时的 Agent State 为这个上下文重新装配（见[上下文压缩](/agent-loop#上下文压缩)）。恢复 Session 时，引擎以最新文件里的 `session_meta` 作为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。
 

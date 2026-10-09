@@ -194,6 +194,7 @@ describe("Session user-prompt hooks", () => {
     system_prompt: "sp",
     agent_state: dir,
     workspace: dir,
+    source: "user",
   });
 
   /** A Trace sink that keeps what it is handed, in order. */

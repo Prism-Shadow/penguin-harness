@@ -18,7 +18,7 @@
  * what that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
  *
  * The conversation is an ordinary Session, listed with the agent's own: only the Test Sessions
- * it starts through `penguin run --source benchmark` are filed under the Evaluations folder.
+ * it starts through `penguin run` (CLI Sessions) are filed under the Background folder.
  */
 import { useEffect, useState } from "react";
 import type {

@@ -6,7 +6,8 @@
  *   draft, wrongly typed, unknown or half fields are dropped and the rest kept (the permission
  *   picks, the paired model references, the AI-prefill mark only as true, the approval mode's
  *   four values, the skills list); a legacy string model id is always dropped, and so is the
- *   evaluation mark an earlier release saved with an Evaluation Center draft.
+ *   evaluation mark (`source: "benchmark"`) an earlier release saved with an Evaluation Center
+ *   draft, so the conversation such a draft creates is an ordinary one.
  * - Saved drafts read back equal; Project and Session drafts, and two users' drafts of the
  *   same Project, never read or overwrite each other (#68); a cleared draft reads as empty.
  * - Dropping the model pin keeps everything else; dropping the `[default_chat]`-seeded

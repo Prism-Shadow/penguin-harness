@@ -573,7 +573,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       L("评估 CASE-001", "Evaluate CASE-001"),
       ago(3),
       {
-        source: "benchmark",
+        // A Test Session the evaluation launched through `penguin run`.
+        source: "cli",
         workspace: `/home/demo/.penguin/data/projects/${IDS.project}/agents/${IDS.agents.docs}/workspaces/case-001`,
       },
     ),
@@ -601,7 +602,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       L("破坏性变更清单", "Breaking changes list"),
       ago(9),
     ),
-    // An organization's desk Session (the durable `org` stamp): reached by its link, never listed.
+    // An organization's desk Session (a company Session, with the durable `org` stamp):
+    // reached by its link, never listed.
     session(
       IDS.sessions.orgDesk,
       IDS.agents.notes,
@@ -611,6 +613,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         workspace: "/home/demo/projects/release-notes",
         lastActiveAt: iso(orgDesk.endedAt),
         client: "org",
+        source: "company",
       },
     ),
   ];

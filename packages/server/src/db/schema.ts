@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   sandbox       TEXT,                                -- the Session's sandbox policy snapshot (JSON SandboxSettings); NULL = legacy row, snapshotted at its next command
   last_active_at TEXT,                               -- last activity this server drove for the session (ISO; stamped once when a run starts and once when it ends, initialized to created_at); monotonic, never moves backwards; NULL only before openDatabase's one-time backfill
   created_at    TEXT NOT NULL
-);                                            -- the subagent/schedule/benchmark SOURCE is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row)
+);                                            -- the Session's SOURCE (user/api/schedule/subagent/cli/company) is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row), read for the source only where the Trace records none ('org' → company)
 CREATE INDEX IF NOT EXISTS idx_sessions_agent_created ON sessions(project_id, agent_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS usage_records (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS trace_sessions (    -- per-session facts read ONCE at
   session_id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,
-  source     TEXT,                           -- session_meta origin: 'subagent' | 'schedule' | 'benchmark' | NULL = user-created (or head not yet readable)
+  source     TEXT,                           -- session_meta source as the head carried it: 'user' | 'api' | 'schedule' | 'subagent' | 'cli' | 'company'; NULL = the head records none (written before the source was required: read as 'company' for an 'org' row, else 'user' — readRecordedSource); 'benchmark' from older rows reads as 'cli' (normalizeSessionSource; meaningless while meta_read = 0)
   workspace  TEXT NOT NULL DEFAULT '',
   title      TEXT,                           -- first-prompt fallback title (sessions.title always wins when present)
   provider   TEXT,                           -- model reference from session_meta: the model the Session was created on (CLI adoption reads it from here, and the runtime's own answer corrects the row at load; NULL = meta unreadable / legacy without provider)

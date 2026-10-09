@@ -5,8 +5,8 @@
  * - The new chat starts on the Project's default Agent while it names a listed Agent, else
  *   default_agent wherever it sits, else the first Agent, else none.
  * - Preparing the draft parks typed text with its selections, then leaves only the model
- *   carry-over and staged skills in the active slot: a text-less draft's other selections
- *   are released, a slot holding nothing it keeps is emptied, and an empty slot is left alone.
+ *   carry-over and staged skills in the active slot: a text-less draft's other selections are
+ *   released, a slot holding nothing it keeps is emptied, and an empty slot is left alone.
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";

@@ -88,9 +88,8 @@ describe("the mocked API", () => {
     expect(first.sessions.length).toBe(3);
     expect(first.counts?.active).toBeGreaterThan(3);
     expect(first.counts?.archived).toBe(1);
-    expect(first.counts?.schedule).toBe(1);
-    expect(first.counts?.subagent).toBe(1);
-    expect(first.counts?.benchmark).toBe(1);
+    // The scheduled, subagent and CLI rows share the Background folder.
+    expect(first.counts?.background).toBe(3);
     expect(first.workspaceCounts).toBeDefined();
     const rest = await api.listSessions(project, agent, {
       offset: 3,
@@ -116,6 +115,17 @@ describe("the mocked API", () => {
     });
     expect(notes.sessions.some((s) => s.client === "org")).toBe(false);
     expect(notes.counts?.active).toBe(notes.sessions.length);
+    // Without the flag too, as the server does: a company Session is in no category, so a
+    // counted page leaves it out; only the plain list serves it.
+    const counted = await api.listSessions(project, store.f.agents[1]!.agentId, {
+      offset: 0,
+      limit: 10,
+      withCounts: true,
+    });
+    expect(counted.sessions.some((s) => s.source === "company")).toBe(false);
+    expect(counted.counts?.active).toBe(counted.sessions.length);
+    const plain = await api.listSessions(project, store.f.agents[1]!.agentId);
+    expect(plain.sessions.some((s) => s.source === "company")).toBe(true);
   });
 
   it("pages the list by last activity with a cursor, as the sidebar asks for it", async () => {

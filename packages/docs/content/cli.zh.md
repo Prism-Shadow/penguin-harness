@@ -52,12 +52,13 @@ penguin run -m <message> [options]
 | `--approve <mode>` | 审批模式；见[审批模式（--approve）](#审批模式--approve)。配合 `--session` 时，以 PATCH 请求更新 Session 固定的审批模式。 | `allow-all` |
 | `--thinking <level>` | 在 Task 开始前固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）。从 Session 的下一次 LLM 请求起生效。 | Session 已固定的等级，否则用 Agent 配置 |
 | `--session <sessionId>` | 复用已有的 Session（完整 id 或唯一片段），而不是新建。不能与 `--workspace` 或模型对同时使用。 | — |
-| `--source <source>` | 把新建的 Session 标记为由 Benchmark 评估创建。取值仅限 `benchmark`，Web App 会把这类 Session 归入会话列表的「评估任务」文件夹。不能与 `--session` 同时使用。 | — |
 | `--background` | 以 POST 提交 Task 后立即退出，打印 session id（`--json` 下为 `{"sessionId"}`）。Task 在服务器上继续运行；可用 `penguin logs -f` 跟踪。 | — |
 | `--timeout <duration>` | 软让出的等待预算；见[全局约定](#全局约定)。不能与 `--background` 同时使用。 | 无限等待 |
 | `--goal [budget]` | 目标模式：消息就是目标，服务器循环执行，直到目标达到终态。可选值是 Token 预算，例如 `500k`。 | — |
 | `--json` | 打印最终的 `{sessionId, status, text}` 对象，取代渲染后的流。`text` 拼接主 Session 的 助手文本消息。 | — |
 | `--server <url>` | 目标服务器；见[服务器连接](#服务器连接)。 | — |
+
+`run` 创建的每个 Session 都是 CLI 会话（`source: "cli"`），Web App 把它列在会话列表的**后台会话**折叠夹里，而不是 Agent 的对话之间。`penguin chat` 创建的是普通对话。旧版评估 Skill 传入的 `--source benchmark` 仍被接受，但会被忽略并给出提示。
 
 `--timeout` 到时后，`run` 打印目前已渲染的内容和一行暗色的仍在运行提示（附 session id），然后退出 0，不中止 Task。`--json` 下则打印 `{sessionId, status: "running", text}`。`--timeout 0` 在 POST 完成后立即返回，`--json` 下打印 `{sessionId, status: "running"}`，不含 `text`。对目标模式运行，最终 JSON 对象里的 `status` 就是目标结果。
 
