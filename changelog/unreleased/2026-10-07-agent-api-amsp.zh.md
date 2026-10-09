@@ -36,13 +36,14 @@ Project 所有者可以把某一个 Agent 开放给 PenguinHarness 之外的程�
 
 ## Web App
 
-- Agent 设置页新增 **API** 标签页：**开启 API 访问**、API 会话的审批模式、可复制的 Base URL 和 Agent ID、只显示一次并可在列表中删除的密钥、带警示的**允许无密钥访问**，以及 curl 和 TypeScript 示例。管理员关闭 Agent API 期间，标签页的开关不可用，并向所有成员说明原因。
+- Agent 设置页新增 **API** 标签页：**开启 API 访问**、API 会话的审批模式、可复制的 Base URL 和 Agent ID、只显示一次并可在列表中删除的密钥、**允许无密钥访问**（打开前先弹出带警示的确认），以及 curl 和 TypeScript 示例。管理员关闭 Agent API 期间，标签页的开关不可用，并向所有成员说明原因。
 - API 标签末尾为所有者增加了**试一试**：输入框预填「现在几点了？」，「运行」经 `POST /api/projects/:projectId/agents/:agentId/api/try` 以所有者的登录身份代替密钥、经同一个处理器发起一次真实的 API 运行，并在一个输出框里按程序会收到的样子显示事件流：标题栏为 `session_id` 与「渲染」/「原始」切换——带行号的逐条目行（同一条目的增量片段合并为拼好的内容，回答即 `text` 行）或带行号的原始 `data:` 行——框底一栏为 `run.done` 的状态、Request 次数、Token（有缓存读写时一并显示）与用时；再次运行即续接该会话，「停止」经会话的中止路由中止，审批模式询问时可在行内作答。
 - 智能体页面为已开启 API 的 Agent 加上 API 图标。**设置 › 服务器**新增 **Agent API** 页，其中是管理员的**允许 Agent API** 开关，关闭前会先确认。
+- 侧边栏**后台会话**折叠夹中的会话（API、定时任务、子智能体与 CLI 会话）运行结束后不再显示未读绿点，只有你自己的对话才显示；运行期间仍显示沙漏。
 
 ## CLI
 
-- `penguin agent api` 在终端里查看和修改 Agent 的 API：`status`、`enable`、`disable` 和 `set`（带 `--open` / `--no-open` 与 `--approve <mode>`）、`keys ls`、`keys create`（stdout 上只有密钥本身）、`keys rm`，以及管理员开关 `server on|off`。`--agent-id` 必填、没有默认值；`status` 向任何成员显示管理员开关。
+- `penguin agent api` 在终端里查看和修改 Agent 的 API：`status`、`enable`、`disable` 和 `set`（带 `--open` / `--no-open` 与 `--approve <mode>`）、`keys ls`、`keys create`（stdout 上只有密钥本身）、`keys rm`，以及管理员开关 `server on|off`。`--agent-id` 必填、没有默认值；`status` 向任何成员显示管理员开关。用 `--open` 开启无密钥访问后，会在 stderr 打印一条警告。
 - CLI 照旧以 `PENGUIN_API_TOKEN` 认证，没有时用 `api-token` 文件。服务器以 `403` `human_required` 拒绝携带该 token 的请求时，CLI 改用人保存的登录——`penguin auth login` 或 `penguin auth token` 写入 `<root>/cli-session.json` 的会话，以会话 Cookie 发送——把同一请求再发一次。只对回环地址上的服务器这样做，只用对回环地址服务器的登录，且从不在 Session 内这样做。`penguin agent api` 的修改命令因此在 `penguin auth login` 之后可用；没有登录或服务器不再接受该登录时，打印应运行的命令并以退出码 1 退出。
 
 ## 文档

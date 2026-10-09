@@ -64,7 +64,7 @@ An API conversation's sandbox comes from the server's new-chat defaults, as for 
 
 ### Keyless access
 
-**Allow keyless access** lets a request without a key run the agent. It is off by default, and a request that presents a key is still checked while it is on.
+**Allow keyless access** lets a request without a key run the agent. It is off by default, and a request that presents a key is still checked while it is on. Switching it on asks first, with the warning below; `penguin agent api enable --open` and `set --open` print the same warning on stderr once it is on.
 
 > [!WARNING]
 > With keyless access on, anything that can reach the server's address can talk to the agent, with the Project's models and credentials. Turn it on only for a server that listens on loopback (`127.0.0.1`).

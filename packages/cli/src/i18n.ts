@@ -230,6 +230,8 @@ export interface Messages {
     apiServerSet(on: boolean): string;
     /** A write refused 403 human_required: it carried the local API token, and no stored sign-in stood in. */
     apiSignInRequired(): string;
+    /** On stderr after `--open` switched keyless access on. */
+    apiOpenWarning(): string;
   };
   /** `penguin project`: project listing. */
   project: {
@@ -1296,6 +1298,8 @@ const en: Messages = {
         : "The Agent API is off for this server: every request is refused; per-agent settings and keys are kept.",
     apiSignInRequired: () =>
       "Sign in first: `penguin auth login` (or `penguin auth token` on the server's machine). The local API token may not change an Agent's exposure.",
+    apiOpenWarning: () =>
+      "Warning: keyless access is on. Anything that can reach this server's address can now talk to the agent without a key, on the Project's models and credentials. Keep it on only for a server that listens on loopback; `--no-open` turns it off.",
   },
   project: {
     desc: "Manage projects",
@@ -2347,6 +2351,8 @@ const zh: Messages = {
         : "这台服务器的 Agent API 已关闭：所有请求均被拒绝，各 Agent 的设置与密钥保留。",
     apiSignInRequired: () =>
       "请先登录：`penguin auth login`（或在服务器本机运行 `penguin auth token`）。本机 API token 不能改变 Agent 的对外暴露。",
+    apiOpenWarning: () =>
+      "警告：已开启无密钥访问。任何能访问此服务器地址的程序现在都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据。仅建议在只监听本机的服务器上保持开启；`--no-open` 可关闭。",
   },
   project: {
     desc: "管理 Project",

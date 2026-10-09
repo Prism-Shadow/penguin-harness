@@ -132,6 +132,9 @@ describe("penguin agent api enable / disable / set", () => {
     expect(text).toMatch(new RegExp(`${t.agent.apiFieldOpen()}\\s+${t.agent.apiYes()}`));
     expect(text).toMatch(new RegExp(`${t.agent.apiFieldApproval()}\\s+read-only`));
     expect(text).toContain("http://127.0.0.1:7399/api/amsp/v1");
+    // Keyless access went on, so stderr carries the warning; stdout stays the status.
+    expect(err()).toContain(t.agent.apiOpenWarning());
+    expect(text).not.toContain(t.agent.apiOpenWarning());
   });
 
   it("disable sends only the switch: keyless access and the mode stay as they were", async () => {
@@ -145,6 +148,7 @@ describe("penguin agent api enable / disable / set", () => {
   it("set sends only what it is given; given nothing it sends nothing and fails", async () => {
     expect(await cli(["agent", "api", "set", "--agent-id", "default_agent", "--no-open"])).toBe(0);
     expect(writes()).toEqual([["PUT", API, { open: false }]]);
+    expect(err()).not.toContain(t.agent.apiOpenWarning());
 
     server.requests.length = 0;
     expect(await cli(["agent", "api", "set", "--agent-id", "default_agent"])).toBe(1);

@@ -5,7 +5,7 @@
  * a member, restores the default command rules, imports a snapshot over an Agent State, lets
  * machines go, stops a running process, restores a workflow revision, runs a plugin's action,
  * clears an organization draft, syncs the model presets, revokes a paired Chrome, turns Chrome
- * extension connections off server-wide, turns an Agent's API off, deletes one of its keys, turns
+ * extension connections off server-wide, turns an Agent's API off, opens it to keyless callers, deletes one of its keys, turns
  * the Agent API off server-wide. Every reference to that function must
  * sit inside a `ConfirmModal`'s `onConfirm`: directly, or in the body of a function that
  * `onConfirm` names. A button wired straight back to the action is one short line in a long
@@ -32,6 +32,7 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/settings/chrome-extension-section.tsx", "switchOffExtensions"],
   ["features/agents/api-tab.tsx", "switchOffAgentApi"],
   ["features/agents/api-tab.tsx", "deleteKey"],
+  ["features/agents/api-tab.tsx", "switchOnKeyless"],
   ["features/settings/agent-api-section.tsx", "switchOffAgentApiServer"],
 ];
 

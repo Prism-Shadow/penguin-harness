@@ -88,6 +88,52 @@ export function agentApiExamples(baseUrl: string, agentRef: string): { curl: str
 const switchOffAgentApi = (projectId: string, agentId: string): Promise<AgentApiResponse> =>
   api.putAgentApi(projectId, agentId, { enabled: false });
 
+/** Opens the Agent to callers without a key. Reached only through the confirm. */
+const switchOnKeyless = (projectId: string, agentId: string): Promise<AgentApiResponse> =>
+  api.putAgentApi(projectId, agentId, { open: true });
+
+/**
+ * The warning before keyless access goes on, in the danger tone: once it is on, anything that
+ * can reach the server talks to the Agent on the Project's models and credentials. Answered yes,
+ * it says the write began, writes the switch on and hands on the outcome. Turning it off needs
+ * no question.
+ */
+export function KeylessOnConfirm({
+  open,
+  projectId,
+  agentId,
+  onClose,
+  onWriting,
+  onSettled,
+}: {
+  open: boolean;
+  projectId: string;
+  agentId: string;
+  onClose: () => void;
+  onWriting: () => void;
+  onSettled: (outcome: AgentApiResponse | { error: unknown }) => void;
+}) {
+  return (
+    <ConfirmModal
+      open={open}
+      title={S.agent.apiOpenTitle}
+      onClose={onClose}
+      onConfirm={() => {
+        onClose();
+        onWriting();
+        switchOnKeyless(projectId, agentId).then(
+          (res) => onSettled(res),
+          (error: unknown) => onSettled({ error }),
+        );
+      }}
+      confirmLabel={S.agent.apiOpenConfirm}
+      cancelLabel={S.common.cancel}
+    >
+      <p className="text-sm text-fg-muted">{S.agent.apiOpenBody}</p>
+    </ConfirmModal>
+  );
+}
+
 /** Deletes one key. Reached only through the confirm. */
 const deleteKey = (projectId: string, agentId: string, keyId: string): Promise<void> =>
   api.deleteAgentApiKey(projectId, agentId, keyId);
@@ -426,6 +472,7 @@ export function ApiTab({
   const [serverEnabled, setServerEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
+  const [confirmKeyless, setConfirmKeyless] = useState(false);
   const [deleting, setDeleting] = useState<AgentApiKeyInfo | null>(null);
   const [draftName, setDraftName] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | undefined>(undefined);
@@ -511,7 +558,10 @@ export function ApiTab({
           else setConfirmOff(true);
         }}
         onApprovalMode={(approvalMode) => void write({ approvalMode })}
-        onToggleOpen={(open) => void write({ open })}
+        onToggleOpen={(open) => {
+          if (open) setConfirmKeyless(true);
+          else void write({ open: false });
+        }}
         onStartKey={() => {
           setDraftName("");
           setDraftError(undefined);
@@ -539,6 +589,20 @@ export function ApiTab({
             setSettings(outcome.api);
             setServerEnabled(outcome.serverEnabled);
             void reloadAgents();
+          } else toastError(apiErrorText(outcome.error));
+          setBusy(false);
+        }}
+      />
+      <KeylessOnConfirm
+        open={confirmKeyless}
+        projectId={projectId}
+        agentId={agentId}
+        onClose={() => setConfirmKeyless(false)}
+        onWriting={() => setBusy(true)}
+        onSettled={(outcome) => {
+          if ("api" in outcome) {
+            setSettings(outcome.api);
+            setServerEnabled(outcome.serverEnabled);
           } else toastError(apiErrorText(outcome.error));
           setBusy(false);
         }}

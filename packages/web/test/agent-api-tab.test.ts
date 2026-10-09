@@ -40,6 +40,7 @@ import type {
 import { Button, CopyButton, Select, ToggleRow } from "@prismshadow/penguin-ui";
 import {
   AgentApiOffConfirm,
+  KeylessOnConfirm,
   ApiTabView,
   DeleteKeyConfirm,
   OneTimeKey,
@@ -257,6 +258,43 @@ describe("turning an Agent's API off", () => {
     await vi.waitFor(() => expect(onSettled).toHaveBeenCalledExactlyOnceWith(stored));
     expect(fetch.requests.map((r) => [r.method, r.path, r.body])).toEqual([
       ["PUT", "/api/projects/demo/agents/coder/api", { enabled: false }],
+    ]);
+  });
+
+  it("hands on a failed write as the failure", async () => {
+    stubFetch(() => apiError(403, "forbidden"));
+    const onSettled = vi.fn();
+    confirm(onSettled).props.onConfirm();
+    await vi.waitFor(() => expect(onSettled).toHaveBeenCalledOnce());
+    expect(onSettled.mock.calls[0]![0]).toHaveProperty("error");
+  });
+});
+
+describe("allowing keyless access", () => {
+  const confirm = (onSettled: (o: unknown) => void, onWriting = noop) =>
+    KeylessOnConfirm({
+      open: true,
+      projectId: "demo",
+      agentId: "coder",
+      onClose: noop,
+      onWriting,
+      onSettled,
+    }) as Confirm;
+
+  it("warns first in the danger tone; answered yes, writes it on and hands on what was stored", async () => {
+    const stored: AgentApiResponse = { api: { ...ON, open: true }, serverEnabled: true };
+    const fetch = stubFetch(() => json(stored));
+    const onWriting = vi.fn();
+    const onSettled = vi.fn();
+    const question = confirm(onSettled, onWriting);
+    expect(question.props.tone).toBeUndefined();
+    expect(question.props.title).toBe(S.agent.apiOpenTitle);
+    expect(fetch.requests).toEqual([]);
+    question.props.onConfirm();
+    expect(onWriting).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(onSettled).toHaveBeenCalledExactlyOnceWith(stored));
+    expect(fetch.requests.map((r) => [r.method, r.path, r.body])).toEqual([
+      ["PUT", "/api/projects/demo/agents/coder/api", { open: true }],
     ]);
   });
 

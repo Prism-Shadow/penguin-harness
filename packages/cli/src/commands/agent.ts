@@ -148,6 +148,9 @@ async function writeSettings(opts: ApiOpts, patch: AgentApiUpdateRequest, t: Mes
   const client = await connect(opts, t);
   const res = await exposureWrite<AgentApiResponse>(client, "PUT", path, patch, t);
   printStatus(client, ref, res, opts.json === true, t);
+  // The Web App asks before keyless access goes on; a terminal has no dialog, so it warns on
+  // stderr once the switch is on (stdout stays the status or the JSON).
+  if (patch.open === true && res.api.open) process.stderr.write(`${t.agent.apiOpenWarning()}\n`);
 }
 
 function registerApiCommands(agent: Command, t: Messages): void {

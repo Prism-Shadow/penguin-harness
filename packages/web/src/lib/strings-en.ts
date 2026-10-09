@@ -1557,6 +1557,10 @@ export const en: Strings = {
     apiOpenHint:
       "Anything that can reach this address can talk to the agent; recommended for loopback use only.",
     apiExamples: "Examples",
+    apiOpenTitle: "Allow keyless access?",
+    apiOpenBody:
+      "Once on, anything that can reach this server's address can talk to this agent without a key, on the Project's models and credentials, with tools run under the API conversations' approval mode. Turn it on only for a server that listens on loopback.",
+    apiOpenConfirm: "Allow anyway",
     apiOffTitle: "Turn API access off?",
     apiOffBody:
       "External programs can no longer talk to this agent. The approval mode and the keys are kept and work again once it is back on.",

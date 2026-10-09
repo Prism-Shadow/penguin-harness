@@ -1602,6 +1602,10 @@ export const zh = {
     apiOpenHint: "任何能访问此地址的程序都能与该 Agent 对话；仅建议本机使用。",
     apiExamples: "示例",
     /** Turning the Agent's API off asks first: every program using it is refused from then on. */
+    apiOpenTitle: "允许无密钥访问？",
+    apiOpenBody:
+      "开启后，任何能访问此服务器地址的程序都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据，工具按 API 会话的审批模式执行。仅建议在只监听本机的服务器上开启。",
+    apiOpenConfirm: "仍然开启",
     apiOffTitle: "关闭 API 访问？",
     apiOffBody: "外部程序会立即无法与此 Agent 对话。审批模式与密钥保留，重新开启后照常可用。",
     apiOff: "关闭",

@@ -68,13 +68,17 @@ export function sessionBackgroundTasks(session: Pick<SessionInfo, "backgroundTas
 /** The subset of a row this function needs (a whole SessionInfo satisfies it). */
 export type SessionActivityRow = Pick<
   SessionInfo,
-  "sessionId" | "status" | "hasTrace" | "lastActiveAt"
+  "sessionId" | "status" | "hasTrace" | "lastActiveAt" | "source"
 >;
 
 /**
  * The glyph one Session ROW draws: `sessionActivity` plus the two things only the list knows —
  * whether the user has looked at this Session since it last ran, and whether it is the
  * conversation currently open.
+ *
+ * Only a person's conversation (`source` `user`, or not yet known) is ever unread. A background
+ * Session — API, scheduled, subagent or CLI — finishes without anyone waiting on it, so its row
+ * shows no "new reply" mark; it still shows when it is running.
  *
  * The open conversation is never unread: the user is looking at it. The chat page reaches the
  * same conclusion by stamping the seen marker once a run settles under the user's eyes, but it
@@ -87,6 +91,7 @@ export function sessionRowActivity(
   activeSessionId: string | null,
 ): SessionActivity {
   const unread =
+    (session.source === undefined || session.source === "user") &&
     session.sessionId !== activeSessionId &&
     isSessionUnread(seen, session.sessionId, session.lastActiveAt);
   return sessionActivity(session.status, session.hasTrace, unread);
