@@ -37,7 +37,11 @@ export interface RunResult {
   requests: number;
 }
 
-/** Folds a run's events, in stream order, into its {@link RunResult}. */
+/**
+ * Folds a run's events, in stream order, into its {@link RunResult}. `AgentClient` uses it; a
+ * program that reads a run's body itself — with its own `fetch`, its own credentials, its own
+ * URL — feeds it what `readSse` yields, parsed, and gets the same result.
+ */
 export class RunCollector {
   #sessionId: string | null = null;
   #done: RunDone | null = null;

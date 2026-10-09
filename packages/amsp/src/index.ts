@@ -6,6 +6,6 @@ export * from "./types.js";
 export { AmspHttpError, AmspStreamError } from "./errors.js";
 export { AgentClient } from "./client.js";
 export type { AgentClientOptions, Run, RunOptions } from "./client.js";
-export { parseArguments } from "./collect.js";
+export { parseArguments, RunCollector } from "./collect.js";
 export type { RunResult } from "./collect.js";
 export { readSse } from "./sse.js";

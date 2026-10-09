@@ -33,6 +33,22 @@ console.log(second.text, second.usage.total);
 - `agent()`, `session(id)`, `abort(id)` and `approve(id, toolCallId, decision)` call the API's other routes; `readSse` is the SSE reader, for a program that reads a run's body itself.
 - Every AMSP event type is exported (`AmspEvent`, `RunDone`, `ToolCallDone`, …). Events of a type the client does not know are passed through.
 
+## The reader without the client
+
+A program that sends the request itself — its own `fetch`, its own credentials or URL — reads the body with `readSse` and folds the events with `RunCollector`, which `AgentClient` uses for `result()`:
+
+```ts
+import { readSse, RunCollector } from "@prismshadow/amsp";
+import type { AmspEvent } from "@prismshadow/amsp";
+
+const collector = new RunCollector();
+for await (const data of readSse(response.body!)) {
+  if (data === "[DONE]") break;
+  collector.add(JSON.parse(data) as AmspEvent);
+}
+const result = collector.result(); // throws AmspStreamError when the stream ended before run.done
+```
+
 ## Documentation
 
 - [Agent API](https://penguin.ooo/docs/agent-api): turning an agent's API on, keys, approval modes, routes, errors, the client in Node and browsers
