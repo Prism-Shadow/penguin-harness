@@ -1,6 +1,6 @@
 ---
 name: agent-initialization
-description: Initialize or extend an Agent from a user requirement - write AGENTS.md, set identity metadata, and create, install or import Skills and hook packages (scripts the harness runs on every prompt, before tool calls, or after a task).
+description: Initialize or extend an Agent from a user requirement - write AGENTS.md, set identity metadata, and create, install or import Skills and hook packages (scripts the harness runs on every prompt, before tool calls, or after a task). For an agent that a program will use, it first asks whether the program embeds the agent with the SDK or calls it over the Agent API.
 ---
 
 # Agent Initialization
@@ -10,6 +10,50 @@ This skill initializes an agent's settings from a user requirement — plain fil
 ## Before you start
 
 If the user's message only invokes this skill (e.g. "use agent-initialization skill") without a concrete requirement, ask the user what agent they want and what it should do. But when the requirement is already concrete — even a single sentence like "an expert that answers questions about X" — do **not** ask follow-up questions: derive the role and rules from that sentence, apply the defaults below, and list your assumptions in the final reply.
+
+One question comes first even then: when the agent is for a program to use, ask how the program reaches it before you create anything (see *An agent for a program*).
+
+## An agent for a program
+
+A program — an app, a service, a bot, a script — reaches a Penguin agent in one of two ways, and they put the agent in different places:
+
+- **The SDK** (`@prismshadow/penguin-core`): the agent is embedded in the program and runs without the Penguin server, on the program's own model key. No Agent is created in this Project; the agent lives in the program's own data directory (see *The embedded agent of an SDK app*). The program gets no server-managed Sessions, no Web App visibility, no approvals UI and no cost center.
+- **The API** (Penguin's Agent API, over AMSP): the program calls an Agent of this Project through the running server, which keeps the conversations in the Agent's Background folder. You create or configure that Agent here as usual; the Project's owner then turns on its API access and creates a key for the program.
+
+Whenever the requested agent is for a program, ask which way before you create anything, even when the requirement is otherwise concrete. It is the one exception to the no-follow-up-questions default above. Do not ask when the user has already chosen ("embed it with the SDK", "call it over the API") or answered earlier in this conversation. An agent that people talk to, in the Web App, the CLI or a Remote-control bot, is not for a program and needs no question.
+
+Ask with one sentence and this choice block, in the user's language, as the end of your reply:
+
+````markdown
+Your program can reach the agent in two ways: embedded with the SDK, or through the Penguin server's Agent API.
+
+```a2ui
+{
+  "type": "choice",
+  "id": "agent-access",
+  "question": "How should the program reach the agent?",
+  "options": [
+    {
+      "label": "SDK: embed the agent",
+      "value": "Use the SDK: embed the agent in the program",
+      "description": "Runs inside the program on its own model key. No Penguin server; nothing appears in the Web App."
+    },
+    {
+      "label": "API: call a Penguin Agent",
+      "value": "Use the Agent API: call a Penguin Agent over AMSP",
+      "description": "Calls an Agent on your Penguin server. You turn on its API access and create a key; its conversations appear in the Web App."
+    }
+  ]
+}
+```
+````
+
+The Web App shows the block as two buttons; the CLI and the messaging channels show it as a numbered list. The answer arrives as the user's next message, in plain text. Then hand over by the way it names:
+
+- **SDK:** build the program with the penguin-sdk skill, and apply this skill to the program's embedded agent instead of creating an Agent here.
+- **API:** create or configure the Agent with the rest of this skill. Never turn on its API access or create its keys yourself: an Agent must not be able to expose itself, and the token in your shell would let `penguin agent api enable` succeed. In your report, give the user the steps. On the Agent's **API** tab (`/agents/<agentId>?tab=api`), turn on **Enable API access**, choose the approval mode for API conversations, and create a key under **Keys**; it is shown once, and the program reads it from `PENGUIN_AGENT_KEY`. Or, in their own terminal, run `penguin agent api enable --agent-id <agentId>` and `penguin agent api keys create --agent-id <agentId> --name <program>`. Name the Agent ID, `<projectId>/<agentId>`, and the Base URL: `http://localhost:7364/api/amsp/v1` on a local server, with `localhost`, not `127.0.0.1`. For the program itself, follow the penguin-sdk skill's API path (`reference/agent-api.md`).
+
+If you do not have the penguin-sdk skill, read it from `default_agent`'s `agent_state/skills/penguin-sdk/`, or ask the user to install the `agent-development` plugin from the Plugins page.
 
 ## Resolve the inherited runtime
 
@@ -70,7 +114,7 @@ Do not register Skills in AGENTS.md; the frontmatter is injected automatically.
 Common library bundles, so you don't under-equip the target:
 
 - **App builder** (builds apps or web frontends): `penguin-sdk`, `web-design`, `unified-llm-api`.
-- **Knowledge expert** (answers questions over a document set): usually **no** harness agent is needed — build a RAG app with the penguin-sdk skill instead, and configure the app's embedded agent (below).
+- **Knowledge expert** (answers questions over a document set): usually a RAG app built with the penguin-sdk skill rather than a harness agent alone. The app reaches its agent by one of the two ways above: on the SDK path, configure the app's embedded agent (below); on the API path, the Agent you create here.
 - **Evaluation loop**: `benchmark-design`, `agent-evaluation`, `agent-optimization`.
 
 When creating a Test Agent, install only the capabilities it needs to solve ordinary tasks.
@@ -165,8 +209,8 @@ Before finishing:
 - confirm every installed hook package has a `hooks.json` that parses, that each command it lists is a file inside the package, and that each script ran by hand exits 0 and prints JSON or nothing;
 - confirm no Agent outside `TARGET` was changed.
 
-Report the target path, whether an existing Agent was configured or a new Agent was created, assumptions, installed Skills and hook packages (for each hook: what it does and at which point it fires), when the change takes effect, the resolved runtime and whether each value was user-specified or inherited, and validation results.
+Report the target path, whether an existing Agent was configured or a new Agent was created, assumptions, installed Skills and hook packages (for each hook: what it does and at which point it fires), when the change takes effect, the resolved runtime and whether each value was user-specified or inherited, and validation results. For an agent that a program uses, also report the way chosen and, on the API path, the owner's steps, the Agent ID and the Base URL.
 
 ## The embedded agent of an SDK app
 
-An app built with the penguin-sdk skill carries its own agent inside the project (`createAgent({ root })` initializes `<app>/penguin_data/default_project/agents/default_agent/` on first run). That directory has exactly the layout described here, and everything in this skill applies to it: write the app's persona into its `agent_state/AGENTS.md` (the penguin-sdk recipe keeps the source of truth in the project's `persona.md` and copies it in during ingest), and set `name`/`description` in its `system_config.yaml` so the app is recognizable. This is how "the app becomes an expert on X": the persona lives in the embedded agent's AGENTS.md, not in application code.
+On the SDK path, an app built with the penguin-sdk skill carries its own agent inside the project (`createAgent({ root })` initializes `<app>/penguin_data/default_project/agents/default_agent/` on first run). That directory has exactly the layout described here, and everything in this skill applies to it: write the app's persona into its `agent_state/AGENTS.md` (the penguin-sdk recipe keeps the source of truth in the project's `persona.md` and copies it in during ingest), and set `name`/`description` in its `system_config.yaml` so the app is recognizable. This is how "the app becomes an expert on X": the persona lives in the embedded agent's AGENTS.md, not in application code.
