@@ -4552,7 +4552,7 @@ Benchmark：
       "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
-    /** The header button and the dialog's title: the one place the page says 评估集, the user's word for it. */
+    /** The header button and the dialog's title: the one place the page uses the user's own word for a Benchmark. */
     importBenchmark: "导入评估集",
     importChatTitle: "推荐：让 Agent 在对话中导入",
     importChatWhy:

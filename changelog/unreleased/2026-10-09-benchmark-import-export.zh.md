@@ -7,7 +7,7 @@
 
 [English](2026-10-09-benchmark-import-export.md)
 
-评估中心新增**导入评估集**（英文为 Import benchmark），Project 的任何成员都可使用；Benchmark 页面新增**导出**。两者搬运的都是 Benchmark 的[包](2026-10-09-benchmark-package.zh.md)——`benchmark.json` 与各个 `CASE-*` 文件夹——从不带分数。
+评估中心新增**导入评估集**，Project 的任何成员都可使用；Benchmark 页面新增**导出**。两者搬运的都是 Benchmark 的[包](2026-10-09-benchmark-package.zh.md)——`benchmark.json` 与各个 `CASE-*` 文件夹——从不带分数。
 
 ## 导入
 

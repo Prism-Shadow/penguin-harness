@@ -7,7 +7,7 @@
 
 [中文版](2026-10-09-benchmark-import-export.zh.md)
 
-The Evaluation Center gained **Import benchmark** (「导入评估集」 in Chinese), open to every member of the Project, and a Benchmark's page gained **Export**. Both move a Benchmark as its [package](2026-10-09-benchmark-package.md), `benchmark.json` and the `CASE-*` folders, and never its scores.
+The Evaluation Center gained **Import benchmark**, open to every member of the Project, and a Benchmark's page gained **Export**. Both move a Benchmark as its [package](2026-10-09-benchmark-package.md), `benchmark.json` and the `CASE-*` folders, and never its scores.
 
 ## Import
 
