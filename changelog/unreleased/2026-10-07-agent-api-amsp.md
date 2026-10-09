@@ -19,7 +19,7 @@ A Project owner could open one agent to programs outside PenguinHarness. A progr
 - A busy conversation answered `409`; a fifth concurrent run of one agent answered `429` `too_many_runs` with `Retry-After: 2`.
 - The CORS preflight was answered for any origin. `Access-Control-Allow-Origin: *` went only on a request carrying `Authorization`, the server-wide `413` and `415` refusals included, so a page on another origin could not drive an agent through keyless access.
 - The administrator's `agentApiEnabled` setting in `/api/admin/settings`, on by default, refused every Agent API request with `403` `agent_api_disabled` when off, keeping the agents' settings and keys.
-- The routes under `/api/projects/:projectId/agents/:agentId/api` let any member read an agent's settings, the administrator's switch included as `serverEnabled`, and let the owner change them and create and delete keys. The agents list carried `apiEnabled`.
+- The routes under `/api/projects/:projectId/agents/:agentId/api` let any member read an agent's settings, the administrator's switch included as `serverEnabled`, and let the owner change them and create and delete keys; `POST …/api/try` ran the agent for the owner's sign-in and streamed the same AMSP response. The agents list carried `apiEnabled`.
 
 ## The AMSP stream
 
@@ -31,11 +31,12 @@ A Project owner could open one agent to programs outside PenguinHarness. A progr
 ## The amsp client
 
 - `@prismshadow/amsp` was a new public package with no runtime dependencies, for Node 24 and browsers. It exported the AMSP wire types, which the server imported, and `AgentClient`.
-- `client.run()` returned a run to iterate for its events, with `session`, `result()` and `abort()`; `client.ask()` returned the result alone. `onApproval` answered approval requests, and without it they were denied. The client also offered `agent()`, `session()`, `abort()` and `approve()`, the `AmspHttpError` and `AmspStreamError` errors, `parseArguments` for a tool call's JSON arguments, and `readSse`, the SSE reader.
+- `client.run()` returned a run to iterate for its events, with `session`, `result()` and `abort()`; `client.ask()` returned the result alone. `onApproval` answered approval requests, and without it they were denied. The client also offered `agent()`, `session()`, `abort()` and `approve()`, the `AmspHttpError` and `AmspStreamError` errors, `parseArguments` for a tool call's JSON arguments, `readSse`, the SSE reader, and `RunCollector`, which folded the events a program read itself into the same result.
 
 ## The Web App
 
 - The agent settings page gained an **API** tab: **Enable API access**, the approval mode for API conversations, the Base URL and Agent ID to copy, keys created with a one-time display and deleted from a list, **Allow keyless access** with its warning, and curl and TypeScript examples. While the administrator had the Agent API off, the tab disabled its switch and said why, to every member.
+- The API tab ended with **Try it**, for the owner: an input prefilled with "What time is it now?" and a Run button that sent one real API run through `POST /api/projects/:projectId/agents/:agentId/api/try` — the owner's sign-in standing in for a key, the same handler behind it — and showed the stream as a program would receive it, as a readable event log or the raw `data:` lines, with the answer, the `run.done` status and usage, and the `session_id`; running again continued that conversation, Stop aborted it through the Session's abort route, and an approval the mode asked for was answered inline.
 - The Agents page marked an agent whose API was on with an API icon. **Settings › Server** gained an **Agent API** page with the administrator's **Allow the Agent API** switch, which asked before turning off.
 
 ## The CLI

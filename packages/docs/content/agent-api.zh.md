@@ -69,6 +69,10 @@ API 会话的沙箱取自服务器的新对话默认值，与其他新对话相�
 
 其他来源的浏览器页面无法使用无密钥访问：服务器不会给不带 `Authorization` 的请求返回 CORS 头。见[在浏览器中](#在浏览器中)。
 
+### 试一试
+
+**API** 标签页的末尾为 Project 所有者提供**试一试**：输入框预填「现在几点了？」，旁边是**运行**。**运行**经 `POST /api/projects/:projectId/agents/:agentId/api/try` 发起一次真实的 API 运行，以你的登录身份代替密钥，背后是同一个处理器，并按程序会收到的样子显示事件流：`session_id`、`run.done` 的状态以及 Request 次数、Token 和用时、回答，还有事件日志，每个事件一行，也可切换为原始的 `data:` 行。默认 Agent 只有执行 `date` 才能知道时间，所以这个示例里能看到一次工具调用和它的结果。再次运行即续接这个会话，正如程序传入 `session_id`；**新会话**另起一个。**停止**经会话的中止路由中止运行，事件流照样以 `run.done` 结束；审批模式需要询问时，该事件所在行会出现**允许**和**拒绝**。开出的会话就是普通的 API 会话，归入**后台会话**折叠夹。管理员关闭 Agent API 期间，**运行**不可用。
+
 ## 用 curl 调用
 
 ```bash
@@ -295,11 +299,16 @@ interface RunResult {
 
 function parseArguments(call: { arguments: string }): Record<string, unknown> | null;
 function readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string>;
+class RunCollector {
+  add(event: AmspEvent): void;
+  readonly finished: boolean;   // run.done has arrived
+  result(): RunResult;          // throws AmspStreamError before run.done
+}
 class AmspHttpError extends Error { status: number; code: string }
 class AmspStreamError extends Error {}
 ```
 
-`readSse` 是客户端自己的 SSE 读取器，导出给自行读取运行响应体的程序：它逐个产出每个事件的数据，`[DONE]` 也包括在内。
+`readSse` 是客户端自己的 SSE 读取器，导出给自行读取运行响应体的程序：它逐个产出每个事件的数据，`[DONE]` 也包括在内。`RunCollector` 把这样的程序解析出的事件归并为 `result()` 返回的那个 `RunResult`。
 
 ## 命令行
 

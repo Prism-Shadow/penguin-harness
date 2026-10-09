@@ -69,6 +69,10 @@ An API conversation's sandbox comes from the server's new-chat defaults, as for 
 
 A browser page on another origin cannot use keyless access: the server sends no CORS header on a request without `Authorization`. See [In a browser](#in-a-browser).
 
+### Try it
+
+The **API** tab ends, for the Project's owner, with **Try it**: an input holding "What time is it now?" and **Run**. **Run** sends one real API run through `POST /api/projects/:projectId/agents/:agentId/api/try`, your sign-in standing in for a key and the same handler behind it, and shows the stream a program would receive: the `session_id`, the `run.done` status with the Request count, tokens and elapsed time, the answer, and the events, one line each or as the raw `data:` lines. The default agent can tell the time only by running `date`, so the example shows a tool call and its result. Running again continues the conversation, as a program does with `session_id`; **New conversation** starts another. **Stop** aborts the run through the Session's abort route, so the stream still ends with `run.done`, and when the approval mode asks, **Allow** and **Deny** appear on the request's line. The conversation is an ordinary API conversation, filed in the **Background** folder. While the administrator has the Agent API off, **Run** is disabled.
+
 ## Call it with curl
 
 ```bash
@@ -295,11 +299,16 @@ interface RunResult {
 
 function parseArguments(call: { arguments: string }): Record<string, unknown> | null;
 function readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string>;
+class RunCollector {
+  add(event: AmspEvent): void;
+  readonly finished: boolean;   // run.done has arrived
+  result(): RunResult;          // throws AmspStreamError before run.done
+}
 class AmspHttpError extends Error { status: number; code: string }
 class AmspStreamError extends Error {}
 ```
 
-`readSse` is the client's SSE reader, exported for a program that reads a run's body itself: it yields each event's data, `[DONE]` included.
+`readSse` is the client's SSE reader, exported for a program that reads a run's body itself: it yields each event's data, `[DONE]` included. `RunCollector` folds the events such a program parses into the `RunResult` that `result()` returns.
 
 ## From the command line
 

@@ -377,7 +377,7 @@ On each row, the owner can select **Disable** or **Enable**, **Edit**, or **Dele
 
 ## API tab
 
-The **API** tab lets programs outside PenguinHarness talk to the agent over HTTP: **Enable API access**, the **Approval mode for API conversations**, the **Base URL** and **Agent ID** under **Connection**, the **Keys**, **Allow keyless access**, and **Examples** of a call. There is no **Save** button: the switches and the approval mode apply when you change them, and turning the API off or deleting a key asks first. To set it up and call the agent, see [Agent API](/agent-api).
+The **API** tab lets programs outside PenguinHarness talk to the agent over HTTP: **Enable API access**, the **Approval mode for API conversations**, the **Base URL** and **Agent ID** under **Connection**, the **Keys**, **Allow keyless access**, **Examples** of a call, and, for the Project's owner, **Try it**, which runs the agent once through the API and shows the stream a program would receive. There is no **Save** button: the switches and the approval mode apply when you change them, and turning the API off or deleting a key asks first. To set it up and call the agent, see [Agent API](/agent-api).
 
 ## How it works
 

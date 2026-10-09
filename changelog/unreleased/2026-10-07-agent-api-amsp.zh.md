@@ -19,7 +19,7 @@ Project 所有者可以把某一个 Agent 开放给 PenguinHarness 之外的程�
 - 正忙的会话返回 `409`；同一个 Agent 的第五个并发运行返回 `429` `too_many_runs`，并带 `Retry-After: 2`。
 - CORS 预检对任何来源都应答。`Access-Control-Allow-Origin: *` 只在带 `Authorization` 的请求上返回，服务器全局的 `413` 与 `415` 拒绝也不例外，所以其他来源的页面无法借无密钥访问驱动 Agent。
 - 管理员在 `/api/admin/settings` 中的 `agentApiEnabled` 设置缺省开启；关闭后所有 Agent API 请求都以 `403` `agent_api_disabled` 拒绝，各 Agent 的设置与密钥保留。
-- `/api/projects/:projectId/agents/:agentId/api` 下的路由让任何成员读取 Agent 的设置（包括以 `serverEnabled` 给出的管理员开关），让所有者修改设置、创建和删除密钥。Agent 列表带上了 `apiEnabled`。
+- `/api/projects/:projectId/agents/:agentId/api` 下的路由让任何成员读取 Agent 的设置（包括以 `serverEnabled` 给出的管理员开关），让所有者修改设置、创建和删除密钥；`POST …/api/try` 以所有者的登录身份运行 Agent，返回同样的 AMSP 事件流。Agent 列表带上了 `apiEnabled`。
 
 ## AMSP 事件流
 
@@ -31,11 +31,12 @@ Project 所有者可以把某一个 Agent 开放给 PenguinHarness 之外的程�
 ## amsp 客户端
 
 - `@prismshadow/amsp` 是新的公开包，没有运行时依赖，适用于 Node 24 和浏览器。它导出 AMSP 的传输类型（服务器也引用这些类型）和 `AgentClient`。
-- `client.run()` 返回一个可迭代取得事件的运行，带有 `session`、`result()` 和 `abort()`；`client.ask()` 只返回结果。`onApproval` 回答审批请求，没有它时一律拒绝。客户端还提供 `agent()`、`session()`、`abort()` 和 `approve()`，`AmspHttpError` 与 `AmspStreamError` 两种错误，解析工具调用 JSON 参数的 `parseArguments`，以及 SSE 读取器 `readSse`。
+- `client.run()` 返回一个可迭代取得事件的运行，带有 `session`、`result()` 和 `abort()`；`client.ask()` 只返回结果。`onApproval` 回答审批请求，没有它时一律拒绝。客户端还提供 `agent()`、`session()`、`abort()` 和 `approve()`，`AmspHttpError` 与 `AmspStreamError` 两种错误，解析工具调用 JSON 参数的 `parseArguments`、SSE 读取器 `readSse`，以及把程序自行读取的事件归并为同样结果的 `RunCollector`。
 
 ## Web App
 
 - Agent 设置页新增 **API** 标签页：**开启 API 访问**、API 会话的审批模式、可复制的 Base URL 和 Agent ID、只显示一次并可在列表中删除的密钥、带警示的**允许无密钥访问**，以及 curl 和 TypeScript 示例。管理员关闭 Agent API 期间，标签页的开关不可用，并向所有成员说明原因。
+- API 标签末尾为所有者增加了**试一试**：输入框预填「现在几点了？」，「运行」经 `POST /api/projects/:projectId/agents/:agentId/api/try` 以所有者的登录身份代替密钥、经同一个处理器发起一次真实的 API 运行，并按程序会收到的样子显示事件流——可读的事件日志或原始 `data:` 行——以及回答、`run.done` 的状态与用量和 `session_id`；再次运行即续接该会话，「停止」经会话的中止路由中止，审批模式询问时可在行内作答。
 - 智能体页面为已开启 API 的 Agent 加上 API 图标。**设置 › 服务器**新增 **Agent API** 页，其中是管理员的**允许 Agent API** 开关，关闭前会先确认。
 
 ## CLI
