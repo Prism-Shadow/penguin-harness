@@ -3,7 +3,9 @@
  * Every plugin whose files changed since the base commit must carry a new `plugin.json`
  * version. The version is what tells an installed copy it is behind the library (the Agents
  * page's update flag and the plugin library's cards read it), so a content change shipped
- * under the old version is invisible to every user until the next unrelated bump.
+ * under the old version is invisible to every user until the next unrelated bump. The
+ * Benchmarks a new Project is seeded with carry date versions too, kept in core's data; their
+ * rule is SEEDED_BENCHMARKS below.
  *
  * Usage: node scripts/check-plugin-versions.mjs <base-commit>
  * An empty or missing base (a push event, a local run with nothing to compare) passes.
@@ -18,6 +20,54 @@ if (base.trim() === "") {
 }
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" });
+
+/**
+ * The Benchmarks a new Project is seeded with carry date versions too: the example's in
+ * example-benchmark.ts, each built-in's in builtin-benchmarks-data.ts, whose rows
+ * builtin-benchmarks.ts writes into statements. The built-ins are also published as packages in
+ * the benchmark repository, where a version names one exact content. So a change to any of these
+ * files must change at least one of the `version: "YYYY.MM.DD.N"` literals in the file that holds
+ * the versions; a file that did not exist at the base commit is new and passes.
+ */
+const SEEDED_BENCHMARKS = [
+  {
+    sources: ["packages/core/src/state/example-benchmark.ts"],
+    versions: "packages/core/src/state/example-benchmark.ts",
+  },
+  {
+    sources: [
+      "packages/core/src/state/builtin-benchmarks-data.ts",
+      "packages/core/src/state/builtin-benchmarks.ts",
+    ],
+    versions: "packages/core/src/state/builtin-benchmarks-data.ts",
+  },
+];
+const dateVersions = (text) =>
+  [...text.matchAll(/\bversion:\s*"(\d{4}\.\d{2}\.\d{2}\.\d+)"/g)].map((m) => m[1]).join(",");
+const unversioned = [];
+for (const { sources, versions } of SEEDED_BENCHMARKS) {
+  if (git("diff", "--name-only", `${base}...HEAD`, "--", ...sources).trim() === "") continue;
+  let before;
+  try {
+    before = dateVersions(git("show", `${base}:${versions}`));
+  } catch {
+    continue;
+  }
+  let after;
+  try {
+    after = dateVersions(readFileSync(versions, "utf8"));
+  } catch {
+    continue;
+  }
+  if (before === after) unversioned.push(versions);
+}
+if (unversioned.length > 0) {
+  console.error(
+    `benchmark versions: the seeded Benchmarks changed without a new version in ${unversioned.join(", ")}. ` +
+      "Move the version (YYYY.MM.DD.N) of every Benchmark whose files the change alters.",
+  );
+  process.exit(1);
+}
 
 /**
  * What an installed copy actually holds: `installPlugin` writes the plugin's skills and its hook

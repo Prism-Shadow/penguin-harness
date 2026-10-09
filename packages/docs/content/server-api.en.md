@@ -543,15 +543,15 @@ Benchmarks belong to the Project, not to an agent: one Benchmark can evaluate an
 | --- | --- | --- |
 | GET | `/benchmarks` | Benchmark scoring data |
 | POST | `/benchmarks` | Creates a Benchmark by hand (owner only) |
-| DELETE | `/benchmarks/:benchmarkId` | Deletes a Benchmark directory with its cases, config and scoreboard (owner only; 204, or 404 when absent) |
+| DELETE | `/benchmarks/:benchmarkId` | Deletes a Benchmark directory with its cases, manifest and scoreboard (owner only; 204, or 404 when absent) |
 | GET | `/benchmarks/:benchmarkId/cases` | A Benchmark's cases: each case's id and the heading of its statement README. Rubrics are never returned |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files` | Browses one case's `statement/` |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files/content` | Reads one file of the statement (`?path=`, `?preview=1`, `?download=1`) |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files` | Browses one case's `rubric/` |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content` | Reads one file of the rubric, with the same parameters |
 
-- `GET /benchmarks` lists only directories that hold a `benchmark_config.toml`. A directory without one, which is what a Benchmark deleted during an evaluation leaves behind, is skipped. Each entry carries `status`: `draft` while the Skill is still building the Benchmark, `failed` when its calibration never finished, and `published` otherwise.
-- `POST /benchmarks` takes `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}` and answers 201 `{benchmark}`. The server writes `benchmark_config.toml` (with `status = "published"`), a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (with the title as its heading) and `rubric/README.md`. Ids use the same characters as agent ids, and case ids start with `CASE-`. If the directory already exists, the route returns 409 `benchmark_exists`.
+- `GET /benchmarks` lists only directories that hold a `benchmark.json`; one from an earlier release that holds only a `benchmark_config.toml` is converted the first time it is listed. A directory without either, which is what a Benchmark deleted during an evaluation leaves behind, is skipped. Each entry carries `status` (`draft` while the Skill is still building the Benchmark, `failed` when its calibration never finished, and `published` otherwise), the date `version` and the `origin` (`{kind, url?, ref?, path?, importedAt?}`, `kind` one of `builtin`, `manual`, `agent`, `git`, `zip`). A Benchmark whose manifest cannot be read is listed under its directory name, as `published`, without `version` or `origin`.
+- `POST /benchmarks` takes `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}` and answers 201 `{benchmark}`. The server writes `benchmark.json` (`status` `published`, the day's first version, origin `manual`), a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (with the title as its heading) and `rubric/README.md`. Ids use the same characters as agent ids, and case ids start with `CASE-`. If the directory already exists, the route returns 409 `benchmark_exists`.
 - The file-content routes apply the same inline hardening as Workspace files; see [Workspace file responses](#workspace-file-responses).
 
 ## Organizations (company mode)

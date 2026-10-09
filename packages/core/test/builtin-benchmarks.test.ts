@@ -2,9 +2,11 @@
  * The built-in Benchmarks, as a new Project's provisioning writes them.
  *
  * - A new Project's benchmarks/ holds the example and five published built-ins, each with one
- *   run per case, no evaluations and at least one case, and no staging left behind.
- * - Every built-in's config is a plain Benchmark config: title, description, runs and status,
- *   nothing that marks how its cases run.
+ *   run per case, no evaluations and at least one case, and no staging left behind; each is
+ *   written in the package format, a benchmark.json the manifest reader accepts and no legacy
+ *   benchmark_config.toml.
+ * - Every built-in's manifest is a plain Benchmark manifest: its id, title, description, a date
+ *   version, status, runs and origin `builtin`, nothing that marks how its cases run.
  * - Every case is one Harbor task: its directory names the task after `CASE-NNN-` within the
  *   API's id rules; its statement links the task's folder in the repository, the repository's
  *   rules for running a task and the measured results, and launches that same task with its
@@ -25,7 +27,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 import {
   DEFAULT_PROJECT_ID,
@@ -34,6 +35,7 @@ import {
   isValidId,
   loadAgentState,
   provisionProjectBenchmarks,
+  readBenchmarkManifest,
   type BuiltinBenchmark,
 } from "../src/state/index.js";
 import { BUILTIN_BENCHMARKS } from "../src/state/builtin-benchmarks-data.js";
@@ -77,9 +79,10 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+/** The Benchmark's benchmark.json, as the file holds it. */
 async function readConfig(benchmarkId: string): Promise<Record<string, unknown>> {
-  return parseToml(
-    await fs.readFile(path.join(dir(), benchmarkId, "benchmark_config.toml"), "utf8"),
+  return JSON.parse(
+    await fs.readFile(path.join(dir(), benchmarkId, "benchmark.json"), "utf8"),
   ) as Record<string, unknown>;
 }
 
@@ -126,7 +129,7 @@ describe("built-in Benchmarks", () => {
     for (const id of BUILTIN_IDS) {
       const config = await readConfig(id);
       expect(config.status, id).toBe("published");
-      expect(Number(config.runs), id).toBe(1);
+      expect(config.runs, id).toBe(1);
       const scoreboard = parseYaml(
         await fs.readFile(path.join(dir(), id, "scoreboard.yaml"), "utf8"),
       ) as { evaluations: unknown[] };
@@ -135,16 +138,31 @@ describe("built-in Benchmarks", () => {
     }
   });
 
-  it("every built-in's config is a plain Benchmark config: title, description, runs, status and nothing else", async () => {
+  it("every Benchmark a new Project starts with is written in the package format: a manifest the reader accepts, and no legacy config", async () => {
+    await provision();
+
+    for (const id of [EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS]) {
+      const manifest = await readBenchmarkManifest(path.join(dir(), id));
+      expect(manifest?.id, id).toBe(id);
+      expect(await exists(path.join(dir(), id, "benchmark_config.toml")), id).toBe(false);
+    }
+  });
+
+  it("every built-in's manifest is a plain Benchmark manifest, seeded as builtin, with nothing that marks how its cases run", async () => {
     await provision();
 
     for (const id of BUILTIN_IDS) {
-      expect(Object.keys(await readConfig(id)).sort(), id).toEqual([
+      const config = await readConfig(id);
+      expect(Object.keys(config).sort(), id).toEqual([
         "description",
+        "id",
+        "origin",
         "runs",
         "status",
         "title",
+        "version",
       ]);
+      expect(config.origin, id).toEqual({ kind: "builtin" });
     }
   });
 
@@ -242,7 +260,7 @@ describe("built-in Benchmarks", () => {
     const example = path.join(dir(), EXAMPLE_BENCHMARK_ID);
     await fs.mkdir(mine, { recursive: true });
     await fs.mkdir(example, { recursive: true });
-    await fs.writeFile(path.join(mine, "benchmark_config.toml"), 'title = "mine"\n');
+    await fs.writeFile(path.join(mine, "benchmark.json"), '{ "title": "mine" }\n');
     await fs.writeFile(path.join(example, "scoreboard.yaml"), "evaluations:\n  - time: kept\n");
     await backdate(dir());
     const before = await tree(dir());
@@ -251,7 +269,7 @@ describe("built-in Benchmarks", () => {
 
     const after = await tree(dir());
     for (const [file, stamp] of before) expect(after.get(file), file).toEqual(stamp);
-    expect(await fs.readdir(mine)).toEqual(["benchmark_config.toml"]);
+    expect(await fs.readdir(mine)).toEqual(["benchmark.json"]);
     expect(await fs.readdir(example)).toEqual(["scoreboard.yaml"]);
     for (const id of BUILTIN_IDS.slice(1))
       expect((await readConfig(id)).status, id).toBe("published");

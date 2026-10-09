@@ -8,10 +8,11 @@
  * is text only — a statement that summarises the task, links its folder in the repository at
  * the pinned commit and the repository's rules for running a task, and gives the exact Harbor
  * launch with its caps; and a rubric that is the verifier's reward out of 100.
- * `benchmark_config.toml` is a plain Benchmark config (title, description, runs, status) that
- * marks nothing: how a case is run is its statement's to say, and the agent-evaluation Skill
+ * `benchmark.json` is a plain Benchmark manifest (origin `builtin`, the built-in's own version)
+ * that marks nothing: how a case is run is its statement's to say, and the agent-evaluation Skill
  * reads it there. Case directories are `CASE-NNN-<task>`, so the Harbor task name is the case id
- * without its `CASE-NNN-` prefix.
+ * without its `CASE-NNN-` prefix. The same files, minus the scoreboard, are the Benchmark's
+ * package (scripts/benchmark-packages.mjs writes them for the benchmark repository).
  *
  * They are written when a Project is created (project-benchmarks.ts), and a deleted one stays
  * deleted. The cases themselves are data (builtin-benchmarks-data.ts): cutting a Benchmark down
@@ -19,8 +20,8 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { stringify as stringifyToml } from "smol-toml";
 import { stringify as stringifyYaml } from "yaml";
+import { writeBenchmarkManifest, type BenchmarkManifest } from "./benchmark-manifest.js";
 import {
   BENCHMARK_REPO,
   BENCHMARK_REPO_REF,
@@ -54,6 +55,12 @@ export interface BuiltinBenchmark {
   title: string;
   /** Opens with the original benchmark the section is ("Sec A is …"), then what every built-in shares. */
   description: string;
+  /**
+   * The manifest's date version, `YYYY.MM.DD.N`: the revision of what this Benchmark's files say.
+   * Move it on whenever its row, or anything the writer below puts in its files, changes
+   * (scripts/check-plugin-versions.mjs refuses a change to the data without a new version).
+   */
+  version: string;
   /** The benchmark's directory in the benchmark repository, which keeps the source's name: its tasks are `benchmarks/<repoDir>/tasks`. */
   repoDir: string;
   /** The source as the statements name it, e.g. a Harbor Hub dataset and its revision. */
@@ -102,9 +109,17 @@ function shellWord(text: string): string {
   return `'${text.replace(/'/g, "'\\''")}'`;
 }
 
-/** A plain Benchmark config, like any other: nothing in it marks how the cases run. */
-function benchmarkConfig(bench: BuiltinBenchmark): Record<string, unknown> {
-  return { title: bench.title, description: bench.description, runs: 1, status: "published" };
+/** A plain Benchmark manifest, like any other: nothing in it marks how the cases run. */
+function builtinManifest(bench: BuiltinBenchmark): BenchmarkManifest {
+  return {
+    id: bench.id,
+    title: bench.title,
+    description: bench.description,
+    version: bench.version,
+    status: "published",
+    runs: 1,
+    origin: { kind: "builtin" },
+  };
 }
 
 /**
@@ -178,7 +193,7 @@ const RUBRIC = `# Scoring rubric (max 100 points)
 `;
 
 /**
- * Writes one built-in Benchmark — config, an empty scoreboard, and every case's statement
+ * Writes one built-in Benchmark — its manifest, an empty scoreboard, and every case's statement
  * and rubric — into `benchDir`, an existing empty directory. project-benchmarks.ts calls it on a
  * staging directory that it renames into place. Every write settles before a failure is
  * reported, so nothing is still writing into the directory once the caller removes it.
@@ -188,11 +203,7 @@ export async function writeBuiltinBenchmark(
   bench: BuiltinBenchmark,
 ): Promise<void> {
   const results = await Promise.allSettled([
-    fs.writeFile(
-      path.join(benchDir, "benchmark_config.toml"),
-      `${stringifyToml(benchmarkConfig(bench))}\n`,
-      "utf8",
-    ),
+    writeBenchmarkManifest(benchDir, builtinManifest(bench)),
     fs.writeFile(
       path.join(benchDir, "scoreboard.yaml"),
       stringifyYaml({ evaluations: [] }),

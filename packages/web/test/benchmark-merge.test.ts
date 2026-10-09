@@ -108,6 +108,29 @@ describe("mergeBenchmarks", () => {
     expect(merged[0]).toMatchObject({ title: "Here", runs: 3, caseCount: 5 });
   });
 
+  it("keeps the first source's version and origin, and takes them from the next source when the first names none", () => {
+    const OLDER = "olderServerMachine";
+    const merged = mergeBenchmarks([
+      {
+        machineId: null,
+        benchmarks: [benchmark("here", { version: "2026.10.09.2", origin: { kind: "manual" } })],
+      },
+      // A machine whose server predates benchmark.json names no version at all.
+      { machineId: OLDER, benchmarks: [benchmark("here"), benchmark("there")] },
+      {
+        machineId: MACHINE,
+        benchmarks: [
+          benchmark("here", { version: "2026.10.01.1", origin: { kind: "zip" } }),
+          benchmark("there", { version: "2026.10.05.1", origin: { kind: "agent" } }),
+        ],
+      },
+    ]);
+    expect(merged.map((b) => [b.id, b.version, b.origin?.kind])).toEqual([
+      ["here", "2026.10.09.2", "manual"],
+      ["there", "2026.10.05.1", "agent"],
+    ]);
+  });
+
   it("names every Agent either scoreboard tested, in first-seen order", () => {
     const merged = mergeBenchmarks([
       { machineId: null, benchmarks: [benchmark("example", { agentIds: ["a", "b"] })] },

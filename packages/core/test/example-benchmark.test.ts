@@ -2,8 +2,8 @@
  * The example Benchmark, as a new Project's provisioning writes it.
  *
  * - A new Project's provisioning writes the Project-level benchmarks/example-benchmark/: a
- *   parseable config (runs = 2), and a scoreboard with three self-consistent evaluations
- *   labelled with the Agent they tested.
+ *   manifest (runs = 2, published, seeded as builtin, a date version), and a scoreboard with
+ *   three self-consistent evaluations labelled with the Agent they tested.
  * - Benchmarks of the user's own, and a copy at the retired per-agent location, do not stand in
  *   for it, and are left as they are.
  * - No Agent writes it: initializing or loading default_agent leaves a deleted example deleted,
@@ -13,7 +13,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 import {
   DEFAULT_AGENT_ID,
@@ -77,14 +76,18 @@ describe("example benchmark provisioning", () => {
     await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
     const dir = path.join(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID), EXAMPLE_BENCHMARK_ID);
 
-    // benchmark_config.toml: title/description/runs=2/status=published; contains no model
-    // reference (the model is recorded on each evaluation instead).
-    const config = parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8"));
+    // benchmark.json: id/title/description/runs=2/status=published, seeded as builtin with a
+    // date version; contains no model reference (the model is recorded on each evaluation
+    // instead).
+    const config = JSON.parse(await fs.readFile(path.join(dir, "benchmark.json"), "utf8"));
+    expect(config.id).toBe(EXAMPLE_BENCHMARK_ID);
     expect(config.title).toBe("Example Benchmark");
     expect(String(config.description)).toContain("built-in example");
     expect(String(config.description)).toContain("Replace it with your own");
-    expect(Number(config.runs)).toBe(2);
+    expect(config.runs).toBe(2);
     expect(config.status).toBe("published");
+    expect(config.origin).toEqual({ kind: "builtin" });
+    expect(config.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
     expect(config).not.toHaveProperty("provider");
     expect(config).not.toHaveProperty("model_id");
 
@@ -174,13 +177,13 @@ describe("example benchmark provisioning", () => {
     // A default_project adopted from a data root the CLI made can hold Benchmarks of its own
     // and no example.
     await fs.mkdir(path.join(dir, "swe-bench-v1"), { recursive: true });
-    await fs.writeFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), 'title = "mine"\n');
+    await fs.writeFile(path.join(dir, "swe-bench-v1", "benchmark.json"), '{ "title": "mine" }\n');
     await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
     expect(await fs.readdir(dir)).toEqual(
       expect.arrayContaining([EXAMPLE_BENCHMARK_ID, "swe-bench-v1"]),
     );
-    expect(await fs.readFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), "utf8")).toBe(
-      'title = "mine"\n',
+    expect(await fs.readFile(path.join(dir, "swe-bench-v1", "benchmark.json"), "utf8")).toBe(
+      '{ "title": "mine" }\n',
     );
   });
 
@@ -197,7 +200,7 @@ describe("example benchmark provisioning", () => {
     await fs.writeFile(path.join(legacy, "benchmark_config.toml"), 'title = "old"\n');
     await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
     const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
-    expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID, "benchmark_config.toml"))).toBe(true);
+    expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID, "benchmark.json"))).toBe(true);
     // The legacy copy is left exactly as it was.
     expect(await fs.readFile(path.join(legacy, "benchmark_config.toml"), "utf8")).toBe(
       'title = "old"\n',

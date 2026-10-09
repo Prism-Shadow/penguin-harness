@@ -112,11 +112,11 @@ Web App 的[评估中心](/evaluation-center)不需要手写 Prompt，就能启�
 
 ## Benchmark 存储
 
-Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmarks/<id>/`，与 `agents/` 平级。Benchmark 与 Agent 是平级关系，谁也不隶属于谁：一个 Benchmark 可以评估多个 Agent，一个 Agent 也可以接受多个 Benchmark 的评估。因此 `benchmark_config.toml` 不记录任何 Agent，被测的 Agent 记在每一条评估上。
+Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmarks/<id>/`，与 `agents/` 平级。Benchmark 与 Agent 是平级关系，谁也不隶属于谁：一个 Benchmark 可以评估多个 Agent，一个 Agent 也可以接受多个 Benchmark 的评估。因此 `benchmark.json` 不记录任何 Agent，被测的 Agent 记在每一条评估上。
 
 ```text
 <project>/benchmarks/<id>/
-├── benchmark_config.toml       # Benchmark configuration: title, description, runs (Builder runs is fixed at 1), status
+├── benchmark.json              # the manifest: id, title, description, version, status, runs (Builder runs is fixed at 1), origin
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
 │   └── rubric/                 # private scoring rubric, isolated from the Target Agent
@@ -125,7 +125,26 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 
 `rubric/` 与 `statement/` 刻意分开存放：Target Agent 只拿到题干，永远拿不到评分细则。
 
-有 `benchmark_config.toml` 的目录才算 Benchmark：`benchmarks/` 下缺少这个文件的目录不会列出。从未评估过的 Benchmark 照样有配置文件，照常列出。评估还在运行时删除 Benchmark，会留下这样一个没有配置文件的目录，因为运行中的评估还在往原来的路径里写；这种残留目录可以放心手动删除。
+有 `benchmark.json` 的目录才算 Benchmark：`benchmarks/` 下缺少这个文件的目录不会列出。从未评估过的 Benchmark 照样有清单，照常列出。评估还在运行时删除 Benchmark，会留下这样一个没有清单的目录，因为运行中的评估还在往原来的路径里写；这种残留目录可以放心手动删除。
+
+### 清单
+
+`benchmark.json` 描述一个 Benchmark，就像 `plugin.json` 描述一个插件：
+
+| 字段 | 取值 |
+| --- | --- |
+| `id` | 目录名。`id` 与所在目录不符的清单不会被读取 |
+| `title`、`description` | 分别不超过 200 和 2,000 个字符 |
+| `version` | 日期版本 `YYYY.MM.DD.N` |
+| `status` | `draft`、`published` 或 `failed`，见 [Benchmark 状态](#benchmark-状态) |
+| `runs` | 每题运行次数，1 到 1,000 |
+| `origin` | 这份副本的来源：`builtin`（随 Project 预置）、`manual`（手动创建表单）、`agent`（由 `benchmark-design` 写入）、`git`（Agent 从仓库文件夹导入：带 `url`、解析到的 40 位提交 `ref`、`path` 与 `imported_at`）或 `zip`（上传的包：带 `imported_at`） |
+
+凡是 Agent 可能在本地改动的东西都带日期版本，Skill 与 Benchmark 都是如此。新的 Benchmark 从当天的 `.1` 开始，同一天的下一次修订取下一个序号；`benchmark-design` 每次改题或改 `status` 都会递增版本。Benchmark 页面在目录路径旁显示它的版本。
+
+Benchmark 的**包**是 `benchmark.json` 加上各题目录。`scoreboard.yaml`、`.jobs/` 下的 trial、其他以点开头的条目和符号链接都属于这块磁盘上的副本，永远不属于包。原始大文件同样不进包：题干以固定提交的仓库链接引用它们，内置 Benchmark 的题干就是这样写的。五个内置 Benchmark 另以同一格式发布在公开仓库 Prism-Shadow/penguin-harness-benchmark 的 `packages/` 下。
+
+早先版本的 Benchmark 只有 `benchmark_config.toml`。服务端第一次列出它时，在旁边写入对应的 `benchmark.json`，版本取 TOML 最后写入的那一天，此后就读这份清单；TOML 留在原处，供已安装的 agent-tuning 插件还早于清单的 Agent 使用。仍是草稿的 Benchmark，要等它的 TOML 写明已发布或失败后才转换。这一切都无需手动处理。
 
 ### Benchmark 状态
 
@@ -137,7 +156,7 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 | `published` | Formal Baseline 已经记录 | 可以使用 |
 | `failed` | `benchmark-design` 报告了 `calibration_failed` | 遮罩显示为创建失败，并提示删除后重新创建 |
 
-`failed` 的 Benchmark 不能使用。手动创建的 Benchmark、内置示例和内置 Benchmark 一开始就是 `published`。配置里没有这个字段，或者取值既不是 `draft` 也不是 `failed`，都按 `published` 读取。
+`failed` 的 Benchmark 不能使用。手动创建的 Benchmark、内置示例和内置 Benchmark 一开始就是 `published`。服务端读不了的清单（不是合法的 JSON，或某个字段不合规）仍以目录名列出，按 `published` 处理，不显示版本。
 
 ### 评估记录
 

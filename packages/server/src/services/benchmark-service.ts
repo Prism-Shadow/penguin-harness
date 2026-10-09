@@ -1,18 +1,20 @@
 /**
- * Benchmark score reading: walks the Project's `benchmarks/<id>/`, reads
- * `benchmark_config.toml` (title, description, per-case run count `runs`, and the build
- * `status`: `draft` while the Benchmark is still being written, `failed` when its calibration
- * never produced a result to freeze, `published` otherwise) and `scoreboard.yaml`
- * (evaluations[], each carrying the Agent it tested, each case its model-written averages and
- * a runs array).
+ * Benchmark score reading: walks the Project's `benchmarks/<id>/`, reads the manifest
+ * `benchmark.json` (core's readBenchmarkManifest: title, description, per-case run count `runs`,
+ * the build `status` — `draft` while the Benchmark is still being written, `failed` when its
+ * calibration never produced a result to freeze, `published` otherwise — the date `version` and
+ * the `origin`) and `scoreboard.yaml` (evaluations[], each carrying the Agent it tested, each
+ * case its model-written averages and a runs array).
  * Content is normally created and refined by the benchmark-design Skill; the server also
  * writes the same layout for a Benchmark created by hand (`create`) and removes a Benchmark
  * directory whole (`remove`), and never touches a scoreboard. A built-in Benchmark is read like
  * any other: its cases run elsewhere (their statements say how), and the service does not know
  * or care.
- * `benchmark_config.toml` is what makes a directory a Benchmark: `list` skips one without it.
- * Files that are there but corrupt degrade gracefully (title falls back to the directory
- * name, scores come back empty) rather than throwing.
+ * A manifest is what makes a directory a Benchmark: `list` skips one without it. A Benchmark
+ * from before benchmark.json has `benchmark_config.toml` instead, which the read converts
+ * (compat(0.3.0), in core). Files that are there but corrupt degrade gracefully (the title
+ * falls back to the directory name, there is no version, scores come back empty) rather than
+ * throwing.
  *
  * Case and Evaluation averages are authoritative file values. The server validates
  * the current shape but never recomputes aggregates and does not migrate or backfill
@@ -21,16 +23,21 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { benchmarksDir } from "@prismshadow/penguin-core";
+import {
+  benchmarksDir,
+  nextDateVersion,
+  readBenchmarkManifest,
+  writeBenchmarkManifest,
+  type BenchmarkManifest,
+} from "@prismshadow/penguin-core";
 import type {
   BenchmarkCaseScore,
   BenchmarkCaseSummary,
   BenchmarkCasesResponse,
   BenchmarkEvaluation,
+  BenchmarkOrigin,
   BenchmarkRunScore,
-  BenchmarkStatus,
   BenchmarkSummary,
   BenchmarksResponse,
   CaseMaterial,
@@ -65,6 +72,17 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>)
     : {};
+}
+
+/** The manifest's origin as the API carries it: camelCase, like every other DTO field. */
+function originDto(origin: BenchmarkManifest["origin"]): BenchmarkOrigin {
+  return {
+    kind: origin.kind,
+    ...(origin.url !== undefined ? { url: origin.url } : {}),
+    ...(origin.ref !== undefined ? { ref: origin.ref } : {}),
+    ...(origin.path !== undefined ? { path: origin.path } : {}),
+    ...(origin.imported_at !== undefined ? { importedAt: origin.imported_at } : {}),
+  };
 }
 
 function numberOr(v: unknown): number | undefined {
@@ -242,27 +260,23 @@ export class BenchmarkService implements Benchmarks {
     const benchmarks: BenchmarkSummary[] = [];
     for (const item of items.filter((i) => i.isDir).sort((a, b) => a.name.localeCompare(b.name))) {
       const benchDir = path.join(dir, item.name);
-      // Only `benchmark_config.toml` makes a directory a Benchmark — it is the file the
-      // evaluation Skills require, and without it there is no title and no run count. A
-      // Benchmark deleted while an evaluation is still running comes back as the paths that
-      // run keeps writing, config not among them; that debris is not a Benchmark and is not
-      // listed. Absence of results is not absence of a Benchmark: one that has never run has
-      // its config and lists as usual.
-      try {
-        await fs.access(path.join(benchDir, "benchmark_config.toml"));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        continue;
-      }
-      benchmarks.push(await this.readBenchmark(benchDir, item.name));
+      // Only a manifest makes a directory a Benchmark — it is the file the evaluation Skills
+      // require, and without it there is no title and no run count. A Benchmark deleted while an
+      // evaluation is still running comes back as the paths that run keeps writing, manifest not
+      // among them; that debris is not a Benchmark and is not listed, and neither is staging or
+      // the Harbor checkouts, whose names are not ids. Absence of results is not absence of a
+      // Benchmark: one that has never run has its manifest and lists as usual.
+      const manifest = await this.manifestOf(benchDir);
+      if (manifest === null) continue;
+      benchmarks.push(await this.summarize(benchDir, item.name, manifest));
     }
     return { benchmarks };
   }
 
   /**
    * Every id `create` refuses as taken, as names only: each entry under `benchmarks/`. Unlike
-   * `list`, this includes a directory with no `benchmark_config.toml` (the debris of one deleted
-   * mid-evaluation), and it reads no config and no scoreboard.
+   * `list`, this includes a directory with no manifest (the debris of one deleted
+   * mid-evaluation), and it reads no manifest and no scoreboard.
    */
   async takenIds(projectId: string): Promise<string[]> {
     try {
@@ -274,12 +288,13 @@ export class BenchmarkService implements Benchmarks {
   }
 
   /**
-   * Creates `benchmarks/<id>/` in the layout the evaluation Skills read: `benchmark_config.toml`
-   * (title, description, runs, status), `scoreboard.yaml` with an empty evaluations list, and
-   * per case `statement/README.md` (`# <title>`, then the statement) and `rubric/README.md` (the
-   * rubric verbatim). An existing directory is a 409, never merged into: a Benchmark's scores stay
-   * comparable only while its cases are rewritten by nothing but the Skills. A half-written
-   * directory is removed again when a later write fails.
+   * Creates `benchmarks/<id>/` in the layout the evaluation Skills read: `benchmark.json` (title,
+   * description, runs, status `published`, the day's first version, origin `manual`),
+   * `scoreboard.yaml` with an empty evaluations list, and per case `statement/README.md`
+   * (`# <title>`, then the statement) and `rubric/README.md` (the rubric verbatim). An existing
+   * directory is a 409, never merged into: a Benchmark's scores stay comparable only while its
+   * cases are rewritten by nothing but the Skills. A half-written directory is removed again when
+   * a later write fails.
    */
   async create(projectId: string, input: BenchmarkCreateInput): Promise<BenchmarkSummary> {
     const dir = benchmarksDir(this.root, projectId);
@@ -295,22 +310,21 @@ export class BenchmarkService implements Benchmarks {
       }
       throw error;
     }
+    const manifest: BenchmarkManifest = {
+      id: input.id,
+      title: input.title,
+      ...(input.description !== undefined && input.description !== ""
+        ? { description: input.description }
+        : {}),
+      version: nextDateVersion(),
+      // A Benchmark made by hand is complete the moment it is submitted: its cases are written
+      // and frozen, so nothing is left for a Skill to finish.
+      status: "published",
+      runs: input.runs,
+      origin: { kind: "manual" },
+    };
     try {
-      const config = {
-        title: input.title,
-        ...(input.description !== undefined && input.description !== ""
-          ? { description: input.description }
-          : {}),
-        runs: input.runs,
-        // A Benchmark made by hand is complete the moment it is submitted: its cases are
-        // written and frozen, so nothing is left for a Skill to finish.
-        status: "published",
-      };
-      await fs.writeFile(
-        path.join(benchDir, "benchmark_config.toml"),
-        `${stringifyToml(config)}\n`,
-        "utf8",
-      );
+      await writeBenchmarkManifest(benchDir, manifest);
       await fs.writeFile(
         path.join(benchDir, "scoreboard.yaml"),
         stringifyYaml({ evaluations: [] }),
@@ -335,7 +349,7 @@ export class BenchmarkService implements Benchmarks {
       await fs.rm(benchDir, { recursive: true, force: true });
       throw error;
     }
-    return this.readBenchmark(benchDir, input.id);
+    return this.summarize(benchDir, input.id, manifest);
   }
 
   /**
@@ -450,35 +464,43 @@ export class BenchmarkService implements Benchmarks {
     }
   }
 
-  private async readBenchmark(benchDir: string, id: string): Promise<BenchmarkSummary> {
-    // benchmark_config.toml: title, description, per-case run count and build status (falls
-    // back to defaults if corrupt). The model isn't part of the config — each evaluation
-    // carries the Model actually used for that run.
-    let title = id;
-    let description: string | undefined;
-    let runs: number | undefined;
-    let status: BenchmarkStatus = "published";
+  /**
+   * The manifest of `benchDir` (a legacy TOML is converted on the way, in core): null when the
+   * directory is not a Benchmark, undefined when it is one whose manifest cannot be read — not
+   * JSON, a field out of shape, an id that is not its directory's, a TOML that does not parse.
+   * Such a Benchmark is still listed, under its directory name, rather than hidden.
+   */
+  private async manifestOf(benchDir: string): Promise<BenchmarkManifest | null | undefined> {
     try {
-      const config = asRecord(
-        parseToml(await fs.readFile(path.join(benchDir, "benchmark_config.toml"), "utf8")),
-      );
-      if (typeof config.title === "string" && config.title !== "") title = config.title;
-      if (typeof config.description === "string" && config.description !== "") {
-        description = config.description;
-      }
-      const configRuns = numberOr(config.runs);
-      if (configRuns !== undefined && Number.isInteger(configRuns) && configRuns >= 1) {
-        runs = configRuns;
-      }
-      // The two states that make a Benchmark unusable are literal: "draft" while it is still
-      // being built, "failed" when its calibration never produced a result to freeze. A config
-      // written before this field existed has none, and an unrecognized value is neither, so
-      // both read as published.
-      const raw = stringOr(config.status);
-      status = raw === "draft" ? "draft" : raw === "failed" ? "failed" : "published";
+      return await readBenchmarkManifest(benchDir);
     } catch {
-      // Missing or corrupt: title falls back to the directory name.
+      return undefined;
     }
+  }
+
+  private async summarize(
+    benchDir: string,
+    id: string,
+    manifest: BenchmarkManifest | undefined,
+  ): Promise<BenchmarkSummary> {
+    // The manifest: title, description, per-case run count, build status, version and origin.
+    // The model isn't part of it — each evaluation carries the Model actually used for that
+    // run. One that cannot be read lists under the directory name, as published, with neither a
+    // version nor an origin.
+    const described: Pick<
+      BenchmarkSummary,
+      "title" | "description" | "runs" | "status" | "version" | "origin"
+    > =
+      manifest === undefined
+        ? { title: id, status: "published" }
+        : {
+            title: manifest.title,
+            ...(manifest.description !== undefined ? { description: manifest.description } : {}),
+            runs: manifest.runs,
+            status: manifest.status,
+            version: manifest.version,
+            origin: originDto(manifest.origin),
+          };
 
     // scoreboard.yaml: evaluations[] is appended over time; bad entries are dropped one by one.
     let evaluations: BenchmarkEvaluation[] = [];
@@ -506,14 +528,11 @@ export class BenchmarkService implements Benchmarks {
 
     return {
       id,
-      title,
-      ...(description !== undefined ? { description } : {}),
-      ...(runs !== undefined ? { runs } : {}),
-      status,
+      ...described,
       caseCount,
       evaluations,
       // Which Agents this Benchmark has evaluated is a fact of its scoreboard, not of its
-      // config: first-seen order, so the list reads in the order the Agents were tested.
+      // manifest: first-seen order, so the list reads in the order the Agents were tested.
       agentIds: [
         ...new Set(
           evaluations

@@ -3981,24 +3981,50 @@ export interface BenchmarkEvaluation {
  */
 export type BenchmarkStatus = "draft" | "published" | "failed";
 
+/**
+ * Where a Benchmark's copy came from: `builtin` (seeded when the Project was created), `manual`
+ * (the create form), `agent` (the benchmark-design Skill wrote it), `git` (an Agent imported a
+ * repository folder), `zip` (an uploaded package).
+ */
+export type BenchmarkOriginKind = "builtin" | "manual" | "agent" | "git" | "zip";
+
+/** The `origin` of a Benchmark's benchmark.json. */
+export interface BenchmarkOrigin {
+  kind: BenchmarkOriginKind;
+  /** git: the folder link as the user gave it (a GitHub tree URL). Always an http(s) URL. */
+  url?: string;
+  /** git: the 40-hex commit the import resolved the link to. */
+  ref?: string;
+  /** git: the folder inside the repository. */
+  path?: string;
+  /** git / zip: when this copy was written (ISO 8601; `imported_at` in the file). */
+  importedAt?: string;
+}
+
 export interface BenchmarkSummary {
   /** Directory name is the identifier (semantic naming, e.g. swe-bench-v1). */
   id: string;
-  /** Title from benchmark_config.toml; falls back to the directory name if unset. */
+  /** Title from benchmark.json; the directory name when the manifest cannot be read. */
   title: string;
   description?: string;
-  /** Number of runs per case (the `runs` field in benchmark_config.toml, ≥1; defaults to 1). */
+  /** Number of runs per case (the `runs` field in benchmark.json, 1..1000); absent when the manifest cannot be read, which reads as 1. */
   runs?: number;
   /**
    * `draft` while the Skill that builds the Benchmark is still writing its cases and
    * calibrating their difficulty — the Web App masks such a Benchmark; `published` once the
    * Benchmark is frozen and its Formal Baseline recorded; `failed` when calibration ended
    * without a Pilot result that could be frozen, which leaves the Benchmark unusable — the Web
-   * App masks it too and says it has to be deleted and created again. benchmark_config.toml is
-   * read literally: only `draft` is a draft and only `failed` is a failure, so a missing field,
-   * or any other value, reads as published.
+   * App masks it too and says it has to be deleted and created again. benchmark.json must say
+   * one of the three; a Benchmark whose manifest cannot be read lists as published.
    */
   status: BenchmarkStatus;
+  /**
+   * The manifest's date version, `YYYY.MM.DD.N`: the revision of the Benchmark's content. Absent
+   * when the manifest cannot be read, and from a machine whose server predates benchmark.json.
+   */
+  version?: string;
+  /** Where this copy came from; absent with `version`. */
+  origin?: BenchmarkOrigin;
   /** Case count (number of case subfolders). */
   caseCount: number;
   /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */
@@ -4030,10 +4056,11 @@ export interface BenchmarkCasesResponse {
 
 /**
  * POST /api/projects/:p/benchmarks (owner only): create a Benchmark by hand. The
- * server writes the on-disk layout the evaluation Skills read — `benchmark_config.toml`, a
- * `scoreboard.yaml` holding `evaluations: []`, and one `<case id>/` per case with
- * `statement/README.md` and `rubric/README.md`. 409 `benchmark_exists` when the directory is
- * already there; nothing is merged into an existing Benchmark.
+ * server writes the on-disk layout the evaluation Skills read — `benchmark.json` (published,
+ * the day's first version, origin `manual`), a `scoreboard.yaml` holding `evaluations: []`, and
+ * one `<case id>/` per case with `statement/README.md` and `rubric/README.md`. 409
+ * `benchmark_exists` when the directory is already there; nothing is merged into an existing
+ * Benchmark.
  */
 export interface BenchmarkCreateRequest {
   /** Directory name, which is the identifier: letters, digits, `_` and `-` only. */

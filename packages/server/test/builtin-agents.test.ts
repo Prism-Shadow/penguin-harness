@@ -5,9 +5,10 @@
  * Specialized capabilities are now carried by Skills — agent_creator / agent_optimizer
  * are no longer built-in Agents: neither provisioned nor deletion-protected.
  * A new Project also starts with its Benchmarks — the example and the five built-ins, written
- * once when it is created — which the Benchmark API lists as plain published Benchmarks, each
- * case statement saying how the case is run. A default_project adopted at bootstrap keeps the
- * Benchmarks it holds and is given only the missing ones.
+ * once when it is created — which the Benchmark API lists as plain published Benchmarks seeded
+ * as builtin, each with a date version and each case statement saying how the case is run. A
+ * default_project adopted at bootstrap keeps the Benchmarks it holds and is given only the
+ * missing ones.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -156,6 +157,11 @@ describe("built-in Agent provisioning", () => {
         "example-benchmark",
         ...builtins.map((b) => b.id),
       ]);
+      for (const bench of [example, ...builtins]) {
+        // Seeded, at a revision of their own.
+        expect(bench.origin, bench.id).toEqual({ kind: "builtin" });
+        expect(bench.version, bench.id).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
+      }
       for (const bench of builtins) {
         // Read like any Benchmark: nothing in the summary sets a built-in apart.
         expect(Object.keys(bench).sort(), bench.id).toEqual(Object.keys(example).sort());
@@ -194,7 +200,15 @@ describe("built-in Agent provisioning", () => {
       beforeSeed: async (root) => {
         const dir = path.join(benchmarksDir(root, "default_project"), mine);
         await fs.mkdir(dir, { recursive: true });
-        await fs.writeFile(path.join(dir, "benchmark_config.toml"), 'title = "Mine"\n');
+        const manifest = {
+          id: mine,
+          title: "Mine",
+          version: "2026.10.09.1",
+          status: "published",
+          runs: 1,
+          origin: { kind: "agent" },
+        };
+        await fs.writeFile(path.join(dir, "benchmark.json"), JSON.stringify(manifest));
       },
     });
     try {
@@ -207,11 +221,12 @@ describe("built-in Agent provisioning", () => {
       expect(ids.filter((id) => id.startsWith(BUILTIN_PREFIX))).toHaveLength(5);
       expect(body.benchmarks.find((b) => b.id === mine)).toMatchObject({
         title: "Mine",
+        origin: { kind: "agent" },
         caseCount: 0,
       });
       expect(
         await fs.readdir(path.join(benchmarksDir(adopted.root, "default_project"), mine)),
-      ).toEqual(["benchmark_config.toml"]);
+      ).toEqual(["benchmark.json"]);
     } finally {
       await adopted.cleanup();
     }

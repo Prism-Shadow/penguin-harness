@@ -543,15 +543,15 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | --- | --- | --- |
 | GET | `/benchmarks` | Benchmark 的分数数据 |
 | POST | `/benchmarks` | 手动创建 Benchmark（仅所有者） |
-| DELETE | `/benchmarks/:benchmarkId` | 删除 Benchmark 目录，包括其中的题目、配置和计分板（仅所有者；返回 204，不存在时返回 404） |
+| DELETE | `/benchmarks/:benchmarkId` | 删除 Benchmark 目录，包括其中的题目、清单和计分板（仅所有者；返回 204，不存在时返回 404） |
 | GET | `/benchmarks/:benchmarkId/cases` | Benchmark 的题目：每道题的 id 和题干 README 的标题。评分标准永远不会返回 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files` | 浏览一道题的 `statement/` 目录 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files/content` | 读取题干中的一个文件（`?path=`、`?preview=1`、`?download=1`） |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files` | 浏览一道题的 `rubric/` 目录 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content` | 读取评分标准中的一个文件，参数与上一条相同 |
 
-- `GET /benchmarks` 只列出含有 `benchmark_config.toml` 的目录；评估过程中删除 Benchmark 留下的目录没有这个文件，因此不会出现在列表里。每个条目都带 `status`：Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`。
-- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark_config.toml`（其中 `status = "published"`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
+- `GET /benchmarks` 只列出含有 `benchmark.json` 的目录；早先版本只含 `benchmark_config.toml` 的目录在第一次列出时转换。两者都没有的目录（评估过程中删除 Benchmark 留下的就是这种）不会出现在列表里。每个条目都带 `status`（Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`）、日期版本 `version` 与来源 `origin`（`{kind, url?, ref?, path?, importedAt?}`，`kind` 取 `builtin`、`manual`、`agent`、`git`、`zip` 之一）。清单读不了的 Benchmark 以目录名列出，按 `published` 处理，不带 `version` 与 `origin`。
+- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark.json`（`status` 为 `published`、当天的第一个版本、来源 `manual`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
 - 这些读取文件内容的路由采用与 Workspace 文件相同的内联加固；参见 [Workspace 文件响应](#workspace-文件响应)。
 
 ## 组织（公司模式）

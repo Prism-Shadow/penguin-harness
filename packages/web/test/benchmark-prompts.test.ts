@@ -44,7 +44,7 @@ describe("benchmarkCreateTail", () => {
     expect(tail).toContain("`benchmark-design`");
     expect(tail).toContain("`report-writer`");
     expect(tail).toContain("`agent-evaluation`");
-    expect(tail).toContain("benchmark_config.toml");
+    expect(tail).toContain("benchmark.json");
     expect(tail).toContain("scoreboard.yaml");
     // Benchmark design calibrates with one run per case; the tail never asks for another count.
     expect(tail).toContain("runs = 1");
