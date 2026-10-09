@@ -10,7 +10,7 @@
  *
  * Credentials, as the server reads them: a request without one is let through (the token gate
  * above); a Bearer header is the local API token, which the agent API writes and the admin's
- * `agentApiEnabled` refuse with 403 `sign_in_required`; a `penguin_session` cookie is a sign-in,
+ * `agentApiEnabled` refuse with 403 `human_required`; a `penguin_session` cookie is a sign-in,
  * accepted only when it is one of `logins` (401 otherwise). Each request records what it sent.
  *
  * The SSE stream is real: a ReadableStream whose frames follow the server's wire shape
@@ -450,12 +450,12 @@ export class FakeServer {
     return this.error(400, "bad_request", message);
   }
 
-  /** The server's refusal of the local API token on a write that changes an agent's exposure. */
-  private signInRequired(): Response {
+  /** The server's refusal of the local API token on a write only a person may make. */
+  private humanRequired(): Response {
     return this.error(
       403,
-      "sign_in_required",
-      "Changing who can reach an Agent from outside takes a signed-in person (the Web App, or `penguin auth login`); the local API token cannot.",
+      "human_required",
+      "Only the signed-in user can do this, in the app; an API token cannot.",
     );
   }
 
@@ -1829,7 +1829,7 @@ export class FakeServer {
     // An agent's public API settings and keys
     m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/api(\/keys(?:\/([^/]+))?)?$/.exec(apiPath);
     if (m) {
-      if (viaToken && method !== "GET") return this.signInRequired();
+      if (viaToken && method !== "GET") return this.humanRequired();
       return this.handleAgentApi(
         method,
         `${decodeURIComponent(m[1]!)}/${decodeURIComponent(m[2]!)}`,
@@ -1842,7 +1842,7 @@ export class FakeServer {
     if (apiPath === "/api/admin/settings") {
       if (this.adminForbidden) return this.error(403, "forbidden", "Admins only.");
       if (viaToken && method === "PUT" && body?.agentApiEnabled !== undefined) {
-        return this.signInRequired();
+        return this.humanRequired();
       }
       if (method === "PUT") this.adminSettings = { ...this.adminSettings, ...body };
       return this.json({ settings: this.adminSettings });

@@ -22,10 +22,10 @@
  *   from the API tab's settings, on a read and on a write alike.
  * - Given the local API token, the credential every tool subprocess holds: it reads an Agent's
  *   settings and keys, but turning the API on, creating a key, deleting one and Try it are each
- *   403 `sign_in_required` and change nothing, run nothing and create no Session; the owner's
+ *   403 `human_required` and change nothing, run nothing and create no Session; the owner's
  *   sign-in then does each of them.
  * - Given the local API token on the admin settings: it changes every setting but
- *   `agentApiEnabled`; a body carrying that is 403 `sign_in_required` alone, and none of its
+ *   `agentApiEnabled`; a body carrying that is 403 `human_required` alone, and none of its
  *   other fields is written.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -232,9 +232,9 @@ describe("Agent API settings", () => {
   });
 
   /** The answer is a refusal for want of a person's sign-in. */
-  const signInRequired = async (res: Response) => {
+  const humanRequired = async (res: Response) => {
     expect(res.status).toBe(403);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("sign_in_required");
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("human_required");
   };
 
   it("the local API token reads an Agent's API but cannot change it or try it; the owner's sign-in can", async () => {
@@ -247,19 +247,19 @@ describe("Agent API settings", () => {
       return ((await res.json()) as AgentApiResponse).api;
     };
 
-    await signInRequired(await token.put(mine, { enabled: true, open: true }));
+    await humanRequired(await token.put(mine, { enabled: true, open: true }));
     expect(await readByToken()).toMatchObject({ enabled: false, open: false });
     expect((await admin.put(mine, { enabled: true })).status).toBe(200);
     expect(await readByToken()).toMatchObject({ enabled: true, open: false });
 
-    await signInRequired(await token.post(`${mine}/keys`, { name: "carried out" }));
+    await humanRequired(await token.post(`${mine}/keys`, { name: "carried out" }));
     expect((await readByToken()).keys).toEqual([]);
     const created = await admin.post(`${mine}/keys`, { name: "ci" });
     expect(created.status).toBe(201);
     const { key } = (await created.json()) as AgentApiKeyCreateResponse;
     expect((await readByToken()).keys).toEqual([key]);
 
-    await signInRequired(await token.delete(`${mine}/keys/${key.keyId}`));
+    await humanRequired(await token.delete(`${mine}/keys/${key.keyId}`));
     expect((await readByToken()).keys).toEqual([key]);
     expect((await admin.delete(`${mine}/keys/${key.keyId}`)).status).toBe(204);
     expect((await readByToken()).keys).toEqual([]);
@@ -277,8 +277,8 @@ describe("Agent API settings", () => {
       { projectId: "default_project", agentId: "default_agent", client: "api" },
     );
     const sessions = t.deps.sessionsRepo.listByAgent("default_project", "default_agent").length;
-    await signInRequired(await token.post(`${mine}/try`, { input: "hi" }));
-    await signInRequired(await token.post(`${mine}/try`, { session_id: sessionId, input: "hi" }));
+    await humanRequired(await token.post(`${mine}/try`, { input: "hi" }));
+    await humanRequired(await token.post(`${mine}/try`, { session_id: sessionId, input: "hi" }));
     expect(runs).toBe(0);
     expect(t.deps.sessionsRepo.listByAgent("default_project", "default_agent")).toHaveLength(
       sessions,
@@ -302,7 +302,7 @@ describe("Agent API settings", () => {
       expect((await token.put("/api/admin/settings", flipped)).status).toBe(200);
       expect(await read()).toEqual({ ...before, ...flipped });
 
-      await signInRequired(
+      await humanRequired(
         await token.put("/api/admin/settings", {
           agentApiEnabled: !before.agentApiEnabled,
           proxyForAgent: before.proxyForAgent,

@@ -28,7 +28,7 @@ penguin agent api enable --agent-id <agentId> --approve <mode>
 export PENGUIN_AGENT_KEY="$(penguin agent api keys create --agent-id <agentId> --name <program>)"
 ```
 
-`keys create` prints the key alone on stdout, so the variable takes it without showing it. These commands change the Agent's exposure, so they take the user's sign-in: `penguin auth login` once, or `penguin auth token` on the server's machine. From your shell the server refuses them with `403 sign_in_required`. Never sign in or mint a session to get past that.
+`keys create` prints the key alone on stdout, so the variable takes it without showing it. These commands change the Agent's exposure, so they take the user's sign-in: `penguin auth login` once, or `penguin auth token` on the server's machine. From your shell the server refuses them with `403 human_required`. Never sign in or mint a session to get past that.
 
 When `serverEnabled` is false, the server's administrator has turned the Agent API off, and every request is refused with `403`. Only an administrator turns it back on, in **Settings › Server › Agent API**.
 

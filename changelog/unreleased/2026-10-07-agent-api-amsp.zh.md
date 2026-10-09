@@ -20,7 +20,7 @@ Project 所有者可以把某一个 Agent 开放给 PenguinHarness 之外的程�
 - CORS 预检对任何来源都应答。`Access-Control-Allow-Origin: *` 只在带 `Authorization` 的请求上返回，服务器全局的 `413` 与 `415` 拒绝也不例外，所以其他来源的页面无法借无密钥访问驱动 Agent。
 - 管理员在 `/api/admin/settings` 中的 `agentApiEnabled` 设置缺省开启；关闭后所有 Agent API 请求都以 `403` `agent_api_disabled` 拒绝，各 Agent 的设置与密钥保留。
 - `/api/projects/:projectId/agents/:agentId/api` 下的路由让任何成员读取 Agent 的设置（包括以 `serverEnabled` 给出的管理员开关），让所有者修改设置、创建和删除密钥；`POST …/api/try` 以所有者的登录身份运行 Agent，返回同样的 AMSP 事件流。Agent 列表带上了 `apiEnabled`。
-- 改变 Agent 的对外暴露需要人的登录。服务器驱动的 Session 的每个工具子进程都持有本地 API token；它能读取 Agent 的设置与密钥，但 `PUT …/api`、`POST …/api/keys`、`DELETE …/api/keys/:keyId`、`POST …/api/try` 以及带 `agentApiEnabled` 的 `PUT /api/admin/settings` 都以 `403` `sign_in_required` 拒绝它，且不写入任何内容，因此 Agent 无法在自己的 shell 里开启自己的对外暴露。这收窄了 harness 交给 Agent 的凭据；边界仍是沙盒。
+- 改变 Agent 的对外暴露需要人的登录。服务器驱动的 Session 的每个工具子进程都持有本地 API token；它能读取 Agent 的设置与密钥，但 `PUT …/api`、`POST …/api/keys`、`DELETE …/api/keys/:keyId`、`POST …/api/try` 以及带 `agentApiEnabled` 的 `PUT /api/admin/settings` 都以 `403` `human_required`（Agent 浏览器拒绝 token 时已在用的错误码）拒绝它，且不写入任何内容，因此 Agent 无法在自己的 shell 里开启自己的对外暴露。这收窄了 harness 交给 Agent 的凭据；边界仍是沙盒。
 
 ## AMSP 事件流
 
@@ -43,13 +43,13 @@ Project 所有者可以把某一个 Agent 开放给 PenguinHarness 之外的程�
 ## CLI
 
 - `penguin agent api` 在终端里查看和修改 Agent 的 API：`status`、`enable`、`disable` 和 `set`（带 `--open` / `--no-open` 与 `--approve <mode>`）、`keys ls`、`keys create`（stdout 上只有密钥本身）、`keys rm`，以及管理员开关 `server on|off`。`--agent-id` 必填、没有默认值；`status` 向任何成员显示管理员开关。
-- CLI 先发送人保存的登录，再考虑本地 API token：先是 `PENGUIN_API_TOKEN`，然后是 `penguin auth login` 或 `penguin auth token` 写入 `<root>/cli-session.json` 的会话（以会话 Cookie 发送），最后是 `api-token` 文件。保存的登录只发给回环地址上的服务器，只在它本身是对回环地址服务器的登录时使用，且从不在 Session 内使用；服务器不再接受它时，改用文件重试一次。`penguin agent api` 的修改命令因此在 `penguin auth login` 之后可用；因携带 token 被拒时，打印应运行的命令并以非零码退出。
+- CLI 照旧以 `PENGUIN_API_TOKEN` 认证，没有时用 `api-token` 文件。服务器以 `403` `human_required` 拒绝携带该 token 的请求时，CLI 改用人保存的登录——`penguin auth login` 或 `penguin auth token` 写入 `<root>/cli-session.json` 的会话，以会话 Cookie 发送——把同一请求再发一次。只对回环地址上的服务器这样做，只用对回环地址服务器的登录，且从不在 Session 内这样做。`penguin agent api` 的修改命令因此在 `penguin auth login` 之后可用；没有登录或服务器不再接受该登录时，打印应运行的命令并以退出码 1 退出。
 
 ## 文档
 
 - 新增两个参考页面：**Agent API**，讲开启 Agent 的 API、审批模式、密钥、无密钥访问、路由、错误、curl、在 Node 和浏览器中使用客户端，以及 CLI；**AMSP**，讲协议的传输、语法、全部事件、示例、错误、从 OmniMessage 的映射和版本规则。
 - **Server API** 补充了 Agent API 设置路由、`agentApiEnabled`、`apiEnabled`、`client` 的 `api` 取值和 `/api/amsp/v1` 的 CORS 例外；**CLI 参考**补充了 `penguin agent api`；**智能体**补充了 **API** 标签页；**设置**补充了 **Agent API** 页；**OmniMessage** 说明 AMSP 是它的投影，它本身没有任何改变。
-- **Agent API**、**Server API**、**CLI 参考**和**安全模型**说明：改变 Agent 的对外暴露需要人的登录，本地 API token 会被拒绝，这不是边界；并说明 CLI 保存的登录在凭据顺序中的位置。
+- **Agent API**、**Server API**、**CLI 参考**和**安全模型**说明：改变 Agent 的对外暴露需要人的登录，本地 API token 会以 `human_required` 被拒绝，这不是边界；并说明 CLI 何时改用保存的登录。
 - `penguin-sdk`、`penguin-orchestration` 和 `agent-initialization` 三个 Skill 写明服务器会以 Agent 的 token 拒绝 `penguin agent api` 的修改命令，要求 Agent 绝不为绕过拒绝而自行登录，并在交给用户的步骤里先写 `penguin auth login`。`agent-tuning` 插件升到 `2026.10.09.2`。
 
 ## 兼容性
@@ -58,4 +58,3 @@ Project 所有者可以把某一个 Agent 开放给 PenguinHarness 之外的程�
 
 - 新增 `agent_api` 和 `agent_api_keys` 两张表（migration 14）。旧版服务器从不读取它们，也不提供 `/api/amsp` 路由，所以回滚之后调用方会得到 `404`，直到认识这两张表的版本回来。回滚该 migration 会删除所有 Agent 的 API 设置和密钥。
 - API 创建的会话在 Session 索引中记为 `client` `api`；这一列接受新取值，无需 migration。
-- 此前用 `penguin auth login` 或 `penguin auth token` 保存在 `<root>/cli-session.json` 的登录，开始被其他 CLI 命令在 Session 之外发给本机上的服务器。这些命令因此以该账号的身份执行，而不再是 token 文件所代表的管理员；`penguin auth logout` 可恢复原先的行为。

@@ -228,7 +228,7 @@ export interface Messages {
     apiKeyDeleted(keyId: string, agentRef: string): string;
     /** After `server on|off`. */
     apiServerSet(on: boolean): string;
-    /** A write refused 403 sign_in_required: it carried the local API token, not a person's sign-in. */
+    /** A write refused 403 human_required: it carried the local API token, and no stored sign-in stood in. */
     apiSignInRequired(): string;
   };
   /** `penguin project`: project listing. */

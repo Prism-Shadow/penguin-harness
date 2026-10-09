@@ -35,7 +35,7 @@ Turning **Enable API access** off refuses every request for the agent at once wi
 
 These settings are stored by the server, outside the agent's state, so an agent can neither expose itself nor loosen its own approval mode.
 
-Changing them also takes a person's sign-in. The commands an agent runs carry the server's local API token: it reads these settings, but every change and **Try it** answer it `403` `sign_in_required`, and so does the [admin switch](#the-admin-switch). This narrows what an agent can do from its own shell; it is not a boundary. A process that runs as the server's OS account outside the sandbox can still sign itself in, so what bounds an agent is its [sandbox](/settings#sandbox).
+Changing them also takes a person's sign-in. The commands an agent runs carry the server's local API token: it reads these settings, but every change and **Try it** answer it `403` `human_required`, and so does the [admin switch](#the-admin-switch). This narrows what an agent can do from its own shell; it is not a boundary. A process that runs as the server's OS account outside the sandbox can still sign itself in, so what bounds an agent is its [sandbox](/settings#sandbox).
 
 ### Approval mode
 
@@ -329,7 +329,7 @@ class AmspStreamError extends Error {}
 
 Each command also takes `--project-id`, `--server` and `--json`. `--approve` takes the four modes: `allow-all`, `read-only`, `always-ask`, `deny-all`. See the [CLI Reference](/cli).
 
-The commands that change something (`enable`, `disable`, `set`, `keys create`, `keys rm` and `server`) need your sign-in: run `penguin auth login` once, or `penguin auth token` on the server's machine. Without it they print that hint and exit non-zero. `status` and `keys ls` need none.
+The commands that change something (`enable`, `disable`, `set`, `keys create`, `keys rm` and `server`) need your sign-in: run `penguin auth login` once, or `penguin auth token` on the server's machine. The server refuses them to the local API token, and the CLI then sends them again with that sign-in. Without it they print that hint and exit 1. `status` and `keys ls` need none.
 
 ## The admin switch
 

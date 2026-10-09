@@ -14,14 +14,14 @@
  *   settings read: the admin settings are never asked.
  * - `server off` / `server on` write the server-wide switch; any other state sends nothing.
  * - `keys rm` deletes the key; an unknown key fails with the server's code.
- * - Outside a Session, a person's stored sign-in (`penguin auth login`) goes as the session
- *   cookie, on the reads and the writes alike, and never beside the Bearer token; the writes go
- *   through.
- * - Inside a Session, with no stored sign-in, or with one to another server, the token file goes
- *   as Bearer instead.
- * - A sign-in the server no longer accepts falls back once to the token file.
- * - Each write the server refuses for the local API token (403 `sign_in_required`) prints the
- *   sign-in hint, exits non-zero and changes nothing.
+ * - The token file goes as Bearer on every request, a stored sign-in notwithstanding, wherever
+ *   the server takes the token.
+ * - A write the server refuses for the token (403 `human_required`) is retried once as the
+ *   person's stored sign-in (`penguin auth login`), alone as the session cookie, and goes through.
+ * - With no stored sign-in, each such write prints the sign-in hint, exits 1 and changes nothing.
+ * - Inside a Session, or for a sign-in to another server, the stored sign-in is never sent: the
+ *   write prints the hint and exits 1.
+ * - A stored sign-in the server no longer accepts leaves the refusal: the hint, exit 1.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -223,12 +223,33 @@ describe("penguin agent api: the credential a request carries", () => {
     server.logins.add(LOGIN);
   };
   const credentials = () => server.requests.map((r) => r.credential);
+  const state = () => JSON.stringify([[...server.agentApi], server.adminSettings]);
+  const WRITES = [
+    [["enable", "--agent-id", "default_agent", "--open"]],
+    [["disable", "--agent-id", "default_agent"]],
+    [["set", "--agent-id", "default_agent", "--approve", "read-only"]],
+    [["keys", "create", "--agent-id", "default_agent", "--name", "ci"]],
+    [["keys", "rm", "key1", "--agent-id", "default_agent"]],
+    [["server", "on"]],
+  ];
 
-  it("outside a Session, a stored sign-in goes as the session cookie, never beside the token, and the writes go through", async () => {
+  it("sends the token file as Bearer, a stored sign-in notwithstanding, wherever the server takes the token", async () => {
     writeTokenFile();
     signIn();
     for (const argv of [
+      ["agent", "ls"],
       ["agent", "api", "status", "--agent-id", "default_agent"],
+      ["agent", "api", "keys", "ls", "--agent-id", "default_agent"],
+    ]) {
+      expect(await cli(argv), argv.join(" ")).toBe(0);
+    }
+    expect(credentials()).toEqual([asBearer, asBearer, asBearer]);
+  });
+
+  it("retries a write refused human_required once as the stored sign-in, alone as the session cookie, and the write goes through", async () => {
+    writeTokenFile();
+    signIn();
+    for (const argv of [
       ["agent", "api", "enable", "--agent-id", "default_agent", "--open"],
       ["agent", "api", "keys", "create", "--agent-id", "default_agent", "--name", "ci"],
       ["agent", "api", "keys", "rm", "key1", "--agent-id", "default_agent"],
@@ -236,10 +257,23 @@ describe("penguin agent api: the credential a request carries", () => {
     ]) {
       expect(await cli(argv), argv.join(" ")).toBe(0);
     }
-    expect(credentials()).toEqual(server.requests.map(() => asCookie));
+    expect(credentials()).toEqual([1, 2, 3, 4].flatMap(() => [asBearer, asCookie]));
     expect(server.agentApi.get(REF)).toMatchObject({ enabled: true, open: true, keys: [] });
     expect(server.adminSettings.agentApiEnabled).toBe(false);
   });
+
+  it.each(WRITES)(
+    "with no stored sign-in, %j prints the sign-in hint, exits 1 and changes nothing",
+    async (argv) => {
+      writeTokenFile();
+      const before = state();
+      expect(await cli(["agent", "api", ...argv])).toBe(1);
+      expect(err()).toBe(`${t.agent.apiSignInRequired()}\n`);
+      expect(out()).toBe("");
+      expect(credentials()).toEqual([asBearer]);
+      expect(state()).toBe(before);
+    },
+  );
 
   it.each([
     [
@@ -249,40 +283,30 @@ describe("penguin agent api: the credential a request carries", () => {
         signIn();
       },
     ],
-    ["with no stored sign-in", () => {}],
-    ["with a sign-in to another server", () => signIn("https://penguin.example")],
-  ])("%s, the token file goes as Bearer instead", async (_case, arrange) => {
-    writeTokenFile();
-    arrange();
-    expect(await cli(["agent", "api", "status", "--agent-id", "default_agent"])).toBe(0);
-    expect(credentials()).toEqual([asBearer]);
-  });
+    ["for a sign-in to another server", () => signIn("https://penguin.example")],
+  ])(
+    "%s, the stored sign-in is never sent: the write prints the hint and exits 1",
+    async (_case, arrange) => {
+      writeTokenFile();
+      arrange();
+      const before = state();
+      expect(await cli(["agent", "api", "enable", "--agent-id", "default_agent", "--open"])).toBe(
+        1,
+      );
+      expect(err()).toBe(`${t.agent.apiSignInRequired()}\n`);
+      expect(credentials()).toEqual([asBearer]);
+      expect(state()).toBe(before);
+    },
+  );
 
-  it("a sign-in the server no longer accepts falls back once to the token file", async () => {
+  it("a stored sign-in the server no longer accepts leaves the refusal: the hint, exit 1", async () => {
     writeTokenFile();
     signIn();
     server.logins.clear();
-    expect(await cli(["agent", "api", "status", "--agent-id", "default_agent"])).toBe(0);
-    expect(credentials()).toEqual([asCookie, asBearer]);
+    const before = state();
+    expect(await cli(["agent", "api", "enable", "--agent-id", "default_agent", "--open"])).toBe(1);
+    expect(err()).toBe(`${t.agent.apiSignInRequired()}\n`);
+    expect(credentials()).toEqual([asBearer, asCookie]);
+    expect(state()).toBe(before);
   });
-
-  it.each([
-    [["enable", "--agent-id", "default_agent", "--open"]],
-    [["disable", "--agent-id", "default_agent"]],
-    [["set", "--agent-id", "default_agent", "--approve", "read-only"]],
-    [["keys", "create", "--agent-id", "default_agent", "--name", "ci"]],
-    [["keys", "rm", "key1", "--agent-id", "default_agent"]],
-    [["server", "on"]],
-  ])(
-    "%j refused for the local API token prints the sign-in hint, exits non-zero and changes nothing",
-    async (argv) => {
-      writeTokenFile();
-      const before = JSON.stringify([[...server.agentApi], server.adminSettings]);
-      expect(await cli(["agent", "api", ...argv])).toBe(1);
-      expect(err()).toBe(`${t.agent.apiSignInRequired()}\n`);
-      expect(out()).toBe("");
-      expect(credentials()).toEqual([asBearer]);
-      expect(JSON.stringify([[...server.agentApi], server.adminSettings])).toBe(before);
-    },
-  );
 });

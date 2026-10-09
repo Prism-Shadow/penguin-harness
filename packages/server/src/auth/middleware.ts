@@ -7,8 +7,8 @@
  * applies to every route behind this middleware, SSE endpoints included (the CLI
  * consumes SSE via fetch with headers). A Bearer header that does not match fails the
  * request rather than falling back to the cookie: silently downgrading a wrong explicit
- * credential would mask misconfiguration. The writes that change an Agent's exposure refuse
- * the token all the same and take a person's sign-in (requireSignedInPerson).
+ * credential would mask misconfiguration. A few writes refuse the token all the same and take a
+ * person's sign-in (requireHuman).
  *
  * Accessing a protected API while logged out -> 401 `{error:{code:"unauthorized"}}`.
  * CSRF: SameSite=Lax plus a Content-Type an HTML form cannot forge (see jsonOnlyWrites).
@@ -103,12 +103,16 @@ export function bearerToken(header: string | undefined): string | null {
 }
 
 /**
- * Refuses the local API token on a write that changes who can reach an Agent from outside: an
- * Agent's API switch, keyless access and approval mode, its keys, the API tab's Try it, and the
- * admin's `agentApiEnabled`. Every tool subprocess of a server-driven Session holds that token as
- * `PENGUIN_API_TOKEN`, so without this an Agent could open itself to the network from its own
- * shell. A person's sign-in — a cookie session, from the Web App, `penguin auth login` or
- * `penguin auth token` — is accepted; 403 `sign_in_required` otherwise.
+ * Refuses the local API token on a write that only a person may make: 403 `human_required`. A
+ * person's sign-in — a cookie session, from the Web App, `penguin auth login` or
+ * `penguin auth token` — passes. Every tool subprocess of a server-driven Session holds that token
+ * as `PENGUIN_API_TOKEN`, so these are the writes an Agent must not make from its own shell:
+ *
+ * - who can reach an Agent from outside — its API switch, keyless access and approval mode, its
+ *   keys, the API tab's Try it, and the admin's `agentApiEnabled` (http/routes/agent-api.ts,
+ *   amsp/try-route.ts, http/routes/admin-settings.ts);
+ * - the person's own browser — choosing the agent browser's backend, minting a pairing code
+ *   (builtin-browser/routes.ts).
  *
  * This narrows the credential the harness hands an Agent; it is not a boundary. A process that
  * runs as the data root's OS user outside the sandbox can mint a sign-in of its own
@@ -117,12 +121,12 @@ export function bearerToken(header: string | undefined): string | null {
  * check becomes "a Session's credential is refused, a person's login is not", and the routes
  * calling it do not change.
  */
-export function requireSignedInPerson(c: { var: { sessionVia: SessionVia } }): void {
+export function requireHuman(c: { var: { sessionVia: SessionVia } }): void {
   if (c.var.sessionVia === "token") {
     throw new HttpError(
       403,
-      "sign_in_required",
-      "Changing who can reach an Agent from outside takes a signed-in person (the Web App, or `penguin auth login`); the local API token cannot.",
+      "human_required",
+      "Only the signed-in user can do this, in the app; an API token cannot.",
     );
   }
 }

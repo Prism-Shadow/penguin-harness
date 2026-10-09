@@ -59,7 +59,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 - 服务器每次启动都生成一个新 token，写入 `<root>/api-token`，文件权限仅限所有者（`0600`）。新 token 一经生成，上一次启动的 token 立即失效。
 - 有效的 Bearer token 以内置 `admin` 的身份通过认证。这是有意设计的授权模型：在本机文件系统上能访问数据根目录，本身就等于管理员权限，因为能读 `api-token` 的人也能读它旁边的 `web.db`。`penguin server reset-admin-password` 依赖的正是这条规则。
 - 服务器驱动的会话会把当前 token 注入每个工具子进程的环境变量 `PENGUIN_API_TOKEN`，同时注入 `PENGUIN_API_URL`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`。Agent 自己的 `penguin` 命令和 API 调用正是靠这些变量获得授权，才能连上运行自己的服务器。
-- 这个 token 不能改变 Agent 的对外暴露。`PUT …/agents/:agentId/api`、`POST …/api/keys`、`DELETE …/api/keys/:keyId`、`POST …/api/try`，以及请求体带 `agentApiEnabled` 的 `PUT /api/admin/settings`，对它一律答 `403` `sign_in_required`，不写入任何内容；这些路由只接受 Cookie 会话。读取路由对它照常开放。每个工具子进程都持有这个 token，否则 Agent 就能在自己的 shell 里把自己开放到网络上。这收窄了交给 Agent 的凭据，但不是边界：在沙盒之外、以数据根目录所属操作系统账号运行的进程可以用 `penguin auth token` 自行铸造会话。边界是沙盒。
+- 这个 token 不能改变 Agent 的对外暴露。`PUT …/agents/:agentId/api`、`POST …/api/keys`、`DELETE …/api/keys/:keyId`、`POST …/api/try`，以及请求体带 `agentApiEnabled` 的 `PUT /api/admin/settings`，对它一律答 `403` `human_required`，不写入任何内容；这些路由只接受 Cookie 会话。[Agent 浏览器](#agent-浏览器)的选择后端与生成配对码对它也是同一种拒绝。读取路由对它照常开放。每个工具子进程都持有这个 token，否则 Agent 就能在自己的 shell 里把自己开放到网络上。这收窄了交给 Agent 的凭据，但不是边界：在沙盒之外、以数据根目录所属操作系统账号运行的进程可以用 `penguin auth token` 自行铸造会话。边界是沙盒。
 - SSE 端点和其他路由一样接受这个请求头。消费它们要用 `fetch`，不要用 `EventSource`——后者无法发送请求头。
 - 写请求只接受 JSON 的 Content-Type 检查，对 Bearer 请求同样生效。
 
@@ -170,7 +170,7 @@ PUT 按如下规则校验：
 
 ### Agent API 开关
 
-`agentApiEnabled` 是服务器的**允许 Agent API** 开关，默认开启。关闭后，`/api/amsp/v1` 下除 CORS 预检以外的所有请求都以 `403` `agent_api_disabled` 拒绝。各 Agent 的 API 开关、审批模式和密钥都会保留，[Agent API 设置](#agent-api-设置)下的路由照常可用。修改从下一个请求起生效，无需重启。修改它需要登录：本地 API token 可以修改这里的其余各项设置，但请求体带 `agentApiEnabled` 时，对它答 `403` `sign_in_required`，该请求体中的字段一项也不写入。所有成员都能从 Agent 的 API 设置中的 `serverEnabled` 读到这个开关。见[管理员开关](/agent-api#管理员开关)。
+`agentApiEnabled` 是服务器的**允许 Agent API** 开关，默认开启。关闭后，`/api/amsp/v1` 下除 CORS 预检以外的所有请求都以 `403` `agent_api_disabled` 拒绝。各 Agent 的 API 开关、审批模式和密钥都会保留，[Agent API 设置](#agent-api-设置)下的路由照常可用。修改从下一个请求起生效，无需重启。修改它需要登录：本地 API token 可以修改这里的其余各项设置，但请求体带 `agentApiEnabled` 时，对它答 `403` `human_required`，该请求体中的字段一项也不写入。所有成员都能从 Agent 的 API 设置中的 `serverEnabled` 读到这个开关。见[管理员开关](/agent-api#管理员开关)。
 
 ### 插件设置
 
@@ -463,7 +463,7 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 ### Agent API 设置
 
-这组路由支撑 Agent 的 **API** 标签页和 `penguin agent api`。这些设置属于这台服务器，保存在它的数据库里，不在 Agent State 中，也不在 Project 文件中，因此 Agent 既不能自行对外开放，也不能放宽自己的审批模式。任何成员都能读取；修改设置和管理密钥仅限 Project 所有者，成员会得到 `403` `owner_required`。这些修改还需要登录：本地 API token 会得到 `403` `sign_in_required`，见上文「本地 API token（Bearer）」。
+这组路由支撑 Agent 的 **API** 标签页和 `penguin agent api`。这些设置属于这台服务器，保存在它的数据库里，不在 Agent State 中，也不在 Project 文件中，因此 Agent 既不能自行对外开放，也不能放宽自己的审批模式。任何成员都能读取；修改设置和管理密钥仅限 Project 所有者，成员会得到 `403` `owner_required`。这些修改还需要登录：本地 API token 会得到 `403` `human_required`，见上文「本地 API token（Bearer）」。
 
 ```ts
 interface AgentApiResponse {

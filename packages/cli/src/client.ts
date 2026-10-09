@@ -1,5 +1,5 @@
 /**
- * The CLI's server client: connection resolution, credentials, JSON requests, and
+ * The CLI's server client: connection resolution, Bearer-token auth, JSON requests, and
  * a dependency-free fetch-based SSE consumer (the HMR deploy path bundles this file with
  * esbuild, so everything here rides on globals — fetch above all).
  *
@@ -16,18 +16,17 @@
  *      lock, attach. The loser of a two-CLI spawn race exits with code 3 ("already
  *      running"), which the lock poll absorbs — it finds the winner's lock either way.
  *
- * Credential resolution (first hit wins):
- *   1. PENGUIN_API_TOKEN, as `Authorization: Bearer`.
- *   2. The person's stored sign-in (`<root>/cli-session.json`, written by `penguin auth login`
- *      or `penguin auth token`), as the `penguin_session` cookie — read only for a loopback
- *      target, only when the sign-in itself is to a loopback server, and only outside a
- *      Session (PENGUIN_SESSION_ID unset): an Agent's own commands never use it.
- *   3. `<root>/api-token` (written by the server each boot), as Bearer, for a loopback target.
- * The sign-in comes before the token file because the server refuses that token on the writes
- * that change an Agent's exposure (403 `sign_in_required`): `penguin agent api enable` works
- * for a person who has signed in. A 401 on a sign-in falls back once to the token file; a 401
- * with a file-sourced token re-reads the file once and retries — the server may have restarted
- * (and rotated the token) since the first read.
+ * Token resolution: PENGUIN_API_TOKEN, else `<root>/api-token` (written by the server
+ * each boot). A 401 with a file-sourced token re-reads the file once and retries — the
+ * server may have restarted (and rotated the token) since the first read.
+ *
+ * A 403 `human_required` — a write the server takes only from a person's sign-in, such as
+ * those that change an Agent's exposure — retries the same request once as the person's
+ * stored sign-in (`<root>/cli-session.json`, written by `penguin auth login` or
+ * `penguin auth token`), sent as the `penguin_session` cookie in place of the token. Only for
+ * a loopback target, only for a sign-in made to a loopback server, and only outside a Session
+ * (PENGUIN_SESSION_ID unset): inside one the command is an Agent's, and the refusal is the
+ * point. Every other request goes exactly as above.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -43,14 +42,14 @@ const SESSION_ID_RE = /^session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$
 /** Hosts that count as this machine for token-file purposes. */
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
-/**
- * Where the credential came from: decides how it is sent (a sign-in as the session cookie,
- * anything else as Bearer) and whether a 401 retries with the token file.
- */
-export type TokenSource = "env" | "login" | "file" | "none";
+/** How the auth token was obtained; decides whether a 401 retries after re-reading the file. */
+export type TokenSource = "env" | "file" | "none";
 
-/** The server's session cookie (auth/middleware.ts SESSION_COOKIE): a sign-in is sent as it. */
+/** The server's session cookie (auth/middleware.ts SESSION_COOKIE): a stored sign-in goes as it. */
 const SESSION_COOKIE = "penguin_session";
+
+/** The server's refusal of the local API token on a write only a person may make (requireHuman). */
+const HUMAN_REQUIRED = "human_required";
 
 export interface Connection {
   /** Normalized base URL, no trailing slash. */
@@ -103,16 +102,26 @@ function readTokenFile(root: string): string | null {
 }
 
 /**
- * The person's stored sign-in on this data root, for a loopback target (see the module doc);
- * null inside a Session, where the command is an Agent's and must go as the Agent's token, and
- * for a sign-in to another server, whose session must not be sent to this one.
+ * The person's stored sign-in on this data root, for the one retry after a `human_required`
+ * refusal (see the module doc); null inside a Session, where the command is an Agent's, and for a
+ * sign-in to a server elsewhere, whose session must not be sent to this one.
  */
-function readStoredLogin(root: string): string | null {
+function readStoredSignIn(root: string): string | null {
   if (process.env.PENGUIN_SESSION_ID?.trim()) return null;
   const session = readSession(root);
   if (session === null) return null;
   try {
     return isLoopbackUrl(new URL(session.server)) ? session.token : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The error code of a JSON error body (`{error: {code}}`), or null for any other body. */
+async function errorCodeOf(res: Response): Promise<string | null> {
+  try {
+    const body = (await res.json()) as { error?: { code?: unknown } } | null;
+    return typeof body?.error?.code === "string" ? body.error.code : null;
   } catch {
     return null;
   }
@@ -248,37 +257,34 @@ export class ServerClient {
     if (envToken) {
       this.token = envToken;
       this.tokenSource = "env";
-    } else if (!conn.loopback) {
+    } else if (conn.loopback) {
+      this.token = readTokenFile(conn.root);
+      this.tokenSource = this.token !== null ? "file" : "none";
+    } else {
       this.token = null;
       this.tokenSource = "none";
-    } else {
-      const login = readStoredLogin(conn.root);
-      this.token = login ?? readTokenFile(conn.root);
-      this.tokenSource = login !== null ? "login" : this.token !== null ? "file" : "none";
     }
   }
 
-  /** The credential (a sign-in as the session cookie, a token as Bearer), then `extra`. */
   private headers(extra: Record<string, string> = {}): Record<string, string> {
-    const credential: Record<string, string> =
-      this.token === null
-        ? {}
-        : this.tokenSource === "login"
-          ? { cookie: `${SESSION_COOKIE}=${this.token}` }
-          : { authorization: `Bearer ${this.token}` };
-    return { ...credential, ...extra };
+    return {
+      ...(this.token !== null ? { authorization: `Bearer ${this.token}` } : {}),
+      ...extra,
+    };
   }
 
   /**
-   * One JSON request. A 401 retries once with the token file (see fetchAuthed); every other
-   * non-2xx becomes an ApiError carrying the server's code and message.
+   * One JSON request. 401 with a file-sourced token re-reads the file once (the server
+   * may have restarted and rotated it) and retries; 403 `human_required` retries once as the
+   * person's stored sign-in (see fetchAuthed); every other non-2xx becomes an ApiError
+   * carrying the server's code and message.
    */
   async request<T>(method: string, apiPath: string, body?: unknown): Promise<T> {
-    const res = await this.fetchAuthed(
-      apiPath,
-      { method, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) },
-      body !== undefined ? { "content-type": "application/json" } : {},
-    );
+    const res = await this.fetchAuthed(apiPath, {
+      method,
+      headers: this.headers(body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
     if (!res.ok) throw await this.toError(res);
     if (res.status === 204 || res.headers.get("content-length") === "0") {
       void res.body?.cancel();
@@ -289,19 +295,17 @@ export class ServerClient {
   }
 
   /**
-   * The authenticated fetch, `headers` beside the credential. On a 401 it retries once with the
-   * token file, read afresh, when that holds a credential other than the one refused: a sign-in
-   * that expired or was revoked falls back to it, and a file token the server rotated on a
-   * restart is replaced. An env token is never swapped.
+   * The authenticated fetch: the one-shot 401 file-token refresh, then the one-shot retry of a
+   * 403 `human_required` as the person's stored sign-in.
    */
-  private async fetchAuthed(
-    apiPath: string,
-    init: RequestInit,
-    headers: Record<string, string>,
-  ): Promise<Response> {
-    const send = () =>
-      fetch(`${this.conn.baseUrl}${apiPath}`, { ...init, headers: this.headers(headers) });
-    const res = await send();
+  private async fetchAuthed(apiPath: string, init: RequestInit): Promise<Response> {
+    const res = await this.fetchWithToken(apiPath, init);
+    return res.status === 403 ? this.retryAsPerson(apiPath, init, res) : res;
+  }
+
+  /** The token's fetch, with the one-shot 401 file-token refresh. */
+  private async fetchWithToken(apiPath: string, init: RequestInit): Promise<Response> {
+    const res = await fetch(`${this.conn.baseUrl}${apiPath}`, init);
     if (res.status !== 401) return res;
     if (this.tokenSource === "env" || !this.conn.loopback) return res;
     const fresh = readTokenFile(this.conn.root);
@@ -309,7 +313,37 @@ export class ServerClient {
     void res.body?.cancel();
     this.token = fresh;
     this.tokenSource = "file";
-    return send();
+    const headers = { ...(init.headers as Record<string, string>), ...this.headers() };
+    return fetch(`${this.conn.baseUrl}${apiPath}`, { ...init, headers });
+  }
+
+  /**
+   * `refused` was a 403. When it is `human_required` and there is a stored sign-in to use (see the
+   * module doc), sends the same request once more as that sign-in — the session cookie, no
+   * Bearer, since the server reads a Bearer first — and answers with that. The refusal stands
+   * when there is no usable sign-in, and when the server does not accept the sign-in either (a
+   * 401: it expired or was revoked), so the caller still sees `human_required`.
+   */
+  private async retryAsPerson(
+    apiPath: string,
+    init: RequestInit,
+    refused: Response,
+  ): Promise<Response> {
+    if (!this.conn.loopback) return refused;
+    const signIn = readStoredSignIn(this.conn.root);
+    if (signIn === null) return refused;
+    if ((await errorCodeOf(refused.clone())) !== HUMAN_REQUIRED) return refused;
+    const headers: Record<string, string> = { cookie: `${SESSION_COOKIE}=${signIn}` };
+    for (const [name, value] of Object.entries((init.headers ?? {}) as Record<string, string>)) {
+      if (name.toLowerCase() !== "authorization") headers[name] = value;
+    }
+    const retried = await fetch(`${this.conn.baseUrl}${apiPath}`, { ...init, headers });
+    if (retried.status === 401) {
+      void retried.body?.cancel();
+      return refused;
+    }
+    void refused.body?.cancel();
+    return retried;
   }
 
   private async toError(res: Response): Promise<ApiError> {
@@ -343,18 +377,17 @@ export class ServerClient {
 
   /**
    * Opens one SSE subscription (fetch with headers — EventSource cannot carry the
-   * credential) and yields parsed frames. The caller handles reconnects; aborting
+   * Bearer token) and yields parsed frames. The caller handles reconnects; aborting
    * `signal` ends the generator quietly.
    */
   async *sse(apiPath: string, opts: { lastEventId?: string; signal?: AbortSignal } = {}) {
-    const res = await this.fetchAuthed(
-      apiPath,
-      { ...(opts.signal ? { signal: opts.signal } : {}) },
-      {
+    const res = await this.fetchAuthed(apiPath, {
+      headers: this.headers({
         accept: "text/event-stream",
         ...(opts.lastEventId !== undefined ? { "last-event-id": opts.lastEventId } : {}),
-      },
-    );
+      }),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    });
     if (!res.ok || res.body === null) throw await this.toError(res);
     yield* parseSseBody(res.body, opts.signal);
   }

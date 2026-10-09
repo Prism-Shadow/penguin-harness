@@ -28,9 +28,10 @@
  * on stderr, so `KEY=$(penguin agent api keys create …)` captures exactly the key.
  *
  * The writes (`enable`, `disable`, `set`, `keys create`, `keys rm`, `server`) take a person's
- * sign-in: the server refuses the local API token on them with 403 `sign_in_required`, so that
- * an Agent cannot expose itself from its own shell. Outside a Session the client sends the
- * stored `penguin auth login` first (client.ts); a refusal prints what to run instead.
+ * sign-in: the server refuses the local API token on them with 403 `human_required`, so that
+ * an Agent cannot expose itself from its own shell. Outside a Session the client then retries
+ * once as the stored `penguin auth login` (client.ts); when that is missing or refused too, the
+ * write prints what to run instead.
  * Docs: /docs/cli § "penguin agent".
  */
 import type { Command } from "commander";
@@ -120,8 +121,9 @@ function printStatus(
 }
 
 /**
- * A write that changes who can reach an agent. The server's 403 `sign_in_required` — the request
- * carried the local API token, not a person's sign-in — becomes the line saying what to run.
+ * A write that changes who can reach an agent. The server's 403 `human_required` that is left
+ * after the client's retry as a stored sign-in — the request carried the local API token, and no
+ * sign-in the server accepts stood in for it — becomes the line saying what to run.
  */
 async function exposureWrite<T>(
   client: ServerClient,
@@ -133,7 +135,7 @@ async function exposureWrite<T>(
   try {
     return await client.request<T>(method, apiPath, body);
   } catch (err) {
-    if (err instanceof ApiError && err.code === "sign_in_required") {
+    if (err instanceof ApiError && err.code === "human_required") {
       throw new Error(t.agent.apiSignInRequired());
     }
     throw err;
