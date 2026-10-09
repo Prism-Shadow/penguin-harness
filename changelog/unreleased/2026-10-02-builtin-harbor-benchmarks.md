@@ -59,7 +59,7 @@ created.
   caller and worker alike a rule never to read the server's `api-token`, a Project's
   `.project_config.toml` or the server's `web.db`, nor to call the server API with a token read
   from disk.
-- **Skill.** `agent-evaluation` (agent-tuning `2026.10.04.2`) recognized a case run through
+- **Skill.** `agent-evaluation` (agent-tuning `2026.10.09.1`) recognized a case run through
   Harbor from its statement — a `## How this case is run` section naming Harbor, a repository at
   a 40-character commit and the `harbor run` launch — and followed the repository's run rules for
   fetching it, the launch, concurrency and Docker networks, retries and reading `result.json`. A

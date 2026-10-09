@@ -21,7 +21,7 @@ No built-in agent is reserved for a role: each role is a Skill, and all four Ski
 ### How the roles call each other
 
 1. The Builder or the Optimizer dispatches the full Case × runs matrix in parallel through `run_subagent`: one Evaluator per cell, each told to use `agent-evaluation`.
-2. Each Evaluator uses the Penguin CLI to launch the Target Agent once, in a fresh top-level Session and a unique Workspace under the Target Agent's `workspaces/` directory, given by its absolute path. The launch passes `--source benchmark`, so every Test Session lands in the **Evaluations** folder of the Web App's session list instead of among the agent's active conversations. The Evaluator's own Session is an ordinary subagent Session.
+2. Each Evaluator uses the Penguin CLI to launch the Target Agent once, in a fresh top-level Session and a unique Workspace under the Target Agent's `workspaces/` directory, given by its absolute path. Every Session `penguin run` creates is a CLI Session, so every Test Session lands in the **Background** folder of the Web App's session list, marked CLI, instead of among the agent's active conversations. The Evaluator's own Session is an ordinary subagent Session, in the same folder.
 3. When the Target Agent finishes, the Evaluator scores the run against the rubric and returns one protocol result: the score, cost, duration and Test Session id. It changes no agent or Benchmark, and never writes `scoreboard.yaml`.
 4. The caller checks the complete matrix and writes `scoreboard.yaml`.
 

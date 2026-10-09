@@ -568,11 +568,13 @@ export interface ComposerControl {
    * anything. `pinnedSkills` is the caller's full list; names the current Agent has not
    * installed are dropped here, where the installed list already lives. Pass an empty list to
    * leave the composer's own Skill selection untouched. Replacing text the user typed asks first.
+   * An empty prompt empties the text body: a reply's choice offers "Other…", and the answer it
+   * asks for is the one the user types here.
    */
   fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
   /**
-   * Move focus to the text body and leave everything in it as it is: a reply's choice offers
-   * "Other…", and the answer it asks for is the one the user types here.
+   * Move focus to the text body and leave everything in it as it is, for a surface that asks
+   * for an answer in the user's own words without clearing what is there.
    */
   focus: () => void;
   /**
@@ -1301,14 +1303,16 @@ export function ChatInput({
   );
   /**
    * Every fill passes here, whichever surface sent it (an example task, a saved shortcut, a
-   * schedule's prompt): replacing text the user typed asks first. A fill over an empty box,
-   * over the same prompt, or over what an earlier fill put there untouched (browsing the
-   * examples) goes straight in.
+   * schedule's prompt, a reply's choice or form): replacing text the user typed asks first. A
+   * fill over an empty box, over the same prompt, or over what an earlier fill put there
+   * untouched (browsing the examples, or a pick before the choice's "Other…") goes straight in.
+   * An empty fill is a clear, and its confirmation says so.
    */
   const [pendingFill, setPendingFill] = useState<{
     prompt: string;
     pinnedSkills: readonly string[];
   } | null>(null);
+  const clearingFill = pendingFill?.prompt === "";
   const fillPrompt = useCallback(
     (prompt: string, pinnedSkills: readonly string[]) => {
       const typed = textRef.current;
@@ -2623,17 +2627,19 @@ export function ChatInput({
       />
       <ConfirmModal
         open={pendingFill !== null}
-        title={S.chat.replaceTypedTitle}
+        title={clearingFill ? S.chat.clearTypedTitle : S.chat.replaceTypedTitle}
         tone="primary"
         onClose={() => setPendingFill(null)}
         onConfirm={() => {
           if (pendingFill !== null) applyFill(pendingFill.prompt, pendingFill.pinnedSkills);
           setPendingFill(null);
         }}
-        confirmLabel={S.chat.replaceTyped}
+        confirmLabel={clearingFill ? S.chat.clearTyped : S.chat.replaceTyped}
         cancelLabel={S.common.cancel}
       >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.chat.replaceTypedBody}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {clearingFill ? S.chat.clearTypedBody : S.chat.replaceTypedBody}
+        </p>
       </ConfirmModal>
     </div>
   );

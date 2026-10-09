@@ -18,6 +18,9 @@
  * the evaluator reads its Session's model from its Environment — so one changed in the composer
  * after the prefill is still the one tested, and the text never goes stale. Optimize reuses what
  * that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
+ *
+ * The conversation is an ordinary Session, listed with the agent's own: only the Test Sessions
+ * it starts through `penguin run` (CLI Sessions) are filed under the Background folder.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -186,9 +189,6 @@ export function UseBenchmarkModal({
       text,
       skills: tab === "evaluate" ? [EVALUATION_SKILL] : [OPTIMIZATION_SKILL, EVALUATION_SKILL],
       ...(ref !== undefined ? { modelRef: ref } : {}),
-      // An evaluation / optimization run, not a conversation of the user's own: the session
-      // list files it, and the Test Sessions it launches, under the Evaluations folder.
-      source: "benchmark",
     });
     onClose();
   };

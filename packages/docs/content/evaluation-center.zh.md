@@ -59,7 +59,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 - 执行评估的 Agent 所在机器装有 Docker（含 Compose v2）和 [uv](https://docs.astral.sh/uv/)，并能访问 GitHub、Docker Hub、nodejs.org、npm 仓库和模型服务。
 - 评估所用的模型，即评估会话的模型，已在**模型库**页面保存了 API key。评估会把这一条模型配置复制进每个任务容器，不需要 Vault。
-- 执行评估的 Agent 的 `agent-evaluation` Skill 来自 `agent-tuning` 2026.10.04.2 或更新版本。在此之前创建的 Agent 保留着旧副本，需要在**智能体**页面更新这个插件。
+- 执行评估的 Agent 的 `agent-evaluation` Skill 来自 `agent-tuning` 2026.10.09.1 或更新版本。在此之前创建的 Agent 保留着旧副本，需要在**智能体**页面更新这个插件。
 
 它们和其他 Benchmark 一样评估，见[评估 Agent](#评估-agent)。执行评估的 Agent 的 `agent-evaluation` Skill 从题干认出这类题，并按仓库里的规则运行：评估先按题干给出的提交取一次仓库，再为每道题的每次运行跑一次 Harbor trial，同时至多四个，因为每个 trial 都要占用主机上数量有限的 Docker 网络。被测 Agent 带着自己的 Agent State 在任务容器里运行，一次 trial 从几分钟到一小时左右不等（含镜像构建）。每次 trial 的文件，包括 Agent 的 Trace 和验证器的输出，都留在该 Benchmark 的 `.jobs/` 目录下；这次运行记在 Session id `harbor:<trial 名>` 名下，评估详情弹窗里可以复制它。
 
@@ -168,7 +168,7 @@ Builder 试测题目和记录基线分时，都用这个新对话的模型来运
 
 被测 Agent 在评估会话的模型上运行：就是**评估会话使用的模型**里选的那个，发送前在输入框里换了模型则以换后的为准。它的思考等级沿用自己的配置，对话框不会改动。
 
-评估会话，以及它启动的每个被测会话，都归入会话列表的**评估任务**折叠夹。评估完成后，会成为这个 Benchmark **评估明细**表的最新一行。
+评估会话是你的一段普通对话；它启动的每个被测会话都是 CLI 会话，归入会话列表的**后台会话**折叠夹。评估完成后，会成为这个 Benchmark **评估明细**表的最新一行。
 
 ## 优化 Agent
 

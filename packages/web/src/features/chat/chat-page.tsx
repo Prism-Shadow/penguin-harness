@@ -73,6 +73,7 @@ import {
   sessionBackgroundTasks,
 } from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
+import { a2uiDrafts } from "../../lib/a2ui-drafts";
 import {
   approvalKey,
   createStreamModel,
@@ -891,10 +892,10 @@ export function ChatPage() {
   ]);
 
   // Auto-select the last conversation when the route doesn't select one: the most recently
-  // ACTIVE loaded active/schedule Session, the same rule the collapsed rail's entry follows —
-  // archived rows are hidden by choice and subagent Sessions belong to their parent, so
-  // neither is auto-opened. If there is none, fall back to draft state (instead of
-  // auto-creating one).
+  // ACTIVE loaded conversation of the user's own (`user` source), the same rule the collapsed
+  // rail's entry follows — archived rows are hidden by choice and background Sessions were
+  // opened by a program, so neither is auto-opened. If there is none, fall back to draft state
+  // (instead of auto-creating one).
   useEffect(() => {
     if (sessionsLoading || draft) return;
     if (selected !== null) return;
@@ -1492,15 +1493,22 @@ export function ChatPage() {
   /**
    * A reply's choice or form block answers through the same exit: the picked text lands in the
    * composer (replacing typed text only after the user confirms) and Send stays the user's move;
-   * its "Other…" only sends focus there. The transcript decides which reply may use these (see
+   * its "Other…" fills nothing, which empties what an earlier pick put there. The open
+   * question's answers in progress are kept in this browser per Session (lib/a2ui-drafts.ts),
+   * so a reload finds them. The transcript decides which reply may use these (see
    * MessageItems); memoized because the blocks read them through context, past the memoized
    * Markdown.
    */
-  const focusComposer = useCallback(() => composerRef.current?.focus(), []);
   const { locale } = useLocale();
   const a2uiActions = useMemo<A2uiActions>(
-    () => ({ interactive: true, fill: prefillComposer, focus: focusComposer, lang: locale }),
-    [prefillComposer, focusComposer, locale],
+    () => ({
+      interactive: true,
+      fill: prefillComposer,
+      lang: locale,
+      drafts: a2uiDrafts,
+      draftScope: selectedSessionId ?? undefined,
+    }),
+    [prefillComposer, locale, selectedSessionId],
   );
   /**
    * The Files panel's exit into the conversation — a `@path` reference, or a fenced block

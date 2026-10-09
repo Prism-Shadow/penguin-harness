@@ -59,7 +59,7 @@ Each case runs as a [Harbor](https://github.com/harbor-framework/harbor) task in
 
 - The machine the evaluator agent runs on has Docker with Compose v2 and [uv](https://docs.astral.sh/uv/), and can reach GitHub, Docker Hub, nodejs.org, the npm registry and the model provider.
 - The model the evaluation runs on, the evaluation conversation's, has its API key saved on the **Models** page. The evaluation copies that one model entry into each task container; it needs no Vault entry.
-- The evaluator agent's `agent-evaluation` Skill comes from `agent-tuning` 2026.10.04.2 or later. An agent created before that keeps its older copy until you update the plugin from the **Agents** page.
+- The evaluator agent's `agent-evaluation` Skill comes from `agent-tuning` 2026.10.09.1 or later. An agent created before that keeps its older copy until you update the plugin from the **Agents** page.
 
 You evaluate them like any other Benchmark; see [Evaluate an agent](#evaluate-an-agent). The evaluator agent's `agent-evaluation` Skill recognizes such a case from its statement and follows the repository's rules: the evaluation fetches the repository once, at the statement's commit, then runs one Harbor trial per case and run, at most four at a time because every trial takes Docker networks from a limited supply. The tested agent runs inside the task's container with its own Agent State, and a trial takes from a few minutes to about an hour, image builds included. Each trial's files, the agent's Traces and the verifier's output, stay under the Benchmark's `.jobs/` directory. Its run is recorded under the Session id `harbor:<trial name>`, which the evaluation dialog lets you copy.
 
@@ -168,7 +168,7 @@ An evaluation runs an agent on every case of a Benchmark and adds one labelled s
 
 The tested agent runs on the model of the evaluation conversation: the one set in **Model of the evaluation conversation**, or the one you pick in the composer before you send. Its thinking level is the one it is configured with; the dialog does not change it.
 
-The evaluation conversation, and every Test Session it starts, is filed under the **Evaluations** folder of the session list. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
+The evaluation conversation is an ordinary conversation of yours. Every Test Session it starts is a CLI Session, filed under the **Background** folder of the session list. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
 
 ## Optimize an agent
 

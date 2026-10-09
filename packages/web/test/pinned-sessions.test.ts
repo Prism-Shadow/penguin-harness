@@ -143,7 +143,7 @@ describe("pinned ordering composes with the group lists", () => {
     expect(active.map((s) => s.sessionId)).toEqual(["s3", "s1", "s2"]);
     // Folder rows keep chronological order and membership regardless of pins …
     expect(parts.archived.map((s) => s.sessionId)).toEqual(["s4"]);
-    expect(parts.subagent.map((s) => s.sessionId)).toEqual(["s5"]);
+    expect(parts.background.map((s) => s.sessionId)).toEqual(["s5"]);
     // … and a stored id of a Session deleted elsewhere never surfaces a row.
     expect(active.some((s) => s.sessionId === "deleted-elsewhere")).toBe(false);
   });

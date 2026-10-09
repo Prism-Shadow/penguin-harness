@@ -289,13 +289,7 @@ async function sessionCompactionThreshold(
 }
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
-const SESSION_CATEGORIES: readonly SessionCategory[] = [
-  "active",
-  "subagent",
-  "schedule",
-  "benchmark",
-  "archived",
-];
+const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "background", "archived"];
 
 /** Accepted `order` query values of the list endpoint (SessionListOrder, spelled out for validation). */
 const SESSION_LIST_ORDERS: readonly SessionListOrder[] = ["created", "activity"];
@@ -532,7 +526,8 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 
   // Serves every row straight from the DB, whichever client created it (legacy CLI-direct
   // Traces were adopted by the boot sweep; see SessionService.listSessions) — unless the
-  // caller asks for the user's own rows only (`excludeOrg=1`, development mode's list).
+  // caller asks for the user's own rows only (`excludeOrg=1`, development mode's list) or for
+  // a category, a Workspace group or counts, none of which holds a company Session.
   app.get("/", async (c) => {
     // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
@@ -608,12 +603,18 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const sandbox = parseSandboxPick(body);
-    // Creating-client hint stored on the row ("cli" from the CLI; default "web").
-    // Informational provenance only — lists serve every row regardless.
+    // Creating-client hint stored on the row ("cli" from the CLI; default "web"). Provenance:
+    // only "org", which no request may send, is ever read back as a filter.
     const client = optionalEnum(body, "client", ["web", "cli"] as const);
-    // The only origin a client may set: `subagent` and `schedule` are written by the server
-    // itself, so anything but `benchmark` is a 400 rather than a silently ignored field.
-    const source = optionalEnum(body, "source", ["benchmark"] as const);
+    // The one source a client may name is `cli` (`penguin run`): every other one is the
+    // server's own to write, and absent means `user`, so anything else is a 400 rather than a
+    // silently ignored field. compat(0.3.0): the retired `benchmark` is accepted as `cli`, for
+    // an older CLI or Web App that still sends it.
+    const source = optionalEnum(
+      { source: body.source === "benchmark" ? "cli" : body.source },
+      "source",
+      ["cli"] as const,
+    );
     let workspace = optionalString(body, "workspace", { minLen: 1, label: "workspace" });
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
@@ -812,7 +813,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     };
     try {
       const insertedForkRow = deps.sessionsRepo.insertFork(row.sessionId, forkRow);
-      deps.sessionSources.set(fork.sessionId, null);
+      // A fork is a person's conversation, as its Trace head records.
+      deps.sessionSources.set(fork.sessionId, "user");
       return c.json(
         {
           session: await deps.sessionService.toInfo(insertedForkRow, true),

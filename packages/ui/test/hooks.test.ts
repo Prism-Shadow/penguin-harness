@@ -15,8 +15,10 @@
  * `ui-notice` and `ui-chart` (notices and charts that differ per theme; the same day), the
  * fourteenth, `ui-scrim` (the dimmed backdrop behind a dialog; 2026-09-30),
  * the fifteenth, `ui-stream` (an assistant reply as it arrives: Frost's soft veil, Console's
- * block cursor; the same day), and the sixteenth, `ui-glyph` (an icon drawn in every theme's
- * style, of which the theme's CSS shows its own). This suite holds the source to it:
+ * block cursor; the same day), the sixteenth, `ui-glyph` (an icon drawn in every theme's
+ * style, of which the theme's CSS shows its own), and the seventeenth, `ui-widget` (a reply's
+ * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04). This suite holds the
+ * source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -36,7 +38,8 @@
  *   (`thinking` / `tool` / `event`), its state (`running` / `done` / `error`) and its slots
  *   (`label`, `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`,
  *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
- *   (`caret`), a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
+ *   (`caret`), `.ui-widget` its kind (the four widgets) and its slots (`head`, `body`, `foot`),
+ *   a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
  *   wherever a `data-part` is written, and a glyph's sets are the three (`line`, `octicons`,
  *   `pixel`), wherever a `data-set` is written; and a fold's phase, which the foundation's layout
  *   motion turns into a track, is one of the three it knows (`open`, `closing`, `settled`)
@@ -68,6 +71,7 @@ const APPENDIX_A = [
   "ui-scrim",
   "ui-stream",
   "ui-glyph",
+  "ui-widget",
 ];
 
 /**
@@ -149,8 +153,8 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-notice": ["Toaster", "NoticeStrip"],
   // The Trace timeline draws its lanes and spans as HTML (`grid` on a lane track, `bar` on a
   // span with a 1-based `data-series`), so the chart recipes carry HTML spellings beside the
-  // SVG ones.
-  "ui-chart": ["ChartFrame", "TokenDonut", "Sparkline", "Ring", "TimelineChart"],
+  // SVG ones. A weather widget's next hours are a line chart of their own (2026-10-04).
+  "ui-chart": ["ChartFrame", "TokenDonut", "Sparkline", "Ring", "TimelineChart", "WeatherHourly"],
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
   // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
   "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],
@@ -159,6 +163,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-stream": ["StreamText"],
   // An icon in every theme's style: the two icon renderers, a registry glyph's and a mark's.
   "ui-glyph": ["GlyphIcon", "GlyphMark"],
+  // A reply's widgets (2026-10-04): the one surface the weather, clock, countdown and metrics
+  // blocks render on.
+  "ui-widget": ["WidgetSurface"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -176,6 +183,8 @@ const NOTICE_TONES = new Set(["info", "success", "warning", "danger", "neutral"]
 const NOTICE_SLOTS = new Set(["icon", "title", "body", "actions"]);
 const STREAM_STATES = new Set(["streaming", "done"]);
 const STREAM_SLOTS = new Set(["caret"]);
+const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics"]);
+const WIDGET_SLOTS = new Set(["head", "body", "foot"]);
 /** The glass anatomies a recipe dresses apart from a floating layer: a plugin or skill tile. */
 const GLASS_KINDS = new Set(["tile"]);
 /** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
@@ -238,7 +247,7 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the sixteen of Appendix A, each with its hosts", () => {
+  it("are the seventeen of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });
@@ -326,6 +335,19 @@ describe("style hooks", () => {
           for (const { slot } of childSlots(element)) {
             if (!FRAME_SLOTS.has(slot)) {
               problems.push(`${at} .ui-frame slot "${slot}" is not head, body, foot or pane`);
+            }
+          }
+        }
+        if (names.has("ui-widget")) {
+          const widget = element.attributes.get("data-widget");
+          if (typeof widget === "string" && !WIDGET_KINDS.has(widget)) {
+            problems.push(
+              `${at} .ui-widget data-widget="${widget}" is not weather|clock|countdown|metrics`,
+            );
+          }
+          for (const { slot } of childSlots(element)) {
+            if (!WIDGET_SLOTS.has(slot)) {
+              problems.push(`${at} .ui-widget slot "${slot}" is not head, body or foot`);
             }
           }
         }

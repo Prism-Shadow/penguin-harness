@@ -21,7 +21,7 @@ PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在
 ### 角色之间的调用
 
 1. Builder 或 Optimizer 通过 `run_subagent` 并行下发完整的 Case × runs 矩阵：矩阵中的每一格对应一个 Evaluator，并要求它使用 `agent-evaluation`。
-2. 每个 Evaluator 用 Penguin CLI 启动一次 Target Agent：开一个全新的顶层 Session，在 Target Agent 的 `workspaces/` 目录下建一个专属 Workspace，并以绝对路径传入。启动时带上 `--source benchmark`，所以每个被测会话都会归入 Web App 会话列表的**评估任务**折叠夹，不会混进这个 Agent 的活跃对话。Evaluator 自己的 Session 是普通的子 Agent Session。
+2. 每个 Evaluator 用 Penguin CLI 启动一次 Target Agent：开一个全新的顶层 Session，在 Target Agent 的 `workspaces/` 目录下建一个专属 Workspace，并以绝对路径传入。`penguin run` 创建的每个 Session 都是 CLI 会话，所以每个被测会话都会归入 Web App 会话列表的**后台会话**折叠夹并标为 CLI，不会混进这个 Agent 的活跃对话。Evaluator 自己的 Session 是普通的子 Agent Session，同样在这个折叠夹里。
 3. Target Agent 运行结束后，Evaluator 按评分细则为这次运行打分，返回一条协议结果：分数、成本、耗时和被测会话 id。Evaluator 不改动任何 Agent 或 Benchmark，也从不写 `scoreboard.yaml`。
 4. 调用方核对完整的矩阵后写入 `scoreboard.yaml`。
 
