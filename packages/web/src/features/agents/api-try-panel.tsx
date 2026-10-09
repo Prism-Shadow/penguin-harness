@@ -3,7 +3,9 @@
  * with) and Run, which sends one real API run through the try route — the owner's sign-in in
  * place of a key, the runs route's handler behind it — and shows its stream as a program would
  * receive it: the Session it named, the result line and the answer once `run.done` arrives, and
- * the events, readable or as the raw `data:` lines.
+ * the events, readable or as the raw `data:` lines. The result line names the status, the Request
+ * count, the output and total tokens, the cache-read and cache-write tokens when there are any,
+ * and the elapsed time.
  *
  * Running again continues the same Session, as a program does with `session_id`; New
  * conversation starts over. Stop asks the Session's abort route, so the stream still ends with
@@ -65,23 +67,16 @@ export interface ApiTryViewProps {
 function Stat({
   label,
   children,
-  tooltip,
   mono = false,
 }: {
   label: string;
   children: string;
-  tooltip?: string;
   mono?: boolean;
 }) {
   return (
     <span className="text-xs">
       <span className="text-fg-muted">{label}</span>{" "}
-      <span
-        data-tooltip={tooltip}
-        className={`font-semibold tabular-nums ${mono ? "font-mono" : ""}`}
-      >
-        {children}
-      </span>
+      <span className={`font-semibold tabular-nums ${mono ? "font-mono" : ""}`}>{children}</span>
     </span>
   );
 }
@@ -153,12 +148,13 @@ export function ApiTryView(p: ApiTryViewProps) {
               {run.status}
             </Stat>
             <Stat label={S.agent.apiTryRequests}>{String(run.requests)}</Stat>
-            <Stat
-              label={S.agent.apiTryTokens}
-              tooltip={S.agent.apiTryCacheTokens(run.usage.cache_read, run.usage.cache_write)}
-            >
-              {`${run.usage.output} / ${run.usage.total}`}
-            </Stat>
+            <Stat label={S.agent.apiTryTokens}>{`${run.usage.output} / ${run.usage.total}`}</Stat>
+            {run.usage.cache_read > 0 && (
+              <Stat label={S.agent.apiTryCacheRead}>{String(run.usage.cache_read)}</Stat>
+            )}
+            {run.usage.cache_write > 0 && (
+              <Stat label={S.agent.apiTryCacheWrite}>{String(run.usage.cache_write)}</Stat>
+            )}
             {p.result !== null && p.result.elapsedMs !== null && (
               <Stat
                 label={S.agent.apiTryElapsed}

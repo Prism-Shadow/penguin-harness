@@ -14,6 +14,8 @@
  * - A run against the fake yields the entries, the answer, the result line's values and the
  *   Session id; the input clears to the follow-up placeholder, and the next run carries that
  *   session_id.
+ * - The result line shows the cache-read and cache-write token counts inline, each only when it
+ *   is not zero.
  * - The raw view prints the exact data: lines as received, [DONE] last.
  * - A refusal before the stream shows its status, code and message and no entries; a body that
  *   ends before run.done shows the broken-stream line after the entries.
@@ -424,6 +426,30 @@ describe("a Try run", () => {
     // A new run's log starts empty.
     expect(h.state.entries.map((e) => e.type)).toEqual(["run.started", "run.done"]);
   });
+
+  it.each([
+    [900, 120],
+    [900, 0],
+    [0, 0],
+  ])(
+    "shows cache read %i and cache write %i on the result line, each only when not zero",
+    async (read, write) => {
+      const done = TIME_RUN.at(-1) as Extract<AmspEvent, { type: "run.done" }>;
+      const counts: TokenCounts = { cache_read: read, cache_write: write, output: 5, total: 50 };
+      stubFetch(() => sse([STARTED, { ...done, usage: counts }, "[DONE]"]));
+      const h = harness();
+      await runTry(TARGET, h.dispatch, tryBody(h.state), new AbortController().signal);
+      const line = html(h.state).replace(/<[^>]+>/g, "");
+      expect(line).toContain("5 / 50");
+      for (const [label, n] of [
+        [S.agent.apiTryCacheRead, read],
+        [S.agent.apiTryCacheWrite, write],
+      ] as const) {
+        if (n > 0) expect(line).toContain(`${label} ${n}`);
+        else expect(line).not.toContain(label);
+      }
+    },
+  );
 
   it("shows the exact data: lines in the raw view, [DONE] last", async () => {
     stubFetch(() => sse([...TIME_RUN, "[DONE]"]));

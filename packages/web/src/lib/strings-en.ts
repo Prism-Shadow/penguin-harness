@@ -1572,8 +1572,8 @@ export const en: Strings = {
     apiTryStatus: "Status",
     apiTryRequests: "Requests",
     apiTryTokens: "Tokens (output / total)",
-    apiTryCacheTokens: (read: number, write: number): string =>
-      `cache read ${read}, cache write ${write}`,
+    apiTryCacheRead: "Cache read",
+    apiTryCacheWrite: "Cache write",
     apiTryElapsed: "Elapsed",
     apiTryAnswer: "Answer",
     apiTryStreamBroken: "The stream ended before run.done.",
