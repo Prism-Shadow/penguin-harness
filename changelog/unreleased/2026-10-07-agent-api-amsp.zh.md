@@ -37,7 +37,7 @@ Project 所有者可以把某一个 Agent 开放给 PenguinHarness 之外的程�
 ## Web App
 
 - Agent 设置页新增 **API** 标签页：**开启 API 访问**、API 会话的审批模式、可复制的 Base URL 和 Agent ID、只显示一次并可在列表中删除的密钥、带警示的**允许无密钥访问**，以及 curl 和 TypeScript 示例。管理员关闭 Agent API 期间，标签页的开关不可用，并向所有成员说明原因。
-- API 标签末尾为所有者增加了**试一试**：输入框预填「现在几点了？」，「运行」经 `POST /api/projects/:projectId/agents/:agentId/api/try` 以所有者的登录身份代替密钥、经同一个处理器发起一次真实的 API 运行，并按程序会收到的样子显示事件流——可读的事件日志或原始 `data:` 行——以及回答、`run.done` 的状态、Request 次数、Token（有缓存读写时在行内一并显示）与用时，和 `session_id`；再次运行即续接该会话，「停止」经会话的中止路由中止，审批模式询问时可在行内作答。
+- API 标签末尾为所有者增加了**试一试**：输入框预填「现在几点了？」，「运行」经 `POST /api/projects/:projectId/agents/:agentId/api/try` 以所有者的登录身份代替密钥、经同一个处理器发起一次真实的 API 运行，并在一个输出框里按程序会收到的样子显示事件流：标题栏为 `session_id` 与「渲染」/「原始」切换——带行号的逐条目行（同一条目的增量片段合并为拼好的内容，回答即 `text` 行）或带行号的原始 `data:` 行——框底一栏为 `run.done` 的状态、Request 次数、Token（有缓存读写时一并显示）与用时；再次运行即续接该会话，「停止」经会话的中止路由中止，审批模式询问时可在行内作答。
 - 智能体页面为已开启 API 的 Agent 加上 API 图标。**设置 › 服务器**新增 **Agent API** 页，其中是管理员的**允许 Agent API** 开关，关闭前会先确认。
 
 ## CLI
