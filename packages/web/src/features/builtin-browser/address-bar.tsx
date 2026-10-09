@@ -1,7 +1,8 @@
 /**
- * The built-in browser's address bar: shows the page's address, takes a URL, a bare domain
- * or a search (address.ts decides which), and offers matching pages from the browser's
- * history underneath while the user types.
+ * The agent browser's address bar: shows the page's address, takes a URL, a bare domain or a
+ * search (address.ts decides which), and offers matching pages from the built-in browser's
+ * history underneath while the user types. On the user's own Chrome it offers none: that
+ * history is the built-in browser's, and Chrome keeps its own.
  *
  * It is a combobox: the text stays what the user typed, the arrows move a highlight through
  * the suggestions and back to the typed text (suggestion-nav.ts), Enter goes to the
@@ -40,11 +41,14 @@ export function AddressBar({
   url,
   onNavigate,
   inputRef,
+  suggest = true,
 }: {
   /** The address of the page on screen ("" with none). */
   url: string;
   onNavigate: (url: string) => void;
   inputRef?: Ref<HTMLInputElement>;
+  /** Whether to offer the built-in browser's history while the user types. */
+  suggest?: boolean;
 }) {
   const listId = useId();
   const fieldRef = useRef<HTMLInputElement | null>(null);
@@ -66,7 +70,7 @@ export function AddressBar({
   // Ask the history for what is typed, after a short pause; the typed text itself, trimmed,
   // is the query — an address typed in full still matches the pages it names.
   useEffect(() => {
-    const query = draft?.trim() ?? "";
+    const query = suggest ? (draft?.trim() ?? "") : "";
     const seq = ++querySeq.current;
     if (query === "") {
       setSuggestions([]);
@@ -86,7 +90,7 @@ export function AddressBar({
         });
     }, SUGGEST_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [draft]);
+  }, [draft, suggest]);
 
   // The list hangs off the field at viewport coordinates, so anything that moves the field
   // closes it rather than leaving it pointing at nothing.

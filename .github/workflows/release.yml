@@ -12,8 +12,10 @@
 #   Artifacts (one shape per target, serving online and offline installs alike):
 #   penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz, penguin-win32-x64.zip,
 #   their .sha256 files, SHA256SUMS, install.sh, install.ps1, probe-64k.bin, probe-1m.bin,
-#   release-download-manifest.tsv, and the desktop installers plus updater metadata/blockmaps;
-#   one version per tag, multiple versions coexist. Releases up to v0.1.5 shipped raw program
+#   release-download-manifest.tsv, the desktop installers plus updater metadata/blockmaps, and the
+#   Chrome extension as penguin-browser-extension-<version>.zip plus a version-less copy (GitHub
+#   only: neither the download manifest nor the OSS mirror lists it); one version per tag,
+#   multiple versions coexist. Releases up to v0.1.5 shipped raw program
 #   archives under the same names plus *-offline wrappers; the installers keep accepting that
 #   legacy layout for pinned versions.
 # - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/penguin-core
@@ -200,6 +202,26 @@ jobs:
 
       - name: Build (tsup + vite)
         run: pnpm build
+
+      # The Chrome extension (PenguinHarness Browser), zipped by its own build above. It ships
+      # under its versioned name and a version-less copy, so the docs and the Web App's pairing
+      # dialog can link to releases/latest/download/penguin-browser-extension.zip. Users load it
+      # unpacked for now; a Chrome Web Store listing comes later, and the manifest's pinned key
+      # keeps the extension id the same across both. Tags from before the extension have no
+      # zip and skip this step, so they stay rebuildable.
+      - name: Collect the Chrome extension
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p extension-artifacts
+          set -- packages/browser-extension/dist/penguin-browser-extension-*.zip
+          if [ ! -f "$1" ]; then
+            echo "No Chrome extension in this tag; nothing to collect."
+            exit 0
+          fi
+          cp "$1" "extension-artifacts/penguin-browser-extension-${TAG#v}.zip"
+          cp "$1" extension-artifacts/penguin-browser-extension.zip
+          unzip -l extension-artifacts/penguin-browser-extension.zip | grep -q ' manifest.json$'
 
       # lib/: the CLI and its production deps (including workspace core/server/skills, all build outputs);
       # Use pnpm's current deploy implementation with injected workspace packages; the hoisted target layout
@@ -424,6 +446,7 @@ jobs:
             desktop-artifacts/latest*.yml
             desktop-artifacts/*.blockmap
             desktop-artifacts/SHA256SUMS.desktop
+            extension-artifacts/*.zip
             install.sh
             install.ps1
 

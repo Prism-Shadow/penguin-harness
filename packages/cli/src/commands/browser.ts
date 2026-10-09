@@ -1,6 +1,8 @@
 /**
- * `penguin browser` — the desktop app's built-in browser, a thin client over
- * /api/builtin-browser in the shape of GenericAgent's web_scan / web_execute_js tools:
+ * `penguin browser` — the agent browser, a thin client over /api/builtin-browser in the shape of
+ * GenericAgent's web_scan / web_execute_js tools. The browser is the one the user chose for their
+ * agents: the desktop app's built-in browser, or their own Chrome through the PenguinHarness
+ * Browser extension. The CLI never picks it; `status` names it.
  *
  *   penguin browser status | tabs
  *   penguin browser open <url> [--new-tab] | switch <tab-id> | close [<tab-id>]
@@ -17,12 +19,14 @@
  *
  * Every command takes `--json` (the response DTO as one line) and `--server`; the commands that
  * act on a page take `--tab <id|active>`, `active` by default. Inside a session,
- * PENGUIN_SESSION_ID travels as `sessionId`, so the app can show which conversation is driving
- * the browser. What is printed is browser-output.ts; an error is one line on stderr,
- * `error: <code>: <message>`, with exit code 1.
+ * PENGUIN_SESSION_ID travels with every call as `sessionId` — in the body, or the query of a GET
+ * or DELETE. The server acts for the person driving that session, so an agent drives its own
+ * user's Chrome, and the app shows which conversation is at work. What is printed is
+ * browser-output.ts; an error is one line on stderr, `error: <code>: <message>`, with exit code 1.
  *
- * The CLI never auto-starts a server for these commands: the browser lives in the desktop app,
- * and a server started here would have no desktop shell to host it.
+ * The CLI never auto-starts a server for these commands: the built-in browser lives in the
+ * desktop app, and the user's Chrome is paired with the server they signed in to, so a server
+ * started here would have neither.
  * Docs: /docs/cli § "penguin browser".
  */
 import fs from "node:fs";
@@ -120,15 +124,20 @@ function describeError(err: unknown, t: Messages): { code: string; message: stri
         ? (body.error as { message?: unknown; reason?: unknown })
         : {};
     const code = typeof body.error === "string" ? body.error : err.code;
-    if (code === "browser_unavailable") {
-      const reason = nested.reason ?? body.reason;
-      return {
-        code,
-        message: t.browser.unavailableHint(typeof reason === "string" ? reason : undefined),
-      };
-    }
     // A 401's own words are the CLI's (they name the token to check); otherwise the server's.
     const own = [nested.message, body.message].find((m) => typeof m === "string" && m !== "");
+    if (code === "browser_unavailable") {
+      // A reason the CLI words with what to tell the user; without one (the user paused the
+      // extension, the link dropped mid-call) the server's own words say it.
+      const reason = nested.reason ?? body.reason;
+      if (typeof reason === "string") return { code, message: t.browser.unavailableHint(reason) };
+      return {
+        code,
+        message: typeof own === "string" ? own : t.browser.unavailableHint(undefined),
+      };
+    }
+    // Import and history asked of the user's Chrome (405): what to do instead.
+    if (code === "not_supported") return { code, message: t.browser.notSupported() };
     return { code, message: err.status !== 401 && typeof own === "string" ? own : err.message };
   }
   const cause = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
@@ -175,10 +184,16 @@ function normalizeUrl(raw: string): string {
   return raw.trim();
 }
 
-/** The calling session (PENGUIN_SESSION_ID), for the bodies that accept one. */
+/** The calling session (PENGUIN_SESSION_ID), for a request body. */
 function session(): { sessionId?: string } {
   const id = process.env.PENGUIN_SESSION_ID?.trim();
   return id ? { sessionId: id } : {};
+}
+
+/** The same for the query of a GET or DELETE: `?sessionId=…` (or `&` after a query), or nothing. */
+function sessionQuery(joiner: "?" | "&" = "?"): string {
+  const { sessionId } = session();
+  return sessionId === undefined ? "" : `${joiner}sessionId=${enc(sessionId)}`;
 }
 
 function print(text: string): void {
@@ -342,7 +357,7 @@ async function resolveSource(client: ServerClient, from: string, t: Messages): P
   if (from.includes(":")) return from;
   const { sources } = await client.request<BuiltinBrowserImportSourcesResponse>(
     "GET",
-    `${BASE}/import/sources`,
+    `${BASE}/import/sources${sessionQuery()}`,
   );
   const browser = from.trim().toLowerCase();
   const matching = sources.filter((s) => s.browser === browser);
@@ -387,7 +402,10 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
   leaf(browser.command("status").description(t.browser.statusDesc)).action(
     action(t, async (opts: CommonOpts) => {
       const client = await connect(opts, t);
-      const res = await client.request<BuiltinBrowserStatus>("GET", `${BASE}/status`);
+      const res = await client.request<BuiltinBrowserStatus>(
+        "GET",
+        `${BASE}/status${sessionQuery()}`,
+      );
       if (opts.json === true) printJson(res);
       else print(renderStatus(res, t));
       if (!res.available) process.exitCode = 1;
@@ -397,7 +415,10 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
   leaf(browser.command("tabs").description(t.browser.tabsDesc)).action(
     action(t, async (opts: CommonOpts) => {
       const client = await connect(opts, t);
-      const res = await client.request<BuiltinBrowserTabsResponse>("GET", `${BASE}/tabs`);
+      const res = await client.request<BuiltinBrowserTabsResponse>(
+        "GET",
+        `${BASE}/tabs${sessionQuery()}`,
+      );
       if (opts.json === true) printJson(res);
       else print(renderTabs(res, t));
     }),
@@ -445,6 +466,7 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
       const res = await client.request<{ tab: BuiltinBrowserTab }>(
         "POST",
         `${BASE}/tabs/${tab}/activate`,
+        session(),
       );
       if (opts.json === true) printJson(res);
       else print(`${tabHead(res.tab, t)}\n`);
@@ -460,7 +482,7 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
     action(t, async (raw: string | undefined, opts: CommonOpts) => {
       const tab = tabRef(raw, t);
       const client = await connect(opts, t);
-      await client.request("DELETE", `${BASE}/tabs/${tab}`);
+      await client.request("DELETE", `${BASE}/tabs/${tab}${sessionQuery()}`);
       if (opts.json === true) printJson({ closed: tab === "active" ? tab : Number(tab) });
       else print(`${tab === "active" ? t.browser.closedActive() : t.browser.closed(tab)}\n`);
     }),
@@ -484,6 +506,7 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
         {
           ...(opts.text === true ? { textOnly: true } : {}),
           ...(maxChars !== undefined ? { maxChars } : {}),
+          ...session(),
         },
       );
       if (opts.json === true) printJson(res);
@@ -631,7 +654,7 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
       const res = await client.request<BuiltinBrowserScreenshot>(
         "POST",
         `${BASE}/tabs/${tab}/screenshot`,
-        opts.fullPage === true ? { fullPage: true } : {},
+        { ...(opts.fullPage === true ? { fullPage: true } : {}), ...session() },
       );
       if (opts.json === true && opts.output === undefined) {
         printJson(res);
@@ -671,6 +694,7 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
       const res = await client.request<{ result: unknown }>("POST", `${BASE}/tabs/${tab}/cdp`, {
         method,
         ...(params !== undefined ? { params } : {}),
+        ...session(),
       });
       if (opts.json === true) printJson(res);
       else print(renderCdpResult(res.result, t));
@@ -704,7 +728,7 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
         if (opts.list === true) {
           const res = await client.request<BuiltinBrowserImportSourcesResponse>(
             "GET",
-            `${BASE}/import/sources`,
+            `${BASE}/import/sources${sessionQuery()}`,
           );
           if (opts.json === true) printJson(res);
           else print(renderImportSources(res.sources, t));
@@ -718,6 +742,7 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
           cookies: both || opts.cookies === true,
           history: both || opts.history === true,
           ...(opts.domain.length > 0 ? { domains: opts.domain } : {}),
+          ...session(),
         });
         if (opts.json === true) printJson(res);
         else print(renderImportResult(res, t));
@@ -737,7 +762,7 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
       const client = await connect(opts, t);
       const res = await client.request<BuiltinBrowserHistoryResponse>(
         "GET",
-        `${BASE}/history?q=${enc(query ?? "")}&limit=${limit}`,
+        `${BASE}/history?q=${enc(query ?? "")}&limit=${limit}${sessionQuery("&")}`,
       );
       if (opts.json === true) printJson(res);
       else print(renderHistory(res.entries, t));

@@ -2,6 +2,11 @@
   "description": "Create and edit Bento presentations — self-contained .bento.html decks whose document is JSON. Use whenever the user wants a slide deck or presentation: from scratch, from source material, or by improving an existing file.",
   "short_description": "Author Bento slide decks.",
   "short_description_zh": "制作 Bento 幻灯片。",
-  "version": "2026.07.22.1",
-  "category": "office-productivity"
+  "version": "2026.10.04.1",
+  "category": "office-productivity",
+  "quick_start": {
+    "prompt": "Make a three-slide Bento deck in this Workspace introducing PenguinHarness: a title slide, what it does, and how to get started.",
+    "prompt_zh": "在当前工作区做一份三页的 Bento 幻灯片介绍 PenguinHarness：标题页、它能做什么、如何上手。",
+    "skills": ["bento-slides"]
+  }
 }

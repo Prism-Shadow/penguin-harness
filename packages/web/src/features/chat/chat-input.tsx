@@ -128,6 +128,7 @@ import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
+import type { PermissionPick } from "../../lib/permission-level";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { SkillPickList } from "../skills/skill-pick-list";
 import { toggleSkillName } from "../skills/skill-selection";
@@ -567,11 +568,13 @@ export interface ComposerControl {
    * anything. `pinnedSkills` is the caller's full list; names the current Agent has not
    * installed are dropped here, where the installed list already lives. Pass an empty list to
    * leave the composer's own Skill selection untouched. Replacing text the user typed asks first.
+   * An empty prompt empties the text body: a reply's choice offers "Other…", and the answer it
+   * asks for is the one the user types here.
    */
   fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
   /**
-   * Move focus to the text body and leave everything in it as it is: a reply's choice offers
-   * "Other…", and the answer it asks for is the one the user types here.
+   * Move focus to the text body and leave everything in it as it is, for a surface that asks
+   * for an answer in the user's own words without clearing what is there.
    */
   focus: () => void;
   /**
@@ -627,15 +630,15 @@ export function ChatInput({
   vision,
   approvalMode,
   approvalModes,
-  onChangeApprovalMode,
   sandbox,
-  onChangeSandbox,
+  onChangePermission,
   modeSaving,
   autoFocus,
   agents,
   currentAgentId,
   skills,
   initialSkills,
+  initialGoal,
   onSkillsChange,
   onHandoff,
   initialText,
@@ -803,16 +806,16 @@ export function ChatInput({
   vision: boolean;
   approvalMode: ApprovalMode;
   /**
-   * The modes the permission button's Approval section lists, in order (`approvalModeChoices`):
-   * all four, except that an organization's Session leaves out `always-ask` unless it is the
-   * current value. The button's level and title follow `approvalMode` whatever the list holds.
+   * The approval modes the permission button may offer, in order (`approvalModeChoices`): all
+   * four, except that an organization's Session leaves out `always-ask` unless it is the current
+   * value. A preset whose approval mode is not listed is left out of the menu, unless it is the
+   * current preset. The button's level and title follow `approvalMode` whatever the list holds.
    */
   approvalModes: readonly ApprovalMode[];
-  /** A returned promise keeps the permission button's pick on screen until the save settles. */
-  onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<unknown>;
   /** The Session's own sandbox policy (the draft's pick before there is a Session). */
   sandbox: SessionSandbox;
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void | Promise<unknown>;
+  /** Saves a preset's approval mode and sandbox together; a returned promise keeps the permission button's pick on screen until the save settles. */
+  onChangePermission: (pick: PermissionPick) => void | Promise<unknown>;
   modeSaving: boolean;
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
@@ -834,6 +837,8 @@ export function ChatInput({
    * in that list are pruned.
    */
   initialSkills?: string[];
+  /** Start in goal mode (a plugin's quick start whose demo is a goal): read once on mount. */
+  initialGoal?: boolean;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
   onSkillsChange?: (names: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
@@ -952,7 +957,7 @@ export function ChatInput({
   // images and selected skills ride the round-1 message exactly as in a normal send: the images
   // as image input (path lines only on a model without vision), the skills as a [use_skills]
   // block. Later rounds restate the objective text alone.
-  const [goalOn, setGoalOn] = useState(false);
+  const [goalOn, setGoalOn] = useState(initialGoal === true);
   const [goalBudgetText, setGoalBudgetText] = useState("");
   const [goalBudgetOpen, setGoalBudgetOpen] = useState(false);
   const [goalBudgetDraft, setGoalBudgetDraft] = useState("");
@@ -1298,14 +1303,16 @@ export function ChatInput({
   );
   /**
    * Every fill passes here, whichever surface sent it (an example task, a saved shortcut, a
-   * schedule's prompt): replacing text the user typed asks first. A fill over an empty box,
-   * over the same prompt, or over what an earlier fill put there untouched (browsing the
-   * examples) goes straight in.
+   * schedule's prompt, a reply's choice or form): replacing text the user typed asks first. A
+   * fill over an empty box, over the same prompt, or over what an earlier fill put there
+   * untouched (browsing the examples, or a pick before the choice's "Other…") goes straight in.
+   * An empty fill is a clear, and its confirmation says so.
    */
   const [pendingFill, setPendingFill] = useState<{
     prompt: string;
     pinnedSkills: readonly string[];
   } | null>(null);
+  const clearingFill = pendingFill?.prompt === "";
   const fillPrompt = useCallback(
     (prompt: string, pinnedSkills: readonly string[]) => {
       const typed = textRef.current;
@@ -2511,8 +2518,7 @@ export function ChatInput({
               approvalMode={approvalMode}
               approvalModes={approvalModes}
               sandbox={sandbox}
-              onChangeApprovalMode={onChangeApprovalMode}
-              onChangeSandbox={onChangeSandbox}
+              onChange={onChangePermission}
               disabled={modeSaving}
               direction={models && onChangeModel ? "down" : "up"}
             />
@@ -2621,17 +2627,19 @@ export function ChatInput({
       />
       <ConfirmModal
         open={pendingFill !== null}
-        title={S.chat.replaceTypedTitle}
+        title={clearingFill ? S.chat.clearTypedTitle : S.chat.replaceTypedTitle}
         tone="primary"
         onClose={() => setPendingFill(null)}
         onConfirm={() => {
           if (pendingFill !== null) applyFill(pendingFill.prompt, pendingFill.pinnedSkills);
           setPendingFill(null);
         }}
-        confirmLabel={S.chat.replaceTyped}
+        confirmLabel={clearingFill ? S.chat.clearTyped : S.chat.replaceTyped}
         cancelLabel={S.common.cancel}
       >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.chat.replaceTypedBody}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {clearingFill ? S.chat.clearTypedBody : S.chat.replaceTypedBody}
+        </p>
       </ConfirmModal>
     </div>
   );

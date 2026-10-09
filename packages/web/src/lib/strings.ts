@@ -306,7 +306,7 @@ export const zh = {
     panelUnavailable: "此面板暂不可用",
   },
 
-  /** The built-in browser (desktop app only): its dock panel, toolbar and dialogs. */
+  /** The agent browser — the built-in one (desktop app) or the user's own Chrome: its dock panel, toolbar and dialogs. */
   builtinBrowser: {
     /** The dock tab's name, also in the dock's menus and the launcher. */
     panelTitle: "浏览器",
@@ -353,7 +353,65 @@ export const zh = {
     unavailableDesktop: "内置浏览器只能在 PenguinHarness 桌面应用中使用。",
     unavailableShell: "当前桌面应用版本过旧，请更新后使用内置浏览器。",
     unavailableWindow: "没有可以显示浏览器的应用窗口。",
+    /** The unavailable built-in panel's way out, where the server offers the user's Chrome. */
+    useChrome: "改用系统 Chrome",
     openFailed: (reason: string): string => `无法打开标签页：${reason}`,
+    closeFailed: (reason: string): string => `无法关闭标签页：${reason}`,
+    /** The overflow menu's backend choice (desktop app): the group's name and its two choices. */
+    backendGroup: "浏览器",
+    backendBuiltin: "内置",
+    backendChrome: "系统 Chrome",
+    /** The status row under the choice: the user's Chrome as the server last said. */
+    chromeConnected: (name: string | null): string =>
+      name !== null ? `Chrome：已连接 · ${name}` : "Chrome：已连接",
+    chromeNotConnected: "Chrome：未连接",
+    chromeNotPaired: "尚未配对 Chrome",
+    chromeDisabled: "Chrome 连接已关闭",
+    /** The status row's action: the pairing dialog, or Settings › Browser once one is paired. */
+    connectChrome: "连接你的 Chrome…",
+    manageChrome: "管理…",
+    /** The toast after a switch, and the one when an agent at work refuses it. */
+    switchedToChrome: "Agent 现在使用你的 Chrome",
+    switchedToBuiltin: "Agent 现在使用内置浏览器",
+    switchRefused: "Agent 正在使用浏览器，等它完成后再切换",
+    switchFailed: (reason: string): string => `无法切换浏览器：${reason}`,
+    /** The Chrome surface: in place of the page, a card for a tab that lives in the user's Chrome. */
+    chromeTabCard: "此标签页在你的 Chrome 中打开",
+    showInChrome: "在 Chrome 中显示",
+    chromeNoTabsTitle: "你的 Chrome 里还没有 Agent 的标签页",
+    chromeNoTabsBody: "Agent 打开的页面会出现在 Chrome 的 Penguin 标签组里。",
+    /** Paired but not connected: the title, which Chrome, and the fold with what to check. */
+    chromeDisconnectedTitle: "Chrome 未连接",
+    chromeDisconnectedBody: (name: string | null): string =>
+      name !== null
+        ? `${name} 现在没有连到这台服务器。`
+        : "你配对的 Chrome 现在没有连到这台服务器。",
+    reconnectHelp: "重新连接帮助",
+    reconnectOpen: "打开 Chrome，确认 PenguinHarness Browser 扩展在 chrome://extensions 中已启用。",
+    reconnectResume: "点工具栏上的扩展图标；如果显示已暂停，选择「继续」。",
+    reconnectPair: "服务器地址变了，或扩展里移除了这台服务器时，需要重新配对。",
+    /** The admin's switch is off. */
+    chromeDisabledTitle: "Chrome 连接已关闭",
+    chromeDisabledBody: "这台服务器的管理员关闭了 Chrome 扩展连接。",
+    /** No Chrome paired: the line above the pairing steps the panel shows in its place. */
+    chromeUnpairedIntro:
+      "安装 PenguinHarness Browser 扩展并完成配对后，Agent 就能在你自己的 Chrome 里打开和操作网页，使用你在 Chrome 中的登录状态。",
+    /** The pairing dialog, and the same three steps inline in the panel while no Chrome is paired. */
+    pairTitle: "连接你的 Chrome",
+    pairStepInstall:
+      "下载扩展并解压。在 Chrome 中打开 chrome://extensions，开启「开发者模式」，选择「加载已解压的扩展程序」并选中解压出的文件夹，再把扩展固定到工具栏。",
+    pairDownload: "下载扩展（zip）",
+    pairStepOpen: "点工具栏上的 PenguinHarness Browser 图标，选择「设置」，打开扩展的配对页。",
+    pairStepPaste: "把下面的服务器地址和配对码粘贴进去，选择「连接」。",
+    pairServer: "服务器地址",
+    pairCode: "配对码",
+    /** Under the code: one use, until when (a local HH:mm). */
+    pairCodeExpiry: (time: string): string => `只能使用一次，${time} 前有效`,
+    pairCodeExpired: "配对码已过期",
+    pairNewCode: "换一个",
+    pairCodeFailed: (reason: string): string => `无法生成配对码：${reason}`,
+    pairWaiting: "正在等待 Chrome…",
+    pairConnected: "已连接",
     /** The import dialog: copies sign-ins and history from a browser installed on this computer. */
     importTitle: "从浏览器导入",
     importIntro: "把系统浏览器里的登录状态和历史记录复制到内置浏览器，原浏览器中的数据不会改变。",
@@ -430,6 +488,38 @@ export const zh = {
     },
   },
 
+  /** Settings › Personal › Browser (the user's agent browser) and Settings › Server › Chrome extension. */
+  browserSettings: {
+    /** The backend choice; only on the desktop app, which has both. */
+    backend: "Agent 使用的浏览器",
+    backendInfo:
+      "内置浏览器在桌面应用里，有自己的登录状态；系统 Chrome 是你自己的 Chrome，Agent 只操作它打开的标签页和你交给它的标签页。Agent 自己不能切换。",
+    paired: "已配对的 Chrome",
+    pairedNone: "还没有配对的 Chrome。",
+    /** A paired Chrome's line under its name: the extension's version, and when it was last connected. */
+    pairedLine: (version: string, seen: string | null): string =>
+      seen === null ? `扩展 ${version} · 尚未连接过` : `扩展 ${version} · 最近连接 ${seen}`,
+    /** The state dot's accessible name. */
+    connected: "已连接",
+    notConnected: "未连接",
+    revoke: "撤销",
+    revokeTitle: "撤销这个 Chrome？",
+    revokeBody: (name: string): string =>
+      `撤销后，Agent 不能再操作「${name}」，它会立即断开；要再使用它，需要重新配对。`,
+    revoked: (name: string): string => `已撤销「${name}」`,
+    revokeFailed: (reason: string): string => `无法撤销：${reason}`,
+    connectFirst: "连接你的 Chrome",
+    connectAnother: "连接另一个 Chrome",
+    loadFailed: (reason: string): string => `无法读取已配对的 Chrome：${reason}`,
+    disabledNote: "这台服务器的管理员关闭了 Chrome 扩展连接。",
+    /** Settings › Server › Chrome extension: the admin's switch, and the question before it goes off. */
+    allow: "允许 Chrome 扩展连接",
+    offTitle: "关闭 Chrome 扩展连接？",
+    offBody:
+      "所有用户的扩展会立即断开，整个服务器上的 Agent 都不能再使用 Chrome。配对会保留，重新开启后扩展会自行重连。",
+    off: "关闭",
+  },
+
   /** The Trace dock panel (the current conversation's Trace files). */
   tracePanel: {
     empty: "暂无轨迹",
@@ -442,6 +532,11 @@ export const zh = {
     languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "设置",
+    /** Settings › Personal › Browser, and the server page with the admin's Chrome switch. */
+    browserTitle: "浏览器",
+    chromeExtensionTitle: "Chrome 扩展",
+    chromeExtensionInfo:
+      "开启时，这台服务器上的每个用户都可以配对自己的 Chrome，让 Agent 在其中操作；关闭时，所有扩展断开，已有的配对保留。",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
@@ -500,6 +595,11 @@ export const zh = {
     pluginsTitle: "插件",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) => `${title}（不支持：${reason}）`,
+    /** A switch one of whose positions this machine cannot honour, under the switch. */
+    pluginPositionUnavailable: (position: string, reason: string) =>
+      `本机不支持${position}：${reason}`,
+    pluginPositionOn: "开启",
+    pluginPositionOff: "关闭",
     pluginsInfo:
       "各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
@@ -527,6 +627,43 @@ export const zh = {
     uploadLimitsInfo: (count: number, imageMb: number): string =>
       `一条消息最多 ${count} 个附件；对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——` +
       `图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
+    /** The fold holding the fields a settings group marks advanced. */
+    pluginAdvanced: "高级选项",
+    /** A table cell its row does not let change, beside the lock mark. */
+    pluginCellLocked: "已锁定：此行保持这个取值",
+    pluginCellOn: "开",
+    pluginCellOff: "关",
+    /** A table row's drag handle: what it moves, and how. */
+    pluginTableMove: (row: string) => `移动 ${row}`,
+    pluginTableMoveHint: "拖动，或按上下方向键",
+    /** The add button under an extensible table that names none of its own. */
+    pluginTableAdd: "添加一行",
+    /** After the chosen row's name (the sandbox's default preset): the row choice's title. */
+    pluginTableChosenMarker: (title: string) => `（${title}）`,
+    /** A table row's "…" button: its accessible name and tooltip. */
+    pluginTableRowMenu: (row: string) => `更多操作：${row}`,
+    pluginTableRowMenuHint: "更多操作",
+    /** The row menu's items: make the row the chosen one, and delete a row an administrator added. */
+    pluginTableChoose: "设为默认",
+    pluginTableChosen: "已是默认",
+    pluginTableDelete: "删除",
+    pluginTableDeleteChosen: "请先把其他行设为默认",
+    /** One line of a row's "?" that lists its values: a choice column's value, and what it does. */
+    pluginTableRowValue: (column: string, value: string, does: string | undefined) =>
+      does === undefined ? `${column}：${value}` : `${column}：${value}。${does}`,
+    /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
+    sandboxBackendPrompt: {
+      title: "安装沙盒后端",
+      body: (machine: string, pkgs: readonly string[]) =>
+        `${machine} 没有适用于其操作系统的沙盒后端，新会话暂时无法进入沙盒。是否安装 ${pkgs.join(" 和 ")}？` +
+        (pkgs.length > 1 ? "两者都可用时，使用封禁范围更大的那个。" : ""),
+      cost: "安装会重新装载服务器的插件，所有项目中正在进行的 Agent 运行都会停止。无论是否安装，开关都保持打开。",
+      install: "安装",
+      installing: "正在安装…",
+      later: "暂不",
+      dontAsk: "此机器不再询问",
+      noProject: "请先打开一个项目：后端会安装到当前项目。",
+    },
     theme: "主题",
     themeInfo: "应用的整体风格：布局、线条、字体与动效随之改变，内容与其他设置不受影响。",
     /** Display names of the three themes; the ids stay github / modern / geek. */
@@ -2258,8 +2395,11 @@ export const zh = {
     detailSkills: "技能",
     detailHooks: "钩子",
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
-    /** Title on a disabled quick-start button: it pre-selects one of the plugin's skills on the currently selected Agent, so the plugin has to be installed there first. */
-    quickInvokeNeedsInstall: "先在当前 Agent 安装该插件后才能快捷调用",
+    /** Quick start's tooltip: what pressing it does, and what it does not. */
+    quickStartHint: "快速开始：打开一份带该插件演示的草稿——点发送之前什么都不会运行",
+    quickStartInstallTitle: (plugin: string, agent: string) =>
+      `先把 ${plugin} 安装到 ${agent} 再快速开始？`,
+    quickStartAfterInstall: "随后打开一份带演示的草稿；点发送之前什么都不会运行。",
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
@@ -2340,6 +2480,11 @@ export const zh = {
     readme: "说明文档",
     noReadme: "该插件暂无说明文档。",
     notFound: "找不到这个插件。",
+    /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
+    sourceUnavailable: (count: number): string =>
+      count === 1
+        ? "有 1 个插件来源无法访问，下面的列表可能不完整。"
+        : `有 ${count} 个插件来源无法访问，下面的列表可能不完整。`,
     repository: "源码仓库",
     homepage: "主页",
     authors: "作者",
@@ -2349,7 +2494,7 @@ export const zh = {
   },
 
   skills: {
-    quickInvoke: "快捷调用",
+    quickInvoke: "快速开始",
     /** Pre-filled body for quick invoke (per UI language; English is `use the <name> skill`). */
     quickInvokeText: (name: string): string => `使用 ${name} 技能`,
     /** Bulk controls of the multi-select skill panel; both act on the rows the search box currently leaves visible. */
@@ -2836,12 +2981,41 @@ Benchmark：
       notInstalled: "未安装",
       noBackend:
         "本服务器没有安装沙盒后端，命令无法被封禁。管理员可在插件页启用适用于本平台的后端（更多…）。",
-      noNetworkUnsupported: "本机的沙盒后端不支持断开网络",
+      noNetworkUnsupported: (backends?: string) =>
+        `本机的沙盒只封禁文件${backends !== undefined ? `（${backends} 不隔离网络）` : ""}，无法断开网络`,
+      maskUnsupported: (backends?: string) =>
+        `本会话要对命令隐藏屏蔽路径，但本机没有能屏蔽路径的沙盒后端${backends !== undefined ? `（${backends} 不能屏蔽路径）` : ""}，每条命令都会被拒绝。管理员可在「更多…」里的沙盒卡片清空屏蔽路径。`,
       notAvailable: "不可用",
+      adminOnly: "仅管理员",
+      aboveCeiling: "超出了本服务器的沙盒上限：只有管理员可以给会话这么大的权限。",
       backendUnavailable: (name: string, reason: string) =>
         `沙盒后端 ${name} 已启用但未在用：${reason}。管理员可在「更多…」里的沙盒卡片处理。`,
       more: "更多…",
       approval: "审批",
+      custom: "自定义",
+      advancedActive: "高级设置生效中",
+      advancedHint: "本会话另有屏蔽路径或只读的临时目录，来自沙盒卡片；选择预设会保留它们。",
+      blocks: "封住",
+      allows: "放开",
+      nothing: "无",
+      enforceable: "本机可以实施。",
+      needsNoBackend: "不需要沙盒后端。",
+      effects: {
+        "write-outside-workspace": "写工作区之外",
+        "write-anywhere": "写任何文件",
+        network: "全部网络",
+        "network-beyond-localhost": "本机 localhost 之外的网络",
+        "unasked-calls": "不经询问的工具调用（每次调用先问）",
+        "unasked-writes": "不经询问的写入（可能写入的调用先问）",
+        "every-call": "每一次工具调用（全部拒绝）",
+        "files-everywhere": "读写任何文件",
+        "files-in-workspace": "写工作区之内",
+        "read-files": "读取文件",
+        "network-open": "完整网络",
+        localhost: "本机 localhost",
+        "calls-unasked": "所有工具调用，不经询问",
+        "reads-unasked": "只读调用，不经询问",
+      } as Record<string, string>,
     },
     /** Short description (the trigger button shows only the description, not the mode id). */
     approvalModeNames: {
@@ -3013,6 +3187,10 @@ Benchmark：
     replaceTypedTitle: "替换输入框内容",
     replaceTyped: "替换",
     replaceTypedBody: "用这条提示词替换输入框里已有的内容？你输入的文字会被清掉。",
+    /** A choice's "Other…" about to empty the composer of text the user typed. */
+    clearTypedTitle: "清空输入框内容",
+    clearTyped: "清空",
+    clearTypedBody: "清空输入框里已输入的文字，另写自己的回答？",
     statTokens: "Token 累计",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "总 Token",
@@ -3224,15 +3402,17 @@ Benchmark：
     copyCode: "复制代码",
     copyReply: "复制回复",
     /**
-     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram),
-     * handed to the UI package that draws them (lib/ui-strings.ts). Of the four tone names, a
-     * warning is about loss or harm and a caution about something recoverable breaking, so the
-     * two must not read as the same level.
+     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram, and
+     * the weather, clock, countdown and metrics widgets), handed to the UI package that draws
+     * them (lib/ui-strings.ts). Of the four tone names, a warning is about loss or harm and a
+     * caution about something recoverable breaking, so the two must not read as the same level.
      */
     a2ui: {
+      /** The language these words are in: widgets format numbers, dates and weekdays in it. */
+      lang: "zh" as "zh" | "en",
       /** The button that puts a multi-select pick, or a form's answers, in the composer. */
       fill: "填入输入框",
-      /** A choice's own-answer control: focuses the composer. */
+      /** A choice's own-answer control: empties the composer for the user's own answer. */
       other: "其他…",
       /** The mark on the option the model recommends. */
       recommended: "推荐",
@@ -3248,6 +3428,53 @@ Benchmark：
       diagram: "图表",
       /** The toggle that shows a diagram's source. */
       showSource: "查看源码",
+      /** A form's number stepper: add or subtract one step. */
+      stepUp: "增加",
+      stepDown: "减少",
+      /** The weather conditions, by the catalog's key (the same words as core's fallback). */
+      conditions: {
+        clear: "晴",
+        "partly-cloudy": "多云",
+        cloudy: "阴",
+        fog: "雾",
+        drizzle: "小雨",
+        rain: "雨",
+        "heavy-rain": "大雨",
+        thunder: "雷雨",
+        snow: "雪",
+        sleet: "雨夹雪",
+        wind: "大风",
+      },
+      /** A snapshot widget's head: when its data was read. */
+      asOf: (time: string) => `数据时间 ${time}`,
+      /** A weather widget's foot: where its data came from. */
+      source: (name: string) => `来源：${name}`,
+      feelsLike: "体感",
+      humidity: "湿度",
+      wind: "风",
+      precipitation: "降水",
+      high: "最高",
+      low: "最低",
+      hourly: "逐小时",
+      daily: "未来几天",
+      today: "今天",
+      /** The widgets' accessible names when the model gave no title. */
+      weather: "天气",
+      clock: "时钟",
+      countdown: "倒计时",
+      metrics: "指标",
+      localTime: "本地时间",
+      /** A countdown past its moment, unless the model named it. */
+      countdownDone: "时间到",
+      unitDays: "天",
+      unitHours: "时",
+      unitMinutes: "分",
+      unitSeconds: "秒",
+      /** A finished progress reading. */
+      done: "已完成",
+      /** Which way a reading moved, read out before its change. */
+      deltaUp: "上升",
+      deltaDown: "下降",
     },
     forkSession: "从这里分叉对话",
     forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",
@@ -3348,6 +3575,8 @@ Benchmark：
      */
     linkMenu: {
       openInBuiltinBrowser: "在内置浏览器中打开",
+      /** The same row while the agents drive the user's Chrome: the link opens in a tab there. */
+      openInChromeTab: "在 Agent 的 Chrome 标签页中打开",
       openExternal: "在系统浏览器中打开",
       openInNewTab: "在新标签页中打开",
       copyLink: "复制链接地址",
@@ -5101,7 +5330,8 @@ Benchmark：
       ticket_session_failed: "无法发起工单会话。",
       handbook_file_not_found: "该文档已不存在。",
       handbook_index_required: "手册索引（README.md）不能删除。",
-      browser_unavailable: "内置浏览器不可用：它需要 PenguinHarness 桌面应用处于打开状态。",
+      browser_unavailable:
+        "浏览器现在不可用：内置浏览器需要打开 PenguinHarness 桌面应用，你的 Chrome 需要连上 PenguinHarness Browser 扩展。",
       source_not_found: "找不到这个浏览器配置文件。",
       shell_unreachable: "无法联系桌面应用。",
       timeout: "操作超时，请重试。",

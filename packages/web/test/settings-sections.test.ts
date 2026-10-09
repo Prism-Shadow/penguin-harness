@@ -4,8 +4,8 @@
  * filter hands a non-admin the form. The admin APIs answer a non-admin with 403 either way; this
  * filter is convenience, not the boundary.
  *
- * - A web admin gets every page in rail order; a non-admin only their own pages, nothing
- *   server-global; the desktop shell's window drops the account page and user management; a
+ * - A web admin gets every page in rail order; a non-admin only their own pages (their browser
+ *   among them: every user may pair their own Chrome), nothing server-global; the desktop shell's window drops the account page and user management; a
  *   password session against a desktop-mode server keeps the account page.
  * - The rail lists an admin's groups once each, in page order, and a single group when only
  *   one remains (its cue to draw no heading).
@@ -52,9 +52,11 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
+      "browser",
       "proxy",
       "uploads",
       "company",
+      "chromeExtension",
       "plugins",
       "users",
     ]);
@@ -71,6 +73,7 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
+      "browser",
     ]);
   });
 
@@ -83,9 +86,11 @@ describe("visibleSettingsSections", () => {
       "general",
       "appearance",
       "shortcuts",
+      "browser",
       "proxy",
       "uploads",
       "company",
+      "chromeExtension",
       "plugins",
     ]);
   });
@@ -99,9 +104,11 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "shortcuts",
       "account",
+      "browser",
       "proxy",
       "uploads",
       "company",
+      "chromeExtension",
       "plugins",
     ]);
   });

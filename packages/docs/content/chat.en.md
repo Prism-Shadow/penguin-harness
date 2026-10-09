@@ -222,13 +222,19 @@ The fork is a new Session with the same agent, model, Workspace and approval mod
 
 A reply can hold blocks that the chat draws as components instead of plain text:
 
-- **Choice**: a question with options. Select an option to put it in the composer. When several picks are allowed, tick them and select **Fill in**. **Other…** moves you to the composer to write your own answer. The option the agent recommends is marked **Recommended**.
+- **Choice**: a question with options. Select an option to put it in the composer. When several picks are allowed, tick them and select **Fill in**. **Other…** clears the composer and moves you there to write your own answer. The option the agent recommends is marked **Recommended**.
 - **Form**: several questions at once. Answer them and select the form's button; the answers go into the composer one per line.
 - **Steps**: a numbered procedure. A warning or caution appears above the step it applies to.
 - **Callout**: a short note, tip, caution or warning on one line, its icon saying which (point at the icon to see the name). A step's warnings, cautions and notes look the same.
 - **Diagram**: a Mermaid diagram, such as a flowchart or a sequence diagram. **Show source** shows the text it is drawn from.
+- **Weather**: the conditions and forecast at a place, with an illustration that moves (rain falls, clouds drift). It stays still when your system is set to reduce motion.
+- **Clock**: the time now in one to four time zones. It ticks live.
+- **Countdown**: the time left until a deadline or an event. It counts down live.
+- **Metrics**: tiles with gauges for a snapshot, such as system resources, a quota or budget left, or the progress of a job. A tile takes the warning or danger colour when its value crosses the thresholds the agent set.
 
-Picking sends nothing. The composer gets ordinary text that you can edit, and you still select **Send**. If the composer holds text you typed, you are asked before it is replaced. Only the latest reply takes answers, and only until a message follows it; earlier replies, subagent conversations and the Trace show the same blocks read-only. A block that cannot be drawn shows its source under a one-line reason.
+Weather and metrics are snapshots the agent took at the time shown on the block; they do not update. Only the clock and the countdown change while you watch.
+
+Picking sends nothing. The composer gets ordinary text that you can edit, and you still select **Send**. If the composer holds text you typed, you are asked before it is replaced or cleared. A form's answers and a multi-select's picks are kept in this browser, so a reload or a visit to another conversation does not lose them; they expire after 7 days. Only the latest reply takes answers, and only until a message follows it; earlier replies, subagent conversations and the Trace show the same blocks read-only. A block that cannot be drawn shows its source under a one-line reason.
 
 Outside the Web App the blocks arrive as plain text. In `penguin chat`, `penguin run` and [remote control](/remote-control) chats, a choice reads as numbered options that you answer with a number or in your own words.
 
@@ -275,7 +281,7 @@ Good to know:
 
 ### Use a terminal
 
-Terminals open as tabs in the docks, or on the standalone `/terminal` page.
+Terminals open as tabs in the docks, or on the standalone `/terminal` page. Each runs your login shell with your own startup files, then puts this installation's `penguin` first on PATH, the same one agents get (see [PATH launcher](/configuration#path-launcher)).
 
 - Ctrl+` shows or hides the terminal tabs. With no terminal open, it takes over a running shell no conversation holds, or starts a new one.
 - Ctrl+Shift+` starts a new terminal in the docks.

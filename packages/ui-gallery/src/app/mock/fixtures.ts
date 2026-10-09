@@ -870,6 +870,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         updatedAt: Math.floor(ago(40) / 1000),
       },
     ],
+    failures: [],
   };
   const readmes: Record<string, string> = {
     "@penguinharness/sandbox-bwrap":
@@ -1460,6 +1461,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       attachmentMaxMb: 100,
       attachmentTotalMb: 120,
       companyMode: false,
+      browserExtensionsEnabled: true,
     },
     project,
     members: [

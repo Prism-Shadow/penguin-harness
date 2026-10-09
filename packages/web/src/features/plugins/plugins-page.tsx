@@ -45,6 +45,7 @@ import type {
   PluginGroupItem,
   PluginIndexEntry,
   PluginItem,
+  QuickStartItem,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
 import {
@@ -124,6 +125,20 @@ function installsOf(
     skills: new Map(skills.map((s) => [s.name, s.version])),
     hooks: new Map(hooks.map((h) => [h.name, h.version])),
   };
+}
+
+/**
+ * A library plugin's quick start: what its plugin.json declares, else its first skill invoked
+ * by name (the prompt read at click time, in the UI language); null for a plugin with neither.
+ */
+export function libraryQuickStart(
+  plugin: Pick<PluginItem, "skills" | "quickStart">,
+): QuickStartItem | null {
+  if (plugin.quickStart !== undefined) return plugin.quickStart;
+  const skill = plugin.skills[0];
+  return skill === undefined
+    ? null
+    : { prompt: S.skills.quickInvokeText(skill.name), skills: [skill.name] };
 }
 
 /**
@@ -228,6 +243,12 @@ export function PluginsPage() {
   const [deployment, setDeployment] = useState<InstalledPluginsResponse | null>(null);
   /** The registry: every module plugin this deployment could ask for. */
   const [index, setIndex] = useState<PluginIndexEntry[] | null>(null);
+  /**
+   * Sources that answered with nothing. A published index that is down shortens the list
+   * instead of emptying it (the server merges tolerantly), so the page has to say so — a
+   * silently shorter list reads as "that plugin does not exist".
+   */
+  const [indexFailures, setIndexFailures] = useState<{ source: string; error: string }[]>([]);
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
@@ -302,7 +323,9 @@ export function PluginsPage() {
     let cancelled = false;
     api.getPluginIndex().then(
       (res) => {
-        if (!cancelled) setIndex(res.plugins);
+        if (cancelled) return;
+        setIndex(res.plugins);
+        setIndexFailures(res.failures ?? []);
       },
       () => {
         if (!cancelled) setIndex([]);
@@ -323,9 +346,12 @@ export function PluginsPage() {
   );
 
   /**
-   * Asks this Project for a module plugin (or drops it); the server lists it and re-assembles
-   * the App, so the row's state afterwards is what the running process has — including a
-   * load that failed, which is reported as such rather than toasted as installed.
+   * Installs the package into the data root (fetched from npm unless this build ships it) and
+   * lists it for this Project — writing the list alone would name a package that is not on
+   * the machine, which is exactly the state the row would then have to report as broken. The
+   * server re-assembles the App where it can, so the row's state afterwards is what the
+   * running process has — including a load that failed, which is reported as such rather than
+   * toasted as installed; otherwise the row waits for a restart.
    */
   const runDeploymentInstall = async (specifier: string, install: boolean) => {
     if (pendingSpecifier !== null || projectId === null) return;
@@ -440,7 +466,7 @@ export function PluginsPage() {
    * and its `pluginUpdates` moved, and both are read off that list.
    */
   const toggleInstall = async (agentId: string, plugin: PluginItem, on: boolean) => {
-    if (!projectId) return;
+    if (!projectId) return false;
     const prev = installed.get(agentId) ?? NO_INSTALLS;
     setAgentInstalls(agentId, withPlugin(prev, plugin, on));
     const target = agents.find((a) => a.agentId === agentId);
@@ -475,9 +501,10 @@ export function PluginsPage() {
     } catch (e) {
       setAgentInstalls(agentId, prev);
       toastError(apiErrorText(e));
-      return;
+      return false;
     }
     void reloadAgents();
+    return true;
   };
 
   /**
@@ -550,16 +577,14 @@ export function PluginsPage() {
   };
 
   /**
-   * Quick start: pre-selects one of the plugin's skills in the draft cache (the `skills`
-   * field, used by ChatInput as its initial selection on mount), pre-fills the invocation text
-   * per UI language (overwriting any existing draft body — quick start's intent is
-   * unambiguous, and leftover draft text would only be noise here), and opens the draft on the
-   * currently selected Agent — the route state carries its agentId explicitly. handoffAgentId
-   * must be cleared: a leftover handoff target would forward the whole skill invocation to a
-   * different Agent. The button is gated on the current Agent having the skill (see
-   * PluginCard.quickStartSkill), so agentId is present here.
+   * Quick start: a plugin's demo, opened as a new-chat draft on the currently selected Agent —
+   * written, never sent, so nothing runs (and no token is spent) until the person sends it. The
+   * prompt goes in per UI language, overwriting the draft body (any typed-but-unsent text is
+   * parked as a draft conversation first, draft-sessions.ts), with the demo's skills
+   * pre-selected and goal mode on when the demo is a goal. handoffAgentId must be cleared: a
+   * leftover handoff target would forward the demo to a different Agent.
    */
-  const quickInvoke = (skillName: string) => {
+  const openQuickStart = (quickStart: QuickStartItem) => {
     const agentId = currentAgent?.agentId;
     if (!agentId) return;
     if (userId && projectId) {
@@ -568,16 +593,44 @@ export function PluginsPage() {
       // the Project's new-chat defaults (new-chat.ts).
       prepareNewChatDraft(userId, projectId);
       const key = draftKey(userId, projectId);
+      const { skills: _skills, goal: _goal, ...rest } = loadDraft(key);
       saveDraft(key, {
-        ...loadDraft(key),
+        ...rest,
         agentId,
-        text: S.skills.quickInvokeText(skillName),
-        skills: [skillName],
+        text: localizedText(locale, quickStart.prompt, quickStart.promptZh),
+        ...(quickStart.skills !== undefined && quickStart.skills.length > 0
+          ? { skills: quickStart.skills }
+          : {}),
+        ...(quickStart.goal === true ? { goal: true as const } : {}),
         handoffAgentId: undefined,
       });
     }
     setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
+  };
+
+  /** A library plugin waiting for "install on this Agent, then quick start" to be confirmed. */
+  const [pendingQuickStart, setPendingQuickStart] = useState<PluginItem | null>(null);
+  const [quickStartInstalling, setQuickStartInstalling] = useState(false);
+
+  /** A library plugin's quick start: installed on the current Agent opens it; otherwise ask first. */
+  const quickStartLibrary = (plugin: PluginItem) => {
+    const demo = libraryQuickStart(plugin);
+    if (demo === null || !currentAgent) return;
+    if (pluginInstalled(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo);
+    else setPendingQuickStart(plugin);
+  };
+
+  const confirmQuickStartInstall = async () => {
+    const plugin = pendingQuickStart;
+    const agentId = currentAgent?.agentId;
+    if (plugin === null || !agentId) return;
+    setQuickStartInstalling(true);
+    const ok = await toggleInstall(agentId, plugin, true);
+    setQuickStartInstalling(false);
+    setPendingQuickStart(null);
+    const demo = libraryQuickStart(plugin);
+    if (ok && demo !== null) openQuickStart(demo);
   };
 
   const allInstalled = installedPluginRows(groups ?? [], locale, deployment, index ?? [], view);
@@ -646,6 +699,11 @@ export function PluginsPage() {
               onDismiss={() => dismissTodo(projectId, "plugins", todo.signature)}
             />
           )}
+          {indexFailures.length > 0 && (
+            <Notice tone="attention" className="mt-4">
+              {S.pluginRegistry.sourceUnavailable(indexFailures.length)}
+            </Notice>
+          )}
           {remote !== null && "error" in remote && remote.machineId === viewMachine && (
             <Notice tone="attention" className="mt-4">
               {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
@@ -702,7 +760,7 @@ export function PluginsPage() {
                     plugin={row.plugin}
                     category={row.category}
                     installed={installed}
-                    onQuickInvoke={quickInvoke}
+                    onQuickStart={quickStartLibrary}
                     onToggleInstall={toggleInstall}
                     onUpdateOutdated={updateOutdated}
                   />
@@ -795,6 +853,24 @@ export function PluginsPage() {
           onConfirm={() => void runDeploymentInstall(pendingApply.specifier, pendingApply.install)}
         >
           <p>{S.plugins.applyConfirmBody}</p>
+        </ConfirmModal>
+      )}
+      {/* A library plugin's quick start on an Agent that lacks it: installing comes first, and is asked. */}
+      {pendingQuickStart !== null && currentAgent && (
+        <ConfirmModal
+          open
+          title={S.plugins.quickStartInstallTitle(
+            pendingQuickStart.name,
+            agentDisplayName(currentAgent),
+          )}
+          tone="primary"
+          confirmLabel={S.plugins.install}
+          cancelLabel={S.common.cancel}
+          busy={quickStartInstalling}
+          onClose={() => setPendingQuickStart(null)}
+          onConfirm={() => void confirmQuickStartInstall()}
+        >
+          <p>{S.plugins.quickStartAfterInstall}</p>
         </ConfirmModal>
       )}
       {/* Bulk update confirmation. Same warning as the per-plugin confirm — an update is an
@@ -1256,7 +1332,7 @@ function PluginCard({
   plugin,
   category,
   installed,
-  onQuickInvoke,
+  onQuickStart,
   onToggleInstall,
   onUpdateOutdated,
 }: {
@@ -1264,8 +1340,8 @@ function PluginCard({
   /** The library's category, shown as the row's first tag (the page has no groups). */
   category: string;
   installed: InstalledMap;
-  onQuickInvoke: (skillName: string) => void;
-  onToggleInstall: (agentId: string, plugin: PluginItem, on: boolean) => Promise<void>;
+  onQuickStart: (plugin: PluginItem) => void;
+  onToggleInstall: (agentId: string, plugin: PluginItem, on: boolean) => Promise<boolean>;
   onUpdateOutdated: (name: string, agentIds: string[]) => Promise<void>;
 }) {
   const { locale } = useLocale();
@@ -1297,14 +1373,10 @@ function PluginCard({
   const outdated = outdatedAgentIds(agents, plugin.name).filter((agentId) =>
     pluginInstalled(plugin, installed.get(agentId)),
   );
-  // Quick start opens a draft on the currently selected Agent and pre-selects one of this
-  // plugin's skills there, so it's only offered once that Agent has one installed — otherwise
-  // it would pre-select a skill the Agent lacks. A plugin with no skill has nothing to start.
-  const currentInstalls = currentAgent === null ? undefined : installed.get(currentAgent.agentId);
-  const quickStartSkill =
-    currentInstalls === undefined
-      ? undefined
-      : plugin.skills.find((skill) => currentInstalls.skills.has(skill.name));
+  // Quick start opens this plugin's demo as a draft on the currently selected Agent; an Agent
+  // that lacks the plugin is asked to install it first (the page does that), so the button only
+  // waits for there to be an Agent and a demo.
+  const canQuickStart = currentAgent !== null && libraryQuickStart(plugin) !== null;
 
   // The card's detail Modal (the model library's card pattern): what the plugin ships,
   // with a per-skill SKILL.md reader.
@@ -1407,21 +1479,17 @@ function PluginCard({
             />
           </Button>
         )}
-        {plugin.skills.length > 0 && (
-          <Button
-            size="sm"
-            className="h-8 shrink-0"
-            aria-label={`${S.skills.quickInvoke} ${plugin.name}`}
-            title={quickStartSkill ? S.skills.quickInvoke : S.plugins.quickInvokeNeedsInstall}
-            disabled={quickStartSkill === undefined}
-            onClick={() => {
-              if (quickStartSkill) onQuickInvoke(quickStartSkill.name);
-            }}
-          >
-            <GlyphIcon d={ICONS.paperPlane} size={ICON_SIZE.iconButton} />
-            <span className="hidden @3xl:inline">{S.skills.quickInvoke}</span>
-          </Button>
-        )}
+        <Button
+          size="sm"
+          className="h-8 shrink-0"
+          aria-label={`${S.skills.quickInvoke} ${plugin.name}`}
+          title={S.plugins.quickStartHint}
+          disabled={!canQuickStart}
+          onClick={() => onQuickStart(plugin)}
+        >
+          <GlyphIcon d={ICONS.paperPlane} size={ICON_SIZE.iconButton} />
+          <span className="hidden @3xl:inline">{S.skills.quickInvoke}</span>
+        </Button>
         <Button
           size="sm"
           className="h-8 shrink-0"

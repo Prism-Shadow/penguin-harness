@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "PenguinHarness Browser",
+    "description": "The extension's name, in Chrome and on the Chrome Web Store. A product name: keep it as it is."
+  },
+  "extDescription": {
+    "message": "让 PenguinHarness 的 Agent 驱动你交给它的 Chrome 标签页：Penguin 标签组中的标签页，以及你用此图标添加的标签页。",
+    "description": "The extension's one-line description in chrome://extensions and the Chrome Web Store; at most 132 characters. \"Penguin\" is the name of the extension's tab group."
+  }
+}

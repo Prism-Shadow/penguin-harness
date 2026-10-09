@@ -132,6 +132,7 @@ single data directory (`~/.penguin/data`) and a single message protocol (OmniMes
 | [`plugins/*`](../plugins) | `@penguinharness/<name>` | The built-in plugins, one npm package each (`plugins/<name>` is `@penguinharness/<name>`): Agent plugins — skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries) — which `packages/core` depends on and loads; and server plugins a Project asks for on the Plugins page (its `[plugins]` table), such as the sandbox backends |
 | [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |
 | [`packages/docs`](../packages/docs)       | —                             | Documentation site (bilingual, deployed under `/docs/`)                                                 |
+| [`packages/browser-extension`](../packages/browser-extension) | — | PenguinHarness Browser: the Chrome extension through which the server drives the tabs a user hands it (released as a zip) |
 
 Responsibilities split by source of truth: the **SDK** owns protocol and execution
 (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime

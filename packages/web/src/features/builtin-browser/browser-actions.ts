@@ -1,9 +1,9 @@
 /**
- * The built-in browser's round trips to the server, each paired with the local change that
- * makes it feel immediate. Components call these; none of them throws.
+ * The agent browser's round trips to the server, each paired with the local change that makes
+ * it feel immediate. Components call these; none of them throws.
  */
-import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
+import type { BrowserBackend, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
+import { toastAttention, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
@@ -59,19 +59,68 @@ export async function openBrowserTab(url?: string): Promise<BuiltinBrowserTab | 
 }
 
 /**
- * A link from the conversation, opened in the built-in browser: the Browser panel comes up in
- * the dock of the conversation on screen, and the link opens in a new tab there — the same
- * request as the panel's own new tab, so the page joins the one set of tabs.
+ * A link from the conversation, opened in the agent browser: the Browser panel comes up in the
+ * dock of the conversation on screen, and the link opens in a new tab — the same request as the
+ * panel's own new tab, so the page joins the one set of tabs (in the user's Chrome, its tab
+ * comes to the front there).
  */
 export function openLinkInBrowser(url: string): void {
   openPanel("builtin-browser");
   void openBrowserTab(url);
 }
 
-/** Brings a tab to the front here at once; the server's next registry snapshot confirms it. */
-export function activateBrowserTab(tabId: number): void {
-  dispatchBrowser({ type: "activated", tabId });
+/**
+ * Brings a tab to the front here at once; the server's next registry snapshot confirms it. A
+ * tab of the user's Chrome comes to the front in Chrome too.
+ */
+export function activateBrowserTab(tabId: number, backend: BrowserBackend = "builtin"): void {
+  dispatchBrowser({ type: "activated", tabId, backend });
   void api.activateBuiltinBrowserTab(tabId).catch(() => undefined);
+}
+
+/**
+ * Closes a tab of the user's Chrome: it leaves the strip at once, and the extension closes it in
+ * Chrome. A failure says why; the next tab list puts the tab back if it is still open.
+ */
+export function closeChromeTab(tabId: number): void {
+  dispatchBrowser({ type: "chrome-closed", tabId });
+  void api.closeBuiltinBrowserTab(tabId).catch((err: unknown) => {
+    if (!(err instanceof ApiError && err.status === 404)) {
+      toastError(S.builtinBrowser.closeFailed(apiErrorText(err)));
+    }
+  });
+}
+
+/** Loads an address in a tab of the user's Chrome (the panel hosts no page to load it in). */
+export function navigateChromeTab(tabId: number, url: string): void {
+  void api.navigateBuiltinBrowserTab(tabId, url).catch((err: unknown) => {
+    toastError(S.builtinBrowser.openFailed(apiErrorText(err)));
+  });
+}
+
+/**
+ * Moves this user's agents to another backend. The server tells every window of theirs, this
+ * one included; the toast says what changed. While an agent acts in the browser being left the
+ * server refuses, and the toast says to wait — nothing is asked, nothing changes. True once
+ * switched.
+ */
+export async function switchBrowserBackend(backend: BrowserBackend): Promise<boolean> {
+  try {
+    await api.putBrowserBackend(backend);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === "action_in_flight") {
+      toastAttention(S.builtinBrowser.switchRefused);
+    } else {
+      toastError(S.builtinBrowser.switchFailed(apiErrorText(err)));
+    }
+    return false;
+  }
+  dispatchBrowser({ type: "event", event: { type: "builtin_browser_backend", backend } });
+  toastSuccess(
+    backend === "chrome" ? S.builtinBrowser.switchedToChrome : S.builtinBrowser.switchedToBuiltin,
+  );
+  await refreshBrowserStatus();
+  return true;
 }
 
 /**

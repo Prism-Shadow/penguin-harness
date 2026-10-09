@@ -96,6 +96,8 @@ penguin browser cdp DOM.setFileInputFiles --params '{"nodeId":42,"files":["/home
 
 Use the `root.nodeId` the first call returns and the `nodeId` the second returns. Check `input.accept` first, and when a page has several file inputs, pick by the container around them.
 
+This works in the built-in browser only. In the user's own Chrome (`backend: chrome`) `DOM.setFileInputFiles` is refused (`cdp_refused`), since it would hand the page a file from the user's own disk: use `DataTransfer` with content you have in hand, or ask the user to pick the file.
+
 ## Download what the page links to
 
 A PDF that opens in the browser instead of downloading can be fetched from the page and saved through a link (same origin, or a server that allows it):

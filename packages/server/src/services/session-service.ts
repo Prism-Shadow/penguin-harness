@@ -28,6 +28,7 @@ import type {
   SessionCategoryCounts,
   SessionInfo,
   SessionSandbox,
+  SessionSandboxPreset,
   SessionSource,
   ServerEvent,
   UnavailableSandboxBackend,
@@ -43,18 +44,7 @@ import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
-
-const SANDBOX_MODE_RANK: Record<SandboxSettings["mode"], number> = {
-  "read-only": 0,
-  "workspace-write": 1,
-  "danger-full-access": 2,
-};
-
-const SANDBOX_NETWORK_RANK: Record<SessionSandbox["network"], number> = {
-  none: 0,
-  local: 1,
-  open: 2,
-};
+import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
 
 /** A stored policy's network level as the composer names it. */
 function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
@@ -66,19 +56,39 @@ function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
  * `dimensions` is what the mounted sandbox backends implement between them — none on a
  * deployment that has not installed one. `unavailable` is each backend that is enabled but
  * failed to load or failed its check, with why; one for another platform is not among them.
+ * `presets` is the Sandbox card's table the composer names levels by, when there is one; the
+ * policy is `advanced` when it holds what no preset shows (masked paths, a read-only temp).
+ * `switchOn` is the card's switch, when the server reports it. Given the server's settings
+ * (`ceiling`), each preset wider than them is marked `aboveCeiling`, by the comparison
+ * `applySandboxPick` refuses a non-admin's pick with.
  */
 export function sessionSandboxOf(
   policy: SandboxSettings,
   dimensions: readonly SandboxDimension[] = [],
   unavailable: readonly UnavailableSandboxBackend[] = [],
+  presets?: readonly SessionSandboxPreset[],
+  switchOn?: boolean,
+  ceiling?: SandboxSettings,
 ): SessionSandbox {
+  const masksPaths = (policy.maskPaths ?? []).length > 0;
+  const advanced = masksPaths || policy.writableTemp === false;
+  const above = (p: SessionSandboxPreset) =>
+    ceiling !== undefined &&
+    aboveSandboxCeiling(p, { mode: ceiling.mode, network: networkOf(ceiling) }) !== null;
   return {
     mode: policy.mode,
     network: networkOf(policy),
     confinementSupported: dimensions.includes("fs-write"),
     noNetworkSupported: dimensions.includes("network"),
     localNetworkSupported: dimensions.includes("network-local"),
+    maskPathsSupported: dimensions.includes("mask-paths"),
+    ...(masksPaths ? { masksPaths: true } : {}),
     unavailableBackends: unavailable.map(({ name, reason }) => ({ name, reason })),
+    ...(presets !== undefined
+      ? { presets: presets.map((p) => ({ ...p, ...(above(p) ? { aboveCeiling: true } : {}) })) }
+      : {}),
+    ...(advanced ? { advanced: true } : {}),
+    ...(switchOn !== undefined ? { switchOn } : {}),
   };
 }
 
@@ -106,14 +116,18 @@ export function applySandboxPick(
     );
   }
   if (!isAdmin) {
-    if (SANDBOX_MODE_RANK[mode] > SANDBOX_MODE_RANK[defaults.mode]) {
+    const above = aboveSandboxCeiling(
+      { mode, network },
+      { mode: defaults.mode, network: networkOf(defaults) },
+    );
+    if (above === "mode") {
       throw new HttpError(
         403,
         "sandbox_forbidden",
         `Only an administrator can give a Session more filesystem access than the server's sandbox settings (${defaults.mode}).`,
       );
     }
-    if (SANDBOX_NETWORK_RANK[network] > SANDBOX_NETWORK_RANK[networkOf(defaults)]) {
+    if (above === "network") {
       throw new HttpError(
         403,
         "sandbox_forbidden",
@@ -242,6 +256,14 @@ export interface SessionServiceDeps {
   sandboxDimensions?: () => readonly SandboxDimension[];
   /** The enabled sandbox backends that failed to load or failed their check, with why. */
   sandboxUnavailable?: () => readonly UnavailableSandboxBackend[];
+  /** The names of the sandbox backends in use, in routing preference (none when absent). */
+  sandboxBackends?: () => readonly string[];
+  /** The Sandbox card's presets table, in table order (absent: the view carries none). */
+  sandboxPresets?: () => readonly SessionSandboxPreset[];
+  /** The Sandbox card's switch: whether new Sessions start confined (absent: not reported). */
+  sandboxSwitchOn?: () => boolean;
+  /** The approval mode a new Session starts with when its request names none (the default preset's). */
+  sandboxDefaultApproval?: () => ApprovalMode | undefined;
 }
 
 export class SessionService {
@@ -263,11 +285,42 @@ export class SessionService {
 
   /** A policy as the composer sees it, with which of its levels this server can enforce. */
   sandboxView(policy: SandboxSettings): SessionSandbox {
-    return sessionSandboxOf(
-      policy,
-      this.sandboxDimensions(),
-      this.deps.sandboxUnavailable?.() ?? [],
-    );
+    const backends = this.deps.sandboxBackends?.() ?? [];
+    return {
+      ...sessionSandboxOf(
+        policy,
+        this.sandboxDimensions(),
+        this.deps.sandboxUnavailable?.() ?? [],
+        this.deps.sandboxPresets?.(),
+        this.deps.sandboxSwitchOn?.(),
+        this.defaultSandbox(),
+      ),
+      ...(backends.length > 0 ? { backendsInUse: [...backends] } : {}),
+    };
+  }
+
+  /**
+   * What a new Session starts from, as the composer's draft reads it (the chat defaults): the
+   * settings' policy, plus the approval mode the default preset gives a request naming none.
+   */
+  defaultsView(): SessionSandbox {
+    const approval = this.deps.sandboxDefaultApproval?.();
+    return {
+      ...this.sandboxView(this.defaultSandbox()),
+      ...(approval !== undefined ? { defaultApprovalMode: approval } : {}),
+    };
+  }
+
+  /**
+   * The approval mode a Session created without one starts with. An organization's Session
+   * keeps `allow-all`: its runtime names the mode it wants, and nobody is there to answer an
+   * ask a preset might bring. The other unattended creators — a scheduled run, a workflow —
+   * pass `allow-all` themselves (scheduler.ts, workflows/service.ts).
+   */
+  private startApproval(requested: ApprovalMode | undefined, client?: string): ApprovalMode {
+    if (requested !== undefined) return requested;
+    if (client === "org") return "allow-all";
+    return this.deps.sandboxDefaultApproval?.() ?? "allow-all";
   }
 
   /** A Session's policy: its snapshot, or — for a row from before snapshots — the settings. */
@@ -275,17 +328,23 @@ export class SessionService {
     return row.sandbox ?? this.defaultSandbox();
   }
 
-  /** Changes one Session's policy (its next command runs under it); returns the new policy. */
-  updateSandbox(row: SessionRow, pick: Partial<SessionSandbox>, isAdmin: boolean): SandboxSettings {
-    const next = applySandboxPick(
+  /**
+   * The policy a pick would give one Session, checked — the non-admin ceiling and what this
+   * server can enforce — and not written: a PATCH checks every field before it writes any.
+   */
+  pickSandbox(row: SessionRow, pick: Partial<SessionSandbox>, isAdmin: boolean): SandboxSettings {
+    return applySandboxPick(
       this.sandboxOf(row),
       pick,
       this.defaultSandbox(),
       isAdmin,
       this.localNetworkSupported(),
     );
-    this.deps.sessions.updateSandbox(row.sessionId, next);
-    return next;
+  }
+
+  /** Stores one Session's policy (`pickSandbox`'s): its next command runs under it. */
+  updateSandbox(sessionId: string, policy: SandboxSettings): void {
+    this.deps.sessions.updateSandbox(sessionId, policy);
   }
 
   /**
@@ -679,7 +738,7 @@ export class SessionService {
       provider: session.provider,
       modelId: session.modelId,
       workspace: session.workspaceDir,
-      approvalMode: args.approvalMode ?? "allow-all",
+      approvalMode: this.startApproval(args.approvalMode, args.client),
       sandbox,
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,

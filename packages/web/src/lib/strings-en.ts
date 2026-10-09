@@ -299,7 +299,58 @@ export const en: Strings = {
     unavailableDesktop: "The built-in browser runs in the PenguinHarness desktop app.",
     unavailableShell: "This desktop app is too old for the built-in browser. Update it to use it.",
     unavailableWindow: "No app window is available to show the browser.",
+    useChrome: "Use System Chrome",
     openFailed: (reason: string): string => `Could not open a tab: ${reason}`,
+    closeFailed: (reason: string): string => `Could not close the tab: ${reason}`,
+    backendGroup: "Browser",
+    backendBuiltin: "Built-in",
+    backendChrome: "System Chrome",
+    chromeConnected: (name: string | null): string =>
+      name !== null ? `Chrome: connected · ${name}` : "Chrome: connected",
+    chromeNotConnected: "Chrome: not connected",
+    chromeNotPaired: "No Chrome paired",
+    chromeDisabled: "Chrome connections are off",
+    connectChrome: "Connect your Chrome…",
+    manageChrome: "Manage…",
+    switchedToChrome: "Agents now use your Chrome",
+    switchedToBuiltin: "Agents now use the built-in browser",
+    switchRefused: "An agent is using the browser; switch once it is done",
+    switchFailed: (reason: string): string => `Could not switch the browser: ${reason}`,
+    chromeTabCard: "This tab is open in your Chrome",
+    showInChrome: "Show in Chrome",
+    chromeNoTabsTitle: "No agent tabs in your Chrome yet",
+    chromeNoTabsBody: "Pages an agent opens appear in Chrome's Penguin tab group.",
+    chromeDisconnectedTitle: "Chrome is not connected",
+    chromeDisconnectedBody: (name: string | null): string =>
+      name !== null
+        ? `${name} is not connected to this server right now.`
+        : "Your paired Chrome is not connected to this server right now.",
+    reconnectHelp: "Reconnect help",
+    reconnectOpen:
+      "Open Chrome and check that the PenguinHarness Browser extension is turned on in chrome://extensions.",
+    reconnectResume:
+      "Click the extension's icon in the toolbar; if it says it is paused, choose Resume.",
+    reconnectPair:
+      "If the server's address changed, or the server was removed in the extension, pair it again.",
+    chromeDisabledTitle: "Chrome connections are off",
+    chromeDisabledBody: "An admin of this server has turned off Chrome extension connections.",
+    chromeUnpairedIntro:
+      "Install the PenguinHarness Browser extension and pair it, and agents can open and work in pages in your own Chrome, signed in as you are there.",
+    pairTitle: "Connect your Chrome",
+    pairStepInstall:
+      "Download the extension and unzip it. In Chrome, open chrome://extensions, turn on Developer mode, choose Load unpacked and pick the unzipped folder, then pin the extension to the toolbar.",
+    pairDownload: "Download the extension (zip)",
+    pairStepOpen:
+      "Click the PenguinHarness Browser icon in the toolbar and choose Settings to open its pairing page.",
+    pairStepPaste: "Paste the server address and the pairing code below, and choose Connect.",
+    pairServer: "Server address",
+    pairCode: "Pairing code",
+    pairCodeExpiry: (time: string): string => `Works once, until ${time}`,
+    pairCodeExpired: "This code has expired",
+    pairNewCode: "New code",
+    pairCodeFailed: (reason: string): string => `Could not create a pairing code: ${reason}`,
+    pairWaiting: "Waiting for Chrome…",
+    pairConnected: "Connected",
     importTitle: "Import from browser",
     importIntro:
       "Copies sign-ins and history from a browser on this computer into the built-in browser. The browser you import from is left unchanged.",
@@ -364,6 +415,35 @@ export const en: Strings = {
     },
   },
 
+  browserSettings: {
+    backend: "Browser agents use",
+    backendInfo:
+      "The built-in browser lives in the desktop app and keeps its own sign-ins. System Chrome is your own Chrome, where agents act only in the tabs they open and the tabs you hand them. Agents cannot switch it themselves.",
+    paired: "Paired Chromes",
+    pairedNone: "No Chrome is paired yet.",
+    pairedLine: (version: string, seen: string | null): string =>
+      seen === null
+        ? `Extension ${version} · never connected`
+        : `Extension ${version} · last seen ${seen}`,
+    connected: "Connected",
+    notConnected: "Not connected",
+    revoke: "Revoke",
+    revokeTitle: "Revoke this Chrome?",
+    revokeBody: (name: string): string =>
+      `Agents lose ${name}: it disconnects now, and it has to be paired again before agents can use it.`,
+    revoked: (name: string): string => `Revoked ${name}`,
+    revokeFailed: (reason: string): string => `Could not revoke it: ${reason}`,
+    connectFirst: "Connect your Chrome",
+    connectAnother: "Connect another Chrome",
+    loadFailed: (reason: string): string => `Could not read the paired Chromes: ${reason}`,
+    disabledNote: "An admin of this server has turned off Chrome extension connections.",
+    allow: "Allow Chrome extension connections",
+    offTitle: "Turn off Chrome extension connections?",
+    offBody:
+      "Every user's extension disconnects at once, and no agent on this server can use a Chrome. Pairings are kept: turn it back on and the extensions reconnect.",
+    off: "Turn off",
+  },
+
   tracePanel: {
     empty: "No traces yet",
     emptyHint: "This session has not produced a Trace file yet",
@@ -375,6 +455,10 @@ export const en: Strings = {
     languageInfo: "Interface language; can follow the browser.",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "Settings",
+    browserTitle: "Browser",
+    chromeExtensionTitle: "Chrome extension",
+    chromeExtensionInfo:
+      "When on, every user of this server can pair their own Chrome for agents to work in. When off, every extension disconnects; pairings are kept.",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -437,6 +521,11 @@ export const en: Strings = {
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) =>
       `${title} (not supported: ${reason})`,
+    /** A switch one of whose positions this machine cannot honour, under the switch. */
+    pluginPositionUnavailable: (position: string, reason: string) =>
+      `${position} is not supported here: ${reason}`,
+    pluginPositionOn: "On",
+    pluginPositionOff: "Off",
     pluginsInfo:
       "The options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here.",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
@@ -466,6 +555,43 @@ export const en: Strings = {
       `conversation keep a separate ${imageMb}MB limit that this setting does not raise — an ` +
       `inline image enters the conversation and the Trace, where its size is paid again on ` +
       `every history page and resume.`,
+    /** The fold holding the fields a settings group marks advanced. */
+    pluginAdvanced: "Advanced",
+    /** A table cell its row does not let change, beside the lock mark. */
+    pluginCellLocked: "Locked: this row keeps this value",
+    pluginCellOn: "On",
+    pluginCellOff: "Off",
+    /** A table row's drag handle: what it moves, and how. */
+    pluginTableMove: (row: string) => `Move ${row}`,
+    pluginTableMoveHint: "Drag, or press the up and down arrow keys",
+    /** The add button under an extensible table that names none of its own. */
+    pluginTableAdd: "Add a row",
+    /** After the chosen row's name (the sandbox's default preset): the row choice's title. */
+    pluginTableChosenMarker: (title: string) => `(${title})`,
+    /** A table row's "…" button: its accessible name and tooltip. */
+    pluginTableRowMenu: (row: string) => `More actions: ${row}`,
+    pluginTableRowMenuHint: "More actions",
+    /** The row menu's items: make the row the chosen one, and delete a row an administrator added. */
+    pluginTableChoose: "Set as default",
+    pluginTableChosen: "Already the default",
+    pluginTableDelete: "Delete",
+    pluginTableDeleteChosen: "Set another row as default first",
+    /** One line of a row's "?" that lists its values: a choice column's value, and what it does. */
+    pluginTableRowValue: (column: string, value: string, does: string | undefined) =>
+      does === undefined ? `${column}: ${value}` : `${column}: ${value}. ${does}`,
+    /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
+    sandboxBackendPrompt: {
+      title: "Install a sandbox backend",
+      body: (machine: string, pkgs: readonly string[]) =>
+        `${machine} has no sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkgs.join(" and ")}?` +
+        (pkgs.length > 1 ? " Where both work, the one that confines more is used." : ""),
+      cost: "Installing reloads the server's plugins, which stops agent runs in progress in every Project. The switch stays on either way.",
+      install: "Install",
+      installing: "Installing…",
+      later: "Not now",
+      dontAsk: "Don't ask again for this machine",
+      noProject: "Open a Project first: the backend is installed into the current Project.",
+    },
     theme: "Theme",
     themeInfo:
       "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",
@@ -2186,8 +2312,12 @@ export const en: Strings = {
     detailHooks: "Hooks",
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
-    /** Title on a disabled quick-start button: it pre-selects one of the plugin's skills on the currently selected agent, so the plugin has to be installed there first. */
-    quickInvokeNeedsInstall: "Install this plugin on the current agent first to quick-start",
+    /** Quick start's tooltip: what pressing it does, and what it does not. */
+    quickStartHint:
+      "Quick start: opens a draft with a demo of this plugin — nothing runs until you send it",
+    quickStartInstallTitle: (plugin: string, agent: string) =>
+      `Install ${plugin} on ${agent} to quick-start?`,
+    quickStartAfterInstall: "Then a draft with its demo opens; nothing runs until you send it.",
     installedToast: (plugin: string, agent: string): string => `Installed ${plugin} to ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string =>
       `Uninstalled ${plugin} from ${agent}`,
@@ -2269,6 +2399,11 @@ export const en: Strings = {
     readme: "Documentation",
     noReadme: "This plugin has no documentation yet.",
     notFound: "No such plugin.",
+    /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
+    sourceUnavailable: (count: number): string =>
+      count === 1
+        ? "One plugin source could not be reached, so this list may be incomplete."
+        : `${count} plugin sources could not be reached, so this list may be incomplete.`,
     repository: "Repository",
     homepage: "Homepage",
     authors: "Authors",
@@ -2749,13 +2884,49 @@ Scenarios:
       notInstalled: "Not installed",
       noBackend:
         "No sandbox backend is installed on this server, so commands cannot be confined. An administrator can enable this platform's backend on the Plugins page (More…).",
-      noNetworkUnsupported: "No sandbox backend on this machine can cut the network off",
+      /** `backends`: the backends in use, as the server names them (absent from an older server). */
+      noNetworkUnsupported: (backends?: string) =>
+        `The sandbox on this machine confines files only${backends !== undefined ? ` (${backends} does not isolate the network)` : ""}, so it cannot cut the network off`,
+      maskUnsupported: (backends?: string) =>
+        `This session hides masked paths from its commands, and no sandbox backend on this machine can${backends !== undefined ? ` (${backends} cannot mask paths)` : ""}, so every command would be refused. An administrator can clear the masked paths on the Sandbox card (More…).`,
       /** The short note beside a level whose enabled backend failed its check. */
       notAvailable: "Unavailable",
+      /** The short note beside a preset wider than the server's sandbox settings, for a non-admin. */
+      adminOnly: "Admin only",
+      aboveCeiling:
+        "Exceeds this server's sandbox ceiling: only an administrator can give a Session this much access.",
       backendUnavailable: (name: string, reason: string) =>
         `The sandbox backend ${name} is enabled but not in use: ${reason}. An administrator can fix this on the Sandbox card (More…).`,
       more: "More…",
       approval: "Approval",
+      /** The button's name for a level no preset matches (set from the full settings, or by an older client). */
+      custom: "Custom",
+      /** The menu's top line when the Session's policy holds what no preset shows. */
+      advancedActive: "Advanced settings in effect",
+      advancedHint:
+        "This Session also has masked paths or a read-only temp directory, set from the Sandbox card; picking a preset keeps them.",
+      /** A preset's hover text: what it blocks, what it allows, and whether this machine can enforce it. */
+      blocks: "Blocks",
+      allows: "Allows",
+      nothing: "nothing",
+      enforceable: "This machine can enforce it.",
+      needsNoBackend: "Needs no sandbox backend.",
+      effects: {
+        "write-outside-workspace": "writing outside the workspace",
+        "write-anywhere": "writing any file",
+        network: "all network access",
+        "network-beyond-localhost": "network beyond localhost",
+        "unasked-calls": "tool calls without asking (each one asks first)",
+        "unasked-writes": "writes without asking (a call that may write asks first)",
+        "every-call": "every tool call (all denied)",
+        "files-everywhere": "reading and writing any file",
+        "files-in-workspace": "writing inside the workspace",
+        "read-files": "reading files",
+        "network-open": "the full network",
+        localhost: "this machine's localhost",
+        "calls-unasked": "every tool call, unasked",
+        "reads-unasked": "read-only calls, unasked",
+      } as Record<string, string>,
     },
     approvalModeNames: {
       "allow-all": "Approve everything",
@@ -2934,6 +3105,10 @@ Scenarios:
     replaceTyped: "Replace",
     replaceTypedBody:
       "Replace what you typed with this prompt? Your text in the composer is cleared.",
+    /** A choice's "Other…" about to empty the composer of text the user typed. */
+    clearTypedTitle: "Clear composer text",
+    clearTyped: "Clear",
+    clearTypedBody: "Clear what you typed to write your own answer?",
     statTokens: "Total Tokens",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "Total Tokens",
@@ -3138,6 +3313,7 @@ Scenarios:
     copyCode: "Copy code",
     copyReply: "Copy reply",
     a2ui: {
+      lang: "en",
       fill: "Fill in",
       other: "Other…",
       recommended: "Recommended",
@@ -3149,6 +3325,45 @@ Scenarios:
       cannotShow: (reason: string) => `This component can't be shown: ${reason}`,
       diagram: "Diagram",
       showSource: "Show source",
+      stepUp: "Increase",
+      stepDown: "Decrease",
+      conditions: {
+        clear: "Clear",
+        "partly-cloudy": "Partly cloudy",
+        cloudy: "Overcast",
+        fog: "Fog",
+        drizzle: "Drizzle",
+        rain: "Rain",
+        "heavy-rain": "Heavy rain",
+        thunder: "Thunderstorm",
+        snow: "Snow",
+        sleet: "Sleet",
+        wind: "Windy",
+      },
+      asOf: (time: string) => `As of ${time}`,
+      source: (name: string) => `Source: ${name}`,
+      feelsLike: "Feels like",
+      humidity: "Humidity",
+      wind: "Wind",
+      precipitation: "Precipitation",
+      high: "High",
+      low: "Low",
+      hourly: "Next hours",
+      daily: "Coming days",
+      today: "Today",
+      weather: "Weather",
+      clock: "Clock",
+      countdown: "Countdown",
+      metrics: "Metrics",
+      localTime: "Local time",
+      countdownDone: "Time's up",
+      unitDays: "days",
+      unitHours: "hours",
+      unitMinutes: "min",
+      unitSeconds: "sec",
+      done: "Done",
+      deltaUp: "up",
+      deltaDown: "down",
     },
     forkSession: "Fork chat from here",
     forkSessionConfirmBody:
@@ -3239,6 +3454,7 @@ Scenarios:
     } as Record<string, string>,
     linkMenu: {
       openInBuiltinBrowser: "Open in built-in browser",
+      openInChromeTab: "Open in agent's Chrome tab",
       openExternal: "Open in system browser",
       openInNewTab: "Open in new tab",
       copyLink: "Copy link address",
@@ -5049,7 +5265,7 @@ Scenarios:
       handbook_file_not_found: "That document no longer exists.",
       handbook_index_required: "The handbook index (README.md) cannot be deleted.",
       browser_unavailable:
-        "The built-in browser is unavailable: it needs the PenguinHarness desktop app to be open.",
+        "The browser is not available right now: the built-in browser needs the PenguinHarness desktop app open, and your Chrome needs the PenguinHarness Browser extension connected.",
       source_not_found: "That browser profile was not found.",
       shell_unreachable: "The desktop app could not be reached.",
       timeout: "That took too long. Try again.",

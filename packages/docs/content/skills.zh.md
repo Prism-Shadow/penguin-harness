@@ -195,10 +195,10 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
-| 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框和 Mermaid 图，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则和一个发送前校验、打分的检查脚本（预装） |
+| 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框、Mermaid 图，以及天气、时钟、倒计时和指标小组件，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则、把天气查询和系统快照直接生成组件块的脚本，以及一个发送前校验、打分的检查脚本（预装） |
 | | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
-| | `browser-automation` | 用 `penguin browser` 驱动桌面应用的[内置浏览器](/builtin-browser)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录状态可从系统浏览器导入 |
+| | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号 |
 | | `use-bento-slides` | 创建和编辑 Bento 演示文稿：单文件 `.bento.html` 幻灯片，文件内容为 JSON，支持素材到图表的映射、morph 过渡和状态幻灯片 |
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装） |
@@ -236,6 +236,7 @@ plugins/<plugin>/
 | `version` | `YYYY.MM.DD.N`：日期加当天的序号 |
 | `category` | `office-productivity`、`software-development`、`ai-app-development`、`agent-company` 之一；缺失或未知的分类归入「其他」 |
 | `preinstall` | 可选；设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
+| `quick_start` | 插件页「快速开始」预填进新对话草稿的演示：`{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各个[钩子点](/agent-loop#stop-hook)运行的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径以 `hooks/` 为起点，timeout 单位为秒。`user_prompt` 命令可以另加 `"trigger"`：`"prompt"`（缺省）表示用户每次提交 Prompt 时运行，`"host"` 表示只在宿主按包名启动该包的流程时运行 |
 
 ### 插件命名与版本

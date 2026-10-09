@@ -284,6 +284,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "The Sessions each machine was last seen holding, shown until its connection is held again. Project id and machine id in the key, Session ids in the value — a new root knows none of them.",
   },
   {
+    kind: "exact",
+    key: "penguin.sandboxBackendPromptDismissed",
+    scope: "install",
+    why: "The machines whose Sandbox card no longer offers to install a backend — machine ids of this root.",
+  },
+  {
     kind: "family",
     key: "penguin.machineAgents.",
     scope: "install",
@@ -324,6 +330,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.sidebarPinnedGroups.",
     scope: "install",
     why: "Pinned sidebar groups, same key space.",
+  },
+  {
+    kind: "family",
+    key: "penguin.a2uiDraft.",
+    scope: "install",
+    why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
   },
   {
     kind: "exact",

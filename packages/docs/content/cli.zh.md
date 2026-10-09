@@ -430,10 +430,10 @@ penguin org finance [--period <YYYY-MM>] [--json]
 
 ## penguin browser
 
-驱动桌面应用的[内置浏览器](/builtin-browser)，是服务器 `/api/builtin-browser` 路由之上的瘦客户端。命令沿用 GenericAgent 的 `web_scan` / `web_execute_js` 设计：`scan` 读取页面，`exec` 在页面中运行 JavaScript 并报告发生了什么变化。输出是写给 Agent 读的：简短的带标签的行，没有任何装饰。预装的 `browser-automation` 插件会教 Agent 如何使用它。
+驱动 Agent 浏览器，是服务器 `/api/builtin-browser` 路由之上的瘦客户端。浏览器由用户选定：桌面应用的[内置浏览器](/builtin-browser)，或经由 PenguinHarness Browser 扩展驱动的[用户自己的 Chrome](/builtin-browser#使用你自己的-chrome)。两者的命令完全相同，没有哪条命令能选择后端。命令沿用 GenericAgent 的 `web_scan` / `web_execute_js` 设计：`scan` 读取页面，`exec` 在页面中运行 JavaScript 并报告发生了什么变化。输出是写给 Agent 读的：简短的带标签的行，没有任何装饰。预装的 `browser-automation` 插件会教 Agent 如何使用它。
 
 ```bash
-penguin browser status                                   # available? and the open tabs
+penguin browser status                                   # which backend, available? and the open tabs
 penguin browser tabs                                     # id (* = active), title, URL
 penguin browser open <url> [--new-tab]                   # in the active tab (a new one when none is open), or a new tab
 penguin browser switch <tab-id>
@@ -452,16 +452,37 @@ penguin browser history [<query>] [-n <count>]
 
 - `--tab <id>` 指定 `open`、`scan`、`exec`、`click`、`type`、`screenshot` 和 `cdp` 作用的标签页：取 `tabs` 列出的标签页 id，或 `active`（默认值）。
 - `--json` 把响应打印为一行 JSON；`--server` 与其他命令相同。
-- 在会话内部，`open`、`exec`、`click` 和 `type` 会发送 `PENGUIN_SESSION_ID`，应用据此在正在驱动浏览器的那个对话里打开浏览器面板。
-- 这些命令从不自动启动服务器，因为这样启动的服务器没有桌面应用来承载浏览器。没有服务器在运行时，命令以 `browser_unavailable` 失败。
+- 在会话内部，每条命令都会发送 `PENGUIN_SESSION_ID`：放在请求体里，`GET` 和 `DELETE` 则放在查询参数里。服务器据此按正在驱动该会话的那个人行事，所以 Agent 驱动的是它自己的用户的 Chrome；应用也据此在正在驱动浏览器的那个对话里打开浏览器面板。
+- 这些命令从不自动启动服务器：这样启动的服务器既没有承载内置浏览器的桌面应用，也没有与之配对的 Chrome。没有服务器在运行时，命令以 `browser_unavailable` 失败。
 - 输出的标签与提示跟随 CLI 的语言。本节示例是英文输出；`PENGUIN_LANG=zh` 时改用中文，例如 `状态：success   标签页：12`。
 
-`status` 打印 `status: available` 和标签页列表；不可用时打印 `status: unavailable (<reason>)` 和一行说明，并以退出码 1 结束。原因有三种：`not_desktop`（服务器不属于桌面应用）、`shell_unsupported`（桌面应用版本过旧，无法承载浏览器）和 `no_window`（应用没有打开的窗口）。
-
-桌面应用测量过标签页之后（每 10 秒一次），`status` 会多一行 `memory:`：各标签页合计使用的内存和标签页数量，以及这台电脑的可用内存和总内存（macOS 上没有这一项）。浏览器负载过高时（标签页合计超过 1.5 GB、电脑可用内存不足 10%，或超过 12 个标签页），后面还有一行 `warning:`，说明哪一项过高，并提示关闭不再需要的标签页：
+`status` 打印 `status: available` 及后端，然后是标签页列表。后端为 `builtin`，或者 `chrome` 加上用户的 Chrome 与扩展版本：
 
 ```text
-status: available
+status: available · backend: chrome (Chrome 130 on macOS, extension 0.2.13)
+tabs: *1203 Your Orders
+```
+
+浏览器无法驱动时，`status` 打印 `status: unavailable (<reason>)` 及后端，再用一行 `note:` 说明该告诉用户什么，并以退出码 1 结束：
+
+```text
+status: unavailable (extension_not_paired) · backend: chrome
+note: No Chrome is paired for this user. Ask the user to install the PenguinHarness Browser extension and pair it: Browser panel → Connect your Chrome.
+```
+
+| 原因 | 后端 | 含义 |
+| --- | --- | --- |
+| `not_desktop` | builtin | 服务器不属于桌面应用 |
+| `shell_unsupported` | builtin | 桌面应用版本过旧，无法承载浏览器 |
+| `no_window` | builtin | 应用没有打开的窗口 |
+| `extension_not_paired` | chrome | 用户还没有配对 Chrome |
+| `extension_disconnected` | chrome | 用户的 Chrome 已配对，但当前未连接 |
+| `extension_disabled` | chrome | 管理员关闭了 Chrome 扩展连接 |
+
+桌面应用测量过内置浏览器的标签页之后（每 10 秒一次），`status` 会多一行 `memory:`：各标签页合计使用的内存和标签页数量，以及这台电脑的可用内存和总内存（macOS 上没有这一项）。浏览器负载过高时（标签页合计超过 1.5 GB、电脑可用内存不足 10%，或超过 12 个标签页），后面还有一行 `warning:`，说明哪一项过高，并提示关闭不再需要的标签页：
+
+```text
+status: available · backend: builtin
 tabs: *12 Your Orders | 15 Google
 memory: 2.1 GB across 2 tabs · this computer: 3.2 GB free of 16.0 GB
 warning: The browser holds a lot of memory. Close the tabs you no longer need (penguin browser close <tab-id>).
@@ -509,9 +530,11 @@ note: No visible change on the page.
 ### screenshot 和 cdp
 
 - `screenshot` 把 PNG 写入 `-o` 指定的文件（默认是工作目录下的 `screenshot-<time>.png`），并打印 `screenshot: <path> (<width>x<height>, <size> KB)`。`--full-page` 截取整个页面而不只是视口。加 `--json` 时打印响应本身，即 `{mime, data}`，图片以 base64 编码；此时只有给了 `-o` 才写文件。
-- `cdp` 向标签页发送一条 Chrome DevTools Protocol 命令，并把结果打印为紧凑 JSON，超过 8,000 个字符时截断（加 `--json` 打印完整结果）。页面 JavaScript 够不到的地方都靠它：文件输入框的文件（`DOM.setFileInputFiles`）、跨域 iframe（`Page.createIsolatedWorld`）、封闭的 shadow root。它只作用于当前标签页：`Target` 域的命令一律拒绝（`cdp_refused`），`Page.navigate` 只能前往网页或 `about:blank`（`invalid_url`）。
+- `cdp` 向标签页发送一条 Chrome DevTools Protocol 命令，并把结果打印为紧凑 JSON，超过 8,000 个字符时截断（加 `--json` 打印完整结果）。页面 JavaScript 够不到的地方都靠它：文件输入框的文件（`DOM.setFileInputFiles`）、跨域 iframe（`Page.createIsolatedWorld`）、封闭的 shadow root。它只作用于当前标签页：`Target` 域的命令一律拒绝（`cdp_refused`），`Page.navigate` 只能前往网页或 `about:blank`（`invalid_url`）。在用户自己的 Chrome 里拒绝的更多，因为那里的 Cookie 和存储都是用户本人的：`Browser`、`Storage`、`Fetch`、`Security`、`Extensions` 和 `Tethering` 域，读写 Cookie、清除缓存或拦截请求的 `Network` 方法，以及 `DOM.setFileInputFiles` 和 `Page.setDownloadBehavior`。
 
 ### import
+
+`import` 和 `history` 属于内置浏览器；对用户自己的 Chrome 调用时，返回 `not_supported`。
 
 - `--list` 列出本机的浏览器个人资料：来源 id、浏览器、个人资料名称，以及其中是否有 Cookie 和历史记录。
 - `--from` 接受列表中的来源 id，或浏览器名（`chrome`、`edge`、`brave`、`arc`、`vivaldi`、`opera`、`chromium` 或 `firefox`），后者表示该浏览器的 `Default` 个人资料，或它唯一的个人资料。
@@ -526,7 +549,16 @@ note: No visible change on the page.
 
 ### 错误
 
-出错时在 stderr 打印一行 `error: <code>: <message>`，命令以退出码 1 结束。服务器的错误码有 `browser_unavailable`、`no_tab`（没有打开的标签页）、`no_such_tab`、`tab_crashed`（该标签页的页面已崩溃：关闭它，在新标签页中重新打开页面）、`too_many_tabs`（浏览器已有 20 个标签页）、`script_error`、`timeout`、`invalid_url`、`source_not_found` 和 `import_failed`；CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失败时的 `io_error`，以及连不上服务器时的 `request_failed`。对于 `browser_unavailable`，错误信息会说明内置浏览器需要 PenguinHarness 桌面应用，并且应用必须处于打开状态。
+出错时在 stderr 打印一行 `error: <code>: <message>`，命令以退出码 1 结束。服务器的错误码有：
+
+- `browser_unavailable`：浏览器无法驱动。带原因时，错误信息与 `status` 的 `note:` 相同；不带原因时是服务器自己的说明，例如用户在 Chrome 里暂停了扩展。
+- `no_tab`（没有打开的标签页）、`no_such_tab`、`tab_crashed`（该标签页的页面已崩溃：关闭它，在新标签页中重新打开页面）、`too_many_tabs`（浏览器已有 20 个标签页）。
+- `tab_released`：用户在自己的 Chrome 里收回了这个标签页。不要重试，改为新开一个标签页。
+- `cdp_refused`：原始命令超出了该后端允许的范围（见 [screenshot 和 cdp](#screenshot-和-cdp)）。
+- `not_supported`：对用户自己的 Chrome 调用了导入或历史记录；错误信息会提示改为请用户在 Chrome 的 Penguin 标签页中登录。
+- `script_error`、`timeout`、`invalid_url`、`source_not_found` 和 `import_failed`。
+
+CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失败时的 `io_error`，以及连不上服务器时的 `request_failed`。
 
 ## 审批模式（--approve）
 

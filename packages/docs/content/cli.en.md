@@ -430,10 +430,10 @@ Paths that contain `..` segments are refused.
 
 ## penguin browser
 
-Drives the desktop app's [Built-in Browser](/builtin-browser), a thin client over the server's `/api/builtin-browser` routes. The commands follow GenericAgent's `web_scan` / `web_execute_js` design: `scan` reads the page, and `exec` runs JavaScript in it and reports what changed. The output is written for an agent to read: short labelled lines, nothing decorative. The preinstalled `browser-automation` plugin teaches agents to use it.
+Drives the agent browser, a thin client over the server's `/api/builtin-browser` routes. The browser is the one the user chose: the desktop app's [Built-in Browser](/builtin-browser), or [the user's own Chrome](/builtin-browser#use-your-own-chrome) through the PenguinHarness Browser extension. The commands are the same for both, and none of them picks the backend. The commands follow GenericAgent's `web_scan` / `web_execute_js` design: `scan` reads the page, and `exec` runs JavaScript in it and reports what changed. The output is written for an agent to read: short labelled lines, nothing decorative. The preinstalled `browser-automation` plugin teaches agents to use it.
 
 ```bash
-penguin browser status                                   # available? and the open tabs
+penguin browser status                                   # which backend, available? and the open tabs
 penguin browser tabs                                     # id (* = active), title, URL
 penguin browser open <url> [--new-tab]                   # in the active tab (a new one when none is open), or a new tab
 penguin browser switch <tab-id>
@@ -452,16 +452,37 @@ penguin browser history [<query>] [-n <count>]
 
 - `--tab <id>` names the tab that `open`, `scan`, `exec`, `click`, `type`, `screenshot` and `cdp` act on: a tab id from `tabs`, or `active`, the default.
 - `--json` prints the response as one line of JSON, and `--server` works as everywhere.
-- Inside a session, `open`, `exec`, `click` and `type` send `PENGUIN_SESSION_ID`, so the app opens the Browser panel in the conversation that is driving it.
-- These commands never auto-start a server, because a server started that way would have no desktop app to host the browser. With no server running they fail with `browser_unavailable`.
+- Inside a session, every command sends `PENGUIN_SESSION_ID`: in the body, or in the query of a `GET` or `DELETE`. The server then acts for the person driving that session, so an agent drives its own user's Chrome, and the app opens the Browser panel in the conversation that is driving it.
+- These commands never auto-start a server: a server started that way would have no desktop app to host the built-in browser, and no Chrome paired with it. With no server running they fail with `browser_unavailable`.
 - The labels and messages follow the CLI's language. The examples here are the English output; with `PENGUIN_LANG=zh` they are in Chinese.
 
-`status` prints `status: available` and the tab list, or `status: unavailable (<reason>)` followed by a note, and then exits 1. The reason is `not_desktop` (the server is not the desktop app's), `shell_unsupported` (the desktop app is too old for the browser) or `no_window` (the app has no window open).
-
-Once the desktop app has measured the tabs (it does every 10 seconds), `status` adds a `memory:` line: the memory the tabs use together and how many tabs there are, then this computer's free and total memory (not on macOS). While the browser is too heavy (over 1.5 GB in its tabs, under 10% of the computer's memory free, or over 12 tabs) a `warning:` line follows, saying what is too much and to close the tabs no longer needed:
+`status` prints `status: available` with the backend, then the tab list. The backend is `builtin`, or `chrome` followed by the user's Chrome and the extension's version:
 
 ```text
-status: available
+status: available · backend: chrome (Chrome 130 on macOS, extension 0.2.13)
+tabs: *1203 Your Orders
+```
+
+When the browser cannot be driven, `status` prints `status: unavailable (<reason>)` with the backend, then a `note:` saying what to tell the user, and exits 1:
+
+```text
+status: unavailable (extension_not_paired) · backend: chrome
+note: No Chrome is paired for this user. Ask the user to install the PenguinHarness Browser extension and pair it: Browser panel → Connect your Chrome.
+```
+
+| Reason | Backend | Meaning |
+| --- | --- | --- |
+| `not_desktop` | builtin | The server is not the desktop app's |
+| `shell_unsupported` | builtin | The desktop app is too old for the browser |
+| `no_window` | builtin | The app has no window open |
+| `extension_not_paired` | chrome | The user has paired no Chrome |
+| `extension_disconnected` | chrome | The user's Chrome is paired but not connected now |
+| `extension_disabled` | chrome | An administrator turned Chrome extension connections off |
+
+Once the desktop app has measured the built-in browser's tabs (it does every 10 seconds), `status` adds a `memory:` line: the memory the tabs use together and how many tabs there are, then this computer's free and total memory (not on macOS). While the browser is too heavy (over 1.5 GB in its tabs, under 10% of the computer's memory free, or over 12 tabs) a `warning:` line follows, saying what is too much and to close the tabs no longer needed:
+
+```text
+status: available · backend: builtin
 tabs: *12 Your Orders | 15 Google
 memory: 2.1 GB across 2 tabs · this computer: 3.2 GB free of 16.0 GB
 warning: The browser holds a lot of memory. Close the tabs you no longer need (penguin browser close <tab-id>).
@@ -509,9 +530,11 @@ note: No visible change on the page.
 ### screenshot and cdp
 
 - `screenshot` writes a PNG to `-o`, by default `screenshot-<time>.png` in the working directory, and prints `screenshot: <path> (<width>x<height>, <size> KB)`. `--full-page` captures the whole page instead of the viewport. With `--json` it prints the response, `{mime, data}` with the image in base64, and writes a file only when `-o` is given.
-- `cdp` sends one Chrome DevTools Protocol command to the tab and prints its result as compact JSON, cut at 8,000 characters (the whole result with `--json`). It reaches what page JavaScript cannot: a file input's files (`DOM.setFileInputFiles`), a cross-origin frame (`Page.createIsolatedWorld`), a closed shadow root. It stays within the tab: the `Target` domain is refused (`cdp_refused`), and `Page.navigate` goes only to a web page or `about:blank` (`invalid_url`).
+- `cdp` sends one Chrome DevTools Protocol command to the tab and prints its result as compact JSON, cut at 8,000 characters (the whole result with `--json`). It reaches what page JavaScript cannot: a file input's files (`DOM.setFileInputFiles`), a cross-origin frame (`Page.createIsolatedWorld`), a closed shadow root. It stays within the tab: the `Target` domain is refused (`cdp_refused`), and `Page.navigate` goes only to a web page or `about:blank` (`invalid_url`). In the user's Chrome more is refused, since the browser's cookies and stores are the user's own: the `Browser`, `Storage`, `Fetch`, `Security`, `Extensions` and `Tethering` domains, the `Network` methods that read or change cookies, clear the cache or intercept requests, `DOM.setFileInputFiles` and `Page.setDownloadBehavior`.
 
 ### import
+
+`import` and `history` belong to the built-in browser. Asked of the user's Chrome, they fail with `not_supported`.
 
 - `--list` lists the browser profiles on this machine: the source id, the browser, the profile's name, and whether it holds cookies and history.
 - `--from` takes a source id from that list, or a browser (`chrome`, `edge`, `brave`, `arc`, `vivaldi`, `opera`, `chromium` or `firefox`) for its `Default` profile, or its only one.
@@ -526,7 +549,16 @@ The result names the source, then prints `cookies: <n> imported, <n> skipped, <n
 
 ### Errors
 
-An error is one line on stderr, `error: <code>: <message>`, and the command exits 1. The server's codes are `browser_unavailable`, `no_tab` (no tab is open), `no_such_tab`, `tab_crashed` (the tab's page crashed: close it and open the page in a new tab), `too_many_tabs` (the browser holds 20 tabs), `script_error`, `timeout`, `invalid_url`, `source_not_found` and `import_failed`; the CLI adds `invalid_argument` for a command typed wrong, `io_error` for a file it cannot read or write, and `request_failed` when the server cannot be reached. For `browser_unavailable` the message explains that the built-in browser needs the PenguinHarness desktop app, and that the app must be open.
+An error is one line on stderr, `error: <code>: <message>`, and the command exits 1. The server's codes are:
+
+- `browser_unavailable`: the browser cannot be driven. With a reason, the message is the one the `note:` of `status` gives. Without one, it is the server's, such as the user having paused the extension in Chrome.
+- `no_tab` (no tab is open), `no_such_tab`, `tab_crashed` (the tab's page crashed: close it and open the page in a new tab), `too_many_tabs` (the browser holds 20 tabs).
+- `tab_released`: the user took the tab back in their Chrome. Do not retry it; open a new tab.
+- `cdp_refused`: a raw command outside what the backend allows (see [screenshot and cdp](#screenshot-and-cdp)).
+- `not_supported`: import or history asked of the user's Chrome; the message says to have the user sign in in the Penguin tab in Chrome instead.
+- `script_error`, `timeout`, `invalid_url`, `source_not_found` and `import_failed`.
+
+The CLI adds `invalid_argument` for a command typed wrong, `io_error` for a file it cannot read or write, and `request_failed` when the server cannot be reached.
 
 ## Approval modes (--approve)
 
