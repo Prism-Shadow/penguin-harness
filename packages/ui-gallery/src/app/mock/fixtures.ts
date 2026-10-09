@@ -1,7 +1,7 @@
 /**
  * The demo world the mocked API answers from, built for one language at a time: a signed-in
  * admin, one Project with two Agents, their conversations, the model table, the plugin
- * library and what is installed, thirty days of usage, two Benchmarks, schedules, the
+ * library and what is installed, thirty days of usage, three Benchmarks, schedules, the
  * machines, the memory and vault of the docs Agent, a small Workspace and the server's
  * settings. Every row is typed by the server's own DTOs, so the compiler is what keeps this
  * data in step with the app that reads it.
@@ -943,6 +943,83 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       cases,
     };
   };
+  /**
+   * The built-in Benchmark's cases (Sec E, Terminal-Bench): one task each, and the trial its one
+   * run recorded. Their statements and rubric are the ones core writes, word for word.
+   */
+  const harborCases = [
+    {
+      id: "CASE-001-music-harmony",
+      task: "music-harmony",
+      title: "Harmonize a chorale excerpt in four parts",
+      summary:
+        "Complete a four-voice (SATB) harmonization of the excerpt in a score PDF, in the style of a Bach chorale, and label every chord with a Roman numeral. The deliverable is a MusicXML file with the harmony annotations embedded.",
+      category: "Media / Music",
+      expertHours: 1,
+      cpus: 2,
+      memoryGb: 4,
+      trial: "music-harmony__3xQpL7a",
+    },
+    {
+      id: "CASE-002-html-js-filter",
+      task: "html-js-filter",
+      title: "Strip JavaScript from HTML without breaking it",
+      summary:
+        "Write a Python script that removes every way to run JavaScript from an HTML file in place, while keeping legitimate markup, formatting and harmless attributes intact. The deliverable is the script, run by the verifier on its own HTML samples.",
+      category: "Security / AppSec",
+      expertHours: 0.75,
+      cpus: 2,
+      memoryGb: 8,
+      trial: "html-js-filter__Vb81mKd",
+    },
+    {
+      id: "CASE-003-foodstuff-beta-activity",
+      task: "foodstuff-beta-activity",
+      title: "Determine the beta activity of a foodstuff",
+      summary:
+        "From liquid-scintillation measurements and Sr-90 reference tables, derive the counting efficiency, the volumetric and gravimetric factors, the detection limit and the sample's activity concentration. The results go into a text file in a fixed format, which the verifier compares with the expected values.",
+      category: "Science / Chemistry",
+      expertHours: 1.5,
+      cpus: 2,
+      memoryGb: 4,
+      trial: "foodstuff-beta-activit__Qe2Rt9s",
+    },
+  ];
+  const harborStatement = (c: (typeof harborCases)[number]): string =>
+    [
+      `# ${c.title}`,
+      "",
+      c.summary,
+      "",
+      `- Benchmark: PenguinHarness Benchmark Sec E — Terminal-Bench 4.0 (Harbor Hub \`terminal-bench/terminal-bench\`, revision 4) · Category: ${c.category} · Expert estimate: ${c.expertHours} h`,
+      `- Task: \`${c.task}\` in https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/c12d65bc20beb5130ed57b3b7983c62d497b7d2f/benchmarks/terminal-bench/tasks/${c.task}`,
+      "- Upstream: https://github.com/harbor-framework/terminal-bench (Apache-2.0)",
+      `- Container: ${c.cpus} CPU, ${c.memoryGb} GB RAM, CPU only · Agent network: public · Verifier: separate container`,
+      "",
+      "## How this case is run",
+      "",
+      "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker with Harbor 0.23.0 and the PenguinHarness adapter from the repository above, following that repository's rules for agents — https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/c12d65bc20beb5130ed57b3b7983c62d497b7d2f/README.md#running-a-task-for-agents — from the root of a checkout at commit `c12d65bc20beb5130ed57b3b7983c62d497b7d2f`:",
+      "",
+      "```bash",
+      'export PYTHONPATH="$PWD/agents"',
+      `uvx --from harbor==0.23.0 harbor run -p benchmarks/terminal-bench/tasks -i ${c.task} \\`,
+      "  -a penguin_agent:PenguinAgent -m <provider>/<model_id> \\",
+      "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
+      "  --ak run_timeout=25m --ak max_turns=200 \\",
+      "  --extra-docker-compose tools/docker/shared-network.yaml \\",
+      "  --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name <job name> -o <jobs dir> -y",
+      "```",
+      "",
+      "Caps: the agent is stopped at 25m and after 200 turns. Run at most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker with Compose v2; uv; network access to Docker Hub (the prebuilt task images), nodejs.org, the npm registry and the model provider; the model under test configured in this machine's PenguinHarness with its API key saved (the adapter copies that one entry into the container, outside the trial's log directory). The instruction keeps upstream's own time budget; the run stops the agent at `run_timeout`.",
+      "",
+      "The score is the verifier's reward × 100: a pass (1) scores 100, a fail (0) scores 0, and a fractional reward r scores 100·r. An evaluation from the Evaluation Center keeps every trial under this Benchmark's `.jobs/` directory and records its Session id as `harbor:<trial name>`.",
+      "",
+      "Measured results of PenguinHarness on these tasks: https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/c12d65bc20beb5130ed57b3b7983c62d497b7d2f/results/v0.2.13/README.md",
+      "",
+    ].join("\n");
+  const harborRubric =
+    "# Scoring rubric (max 100 points)\n\n- 100 pts: the Harbor verifier's reward for this trial (`/logs/verifier/reward.txt` or the `reward` key of `reward.json`) multiplied by 100. The task's own tests decide; there is no manual judging and no partial credit beyond what the verifier itself reports.\n";
+
   const benchmarks: BenchmarkSummary[] = [
     {
       id: IDS.benchmarks.docs,
@@ -970,6 +1047,48 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       evaluations: [],
       agentIds: [],
     },
+    // Built in, English in either locale like the product's own; one evaluation, whose runs
+    // are Harbor trials rather than Sessions.
+    {
+      id: IDS.benchmarks.builtin,
+      title: "PenguinHarness Benchmark Sec E",
+      description:
+        "Sec E is Terminal-Bench 4.0: hard, realistic tasks done in a terminal, across software, security, science, machine learning, operations, hardware and media. Chosen to run on CPU-only Docker. A built-in benchmark: each task runs in Docker through the Harbor framework and is scored by its own verifier; the task files are in the public repository Prism-Shadow/penguin-harness-benchmark. It is written when the Project is created; a deleted one stays deleted.",
+      runs: 1,
+      status: "published",
+      caseCount: harborCases.length,
+      evaluations: [
+        {
+          time: iso(ago(1)),
+          agentId: IDS.agents.docs,
+          summaryTitle: L("首个 Harbor 基线", "First Harbor baseline"),
+          summary: L(
+            "每题一次 Harbor trial；分数即验证器的 reward × 100。",
+            "One Harbor trial per case; each score is the verifier's reward × 100.",
+          ),
+          modelId: "deepseek-flash",
+          provider: "deepseek",
+          thinkingLevel: "max",
+          version: 14,
+          score: 33.33,
+          cost: 0.0712,
+          durationMs: 694_000,
+          cases: harborCases.map((c, i) => {
+            const score = i === 0 ? 100 : 0;
+            const cost = [0.0521, 0.0934, 0.0681][i]!;
+            const durationMs = [512_000, 903_000, 667_000][i]!;
+            return {
+              case: c.id,
+              score,
+              cost,
+              durationMs,
+              runs: [{ score, cost, durationMs, sessionId: `harbor:${c.trial}` }],
+            };
+          }),
+        },
+      ],
+      agentIds: [IDS.agents.docs],
+    },
   ];
   const benchmarkCases: Record<string, BenchmarkCaseSummary[]> = {
     [IDS.benchmarks.docs]: [
@@ -985,6 +1104,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       { id: "CASE-001-lead", title: L("写一段导语", "Write a lead paragraph") },
       { id: "CASE-002-breaking", title: L("列出破坏性变更", "List the breaking changes") },
     ],
+    [IDS.benchmarks.builtin]: harborCases.map((c) => ({ id: c.id, title: c.title })),
   };
   const caseFiles: DemoFixtures["caseFiles"] = {};
   for (const [benchmarkId, cases] of Object.entries(benchmarkCases)) {
@@ -999,6 +1119,13 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         },
       };
     }
+  }
+  // A Harbor case is text only: what the task is, where its folder is, and how it is launched.
+  for (const c of harborCases) {
+    caseFiles[`${IDS.benchmarks.builtin}/${c.id}`] = {
+      statement: { "README.md": harborStatement(c) },
+      rubric: { "README.md": harborRubric },
+    };
   }
 
   const machines: MachinesResponse = {

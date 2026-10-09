@@ -137,14 +137,14 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 | `published` | Formal Baseline 已经记录 | 可以使用 |
 | `failed` | `benchmark-design` 报告了 `calibration_failed` | 遮罩显示为创建失败，并提示删除后重新创建 |
 
-`failed` 的 Benchmark 不能使用。手动创建的 Benchmark 和内置示例一开始就是 `published`。配置里没有这个字段，或者取值既不是 `draft` 也不是 `failed`，都按 `published` 读取。
+`failed` 的 Benchmark 不能使用。手动创建的 Benchmark、内置示例和内置 Benchmark 一开始就是 `published`。配置里没有这个字段，或者取值既不是 `draft` 也不是 `failed`，都按 `published` 读取。
 
 ### 评估记录
 
 `scoreboard.yaml` 里的每条评估记录都带时间戳，并包含：
 
 - `agent_id`：这次评估测试的 Agent。它与 `model_id`、`thinking_level` 一起组成这条记录的**标签**。趋势图以时间为横轴、分数为纵轴，每个标签画一条线，只有同一标签下的分数才可比。Agent State 的 `version` 不属于标签：同一个 Agent 在同一 Runtime 下的历次版本，正是这张图要展示的趋势，所以它们共用一条线，每个点的悬停提示里写着对应的版本。评估记录还不带 Agent 的时期写下的记录，读作未标注，归入图表的灰色系列。
-- 评估 Runtime：`provider`、`model_id` 和 `thinking_level`。对于基线，用户指定的 `(provider, model_id)` 模型对优先，否则沿用 Builder Session 的模型对；优化则沿用 Reference 的 Runtime。`thinking_level` 从 Target Agent 的配置读取，不依赖 Trace 元数据。
+- 评估 Runtime：`provider`、`model_id` 和 `thinking_level`。对于基线，用户指定的 `(provider, model_id)` 模型对优先，否则沿用 Builder Session 的模型对；评估中心**评估**标签页发起的评估同样沿用其评估会话的模型对；优化则沿用 Reference 的 Runtime。`thinking_level` 从 Target Agent 的配置读取，不依赖 Trace 元数据。
 - `summary_title` 和 `summary`：这一轮的结论和下一轮的假设。
 - 由模型写入的分数、成本和耗时平均值。题目级的值是各次运行的平均，评估级的值是各道题目的平均。单次运行的成本保留记录时的精度。成本平均值忽略 `null`，只有所有参与计算的成本都未知时才为 `null`。分数保留两位小数，成本平均值保留六位小数，`duration_ms` 为整数。
 - 每道题目的逐次运行明细：每次运行记录 `score`、`cost`、`duration_ms` 和 `session_id`。
@@ -153,9 +153,9 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 
 ### 示例 Benchmark
 
-初始化 Project 的 `default_agent` 时，会在 Project 层级预置一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`）。它的三条示例评估都标注为 `agent_id: default_agent`，所以评估页面开箱就有数据。整个目录随时可以删除或替换。
+创建 Project 时，会在 Project 层级预置一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`）。它的三条示例评估都标注为 `agent_id: default_agent`，所以评估页面开箱就有数据。整个目录随时可以删除或替换。
 
-判断只看示例自己的目录 `benchmarks/example-benchmark/`：只要它不存在，初始化或加载 `default_agent` 时就会写入示例，不管 `benchmarks/` 里已经有什么，也不管旧的数据根在已退役的按 Agent 存放位置 `agents/<agent>/benchmarks/` 下还留着什么（没有任何代码读取那里）。已经存在的示例一概不动，删掉的示例会在下次加载时回来。
+示例与五个内置 Benchmark 只在 Project 创建时写入一次（`packages/core/src/state/project-benchmarks.ts`）：服务端创建 Project 时写入，`default_project` 则在全新安装首次启动时写入。每个都先写进 `benchmarks/.seeding/` 下的临时目录，再改名就位；写入失败即 Project 创建失败，并整体回滚。目录已存在的 id 直接跳过、从不往里写，因此服务端沿用已有数据根里的 `default_project` 时，它自己的 Benchmark 原样保留，只补上缺少的。此后不再写入：初始化或加载 `default_agent` 都不碰 `benchmarks/`，删掉的不会再出现。早先版本的 Project 保持原样：不会得到内置 Benchmark，示例在的仍在，删掉的也不会回来。
 
 ## 快照与版本
 

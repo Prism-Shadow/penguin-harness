@@ -66,7 +66,6 @@ import {
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
 import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
-import { provisionExampleBenchmark } from "./example-benchmark.js";
 import {
   agentsMdPath,
   agentStateDir,
@@ -184,19 +183,6 @@ export async function loadAgentState(opts?: {
         `Invalid Agent State config: ${configPath} is empty, corrupted, or missing the system_prompt field.`,
       );
     }
-    // The example Benchmark is provisioned on this path too, not only at initialization: a
-    // Project without benchmarks/example-benchmark/ gets it the first time its default_agent
-    // is loaded, whatever else benchmarks/ holds — which is what gives a data root created
-    // before this provisioning existed, or one that made Benchmarks of its own first, the same
-    // example a fresh one has. Best effort — opening a model context must not fail because a
-    // directory could not be written.
-    if (agentId === DEFAULT_AGENT_ID) {
-      try {
-        await provisionExampleBenchmark(root, projectId);
-      } catch {
-        // Nothing to do: the evaluation center simply starts out empty.
-      }
-    }
     return {
       root,
       projectId,
@@ -240,15 +226,11 @@ export async function loadAgentState(opts?: {
     preset === undefined && agentId === DEFAULT_AGENT_ID
       ? loadPreinstalledPlugins()
       : (preset?.plugins ?? []);
+  // The Project's Benchmarks are no Agent's to write, default_agent's included: they are
+  // written when the Project is created (project-benchmarks.ts), never on this path.
   await Promise.all([
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
     ...plugins.map((plugin) => installPlugin(root, projectId, agentId, plugin)),
-    // The example Benchmark is only provisioned alongside default_agent (so the evaluation
-    // center has data out of the box). It lands in the Project's benchmarks/, a sibling of
-    // agents/: skipped when the example is already there, and never written for a plain
-    // Agent, whose creation is not a Project's first day. Awaited here, unlike on the load
-    // path — a Project's first day is the one moment a failure is worth reporting.
-    ...(agentId === DEFAULT_AGENT_ID ? [provisionExampleBenchmark(root, projectId)] : []),
   ]);
   // system_config.yaml is written last: its existence is the "initialization complete" marker
   // (the load/init decision point). If this fails partway (disk full / crash), the next run

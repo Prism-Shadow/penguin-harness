@@ -137,14 +137,14 @@ Benchmarks belong to the Project. Each one is stored in `<root>/<project>/benchm
 | `published` | The Formal Baseline is recorded | Usable |
 | `failed` | `benchmark-design` reports `calibration_failed` | Masked as a failed creation, with a request to delete it and create it again |
 
-A failed Benchmark cannot be used. A Benchmark created by hand, and the built-in example, are published from the start. A config without the field, or with any value other than `draft` or `failed`, reads as published.
+A failed Benchmark cannot be used. A Benchmark created by hand, the built-in example and the built-in Benchmarks are published from the start. A config without the field, or with any value other than `draft` or `failed`, reads as published.
 
 ### Evaluation records
 
 Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 
 - `agent_id`, the agent the evaluation tested. Together with `model_id` and `thinking_level`, it forms the record's **label**. The trend chart plots score against time with one series per label, and only scores under the same label are comparable. The Agent State `version` is not part of the label: successive versions of one agent on one runtime are the trend the chart exists to show, so they share a line, and each point names its version on hover. A record written before evaluations carried an agent reads as unlabelled and falls into the chart's grey series.
-- The evaluation runtime: `provider`, `model_id` and `thinking_level`. For the baseline, a `(provider, model_id)` pair the user specifies takes priority; otherwise the pair is inherited from the Builder Session. An optimization reuses the Reference's runtime. `thinking_level` is read from the Target Agent's config, not from Trace metadata.
+- The evaluation runtime: `provider`, `model_id` and `thinking_level`. For the baseline, a `(provider, model_id)` pair the user specifies takes priority; otherwise the pair is inherited from the Builder Session. An evaluation from the Evaluation Center's **Evaluate** tab inherits its own conversation's pair the same way. An optimization reuses the Reference's runtime. `thinking_level` is read from the Target Agent's config, not from Trace metadata.
 - `summary_title` and `summary`: the round's conclusion and the hypothesis for the next one.
 - Score, cost and duration averages, written by the model. Case-level values average the runs, and evaluation-level values average the Cases. Run cost keeps its recorded precision. Cost averages ignore `null` inputs and are `null` only when every contributing cost is unknown. Scores use two decimals, cost averages six, and `duration_ms` is an integer.
 - Per-Case run details: each run records `score`, `cost`, `duration_ms` and `session_id`.
@@ -153,9 +153,9 @@ Every run and every Case is scored out of 100, so Scoreboard entries carry no `m
 
 ### The example Benchmark
 
-Initializing a Project's `default_agent` seeds an example Benchmark at the Project level (`packages/core/src/state/example-benchmark.ts`). Its three sample evaluations are labelled `agent_id: default_agent`, so the evaluation pages have data out of the box. The whole directory can be deleted or replaced at any time.
+Creating a Project writes an example Benchmark at the Project level (`packages/core/src/state/example-benchmark.ts`). Its three sample evaluations are labelled `agent_id: default_agent`, so the evaluation pages have data out of the box. The whole directory can be deleted or replaced at any time.
 
-The check looks only at the example's own directory, `benchmarks/example-benchmark/`. Whenever it is missing and `default_agent` is initialized or loaded, the example is written, whatever else `benchmarks/` holds, and whatever an older data root still keeps at the retired per-agent location `agents/<agent>/benchmarks/`, which nothing reads. An example that is present is never touched, and a deleted one comes back on the next load.
+The example and the five built-in Benchmarks are written once, when the Project is created (`packages/core/src/state/project-benchmarks.ts`): by the server when it creates a Project, and for `default_project` at a fresh install's first start. Each is written into a temporary directory under `benchmarks/.seeding/` and renamed into place; a write that fails fails the Project's creation, which is rolled back. An id whose directory already exists is skipped and never written into, so a `default_project` the server adopts from an existing data root keeps its own Benchmarks and is given only the missing ones. Nothing writes them again afterwards: initializing or loading `default_agent` never touches `benchmarks/`, so a deleted one stays deleted. A Project from an earlier release is left as it is: it is not given the built-in Benchmarks, and its example stays, or stays deleted.
 
 ## Snapshots and versions
 
