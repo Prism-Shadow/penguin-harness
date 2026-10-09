@@ -3,6 +3,7 @@
 - **Date:** 2026-10-09
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1010](https://github.com/Prism-Shadow/penguin-harness/pull/1010)
 
 [English](2026-10-09-page-rules-machines.md)
 
