@@ -195,7 +195,7 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plu
 
 | Category | Plugin | Purpose |
 | --- | --- | --- |
-| Office Productivity | `a2ui` | Rich reply blocks — a choice, a form, steps, a callout or a Mermaid diagram written as a fenced block inside ordinary Markdown, rendered by the Web App with its own components (a pick fills the composer as plain text) and shown as readable text elsewhere — with STE-style writing rules for Chinese and English and a checker script that validates and scores a draft before it is sent (preinstalled) |
+| Office Productivity | `a2ui` | Rich reply blocks — a choice, a form, steps, a callout, a Mermaid diagram, or a weather, clock, countdown or metrics widget, written as a fenced block inside ordinary Markdown, rendered by the Web App with its own components (a pick fills the composer as plain text) and shown as readable text elsewhere — with STE-style writing rules for Chinese and English, scripts that turn a weather lookup or a system snapshot into a block, and a checker script that validates and scores a draft before it is sent (preinstalled) |
 | | `data-analysis` | Complete data-analysis tasks with bounded evidence inspection, explicit answer-changing decisions, native artifact handling and final output verification |
 | | `use-firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
 | | `browser-automation` | Drive the agent browser with `penguin browser`, the desktop app's [Built-in Browser](/builtin-browser) or [your own Chrome](/builtin-browser#use-your-own-chrome): read pages as simplified HTML or text, act with JavaScript and trusted clicks and typing, and extract data such as Amazon orders, signed in with your own accounts |

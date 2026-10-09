@@ -1,14 +1,21 @@
 /**
  * The whole-reply check the skill's script runs: L1 per block (parseA2ui / checkMermaid), the L2
  * heuristics across blocks (too many blocks, a question that does not end the turn, a block no
- * sentence introduces), the prose lint, and one score. The L3 questions — would text have done,
- * is this what a person would say — are not detectable and live in A2UI_RUBRIC instead.
+ * sentence introduces, a snapshot that does not say when it was taken), the prose lint, and one
+ * score. The L3 questions — would text have done, is this what a person would say — are not
+ * detectable and live in A2UI_RUBRIC instead.
  */
 import { parseA2ui } from "./catalog.js";
 import { blocksFromFences, fenceLineSet, scanFences, splitLines } from "./fences.js";
 import { checkMermaid } from "./mermaid.js";
 import { lintProse, resolveLang } from "./prose.js";
-import { A2UI_SCORING, type A2uiIssue, type A2uiLangOption, type A2uiReport } from "./types.js";
+import {
+  A2UI_SCORING,
+  type A2uiIssue,
+  type A2uiLangOption,
+  type A2uiReport,
+  type A2uiSpec,
+} from "./types.js";
 
 const HEADING = /^\s{0,3}#{1,6}(\s|$)/;
 const TABLE_ROW = /^\s*\|/;
@@ -24,6 +31,7 @@ export function checkReply(markdown: string, opts: { lang?: A2uiLangOption } = {
   const issues: A2uiIssue[] = [];
   const summary: A2uiReport["blocks"] = [];
   const typeOf = new Map<number, string | undefined>();
+  const specOf = new Map<number, A2uiSpec>();
 
   for (const block of blocks) {
     const own: A2uiIssue[] = [];
@@ -41,6 +49,7 @@ export function checkReply(markdown: string, opts: { lang?: A2uiLangOption } = {
       const result = parseA2ui(block.source);
       type = result.spec?.type ?? result.type;
       relative = result.issues;
+      if (result.spec !== undefined) specOf.set(block.index, result.spec);
     } else {
       relative = checkMermaid(block.source);
     }
@@ -70,6 +79,7 @@ export function checkReply(markdown: string, opts: { lang?: A2uiLangOption } = {
   const label = (index: number, fence: string): string =>
     fence === "mermaid" ? "mermaid" : (typeOf.get(index) ?? "a2ui");
 
+  // Only a question ends the turn; the widgets are read-only and prose may follow them.
   const interactive = blocks.filter((b) => {
     const t = typeOf.get(b.index);
     return b.fence === "a2ui" && (t === "choice" || t === "form");
@@ -87,6 +97,18 @@ export function checkReply(markdown: string, opts: { lang?: A2uiLangOption } = {
         `Content follows the ${label(b.index, b.fence)} block that ends on line ${b.endLine}; a question ends the turn — move the block to the end, or drop what follows.`,
         b.index,
         b.endLine,
+      );
+    }
+  }
+  for (const b of blocks) {
+    const spec = specOf.get(b.index);
+    if (spec === undefined) continue;
+    if ((spec.type === "weather" || spec.type === "metrics") && spec.asOf === undefined) {
+      l2(
+        "no_as_of",
+        `The ${spec.type} block on line ${b.startLine} has no \`asOf\`; a snapshot says when it was taken — add the time the data was read (a script prints it).`,
+        b.index,
+        b.startLine,
       );
     }
   }

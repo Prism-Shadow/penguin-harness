@@ -354,6 +354,8 @@ export const en: GalleryStrings = {
       "ui-notice":
         "a notice strip or toast, coloured by its tone: info, success, warning, danger or neutral",
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
+      "ui-widget":
+        "a reading in a reply taken in at a glance: weather, a clock, a countdown, metrics",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
       "ui-stream":
         "text that is still streaming (a reply, thinking, a summary, a tool's output): each theme decides how new text appears",
@@ -1010,8 +1012,116 @@ export const en: GalleryStrings = {
       patchLabel: "Changes to src/limits.ts",
       a2ui: "A2UI blocks",
       a2uiHint:
-        "Components a model writes into its reply: a choice, a form, steps, a callout and a Mermaid diagram. A pick or a submit here shows, as a toast, the text the app would put in the composer.",
+        "Components a model writes into its reply: weather, clock, countdown and metrics widgets, then a choice, a form, steps, a callout and a Mermaid diagram. The widgets are snapshots the model supplies; only the clock and the countdown move. A pick or a submit here shows, as a toast, the text the app would put in the composer.",
       a2uiReply: [
+        {
+          lead: "Here is the weather in Beijing right now:",
+          spec: {
+            type: "weather",
+            place: "Beijing",
+            condition: "partly-cloudy",
+            temp: 18,
+            unit: "C",
+            summary: "Clouding over by evening, light rain likely tonight",
+            high: 22,
+            low: 12,
+            feelsLike: 17,
+            humidity: 62,
+            windSpeed: 12,
+            windDirection: "NE",
+            hourly: [
+              { time: "14:00", temp: 18, condition: "partly-cloudy", precip: 10 },
+              { time: "15:00", temp: 19, condition: "partly-cloudy", precip: 10 },
+              { time: "16:00", temp: 19, condition: "cloudy", precip: 20 },
+              { time: "17:00", temp: 18, condition: "cloudy", precip: 30 },
+              { time: "18:00", temp: 16, condition: "cloudy", precip: 40, night: true },
+              { time: "19:00", temp: 15, condition: "drizzle", precip: 60, night: true },
+            ],
+            daily: [
+              { date: "2026-10-04", high: 22, low: 12, condition: "partly-cloudy", precip: 20 },
+              { date: "2026-10-05", high: 19, low: 11, condition: "rain", precip: 80 },
+              { date: "2026-10-06", high: 17, low: 9, condition: "cloudy", precip: 30 },
+              { date: "2026-10-07", high: 20, low: 10, condition: "clear", precip: 0 },
+              { date: "2026-10-08", high: 23, low: 11, condition: "wind", precip: 10 },
+            ],
+            asOf: "2026-10-04T14:05+08:00",
+            source: "Open-Meteo",
+          },
+        },
+        {
+          lead: "The time now where the team works:",
+          spec: {
+            type: "clock",
+            title: "Team time zones",
+            zones: [
+              { zone: "local" },
+              { zone: "America/New_York", label: "New York" },
+              { zone: "Europe/London", label: "London" },
+            ],
+            style: "both",
+          },
+        },
+        {
+          lead: "Time left until the New Year:",
+          spec: {
+            type: "countdown",
+            to: "2026-12-31T23:59:59+08:00",
+            label: "New Year",
+            doneLabel: "Happy New Year",
+          },
+        },
+        {
+          lead: "The service status, as just read:",
+          spec: {
+            type: "metrics",
+            title: "Service status",
+            items: [
+              {
+                label: "CPU",
+                value: 37,
+                max: 100,
+                unit: "%",
+                gauge: "ring",
+                warn: 80,
+                danger: 95,
+                history: [22, 31, 28, 45, 52, 41, 37],
+              },
+              {
+                label: "Memory",
+                kind: "used",
+                value: 15.3,
+                max: 16,
+                unit: "GB",
+                decimals: 1,
+                gauge: "bar",
+                warn: 13.6,
+                danger: 15.2,
+                delta: 0.4,
+                deltaLabel: "vs. yesterday",
+              },
+              {
+                label: "API quota",
+                kind: "remaining",
+                value: 1240,
+                max: 5000,
+                warn: 1000,
+                danger: 250,
+                detail: "resets in 3 days",
+              },
+              {
+                label: "Monthly budget",
+                kind: "remaining",
+                value: 180,
+                max: 1000,
+                prefix: "¥",
+                warn: 300,
+                danger: 100,
+              },
+              { label: "Upload", kind: "progress", value: 63, max: 100, unit: "%" },
+            ],
+            asOf: "2026-10-04T14:05+08:00",
+          },
+        },
         {
           lead: "Pick the database first.",
           spec: {
@@ -1030,6 +1140,35 @@ export const en: GalleryStrings = {
           },
         },
         {
+          lead: "The change passed every check.",
+          spec: {
+            type: "choice",
+            question: "Merge it now?",
+            options: [
+              { label: "Merge now", recommended: true },
+              { label: "After review" },
+              { label: "Not yet" },
+            ],
+          },
+        },
+        {
+          lead: "Pick the checks to run before the release:",
+          spec: {
+            type: "choice",
+            question: "Which checks should run before the release?",
+            multiple: true,
+            options: [
+              {
+                label: "Type check",
+                description: "A few seconds; catches most slips",
+                recommended: true,
+              },
+              { label: "Unit tests", description: "About two minutes" },
+              { label: "End-to-end tests", description: "About fifteen minutes; needs a browser" },
+            ],
+          },
+        },
+        {
           lead: "Give the deployment details in one go:",
           spec: {
             type: "form",
@@ -1039,7 +1178,7 @@ export const en: GalleryStrings = {
                 id: "region",
                 label: "Region",
                 kind: "single",
-                options: [{ label: "eu-west" }, { label: "us-east" }],
+                options: [{ label: "eu-west" }, { label: "us-east" }, { label: "ap-south" }],
                 required: true,
               },
               {
