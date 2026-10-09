@@ -1688,8 +1688,9 @@ function dateOutput(ms: number): string {
 
 /**
  * The body the try route streams, as `data:` lines and `[DONE]`: the example question answered
- * by running `date` (a tool call, its result, then the answer, over two Requests); a run that
- * continues a Session gets one answer in one Request.
+ * by running `date` over two Requests — the tool call's fragments and the complete call, its
+ * result, then the answer's fragments and the complete answer, so the rendered view has
+ * fragments to merge; a run that continues a Session gets one answer in one Request.
  */
 export function amspTryStream(
   body: unknown,
@@ -1743,6 +1744,13 @@ export function amspTryStream(
     const call = usage(31, 1376, 1152);
     const answer = usage(55, 1352, 1088);
     const clockText = dateOutput(now + 1900);
+    const answerText = L(
+      `现在是 ${clockText.slice(11, 16)}（UTC），${new Date(now).getUTCFullYear()} 年 ${new Date(now).getUTCMonth() + 1} 月 ${new Date(now).getUTCDate()} 日。`,
+      `It is ${clockText.slice(11, 16)} UTC on ${clockText.slice(0, 10)}, ${new Date(now).getUTCFullYear()}.`,
+    );
+    // The answer as a model streams it: three fragments, then the complete text.
+    const third = Math.ceil(answerText.length / 3);
+    const fragments = [0, 1, 2].map((i) => answerText.slice(i * third, (i + 1) * third));
     events = [
       started,
       {
@@ -1753,10 +1761,31 @@ export function amspTryStream(
         model_id: "claude-sonnet-5",
         context_window: 200000,
       },
+      {
+        type: "tools.ready",
+        at: at(20),
+        tools: ["exec_command", "read_file", "write_file", "edit_file", "web_fetch"].map(
+          (name) => ({ name, description: "" }),
+        ),
+      },
       { type: "request.started", at: at(40), request: 1 },
       {
+        type: "tool_call.delta",
+        at: at(1200),
+        tool_call_id: "toolu_try_date",
+        name: "exec_command",
+        arguments: '{"cmd": ',
+      },
+      {
+        type: "tool_call.delta",
+        at: at(200),
+        tool_call_id: "toolu_try_date",
+        name: "",
+        arguments: '"date"}',
+      },
+      {
         type: "tool_call.done",
-        at: at(1500),
+        at: at(100),
         tool_call_id: "toolu_try_date",
         name: "exec_command",
         arguments: '{"cmd":"date"}',
@@ -1771,14 +1800,17 @@ export function amspTryStream(
       },
       { type: "request.done", at: at(10), request: 1, status: "completed", usage: call },
       { type: "request.started", at: at(30), request: 2 },
+      ...fragments.map((text): AmspEvent => ({
+        type: "text.delta",
+        at: at(400),
+        role: "assistant",
+        text,
+      })),
       {
         type: "text.done",
-        at: at(1200),
+        at: at(10),
         role: "assistant",
-        text: L(
-          `现在是 ${clockText.slice(11, 16)}（UTC），${new Date(now).getUTCFullYear()} 年 ${new Date(now).getUTCMonth() + 1} 月 ${new Date(now).getUTCDate()} 日。`,
-          `It is ${clockText.slice(11, 16)} UTC on ${clockText.slice(0, 10)}, ${new Date(now).getUTCFullYear()}.`,
-        ),
+        text: answerText,
         stop_reason: "completed",
       },
       { type: "request.done", at: at(20), request: 2, status: "completed", usage: answer },

@@ -1613,15 +1613,18 @@ export const zh = {
     /** The input's placeholder once a run has named its Session: the next run continues it. */
     apiTryFollowUp: "继续这个会话…",
     apiTryNewSession: "新会话",
-    apiTryEvents: "事件",
+    /** The output's two views: the stream with fragments merged, and its `data:` lines as received. */
+    apiTryRendered: "渲染",
     apiTryRaw: "原始",
+    apiTryCopyRaw: "复制原始行",
+    /** The output before the first run. */
+    apiTryEmpty: "运行后，事件流显示在这里。",
     apiTryStatus: "状态",
     apiTryRequests: "Request",
     apiTryTokens: "Token（输出 / 合计）",
     apiTryCacheRead: "缓存读",
     apiTryCacheWrite: "缓存写",
     apiTryElapsed: "用时",
-    apiTryAnswer: "回答",
     apiTryStreamBroken: "事件流在 run.done 之前结束。",
   },
 
