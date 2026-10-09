@@ -12,6 +12,8 @@
  * - The move to per-part versions: SKILL.md files gaining only their version line, at the
  *   version the plugin carried, pass; a part started below that version fails, and so does a
  *   plugin.json that keeps its top-level version.
+ * - Only plugin directories count: the library's own README is no plugin, and a plugin new since
+ *   the base reads as new, with nothing printed but the summary.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
@@ -142,6 +144,25 @@ describe("the plugin version guard", () => {
       }),
     });
     expect(run).toMatchObject({ ok: true });
+  });
+
+  it("counts plugin directories only, and reads a plugin new since the base without noise", async () => {
+    const base = await checkout(PER_PART);
+    const run = await guard(base, {
+      "plugins/README.md": "# The plugin library\n",
+      "plugins/fresh/package.json": JSON.stringify({
+        name: "@penguinharness/fresh",
+        version: "0.2.13",
+      }),
+      "plugins/fresh/plugin.json": JSON.stringify({ description: "Fresh." }),
+      "plugins/fresh/skills/one/SKILL.md": skillMd("2026.10.09.1"),
+    });
+    expect(run.ok).toBe(true);
+    // One line, the summary: a file missing at the base is no error to print.
+    const lines = run.out.split("\n").filter((line) => line.trim() !== "");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("fresh/one");
+    expect(lines[0]).not.toContain("README.md");
   });
 
   it("lets the move to per-part versions through at the plugin's own version, and nothing below it", async () => {

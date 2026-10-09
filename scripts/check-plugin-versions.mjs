@@ -32,7 +32,10 @@ if (base.trim() === "") {
   process.exit(0);
 }
 
-const git = (...args) => execFileSync("git", args, { encoding: "utf8" });
+// git's stderr is captured, not printed: a file missing at the base is an expected miss, and a
+// real failure still throws with git's message in it.
+const git = (...args) =>
+  execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 /** A file at the base commit, or null where it did not exist. */
 const atBase = (file) => {
   try {
@@ -92,7 +95,15 @@ const changed = git("diff", "--name-only", `${base}...HEAD`, "--", "plugins/")
   .split("\n")
   .map((line) => line.trim())
   .filter((line) => line.startsWith("plugins/"));
-const plugins = [...new Set(changed.map((file) => file.split("/")[1]).filter(Boolean))].sort();
+// A plugin is a directory: a file right under plugins/ (the library's README) is nobody's.
+const plugins = [
+  ...new Set(
+    changed
+      .map((file) => file.split("/"))
+      .filter((parts) => parts.length > 2)
+      .map((parts) => parts[1]),
+  ),
+].sort();
 if (plugins.length === 0) {
   console.log("plugin versions: no plugin files changed");
   process.exit(0);
@@ -133,7 +144,10 @@ for (const name of plugins) {
       continue;
     }
     const then = atBase(skillFile);
-    if (then === null) continue; // a new skill: any version is new
+    if (then === null) {
+      bumped.push(`${name}/${skill}`); // a new skill: any version is new
+      continue;
+    }
     const files = changed.filter((file) => file.startsWith(`${dir}/skills/${skill}/`));
     const onlyTheVersionLine =
       files.length === 1 && files[0] === skillFile && withoutVersion(now) === withoutVersion(then);
