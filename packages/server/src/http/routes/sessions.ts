@@ -712,6 +712,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         "No updatable field provided (approvalMode / sandbox / thinkingLevel / archived / title).",
       );
     }
+    // Every check before any write: the sandbox pick's (the non-admin ceiling, what this server
+    // can enforce) included, so a refused request stores nothing — not the approval-mode half
+    // of a preset whose sandbox half was refused.
+    const nextSandbox =
+      sandbox !== undefined
+        ? deps.sessionService.pickSandbox(row, sandbox, c.var.user.isAdmin)
+        : undefined;
     let updated: SessionRow = { ...row };
     if (title !== undefined) {
       // Manual renaming takes priority over auto-generation: TitleGenerator only ever replaces the fallback title it wrote itself, never a manual rename.
@@ -731,10 +738,10 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       deps.sessionsRepo.updateApprovalMode(row.sessionId, approvalMode);
       updated = { ...updated, approvalMode };
     }
-    if (sandbox !== undefined) {
+    if (nextSandbox !== undefined) {
       // Takes effect at the Session's next command: its confiner reads the row at every spawn.
-      const next = deps.sessionService.updateSandbox(row, sandbox, c.var.user.isAdmin);
-      updated = { ...updated, sandbox: next };
+      deps.sessionService.updateSandbox(row.sessionId, nextSandbox);
+      updated = { ...updated, sandbox: nextSandbox };
     }
     if (thinkingLevel !== undefined) {
       // The row is what the loader applies at load; a runtime already loaded is assigned
@@ -1795,7 +1802,7 @@ export class SessionApiRoutes {
       agentConfigService,
       projectConfigService,
       access,
-      sandboxDefaults: () => sessionService.sandboxView(sessionService.defaultSandbox()),
+      sandboxDefaults: () => sessionService.defaultsView(),
     });
     this.commandPolicyRoutes = commandPolicyRoutes({ projectConfigService, access });
     this.agentsRoutes = agentsRoutes({

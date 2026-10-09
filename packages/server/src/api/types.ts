@@ -1593,6 +1593,19 @@ export interface SessionSandbox {
    * (400 `sandbox_unsupported`).
    */
   localNetworkSupported?: boolean;
+  /** Response only, ignored in requests: whether a backend here can enforce `masksPaths`. */
+  maskPathsSupported?: boolean;
+  /**
+   * Response only, ignored in requests: true when this policy hides paths (the Sandbox card's
+   * masked paths, kept by every pick). Where `maskPathsSupported` is false, every level then
+   * refuses every command, and the composer says so.
+   */
+  masksPaths?: boolean;
+  /**
+   * Response only, ignored in requests: the names of the sandbox backends in use here, which the
+   * composer names when a level is beyond what they enforce. Absent with none in use.
+   */
+  backendsInUse?: string[];
   /**
    * Response only, ignored in requests: the sandbox backends that are enabled here but failed
    * to load or failed their check (a WSL distro not set up, a wrong program path), each with
@@ -1600,6 +1613,50 @@ export interface SessionSandbox {
    * composer marks the confining levels unavailable and gives the first one's reason.
    */
   unavailableBackends?: UnavailableSandboxBackend[];
+  /**
+   * Response only, ignored in requests: the server's sandbox presets (the Sandbox card's table),
+   * in table order, disabled rows included. The composer lists the enabled ones and names the
+   * Session's level by the first row matching its mode, network and approval mode. A server
+   * that does not report it gets the composer's built-in table.
+   */
+  presets?: SessionSandboxPreset[];
+  /**
+   * Response only, ignored in requests: true when this Session's policy holds something the
+   * presets do not show — masked paths, or the temp directory not writable.
+   */
+  advanced?: boolean;
+  /**
+   * Response only, chat defaults only: the approval mode a new Session starts with when its
+   * request names none — the Sandbox card's default preset's, while the switch is on. Absent:
+   * the server's own fallback (`allow-all`).
+   */
+  defaultApprovalMode?: ApprovalMode;
+  /**
+   * Response only, ignored in requests: the Sandbox card's switch on this server — whether new
+   * Sessions start confined. Off, the composer offers the approval modes alone (a Session keeps
+   * its own policy either way). A server that does not report it is read as on.
+   */
+  switchOn?: boolean;
+}
+
+/** One sandbox preset: a named mode, network level and approval mode. */
+export interface SessionSandboxPreset {
+  id: string;
+  /** The name an administrator gave it, or its declared English name. */
+  name: string;
+  /** Its declared Chinese name, while it has not been renamed. */
+  nameZh?: string;
+  /** Whether the composer's menu lists it. */
+  enabled: boolean;
+  mode: SessionSandboxMode;
+  network: SessionSandboxNetwork;
+  approvalMode: ApprovalMode;
+  /**
+   * Response-only: its file mode or network is wider than the server's sandbox settings (the
+   * ceiling for non-admins), so a non-admin's pick of it is refused with `403 sandbox_forbidden`.
+   * The same comparison as that refusal; absent when it is within them.
+   */
+  aboveCeiling?: true;
 }
 
 /** An enabled sandbox backend that is not in use on this server, and why. */
@@ -3961,6 +4018,18 @@ export interface PluginItem {
   hooks: string[];
   /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
+  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`); absent = pre-select its first skill. */
+  quickStart?: QuickStartItem;
+}
+
+/** A quick start: a prompt pre-filled into a new-chat draft — never sent by the page. */
+export interface QuickStartItem {
+  prompt: string;
+  promptZh?: string;
+  /** Skills to pre-select (a library plugin's own). */
+  skills?: string[];
+  /** Open the draft in goal mode. */
+  goal?: boolean;
 }
 
 export interface PluginGroupItem {
@@ -5397,17 +5466,30 @@ export interface ContributionsResponse {
  * One field of a settings group a module declares (its `PluginConfigProvider.groups`
  * contribution's `properties.<name>`): what the Settings dialog draws for it. `secret` is
  * drawn as a password field and masked on the way out; `enum` is a choice among `options`;
- * `list` is a list of strings, drawn one per line.
+ * `list` is a list of strings, drawn one per line; `table` is a fixed set of `rows`, each a
+ * value per one of its `columns`, drawn as a table.
  */
 export interface PluginConfigField {
-  type: "string" | "secret" | "boolean" | "number" | "enum" | "list";
+  type: "string" | "secret" | "boolean" | "number" | "enum" | "list" | "table";
   title: string;
   titleZh?: string;
+  /** What the field means: disclosed behind a "?" beside its title. */
   description?: string;
   descriptionZh?: string;
+  /**
+   * The shape a value must take ("one absolute path per line"): shown under the field at all
+   * times, since it is read while typing.
+   */
+  hint?: string;
+  hintZh?: string;
   placeholder?: string;
   /** The value a package with nothing stored reads; also what an empty field falls back to. */
   default?: string | number | boolean | string[];
+  /**
+   * Drawn in the card's Advanced fold, collapsed by default, rather than among the basic
+   * fields. Presentation only: it is stored, validated and read like any other field.
+   */
+  advanced?: boolean;
   /** A save that would leave this field empty is refused. */
   required?: boolean;
   /** `enum` only: the values it may take, in display order. */
@@ -5421,6 +5503,114 @@ export interface PluginConfigField {
   pattern?: string;
   /** What a save refused by `pattern` says, after the field's name (e.g. "must be an absolute path"). */
   patternErrorMessage?: string;
+  /**
+   * `table` only: its columns, in display order, and its rows, in display order. The table
+   * has no `default`: the rows' declared cells are its defaults, and what is stored is only
+   * the cells that differ from them — `{ [row id]: { [column]: value } }`.
+   */
+  columns?: PluginConfigTableColumn[];
+  rows?: PluginConfigTableRow[];
+  /**
+   * `table` only: a single choice of one row — the sandbox's default preset. The choice is
+   * stored in `field`, an `enum` field of the same group whose options are the row ids (plus,
+   * in an `extensible` table, the ids of the rows added to it); the page draws that field only
+   * as its title in brackets after the chosen row's name ("(Default)"), and picks it from a
+   * row's "…" menu.
+   */
+  rowChoice?: PluginConfigRowChoice;
+  /**
+   * `table` only: rows may be added (and only those deleted, from the row's "…" menu) and every
+   * row reordered. A new row
+   * starts from these values. What is stored, beside the declared rows' changed cells, is the
+   * added rows under `"$added"` (`{ [row id]: { [column]: value } }`, every column present) and
+   * the row order under `"$order"` (row ids); neither key can be a row id. A save sends either
+   * key whole; a document without them reads as the declared rows in declared order.
+   */
+  extensible?: PluginConfigNewRow;
+  /**
+   * `table` only: a header drawn over adjacent columns that belong together (the sandbox's
+   * Pin, under "Action"). `columns` names them. When the group ends the columns, the row's drag
+   * handle and "…" menu join it.
+   */
+  columnGroup?: PluginConfigColumnGroup;
+  /**
+   * `table` only: a `boolean` column drawn as a pin toggle rather than a switch — a row pinned
+   * to a list (the sandbox presets in the composer's menu). The texts are its tooltip in each
+   * state. Declared on the table, not the column, so every column keeps one shape.
+   */
+  pin?: PluginConfigPinColumn;
+}
+
+/** A table's pin column: which boolean column, and its tooltip pinned and not. */
+export interface PluginConfigPinColumn {
+  column: string;
+  on: string;
+  onZh?: string;
+  off: string;
+  offZh?: string;
+}
+
+/**
+ * A table's single choice of a row: the `enum` field it stores into, and its title, drawn in
+ * brackets after the chosen row's name. The choice may name no row (nothing stored, and the
+ * group's `derive` gives none): no row is marked and a save is not refused for it. A save that
+ * leaves it naming a row the table no longer has is refused.
+ */
+export interface PluginConfigRowChoice {
+  field: string;
+  title: string;
+  titleZh?: string;
+}
+
+/** One column of a `table` field: a scalar field type (`string`, `boolean`, or an `enum` with `options`). */
+export interface PluginConfigTableColumn {
+  name: string;
+  type: "string" | "boolean" | "enum";
+  title: string;
+  titleZh?: string;
+  /** What the column means: disclosed behind a "?" beside its header. */
+  description?: string;
+  descriptionZh?: string;
+  options?: PluginConfigOption[];
+}
+
+/** One row of a `table` field: its id and its declared cells. */
+export interface PluginConfigTableRow {
+  id: string;
+  /** Every column's declared value. */
+  values: Record<string, string | boolean>;
+  /** A string cell's declared value in Chinese, shown until a save changes the cell. */
+  valuesZh?: Record<string, string>;
+  /** Columns whose cell in this row a save may not change. */
+  locked?: string[];
+  /** A row added to an `extensible` table (not declared): the only kind that may be deleted. */
+  added?: boolean;
+  /**
+   * What the row is for, disclosed behind a "?" beside its name while its `enum` cells hold
+   * their declared values. A row without one, or whose choices changed, gets a "?" listing its
+   * `enum` cells' values and what each does (the options' `description`s).
+   */
+  description?: string;
+  descriptionZh?: string;
+}
+
+/** A header over adjacent table columns, with its own "?". */
+export interface PluginConfigColumnGroup {
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  columns: string[];
+}
+
+/** The values a row added to an `extensible` table starts from. */
+export interface PluginConfigNewRow {
+  /** The add button's text ("Add preset"). */
+  add?: string;
+  addZh?: string;
+  values: Record<string, string | boolean>;
+  /** A string column's starting text in Chinese. */
+  valuesZh?: Record<string, string>;
 }
 
 /** One choice of an `enum` field. */
@@ -5428,6 +5618,9 @@ export interface PluginConfigOption {
   value: string;
   title: string;
   titleZh?: string;
+  /** What picking it does: listed, for a table column's option, in a row's "?" (see the row's `description`). */
+  description?: string;
+  descriptionZh?: string;
 }
 
 /** A declared configuration: a titled group of fields, in declaration order. */
@@ -5436,6 +5629,13 @@ export interface PluginConfiguration {
   titleZh?: string;
   description?: string;
   descriptionZh?: string;
+  /**
+   * A `boolean` field that turns the group on (the sandbox's `enabled`). While it is off, as
+   * drafted, the card draws that field alone: no other field, notice or action, and none of the
+   * groups drawn inside it. Turning it on in a group that reports a `backend` it lacks offers
+   * to install one.
+   */
+  switch?: string;
   properties: Record<string, PluginConfigField>;
 }
 
@@ -5449,6 +5649,9 @@ export interface PluginConfigNotice {
   tone: "attention" | "muted" | "progress";
   text: string;
   textZh?: string;
+  /** More about the notice, disclosed under it on request; lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
 }
 
 /** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
@@ -5466,11 +5669,33 @@ export interface PluginConfigEntry {
   actions?: PluginConfigActionDecl[];
   /** Enum options this machine cannot honour now: drawn greyed out with the reason; a save choosing one is refused. */
   unavailable?: PluginConfigUnavailableDecl[];
+  /**
+   * For a group whose settings a backend plugin enforces (the sandbox): whether one that
+   * applies to this machine's OS is installed, and which packages this OS defaults to. The card
+   * offers to install `recommended` when the group's switch is turned on and none is installed.
+   * Asked per read, like the notices; the client never guesses the OS.
+   */
+  backend?: PluginConfigBackend;
 }
 
-/** One enum option a settings group cannot honour on this machine, and why. */
+/** Whether a backend that applies to this machine is installed, and this OS's default ones. */
+export interface PluginConfigBackend {
+  /** A backend for this OS is installed: loaded, or installed and failing its check. */
+  installed: boolean;
+  /**
+   * The npm packages this OS defaults to, installed together; absent on an OS with no default
+   * backend. Linux names two: bubblewrap, and sandbox-dsh, which confines files through
+   * Landlock where bubblewrap is refused.
+   */
+  recommended?: string[];
+}
+
+/** One enum option (or boolean position) a settings group cannot honour on this machine, and why. */
 export interface PluginConfigUnavailableDecl {
   field: string;
+  /** A `table` field's column: the option is unavailable in every cell of that column. */
+  column?: string;
+  /** An enum option, or a boolean field's position: "true" or "false". */
   value: string;
   reason: string;
   reasonZh?: string;

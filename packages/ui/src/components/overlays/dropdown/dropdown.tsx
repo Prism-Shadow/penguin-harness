@@ -151,15 +151,18 @@ export function Dropdown({
   );
 
   // Opening moves focus into the panel (first item), so the menu is operable from the
-  // keyboard at all. Runs after the panel has mounted, portal or in-flow alike.
-  // Read through a ref so the effect still depends on `open` alone: a caller that flips
+  // keyboard at all. Runs after the panel has mounted, portal or in-flow alike — a portaled
+  // panel once it is placed: until then it is laid out `visibility: hidden`, and a hidden
+  // element cannot take focus, which would leave focus on the trigger and the arrows dead.
+  // Read through a ref so the effect still depends on opening alone: a caller that flips
   // focusOnOpen while the menu is open must not make focus jump into the panel.
   const focusOnOpenRef = useRef(focusOnOpen);
   focusOnOpenRef.current = focusOnOpen;
+  const placed = !portal || pos !== null;
   useEffect(() => {
-    if (!open || focusOnOpenRef.current === false) return;
+    if (!open || !placed || focusOnOpenRef.current === false) return;
     panelItems()[0]?.focus();
-  }, [open, panelItems]);
+  }, [open, placed, panelItems]);
 
   /**
    * Up/Down walk the panel's items, wrapping at both ends (the standard menu idiom) —

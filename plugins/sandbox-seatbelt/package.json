@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/sandbox-seatbelt",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "description": "macOS Seatbelt sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
   "license": "Apache-2.0",

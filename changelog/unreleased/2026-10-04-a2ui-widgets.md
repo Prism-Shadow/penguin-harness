@@ -53,5 +53,5 @@ clock. Two new skill scripts print real weather and system data as ready-made bl
   fence to paste as is, or the bare JSON with `--json`. The skill tells the model to use them
   instead of numbers from memory.
 - **Skill and docs:** the a2ui skill and its component reference covered the four widgets with
-  examples, and the plugin moved to `2026.10.04.1`. The chat page's "Rich output blocks" section
+  examples, and the plugin moved to `2026.10.09.1`. The chat page's "Rich output blocks" section
   listed the widgets, and the UI gallery's content board gained samples of them.

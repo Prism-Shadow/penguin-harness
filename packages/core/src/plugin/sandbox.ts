@@ -33,9 +33,13 @@ export type ConfinedSandboxMode = Exclude<SandboxMode, "danger-full-access">;
  * and `mask-paths` are optional implementations (see {@link SandboxProvider.dimensions}).
  * `network-local` is the local network level: only the host's localhost is reachable. It is
  * its own dimension because a backend that can cut the network cannot necessarily keep the
- * host's loopback while cutting the rest.
+ * host's loopback while cutting the rest. `closed-temp` is withholding the temporary directory
+ * when a policy does not grant it ({@link SandboxPolicy.writableTemp}): a backend whose temp
+ * area is always writable (the DSH adaptor, which grants the host's /tmp under
+ * `workspace-write`) does not declare it, and a policy closing temp is never routed to it.
  */
-export type SandboxDimension = "fs-write" | "network" | "network-local" | "mask-paths";
+export type SandboxDimension =
+  "fs-write" | "network" | "network-local" | "mask-paths" | "closed-temp";
 
 /**
  * The network levels, narrowest first: `none` = no network at all, `local` = only the host's
@@ -63,9 +67,15 @@ export interface SandboxPolicy {
   /**
    * Further absolute directories `workspace-write` may write under, beside the workspace:
    * the Session's scratchpad, where the plan file, a goal's state file and the
-   * attachments live. Meaningless under `read-only`. A backend that does not implement
-   * the field confines more narrowly than asked, never more widely, so no dimension
-   * guards it.
+   * attachments live. The service sets it only under `workspace-write`. A backend that
+   * does not implement the field confines more narrowly than asked, never more widely, so
+   * no dimension guards it.
+   *
+   * Each root EXISTS on the host by the time a backend is handed the policy: the service
+   * creates it first (the scratchpad is made lazily, and can be removed mid-Session), and
+   * refuses the spawn when it cannot. A backend neither creates a root nor skips a missing
+   * one. `workspaceRoot` is not covered: a missing Workspace is a different error, and
+   * surfaces as such.
    */
   writableRoots?: readonly string[];
   /**
@@ -77,7 +87,8 @@ export interface SandboxPolicy {
   maskPaths?: readonly string[];
   /**
    * The system temporary directory is writable, in either confining mode: shells and most
-   * tools need somewhere to write before they run anything. Absent = not granted.
+   * tools need somewhere to write before they run anything. Absent = not granted — which the
+   * service hands only to a backend declaring `closed-temp`.
    */
   writableTemp?: boolean;
 }
@@ -138,7 +149,25 @@ export interface SandboxProvider {
    * unimplemented dimension can never be silently ignored.
    */
   readonly dimensions?: readonly SandboxDimension[];
+  /**
+   * What enforces the confinement on this host, as an administrator would name it
+   * ("bubblewrap", "Landlock"). The settings card says what this machine enforces and by
+   * what; absent, it names the backend instead.
+   */
+  readonly mechanism?: string;
+  /**
+   * What this backend leaves open on this host beyond the dimensions it does not declare —
+   * a policy field it cannot honour in full, a kernel that enforces only part of it — in an
+   * administrator's words. The settings card discloses them under what this machine enforces.
+   */
+  readonly limits?: readonly SandboxLimit[];
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv;
+}
+
+/** One limit of a backend on this host (see {@link SandboxProvider.limits}). */
+export interface SandboxLimit {
+  text: string;
+  textZh?: string;
 }
 
 /** A provider, or a promise of one: backends load asynchronously (dynamic imports, probes). */

@@ -171,7 +171,9 @@ PUT 按如下规则校验：
 
 设置分组是投给 `PluginConfigProvider.groups` 的 contribution，沙盒的排在最前。列表中的每个分组带有它的 schema（`configuration`）、合并到缺省值上的存储值（密钥掩码）、它被画在哪个分组的卡片里（`parent`），以及实时状态行（`notices`）。
 
-字段类型有 `string`、`secret`、`boolean`、`number`、`enum`（带 `options`）和 `list`（每行一个值，可选 `maxItems`）。`number` 可声明 `minimum` 与 `maximum`；`string` 与 `list` 可声明每个值或每一行都须匹配的 `pattern`（配 `patternErrorMessage`）。
+字段类型有 `string`、`secret`、`boolean`、`number`、`enum`（带 `options`）和 `list`（每行一个值，可选 `maxItems`）。`number` 可声明 `minimum` 与 `maximum`；`string` 与 `list` 可声明每个值或每一行都须匹配的 `pattern`（配 `patternErrorMessage`）。标记 `advanced: true` 的字段画在卡片默认折叠的「高级选项」里，存储与校验与其他字段相同。字段的 `description` 说明其含义，收在标题旁的「?」里；`hint` 是取值须符合的格式，显示在字段下方。`table` 字段有固定的 `rows` 与 `columns`（`string`、`boolean` 或 `enum`，各可带 `description`，用于列标题的「?」），并可声明 `rowChoice`（单选一行，存入该组的一个 `enum` 字段，画作被选行名称后带括号的标题，在该行的「…」菜单里选定）、`pin`（把一个布尔列画成图钉按钮，带 `on` 与 `off` 两种提示）、`columnGroup`（相邻几列上方的分组标题）与 `extensible`（可新增行并调整顺序，在改动的单元格旁存于 `"$added"` 与 `"$order"`；只有新增的行可删除，单选列不指向任何行的保存会被拒绝）。行可带 `description`，`enum` 的选项也可带 `description`，都用于行名称后的「?」。配置可把一个布尔字段声明为 `switch`：它关闭时，卡片只画这一个字段。
+
+沙盒条目另带 `backend`：`installed` 表示是否装有适用于本机操作系统的沙盒后端，`recommended` 列出本系统默认一并安装的后端包（Linux 为 `@penguinharness/sandbox-bwrap` 与 `@penguinharness/sandbox-dsh`，macOS 为 `@penguinharness/sandbox-seatbelt`，Windows 为 `@penguinharness/sandbox-wsl`）。它的第一条提示写明本机实施什么、由什么实施；提示可以带 `details`（及 `detailsZh`），折叠显示在其下方——这里是每个已安装但未启用的后端及原因。其 `enabled` 开关决定新建 Session 是否进入沙盒，`defaultPreset`（预设表的 `rowChoice`，画作行名称后的「（默认）」）指定新 Session 取哪一行的封禁模式、网络与审批方式。开关出现之前保存的设置，旧策略有任何封禁（封禁模式不是「关闭」、网络不是完全开放，或设置了屏蔽路径）即视为打开；默认预设出现之前保存的设置（带自身的 `mode` 或 `network`、或设置了屏蔽路径，且没有 `defaultPreset`），新 Session 仍按其自身的 `mode` 与 `network` 开始，直到管理员选定默认行。对这类文档，`values.defaultPreset` 是起点与之完全相同的第一行，保存时写入它；没有这样的行时（网络为 `none` 或 `local`，或模式为关闭而设了屏蔽路径），`defaultPreset` 缺省，一条提示写明实际生效的值，保存别的字段也不写入 `defaultPreset`。读取时都不改写文档。表的 `rowChoice` 可以不指向任何一行：保存不因此被拒，只有让它指向表里已不存在的行时才被拒。chat defaults 的 `sandbox.defaultApprovalMode` 是开关打开时默认预设的审批方式。
 
 PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，密钥按掩码原样送回即保持存储值。被拒的字段返回 `400` `plugin_config_invalid` 并点名该字段；没有分组叫这个名字时返回 `404` `plugin_config_unknown`。声明它的模块自己经 watch 或下次读取拿到改动，无需重启。
 
@@ -695,7 +697,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/` | Session 信息 |
-| PATCH | `/` | 更新 Session：`{approvalMode?, thinkingLevel?, archived?, title?}` |
+| PATCH | `/` | 更新 Session：`{approvalMode?, sandbox?, thinkingLevel?, archived?, title?}` |
 | DELETE | `/` | 删除 Session，连同它的 Trace 和暂存文件 |
 | GET | `/messages` | OmniMessage 历史，全量或按 Task 窗口 |
 | GET | `/trace-image?file=&ordinal=[&i=]` | Trace 记录中的一张图片，即分窗 `/messages` 页引用的图片 |
@@ -705,6 +707,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/goal` | 当前 Session 最近一次目标运行 |
 
 - `GET /` 返回 Session 的信息。与列表行不同，单个 Session 的响应还带 `tracePath`，即最新 Trace 文件的绝对路径。`orgId` 标记公司模式缓存持有的会话（工位会话，或这个组织某个工单的贡献会话）；普通 Session 一律不带这个字段，列表路由同样会设置它。
+- `PATCH /` 先校验全部字段再写入任何一个，`sandbox` 选择（`{mode?, network?}`）也在其中：非管理员选的档位比服务端的沙盒设置更宽时为 `403` `sandbox_forbidden`，本机没有后端能实施的档位为 `400` `sandbox_unsupported`；被拒的请求什么都不落盘，`approvalMode` 与 `title` 也不例外。Session 的 `sandbox` 视图里，`presets` 中比服务端设置更宽的行带 `aboveCeiling: true`（只出现在响应里），与这条拒绝用同一次比较：非管理员选这样的行会被拒绝。
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。

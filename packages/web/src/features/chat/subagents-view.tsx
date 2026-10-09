@@ -50,6 +50,7 @@ import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
+import type { PermissionPick } from "../../lib/permission-level";
 import { noteSessionSeen } from "../../lib/session-seen";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -84,8 +85,7 @@ export function SubagentsView({
   models,
   approvalMode,
   approvalModes,
-  onChangeApprovalMode,
-  onChangeSandbox,
+  onChangePermission,
   modeSaving,
   parentThinkingLevel,
 }: {
@@ -105,11 +105,10 @@ export function SubagentsView({
   models: ModelInfo[];
   /** The PARENT session's approval mode — child approvals are judged by it (the same value the main composer edits). */
   approvalMode: ApprovalMode;
-  /** The modes the picker lists for the PARENT session (the main composer's list). */
+  /** The approval modes the picker may offer for the PARENT session (the main composer's list). */
   approvalModes: readonly ApprovalMode[];
-  onChangeApprovalMode: (mode: ApprovalMode) => void;
-  /** Edits the PARENT session's sandbox policy — a child runs under its root's. */
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void;
+  /** Edits the PARENT session's approval mode and sandbox policy — a child runs under its root's. */
+  onChangePermission: (pick: PermissionPick) => void | Promise<unknown>;
   modeSaving: boolean;
   /** The parent session's effective thinking level ("" = unknown): the child composer's display fallback — a child inherits it at spawn unless the spawning call pinned its own. */
   parentThinkingLevel: string;
@@ -305,9 +304,8 @@ export function SubagentsView({
             models={models}
             approvalMode={approvalMode}
             approvalModes={approvalModes}
-            onChangeApprovalMode={onChangeApprovalMode}
             sandbox={session.sandbox}
-            onChangeSandbox={onChangeSandbox}
+            onChangePermission={onChangePermission}
             modeSaving={modeSaving}
             fallbackThinkingLevel={activeNode?.spawnThinkingLevel ?? parentThinkingLevel}
           />
@@ -350,9 +348,8 @@ function SubagentComposer({
   models,
   approvalMode,
   approvalModes,
-  onChangeApprovalMode,
   sandbox,
-  onChangeSandbox,
+  onChangePermission,
   modeSaving,
   fallbackThinkingLevel,
 }: {
@@ -367,11 +364,10 @@ function SubagentComposer({
   models: ModelInfo[];
   approvalMode: ApprovalMode;
   approvalModes: readonly ApprovalMode[];
-  onChangeApprovalMode: (mode: ApprovalMode) => void;
   /** The PARENT session's sandbox policy. */
   sandbox: SessionSandbox;
-  /** Edits the PARENT session's sandbox policy — a child runs under its root's. */
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void;
+  /** Edits the PARENT session's approval mode and sandbox policy — a child runs under its root's. */
+  onChangePermission: (pick: PermissionPick) => void | Promise<unknown>;
   modeSaving: boolean;
   /** Display fallback for the thinking picker while the user hasn't picked: the spawn call's explicit level, else the parent session's effective level (what the child inherited). */
   fallbackThinkingLevel: string;
@@ -473,9 +469,8 @@ function SubagentComposer({
         vision={false}
         approvalMode={approvalMode}
         approvalModes={approvalModes}
-        onChangeApprovalMode={onChangeApprovalMode}
         sandbox={sandbox}
-        onChangeSandbox={onChangeSandbox}
+        onChangePermission={onChangePermission}
         modeSaving={modeSaving}
         agents={[]}
         skills={skills}

@@ -8,12 +8,8 @@
  */
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
-import type {
-  ApprovalMode,
-  ModelsResponse,
-  SessionInfo,
-  SessionSandbox,
-} from "@prismshadow/penguin-server/api";
+import type { ModelsResponse, SessionInfo } from "@prismshadow/penguin-server/api";
+import type { PermissionPick } from "../../lib/permission-level";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/omni/memory-changes";
 import type { ComposerReference } from "../../lib/workspace-tree";
@@ -43,8 +39,8 @@ export interface ChatDockState {
   /** The Task the agents tab shows: null = the latest; an anchor pins the one with that child. */
   subagentTaskScope: { anchorSessionId: string } | null;
   models: ModelsResponse | null;
-  onChangeApprovalMode: (mode: ApprovalMode) => void;
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void;
+  /** A permission pick: the approval mode and the Session's sandbox, saved in one PATCH. */
+  onChangePermission: (pick: PermissionPick) => void | Promise<unknown>;
   /** An approval-mode or sandbox save is in flight. */
   modeSaving: boolean;
   /** The Session's effective thinking level ("" = unknown): a child composer's display fallback. */

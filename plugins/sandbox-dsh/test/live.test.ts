@@ -18,8 +18,17 @@ import type { SandboxProvider } from "@prismshadow/penguin-core/plugin";
 import { loadDshAdaptor } from "../src/index.js";
 import { mustRun } from "../../../scripts/must-run.mjs";
 
+const win32 = process.platform === "win32";
+
+// Windows probes run through pwsh: the ACL runner cannot start the default bash (see
+// windows-shells.test.ts). Set before the adaptor loads: core resolves the shell once per process.
+// TODO(win32): a DSH-confined bash is not guaranteed on Windows until the runner starts an MSYS bash.
+if (win32) process.env.PENGUIN_SHELL = "pwsh";
+
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-dsh-live-"));
 const outsideProbe = path.join(homedir(), `penguin-dsh-live-${process.pid}.txt`);
+/** What the background child writes inside the Workspace: proof it ran at all. */
+const backgroundMarker = path.join(ws, "bg-inside.txt");
 
 let loadError = "the DSH adaptor did not load";
 const provider: SandboxProvider | null = await loadDshAdaptor().catch((err: unknown) => {
@@ -35,13 +44,13 @@ const cannotOpen =
     ? loadError
     : (() => {
         try {
-          provider.confine(["true"], { mode: "workspace-write", workspaceRoot: ws });
+          // An absolute program: on Windows a bare `true` is refused, as no PATH entry has it.
+          provider.confine([process.execPath], { mode: "workspace-write", workspaceRoot: ws });
           return null;
         } catch (err) {
           return err instanceof Error ? err.message : String(err);
         }
       })();
-const usable = mustRun("sandbox-dsh", cannotOpen);
 
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>
@@ -59,13 +68,43 @@ async function run(cmd: string): Promise<{ code: number | null; out: string }> {
   return { code: session.exit?.code ?? null, out };
 }
 
-/**
- * The denial DIALECT depends on which rung the chain selected — EROFS text under
- * bwrap's read-only binds, EACCES under Landlock, EPERM under Seatbelt, and the
- * Windows ACL runner's own wording. That is exactly why ConfinedArgv carries
- * denialSignatures; assert the effect plus a denial in any dialect, never one rung's.
- */
-const DENIED = /permission denied|read-only file system|operation not permitted|access is denied/i;
+/** A PowerShell single-quoted literal. */
+const ps = (value: string) => `'${value.replaceAll("'", "''")}'`;
+
+/** A file outside the workspace every gated host can read (macOS has no /etc/hostname). */
+const readProbe = win32 ? process.execPath : "/etc/hosts";
+
+// One probe per test, in the session shell's dialect. The background child writes a marker
+// inside the Workspace first, so a child that never ran cannot pass for a confined one.
+const probes = win32
+  ? {
+      insideAndRead: `$ErrorActionPreference = 'Stop'; Set-Content -LiteralPath inside.txt -Value confined-ok; Get-Content -LiteralPath inside.txt; $null = Get-Content -AsByteStream -TotalCount 1 -LiteralPath ${ps(readProbe)}; 'READ_OK'`,
+      writeOutside: `try { Set-Content -LiteralPath ${ps(outsideProbe)} -Value leak -ErrorAction Stop } catch { $_.Exception.Message }`,
+      backgroundOutside: `Start-Process -FilePath cmd.exe -ArgumentList ${ps(`/d /c echo bg > "${backgroundMarker}" & echo bg > "${outsideProbe}"`)} -NoNewWindow -Wait; 'done'`,
+      writeWorkspace: `try { Set-Content -LiteralPath ro-probe.txt -Value x -ErrorAction Stop } catch { $_.Exception.Message }`,
+      writeOutsideUnconfined: `Set-Content -LiteralPath ${ps(outsideProbe)} -Value unconfined`,
+    }
+  : {
+      insideAndRead: `echo confined-ok > inside.txt && cat inside.txt && head -c 1 ${readProbe} > /dev/null && echo READ_OK`,
+      writeOutside: `echo leak > ${JSON.stringify(outsideProbe)} 2>&1; echo exit=$?`,
+      backgroundOutside: `(sleep 0.2; echo bg > ${JSON.stringify(backgroundMarker)}; echo bg > ${JSON.stringify(outsideProbe)}) & wait; echo done`,
+      writeWorkspace: "echo x > ro-probe.txt 2>&1; echo exit=$?",
+      writeOutsideUnconfined: `echo unconfined > ${JSON.stringify(outsideProbe)}; echo exit=$?`,
+    };
+
+// A Windows host without pwsh (PowerShell 7) cannot run the probes, so cannot open the suite.
+const shellReady =
+  !win32 || (await run("'pwsh-' + $PSVersionTable.PSEdition")).out.trim() === "pwsh-Core";
+
+const usable = mustRun(
+  "sandbox-dsh",
+  cannotOpen ?? (shellReady ? null : "the session shell is not pwsh (PowerShell 7)"),
+);
+
+// The denial dialect depends on the rung (EROFS, EACCES, EPERM, .NET's "Access to the path"):
+// assert the effect plus a denial in any dialect, never one rung's.
+const DENIED =
+  /permission denied|read-only file system|operation not permitted|access is denied|access to the path .* is denied/i;
 
 afterAll(() => {
   mgr.dispose();
@@ -73,55 +112,50 @@ afterAll(() => {
   rmSync(outsideProbe, { force: true });
 });
 
-// skipIf(win32) is NOT a capability gate: the usability gate does open there — the ACL
-// chain loads and the kernel denial fires (observed on CI as UTF-16 "Access is denied"
-// from the runner). What is missing is a cmd-dialect probe set: these probes are POSIX
-// shell (head, /etc/hosts, `(…) & wait`) and the assertions decode UTF-8. TODO(win32):
-// a Windows probe set with UTF-16-tolerant denial matching, as its own change.
-describe.skipIf(!usable || process.platform === "win32")(
-  "DSH adaptor live enforcement (host-gated)",
-  () => {
-    it("workspace-write: writes inside the workspace work, reads outside still work", async () => {
-      mode = "workspace-write";
-      // /etc/hosts, not /etc/hostname: the read probe must exist on every POSIX host the
-      // usability gate can open, and macOS has no /etc/hostname.
-      const r = await run(
-        "echo confined-ok > inside.txt && cat inside.txt && head -c 1 /etc/hosts > /dev/null && echo READ_OK",
-      );
-      expect(r.code).toBe(0);
-      expect(r.out).toContain("confined-ok");
-      expect(r.out).toContain("READ_OK");
-    });
+describe.skipIf(!usable)("DSH adaptor live enforcement (host-gated)", () => {
+  it("workspace-write: writes inside the workspace work, reads outside still work", async () => {
+    mode = "workspace-write";
+    const r = await run(probes.insideAndRead);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("confined-ok");
+    expect(r.out).toContain("READ_OK");
+  });
 
-    it("workspace-write: a write outside the workspace is denied by the kernel", async () => {
-      mode = "workspace-write";
-      const r = await run(`echo leak > ${JSON.stringify(outsideProbe)} 2>&1; echo exit=$?`);
-      expect(existsSync(outsideProbe)).toBe(false);
-      expect(r.out).toMatch(DENIED);
-    });
+  it("names the rung that serves for the settings card", () => {
+    expect(provider!.mechanism).toMatch(
+      /^(bubblewrap|Landlock|Seatbelt|the Windows ACL runner)( \(partial\))?$/,
+    );
+    // Read by a host check that wants to see which rung a CI runner reached.
+    console.log(`sandbox-dsh confines through ${provider!.mechanism}`);
+  });
 
-    it("workspace-write: background children are confined with the wrapped shell", async () => {
-      mode = "workspace-write";
-      const r = await run(
-        `(sleep 0.2 && echo bg > ${JSON.stringify(outsideProbe)}) & wait; echo done`,
-      );
-      expect(r.out).toContain("done");
-      expect(existsSync(outsideProbe)).toBe(false);
-    });
+  it("workspace-write: a write outside the workspace is denied by the kernel", async () => {
+    mode = "workspace-write";
+    const r = await run(probes.writeOutside);
+    expect(existsSync(outsideProbe)).toBe(false);
+    expect(r.out).toMatch(DENIED);
+  });
 
-    it("read-only: even the workspace is not writable", async () => {
-      mode = "read-only";
-      const r = await run("echo x > ro-probe.txt 2>&1; echo exit=$?");
-      expect(existsSync(path.join(ws, "ro-probe.txt"))).toBe(false);
-      expect(r.out).toMatch(DENIED);
-    });
+  it("workspace-write: background children are confined with the wrapped shell", async () => {
+    mode = "workspace-write";
+    const r = await run(probes.backgroundOutside);
+    expect(r.out).toContain("done");
+    expect(existsSync(backgroundMarker)).toBe(true);
+    expect(existsSync(outsideProbe)).toBe(false);
+  });
 
-    it("the policy is read per spawn: dropping it lifts confinement on the next command", async () => {
-      mode = null;
-      const r = await run(`echo unconfined > ${JSON.stringify(outsideProbe)}; echo exit=$?`);
-      expect(r.code).toBe(0);
-      expect(existsSync(outsideProbe)).toBe(true);
-      rmSync(outsideProbe, { force: true });
-    });
-  },
-);
+  it("read-only: even the workspace is not writable", async () => {
+    mode = "read-only";
+    const r = await run(probes.writeWorkspace);
+    expect(existsSync(path.join(ws, "ro-probe.txt"))).toBe(false);
+    expect(r.out).toMatch(DENIED);
+  });
+
+  it("the policy is read per spawn: dropping it lifts confinement on the next command", async () => {
+    mode = null;
+    const r = await run(probes.writeOutsideUnconfined);
+    expect(r.code).toBe(0);
+    expect(existsSync(outsideProbe)).toBe(true);
+    rmSync(outsideProbe, { force: true });
+  });
+});

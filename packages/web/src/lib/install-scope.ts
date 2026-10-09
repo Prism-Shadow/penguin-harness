@@ -284,6 +284,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "The Sessions each machine was last seen holding, shown until its connection is held again. Project id and machine id in the key, Session ids in the value — a new root knows none of them.",
   },
   {
+    kind: "exact",
+    key: "penguin.sandboxBackendPromptDismissed",
+    scope: "install",
+    why: "The machines whose Sandbox card no longer offers to install a backend — machine ids of this root.",
+  },
+  {
     kind: "family",
     key: "penguin.machineAgents.",
     scope: "install",

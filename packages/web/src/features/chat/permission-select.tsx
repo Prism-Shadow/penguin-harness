@@ -1,28 +1,40 @@
 /**
  * The composer's permission button: an icon-only square like the + button, wearing lucide's
  * shield icon for the level (see lib/permission-level.ts) — a different icon per level, coloured
- * by it, so the level never depends on colour alone. The menu has three sections — Filesystem, Network and Approval — and, for an
- * administrator, More…, which opens the Settings page's Sandbox card.
+ * by it, so the level never depends on colour alone. The menu lists the server's sandbox presets
+ * that are in the menu — each a named mode, network level and approval mode — and, for an
+ * administrator, More…, which opens the Settings page's Sandbox card, where the presets are
+ * renamed, remapped and put in or out of the menu, and where the full settings stay.
  *
- * Filesystem and Network edit the Session's own sandbox policy: a Session keeps the policy it
- * was created with, so the Settings page only decides what NEW Sessions start from. The menu is
- * the same on every platform; a level this server cannot enforce is greyed out rather than
- * hidden — with no sandbox backend installed, every level short of full access, marked so.
+ * A pick edits the Session's own policy and approval mode in one save: a Session keeps the
+ * policy it was created with, so the Settings page only decides what NEW Sessions start from.
+ * The Session stores the three values, never the preset: the button names it by the first row
+ * matching them, and says custom when none does. A preset this server cannot enforce is greyed
+ * out rather than hidden, marked with why — with no sandbox backend installed, every preset
+ * that confines. So is, for a non-admin, a preset wider than the server's sandbox settings
+ * (`aboveCeiling`), which the server would refuse: marked admin-only, unless it is the current one.
  *
- * Approval lists the modes the composer passes in (see approval-mode.ts): an organization's
- * Session is not offered `always-ask` unless it is the current value.
+ * With the server's Sandbox switch off, new Sessions start unconfined and the menu lists the
+ * approval modes alone (permissionMenu); a pick changes only the approval mode.
+ *
+ * The menu offers only presets whose approval mode is among the modes the composer passes in
+ * (see approval-mode.ts): an organization's Session is not offered an `always-ask` preset unless
+ * it is the current one.
  *
  * Popup direction depends on context: the draft card has room below and opens downward; the
  * chat input docked at the bottom of the screen opens upward.
  */
 import { useState } from "react";
-import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
+import type {
+  ApprovalMode,
+  SessionSandbox,
+  SessionSandboxPreset,
+} from "@prismshadow/penguin-server/api";
 import {
   Dropdown,
   GlyphIcon,
   Menu,
   MenuItem,
-  MenuLabel,
   MenuRadioItem,
   MenuSeparator,
 } from "@prismshadow/penguin-ui";
@@ -31,71 +43,72 @@ import { toneInk } from "../../lib/tone";
 import {
   PERMISSION_LEVEL_GLYPH,
   PERMISSION_LEVEL_TONE,
+  approvalModePick,
   firstUnavailableBackend,
-  fsModeBlock,
-  networkBlock,
+  matchPreset,
   permissionLevel,
+  permissionMenu,
+  presetBlock,
+  presetEffects,
+  presetPick,
+  presetsOf,
+  sandboxSwitchOff,
 } from "../../lib/permission-level";
-import type { LevelBlock } from "../../lib/permission-level";
+import type { PermissionPick, PresetBlock } from "../../lib/permission-level";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
+import { localizedText } from "./skill-use";
 import { SettingsDialog } from "../settings/settings-dialog";
 
-const FS_MODES: SessionSandbox["mode"][] = ["read-only", "workspace-write", "danger-full-access"];
-const NETWORK_MODES: SessionSandbox["network"][] = ["open", "local", "none"];
-
 /**
- * One choice row: its text, and a check when it is the current value. An unavailable choice
- * stays listed, greyed out, with a short note (`note`, "Not supported" unless given) and the
- * reason in its title (`unavailable`).
+ * One preset row: its name, and a check when it is the Session's level. Its tooltip says what
+ * it blocks and allows and whether this machine can enforce it; an unenforceable one stays
+ * listed, greyed out, with a short note.
  */
 function Choice({
   label,
   selected,
   onPick,
+  hint,
   unavailable,
   note,
 }: {
   label: string;
   selected: boolean;
   onPick: () => void;
-  unavailable?: string;
+  hint: string;
+  unavailable: boolean;
   note?: string;
 }) {
-  const off = unavailable !== undefined;
   return (
     <MenuRadioItem
       label={label}
       checked={selected}
-      disabled={off}
-      data-tooltip={unavailable}
-      trailing={off ? (note ?? S.chat.permission.unsupported) : undefined}
+      disabled={unavailable}
+      data-tooltip={hint}
+      trailing={unavailable ? (note ?? S.chat.permission.unsupported) : undefined}
       onSelect={onPick}
     />
   );
-}
-
-/** A pick not yet confirmed by its save: shown at once, dropped when the save settles. */
-interface PendingPick {
-  approvalMode?: ApprovalMode;
-  sandbox?: Partial<SessionSandbox>;
 }
 
 export function PermissionSelect({
   approvalMode: savedApprovalMode,
   approvalModes,
   sandbox: savedSandbox,
-  onChangeApprovalMode,
-  onChangeSandbox,
+  onChange,
   disabled,
   direction = "up",
 }: {
   approvalMode: ApprovalMode;
-  /** The modes the Approval section lists, in order (`approvalModeChoices`). */
+  /**
+   * The approval modes the Session may be given, in order (`approvalModeChoices`): a preset
+   * holding any other is not offered, unless it is the current one.
+   */
   approvalModes: readonly ApprovalMode[];
   sandbox: SessionSandbox;
-  /** A save that returns a promise keeps the pick on screen until it settles. */
-  onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<unknown>;
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void | Promise<unknown>;
+  /** Saves a preset's three values together; a returned promise keeps the pick on screen until it settles. */
+  onChange: (pick: PermissionPick) => void | Promise<unknown>;
   /** Blocks a second pick while one saves; deliberately NOT drawn dimmed (that read as a flicker). */
   disabled: boolean;
   direction?: "up" | "down";
@@ -104,28 +117,48 @@ export function PermissionSelect({
   // The pick shows the moment it is made: waiting for the server's row would draw the old
   // level, then the new one — the flicker. When the save settles the saved values take over
   // (on a refusal those are the old ones, and the toast says why).
-  const [pending, setPending] = useState<PendingPick | null>(null);
+  const [pending, setPending] = useState<PermissionPick | null>(null);
   const approvalMode = pending?.approvalMode ?? savedApprovalMode;
   const sandbox: SessionSandbox = { ...savedSandbox, ...pending?.sandbox };
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The Sandbox card lives on the Plugins page, which only an administrator can open.
   const isAdmin = useAuth().user?.isAdmin === true;
+  const { locale } = useLocale();
   const P = S.chat.permission;
-  // A level this server cannot enforce stays listed, greyed out, saying why — with no backend
-  // mounted, that is every level short of full access: not installed, or enabled but failing
-  // its check, with the first such backend's reason.
+  const nameOf = (p: SessionSandboxPreset) => localizedText(locale, p.name, p.nameZh);
+  const presets = presetsOf(sandbox);
+  const current = matchPreset(presets, approvalMode, sandbox);
+  // A preset this server cannot enforce stays listed, greyed out, saying why — with no backend
+  // mounted, every preset that confines: not installed, or enabled but failing its check, with
+  // the first such backend's reason.
   const failed = firstUnavailableBackend(sandbox);
-  const blocked = (block: LevelBlock | null) =>
-    block === null
-      ? {}
+  const inUse = sandbox.backendsInUse?.join(", ");
+  const blockText = (block: PresetBlock): { reason: string; note?: string } =>
+    block === "above-ceiling"
+      ? { reason: P.aboveCeiling, note: P.adminOnly }
       : block === "no-backend"
-        ? { unavailable: P.noBackend, note: P.notInstalled }
+        ? { reason: P.noBackend, note: P.notInstalled }
         : block === "unavailable" && failed !== null
-          ? { unavailable: P.backendUnavailable(failed.name, failed.reason), note: P.notAvailable }
+          ? { reason: P.backendUnavailable(failed.name, failed.reason), note: P.notAvailable }
           : {
-              unavailable:
-                block === "local-unsupported" ? P.localUnsupported : P.noNetworkUnsupported,
+              reason:
+                block === "local-unsupported"
+                  ? P.localUnsupported
+                  : block === "mask-unsupported"
+                    ? P.maskUnsupported(inUse)
+                    : P.noNetworkUnsupported(inUse),
             };
+  const hintOf = (p: SessionSandboxPreset, block: PresetBlock | null) => {
+    const { blocks, allows } = presetEffects(p);
+    const list = (effects: string[]) =>
+      effects.length === 0 ? P.nothing : effects.map((e) => P.effects[e] ?? e).join(", ");
+    const confines = p.mode !== "danger-full-access" || p.network !== "open";
+    return [
+      `${P.blocks}: ${list(blocks)}`,
+      `${P.allows}: ${list(allows)}`,
+      block !== null ? blockText(block).reason : confines ? P.enforceable : P.needsNoBackend,
+    ].join("\n");
+  };
   const level = permissionLevel(approvalMode, sandbox);
   // The swap animation plays only for a CHANGE of level, never on the first paint — React's
   // "adjust state while rendering" pattern for information from the previous render.
@@ -135,16 +168,37 @@ export function PermissionSelect({
     setShownLevel(level);
     setAnimate(true);
   }
-  const levelName = P.levels[level] ?? level;
+  // With the Sandbox switch off the menu is the approval modes, so the button names the mode.
+  const switchOff = sandboxSwitchOff(sandbox);
+  const levelName = switchOff
+    ? (S.chat.approvalModeNames[approvalMode] ?? approvalMode)
+    : current !== null
+      ? nameOf(current)
+      : P.custom;
   const summary = [
     `${P.fs}: ${P.fsModes[sandbox.mode] ?? sandbox.mode}`,
     `${P.network}: ${P.networkModes[sandbox.network] ?? sandbox.network}`,
     `${P.approval}: ${S.chat.approvalModeNames[approvalMode] ?? approvalMode}`,
   ].join(" · ");
-  const pick = (next: PendingPick, save: () => void | Promise<unknown>) => {
+  const pick = (p: SessionSandboxPreset) => {
+    if (current?.id === p.id) {
+      setOpen(false);
+      return;
+    }
+    save(presetPick(p));
+  };
+  // Switch off: only the approval mode changes; the pick carries no policy (see PermissionPick).
+  const pickMode = (mode: ApprovalMode) => {
+    if (mode === approvalMode) {
+      setOpen(false);
+      return;
+    }
+    save(approvalModePick(mode));
+  };
+  const save = (next: PermissionPick) => {
     setOpen(false);
     setPending(next);
-    const saved = save();
+    const saved = onChange(next);
     if (saved instanceof Promise) void saved.finally(() => setPending(null));
     else setPending(null);
   };
@@ -179,53 +233,49 @@ export function PermissionSelect({
           </button>
         }
       >
-        <Menu label={P.label} density="sm" className="pb-1">
-          <MenuLabel>{P.fs}</MenuLabel>
-          {FS_MODES.map((mode) => (
-            <Choice
-              key={mode}
-              label={P.fsModes[mode] ?? mode}
-              selected={sandbox.mode === mode}
-              {...blocked(fsModeBlock(sandbox, mode))}
-              onPick={() =>
-                mode === sandbox.mode
-                  ? setOpen(false)
-                  : pick({ sandbox: { mode } }, () => onChangeSandbox({ mode }))
-              }
-            />
-          ))}
-          <MenuLabel>{P.network}</MenuLabel>
-          {NETWORK_MODES.map((network) => (
-            <Choice
-              key={network}
-              label={P.networkModes[network] ?? network}
-              selected={sandbox.network === network}
-              {...blocked(networkBlock(sandbox, network))}
-              onPick={() =>
-                network === sandbox.network
-                  ? setOpen(false)
-                  : pick({ sandbox: { network } }, () => onChangeSandbox({ network }))
-              }
-            />
-          ))}
-          <MenuLabel>{P.approval}</MenuLabel>
-          {approvalModes.map((mode) => (
-            <Choice
-              key={mode}
-              label={S.chat.approvalModes[mode] ?? mode}
-              selected={approvalMode === mode}
-              onPick={() =>
-                mode === approvalMode
-                  ? setOpen(false)
-                  : pick({ approvalMode: mode }, () => onChangeApprovalMode(mode))
-              }
-            />
-          ))}
+        <Menu label={P.label} density="sm" className="py-1">
+          {/* The two views say the same policy: what the presets cannot show is flagged here. */}
+          {sandbox.advanced === true && !switchOff && (
+            <div
+              role="presentation"
+              data-tooltip={P.advancedHint}
+              className="px-3 pt-1 pb-1.5 text-xs font-medium text-fg-subtle"
+            >
+              {P.advancedActive}
+            </div>
+          )}
+          {permissionMenu(sandbox, approvalModes, current).map((row) => {
+            if (row.kind === "approval") {
+              return (
+                <MenuRadioItem
+                  key={row.mode}
+                  label={S.chat.approvalModeNames[row.mode] ?? row.mode}
+                  checked={row.mode === approvalMode}
+                  onSelect={() => pickMode(row.mode)}
+                />
+              );
+            }
+            const p = row.preset;
+            const block = presetBlock(sandbox, p, { isAdmin, current });
+            return (
+              <Choice
+                key={p.id}
+                label={nameOf(p)}
+                selected={current?.id === p.id}
+                hint={hintOf(p, block)}
+                unavailable={block !== null}
+                {...(block !== null && blockText(block).note !== undefined
+                  ? { note: blockText(block).note }
+                  : {})}
+                onPick={() => pick(p)}
+              />
+            );
+          })}
           {isAdmin && (
             <>
               <MenuSeparator />
-              {/* More…: the rest of the sandbox (masked paths, the temp directory, the backend)
-                is on the Settings page's Sandbox card, where this opens. */}
+              {/* More…: the presets table and the full settings (masked paths, the temp
+                directory, the backends) are on the Settings page's Sandbox card. */}
               <MenuItem
                 label={P.more}
                 onSelect={() => {

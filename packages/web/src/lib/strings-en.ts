@@ -521,6 +521,11 @@ export const en: Strings = {
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) =>
       `${title} (not supported: ${reason})`,
+    /** A switch one of whose positions this machine cannot honour, under the switch. */
+    pluginPositionUnavailable: (position: string, reason: string) =>
+      `${position} is not supported here: ${reason}`,
+    pluginPositionOn: "On",
+    pluginPositionOff: "Off",
     pluginsInfo:
       "The options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here.",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
@@ -550,6 +555,43 @@ export const en: Strings = {
       `conversation keep a separate ${imageMb}MB limit that this setting does not raise — an ` +
       `inline image enters the conversation and the Trace, where its size is paid again on ` +
       `every history page and resume.`,
+    /** The fold holding the fields a settings group marks advanced. */
+    pluginAdvanced: "Advanced",
+    /** A table cell its row does not let change, beside the lock mark. */
+    pluginCellLocked: "Locked: this row keeps this value",
+    pluginCellOn: "On",
+    pluginCellOff: "Off",
+    /** A table row's drag handle: what it moves, and how. */
+    pluginTableMove: (row: string) => `Move ${row}`,
+    pluginTableMoveHint: "Drag, or press the up and down arrow keys",
+    /** The add button under an extensible table that names none of its own. */
+    pluginTableAdd: "Add a row",
+    /** After the chosen row's name (the sandbox's default preset): the row choice's title. */
+    pluginTableChosenMarker: (title: string) => `(${title})`,
+    /** A table row's "…" button: its accessible name and tooltip. */
+    pluginTableRowMenu: (row: string) => `More actions: ${row}`,
+    pluginTableRowMenuHint: "More actions",
+    /** The row menu's items: make the row the chosen one, and delete a row an administrator added. */
+    pluginTableChoose: "Set as default",
+    pluginTableChosen: "Already the default",
+    pluginTableDelete: "Delete",
+    pluginTableDeleteChosen: "Set another row as default first",
+    /** One line of a row's "?" that lists its values: a choice column's value, and what it does. */
+    pluginTableRowValue: (column: string, value: string, does: string | undefined) =>
+      does === undefined ? `${column}: ${value}` : `${column}: ${value}. ${does}`,
+    /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
+    sandboxBackendPrompt: {
+      title: "Install a sandbox backend",
+      body: (machine: string, pkgs: readonly string[]) =>
+        `${machine} has no sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkgs.join(" and ")}?` +
+        (pkgs.length > 1 ? " Where both work, the one that confines more is used." : ""),
+      cost: "Installing reloads the server's plugins, which stops agent runs in progress in every Project. The switch stays on either way.",
+      install: "Install",
+      installing: "Installing…",
+      later: "Not now",
+      dontAsk: "Don't ask again for this machine",
+      noProject: "Open a Project first: the backend is installed into the current Project.",
+    },
     theme: "Theme",
     themeInfo:
       "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",
@@ -2270,8 +2312,12 @@ export const en: Strings = {
     detailHooks: "Hooks",
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
-    /** Title on a disabled quick-start button: it pre-selects one of the plugin's skills on the currently selected agent, so the plugin has to be installed there first. */
-    quickInvokeNeedsInstall: "Install this plugin on the current agent first to quick-start",
+    /** Quick start's tooltip: what pressing it does, and what it does not. */
+    quickStartHint:
+      "Quick start: opens a draft with a demo of this plugin — nothing runs until you send it",
+    quickStartInstallTitle: (plugin: string, agent: string) =>
+      `Install ${plugin} on ${agent} to quick-start?`,
+    quickStartAfterInstall: "Then a draft with its demo opens; nothing runs until you send it.",
     installedToast: (plugin: string, agent: string): string => `Installed ${plugin} to ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string =>
       `Uninstalled ${plugin} from ${agent}`,
@@ -2838,13 +2884,49 @@ Scenarios:
       notInstalled: "Not installed",
       noBackend:
         "No sandbox backend is installed on this server, so commands cannot be confined. An administrator can enable this platform's backend on the Plugins page (More…).",
-      noNetworkUnsupported: "No sandbox backend on this machine can cut the network off",
+      /** `backends`: the backends in use, as the server names them (absent from an older server). */
+      noNetworkUnsupported: (backends?: string) =>
+        `The sandbox on this machine confines files only${backends !== undefined ? ` (${backends} does not isolate the network)` : ""}, so it cannot cut the network off`,
+      maskUnsupported: (backends?: string) =>
+        `This session hides masked paths from its commands, and no sandbox backend on this machine can${backends !== undefined ? ` (${backends} cannot mask paths)` : ""}, so every command would be refused. An administrator can clear the masked paths on the Sandbox card (More…).`,
       /** The short note beside a level whose enabled backend failed its check. */
       notAvailable: "Unavailable",
+      /** The short note beside a preset wider than the server's sandbox settings, for a non-admin. */
+      adminOnly: "Admin only",
+      aboveCeiling:
+        "Exceeds this server's sandbox ceiling: only an administrator can give a Session this much access.",
       backendUnavailable: (name: string, reason: string) =>
         `The sandbox backend ${name} is enabled but not in use: ${reason}. An administrator can fix this on the Sandbox card (More…).`,
       more: "More…",
       approval: "Approval",
+      /** The button's name for a level no preset matches (set from the full settings, or by an older client). */
+      custom: "Custom",
+      /** The menu's top line when the Session's policy holds what no preset shows. */
+      advancedActive: "Advanced settings in effect",
+      advancedHint:
+        "This Session also has masked paths or a read-only temp directory, set from the Sandbox card; picking a preset keeps them.",
+      /** A preset's hover text: what it blocks, what it allows, and whether this machine can enforce it. */
+      blocks: "Blocks",
+      allows: "Allows",
+      nothing: "nothing",
+      enforceable: "This machine can enforce it.",
+      needsNoBackend: "Needs no sandbox backend.",
+      effects: {
+        "write-outside-workspace": "writing outside the workspace",
+        "write-anywhere": "writing any file",
+        network: "all network access",
+        "network-beyond-localhost": "network beyond localhost",
+        "unasked-calls": "tool calls without asking (each one asks first)",
+        "unasked-writes": "writes without asking (a call that may write asks first)",
+        "every-call": "every tool call (all denied)",
+        "files-everywhere": "reading and writing any file",
+        "files-in-workspace": "writing inside the workspace",
+        "read-files": "reading files",
+        "network-open": "the full network",
+        localhost: "this machine's localhost",
+        "calls-unasked": "every tool call, unasked",
+        "reads-unasked": "read-only calls, unasked",
+      } as Record<string, string>,
     },
     approvalModeNames: {
       "allow-all": "Approve everything",
