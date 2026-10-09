@@ -41,8 +41,8 @@ created.
   running a task (its README section "Running a task (for agents)"), the exact `harbor run`
   launch with the per-trial caps, and the prerequisites. Its rubric was the verifier's reward ×
   100. Statements linked the repository's measured results (`results/v0.2.13/README.md`) rather
-  than repeating them. A test marked as expected to fail held every link to a 40-character commit
-  until the results commit is pinned.
+  than repeating them. Every link pointed at commit `c12d65b` of the repository, the one that carries
+  the calibrated sets and their results, and a test held every statement to a 40-character commit.
 - **Format.** A built-in's `benchmark_config.toml` held `title`, `description`, `runs` and
   `status`, like any Benchmark's: no field marked how its cases run.
 - **API.** No new fields: `GET …/benchmarks` listed the five as plain published Benchmarks.

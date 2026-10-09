@@ -19,8 +19,7 @@
  * - A write that fails part-way leaves neither its directory nor staging debris, and the error
  *   reaches the caller.
  * - Initializing or loading default_agent never writes into benchmarks/.
- * - Release guard: every statement links the repository at a commit. Expected to fail until the
- *   results commit is pinned, at which point it turns into a plain test.
+ * - Release guard: every statement links the repository at a commit, never a branch.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -282,22 +281,19 @@ describe("built-in Benchmarks", () => {
     expect(await fs.readdir(dir())).toEqual([]);
   });
 
-  // Release guard: flip `it.fails` to `it` in the change that pins the results commit.
-  it.fails(
-    "release guard: every statement links the repository at a commit (expected to fail until the results commit is pinned)",
-    async () => {
-      await provision();
-      for (const id of BUILTIN_IDS) {
-        for (const caseId of await caseIds(id)) {
-          const statement = await readCase(id, caseId, "statement");
-          const taskLine = statement.split("\n").find((line) => line.startsWith("- Task: "));
-          expect(taskLine, caseId).toMatch(/\/tree\/[0-9a-f]{40}\//);
-          const runRules = /\S+#running-a-task-for-agents/.exec(statement)?.[0];
-          const results = /\S+\/results\/\S+/.exec(statement)?.[0];
-          expect(runRules, caseId).toMatch(/\/blob\/[0-9a-f]{40}\//);
-          expect(results, caseId).toMatch(/\/blob\/[0-9a-f]{40}\//);
-        }
+  // Release guard: a statement that links a branch would follow whatever that branch holds later.
+  it("release guard: every statement links the repository at a commit", async () => {
+    await provision();
+    for (const id of BUILTIN_IDS) {
+      for (const caseId of await caseIds(id)) {
+        const statement = await readCase(id, caseId, "statement");
+        const taskLine = statement.split("\n").find((line) => line.startsWith("- Task: "));
+        expect(taskLine, caseId).toMatch(/\/tree\/[0-9a-f]{40}\//);
+        const runRules = /\S+#running-a-task-for-agents/.exec(statement)?.[0];
+        const results = /\S+\/results\/\S+/.exec(statement)?.[0];
+        expect(runRules, caseId).toMatch(/\/blob\/[0-9a-f]{40}\//);
+        expect(results, caseId).toMatch(/\/blob\/[0-9a-f]{40}\//);
       }
-    },
-  );
+    }
+  });
 });

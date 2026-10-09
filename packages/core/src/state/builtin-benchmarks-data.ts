@@ -20,12 +20,12 @@ import type { BuiltinBenchmark } from "./builtin-benchmarks.js";
 export const BENCHMARK_REPO = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
 
 /**
- * The revision of that repository every statement links and every evaluation fetches. What ships
- * is a 40-character commit id, the one that carries the measured results; until that commit
- * exists this is a branch, and the release guard in test/builtin-benchmarks.test.ts (expected to
- * fail until the pin) says so.
+ * The revision of that repository every statement links and every evaluation fetches: the commit
+ * that carries the calibrated task sets and the v0.2.13 results (benchmark repository #2). A
+ * later re-measurement moves it to the commit that carries those results; the release guard in
+ * test/builtin-benchmarks.test.ts holds it to a 40-character commit id.
  */
-export const BENCHMARK_REPO_REF = "main";
+export const BENCHMARK_REPO_REF = "c12d65bc20beb5130ed57b3b7983c62d497b7d2f";
 
 /**
  * The measured results of a PenguinHarness release on these tasks (accuracy over three attempts,
