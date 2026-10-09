@@ -3,6 +3,7 @@
 - **Date:** 2026-10-09
 - **Type:** feature
 - **Scope:** `server`, `web`, `core`, `skills`, `docs`
+- **PR:** [#1011](https://github.com/Prism-Shadow/penguin-harness/pull/1011)
 
 [English](2026-10-09-benchmark-import-export.md)
 
