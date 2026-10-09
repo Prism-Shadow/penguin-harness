@@ -8,6 +8,8 @@
  * - lets its Enable button enable the machine without opening anything;
  * - offers Update in Enable's place for a machine on another build, and neither for one that is
  *   connected or has a job on its way, whose stepper it shows instead;
+ * - never offers Disable beside them, which would read as a toggle contradicting itself: the
+ *   dialog holds it;
  * - offers no verb at all on this server's own card;
  * - holds its verbs while a request is in flight.
  *
@@ -36,7 +38,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 import { Button } from "@prismshadow/penguin-ui";
-import { JobStepper, MachineCard, machineMark } from "../src/features/machines/machine-card";
+import { Stepper, MachineCard, machineMark } from "../src/features/machines/machine-card";
 import type { MachineCardProps } from "../src/features/machines/machine-card";
 import { MachineDetailBody } from "../src/features/machines/machine-detail-dialog";
 import type {
@@ -137,7 +139,6 @@ function card(machine: MachineInfo, job: MachineJob | null = null, busy = false)
     busy,
     onOpen: vi.fn(),
     onUse: vi.fn(),
-    onStopUsing: vi.fn(),
     onConfigure: vi.fn(),
   };
   const element = MachineCard(props) as AnyElement;
@@ -233,12 +234,19 @@ describe("a machine's card", () => {
     const updating = card(behind, runningJob(behind));
     expect(updating.buttons.has(S.machines.use)).toBe(false);
     expect(updating.buttons.has(S.machines.card.update)).toBe(false);
-    expect(updating.tree.some((el) => el.type === JobStepper)).toBe(true);
-    expect(card(behind).tree.some((el) => el.type === JobStepper)).toBe(false);
+    expect(updating.tree.some((el) => el.type === Stepper)).toBe(true);
+    expect(card(behind).tree.some((el) => el.type === Stepper)).toBe(false);
 
     for (const c of [old, connected, updating]) {
-      expect(c.buttons.has(S.machines.stopUsing)).toBe(true);
       expect(c.buttons.has(S.machines.host.configure)).toBe(true);
+    }
+  });
+
+  it("never offers Disable beside Enable or Update: the dialog holds it", () => {
+    for (const machine of [stopped, ready, behind, unreachable]) {
+      const { buttons } = card(machine);
+      expect(buttons.has(S.machines.stopUsing), machine.alias).toBe(false);
+      expect(dialog(machine, null).verbs.has(S.machines.stopUsing), machine.alias).toBe(true);
     }
   });
 
@@ -251,7 +259,7 @@ describe("a machine's card", () => {
 
   it("holds its verbs while a request is in flight", () => {
     const { buttons } = card(stopped, null, true);
-    expect(buttons.size).toBe(3);
+    expect([...buttons.keys()].sort()).toEqual([S.machines.use, S.machines.host.configure].sort());
     for (const [name, button] of buttons) expect(button.props.disabled, name).toBe(true);
   });
 });
@@ -326,7 +334,7 @@ describe("the Machine dialog", () => {
   it("is this server's record alone for its own entry: no job, no verbs", () => {
     const { verbs, tree } = dialog(here, null);
     expect(verbs.size).toBe(0);
-    expect(tree.some((el) => el.type === JobStepper)).toBe(false);
+    expect(tree.some((el) => el.type === Stepper)).toBe(false);
   });
 });
 

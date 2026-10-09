@@ -116,14 +116,17 @@ export function readMachine(
   return { kind: "notConnected" };
 }
 
-/** The tone a reading's mark carries — by what it means, as tone.ts asks; a held connection is `link`, never `success`. */
+/**
+ * The tone a reading's mark carries — by what it means, as tone.ts asks; a held connection is
+ * `link`, never `success`. Only a failed job is `danger`: a machine out of reach is waiting on
+ * someone (its network, its host), which is `attention`, and red stays for what failed.
+ */
 export function readingTone(reading: MachineReading): Tone {
   switch (reading.kind) {
     case "queued":
     case "working":
       return "busy";
     case "failed":
-    case "unreachable":
       return "danger";
     case "ready":
       // A held connection is a live link, not a verdict: blue, never green.

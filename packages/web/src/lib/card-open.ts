@@ -3,14 +3,15 @@
  *
  * A click anywhere on a card's body opens the detail, and a click on a control inside the card —
  * one of its buttons, a link, a field — belongs to that control alone, so a card's own buttons
- * act on their own and never open the detail as well. The detail is either a page of its own
- * (`pageCardProps`: the whole card is a link to it) or a dialog (`dialogCardClick`: the card's
- * main button opens it, and the rest of the body follows that button).
+ * act on their own and never open the detail as well. The detail is a page of its own or a
+ * dialog; either way the card's title is the keyboard's way in — a link to the page, or the
+ * button that opens the dialog — and the card itself is no control: a control wrapped around
+ * other controls hides them from assistive technology.
  *
  * The card decides, rather than each button stopping propagation: a button added to a card later
  * is a control the moment it renders, with nothing for its author to remember.
  */
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { MouseEvent } from "react";
 
 /** What a click inside a card can land on that has an action of its own. */
 const CONTROL = [
@@ -61,45 +62,22 @@ export function landsOnCardBody(event: CardClick): boolean {
   if (target === null || !card.contains(target as never)) return false;
   if (selectingTextIn(card)) return false;
   const control = typeof target.closest === "function" ? target.closest(CONTROL) : null;
-  // A page card carries the link role itself, so reaching the card is reaching its body.
-  return control === null || control === card || !card.contains(control as never);
+  return control === null || !card.contains(control as never);
 }
 
 /**
- * The look of a card that opens something: the pointer, the keyboard ring a link wears, and a
- * hover on the border alone — a filled hover takes the neutral badges on the card (a version, a
- * tag) into its own fill in themes where the two are one colour.
+ * The look of a card that opens something: the pointer, and a hover on the border alone — a
+ * filled hover takes the neutral badges on the card (a version, a tag) into its own fill in
+ * themes where the two are one colour.
  */
 export const OPENS_DETAIL_CLASS =
-  "cursor-pointer transition-colors duration-150 hover:border-line-emphasis focus-visible:[outline:var(--ui-focus-ring)] focus-visible:[outline-offset:var(--ui-focus-ring-offset)]";
+  "cursor-pointer transition-colors duration-150 hover:border-line-emphasis";
 
 /**
- * Makes a whole card the link to its item's own page: a click on its body, or Enter while the
- * card itself has focus, opens it. `label` names the link — the item's name; without it the link
- * would be named by every word on the card, its buttons included.
+ * The card's click handler: a click on its body opens the detail — the page its title links to,
+ * or the dialog its title button opens. The title stays the keyboard's way in.
  */
-export function pageCardProps(open: () => void, label: string) {
-  return {
-    role: "link" as const,
-    tabIndex: 0,
-    "aria-label": label,
-    onClick: (event: MouseEvent<HTMLElement>) => {
-      if (landsOnCardBody(event)) open();
-    },
-    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
-      // Enter on a button inside the card presses that button; only the card's own focus opens it.
-      if (event.key !== "Enter" || event.target !== event.currentTarget) return;
-      event.preventDefault();
-      open();
-    },
-  };
-}
-
-/**
- * A card whose detail is a dialog. Its main button opens the dialog and is the keyboard's way in;
- * this handler, on the card, lets a click anywhere else on the body open it too.
- */
-export function dialogCardClick(open: () => void) {
+export function cardBodyClick(open: () => void) {
   return (event: MouseEvent<HTMLElement>) => {
     if (landsOnCardBody(event)) open();
   };

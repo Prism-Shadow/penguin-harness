@@ -9,9 +9,10 @@
  * (lib/card-open.ts), while the verbs on the card act on their own.
  *
  * The middle holds the pipeline's stepper while a job for the machine is queued or running and is
- * empty otherwise, so the verbs keep their place when one starts. The verbs: Enable when the
- * machine needs bringing up, Update in its place when it carries another build, Disable, and the
- * gear that configures its ssh host. This server's own card has none: it is where the page is
+ * empty otherwise, so the verbs keep their place when one starts. The verbs: one primary verb —
+ * Enable when the machine needs bringing up, Update in its place when it carries another build —
+ * and the gear that configures its ssh host. Disable lives in the dialog: beside Enable it would
+ * read as a toggle contradicting itself. This server's own card has none: it is where the page is
  * served from.
  */
 import type { MachineInfo, MachineJob } from "@prismshadow/penguin-server/api";
@@ -19,14 +20,16 @@ import {
   Badge,
   Button,
   Card,
+  Dot,
   GlyphIcon,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
   UpdatePill,
 } from "@prismshadow/penguin-ui";
+import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { OPENS_DETAIL_CLASS, dialogCardClick } from "../../lib/card-open";
+import { OPENS_DETAIL_CLASS, cardBodyClick } from "../../lib/card-open";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
@@ -55,8 +58,9 @@ export interface MachineMark {
   /** A job is queued or running for it: the dot pulses. */
   moving: boolean;
   /**
-   * A broken machine's glyph — a cross for a failed job, an alert for a machine out of reach —
-   * so the two danger states differ in shape; null for the dot every other state wears.
+   * The glyph of a machine that is not working — a cross for a failed job (danger), an alert for
+   * a machine out of reach (attention: waiting on its network, not failed) — so the two read
+   * apart by shape as well as ink; null for the dot every other state wears.
    */
   glyph: string | null;
 }
@@ -82,10 +86,20 @@ export function machineMark(reading: MachineReading | null): MachineMark {
   };
 }
 
+/** The app's tones in the shared package's names, for its `Dot`: a busy dot takes the success fill. */
+const DOT_TONE: Record<Tone, ToneName> = {
+  busy: "success",
+  attention: "attention",
+  success: "success",
+  link: "info",
+  danger: "danger",
+  muted: "neutral",
+};
+
 /**
- * A machine's state as one mark beside its name: a dot in the state's tone, pulsing while a job
- * moves, or the danger glyph for a broken machine. The words are the tooltip and the accessible
- * name, never a line of coloured text.
+ * A machine's state as one mark beside its name: a dot in the state's tone — the shared `Dot`,
+ * which owns the pulse of a moving machine — or a glyph for a failed or unreachable machine. The
+ * words are the tooltip and the accessible name, never a line of coloured text.
  */
 export function MachineStateMark({ mark }: { mark: MachineMark }) {
   return (
@@ -97,11 +111,7 @@ export function MachineStateMark({ mark }: { mark: MachineMark }) {
       className={`inline-flex size-4 shrink-0 items-center justify-center ${mark.glyph === null ? "" : toneInk[mark.tone]}`}
     >
       {mark.glyph === null ? (
-        <span
-          // The dot of a moving machine is a live signal, so a theme can re-time its pulse.
-          data-live={mark.moving ? "dot" : undefined}
-          className={`h-1.5 w-1.5 rounded-full ${toneDot[mark.tone]} ${mark.moving ? "ui-live animate-pulse" : ""}`}
-        />
+        <Dot tone={DOT_TONE[mark.tone]} pulse={mark.moving} />
       ) : (
         <GlyphIcon d={mark.glyph} size={ICON_SIZE.inlineGlyph} />
       )}
@@ -117,7 +127,7 @@ export const jobMoving = (job: MachineJob | null): boolean =>
  * The pipeline's six steps as segments, with a caption under them: what a queued or running job
  * is doing, or where a finished one ended — the step that failed in the danger fill.
  */
-export function JobStepper({ job, className = "" }: { job: MachineJob; className?: string }) {
+export function Stepper({ job, className = "" }: { job: MachineJob; className?: string }) {
   const step = job.phase === null ? -1 : MACHINE_PHASES.indexOf(job.phase);
   const result = job.result;
   const failed = !job.queued && !job.running && result !== null && !result.ok;
@@ -169,7 +179,6 @@ export interface MachineCardProps {
   onOpen: () => void;
   /** Brings the machine up, or onto this server's build: the whole pipeline. */
   onUse: () => void;
-  onStopUsing: () => void;
   onConfigure: () => void;
 }
 
@@ -191,7 +200,6 @@ export function MachineCard({
   busy,
   onOpen,
   onUse,
-  onStopUsing,
   onConfigure,
 }: MachineCardProps) {
   const reading = machine.local ? null : readMachine(machine, job, imageVersion);
@@ -206,7 +214,7 @@ export function MachineCard({
     <Card
       padding="md"
       className={`flex flex-wrap items-center gap-x-6 gap-y-2 ${OPENS_DETAIL_CLASS}`}
-      onClick={dialogCardClick(onOpen)}
+      onClick={cardBodyClick(onOpen)}
     >
       <div className="min-w-[14rem] flex-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -272,7 +280,7 @@ export function MachineCard({
       {/* The stepper's slot: empty while nothing moves, and hidden on a narrow screen then, so an
           idle card does not spend a line on it. */}
       <div className={moving ? "w-44 shrink-0" : "hidden w-44 shrink-0 md:block"}>
-        {moving && job !== null && <JobStepper job={job} />}
+        {moving && job !== null && <Stepper job={job} />}
       </div>
 
       {!machine.local && (
@@ -291,10 +299,6 @@ export function MachineCard({
               </Button>
             )
           )}
-          <Button size="sm" disabled={busy} onClick={onStopUsing}>
-            <GlyphIcon d={ICONS.plugLifted} />
-            {S.machines.stopUsing}
-          </Button>
           <Button
             size="icon"
             title={S.machines.host.configure}

@@ -3,11 +3,11 @@
  *
  * Enable is the whole of what a person wants from a machine — install or update the program
  * there, start its server, connect, hand over the Model config — as one job the server queues
- * per machine. Disable lets a machine go. Both sit on every card (Update in Enable's place when a
+ * per machine. A card offers it when the machine needs bringing up (Update in its place when the
  * machine carries another build than this server's), beside the gear that configures its ssh
- * host. The Machine dialog holds the rest: the machine's record, its job's output, and the single
- * steps the server also takes one at a time (install, connect, restart, disconnect, remove from
- * the Project).
+ * host. The Machine dialog holds the rest: the machine's record, its job's output, Disable, which
+ * lets a machine go, and the single steps the server also takes one at a time (install, connect,
+ * restart, disconnect, remove from the Project).
  *
  * One card per machine, this server first, then the machines in use by name. A card says the
  * state once, as a mark beside the name with its word on hover (machine-card.tsx). While machines
@@ -368,7 +368,6 @@ export function MachinesPage() {
       busy={posting}
       onOpen={() => setOpenId(machine.id)}
       onUse={() => act(machine, "use")}
-      onStopUsing={() => act(machine, "stopUsing")}
       onConfigure={() => act(machine, "configure")}
     />
   );

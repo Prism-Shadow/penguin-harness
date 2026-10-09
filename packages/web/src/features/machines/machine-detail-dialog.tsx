@@ -2,9 +2,9 @@
  * The Machine dialog: everything about one machine that its card leaves out, and every verb it
  * takes, in three ruled sections.
  *
- * - Connection: the machine's own id (with a copy button), how this server reaches it — the ssh
- *   alias and the host block that alias names — the server root, the state, what the last probe
- *   found over there and when, and the build it carries.
+ * - Connection: how this server reaches the machine — the ssh alias and the host block that alias
+ *   names — the server root, the state, what the last probe found over there and when, the build
+ *   it carries, and last, quiet, the machine's own id with a copy button.
  * - Job: the current or last job's stepper and its output, the newest line bright. A failed
  *   machine offers Retry, and Force install when the failure asks for it.
  * - Actions: Enable (or Update) and Disable — the whole pipeline, as on the card — then the
@@ -35,7 +35,7 @@ import type { ButtonVariant } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatDateTime, formatMessageTime } from "../../lib/format";
-import { JobStepper, jobMoving } from "./machine-card";
+import { Stepper, jobMoving } from "./machine-card";
 import { outOfDate, readMachine, wantsUse } from "./machines-view";
 
 /** Everything the dialog can ask its page to do for the machine. */
@@ -68,21 +68,24 @@ export interface MachineDetailBodyProps {
 }
 
 /**
- * One pair in the Connection lists: the label in the muted ink, at a minimum width both lists
- * share so they line up when a phone stacks them, and the value semibold — the part that is read.
+ * One pair in the Connection lists: the label in the muted ink, at a minimum width every list
+ * shares so they line up when a phone stacks them, and the value semibold — the part that is read
+ * — or, for a `quiet` detail you go looking for, in the muted ink like its label.
  */
 function Row({
   label,
   mono = false,
+  quiet = false,
   children,
 }: {
   label: string;
   mono?: boolean;
+  quiet?: boolean;
   children: ReactNode;
 }) {
   return (
     <KeyValueRow label={<span className="inline-block min-w-[6em]">{label}</span>} mono={mono}>
-      <span className="font-semibold">{children}</span>
+      <span className={quiet ? "text-fg-muted" : "font-semibold"}>{children}</span>
     </KeyValueRow>
   );
 }
@@ -174,14 +177,6 @@ export function MachineDetailBody({
             phone. */}
         <div className="grid items-start gap-x-6 gap-y-1 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <KeyValue size="sm">
-            {machine.machineId !== null && (
-              <Row label={m.detailMachineId} mono>
-                <span className="inline-flex items-center gap-1.5">
-                  {machine.machineId}
-                  <CopyButton size="sm" text={machine.machineId} label={m.detail.copyMachineId} />
-                </span>
-              </Row>
-            )}
             {!machine.local && (
               <Row label={m.detail.alias} mono>
                 {machine.alias}
@@ -228,11 +223,23 @@ export function MachineDetailBody({
             )}
           </KeyValue>
         </div>
+        {/* The machine's own id is a detail you go looking for: it closes the section, quiet,
+            with its copy button. */}
+        {machine.machineId !== null && (
+          <KeyValue size="sm" className="mt-1">
+            <Row label={m.detailMachineId} mono quiet>
+              <span className="inline-flex items-center gap-1.5">
+                {machine.machineId}
+                <CopyButton size="sm" text={machine.machineId} label={m.detail.copyMachineId} />
+              </span>
+            </Row>
+          </KeyValue>
+        )}
       </RuledSection>
 
       {!machine.local && job !== null && (
         <RuledSection level={3} title={m.detail.job}>
-          <JobStepper job={job} className="max-w-xs" />
+          <Stepper job={job} className="max-w-xs" />
           <JobOutput job={job} />
           {failed !== null && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -248,7 +255,8 @@ export function MachineDetailBody({
                   glyph={ICONS.plug}
                   label={m.replaceProgram}
                   why={m.replaceProgramWhy}
-                  variant="danger"
+                  // Secondary like Retry: the confirmation that follows carries the danger tone.
+                  variant="secondary"
                   disabled={busy}
                   onClick={() => onAct("replaceProgram")}
                 />

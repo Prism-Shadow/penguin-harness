@@ -188,10 +188,13 @@ describe("readMachine", () => {
     expect(readMachine(carrying("nas"), installedOnly, "9.9.9")).toEqual({ kind: "installedOnly" });
   });
 
-  it("tones follow meaning: moving is busy, connected is a link, broken is danger, the rest want attention", () => {
+  it("tones follow meaning: moving is busy, connected is a link, a failed job is danger, out of reach and the rest want attention", () => {
     expect(readingTone({ kind: "working", step: null })).toBe("busy");
     expect(readingTone({ kind: "ready", port: 7364 })).toBe("link");
-    expect(readingTone({ kind: "unreachable", detail: null })).toBe("danger");
+    expect(
+      readingTone({ kind: "failed", step: "restart", message: "", canReplaceProgram: false }),
+    ).toBe("danger");
+    expect(readingTone({ kind: "unreachable", detail: null })).toBe("attention");
     expect(readingTone({ kind: "stopped" })).toBe("attention");
     expect(readingTone({ kind: "unknown" })).toBe("muted");
   });
