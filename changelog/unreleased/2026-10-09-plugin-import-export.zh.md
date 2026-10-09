@@ -3,6 +3,7 @@
 - **Date:** 2026-10-09
 - **Type:** feature
 - **Scope:** `web`, `server`, `core`, `cli`
+- **PR:** [#1012](https://github.com/Prism-Shadow/penguin-harness/pull/1012)
 
 [English](2026-10-09-plugin-import-export.md)
 
