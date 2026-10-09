@@ -3,6 +3,7 @@
 - **Date:** 2026-10-09
 - **Type:** test
 - **Scope:** `server`
+- **PR:** [#1005](https://github.com/Prism-Shadow/penguin-harness/pull/1005)
 
 [English](2026-10-09-terminal-pwsh-enter-flake.md)
 
