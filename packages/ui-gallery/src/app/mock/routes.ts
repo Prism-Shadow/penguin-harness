@@ -126,7 +126,7 @@ import type {
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
 import { READ_ONLY } from "./errors";
-import { dayKey, effectiveOf } from "./fixtures";
+import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 import type { UsageDay } from "./fixtures";
 import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
@@ -861,7 +861,20 @@ router
     if (kept.length === settings.keys.length) fail(404, "key_not_found", "No such key.");
     settings.keys = kept;
     return empty();
-  });
+  })
+  // Try it: the stream a real run sends, scripted (fixtures.ts), whole in one body.
+  .post("/api/projects/:projectId/agents/:agentId/api/try", (ctx) =>
+    raw(
+      amspTryStream(ctx.body, {
+        agent: `${ctx.params.projectId}/${ctx.params.agentId}`,
+        lang: ctx.store.lang,
+        now: Date.now(),
+      }),
+      {
+        "content-type": "text/event-stream; charset=utf-8",
+      },
+    ),
+  );
 
 // ---------------------------------------------------------------------------------------------
 // Sessions: the list, directories, creation, the row

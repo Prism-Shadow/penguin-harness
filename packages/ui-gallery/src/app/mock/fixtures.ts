@@ -57,6 +57,8 @@ import {
   presetPromotions,
   presetProviderTable,
 } from "../../../../core/dist/state/model-catalog.js";
+// The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
+import type { AmspEvent } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
 import type { Lang } from "./types";
@@ -1536,4 +1538,130 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     usage,
     usageErrors,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The API tab's Try it: one run's AMSP stream
+// ---------------------------------------------------------------------------------------------
+
+/** The Session the demo's Try it runs open. */
+export const TRY_SESSION_ID = "session-2026-10-09-09-30-00-7d2e41c8";
+
+/** `date`'s own format, in UTC: `Fri Oct  9 09:30:00 UTC 2026`. */
+function dateOutput(ms: number): string {
+  const d = new Date(ms);
+  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+  const month = d.toLocaleString("en", { month: "short", timeZone: "UTC" });
+  const date = String(d.getUTCDate()).padStart(2, " ");
+  const time = d.toISOString().slice(11, 19);
+  return `${day} ${month} ${date} ${time} UTC ${d.getUTCFullYear()}`;
+}
+
+/**
+ * The body the try route streams, as `data:` lines and `[DONE]`: the example question answered
+ * by running `date` (a tool call, its result, then the answer, over two Requests); a run that
+ * continues a Session gets one answer in one Request.
+ */
+export function amspTryStream(
+  body: unknown,
+  run: { agent: string; lang: Lang; now: number },
+): string {
+  const { agent, lang, now } = run;
+  const L = <T>(zh: T, en: T): T => (lang === "zh" ? zh : en);
+  const sessionField = (body as { session_id?: unknown } | null)?.session_id;
+  const sessionId = typeof sessionField === "string" ? sessionField : TRY_SESSION_ID;
+  let clock = now;
+  const at = (stepMs: number) => new Date((clock += stepMs)).toISOString();
+  const usage = (output: number, total: number, cacheRead: number) => ({
+    cache_read: cacheRead,
+    cache_write: 0,
+    output,
+    total,
+  });
+  const started: AmspEvent = {
+    type: "run.started",
+    at: at(0),
+    session_id: sessionId,
+    agent,
+  };
+  let events: AmspEvent[];
+  if (typeof sessionField === "string") {
+    const answer = usage(38, 3120, 2944);
+    events = [
+      started,
+      { type: "request.started", at: at(120), request: 1 },
+      {
+        type: "text.done",
+        at: at(1400),
+        role: "assistant",
+        text: L(
+          "演示数据只回答第一个问题；真实的 Agent 会在这里接着同一个会话作答。",
+          "The demo answers only the first question; a real agent would carry on this conversation here.",
+        ),
+        stop_reason: "completed",
+      },
+      { type: "request.done", at: at(20), request: 1, status: "completed", usage: answer },
+      {
+        type: "run.done",
+        at: at(10),
+        status: "completed",
+        requests: 1,
+        usage: answer,
+        session_usage: usage(124, 5848, 5184),
+      },
+    ];
+  } else {
+    const call = usage(31, 1376, 1152);
+    const answer = usage(55, 1352, 1088);
+    const clockText = dateOutput(now + 1900);
+    events = [
+      started,
+      {
+        type: "context.opened",
+        at: at(60),
+        session_id: sessionId,
+        provider: "anthropic",
+        model_id: "claude-sonnet-5",
+        context_window: 200000,
+      },
+      { type: "request.started", at: at(40), request: 1 },
+      {
+        type: "tool_call.done",
+        at: at(1500),
+        tool_call_id: "toolu_try_date",
+        name: "exec_command",
+        arguments: '{"cmd":"date"}',
+        stop_reason: "completed",
+      },
+      {
+        type: "tool_result.done",
+        at: at(260),
+        tool_call_id: "toolu_try_date",
+        output: `${clockText}\n`,
+        stop_reason: "completed",
+      },
+      { type: "request.done", at: at(10), request: 1, status: "completed", usage: call },
+      { type: "request.started", at: at(30), request: 2 },
+      {
+        type: "text.done",
+        at: at(1200),
+        role: "assistant",
+        text: L(
+          `现在是 ${clockText.slice(11, 16)}（UTC），${new Date(now).getUTCFullYear()} 年 ${new Date(now).getUTCMonth() + 1} 月 ${new Date(now).getUTCDate()} 日。`,
+          `It is ${clockText.slice(11, 16)} UTC on ${clockText.slice(0, 10)}, ${new Date(now).getUTCFullYear()}.`,
+        ),
+        stop_reason: "completed",
+      },
+      { type: "request.done", at: at(20), request: 2, status: "completed", usage: answer },
+      {
+        type: "run.done",
+        at: at(10),
+        status: "completed",
+        requests: 2,
+        usage: usage(86, 2728, 2240),
+        session_usage: usage(86, 2728, 2240),
+      },
+    ];
+  }
+  return [...events.map((e) => JSON.stringify(e)), "[DONE]"].map((d) => `data: ${d}\n\n`).join("");
 }

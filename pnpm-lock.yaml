@@ -657,6 +657,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../amsp
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)

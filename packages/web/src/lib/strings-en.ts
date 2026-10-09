@@ -1559,6 +1559,24 @@ export const en: Strings = {
       "External programs can no longer talk to this agent. The approval mode and the keys are kept and work again once it is back on.",
     apiOff: "Turn off",
     apiOn: "API access on",
+    apiTry: "Try it",
+    apiTryHint:
+      "Runs the same route a program calls, your sign-in standing in for a key, and shows the stream a program would receive; the conversation is filed under Background.",
+    apiTryExample: "What time is it now?",
+    apiTryRun: "Run",
+    apiTryStop: "Stop",
+    apiTryFollowUp: "Continue this conversation…",
+    apiTryNewSession: "New conversation",
+    apiTryEvents: "Events",
+    apiTryRaw: "Raw",
+    apiTryStatus: "Status",
+    apiTryRequests: "Requests",
+    apiTryTokens: "Tokens (output / total)",
+    apiTryCacheTokens: (read: number, write: number): string =>
+      `cache read ${read}, cache write ${write}`,
+    apiTryElapsed: "Elapsed",
+    apiTryAnswer: "Answer",
+    apiTryStreamBroken: "The stream ended before run.done.",
   },
 
   models: {

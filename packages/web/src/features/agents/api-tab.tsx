@@ -14,6 +14,9 @@
  * The admin's server-wide switch (Settings › Server › Agent API) overrides every Agent: when it is
  * off the switch here is disabled and says so, and nothing is lost. The tab's own read carries that
  * switch (`serverEnabled`), so every member sees it, not only an admin.
+ *
+ * The owner's tab ends with Try it (api-try-panel.tsx): one real API run on the owner's sign-in,
+ * its stream shown as a program would receive it.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
@@ -46,6 +49,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useProject } from "../../state/project";
 import { APPROVAL_MODES } from "../chat/approval-mode";
+import { ApiTryPanel } from "./api-try-panel";
 
 /** The public API's root on the server this page was served from. */
 export function agentApiBaseUrl(origin: string): string {
@@ -247,6 +251,8 @@ function KeyRow({
 }
 
 export interface ApiTabViewProps {
+  projectId: string;
+  agentId: string;
   settings: AgentApiSettings;
   /** The admin's server-wide switch, as the tab's own read reports it to every member. */
   serverEnabled: boolean;
@@ -388,6 +394,16 @@ export function ApiTabView(p: ApiTabViewProps) {
             <CodeBlock language="bash" code={examples.curl} />
             <CodeBlock language="typescript" code={examples.sdk} />
           </RuledSection>
+
+          {p.isOwner && (
+            <ApiTryPanel
+              // Another Agent's tab starts its own Try it: no Session carried over.
+              key={p.agentRef}
+              projectId={p.projectId}
+              agentId={p.agentId}
+              disabledReason={serverOff ? S.agent.apiAdminOff : undefined}
+            />
+          )}
         </>
       )}
     </div>
@@ -479,6 +495,8 @@ export function ApiTab({
   return (
     <>
       <ApiTabView
+        projectId={projectId}
+        agentId={agentId}
         settings={settings}
         serverEnabled={serverEnabled}
         isOwner={isOwner}

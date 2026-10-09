@@ -241,7 +241,8 @@ import type {
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta } from "./client";
+import type { RunRequest } from "@prismshadow/amsp";
+import { apiFetch, apiFetchStream, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam } from "../lib/session-grouping";
@@ -740,6 +741,23 @@ export const createAgentApiKey = (
 export const deleteAgentApiKey = (projectId: string, agentId: string, keyId: string) =>
   apiFetch<void>(`${agentApiBase(projectId, agentId)}/keys/${encodeURIComponent(keyId)}`, {
     method: "DELETE",
+  });
+
+/**
+ * Runs the Agent once through its API for the owner's sign-in (the API tab's Try it): the body is
+ * the public runs route's, and the answer the same AMSP event stream, handed back unread for
+ * `readSse` (or the same JSON refusal, as an ApiError).
+ */
+export const tryAgentApi = (
+  projectId: string,
+  agentId: string,
+  body: RunRequest,
+  opts: { signal?: AbortSignal } = {},
+) =>
+  apiFetchStream(`${agentApiBase(projectId, agentId)}/try`, {
+    method: "POST",
+    body,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
 // Session ---------------------------------------------------------------------

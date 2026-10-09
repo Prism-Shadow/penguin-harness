@@ -1603,6 +1603,25 @@ export const zh = {
     apiOff: "关闭",
     /** The Agents list's plug mark on an Agent whose API is on. */
     apiOn: "已开启 API 访问",
+    /** The tab's Try it: one real API run on the owner's sign-in, shown as a program receives it. */
+    apiTry: "试一试",
+    apiTryHint:
+      "以你的登录身份走程序用的同一条运行路由，收到的就是程序会收到的事件流；开出的会话归入侧栏的「后台会话」。",
+    apiTryExample: "现在几点了？",
+    apiTryRun: "运行",
+    apiTryStop: "停止",
+    /** The input's placeholder once a run has named its Session: the next run continues it. */
+    apiTryFollowUp: "继续这个会话…",
+    apiTryNewSession: "新会话",
+    apiTryEvents: "事件",
+    apiTryRaw: "原始",
+    apiTryStatus: "状态",
+    apiTryRequests: "Request",
+    apiTryTokens: "Token（输出 / 合计）",
+    apiTryCacheTokens: (read: number, write: number): string => `缓存读 ${read}，缓存写 ${write}`,
+    apiTryElapsed: "用时",
+    apiTryAnswer: "回答",
+    apiTryStreamBroken: "事件流在 run.done 之前结束。",
   },
 
   models: {

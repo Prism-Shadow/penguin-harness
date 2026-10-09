@@ -23,6 +23,10 @@
  *   is on.
  * - Turning the Agent API off server-wide asks first, in the danger tone; answered yes, it writes
  *   the switch off and hands on what the server stored.
+ * - The owner's tab ends with Try it, its input holding the example question; a member's tab has
+ *   no Try it.
+ * - With the admin's server-wide switch off, Try it's input and Run are disabled, and Run carries
+ *   the reason.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, isValidElement } from "react";
@@ -87,6 +91,8 @@ const SECRET = "penguin_fake-secret";
 const noop = () => {};
 function props(over: Partial<ApiTabViewProps> = {}): ApiTabViewProps {
   return {
+    projectId: "demo",
+    agentId: "coder",
     settings: ON,
     serverEnabled: true,
     isOwner: true,
@@ -189,6 +195,27 @@ describe("the API tab", () => {
     expect(render({ serverEnabled: false })).toContain(S.agent.apiAdminOff);
     expect(render({ serverEnabled: false, isOwner: false })).toContain(S.agent.apiAdminOff);
     expect(render()).not.toContain(S.agent.apiAdminOff);
+  });
+
+  it("ends the owner's tab with Try it, its input holding the example; a member's tab has none", () => {
+    const html = render();
+    expect(html.indexOf(S.agent.apiTry)).toBeGreaterThan(html.indexOf(S.agent.apiExamples));
+    expect(html).toContain(`value="${S.agent.apiTryExample}"`);
+    expect(render({ isOwner: false })).not.toContain(S.agent.apiTry);
+    expect(render({ settings: { ...ON, enabled: false } })).not.toContain(S.agent.apiTry);
+  });
+
+  it("disables Try it's input and Run when the admin has the API off, Run saying why", () => {
+    const html = render({ serverEnabled: false });
+    const section = html.slice(html.indexOf(S.agent.apiTry));
+    expect(section).toMatch(/<input[^>]*disabled=""/);
+    // The section's first button is Run.
+    const run = /<button[^>]*>[^<]*<\/button>/.exec(section)?.[0] ?? "";
+    expect(run).toContain(S.agent.apiTryRun);
+    expect(run).toContain('disabled=""');
+    expect(run).toContain(`data-tooltip="${S.agent.apiAdminOff}"`);
+    const enabled = render().slice(render().indexOf(S.agent.apiTry));
+    expect(enabled).not.toMatch(/<input[^>]*disabled=""/);
   });
 
   it("leaves a member who is not the owner every control disabled and no key action", () => {

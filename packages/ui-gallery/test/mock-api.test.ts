@@ -230,6 +230,42 @@ describe("the mocked API", () => {
     expect((await api.putAgentApi(project, agent, { open: true })).serverEnabled).toBe(false);
   });
 
+  it("streams a Try run as the try route does: the example run, then a continued one", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    /** The body's `data:` payloads, in order. */
+    const payloads = async (res: Response) =>
+      (await res.text())
+        .split("\n\n")
+        .filter((block) => block !== "")
+        .map((block) => block.replace(/^data: /, ""));
+    const typeOf = (payload: string) => (JSON.parse(payload) as { type: string }).type;
+
+    const first = await api.tryAgentApi(project, agent, { input: "What time is it now?" });
+    expect(first.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    const run = await payloads(first);
+    expect(run.at(-1)).toBe("[DONE]");
+    const types = run.slice(0, -1).map(typeOf);
+    expect(types[0]).toBe("run.started");
+    expect(types).toContain("tool_call.done");
+    expect(types).toContain("tool_result.done");
+    expect(types.at(-1)).toBe("run.done");
+
+    const sessionId = (JSON.parse(run[0]!) as { session_id: string }).session_id;
+    const next = await payloads(
+      await api.tryAgentApi(project, agent, { input: "And now?", session_id: sessionId }),
+    );
+    expect(next.slice(0, -1).map(typeOf)).toEqual([
+      "run.started",
+      "request.started",
+      "text.done",
+      "request.done",
+      "run.done",
+    ]);
+    expect(JSON.parse(next[0]!)).toMatchObject({ session_id: sessionId });
+  });
+
   it("serves the group tables a new Project writes, and takes a protocol or a cleared key on any group", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
