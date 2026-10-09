@@ -16,6 +16,9 @@
  * agent-evaluation. The evaluation runtime is never picked in this dialog —
  * Evaluate takes the tested agent's own configured model and thinking level, and Optimize reuses
  * what that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
+ *
+ * The conversation is an ordinary Session, listed with the agent's own: only the Test Sessions
+ * it starts through `penguin run --source benchmark` are filed under the Evaluations folder.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -184,9 +187,6 @@ export function UseBenchmarkModal({
       text,
       skills: tab === "evaluate" ? [EVALUATION_SKILL] : [OPTIMIZATION_SKILL, EVALUATION_SKILL],
       ...(ref !== undefined ? { modelRef: ref } : {}),
-      // An evaluation / optimization run, not a conversation of the user's own: the session
-      // list files it, and the Test Sessions it launches, under the Evaluations folder.
-      source: "benchmark",
     });
     onClose();
   };

@@ -35,10 +35,9 @@ export function newChatAgentId(
  * parked as a draft conversation (parkActiveDraft), then the slot is rewritten to the two things
  * a new chat carries over, the model (as after any park or send) and staged skills. Everything
  * else a text-less draft left there is released: its Agent / Workspace / approval-mode
- * selections, so the draft seeds them afresh, and the evaluation-run mark (`source`), which
- * would otherwise file the next ordinary conversation under Evaluations. The slot is rebuilt
- * from what stays rather than stripped of what goes, so a field the cache gains later starts
- * released too. Returns the parked entry's id, or null when nothing was typed.
+ * selections, so the draft seeds them afresh. The slot is rebuilt from what stays rather than
+ * stripped of what goes, so a field the cache gains later starts released too. Returns the
+ * parked entry's id, or null when nothing was typed.
  */
 export function prepareNewChatDraft(
   userId: string,

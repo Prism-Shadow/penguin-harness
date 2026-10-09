@@ -135,6 +135,16 @@ describe("penguin run", () => {
     expect(session.patches).toContainEqual({ thinkingLevel: "high" });
     expect("thinkingLevel" in (session.tasks[0] as object)).toBe(false);
   });
+
+  it("--source benchmark creates the Session as an evaluation's Test Session; a plain run creates it with no origin", async () => {
+    // How agent-evaluation launches each Test Session, then an ordinary run.
+    expect(await cli(["run", "-m", "case 1, run 1", "--source", "benchmark"])).toBe(0);
+    expect(await cli(["run", "-m", "an ordinary task"])).toBe(0);
+    const creates = server.requests.filter(
+      (r) => r.method === "POST" && r.path.endsWith("/sessions"),
+    );
+    expect(creates.map((r) => r.body?.source)).toEqual(["benchmark", undefined]);
+  });
 });
 
 describe("penguin ls", () => {

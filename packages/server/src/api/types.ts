@@ -43,7 +43,7 @@ export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask"
 /** Session run status: idle / Task in progress / compacting. */
 export type SessionStatus = "idle" | "running" | "compacting";
 
-/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session / created by a Benchmark evaluation or optimization. */
+/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session / a Benchmark evaluation's Test Session, created by `penguin run --source benchmark`. */
 export type SessionSource = "schedule" | "subagent" | "benchmark";
 
 // ---------------------------------------------------------------------------
@@ -1915,10 +1915,12 @@ export interface SessionCreateRequest {
    */
   client?: "web" | "cli" | "org";
   /**
-   * Marks the Session as created by a Benchmark evaluation or optimization (the Evaluation
-   * Center's Use flows, and the Test Sessions agent-evaluation launches through the CLI). Only
-   * this value is accepted from a client: `subagent` and `schedule` are written by the server
-   * itself. The Web App files such Sessions into the Evaluations folder of the session list.
+   * Marks the Session as a Test Session of a Benchmark evaluation: the CLI sends it for
+   * `penguin run --source benchmark`, which agent-evaluation uses to launch every Test Session.
+   * Only this value is accepted from a client: `subagent` and `schedule` are written by the
+   * server itself. The Web App files such Sessions into the Evaluations folder of the session
+   * list and never sends the field: the conversation the Evaluation Center's Use dialog opens is
+   * an ordinary Session.
    */
   source?: "benchmark";
 }

@@ -249,7 +249,7 @@ export interface CreateSessionOptions {
   baseUrl?: string;
   /** Internal use: this Session's depth in the subagent spawn chain (0 at the top level), used to cap spawn depth. */
   subagentDepth?: number;
-  /** Session origin recorded in session_meta (absent = user-created); the subagent spawn site passes "subagent", callers driven by a scheduled task pass "schedule", and a Benchmark evaluation or optimization passes "benchmark". */
+  /** Session origin recorded in session_meta (absent = user-created); the subagent spawn site passes "subagent", callers driven by a scheduled task pass "schedule", and the server passes "benchmark" for the Test Sessions of a Benchmark evaluation, which `penguin run --source benchmark` creates. */
   source?: "subagent" | "schedule" | "benchmark";
 }
 
