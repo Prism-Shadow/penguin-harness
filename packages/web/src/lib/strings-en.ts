@@ -338,7 +338,10 @@ export const en: Strings = {
       "Install the PenguinHarness Browser extension and pair it, and agents can open and work in pages in your own Chrome, signed in as you are there.",
     pairTitle: "Connect your Chrome",
     pairStepInstall:
-      "Download the extension and unzip it. In Chrome, open chrome://extensions, turn on Developer mode, choose Load unpacked and pick the unzipped folder, then pin the extension to the toolbar.",
+      "Install the extension and pin it to the toolbar. The Chrome Web Store is the recommended source: Chrome keeps the extension up to date.",
+    pairStore: "Open the Chrome Web Store",
+    pairStepInstallZip:
+      "If the store does not open, download the zip and unzip it instead. In chrome://extensions, turn on Developer mode, choose Load unpacked and pick the unzipped folder.",
     pairDownload: "Download the extension (zip)",
     pairStepOpen:
       "Click the PenguinHarness Browser icon in the toolbar and choose Settings to open its pairing page.",
