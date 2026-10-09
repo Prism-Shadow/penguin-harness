@@ -4101,6 +4101,8 @@ Scenarios:
     colCase: "Case",
     colRun: "Run",
     colSession: "Session",
+    /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
+    copyTrialName: "Copy Harbor trial name",
     askAi: "Ask AI",
     evaluationDetailTitle: (time: string): string => `Evaluation · ${time}`,
     askEvaluationTitle: "Ask AI about this evaluation",
@@ -4309,7 +4311,7 @@ Scenarios:
       "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
-      "The model that dispatches and totals the runs, the Project's default model unless changed; the tested agent uses the model it is configured with, which is not changed here",
+      "The model this conversation runs on, the Project's default model unless changed; the tested agent is evaluated on this same model, at the thinking level it is configured with",
     evaluateRunsHint:
       "How many times every case runs, averaged; defaults to the Benchmark's configured count",
     evaluateNoteField: "Note",
@@ -4320,8 +4322,10 @@ Scenarios:
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
       `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
       `- runs: \`${p.runs}\`\n\n` +
-      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned subagent per matrix cell (omit `agent_id`), and say in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
-      "the evaluation runtime is the model and thinking level that tested agent is configured with right now. Require every returned result to agree on " +
+      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned subagent per matrix cell (omit `agent_id`), and say in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill. " +
+      "The tested model is this conversation's own: read `Provider` and `Model ID` from your Environment once, before the first `run_subagent`, and pass them as `provider` and `model_id` in every request. " +
+      "An agent stores no model, so look for none in the tested agent's files, the Project configuration or the server; if your Environment lacks either line, stop and ask me. " +
+      "The thinking level is the one the tested agent is configured with. Require every returned result to agree on " +
       "`agent_id`, `provider`, `model_id` and `thinking_level`, and stop rather than merge two labels into one record. Average the runs per case and the cases " +
       "per evaluation as the scoreboard contract specifies, then append exactly ONE evaluation to `scoreboard.yaml`, labelled with `agent_id`, `version`, " +
       "`provider` / `model_id` and `thinking_level`. Change neither the tested agent nor the Benchmark. " +
