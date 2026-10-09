@@ -3,6 +3,7 @@
 - **Date:** 2026-10-09
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `skills`, `tooling`
+- **PR:** [#1008](https://github.com/Prism-Shadow/penguin-harness/pull/1008)
 
 [中文版](2026-10-09-benchmark-package.zh.md)
 

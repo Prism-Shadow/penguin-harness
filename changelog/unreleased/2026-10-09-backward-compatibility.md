@@ -3,6 +3,7 @@
 - **Date:** 2026-10-09
 - **Type:** process
 - **Scope:** `core`, `server`, `skills`
+- **PR:** [#1008](https://github.com/Prism-Shadow/penguin-harness/pull/1008)
 
 [中文版](2026-10-09-backward-compatibility.zh.md)
 
