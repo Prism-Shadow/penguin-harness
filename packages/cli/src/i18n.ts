@@ -228,6 +228,8 @@ export interface Messages {
     apiKeyDeleted(keyId: string, agentRef: string): string;
     /** After `server on|off`. */
     apiServerSet(on: boolean): string;
+    /** A write refused 403 sign_in_required: it carried the local API token, not a person's sign-in. */
+    apiSignInRequired(): string;
   };
   /** `penguin project`: project listing. */
   project: {
@@ -1292,6 +1294,8 @@ const en: Messages = {
       on
         ? "The Agent API is on for this server."
         : "The Agent API is off for this server: every request is refused; per-agent settings and keys are kept.",
+    apiSignInRequired: () =>
+      "Sign in first: `penguin auth login` (or `penguin auth token` on the server's machine). The local API token may not change an Agent's exposure.",
   },
   project: {
     desc: "Manage projects",
@@ -2341,6 +2345,8 @@ const zh: Messages = {
       on
         ? "这台服务器的 Agent API 已开启。"
         : "这台服务器的 Agent API 已关闭：所有请求均被拒绝，各 Agent 的设置与密钥保留。",
+    apiSignInRequired: () =>
+      "请先登录：`penguin auth login`（或在服务器本机运行 `penguin auth token`）。本机 API token 不能改变 Agent 的对外暴露。",
   },
   project: {
     desc: "管理 Project",

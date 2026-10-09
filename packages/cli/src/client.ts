@@ -1,5 +1,5 @@
 /**
- * The CLI's server client: connection resolution, Bearer-token auth, JSON requests, and
+ * The CLI's server client: connection resolution, credentials, JSON requests, and
  * a dependency-free fetch-based SSE consumer (the HMR deploy path bundles this file with
  * esbuild, so everything here rides on globals — fetch above all).
  *
@@ -16,15 +16,25 @@
  *      lock, attach. The loser of a two-CLI spawn race exits with code 3 ("already
  *      running"), which the lock poll absorbs — it finds the winner's lock either way.
  *
- * Token resolution: PENGUIN_API_TOKEN, else `<root>/api-token` (written by the server
- * each boot). A 401 with a file-sourced token re-reads the file once and retries — the
- * server may have restarted (and rotated the token) since the first read.
+ * Credential resolution (first hit wins):
+ *   1. PENGUIN_API_TOKEN, as `Authorization: Bearer`.
+ *   2. The person's stored sign-in (`<root>/cli-session.json`, written by `penguin auth login`
+ *      or `penguin auth token`), as the `penguin_session` cookie — read only for a loopback
+ *      target, only when the sign-in itself is to a loopback server, and only outside a
+ *      Session (PENGUIN_SESSION_ID unset): an Agent's own commands never use it.
+ *   3. `<root>/api-token` (written by the server each boot), as Bearer, for a loopback target.
+ * The sign-in comes before the token file because the server refuses that token on the writes
+ * that change an Agent's exposure (403 `sign_in_required`): `penguin agent api enable` works
+ * for a person who has signed in. A 401 on a sign-in falls back once to the token file; a 401
+ * with a file-sourced token re-reads the file once and retries — the server may have restarted
+ * (and rotated the token) since the first read.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
+import { readSession } from "./auth-session.js";
 import type { Messages } from "./i18n.js";
 
 /** Session-id shape (core's convention); a full id needs no directory search. */
@@ -33,8 +43,14 @@ const SESSION_ID_RE = /^session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$
 /** Hosts that count as this machine for token-file purposes. */
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
-/** How the auth token was obtained; decides whether a 401 retries after re-reading the file. */
-export type TokenSource = "env" | "file" | "none";
+/**
+ * Where the credential came from: decides how it is sent (a sign-in as the session cookie,
+ * anything else as Bearer) and whether a 401 retries with the token file.
+ */
+export type TokenSource = "env" | "login" | "file" | "none";
+
+/** The server's session cookie (auth/middleware.ts SESSION_COOKIE): a sign-in is sent as it. */
+const SESSION_COOKIE = "penguin_session";
 
 export interface Connection {
   /** Normalized base URL, no trailing slash. */
@@ -81,6 +97,22 @@ function readTokenFile(root: string): string | null {
   try {
     const value = fs.readFileSync(apiTokenPath(root), "utf8").trim();
     return value === "" ? null : value;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The person's stored sign-in on this data root, for a loopback target (see the module doc);
+ * null inside a Session, where the command is an Agent's and must go as the Agent's token, and
+ * for a sign-in to another server, whose session must not be sent to this one.
+ */
+function readStoredLogin(root: string): string | null {
+  if (process.env.PENGUIN_SESSION_ID?.trim()) return null;
+  const session = readSession(root);
+  if (session === null) return null;
+  try {
+    return isLoopbackUrl(new URL(session.server)) ? session.token : null;
   } catch {
     return null;
   }
@@ -216,33 +248,37 @@ export class ServerClient {
     if (envToken) {
       this.token = envToken;
       this.tokenSource = "env";
-    } else if (conn.loopback) {
-      this.token = readTokenFile(conn.root);
-      this.tokenSource = this.token !== null ? "file" : "none";
-    } else {
+    } else if (!conn.loopback) {
       this.token = null;
       this.tokenSource = "none";
+    } else {
+      const login = readStoredLogin(conn.root);
+      this.token = login ?? readTokenFile(conn.root);
+      this.tokenSource = login !== null ? "login" : this.token !== null ? "file" : "none";
     }
   }
 
+  /** The credential (a sign-in as the session cookie, a token as Bearer), then `extra`. */
   private headers(extra: Record<string, string> = {}): Record<string, string> {
-    return {
-      ...(this.token !== null ? { authorization: `Bearer ${this.token}` } : {}),
-      ...extra,
-    };
+    const credential: Record<string, string> =
+      this.token === null
+        ? {}
+        : this.tokenSource === "login"
+          ? { cookie: `${SESSION_COOKIE}=${this.token}` }
+          : { authorization: `Bearer ${this.token}` };
+    return { ...credential, ...extra };
   }
 
   /**
-   * One JSON request. 401 with a file-sourced token re-reads the file once (the server
-   * may have restarted and rotated it) and retries; every other non-2xx becomes an
-   * ApiError carrying the server's code and message.
+   * One JSON request. A 401 retries once with the token file (see fetchAuthed); every other
+   * non-2xx becomes an ApiError carrying the server's code and message.
    */
   async request<T>(method: string, apiPath: string, body?: unknown): Promise<T> {
-    const res = await this.fetchAuthed(apiPath, {
-      method,
-      headers: this.headers(body !== undefined ? { "content-type": "application/json" } : {}),
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
+    const res = await this.fetchAuthed(
+      apiPath,
+      { method, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) },
+      body !== undefined ? { "content-type": "application/json" } : {},
+    );
     if (!res.ok) throw await this.toError(res);
     if (res.status === 204 || res.headers.get("content-length") === "0") {
       void res.body?.cancel();
@@ -252,9 +288,20 @@ export class ServerClient {
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 
-  /** The authenticated fetch with the one-shot 401 file-token refresh. */
-  private async fetchAuthed(apiPath: string, init: RequestInit): Promise<Response> {
-    const res = await fetch(`${this.conn.baseUrl}${apiPath}`, init);
+  /**
+   * The authenticated fetch, `headers` beside the credential. On a 401 it retries once with the
+   * token file, read afresh, when that holds a credential other than the one refused: a sign-in
+   * that expired or was revoked falls back to it, and a file token the server rotated on a
+   * restart is replaced. An env token is never swapped.
+   */
+  private async fetchAuthed(
+    apiPath: string,
+    init: RequestInit,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    const send = () =>
+      fetch(`${this.conn.baseUrl}${apiPath}`, { ...init, headers: this.headers(headers) });
+    const res = await send();
     if (res.status !== 401) return res;
     if (this.tokenSource === "env" || !this.conn.loopback) return res;
     const fresh = readTokenFile(this.conn.root);
@@ -262,8 +309,7 @@ export class ServerClient {
     void res.body?.cancel();
     this.token = fresh;
     this.tokenSource = "file";
-    const headers = { ...(init.headers as Record<string, string>), ...this.headers() };
-    return fetch(`${this.conn.baseUrl}${apiPath}`, { ...init, headers });
+    return send();
   }
 
   private async toError(res: Response): Promise<ApiError> {
@@ -297,17 +343,18 @@ export class ServerClient {
 
   /**
    * Opens one SSE subscription (fetch with headers — EventSource cannot carry the
-   * Bearer token) and yields parsed frames. The caller handles reconnects; aborting
+   * credential) and yields parsed frames. The caller handles reconnects; aborting
    * `signal` ends the generator quietly.
    */
   async *sse(apiPath: string, opts: { lastEventId?: string; signal?: AbortSignal } = {}) {
-    const res = await this.fetchAuthed(apiPath, {
-      headers: this.headers({
+    const res = await this.fetchAuthed(
+      apiPath,
+      { ...(opts.signal ? { signal: opts.signal } : {}) },
+      {
         accept: "text/event-stream",
         ...(opts.lastEventId !== undefined ? { "last-event-id": opts.lastEventId } : {}),
-      }),
-      ...(opts.signal ? { signal: opts.signal } : {}),
-    });
+      },
+    );
     if (!res.ok || res.body === null) throw await this.toError(res);
     yield* parseSseBody(res.body, opts.signal);
   }

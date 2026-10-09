@@ -10,7 +10,10 @@
  * Owner means the Project owner, the rule Agent deletion uses: exposing an Agent to programs
  * outside the Web App is a Project-level decision, and so is the approval mode those programs'
  * conversations start with. The settings live in this server's web.db (see AgentApi), never in
- * the Agent State the Agent itself can rewrite.
+ * the Agent State the Agent itself can rewrite. And the writes take the owner's sign-in, never
+ * the local API token every tool subprocess holds (403 `sign_in_required`, see
+ * requireSignedInPerson): an Agent must not switch on its own exposure from its shell. The reads
+ * stay open to the token, for `penguin agent api status` and `keys ls`.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -19,6 +22,7 @@ import type {
   AgentApiKeyInfo,
   AgentApiResponse,
 } from "../../api/types.js";
+import { requireSignedInPerson } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { mintAgentApiKey } from "../../amsp/keys.js";
 import { HttpError } from "../errors.js";
@@ -93,6 +97,7 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
   });
 
   app.put("/", async (c) => {
+    requireSignedInPerson(c);
     const { projectId, agentId } = await agentOf(c, true);
     const body = await readJson(c);
     // Every field is checked before any is written.
@@ -113,6 +118,7 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
   });
 
   app.post("/keys", async (c) => {
+    requireSignedInPerson(c);
     const { projectId, agentId } = await agentOf(c, true);
     const body = await readJson(c);
     const name = requireString(body, "name", { maxLen: 64, label: "name" }).trim();
@@ -136,6 +142,7 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
   });
 
   app.delete("/keys/:keyId", async (c) => {
+    requireSignedInPerson(c);
     const { projectId, agentId } = await agentOf(c, true);
     if (!deps.agentApi.deleteKey(projectId, agentId, c.req.param("keyId"))) {
       throw new HttpError(404, "key_not_found", "This Agent has no key with that id.");

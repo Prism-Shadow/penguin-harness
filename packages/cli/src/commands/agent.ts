@@ -26,6 +26,11 @@
  * (admins only) writes. `keys
  * create` prints the key bare on stdout — the only time it exists anywhere — and everything else
  * on stderr, so `KEY=$(penguin agent api keys create …)` captures exactly the key.
+ *
+ * The writes (`enable`, `disable`, `set`, `keys create`, `keys rm`, `server`) take a person's
+ * sign-in: the server refuses the local API token on them with 403 `sign_in_required`, so that
+ * an Agent cannot expose itself from its own shell. Outside a Session the client sends the
+ * stored `penguin auth login` first (client.ts); a refusal prints what to run instead.
  * Docs: /docs/cli § "penguin agent".
  */
 import type { Command } from "commander";
@@ -39,7 +44,7 @@ import type {
   ServerSettingsResponse,
 } from "@prismshadow/penguin-server/api";
 import { resolveApprovalMode } from "../approval.js";
-import { resolveConnection, resolveProjectId, ServerClient } from "../client.js";
+import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
 import { listAgents } from "../server-session.js";
 import { displayWidth, renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
@@ -114,11 +119,32 @@ function printStatus(
   process.stdout.write(`${t.agent.apiStatusTitle(ref)}\n${lines.join("\n")}\n`);
 }
 
+/**
+ * A write that changes who can reach an agent. The server's 403 `sign_in_required` — the request
+ * carried the local API token, not a person's sign-in — becomes the line saying what to run.
+ */
+async function exposureWrite<T>(
+  client: ServerClient,
+  method: string,
+  apiPath: string,
+  body: unknown,
+  t: Messages,
+): Promise<T> {
+  try {
+    return await client.request<T>(method, apiPath, body);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === "sign_in_required") {
+      throw new Error(t.agent.apiSignInRequired());
+    }
+    throw err;
+  }
+}
+
 /** One PUT of the agent's API settings, then the status it left. */
 async function writeSettings(opts: ApiOpts, patch: AgentApiUpdateRequest, t: Messages) {
   const { path, ref } = target(opts);
   const client = await connect(opts, t);
-  const res = await client.request<AgentApiResponse>("PUT", path, patch);
+  const res = await exposureWrite<AgentApiResponse>(client, "PUT", path, patch, t);
   printStatus(client, ref, res, opts.json === true, t);
 }
 
@@ -210,9 +236,13 @@ function registerApiCommands(agent: Command, t: Messages): void {
     .action(async (opts: ApiOpts) => {
       const { path, ref } = target(opts);
       const client = await connect(opts, t);
-      const res = await client.request<AgentApiKeyCreateResponse>("POST", `${path}/keys`, {
-        name: String(opts.name),
-      });
+      const res = await exposureWrite<AgentApiKeyCreateResponse>(
+        client,
+        "POST",
+        `${path}/keys`,
+        { name: String(opts.name) },
+        t,
+      );
       if (opts.json === true) {
         process.stdout.write(`${JSON.stringify(res)}\n`);
         return;
@@ -225,7 +255,7 @@ function registerApiCommands(agent: Command, t: Messages): void {
     async (keyId: string, opts: ApiOpts) => {
       const { path, ref } = target(opts);
       const client = await connect(opts, t);
-      await client.request<void>("DELETE", `${path}/keys/${enc(keyId)}`);
+      await exposureWrite<void>(client, "DELETE", `${path}/keys/${enc(keyId)}`, undefined, t);
       if (opts.json === true) {
         process.stdout.write(`${JSON.stringify({ deleted: keyId })}\n`);
         return;
@@ -247,9 +277,13 @@ function registerApiCommands(agent: Command, t: Messages): void {
         return;
       }
       const client = await connect(opts, t);
-      const res = await client.request<ServerSettingsResponse>("PUT", "/api/admin/settings", {
-        agentApiEnabled: wanted === "on",
-      });
+      const res = await exposureWrite<ServerSettingsResponse>(
+        client,
+        "PUT",
+        "/api/admin/settings",
+        { agentApiEnabled: wanted === "on" },
+        t,
+      );
       const on = res.settings.agentApiEnabled;
       if (opts.json === true) {
         process.stdout.write(`${JSON.stringify({ agentApiEnabled: on })}\n`);

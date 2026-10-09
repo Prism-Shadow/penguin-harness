@@ -35,6 +35,8 @@ Agent API 让 PenguinHarness 之外的程序（脚本、服务、浏览器里的
 
 这些设置由服务器保存，不在 Agent 的状态里，因此 Agent 既不能自行对外开放，也不能放宽自己的审批模式。
 
+修改这些设置还需要人的登录。Agent 运行的命令带着服务器的本地 API token：它能读取这些设置，但每一项修改和**试一试**都以 `403` `sign_in_required` 拒绝它，[管理员开关](#管理员开关)也一样。这收窄了 Agent 在自己的 shell 里能做的事，但不是边界：在沙盒之外、以服务器所属操作系统账号运行的进程仍能自行登录，真正约束 Agent 的是它的[沙盒](/settings#沙盒)。
+
 ### 审批模式
 
 API 会话有自己的审批模式，与新建对话时预选的审批模式互不相干：
@@ -327,6 +329,8 @@ class AmspStreamError extends Error {}
 
 每条命令都接受 `--project-id`、`--server` 和 `--json`。`--approve` 接受四种模式：`allow-all`、`read-only`、`always-ask`、`deny-all`。见 [CLI 参考](/cli)。
 
+会做出修改的命令（`enable`、`disable`、`set`、`keys create`、`keys rm` 和 `server`）需要你的登录：先运行一次 `penguin auth login`，或在服务器本机运行 `penguin auth token`。没有登录时，它们打印这条提示并以非零码退出。`status` 和 `keys ls` 不需要登录。
+
 ## 管理员开关
 
-**设置 › 服务器 › Agent API** 中有管理员的**允许 Agent API** 开关，缺省开启。关闭前会先确认；关闭后，所有 Agent API 请求（CORS 预检除外）都以 `403` `agent_api_disabled` 拒绝。各 Agent 的开关、审批模式和密钥都会保留，所有成员看到的 API 标签页开关都显示为不可用，并附有说明。见设置中的 [Agent API](/settings#agent-api)。这个设置是 `GET`/`PUT /api/admin/settings` 中的 `agentApiEnabled`，在终端里用 `penguin agent api server on|off` 设置。
+**设置 › 服务器 › Agent API** 中有管理员的**允许 Agent API** 开关，缺省开启。关闭前会先确认；关闭后，所有 Agent API 请求（CORS 预检除外）都以 `403` `agent_api_disabled` 拒绝。各 Agent 的开关、审批模式和密钥都会保留，所有成员看到的 API 标签页开关都显示为不可用，并附有说明。见设置中的 [Agent API](/settings#agent-api)。这个设置是 `GET`/`PUT /api/admin/settings` 中的 `agentApiEnabled`，登录后在终端里用 `penguin agent api server on|off` 设置。

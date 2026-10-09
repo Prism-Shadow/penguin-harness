@@ -8,6 +8,11 @@
  * (a loopback URL, so no token gate) and PENGUIN_HOME points at a scratch directory so
  * nothing of the developer's real data root is read.
  *
+ * Credentials, as the server reads them: a request without one is let through (the token gate
+ * above); a Bearer header is the local API token, which the agent API writes and the admin's
+ * `agentApiEnabled` refuse with 403 `sign_in_required`; a `penguin_session` cookie is a sign-in,
+ * accepted only when it is one of `logins` (401 otherwise). Each request records what it sent.
+ *
  * The SSE stream is real: a ReadableStream whose frames follow the server's wire shape
  * (default-event OmniMessage frames, `event: server_event` control frames, incrementing
  * ids). A task POST synchronously emits `task_state running`, the script's messages,
@@ -179,8 +184,19 @@ const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value !== "";
 
 export class FakeServer {
-  /** Every request, in order: the path without its query, the query on its own, and the parsed body. */
-  readonly requests: Array<{ method: string; path: string; search: string; body?: Json }> = [];
+  /**
+   * Every request, in order: the path without its query, the query on its own, the parsed body,
+   * and the credential it carried (`authorization` / `cookie`, each only when sent).
+   */
+  readonly requests: Array<{
+    method: string;
+    path: string;
+    search: string;
+    body?: Json;
+    credential?: { authorization?: string; cookie?: string };
+  }> = [];
+  /** Sign-in tokens a `penguin_session` cookie is accepted with; any other cookie is a 401. */
+  readonly logins = new Set<string>();
   readonly sessions = new Map<string, FakeSessionState>();
   agents: Array<Json> = [
     {
@@ -432,6 +448,15 @@ export class FakeServer {
 
   private badRequest(message: string): Response {
     return this.error(400, "bad_request", message);
+  }
+
+  /** The server's refusal of the local API token on a write that changes an agent's exposure. */
+  private signInRequired(): Response {
+    return this.error(
+      403,
+      "sign_in_required",
+      "Changing who can reach an Agent from outside takes a signed-in person (the Web App, or `penguin auth login`); the local API token cannot.",
+    );
   }
 
   // ---- an agent's public API ----
@@ -1699,12 +1724,31 @@ export class FakeServer {
     if (typeof init?.body === "string" && init.body.length > 0) {
       body = JSON.parse(init.body) as Json;
     }
+    const headers = new Headers(init?.headers);
+    const authorization = headers.get("authorization") ?? undefined;
+    const cookie = headers.get("cookie") ?? undefined;
     this.requests.push({
       method,
       path: apiPath,
       search: url.search,
       ...(body !== undefined ? { body } : {}),
+      ...(authorization !== undefined || cookie !== undefined
+        ? {
+            credential: {
+              ...(authorization !== undefined ? { authorization } : {}),
+              ...(cookie !== undefined ? { cookie } : {}),
+            },
+          }
+        : {}),
     });
+    // The server reads a Bearer first; a cookie alone must be a sign-in it knows.
+    if (authorization === undefined && cookie !== undefined) {
+      const login = /(?:^|;\s*)penguin_session=([^;]+)/.exec(cookie)?.[1];
+      if (login === undefined || !this.logins.has(login)) {
+        return this.error(401, "unauthorized", "Not signed in or the sign-in has expired.");
+      }
+    }
+    const viaToken = authorization !== undefined;
 
     if (apiPath.startsWith("/api/builtin-browser/")) {
       const answer = this.builtinBrowser({
@@ -1785,6 +1829,7 @@ export class FakeServer {
     // An agent's public API settings and keys
     m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/api(\/keys(?:\/([^/]+))?)?$/.exec(apiPath);
     if (m) {
+      if (viaToken && method !== "GET") return this.signInRequired();
       return this.handleAgentApi(
         method,
         `${decodeURIComponent(m[1]!)}/${decodeURIComponent(m[2]!)}`,
@@ -1796,6 +1841,9 @@ export class FakeServer {
 
     if (apiPath === "/api/admin/settings") {
       if (this.adminForbidden) return this.error(403, "forbidden", "Admins only.");
+      if (viaToken && method === "PUT" && body?.agentApiEnabled !== undefined) {
+        return this.signInRequired();
+      }
       if (method === "PUT") this.adminSettings = { ...this.adminSettings, ...body };
       return this.json({ settings: this.adminSettings });
     }

@@ -20,6 +20,13 @@
  *   GET/PUT /api/admin/settings; a non-admin cannot change it.
  * - Given the admin's switch off, a Project owner who cannot read the admin settings learns it
  *   from the API tab's settings, on a read and on a write alike.
+ * - Given the local API token, the credential every tool subprocess holds: it reads an Agent's
+ *   settings and keys, but turning the API on, creating a key, deleting one and Try it are each
+ *   403 `sign_in_required` and change nothing, run nothing and create no Session; the owner's
+ *   sign-in then does each of them.
+ * - Given the local API token on the admin settings: it changes every setting but
+ *   `agentApiEnabled`; a body carrying that is 403 `sign_in_required` alone, and none of its
+ *   other fields is written.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
@@ -28,7 +35,7 @@ import type {
   AgentsResponse,
   ServerSettingsResponse,
 } from "../src/api/types.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 
@@ -221,6 +228,93 @@ describe("Agent API settings", () => {
       expect(((await write.json()) as AgentApiResponse).serverEnabled).toBe(false);
     } finally {
       await admin.put("/api/admin/settings", { agentApiEnabled: true });
+    }
+  });
+
+  /** The answer is a refusal for want of a person's sign-in. */
+  const signInRequired = async (res: Response) => {
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("sign_in_required");
+  };
+
+  it("the local API token reads an Agent's API but cannot change it or try it; the owner's sign-in can", async () => {
+    // The admin's own Project: the token authenticates as the admin, who owns it.
+    const mine = "/api/projects/default_project/agents/default_agent/api";
+    const token = tokenClient(t.app, t.deps.authService.localApiToken()!);
+    const readByToken = async () => {
+      const res = await token.get(mine);
+      expect(res.status).toBe(200);
+      return ((await res.json()) as AgentApiResponse).api;
+    };
+
+    await signInRequired(await token.put(mine, { enabled: true, open: true }));
+    expect(await readByToken()).toMatchObject({ enabled: false, open: false });
+    expect((await admin.put(mine, { enabled: true })).status).toBe(200);
+    expect(await readByToken()).toMatchObject({ enabled: true, open: false });
+
+    await signInRequired(await token.post(`${mine}/keys`, { name: "carried out" }));
+    expect((await readByToken()).keys).toEqual([]);
+    const created = await admin.post(`${mine}/keys`, { name: "ci" });
+    expect(created.status).toBe(201);
+    const { key } = (await created.json()) as AgentApiKeyCreateResponse;
+    expect((await readByToken()).keys).toEqual([key]);
+
+    await signInRequired(await token.delete(`${mine}/keys/${key.keyId}`));
+    expect((await readByToken()).keys).toEqual([key]);
+    expect((await admin.delete(`${mine}/keys/${key.keyId}`)).status).toBe(204);
+    expect((await readByToken()).keys).toEqual([]);
+
+    // Try it: refused before anything runs or is created, on a new conversation and an old one.
+    let runs = 0;
+    const sessionId = uniqueSessionId();
+    adoptSession(
+      t.deps,
+      fakeSession(sessionId, {
+        async *run() {
+          runs += 1;
+        },
+      }),
+      { projectId: "default_project", agentId: "default_agent", client: "api" },
+    );
+    const sessions = t.deps.sessionsRepo.listByAgent("default_project", "default_agent").length;
+    await signInRequired(await token.post(`${mine}/try`, { input: "hi" }));
+    await signInRequired(await token.post(`${mine}/try`, { session_id: sessionId, input: "hi" }));
+    expect(runs).toBe(0);
+    expect(t.deps.sessionsRepo.listByAgent("default_project", "default_agent")).toHaveLength(
+      sessions,
+    );
+    const tried = await admin.post(`${mine}/try`, { session_id: sessionId, input: "hi" });
+    expect(tried.status).toBe(200);
+    await tried.text();
+    expect(runs).toBe(1);
+  });
+
+  it("the local API token changes every admin setting but agentApiEnabled, which is refused with the rest of its body", async () => {
+    const token = tokenClient(t.app, t.deps.authService.localApiToken()!);
+    const read = async () =>
+      ((await (await token.get("/api/admin/settings")).json()) as ServerSettingsResponse).settings;
+    const before = await read();
+    const flipped = {
+      proxyForAgent: !before.proxyForAgent,
+      browserExtensionsEnabled: !before.browserExtensionsEnabled,
+    };
+    try {
+      expect((await token.put("/api/admin/settings", flipped)).status).toBe(200);
+      expect(await read()).toEqual({ ...before, ...flipped });
+
+      await signInRequired(
+        await token.put("/api/admin/settings", {
+          agentApiEnabled: !before.agentApiEnabled,
+          proxyForAgent: before.proxyForAgent,
+          browserExtensionsEnabled: before.browserExtensionsEnabled,
+        }),
+      );
+      expect(await read()).toEqual({ ...before, ...flipped });
+    } finally {
+      await token.put("/api/admin/settings", {
+        proxyForAgent: before.proxyForAgent,
+        browserExtensionsEnabled: before.browserExtensionsEnabled,
+      });
     }
   });
 

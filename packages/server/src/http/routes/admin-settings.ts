@@ -12,6 +12,9 @@
  * switch needs no push — the command-subprocess policy getter re-reads the repo at
  * every spawn). The upload limits need no push either, for the same reason: the
  * attachment validators and the request body cap both read the repo per request.
+ * A PUT carrying `agentApiEnabled` takes a person's sign-in: the local API token is refused
+ * with 403 `sign_in_required`, and nothing in that body is written. The token may change every
+ * other field.
  *
  * GET /api/admin/settings/proxy-probe names the model provider hosts the reachability probe
  * would request; POST .../proxy-probe/:provider measures one of them — unauthenticated, see
@@ -24,6 +27,7 @@ import type {
   ServerSettingsResponse,
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
+import { requireSignedInPerson } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { optionalBoolean, readJson } from "../validate.js";
 import type { ProxyControl } from "../../hmr/capabilities.js";
@@ -104,6 +108,10 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
 
   app.put("/", async (c) => {
     const body = await readJson(c);
+    // The Agent API switch decides whether any Agent can be reached from outside, so it takes a
+    // person's sign-in, never the local API token every tool subprocess holds (see
+    // requireSignedInPerson). Refused before any field is written.
+    if (body.agentApiEnabled !== undefined) requireSignedInPerson(c);
     // Validate every provided field before writing any: a partial PUT with one invalid
     // field must leave the others untouched too.
     const proxyForApp = optionalBoolean(body, "proxyForApp");

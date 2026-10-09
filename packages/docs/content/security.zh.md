@@ -110,7 +110,9 @@ PenguinHarness 用真实凭据在真实机器上运行 Agent，所以值得弄�
 
 脚本和 CLI 从来不需要密码，因为本地所有权本来就高于密码。
 
-CLI 命令访问本机上的服务器时，用本地 API token 认证；服务器每次启动都会把它写入 `<root>/api-token`。参见 [CLI 参考](/cli#服务器连接)。
+CLI 命令访问本机上的服务器时，用本地 API token 认证（服务器每次启动都会把它写入 `<root>/api-token`），有保存的登录时则用该登录。参见 [CLI 参考](/cli#服务器连接)。
+
+本地 API token 不能改变 Agent 的对外暴露：开启 Agent 的 API、无密钥访问、审批模式、密钥，以及整台服务器的 Agent API 开关，都需要人的登录，因为每个 Agent 的命令都带着这个 token。下文的 `penguin auth token` 能为 CLI 提供这样的登录。这防止 Agent 借 harness 交给它的凭据自行对外开放，但不是边界：以数据根目录所属操作系统账号运行的进程同样能铸造会话。约束 Agent 的是沙盒。
 
 脚本需要自己的会话时，就自己铸造一个。会话是数据根目录下 `web.db` 里的一行记录，所以 CLI 直接写入一行：
 

@@ -11,9 +11,12 @@
  * who was at the keyboard.
  *
  * Owner only: the tab puts it among the owner's controls, and a run starts under the approval
- * mode the owner set for programs. A member talks to the Agent in the composer.
+ * mode the owner set for programs. A member talks to the Agent in the composer. And the owner's
+ * sign-in only, like the tab's writes: the local API token is refused with 403
+ * `sign_in_required`, before anything else is checked.
  */
 import { Hono } from "hono";
+import { requireSignedInPerson } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { requireValidId } from "../http/validate.js";
 import type { Access } from "../mechanisms/projects.js";
@@ -30,6 +33,7 @@ export function agentApiTryRoutes(deps: AgentApiTryRouteDeps): Hono<AppEnv> {
   const app = new Hono<AmspEnv>();
 
   app.post("/", async (c) => {
+    requireSignedInPerson(c);
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     // 404 for a Project the caller cannot reach, 403 `owner_required` for a member.

@@ -35,6 +35,8 @@ Turning **Enable API access** off refuses every request for the agent at once wi
 
 These settings are stored by the server, outside the agent's state, so an agent can neither expose itself nor loosen its own approval mode.
 
+Changing them also takes a person's sign-in. The commands an agent runs carry the server's local API token: it reads these settings, but every change and **Try it** answer it `403` `sign_in_required`, and so does the [admin switch](#the-admin-switch). This narrows what an agent can do from its own shell; it is not a boundary. A process that runs as the server's OS account outside the sandbox can still sign itself in, so what bounds an agent is its [sandbox](/settings#sandbox).
+
 ### Approval mode
 
 API conversations have their own approval mode, separate from the one the composer preselects:
@@ -327,6 +329,8 @@ class AmspStreamError extends Error {}
 
 Each command also takes `--project-id`, `--server` and `--json`. `--approve` takes the four modes: `allow-all`, `read-only`, `always-ask`, `deny-all`. See the [CLI Reference](/cli).
 
+The commands that change something (`enable`, `disable`, `set`, `keys create`, `keys rm` and `server`) need your sign-in: run `penguin auth login` once, or `penguin auth token` on the server's machine. Without it they print that hint and exit non-zero. `status` and `keys ls` need none.
+
 ## The admin switch
 
-**Settings › Server › Agent API** holds the administrator's **Allow the Agent API** switch, on by default. Turning it off asks first, then refuses every Agent API request with `403` `agent_api_disabled`, the CORS preflight excepted. Agents' switches, approval modes and keys are kept, and every member sees the API tab's switch disabled with a note saying why. See [Agent API](/settings#agent-api) in Settings. The setting is `agentApiEnabled` in `GET`/`PUT /api/admin/settings`, and `penguin agent api server on|off` sets it from a terminal.
+**Settings › Server › Agent API** holds the administrator's **Allow the Agent API** switch, on by default. Turning it off asks first, then refuses every Agent API request with `403` `agent_api_disabled`, the CORS preflight excepted. Agents' switches, approval modes and keys are kept, and every member sees the API tab's switch disabled with a note saying why. See [Agent API](/settings#agent-api) in Settings. The setting is `agentApiEnabled` in `GET`/`PUT /api/admin/settings`, and `penguin agent api server on|off` sets it from a terminal once you have signed in.

@@ -11,14 +11,20 @@ CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`�
 
 ## 服务器连接
 
-与本机服务器通信的 CLI 无需登录。CLI 按以下顺序确定要连接的服务器，命中第一项即停止：
+与本机服务器通信的 CLI 无需登录，只有改变 Agent 的对外暴露时例外（见 [penguin agent api](#penguin-agent-api)）。CLI 按以下顺序确定要连接的服务器，命中第一项即停止：
 
 1. `--server <url>`：显式指定的目标。
 2. `PENGUIN_API_URL`：同样指定目标，但取自环境变量。服务器驱动的会话会把它注入每个工具子进程，同时注入的还有 `PENGUIN_API_TOKEN`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`，这样 Agent 自己调用 `penguin` 时，请求就能到达运行它的那台服务器。
 3. 数据根目录下存在活跃的 `server.lock`（数据根目录取 `PENGUIN_HOME`，否则为 `~/.penguin/data`）：CLI 接入正在运行的本地服务器。
 4. 自动启动：CLI 在临时端口上拉起一个独立运行的本地服务器，等它就绪后接入。服务器输出写入 `<root>/logs/server-auto-<date>.log`。如果两个 CLI 同时抢着启动，落败一方的启动进程会退出，双方都接入先成功的那台。
 
-CLI 使用本地 API token 认证。服务器每次启动都会把一个新 token 写入 `<root>/api-token`（仅所有者可读），CLI 以 `Authorization: Bearer` 的形式发送它。`PENGUIN_API_TOKEN` 优先于这个文件。CLI 只对回环地址目标读取这个文件，因此远程 `--server` 需要显式设置 `PENGUIN_API_TOKEN`。按设计，持有这个文件就等于持有管理员权限——能直接访问数据根目录的本地文件系统，本来就拥有同样的权限。`penguin server reset-admin-password` 依据的也是同一条规则。
+CLI 按以下顺序取认证凭据，用第一个拿到的：
+
+1. `PENGUIN_API_TOKEN`，以 `Authorization: Bearer` 发送。
+2. 你用 [`penguin auth login`](#penguin-auth-login) 或 [`penguin auth token`](#penguin-auth-token) 保存的登录，存放在 `<root>/cli-session.json`，以会话 Cookie 发送，命令因此以该账号的身份执行。CLI 只把它发给本机上的服务器，只在登录的对象本身就是本机服务器时使用，且从不在 Session 内使用——那里的命令属于 Agent。
+3. 本地 API token。服务器每次启动都会把一个新 token 写入 `<root>/api-token`（仅所有者可读），CLI 以 `Authorization: Bearer` 的形式发送它。
+
+CLI 只对回环地址目标读取保存的登录和 token 文件，因此远程 `--server` 需要显式设置 `PENGUIN_API_TOKEN`。服务器不再接受保存的登录时，CLI 改用 token 文件重试一次。按设计，持有 token 文件就等于持有管理员权限——能直接访问数据根目录的本地文件系统，本来就拥有同样的权限。`penguin server reset-admin-password` 依据的也是同一条规则。不过，这个 token 不能改变 Agent 的对外暴露，见 [penguin agent api](#penguin-agent-api)。
 
 ## 全局约定
 
@@ -229,6 +235,8 @@ penguin agent create --agent-id helper --name "Helper" --plugins software-develo
 
 管理 Agent 的 [Agent API](/agent-api)，作用与它的 **API** 标签页相同：是否允许程序调用、无密钥访问、API 会话起始的审批模式，以及密钥。任何成员都能执行 `status` 和 `keys ls`；所有修改，服务器只接受 Project 所有者发起，`server` 只接受管理员发起。
 
+所有修改还需要人的登录。服务器以 `sign_in_required` 拒绝携带本地 API token 的修改：每个 Agent 的命令都带着这个 token，而 Agent 不得自行对外开放。先运行一次 `penguin auth login`，或在服务器本机运行 `penguin auth token`；此后在 Session 之外，CLI 会发送这个登录。没有登录时，修改命令打印这条提示并以非零码退出。
+
 ```bash
 penguin agent api status        --agent-id <id> [--project-id <id>] [--json] [--server <url>]
 penguin agent api enable        --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
@@ -262,6 +270,7 @@ penguin agent api server on|off [--json] [--server <url>]
 | `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
 
 ```bash
+penguin auth login
 penguin agent api enable --agent-id helper --approve read-only
 KEY=$(penguin agent api keys create --agent-id helper --name ci)
 penguin agent api status --agent-id helper --json
@@ -851,7 +860,7 @@ penguin auth token                      # no password: minted from this data roo
 
 ### penguin auth status / penguin auth logout
 
-会话保存在 `<root>/cli-session.json`，文件权限为 0600。`login` 写入它；数据根目录上有服务器在运行时，`token` 也会写入。`status` 读取它。`logout` 吊销会话并删除文件：它会先通知服务器，因此会话在服务器端结束，而不只是本地把它忘掉。连不上服务器时，`logout` 会说明情况，然后照样删除本地文件。
+会话保存在 `<root>/cli-session.json`，文件权限为 0600。`login` 写入它；数据根目录上有服务器在运行时，`token` 也会写入。`status` 读取它。在 Session 之外，其他命令访问本机上的服务器时会先发送它，再考虑本地 API token，见[服务器连接](#服务器连接)。`logout` 吊销会话并删除文件：它会先通知服务器，因此会话在服务器端结束，而不只是本地把它忘掉。连不上服务器时，`logout` 会说明情况，然后照样删除本地文件。
 
 ## penguin update
 

@@ -11,14 +11,20 @@ The CLI is a thin client of the server. Every session-facing command (`run`, `ch
 
 ## Server connection
 
-A CLI that talks to the server on the local machine needs no login. The CLI picks its server in this order, and the first match wins:
+A CLI that talks to the server on the local machine needs no login, except to change an agent's exposure (see [penguin agent api](#penguin-agent-api)). The CLI picks its server in this order, and the first match wins:
 
 1. `--server <url>`: an explicit target.
 2. `PENGUIN_API_URL`: the same, from the environment. Server-driven sessions inject it into every tool subprocess, together with `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID`, so an agent's own `penguin` calls reach the server that runs them.
 3. A live `server.lock` at the data root (`PENGUIN_HOME`, else `~/.penguin/data`): the CLI attaches to the running local server.
 4. Auto-start: the CLI spawns a detached local server on an ephemeral port, waits for it and attaches. The server's output goes to `<root>/logs/server-auto-<date>.log`. If two CLIs race, the losing spawn exits and both attach to the winner.
 
-The CLI authenticates with the local API token. The server writes a fresh token to `<root>/api-token` on every boot (owner-only), and the CLI sends it as `Authorization: Bearer`. `PENGUIN_API_TOKEN` overrides the file. The CLI reads the file only for loopback targets, so a remote `--server` needs `PENGUIN_API_TOKEN` set explicitly. Holding the file grants admin authority by design, because local filesystem access to the data root already does. `penguin server reset-admin-password` relies on the same rule.
+The CLI authenticates with the first of these it has:
+
+1. `PENGUIN_API_TOKEN`, sent as `Authorization: Bearer`.
+2. Your sign-in from [`penguin auth login`](#penguin-auth-login) or [`penguin auth token`](#penguin-auth-token), stored in `<root>/cli-session.json` and sent as the session cookie, so commands act as that account. The CLI sends it only to a server on this machine, only when the sign-in itself is to a server on this machine, and never from inside a Session, where the command is an agent's.
+3. The local API token. The server writes a fresh token to `<root>/api-token` on every boot (owner-only), and the CLI sends it as `Authorization: Bearer`.
+
+The CLI reads the stored sign-in and the token file only for loopback targets, so a remote `--server` needs `PENGUIN_API_TOKEN` set explicitly. When the server no longer accepts the stored sign-in, the CLI retries once with the token file. Holding the token file grants admin authority by design, because local filesystem access to the data root already does. `penguin server reset-admin-password` relies on the same rule. The token cannot change an agent's exposure, though; see [penguin agent api](#penguin-agent-api).
 
 ## Global conventions
 
@@ -229,6 +235,8 @@ penguin agent create --agent-id helper --name "Helper" --plugins software-develo
 
 Manages an agent's [Agent API](/agent-api), the way its **API** tab does: whether programs may call it, keyless access, the approval mode its API conversations start with, and its keys. Any member can run `status` and `keys ls`; the server takes every change from the Project's owner only, and `server` from an admin only.
 
+Every change also takes a person's sign-in. The server refuses the local API token on them with `sign_in_required`, because every agent's commands carry that token and an agent must not expose itself. Run `penguin auth login` once, or `penguin auth token` on the server's machine; outside a Session the CLI then sends that sign-in. Without one, a change prints that hint and exits non-zero.
+
 ```bash
 penguin agent api status        --agent-id <id> [--project-id <id>] [--json] [--server <url>]
 penguin agent api enable        --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
@@ -262,6 +270,7 @@ Options:
 | `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
 
 ```bash
+penguin auth login
 penguin agent api enable --agent-id helper --approve read-only
 KEY=$(penguin agent api keys create --agent-id helper --name ci)
 penguin agent api status --agent-id helper --json
@@ -851,7 +860,7 @@ When run interactively, `login` asks for the account first and then the password
 
 ### penguin auth status / penguin auth logout
 
-The session is stored in `<root>/cli-session.json` with mode 0600. `login` writes it, and so does `token` when a server is running on the data root. `status` reads it. `logout` revokes the session and deletes the file: it tells the server first, so the session ends on the server rather than merely being forgotten locally. If the server cannot be reached, `logout` says so and deletes the local file anyway.
+The session is stored in `<root>/cli-session.json` with mode 0600. `login` writes it, and so does `token` when a server is running on the data root. `status` reads it. Outside a Session, the other commands send it to a server on this machine ahead of the local API token; see [Server connection](#server-connection). `logout` revokes the session and deletes the file: it tells the server first, so the session ends on the server rather than merely being forgotten locally. If the server cannot be reached, `logout` says so and deletes the local file anyway.
 
 ## penguin update
 
