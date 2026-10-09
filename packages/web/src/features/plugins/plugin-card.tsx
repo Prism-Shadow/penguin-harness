@@ -14,7 +14,9 @@
  * - A server module: Install, or Remove, for an admin only; a member reads the card and its
  *   dialog, with no way in to change the server.
  *
- * The dialog's footer repeats the same actions with their words.
+ * The dialog's footer repeats the same actions with their words, after Export — the package as
+ * a zip another server imports, for any member whenever its package is on this server — and,
+ * for an admin, Delete on a package an admin installed on the server.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -29,17 +31,22 @@ import {
   Modal,
   StatusIcon,
   UpdateDot,
+  toastError,
 } from "@prismshadow/penguin-ui";
+import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
 import { SkillTile } from "../skills/skill-icon-view";
-import { MetaLine, PluginDetailModal } from "./plugin-detail";
+import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import {
   PluginTag,
   StatusMark,
   rowBuiltin,
+  rowInstalledOnServer,
   rowIcon,
   rowShortDescription,
   rowVersion,
@@ -69,6 +76,15 @@ export function libraryQuickStart(
     : { prompt: S.skills.quickInvokeText(skill.name), skills: [skill.name] };
 }
 
+/** Where a row's package downloads as a zip — a library plugin's, or a server module's on this server — or null when its package is not here. */
+export function pluginArchiveUrl(row: PluginRow): string | null {
+  if (row.library !== undefined) return api.libraryPluginArchiveUrl(row.library.name);
+  if (row.module !== undefined && moduleOnThisServer(row.module)) {
+    return api.registryPluginArchiveUrl(row.module.specifier);
+  }
+  return null;
+}
+
 export interface PluginCardProps {
   row: PluginRow;
   status: PluginStatus;
@@ -92,6 +108,8 @@ export interface PluginCardProps {
   /** Another row's is: one at a time, so this one is held rather than queued. */
   blocked: boolean;
   onQuickStart: (plugin: PluginItem) => void;
+  /** Deletes a package an admin installed on the server (the card has asked first). */
+  onDeletePlugin: (plugin: PluginItem) => Promise<void>;
   onToggleInstall: (agentId: string, plugin: PluginItem, on: boolean) => Promise<boolean>;
   onUpdateOutdated: (name: string, agentIds: string[]) => Promise<void>;
   /** Asks to install (true) or remove (false) the server module; the page confirms first. */
@@ -111,6 +129,9 @@ export function PluginCard(props: PluginCardProps) {
   // Agent pending an uninstall confirmation (null = none): uninstalling deletes the installed
   // files, local edits included.
   const [pendingUninstall, setPendingUninstall] = useState<string | null>(null);
+  // Delete-from-server waiting for its confirmation, and running.
+  const [pendingDelete, setPendingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const hint = statusHint(row, status, usage);
   const version = rowVersion(row);
@@ -127,12 +148,37 @@ export function PluginCard(props: PluginCardProps) {
   const uninstallAgent =
     pendingUninstall !== null ? agents.find((a) => a.agentId === pendingUninstall) : undefined;
 
+  const archiveUrl = pluginArchiveUrl(row);
+  const exportPlugin = async (url: string) => {
+    try {
+      await downloadArchive(url, row.name);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
+
   /** The card's actions: icon buttons on the card, labelled buttons in the dialog's footer. */
   const actions = (where: "card" | "footer"): ReactNode[] => {
     const out: ReactNode[] = [];
     const look = where === "card" ? "h-8 shrink-0" : "shrink-0";
     const words = (text: string) =>
       where === "card" ? <span className="hidden @3xl:inline">{text}</span> : <span>{text}</span>;
+    // The dialog's first: what any member may take away — the package itself.
+    if (where === "footer" && archiveUrl !== null) {
+      out.push(
+        <Button
+          key="export"
+          size="sm"
+          className={look}
+          aria-label={`${S.plugins.exportPlugin} ${row.name}`}
+          title={S.plugins.exportPluginHint}
+          onClick={() => void exportPlugin(archiveUrl)}
+        >
+          <GlyphIcon d={ICONS.download} size={ICON_SIZE.iconButton} />
+          {words(S.plugins.exportPlugin)}
+        </Button>,
+      );
+    }
     if (plugin !== undefined && behind.length > 0) {
       // Light (secondary): an update nudge, not the card's primary action. The last stop on the
       // plugins trail, so on the card it carries the dot itself, straddling the button's corner.
@@ -223,6 +269,23 @@ export function PluginCard(props: PluginCardProps) {
         );
       }
     }
+    // An admin's package of Skills or hooks leaves the server from its dialog; a server module's
+    // Remove above does the same for one with modules.
+    if (where === "footer" && props.isAdmin && plugin?.source === "installed") {
+      out.push(
+        <Button
+          key="delete"
+          size="sm"
+          className={look}
+          aria-label={`${S.plugins.deletePlugin} ${plugin.package}`}
+          disabled={deleting}
+          onClick={() => setPendingDelete(true)}
+        >
+          <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+          {words(S.plugins.deletePlugin)}
+        </Button>,
+      );
+    }
     return out;
   };
 
@@ -237,6 +300,13 @@ export function PluginCard(props: PluginCardProps) {
         title={plugin !== undefined ? S.plugins.libraryBuiltinHint : S.plugins.builtinHint}
       >
         {S.plugins.builtin}
+      </PluginTag>,
+    );
+  }
+  if (rowInstalledOnServer(row)) {
+    tags.push(
+      <PluginTag key="installed" title={S.plugins.installedOnServerHint}>
+        {S.plugins.installedOnServer}
       </PluginTag>,
     );
   }
@@ -384,6 +454,28 @@ export function PluginCard(props: PluginCardProps) {
               })}
             </ul>
           </div>
+        </ConfirmModal>
+      )}
+      {plugin !== undefined && pendingDelete && (
+        <ConfirmModal
+          open
+          title={S.plugins.deleteConfirmTitle(plugin.package)}
+          confirmLabel={S.plugins.deletePlugin}
+          cancelLabel={S.common.cancel}
+          busy={deleting}
+          onClose={() => setPendingDelete(false)}
+          onConfirm={() => {
+            setDeleting(true);
+            void props.onDeletePlugin(plugin).finally(() => {
+              setDeleting(false);
+              setPendingDelete(false);
+              setDetailOpen(false);
+            });
+          }}
+        >
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.plugins.deleteConfirmBody(plugin.package)}
+          </p>
         </ConfirmModal>
       )}
       {plugin !== undefined && pendingUninstall !== null && (

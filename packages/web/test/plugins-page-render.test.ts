@@ -3,12 +3,16 @@
  * card's actions by kind and role, a server module's confirm, and the detail dialog's sections
  * by kind.
  *
- * - A member sees the search box and no settings gear; an admin sees the gear with its words.
+ * - A member sees the search box, and neither Import plugin nor the settings gear; an admin
+ *   sees both, with their words.
  * - Each select names itself in what it shows: the grouping, and a filter with its value.
  * - A server module's card offers an admin Install, or Remove once listed, each with its words;
  *   a member gets the card read-only — its status, and no way to change the server.
  * - A library plugin's card offers any member quick start and "manage installs".
- * - A card names its category, except inside that category's own section.
+ * - A card names its category, except inside that category's own section; a package an admin
+ *   installed on the server says so where a shipped one says "built in".
+ * - Export offers a library plugin's package and a server module's on this server, and nothing
+ *   for a module whose package is not here.
  * - Installing a server module names it and says it goes on the whole server, and then, after
  *   that, that the runs in progress in every Project stop.
  * - The detail dialog: a plugin of Skills shows its description and its files; a server module
@@ -25,6 +29,7 @@ import type { PluginIndexEntry, PluginItem } from "@prismshadow/penguin-server/a
 import {
   ModuleApplyBody,
   PluginCard,
+  pluginArchiveUrl,
   type PluginCardProps,
 } from "../src/features/plugins/plugin-card";
 import {
@@ -73,18 +78,21 @@ const header = (isAdmin: boolean) =>
     isAdmin,
     machinePicker: null,
     onOpenSettings: () => undefined,
+    onImport: () => undefined,
   });
 
 describe("the plugins page header", () => {
-  it("offers a member the search box and no settings gear", () => {
+  it("offers a member the search box, and neither the import nor the settings gear", () => {
     const html = header(false);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
+    expect(buttonText(html, en.plugins.importPlugin)).toBeUndefined();
     expect(buttonText(html, en.plugins.openSettings)).toBeUndefined();
   });
 
-  it("offers an admin the search box and a settings gear that says what it is", () => {
+  it("offers an admin the search box, Import plugin and a settings gear, each saying what it is", () => {
     const html = header(true);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
+    expect(buttonText(html, en.plugins.importPlugin)).toBe(en.plugins.importPlugin);
     expect(buttonText(html, en.plugins.openSettings)).toBe(en.plugins.openSettings);
   });
 });
@@ -111,6 +119,7 @@ const LIBRARY: PluginItem = {
   name: "data-analysis",
   description: "Data analysis.",
   version: "0.2.13",
+  package: "@penguinharness/data-analysis",
   source: "builtin",
   skills: [{ name: "data-analysis", description: "", version: "2026.10.04.1" }],
   hooks: [],
@@ -136,6 +145,7 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
     busy: false,
     blocked: false,
     onQuickStart: () => undefined,
+    onDeletePlugin: () => Promise.resolve(),
     onToggleInstall: () => Promise.resolve(true),
     onUpdateOutdated: () => Promise.resolve(),
     onModuleApply: () => undefined,
@@ -189,6 +199,35 @@ describe("a card's category", () => {
     expect(text(inSection)).not.toContain("Office Productivity");
     // The other tags stay.
     expect(text(inSection)).toContain(en.plugins.builtin);
+  });
+});
+
+describe("where a plugin comes from", () => {
+  it("tags a package an admin installed on the server, where a shipped one is built in", () => {
+    const installed = card(
+      {
+        ...libraryRow,
+        library: { ...LIBRARY, package: "@acme/data-analysis", source: "installed" },
+      },
+      false,
+    );
+    expect(text(installed)).toContain(en.plugins.installedOnServer);
+    expect(text(installed)).not.toContain(en.plugins.builtin);
+    const shipped = card(libraryRow, false);
+    expect(text(shipped)).toContain(en.plugins.builtin);
+    expect(text(shipped)).not.toContain(en.plugins.installedOnServer);
+  });
+});
+
+describe("exporting a plugin", () => {
+  it("offers a library plugin's package and a server module's on this server, and nothing for one not here", () => {
+    expect(pluginArchiveUrl(libraryRow)).toBe("/api/plugins/data-analysis/archive");
+    expect(pluginArchiveUrl(moduleRow("active"))).toBe(
+      "/api/plugins/registry/archive?name=%40penguinharness%2Fsandbox-bwrap",
+    );
+    // Shipped with the build, so on this server even before anything lists it.
+    expect(pluginArchiveUrl(moduleRow("none"))).not.toBeNull();
+    expect(pluginArchiveUrl(moduleRow("none", false))).toBeNull();
   });
 });
 

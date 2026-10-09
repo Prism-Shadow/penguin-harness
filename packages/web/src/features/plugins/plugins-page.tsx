@@ -71,8 +71,10 @@ import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { localizedText } from "../chat/skill-use";
 import { SettingsDialog } from "../settings/settings-dialog";
+import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
+import { ImportPluginModal } from "./plugin-import-modal";
 import {
   NO_FILTERS,
   PLUGIN_GROUP_BYS,
@@ -183,6 +185,10 @@ export function PluginsPage() {
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The import dialog (admin) is open. */
+  const [importOpen, setImportOpen] = useState(false);
+  /** Bumped when what the server holds changed under the page (an import, a delete): the library and the registry are read again. */
+  const [reloadKey, setReloadKey] = useState(0);
   /** Free text over names, descriptions and keywords. */
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<PluginFilters>(NO_FILTERS);
@@ -257,7 +263,7 @@ export function PluginsPage() {
     })),
   ];
 
-  // The registry, fetched once on page entry.
+  // The registry, fetched on page entry and again after an import or a delete.
   useEffect(() => {
     let cancelled = false;
     api.getPluginIndex().then(
@@ -273,7 +279,7 @@ export function PluginsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   /**
    * A server module change waiting for its confirmation (null = none). Applying one
@@ -316,7 +322,8 @@ export function PluginsPage() {
     }
   };
 
-  // Library list: readable once logged in, fetched once on page entry.
+  // Library list: readable once logged in, fetched on page entry and again after an import or a
+  // delete (an admin's packages of Skills or hooks are in it).
   useEffect(() => {
     let cancelled = false;
     setError(null);
@@ -331,7 +338,29 @@ export function PluginsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
+
+  /** What the server holds changed (an import, a delete): read the library, the registry and the Project's list again. */
+  const reloadServerPlugins = () => {
+    setReloadKey((k) => k + 1);
+    reloadDeployment();
+  };
+
+  /**
+   * Deletes a package an admin installed on the server: off this Project's list, and off the
+   * server's disk once nothing lists it — through the same route Remove takes. The copies of its
+   * skills and hooks on Agents stay where they are.
+   */
+  const deletePlugin = async (plugin: PluginItem) => {
+    if (projectId === null) return;
+    try {
+      setDeployment(await api.uninstallPlugin(projectId, plugin.package));
+      toastSuccess(S.plugins.deletedToast(plugin.package));
+      reloadServerPlugins();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
 
   // Installed skills and hook packages for every Agent in the current Project (fetched in
   // parallel, same convention as the sessions context): a single Agent's failure is silently
@@ -608,6 +637,7 @@ export function PluginsPage() {
         pendingSpecifier !== row.module.specifier
       }
       onQuickStart={quickStartLibrary}
+      onDeletePlugin={deletePlugin}
       onToggleInstall={toggleInstall}
       onUpdateOutdated={updateOutdated}
       onModuleApply={(install) => {
@@ -646,6 +676,7 @@ export function PluginsPage() {
                 ) : null
               }
               onOpenSettings={() => setSettingsOpen(true)}
+              onImport={() => setImportOpen(true)}
             />
           }
         >
@@ -687,6 +718,15 @@ export function PluginsPage() {
         onClose={() => setSettingsOpen(false)}
         section="plugins"
       />
+      {isAdmin && projectId !== null && (
+        <ImportPluginModal
+          open={importOpen}
+          projectId={projectId}
+          agentId={pickDefaultAgent(agents)?.agentId ?? null}
+          onClose={() => setImportOpen(false)}
+          onInstalled={reloadServerPlugins}
+        />
+      )}
 
       {error ? (
         <div className="mt-2 flex items-center gap-3">
@@ -921,9 +961,9 @@ export function PluginControls({
 /**
  * The page header's actions, the Models page's shape: search for everyone (a member filters the
  * list too), then, for an admin, the machine picker (which machine's plugins the rows show, and
- * which table an install or a removal edits: the shared one, or that machine's own) and the gear
- * that opens the Settings dialog's Plugins page. The gear's words sit beside its icon once the
- * header's `@container` is wide enough.
+ * which table an install or a removal edits: the shared one, or that machine's own), Import
+ * plugin, and the gear that opens the Settings dialog's Plugins page. A button's words sit
+ * beside its icon once the header's `@container` is wide enough.
  */
 export function PluginsHeaderActions({
   query,
@@ -931,6 +971,7 @@ export function PluginsHeaderActions({
   isAdmin,
   machinePicker,
   onOpenSettings,
+  onImport,
 }: {
   query: string;
   onQuery: (query: string) => void;
@@ -938,6 +979,8 @@ export function PluginsHeaderActions({
   /** The machine picker, when there is another machine to pick; null otherwise. */
   machinePicker: React.ReactNode;
   onOpenSettings: () => void;
+  /** Opens the import dialog (shown to an admin only: installing is the server's). */
+  onImport: () => void;
 }) {
   return (
     <>
@@ -953,6 +996,16 @@ export function PluginsHeaderActions({
       {isAdmin && (
         <>
           {machinePicker}
+          <Button
+            size="sm"
+            className="h-8 shrink-0"
+            aria-label={S.plugins.importPlugin}
+            title={S.plugins.importPlugin}
+            onClick={onImport}
+          >
+            <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
+            <span className="hidden @3xl:inline">{S.plugins.importPlugin}</span>
+          </Button>
           <Button
             size="sm"
             className="h-8 shrink-0"

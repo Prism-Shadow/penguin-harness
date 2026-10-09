@@ -25,6 +25,11 @@
  * loader stamps the plugin's UI short descriptions into each skill's metadata and installable
  * content (the installed copy carries the full frontmatter, generated — the way hooks.json is).
  *
+ * Besides the packages this build ships, the library lists what the operator installed on the
+ * server: the packages of the data root's plugin prefix (see useInstalledPluginPrefix) that carry
+ * a plugin.json beside skills or a hook package. Those are the operator's, not the build's, so
+ * one that will not read is left out with a warning instead of failing the library.
+ *
  * Docs: packages/docs/content/skills.{zh,en}.md (site path /docs/skills) documents the plugin
  * format, the versions and the built-in library.
  */
@@ -120,8 +125,12 @@ export interface QuickStart {
 
 /** A plugin in the library: the manifest fields plus the content it ships. */
 export interface LibraryPlugin {
-  /** Plugin name (its directory name). */
+  /** Plugin name: its package name without the scope (`a2ui` for `@penguinharness/a2ui`). */
   name: string;
+  /** The npm package the plugin is, e.g. `@penguinharness/a2ui`. */
+  packageName: string;
+  /** `installed` for a package the operator installed on the server (see useInstalledPluginPrefix); absent for one this build ships. */
+  source?: "installed";
   /** English one-line description (plugin.json `description`). */
   description: string;
   /** Chinese description (plugin.json `description_zh`, optional). */
@@ -137,7 +146,7 @@ export interface LibraryPlugin {
   version: string;
   /** Category id (see PLUGIN_CATEGORIES); absent or unknown → the "other" group. */
   category?: string;
-  /** Whether default_agent gets this plugin at creation (plugin.json `preinstall`, default true). */
+  /** Whether default_agent gets this plugin at creation (plugin.json `preinstall`, default true; always false for an installed package — the operator chose it for the server, not for every new Project). */
   preinstall: boolean;
   /** Raw `icon.svg` beside plugin.json — every built-in plugin ships one. It is the icon of everything the plugin ships: stamped onto each skill and written beside an installed hook package. */
   icon?: string;
@@ -457,8 +466,8 @@ function readDependencies(pkg: HostPackage): Record<string, string> {
  * checkout is redirected to its `plugins/<name>/` directory (see workspacePluginRoot). Read
  * fresh on every call, like the plugin files themselves.
  */
-function pluginRoots(): Map<string, string> {
-  const roots = new Map<string, string>();
+function pluginRoots(): Map<string, LibraryRoot> {
+  const roots = new Map<string, LibraryRoot>();
   const pkg = hostPackage();
   for (const dep of Object.keys(readDependencies(pkg))) {
     if (!dep.startsWith(PLUGIN_PKG_PREFIX)) continue;
@@ -473,9 +482,100 @@ function pluginRoots(): Map<string, string> {
       );
     }
     const name = dep.slice(PLUGIN_PKG_PREFIX.length);
-    roots.set(name, workspacePluginRoot(name, path.dirname(manifest), pkg.root));
+    roots.set(name, {
+      dir: workspacePluginRoot(name, path.dirname(manifest), pkg.root),
+      packageName: dep,
+      installed: false,
+    });
   }
   return roots;
+}
+
+/** Where one library plugin is read from, and whether the operator installed it. */
+interface LibraryRoot {
+  dir: string;
+  packageName: string;
+  installed: boolean;
+}
+
+/**
+ * The data root's plugin prefix (`<root>/plugins`, an npm prefix), when the server named one.
+ * Null — the default, and what a CLI or a test without a server has — reads the shipped
+ * library alone.
+ */
+let installedPrefix: string | null = null;
+
+/**
+ * Lets the library list what the operator installed on the server: the packages the prefix's
+ * own package.json depends on (what `npm install` put there by name, link or uploaded zip —
+ * not the dependencies npm installed beside them) that are library plugins (isLibraryPackage).
+ * Called by the server at boot, with the prefix its installs write to.
+ */
+export function useInstalledPluginPrefix(dir: string | null): void {
+  installedPrefix = dir;
+}
+
+/**
+ * Whether a package directory is a library plugin: a plugin.json beside skills or a hook
+ * package. A package of server modules carries a plugin.json too, for its card, and is not one —
+ * it has nothing to install into an Agent.
+ */
+export function isLibraryPackage(dir: string): boolean {
+  return (
+    fs.existsSync(path.join(dir, "plugin.json")) &&
+    (fs.existsSync(path.join(dir, "skills")) || fs.existsSync(path.join(dir, "hooks")))
+  );
+}
+
+/** The plugin name a package is listed under: its name without the scope. */
+function unscoped(packageName: string): string {
+  return packageName.slice(packageName.lastIndexOf("/") + 1);
+}
+
+/**
+ * The installed library plugins, name → root. A name the build ships stays the build's, and of
+ * two installed packages under one name (`@a/x`, `@b/x`) the first in name order is listed.
+ */
+function installedPluginRoots(shipped: ReadonlyMap<string, LibraryRoot>): Map<string, LibraryRoot> {
+  const roots = new Map<string, LibraryRoot>();
+  if (installedPrefix === null) return roots;
+  let deps: Record<string, unknown>;
+  try {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(installedPrefix, "package.json"), "utf8"),
+    ) as { dependencies?: Record<string, unknown> };
+    deps = manifest.dependencies ?? {};
+  } catch {
+    // No prefix yet (nothing was ever installed), or one npm will rewrite: nothing to list.
+    return roots;
+  }
+  for (const packageName of Object.keys(deps).sort()) {
+    const name = unscoped(packageName);
+    if (!PLUGIN_NAME_PATTERN.test(name) || shipped.has(name) || roots.has(name)) continue;
+    const dir = path.join(installedPrefix, "node_modules", ...packageName.split("/"));
+    if (!isLibraryPackage(dir)) continue;
+    roots.set(name, { dir, packageName, installed: true });
+  }
+  return roots;
+}
+
+/** Every library plugin's root: the shipped ones, then the installed ones. */
+function libraryRoots(): Map<string, LibraryRoot> {
+  const shipped = pluginRoots();
+  return new Map([...shipped, ...installedPluginRoots(shipped)]);
+}
+
+/** Reads one root: a shipped plugin that will not read throws; an installed one is left out (null) with a warning. */
+function readRoot(name: string, root: LibraryRoot): LibraryPlugin | null {
+  if (!root.installed) return readPluginDir(name, root);
+  try {
+    return readPluginDir(name, root);
+  } catch (err) {
+    console.warn(
+      `[plugins] ${root.packageName} is installed but not listed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
 }
 
 /**
@@ -588,7 +688,8 @@ function readPackageVersion(dir: string): string {
 }
 
 /** Reads one plugin directory. */
-function readPluginDir(name: string, dir: string): LibraryPlugin {
+function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
+  const { dir } = root;
   const manifestFile = path.join(dir, "plugin.json");
   const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")) as PluginManifestFile;
   const {
@@ -635,15 +736,20 @@ function readPluginDir(name: string, dir: string): LibraryPlugin {
       files: hookFiles,
     };
   }
+  if (typeof description !== "string" || description.trim() === "") {
+    throw new Error(`${manifestFile}: description must be a non-empty string`);
+  }
   return {
     name,
+    packageName: root.packageName,
+    ...(root.installed ? { source: "installed" as const } : {}),
     description,
     ...(descriptionZh !== undefined ? { descriptionZh } : {}),
     ...(shortDescription !== undefined ? { shortDescription } : {}),
     ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
     version,
     ...(manifest.category !== undefined ? { category: manifest.category } : {}),
-    preinstall: manifest.preinstall !== false,
+    preinstall: !root.installed && manifest.preinstall !== false,
     ...(icon !== undefined ? { icon } : {}),
     skills: skills.map((skill) =>
       stampSkill(skill, {
@@ -699,10 +805,11 @@ function parseQuickStart(
   };
 }
 
-/** Reads every plugin in the library (one per plugin package, see pluginRoots), sorted by name. */
+/** Reads every plugin in the library (one per plugin package: the shipped ones, see pluginRoots, and the installed ones, see useInstalledPluginPrefix), sorted by name. */
 export function loadLibraryPlugins(): LibraryPlugin[] {
-  return [...pluginRoots()]
-    .map(([name, dir]) => readPluginDir(name, dir))
+  return [...libraryRoots()]
+    .map(([name, root]) => readRoot(name, root))
+    .filter((plugin): plugin is LibraryPlugin => plugin !== null)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -713,8 +820,41 @@ export function loadPreinstalledPlugins(): LibraryPlugin[] {
 
 /** Reads a single library plugin by name; undefined when the library has no such plugin (names are looked up, never joined into a path). */
 export function libraryPlugin(name: string): LibraryPlugin | undefined {
-  const dir = pluginRoots().get(name);
-  return dir !== undefined ? readPluginDir(name, dir) : undefined;
+  const root = libraryRoots().get(name);
+  return root !== undefined ? (readRoot(name, root) ?? undefined) : undefined;
+}
+
+/**
+ * Where a library plugin's package is on this machine, with its npm name and version — what an
+ * export zips. Undefined when the library has no such plugin.
+ */
+export function libraryPluginPackage(
+  name: string,
+): { dir: string; packageName: string; version: string } | undefined {
+  const root = libraryRoots().get(name);
+  if (root === undefined) return undefined;
+  return { dir: root.dir, packageName: root.packageName, version: readPackageVersion(root.dir) };
+}
+
+/**
+ * Reads a package directory as the library would read it once installed — the check an
+ * uploaded plugin passes before anything is installed. Throws, naming the file, on what the
+ * library would refuse: no package.json name, a name that is not a plugin name, a malformed
+ * plugin.json, a skill without its dated version, a hook package without `hooks.version`.
+ */
+export function readLibraryPackage(dir: string): LibraryPlugin {
+  const file = path.join(dir, "package.json");
+  const packageName = (JSON.parse(fs.readFileSync(file, "utf8")) as { name?: unknown }).name;
+  if (typeof packageName !== "string" || packageName === "") {
+    throw new Error(`${file}: the package carries no name`);
+  }
+  const name = unscoped(packageName);
+  if (!PLUGIN_NAME_PATTERN.test(name)) {
+    throw new Error(
+      `${file}: ${JSON.stringify(name)} is not a plugin name (letters, digits, "_" and "-")`,
+    );
+  }
+  return readPluginDir(name, { dir, packageName, installed: true });
 }
 
 /**
@@ -723,10 +863,10 @@ export function libraryPlugin(name: string): LibraryPlugin | undefined {
  * with the listing — a readme is long and wanted only for the plugin someone opened.
  */
 export function libraryPluginReadme(name: string): string | null | undefined {
-  const dir = pluginRoots().get(name);
-  if (dir === undefined) return undefined;
+  const root = libraryRoots().get(name);
+  if (root === undefined) return undefined;
   try {
-    return fs.readFileSync(path.join(dir, "README.md"), "utf8");
+    return fs.readFileSync(path.join(root.dir, "README.md"), "utf8");
   } catch {
     return null;
   }

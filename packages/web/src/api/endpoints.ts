@@ -213,6 +213,7 @@ import type {
   VaultResponse,
   VaultUpdateRequest,
   InstalledPluginsResponse,
+  PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
   WorkflowInfo,
@@ -2407,6 +2408,26 @@ export const uninstallPlugin = (
     }`,
     { method: "DELETE" },
   );
+
+/**
+ * Admin only: installs a plugin package from an uploaded zip on this server — 409
+ * plugin_exists while another version is installed, unless `overwrite`. A package of server
+ * modules is listed for this machine and applied; a package of Skills or hooks joins the
+ * library. `installed` says which.
+ */
+export const importPluginArchive = (projectId: string, body: PluginArchiveImportRequest) =>
+  apiFetch<InstalledPluginsResponse>(`${pluginsPath(projectId)}/archive`, {
+    method: "POST",
+    body,
+  });
+
+/** Zip download URL of a library plugin's package (any member; the server names the file, `<name>-v<version>.zip`). */
+export const libraryPluginArchiveUrl = (plugin: string): string =>
+  `/api/plugins/${encodeURIComponent(plugin)}/archive`;
+
+/** Zip download URL of a listed server module's package on this server (any member). */
+export const registryPluginArchiveUrl = (name: string): string =>
+  `/api/plugins/registry/archive?name=${encodeURIComponent(name)}`;
 
 // ---- The agent browser: the desktop's built-in browser, or the user's own Chrome ----
 /**

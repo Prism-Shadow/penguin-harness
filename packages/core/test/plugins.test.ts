@@ -11,12 +11,20 @@
  *   carries `hooks.version`.
  * - A skill without a dated version, or a hook package without `hooks.version`, fails the
  *   load naming the file, rather than reading as a version every install is behind.
+ *
+ * What the operator installed on the server, on a fixture prefix (useInstalledPluginPrefix):
+ * - A package of Skills the prefix depends on joins the library as installed, under its name
+ *   without the scope, and is never preinstalled.
+ * - A package of server modules alone, a name the build ships, and what npm installed beside the
+ *   prefix's own packages stay out.
+ * - An installed package that will not read is left out with a warning; the library still
+ *   loads.
  */
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PLUGIN_CATEGORIES,
   PLUGIN_VERSION_PATTERN,
@@ -26,8 +34,10 @@ import {
   librarySkill,
   loadLibraryPlugins,
   loadPluginGroups,
+  libraryPluginPackage,
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
+  useInstalledPluginPrefix,
   usePushedPluginLibrary,
   workspacePluginRoot,
   type LibraryPlugin,
@@ -39,6 +49,7 @@ const pluginsRoot = path.resolve(import.meta.dirname, "../../../plugins");
 /** Minimal LibraryPlugin for groupPlugins unit tests. */
 const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
   name,
+  packageName: `@penguinharness/${name}`,
   description: `Do ${name}.`,
   version: "0.2.13",
   preinstall: true,
@@ -337,6 +348,120 @@ describe("plugin versions, on a fixture library", () => {
       "hooks/stop.mjs": "export {};\n",
     });
     expect(() => libraryPlugin("sample")).toThrow(/plugin\.json: hooks\.version/);
+  });
+});
+
+describe("packages the operator installed on the server", () => {
+  let root: string | null = null;
+
+  afterEach(async () => {
+    usePushedPluginLibrary(null);
+    useInstalledPluginPrefix(null);
+    vi.restoreAllMocks();
+    if (root !== null) await fs.rm(root, { recursive: true, force: true });
+    root = null;
+  });
+
+  const skillFile = (name: string, version?: string) =>
+    `---\nname: ${name}\ndescription: Do ${name}.\n${version === undefined ? "" : `version: ${version}\n`}---\n\nBody.\n`;
+
+  /** Writes `files` under `dir` (paths relative to it). */
+  async function write(dir: string, files: Record<string, string>): Promise<void> {
+    for (const [rel, text] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+      await fs.writeFile(path.join(dir, rel), text);
+    }
+  }
+
+  /**
+   * A shipped library of one plugin (`@penguinharness/sample`) and a server prefix whose
+   * package.json depends on `installed`; every package is written under node_modules.
+   */
+  async function setUp(
+    installed: string[],
+    packages: Record<string, Record<string, string>>,
+  ): Promise<void> {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-installed-plugins-"));
+    const host = path.join(root, "host");
+    await write(host, {
+      "package.json": JSON.stringify({
+        name: "host",
+        dependencies: { "@penguinharness/sample": "*" },
+      }),
+      "node_modules/@penguinharness/sample/package.json": JSON.stringify({
+        name: "@penguinharness/sample",
+        version: "1.0.0",
+      }),
+      "node_modules/@penguinharness/sample/plugin.json": JSON.stringify({ description: "Sample." }),
+      "node_modules/@penguinharness/sample/skills/sample/SKILL.md": skillFile(
+        "sample",
+        "2026.09.01.1",
+      ),
+    });
+    const prefix = path.join(root, "prefix");
+    await write(prefix, {
+      "package.json": JSON.stringify({
+        name: "penguin-plugins",
+        private: true,
+        dependencies: Object.fromEntries(installed.map((name) => [name, "*"])),
+      }),
+    });
+    for (const [name, files] of Object.entries(packages)) {
+      await write(path.join(prefix, "node_modules", ...name.split("/")), files);
+    }
+    usePushedPluginLibrary(host);
+    useInstalledPluginPrefix(prefix);
+  }
+
+  const notes = (name: string) => ({
+    "package.json": JSON.stringify({ name, version: "2.0.0" }),
+    "plugin.json": JSON.stringify({ description: "Notes.", preinstall: true }),
+    "skills/notes/SKILL.md": skillFile("notes", "2026.10.01.1"),
+  });
+
+  it("lists a package of Skills the operator installed, as installed and never preinstalled", async () => {
+    await setUp(["@acme/notes"], { "@acme/notes": notes("@acme/notes") });
+    expect(loadLibraryPlugins().map((p) => [p.name, p.packageName, p.source])).toEqual([
+      ["notes", "@acme/notes", "installed"],
+      ["sample", "@penguinharness/sample", undefined],
+    ]);
+    expect(libraryPlugin("notes")).toMatchObject({ version: "2.0.0", preinstall: false });
+    expect(loadPreinstalledPlugins().map((p) => p.name)).toEqual(["sample"]);
+    expect(libraryPluginPackage("notes")).toMatchObject({
+      packageName: "@acme/notes",
+      version: "2.0.0",
+    });
+  });
+
+  it("leaves out a package of server modules alone, a name the build ships, and npm's own dependencies", async () => {
+    await setUp(["@acme/sandbox-x", "@other/sample"], {
+      // A server module's card: a plugin.json with nothing to install into an Agent.
+      "@acme/sandbox-x": {
+        "package.json": JSON.stringify({ name: "@acme/sandbox-x", version: "1.0.0" }),
+        "plugin.json": JSON.stringify({ description: "A sandbox backend." }),
+      },
+      "@other/sample": notes("@other/sample"),
+      // Installed by npm beside the packages the prefix asked for, not by the operator.
+      "left-pad": notes("left-pad"),
+    });
+    expect(loadLibraryPlugins().map((p) => [p.name, p.packageName])).toEqual([
+      ["sample", "@penguinharness/sample"],
+    ]);
+  });
+
+  it("leaves an installed package that will not read out, with a warning, and still loads the library", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await setUp(["@acme/broken", "@acme/notes"], {
+      "@acme/broken": {
+        "package.json": JSON.stringify({ name: "@acme/broken", version: "1.0.0" }),
+        "plugin.json": JSON.stringify({ description: "Broken." }),
+        "skills/broken/SKILL.md": skillFile("broken"),
+      },
+      "@acme/notes": notes("@acme/notes"),
+    });
+    expect(loadLibraryPlugins().map((p) => p.name)).toEqual(["notes", "sample"]);
+    expect(libraryPlugin("broken")).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("@acme/broken"));
   });
 });
 

@@ -44,6 +44,7 @@ import {
   PluginTag,
   StatusMark,
   rowBuiltin,
+  rowInstalledOnServer,
   rowDescription,
   rowIcon,
   rowVersion,
@@ -247,6 +248,11 @@ export function PluginDetailSections({
                 }
               >
                 {S.plugins.builtin}
+              </PluginTag>
+            )}
+            {rowInstalledOnServer(row) && (
+              <PluginTag title={S.plugins.installedOnServerHint}>
+                {S.plugins.installedOnServer}
               </PluginTag>
             )}
             {/* The hook points the package answers at: bare point names (`stop`, `user_prompt`) — identifiers, not copy. */}

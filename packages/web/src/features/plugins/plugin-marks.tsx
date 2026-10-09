@@ -107,6 +107,21 @@ export function rowBuiltin(row: PluginRow): boolean {
 }
 
 /**
+ * Whether an admin installed the row's package on this server — by name, link or zip — rather
+ * than the build shipping it: an installed library package, or a server module this server
+ * holds that the build does not ship.
+ */
+export function rowInstalledOnServer(row: PluginRow): boolean {
+  if (row.library?.source === "installed") return true;
+  const part = row.module;
+  return (
+    part !== undefined &&
+    !part.shipped &&
+    (part.state === "active" || part.state === "pending" || part.state === "failed")
+  );
+}
+
+/**
  * A row's one-line description in the UI language: the short one where there is one, the full
  * one otherwise; a shipped package no index knows says so.
  */

@@ -2402,6 +2402,60 @@ export const en: Strings = {
     detailHooks: "Hooks",
     /** In place of the README of a package that is not on this server. */
     readmeAfterInstall: "The README shows once the plugin is installed",
+    /** The tag of a plugin an admin installed on this server (not shipped with the build). */
+    installedOnServer: "installed on server",
+    installedOnServerHint: "Installed on this server by an admin; it does not ship with the build.",
+    /** The detail dialog's export (any member) and delete (admin, a package installed on the server). */
+    exportPlugin: "Export",
+    exportPluginHint:
+      "Download the plugin's package as a zip, which another server imports as it is with Import plugin",
+    deletePlugin: "Delete",
+    deleteConfirmTitle: (name: string) => `Delete ${name} from the server`,
+    deleteConfirmBody: (name: string) =>
+      `${name} leaves the server and the plugin library; the copies of its skills and hooks installed on agents stay.`,
+    deletedToast: (name: string) => `Deleted ${name} from the server`,
+    /** The import dialog (admin): npm or a link, an Agent in a chat, or an uploaded zip. */
+    importPlugin: "Import plugin",
+    importServerWide: "A plugin is installed on the whole server and shared by every Project.",
+    importDirectTitle: "Install from npm or a link",
+    importDirectWhy:
+      "An npm package name, name@version, or an https link to a git repository or a tarball; the server installs it directly.",
+    importSpecifierLabel: "Package name or link",
+    importSpecifierPlaceholder: "@scope/name, name@1.2.0 or https://github.com/…",
+    importSpecifierInvalid:
+      "Not an npm package name or an https link; for anything else, let an agent install it in a chat.",
+    importCost:
+      "When the plugin carries server modules, installing reloads the server's plugins, which stops the agent runs in progress in every Project.",
+    importAgentTitle: "Or let an agent install it in a chat",
+    importAgentWhy:
+      "For a page, a repository or a description: the agent finds and reviews the package first, then installs it with penguin plugin install.",
+    importSourceLabel: "Plugin source",
+    importSourcePlaceholder: "A link, a local path or a description",
+    importSourceToken: "<plugin source>",
+    importPromptLabel: "Prompt for the agent",
+    /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
+    importPromptLead: {
+      link: (source: string) => `Install the PenguinHarness plugin at ${source} on this server.`,
+      localPath: (source: string) =>
+        `Install the PenguinHarness plugin in the local folder ${source} on this server.`,
+      reference: (source: string) =>
+        `Find the PenguinHarness plugin described here and install it on this server: ${source}`,
+    },
+    importPromptTail: (projectId: string) =>
+      `A plugin is an npm package that runs on the server: before installing anything, read its package.json, plugin.json and every script it ships, and say what it does and what it would run. If it is not a PenguinHarness plugin (a plugin.json beside skills/ or hooks/, or the ifaces.json of server modules), or anything in it looks unsafe, stop and tell me. Then install it with \`penguin plugin install <npm name or https link> --project-id ${projectId}\` and report the installed name and version. Do not install a local folder: zip it without node_modules and tell me where the zip is, and I will upload it with "Upload a plugin zip".`,
+    importUploadTitle: "Upload a plugin zip",
+    importUploadDesc:
+      "A zip of the plugin's package directory: package.json at its root or in its one top-level directory, no node_modules — such as another server's Export. Upload only what you trust.",
+    importUploadAction: "Choose a zip file",
+    importedToast: (name: string, version: string | null) =>
+      version === null ? `Installed ${name}` : `Installed ${name} ${version}`,
+    importUnchangedToast: (name: string, version: string | null) =>
+      `${name}${version === null ? "" : ` ${version}`} is already installed on the server`,
+    /** The confirm when the zip holds another version of a package on this server (409 plugin_exists). */
+    replaceTitle: "Replace the installed plugin",
+    replaceBody: (name: string, installed: string, incoming: string) =>
+      `${name} ${installed} is installed on the server; the zip holds ${incoming}. Replacing it moves every Project to the zip's version.`,
+    replaceAction: "Replace",
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
     /** Quick start's tooltip: what pressing it does, and what it does not. */
