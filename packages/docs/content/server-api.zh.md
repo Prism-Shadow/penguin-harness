@@ -544,6 +544,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/benchmarks` | Benchmark 的分数数据 |
 | POST | `/benchmarks` | 手动创建 Benchmark（仅所有者） |
 | DELETE | `/benchmarks/:benchmarkId` | 删除 Benchmark 目录，包括其中的题目、清单和计分板（仅所有者；返回 204，不存在时返回 404） |
+| POST | `/benchmarks/archive` | 从 zip 导入一个 Benchmark 包：`{dataBase64, overwrite?}` → 201 `{benchmark}`（任意成员） |
+| GET | `/benchmarks/:benchmarkId/archive` | 把已发布 Benchmark 的包导出为 zip（任意成员） |
 | GET | `/benchmarks/:benchmarkId/cases` | Benchmark 的题目：每道题的 id 和题干 README 的标题。评分标准永远不会返回 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files` | 浏览一道题的 `statement/` 目录 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files/content` | 读取题干中的一个文件（`?path=`、`?preview=1`、`?download=1`） |
@@ -552,6 +554,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 - `GET /benchmarks` 只列出含有 `benchmark.json` 的目录；早先版本只含 `benchmark_config.toml` 的目录在第一次列出时转换。两者都没有的目录（评估过程中删除 Benchmark 留下的就是这种）不会出现在列表里。每个条目都带 `status`（Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`）、日期版本 `version` 与来源 `origin`（`{kind, url?, ref?, path?, importedAt?}`，`kind` 取 `builtin`、`manual`、`agent`、`git`、`zip` 之一）。清单不可用的 Benchmark 以目录名列出，按 `failed` 处理，带 `manifestError`（`{code, message}`，`code` 为 `benchmark_manifest_invalid`、`benchmark_id_mismatch` 或 `benchmark_config_invalid`），不带 `version` 与 `origin`。文件系统层面读不了清单时，请求失败。
 - `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark.json`（`status` 为 `published`、当天的第一个版本、来源 `manual`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
+- `POST /benchmarks/archive` 接受不超过 14MB 的 zip，`benchmark.json` 与各个 `CASE-*` 目录放在 zip 根目录，或放在唯一一个以清单 `id` 命名的顶层目录里。顶层另有别的东西（包括 `scoreboard.yaml` 与 `.jobs/`）、顶层有以 `.` 开头的条目、含符号链接、某道题缺少 `statement/README.md` 或 `rubric/README.md`，或清单会被列表判为不可用时，返回 400（`benchmark_archive_invalid`、`benchmark_case_invalid` 或清单自己的错误码）；`status` 不是 `published` 时返回 400 `benchmark_not_published`。超过 14MB、1000 个文件、单个文件 5MB 或合计 20MB 时返回 413 `benchmark_too_large`。服务器原样写入各题，清单的来源改写为 `{kind: "zip", imported_at}`、版本保持包里的值，并写入一份 `evaluations: []` 的 `scoreboard.yaml`。id 已被占用时返回 409 `benchmark_exists`，除非 `overwrite` 为 true——覆盖会替换整个目录，连同记分板与 `.jobs/`。
+- `GET /benchmarks/:benchmarkId/archive` 的文件名为 `<id>-v<version>.zip`，内容是磁盘上原样的 `<id>/benchmark.json` 与全部 `CASE-*` 子树，不含记分板、`.jobs/`、其他以 `.` 开头的条目与符号链接；这个 zip 可以原样经 `POST /benchmarks/archive` 导回。`draft` 或 `failed` 的 Benchmark 返回 409 `benchmark_not_published`，清单不可用的返回 409 与清单自己的错误码，不存在的返回 404，超出导入上限的返回 413 `benchmark_too_large`。
 - 这些读取文件内容的路由采用与 Workspace 文件相同的内联加固；参见 [Workspace 文件响应](#workspace-文件响应)。
 
 ## 组织（公司模式）

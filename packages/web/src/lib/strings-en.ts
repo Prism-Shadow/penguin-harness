@@ -4447,6 +4447,45 @@ Scenarios:
       "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
       "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
       "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
+    // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
+    importBenchmark: "Import benchmark",
+    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatWhy:
+      "The agent pins the link to one commit, fetches only that folder and reads every file before writing it to the Evaluation Center — more reliable than a bare upload.",
+    importSourceLabel: "Benchmark source",
+    importSourceHint:
+      "A folder link in a GitHub repository (such as …/tree/<commit>/packages/<id>), a local path, or a description",
+    importSourcePlaceholder:
+      "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/…",
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    importPromptLead: {
+      repoFolderUrl: (s: string): string =>
+        `Import the Benchmark package at this repository folder into this Project's Evaluation Center: ${s}.`,
+      localPath: (s: string): string => `Import the Benchmark package under this local path: ${s}.`,
+      reference: (s: string): string => `Find and import this Benchmark as a package: ${s}.`,
+    },
+    importPromptTail: (projectId: string): string =>
+      [
+        "The package is a folder with `benchmark.json` (fields: id, title, description, version `YYYY.MM.DD.N`, status, runs, origin) and one `CASE-*/` per case, holding `statement/README.md` and `rubric/README.md`.",
+        "Fetch only that folder, at a commit: resolve the link's branch or tag to its 40-hex commit (`git ls-remote`), download it (a codeload tarball or a sparse checkout), and read every file before writing anything — refuse if it is not a Benchmark package, if its `status` is not `published`, or if it holds anything but text materials.",
+        `Write it to \`<app_data_dir>/benchmarks/<id>/\` (Project \`${projectId}\`); if that directory already exists, stop and ask me before overwriting — an overwrite replaces the whole directory, its \`scoreboard.yaml\` and \`.jobs/\` included. Do not copy large upstream materials; the statements link them.`,
+        'Set `origin` to `{"kind": "git", "url": <the link as given>, "ref": <the 40-hex commit>, "path": <the folder inside the repository>, "imported_at": <now, ISO 8601>}` (`{"kind": "agent"}` for a source that is not a repository folder), keep `version` as in the package, write a fresh `scoreboard.yaml` with `evaluations: []`, read `benchmark.json` back to confirm it parses, and report the id, title, version and case count; the Evaluation Center lists it from then on.',
+        'If the `benchmark-design` skill is installed, read its `reference/package.md` ("Importing a package") first.',
+      ].join("\n"),
+    importCopyPrompt: "Copy prompt",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a Benchmark zip",
+    importUploadDesc:
+      "A zip exported from the Evaluation Center, or one with benchmark.json and the CASE-*/ folders at its root or in its only top-level folder. The cases come in, the evaluation records do not: they start empty. Import only sources you trust.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Benchmark imported",
+    importOverwriteTitle: "Overwrite the existing Benchmark",
+    importOverwriteBody: (id: string): string =>
+      `The Benchmark "${id}" already exists. Overwriting replaces all of its files, and its evaluation records (the scoreboard) and run results are deleted with them. This cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
+    exportBenchmark: "Export",
   },
 
   /** Company mode: the organization switcher and dialogs, and the six organization pages. */

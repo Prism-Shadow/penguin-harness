@@ -6,10 +6,12 @@
  * the `origin`) and `scoreboard.yaml` (evaluations[], each carrying the Agent it tested, each
  * case its model-written averages and a runs array).
  * Content is normally created and refined by the benchmark-design Skill; the server also
- * writes the same layout for a Benchmark created by hand (`create`) and removes a Benchmark
- * directory whole (`remove`), and never touches a scoreboard. A built-in Benchmark is read like
- * any other: its cases run elsewhere (their statements say how), and the service does not know
- * or care.
+ * writes the same layout for a Benchmark created by hand (`create`) or uploaded as a package
+ * (`importArchive`, whose copy starts with an empty scoreboard and whose overwrite replaces the
+ * directory whole), packs a Benchmark's package for download (`exportArchive`), and removes a
+ * Benchmark directory whole (`remove`); it never edits a scoreboard. A built-in Benchmark is
+ * read like any other: its cases run elsewhere (their statements say how), and the service does
+ * not know or care.
  * A manifest is what makes a directory a Benchmark: `list` skips one without it. A Benchmark
  * from before benchmark.json has `benchmark_config.toml` instead, which the read converts
  * (compat(0.3.0), in core). A manifest that is there but says something unusable lists the
@@ -29,6 +31,7 @@ import {
   BenchmarkManifestError,
   benchmarksDir,
   nextDateVersion,
+  placeBenchmark,
   readBenchmarkManifest,
   writeBenchmarkManifest,
   type BenchmarkManifest,
@@ -46,6 +49,7 @@ import type {
   WorkspaceFilesResponse,
 } from "../api/types.js";
 import type { WorkspaceFileContent, WorkspaceFileReadOptions } from "./workspace-files-service.js";
+import { packBenchmark, readBenchmarkArchive } from "./benchmark-archive.js";
 import { HttpError } from "../http/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
@@ -68,6 +72,29 @@ export interface BenchmarkCreateInput {
   description?: string;
   runs: number;
   cases: BenchmarkCaseInput[];
+}
+
+/** A Benchmark's package as a zip, and the name its download is offered under. */
+export interface BenchmarkArchive {
+  /** `<id>-v<version>.zip`. */
+  fileName: string;
+  data: Uint8Array;
+}
+
+function benchmarkExists(id: string): HttpError {
+  // The id ends the message: the Web App's overwrite confirm reads it from there.
+  return new HttpError(409, "benchmark_exists", `Benchmark already exists: ${id}`);
+}
+
+/** Whether anything is under `p`; a symlink counts, wherever it points. */
+async function occupied(p: string): Promise<boolean> {
+  try {
+    await fs.lstat(p);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -371,6 +398,97 @@ export class BenchmarkService implements Benchmarks {
       throw new HttpError(404, "not_found", `Benchmark does not exist: ${benchmarkId}`);
     }
     await fs.rm(benchDir, { recursive: true, force: true });
+  }
+
+  /**
+   * Writes the package an uploaded zip holds as `benchmarks/<id>/` (benchmark-archive.ts says what
+   * is refused and why). What lands is the package as a new copy: its cases byte for byte, its
+   * manifest with the origin rewritten to `zip` and the time of this import (the version stays the
+   * package's: it names the content, not the copy), and a `scoreboard.yaml` with no evaluations —
+   * a package carries none. A taken id is a 409 unless `overwrite`, which replaces the whole
+   * directory, its scoreboard and `.jobs/` included. The copy is staged and renamed into place,
+   * so a failed write leaves the id as it was.
+   */
+  async importArchive(
+    projectId: string,
+    archive: Uint8Array,
+    options: { overwrite: boolean },
+  ): Promise<BenchmarkSummary> {
+    const { manifest: packaged, caseFiles } = readBenchmarkArchive(archive);
+    const dir = benchmarksDir(this.root, projectId);
+    const benchDir = path.join(dir, packaged.id);
+    await fs.mkdir(dir, { recursive: true });
+    if (!options.overwrite && (await occupied(benchDir))) throw benchmarkExists(packaged.id);
+    const manifest: BenchmarkManifest = {
+      ...packaged,
+      origin: { kind: "zip", imported_at: new Date().toISOString() },
+    };
+    try {
+      await placeBenchmark(
+        dir,
+        manifest.id,
+        async (stage) => {
+          for (const [rel, data] of caseFiles) {
+            const file = path.join(stage, ...rel.split("/"));
+            await fs.mkdir(path.dirname(file), { recursive: true });
+            await fs.writeFile(file, data);
+          }
+          await writeBenchmarkManifest(stage, manifest);
+          await fs.writeFile(
+            path.join(stage, "scoreboard.yaml"),
+            stringifyYaml({ evaluations: [] }),
+            "utf8",
+          );
+        },
+        { replace: options.overwrite },
+      );
+    } catch (error) {
+      // Taken between the check and the rename, by another import of the same id.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!options.overwrite && (code === "ENOTEMPTY" || code === "EEXIST")) {
+        throw benchmarkExists(manifest.id);
+      }
+      throw error;
+    }
+    return this.summarize(benchDir, manifest.id, manifest);
+  }
+
+  /**
+   * The Benchmark's package as a zip for download (benchmark-archive.ts says what it holds). Only
+   * a published Benchmark has one to give: a draft is still being written, a failed one never
+   * finished calibrating, and one whose manifest cannot be read has no manifest to give (409, with
+   * the reason). As for `remove`, only a real directory counts: a symlink is not followed.
+   */
+  async exportArchive(projectId: string, benchmarkId: string): Promise<BenchmarkArchive> {
+    const benchDir = path.join(benchmarksDir(this.root, projectId), benchmarkId);
+    let isDirectory = false;
+    try {
+      isDirectory = (await fs.lstat(benchDir)).isDirectory();
+    } catch {
+      // Missing: reported below as not found.
+    }
+    const manifest = isDirectory ? await this.manifestOf(benchDir) : null;
+    if (manifest === null) {
+      throw new HttpError(404, "not_found", `Benchmark does not exist: ${benchmarkId}`);
+    }
+    if (manifest instanceof BenchmarkManifestError) {
+      throw new HttpError(
+        409,
+        manifest.code,
+        `The Benchmark's manifest cannot be read, so it has no package to export: ${manifest.message}`,
+      );
+    }
+    if (manifest.status !== "published") {
+      throw new HttpError(
+        409,
+        "benchmark_not_published",
+        `Only a published Benchmark can be exported; ${benchmarkId} is ${manifest.status}.`,
+      );
+    }
+    return {
+      fileName: `${benchmarkId}-v${manifest.version}.zip`,
+      data: await packBenchmark(benchDir, manifest),
+    };
   }
 
   async listCases(projectId: string, benchmarkId: string): Promise<BenchmarkCasesResponse> {

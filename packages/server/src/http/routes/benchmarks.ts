@@ -4,6 +4,8 @@
  *   GET /api/projects/:p/benchmarks (any member, read-only)
  *   POST /api/projects/:p/benchmarks (owner: create a Benchmark by hand)
  *   DELETE /api/projects/:p/benchmarks/:benchmarkId (owner: remove the directory whole)
+ *   POST /api/projects/:p/benchmarks/archive (any member: import a package from a zip)
+ *   GET /api/projects/:p/benchmarks/:benchmarkId/archive (any member: export the package)
  *   GET /api/projects/:p/benchmarks/:benchmarkId/cases
  *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/files
  *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/files/content
@@ -15,7 +17,11 @@
 import { Hono, type Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { BenchmarkCreateResponse, CaseMaterial } from "../../api/types.js";
+import type {
+  BenchmarkArchiveImportResponse,
+  BenchmarkCreateResponse,
+  CaseMaterial,
+} from "../../api/types.js";
 import type { BenchmarkCaseInput } from "../../services/benchmark-service.js";
 import type { Benchmarks } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
@@ -177,6 +183,40 @@ export function benchmarksRoutes(deps: BenchmarksRouteDeps): Hono<AppEnv> {
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.benchmarks.remove(projectId, benchmarkId);
     return c.body(null, 204);
+  });
+
+  // Import a package from a zip. Unlike creating or deleting, this is open to every member: a
+  // Benchmark belongs to the Project, and anyone in it may bring one in. With `overwrite` it
+  // replaces a Benchmark of the same id whole, evaluation records included — the Web App says so
+  // before it sends one.
+  app.post("/archive", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    const dataBase64 = requireString(body, "dataBase64");
+    const benchmark = await deps.benchmarks.importArchive(
+      projectId,
+      Buffer.from(dataBase64, "base64"),
+      { overwrite: body.overwrite === true },
+    );
+    return c.json({ benchmark } satisfies BenchmarkArchiveImportResponse, 201);
+  });
+
+  // Export a published Benchmark's package: a direct binary attachment, as the Skill and hook
+  // exports are, which the import above takes back unchanged.
+  app.get("/:benchmarkId/archive", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const benchmarkId = requireValidId(c, "benchmarkId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const { fileName, data } = await deps.benchmarks.exportArchive(projectId, benchmarkId);
+    return new Response(new Uint8Array(data), {
+      headers: {
+        "Content-Type": "application/zip",
+        // An id and a date version: the encoded name is the name itself.
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   });
 
   app.get("/:benchmarkId/cases", async (c) => {

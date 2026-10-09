@@ -4551,6 +4551,50 @@ Benchmark：
       "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
       "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
+    // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
+    /** The header button and the dialog's title: the one place the page says 评估集, the user's word for it. */
+    importBenchmark: "导入评估集",
+    importChatTitle: "推荐：让 Agent 在对话中导入",
+    importChatWhy:
+      "Agent 会把链接固定到一个提交、只取这一个文件夹，读过每个文件后再写入评估中心，比直接上传更可靠。",
+    importSourceLabel: "Benchmark 来源",
+    importSourceHint:
+      "GitHub 仓库里的文件夹链接（如 …/tree/<commit>/packages/<id>）/ 本地路径 / 一段描述",
+    importSourcePlaceholder:
+      "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/…",
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<来源>",
+    importPromptLabel: "发送给 Agent 的 Prompt（预览）",
+    /** The prompt's lead sentence per kind of source (features/benchmark/benchmark-import-prompt.ts), joined to importPromptTail. */
+    importPromptLead: {
+      repoFolderUrl: (s: string): string =>
+        `把这个仓库文件夹里的 Benchmark 包导入本 Project 的评估中心：${s}。`,
+      localPath: (s: string): string => `导入这个本地路径下的 Benchmark 包：${s}。`,
+      reference: (s: string): string => `找到这个 Benchmark，并把它作为包导入：${s}。`,
+    },
+    /** The fixed tail: the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
+    importPromptTail: (projectId: string): string =>
+      [
+        "包是一个文件夹：根下有 `benchmark.json`（字段：id、title、description、version（`YYYY.MM.DD.N`）、status、runs、origin），每题一个 `CASE-*/`，内含 `statement/README.md` 与 `rubric/README.md`。",
+        "只取这一个文件夹，并固定在一个提交上：先把链接里的分支或标签解析成 40 位提交号（`git ls-remote`），再下载它（codeload 的 tarball 或 sparse checkout）；写入任何东西之前读完每个文件——不是 Benchmark 包、`status` 不是 `published`、或含有文本材料以外的东西，就拒绝导入。",
+        `写入 \`<app_data_dir>/benchmarks/<id>/\`（Project「${projectId}」）；该目录已存在时先停下问我——覆盖会替换整个目录，连同 \`scoreboard.yaml\` 与 \`.jobs/\`。不要拷贝上游的大文件，题干里有它们的链接。`,
+        '把 `origin` 写成 `{"kind": "git", "url": <原样的链接>, "ref": <40 位提交号>, "path": <仓库里的文件夹路径>, "imported_at": <当前时间，ISO 8601>}`（来源不是仓库文件夹时写 `{"kind": "agent"}`），`version` 保持包里的值，新写一份内容为 `evaluations: []` 的 `scoreboard.yaml`，再读一遍 `benchmark.json` 确认能解析，然后报告 id、标题、版本与题数；评估中心随即列出它。',
+        "如果你装有 `benchmark-design` 技能，先读它的 `reference/package.md`（「Importing a package」一节）。",
+      ].join("\n"),
+    importCopyPrompt: "复制 Prompt",
+    importOpenChat: "打开新对话",
+    importUploadTitle: "上传 Benchmark zip 包",
+    importUploadDesc:
+      "从评估中心导出的 zip，或根目录（或唯一的顶层目录）里有 benchmark.json 与各题 CASE-*/ 的 zip。导入的是题目，不带评估记录：记录从空开始。只导入你信任的来源。",
+    importUploadAction: "选择 zip 文件",
+    importUploading: "上传中…",
+    importDoneToast: "Benchmark 已导入",
+    importOverwriteTitle: "覆盖已有的 Benchmark",
+    importOverwriteBody: (id: string): string =>
+      `Benchmark「${id}」已存在。覆盖会替换它的全部文件，已有的评估记录（scoreboard）与运行结果将一并删除，且不可撤销。继续？`,
+    importOverwriteAction: "覆盖导入",
+    /** The Benchmark page's icon button beside the path's copy button: downloads the package as a zip. */
+    exportBenchmark: "导出",
   },
 
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).

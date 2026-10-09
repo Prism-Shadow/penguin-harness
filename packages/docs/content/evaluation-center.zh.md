@@ -6,6 +6,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 评估中心是 Web App 里衡量和改进 Agent 的地方。**Benchmark** 是一组题目，每道题包含任务题干和一份私有的评分细则。Benchmark 属于 Project，不属于某个 Agent，所以它可以给 Project 里的任何 Agent 打分。
 
 - 要创建 Benchmark，见[让 AI 创建 Benchmark](#让-ai-创建-benchmark) 或[手动创建 Benchmark](#手动创建-benchmark)。
+- 要从仓库文件夹或 zip 导入 Benchmark，或者把它下载下来，见[导入 Benchmark](#导入-benchmark) 和[导出 Benchmark](#导出-benchmark)。
 - 要查看题目、分数曲线和历次评估，见[查看 Benchmark](#查看-benchmark)。
 - 要给 Agent 打分，见[评估 Agent](#评估-agent)。
 - 要根据分数改进 Agent，见[优化 Agent](#优化-agent)。
@@ -17,7 +18,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 在侧边栏中选择**评估中心**。这个页面（`/benchmark`）以卡片形式列出当前 Project 的所有 Benchmark。
 
-标题下方有三张带编号的步骤卡片，概括了整个循环：**出题**、**评估**和**优化**。每张卡片都写明在哪里做这一步：用右上角的创建按钮，或者在某个 Benchmark 上点**使用**，再选对应的标签页。owner 有**用 AI 创建**和**手动创建**两个按钮；成员只有**用 AI 创建**，第一张卡片也只写这一个。
+标题下方有三张带编号的步骤卡片，概括了整个循环：**出题**、**评估**和**优化**。每张卡片都写明在哪里做这一步：用右上角的创建按钮，或者在某个 Benchmark 上点**使用**，再选对应的标签页。owner 有**用 AI 创建**和**手动创建**两个按钮；成员只有**用 AI 创建**，第一张卡片也只写这一个。每个成员还有它们左边的**导入评估集**，见[导入 Benchmark](#导入-benchmark)。
 
 每张 Benchmark 卡片显示：
 
@@ -97,11 +98,41 @@ Builder 试测题目和记录基线分时，都用这个新对话的模型来运
 
 手动创建时不用选择所属的 Agent。手动创建的 Benchmark 立即发布，但还没有基线分，所以优化之前，先用它[评估 Agent](#评估-agent)。
 
+## 导入 Benchmark
+
+Benchmark 也可以以**包**的形式导入：它的 `benchmark.json` 和全部题目，不带任何人的分数。Project 的任何成员都能导入。
+
+1. 在评估中心右上角，选择**导入评估集**。
+2. 从弹窗的两种方式中选一种：
+   - **推荐：让 Agent 在对话中导入。**在 **Benchmark 来源**中粘贴 GitHub 仓库里一个包文件夹的链接、一个本地路径或一段描述。每个内置 Benchmark 的包文件夹都在 [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) 的 `packages/` 下。弹窗会显示为 Project 默认 Agent 生成的提示词。选择**打开新对话**，检查提示词后发送；也可以用**复制 Prompt** 复制它。
+   - **上传 Benchmark zip 包。**选择**选择 zip 文件**，挑一个从 Benchmark 页面导出的 zip，或者根目录（或唯一的顶层目录）里有 `benchmark.json` 和各个 `CASE-*` 文件夹的 zip。
+3. 如果已有同 id 的 Benchmark，会先弹出确认再覆盖。覆盖会替换它的全部文件，并删除它的评估记录与运行结果，无法撤销。
+
+Agent 会把链接解析到一个固定提交，只取回那一个文件夹，写入前读完每个文件，覆盖已有的 Benchmark 之前先问你。服务端自己从不抓取这个链接。
+
+包里不带分数：导入的 Benchmark 没有评估记录，先用它[评估 Agent](#评估-agent)。zip 不是包时，上传会被拒绝并说明原因：
+
+- 里面有 `scoreboard.yaml`、`.jobs` 文件夹或其他以 `.` 开头的条目，或者顶层除了 `benchmark.json` 和 `CASE-*` 文件夹还有别的东西；
+- 里面有符号链接；
+- `status` 不是 `published`，或者某道题缺少 `statement/README.md` 或 `rubric/README.md`；
+- 顶层文件夹的名字与清单的 `id` 不同；
+- zip 超过 14 MB，或者解开后超过 1,000 个文件、单个文件超过 5 MB 或合计超过 20 MB。
+
+> [!NOTE]
+> 只导入来源可信的 Benchmark。包是供评估方和被测 Agent 阅读的文本，其中的内容不会自行运行。
+
+## 导出 Benchmark
+
+1. 打开 Benchmark 的页面。
+2. 在页头目录路径旁边，选择**导出**图标。
+
+下载的 `<benchmark>-v<version>.zip` 就是这个 Benchmark 的包：磁盘上原样的 `benchmark.json`（含来源）和全部题目。它不含记分板、`.jobs` 文件夹、其他以 `.` 开头的条目和符号链接，可以在本服务器或其他服务器上再次导入。只有已发布的 Benchmark 才有包：构建中、创建失败或清单无法读取的 Benchmark 没有**导出**。
+
 ## 查看 Benchmark
 
 点 Benchmark 卡片或**查看**，打开这个 Benchmark 的页面（`/benchmark/<benchmark>`）。**返回列表**回到列表页。
 
-页头在标题旁边写出 Benchmark 的目录 `benchmarks/<benchmark>`，附带**复制目录路径**按钮与 Benchmark 的版本（例如 `v2026.10.09.1`），另有它自己的**使用**按钮。Agent 从仓库文件夹导入的 Benchmark 另在**来源**处链接那个文件夹。
+页头在标题旁边写出 Benchmark 的目录 `benchmarks/<benchmark>`，附带**复制目录路径**按钮（已发布的 Benchmark 还有**导出**按钮）与 Benchmark 的版本（例如 `v2026.10.09.1`），另有它自己的**使用**按钮。Agent 从仓库文件夹导入的 Benchmark 另在**来源**处链接那个文件夹。
 
 ### 题目
 
@@ -217,6 +248,8 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 - **状态。** `benchmark.json` 中的 `status` 决定遮罩：`draft` 显示**构建中**，`failed` 显示**创建失败**，`published` 解除遮罩。清单读不了的 Benchmark 同样遮罩，显示**清单无法读取**，旁边图标的悬停提示说明原因。
 - **用 AI 创建。** 提示词的固定结尾把被测智能体的 id、期望的基线分和 Pilot 迭代上限交给 `benchmark-design` Skill，并要求取得基线分。
 - **手动创建。** 服务端按 Skill 读取的目录结构，把表单内容写入磁盘（`POST …/benchmarks`，仅 owner），状态为 `published`。
+- **导入。** 上传的 zip 交给 `POST …/benchmarks/archive`（任意成员），服务端检查后把包写入 `benchmarks/<id>/`，来源记为 `zip` 并带导入时间，记分板为空；版本保持包里的值。Agent 从仓库文件夹导入时写入来源 `git`，带链接、提交与文件夹；做法见 `benchmark-design` Skill 的 `reference/package.md`。
+- **导出。** `GET …/benchmarks/:id/archive`（任意成员）把已发布 Benchmark 的 `benchmark.json` 与题目打成 zip。
 - **评估。** 提示词要求通过自行派生的 `agent-evaluation` 子 Agent，在本会话自己的模型上跑完完整的 Case × runs 矩阵；执行评估的 Agent 从系统提示词的 `Provider` 与 `Model ID` 两行读出这个模型。每条结果报告的 Agent、模型和思考等级都必须一致，最后只向 `scoreboard.yaml` 追加一条带标签的评估。被测的 Agent 和 Benchmark 都保持不变。
 - **删除。** 服务端整目录删除（`DELETE …/benchmarks/:id`）。评估还在运行时删除 Benchmark，可能留下一个目录，因为运行中的评估还在往里写。这个目录没有 `benchmark.json`，不会出现在列表里，可以手动删除。
 - **示例与内置 Benchmark。** 在 Project 创建时写入，此后不再写入。早先版本的 Project 保留已有的内容，不会得到内置 Benchmark。

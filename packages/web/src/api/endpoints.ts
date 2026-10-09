@@ -30,6 +30,8 @@ import type {
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
+  BenchmarkArchiveImportRequest,
+  BenchmarkArchiveImportResponse,
   BenchmarkCasesResponse,
   BenchmarkCreateRequest,
   BenchmarkCreateResponse,
@@ -1764,6 +1766,28 @@ export const deleteBenchmark = (projectId: string, benchmarkId: string) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}`,
     { method: "DELETE" },
+  );
+
+/** Imports a Benchmark package from a zip (base64; any member); 409 `benchmark_exists` on a taken id unless overwrite; 201 returns the Benchmark as listed. */
+export const importBenchmarkArchive = (projectId: string, body: BenchmarkArchiveImportRequest) =>
+  apiFetch<BenchmarkArchiveImportResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/archive`,
+    { method: "POST", body },
+  );
+
+/**
+ * Download URL of a published Benchmark's package (a zip; the server names it `<id>-v<version>.zip`
+ * in Content-Disposition), from the machine holding the copy — null for this server. The export
+ * round-trips through importBenchmarkArchive.
+ */
+export const benchmarkArchiveUrl = (
+  projectId: string,
+  benchmarkId: string,
+  machineId?: string | null,
+): string =>
+  apiUrl(
+    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}/archive`,
+    machineId ?? null,
   );
 
 const benchmarkCaseFilesPath = (

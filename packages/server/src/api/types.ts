@@ -4105,6 +4105,28 @@ export interface BenchmarkCreateResponse {
   benchmark: BenchmarkSummary;
 }
 
+/**
+ * POST /api/projects/:p/benchmarks/archive (any Project member): import a Benchmark package from
+ * a zip. The zip holds `benchmark.json` and the `CASE-*` directories, at its root or inside
+ * exactly one top-level directory named by the manifest's id — the shape
+ * `GET …/benchmarks/:benchmarkId/archive` exports. A zip carrying `scoreboard.yaml`, `.jobs/` or
+ * anything else at its top level, a link, a package that is not `published` or a case without
+ * both READMEs is refused (400); so is a zip past the caps (413 `benchmark_too_large`: 14MB
+ * zipped, 1000 files, 5MB a file, 20MB inflated). The copy is written with origin `zip` and an
+ * empty scoreboard. An id already taken is 409 `benchmark_exists` unless `overwrite`.
+ */
+export interface BenchmarkArchiveImportRequest {
+  /** The zip, base64-encoded. */
+  dataBase64: string;
+  /** Replace the Benchmark of the same id whole — its evaluation records and `.jobs/` included. */
+  overwrite?: boolean;
+}
+
+export interface BenchmarkArchiveImportResponse {
+  /** The imported Benchmark, as the list now reads it. */
+  benchmark: BenchmarkSummary;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin library, and an Agent's installed skills and hooks
 // ---------------------------------------------------------------------------

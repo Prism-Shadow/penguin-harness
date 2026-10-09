@@ -6,6 +6,7 @@ description: Create Benchmarks, score agents on them, and improve agents against
 The Evaluation Center is where you measure and improve agents in the Web App. A **Benchmark** is a set of cases, each with a task statement and a private scoring rubric. A Benchmark belongs to the Project rather than to one agent, so it can score any agent in the Project.
 
 - To build a Benchmark, see [Create a Benchmark with AI](#create-a-benchmark-with-ai) or [Create a Benchmark manually](#create-a-benchmark-manually).
+- To bring in a Benchmark from a repository folder or a zip, or to download one, see [Import a Benchmark](#import-a-benchmark) and [Export a Benchmark](#export-a-benchmark).
 - To read the cases, the score chart and past evaluations, see [Read a Benchmark](#read-a-benchmark).
 - To score an agent, see [Evaluate an agent](#evaluate-an-agent).
 - To improve an agent against its scores, see [Optimize an agent](#optimize-an-agent).
@@ -17,7 +18,7 @@ For how evaluation and optimization work behind these pages, see [Self-Improveme
 
 In the sidebar, select **Evaluation Center**. The page (`/benchmark`) lists every Benchmark of the current Project as a card.
 
-Under the title, three numbered step cards outline the loop: **Create**, **Evaluate** and **Optimize**. Each says where to do that step: with the create buttons at the top right, or with **Use** on a Benchmark followed by the matching tab. The owner gets two create buttons, **Create with AI** and **Create manually**; a member gets **Create with AI** alone, and the first card names only that.
+Under the title, three numbered step cards outline the loop: **Create**, **Evaluate** and **Optimize**. Each says where to do that step: with the create buttons at the top right, or with **Use** on a Benchmark followed by the matching tab. The owner gets two create buttons, **Create with AI** and **Create manually**; a member gets **Create with AI** alone, and the first card names only that. Every member also gets **Import benchmark**, to the left of them; see [Import a Benchmark](#import-a-benchmark).
 
 Each Benchmark card shows:
 
@@ -97,11 +98,41 @@ While the cases are being written, the Benchmark's card shows **Being built**. T
 
 You do not choose an owning agent. A manual Benchmark is published at once but has no baseline yet, so [evaluate an agent](#evaluate-an-agent) on it before you optimize.
 
+## Import a Benchmark
+
+A Benchmark can also come in as a **package**: its `benchmark.json` and its cases, without anyone's scores. Any member of the Project can import one.
+
+1. At the top right of the Evaluation Center, select **Import benchmark**.
+2. Take one of the dialog's two ways:
+   - **Recommended: import it by chatting with the agent.** In **Benchmark source**, paste a link to one package folder in a GitHub repository, a local path or a description. Each built-in Benchmark has its package folder under `packages/` in [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark). The dialog shows the prompt it builds for the Project's default agent. Select **Open a new chat**, review the prompt, and send it; **Copy prompt** copies it instead.
+   - **Upload a Benchmark zip.** Select **Choose zip file** and pick a zip a Benchmark page exported, or one with `benchmark.json` and the `CASE-*` folders at its root or inside its only top-level folder.
+3. If a Benchmark with the same id already exists, a confirmation asks before overwriting. Overwriting replaces all of its files and deletes its evaluation records and run results, and cannot be undone.
+
+The agent resolves the link to a fixed commit, fetches only that folder, reads every file before it writes anything, and asks you before it overwrites a Benchmark. The server never fetches the link itself.
+
+A package carries no scores: an imported Benchmark starts without evaluations, so [evaluate an agent](#evaluate-an-agent) on it first. An upload is refused, with the reason, when the zip is not a package:
+
+- it holds a `scoreboard.yaml`, a `.jobs` folder or another entry starting with `.`, or anything at the top level besides `benchmark.json` and the `CASE-*` folders;
+- it holds a symbolic link;
+- its `status` is not `published`, or a case lacks `statement/README.md` or `rubric/README.md`;
+- its top-level folder is named differently from the manifest's `id`;
+- it is larger than 14 MB, or unpacks to more than 1,000 files, 5 MB in one file or 20 MB in all.
+
+> [!NOTE]
+> Import Benchmarks only from sources you trust. A package is text that the evaluator and the agent under test read; nothing in it runs on its own.
+
+## Export a Benchmark
+
+1. Open the Benchmark's page.
+2. In the header, beside the directory path, select the **Export** icon.
+
+The download, `<benchmark>-v<version>.zip`, is the Benchmark's package: `benchmark.json` as it is on disk, its origin included, and every case. It leaves out the scoreboard, the `.jobs` folder, other entries starting with `.` and symbolic links, so it can be imported again, on this server or another. Only a published Benchmark has a package: one that is being built, whose creation failed, or whose manifest can't be read shows no **Export**.
+
 ## Read a Benchmark
 
 Select a Benchmark card, or **View**, to open the Benchmark's page (`/benchmark/<benchmark>`). **Back to list** returns to the list.
 
-The header shows the Benchmark's directory, `benchmarks/<benchmark>`, beside the title, with a **Copy directory path** button, the Benchmark's version (for example `v2026.10.09.1`) and its own **Use** button. A Benchmark an agent imported from a repository folder also links that folder under **Source**.
+The header shows the Benchmark's directory, `benchmarks/<benchmark>`, beside the title, with a **Copy directory path** button and, for a published Benchmark, an **Export** button, then the Benchmark's version (for example `v2026.10.09.1`) and its own **Use** button. A Benchmark an agent imported from a repository folder also links that folder under **Source**.
 
 ### Cases
 
@@ -217,6 +248,8 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 - **Status.** `status` in `benchmark.json` drives the mask: `draft` shows **Being built**, `failed` shows **Creation failed**, and `published` lifts the mask. A Benchmark whose manifest cannot be read is masked too, as **Manifest can't be read**, with the reason on the icon beside it.
 - **Creating with AI.** The prompt's fixed ending hands the `benchmark-design` Skill the Test Agent's id, a desired baseline score and a pilot-iteration limit, and asks for the baseline to be taken.
 - **Creating manually.** The server writes the form to disk in the layout the Skills read (`POST …/benchmarks`, owner only), with the status `published`.
+- **Importing.** An upload goes to `POST …/benchmarks/archive` (any member), which checks the zip and writes the package to `benchmarks/<id>/` with the origin `zip`, the time of the import and an empty scoreboard; the version stays the package's. An agent's import from a repository folder writes the origin `git`, with the link, the commit and the folder; the `benchmark-design` Skill's `reference/package.md` describes that procedure.
+- **Exporting.** `GET …/benchmarks/:id/archive` (any member) packs a published Benchmark's `benchmark.json` and cases into a zip.
 - **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents, on the conversation's own model, which the evaluator agent reads from the `Provider` and `Model ID` lines of its system prompt. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
 - **Deleting.** The server removes the directory whole (`DELETE …/benchmarks/:id`). Deleting a Benchmark while an evaluation is still running can leave a directory behind, because the evaluation keeps writing into it. That directory has no `benchmark.json`, so it is not listed, and you can delete it by hand.
 - **The example and the built-in Benchmarks.** Written when the Project is created; never written again. A Project from an earlier release keeps what it has and is not given the built-in Benchmarks.
