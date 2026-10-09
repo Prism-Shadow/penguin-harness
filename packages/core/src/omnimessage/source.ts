@@ -1,11 +1,14 @@
 /**
  * Reading a Session's source (`session_meta.source`) back from a Trace or from a forwarded meta.
  *
- * Every meta written since the source became required carries one of the five values. A Trace
- * kept from before may carry none (it was a person's conversation) or the retired `benchmark`
- * (a Test Session `penguin run --source benchmark` started, which `penguin run` now records as
- * `cli`). Old Traces are never rewritten: each reader narrows what it reads through this one
- * function instead.
+ * Every meta written since the source became required carries one of the six values. A Trace
+ * kept from before may carry none (it was a person's conversation, or a desk or ticket Session
+ * of company mode) or the retired `benchmark` (a Test Session `penguin run --source benchmark`
+ * started, which `penguin run` now records as `cli`). Old Traces are never rewritten: each
+ * reader narrows what it reads through this one function instead. Seeing the Trace alone, it
+ * reads a missing source as `user`; the server, which also has the Session's index row, reads
+ * one whose row was opened by the organization runtime as `company` instead
+ * (`readRecordedSource` in the server's runtime/session-sources.ts).
  *
  * Removal: at the 0.3.0 release preparation the `benchmark` branch goes. The `undefined` branch
  * goes only together with a one-time rewrite of old heads, or stays for good — the user decides
@@ -20,6 +23,7 @@ const SESSION_SOURCES: ReadonlySet<unknown> = new Set<SessionSource>([
   "schedule",
   "subagent",
   "cli",
+  "company",
 ]);
 
 /** Narrows an untrusted `session_meta.source` to a SessionSource. */

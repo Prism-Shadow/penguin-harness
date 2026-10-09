@@ -85,6 +85,7 @@ import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import { LiveTailTracker } from "./live-tail.js";
+import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
@@ -373,15 +374,16 @@ export function createCoreSessionLoader(
           `This Session's Workspace no longer exists: ${row.workspace}, so it cannot continue. Create a new Session.`,
         );
       }
-      const knownSource = sources?.get(row.sessionId);
+      // The source this process recorded at creation, else the one the row stands for: the
+      // organization runtime's are `company` (unrunSource), the list's reading of the same row.
+      const knownSource = sources?.get(row.sessionId) ?? unrunSource(row.client);
       try {
         return await agent.createSession({
           workspaceDir: row.workspace,
           modelId: row.modelId,
           provider: row.provider,
-          // The rebuilt Session re-records a known source in its fresh session_meta (an
-          // unknown one is core's default, `user`), and starts its first context at the
-          // row's pinned level.
+          // The rebuilt Session records that source in its fresh session_meta (an unknown one
+          // is core's default, `user`), and starts its first context at the row's pinned level.
           ...(knownSource !== undefined ? { source: knownSource } : {}),
           ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
         });

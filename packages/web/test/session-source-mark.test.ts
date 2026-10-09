@@ -3,8 +3,8 @@
  *
  * - Given a Background row (an API, scheduled, subagent or CLI Session), it carries one mark
  *   with a tooltip, and no two sources share a drawing or a name.
- * - Given a person's conversation (`user`, or a row not yet classified) or an archived row of any
- *   source, it carries no source mark.
+ * - Given a person's conversation (`user`, or a row not yet classified), a company Session or
+ *   an archived row of any source, it carries no source mark.
  * - Given a scheduled task's Session, its mark is not the alarm clock: that mark belongs to a
  *   task still to fire into a conversation, and one row must not show two alarms.
  * - In English, no mark falls back to a Chinese name.
@@ -52,9 +52,10 @@ describe("backgroundSourceMark", () => {
     expect(new Set(marks.map((m) => m?.sourceLabel)).size).toBe(BACKGROUND.length);
   });
 
-  it("leaves a person's conversation and every archived row unmarked", () => {
+  it("leaves a person's conversation, a company Session and every archived row unmarked", () => {
     expect(backgroundSourceMark(session({ source: "user" }))).toBeNull();
     expect(backgroundSourceMark(session())).toBeNull();
+    expect(backgroundSourceMark(session({ source: "company" }))).toBeNull();
     for (const source of BACKGROUND) {
       expect(backgroundSourceMark(session({ source, archived: true }))).toBeNull();
     }

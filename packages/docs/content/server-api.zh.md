@@ -647,8 +647,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `excludeOrg=1` 会把组织的工位会话、工单会话和子 Session 一并移出这一页以及 `counts=1` 的总数，这正是开发模式的列表所要的。取其他值返回 400。
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
-- `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。只有 `excludeOrg` 会把它当作过滤条件，而且只用来剔除这些行。
-- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/omni-message#sessionmeta)），类别由它决定：已归档的 Session 无论来源都是 `archived`；其余的 `user` 会话为 `active`，`api`、`schedule`、`subagent`、`cli` 会话为 `background`。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
+- `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。只有 `excludeOrg` 会把它当作过滤条件，而且只用来剔除这些行。Trace 未记录 `source` 的 `"org"` 行（旧版本写下的，或尚未运行过的）读作 `company` 会话。
+- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/omni-message#sessionmeta)），类别由它决定：`company` 会话不属于任何类别，归档与否都一样，因此带 `category`、`workspaceGroup` 或 `counts=1` 的请求会把它移出这一页和所有总数，只有不带这些参数的完整列表才返回它。其余的会话，已归档的无论来源都是 `archived`；`user` 会话为 `active`，`api`、`schedule`、`subagent`、`cli` 会话为 `background`。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
 - 创建时 `source` 只接受 `"cli"`，由 `penguin run` 发送；其他来源只由服务器自己写入，省略时创建 `user` 会话。已停用的 `"benchmark"` 仍然接受，按 `"cli"` 处理。
 - `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，系统隐藏的条目（带隐藏属性，如 `AppData`、`NTUSER.DAT`）另带 `hidden: true`，只写盘符如 `D:` 即视为其根目录 `D:\`。请求主目录并带 `places=1` 时，另附选择器左栏所需的两项：`standardFolders`（桌面、文档、下载、图片，按该机器自己的规则取得——Windows 的已知文件夹、Linux 的 XDG 用户目录；读取失败时省略）与 `locations`（Windows 的各盘符、macOS 的各卷、Linux 的根目录及 `/media`、`/run/media`、`/mnt` 下的挂载点，各带 `kind`，有名称时带 `label`）。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
 - `POST /dirs/access` 是桌面端 Workspace 选择器里的**允许访问**。macOS 只替它认定为读取责任方的应用询问桌面、文稿与下载的访问权限，因此由桌面 shell 的主进程把绝对路径 `path` 读一次，响应要等用户作答后才返回。`granted` 表示这次读取是否成功（非 macOS 平台不读取，恒为 `true`）。`packaged` 为 `false` 表示这是从终端启动的开发实例，macOS 把它的读取记在该终端名下。`path` 不是绝对路径时返回 `400` `dir_not_absolute`；服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`；shell 在 120 秒内没有应答时返回 `504` `timeout`。只有桌面应用自己的窗口可以调用，其他会话返回 `403` `desktop_shell_only`。
@@ -684,7 +684,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `GET /usage/errors` 接受 `offset`、`limit`、同样的 `from` / `to` / `fromTs` / `toTs` / `agentId` 过滤条件，以及可选的 `kind`（`unexpected` 或 `expected`）。
 - 错误表把同一天里来源、错误码、分类和消息都相同的记录合为一行，带上次数 `count`、最近一次的时间 `ts` 和首次的时间 `firstTs`。`offset`、`limit` 和 `rows` 按行计；`total` 和仪表盘的汇总数字按记录计。`GET /usage` 与 `GET /usage/errors` 都接受可选的 `utcOffsetMinutes`，即读者所在时区相对 UTC 向东的分钟数（−840 到 840），它决定「同一天」按哪一天算；不传时按服务器自己的日期。
 - `DELETE /usage/errors` 接受与读取相同的过滤条件（`from` / `to` / `fromTs` / `toTs` / `agentId`），但不接受 `kind`，因为面板上没有这个控件。这里 `from` 和 `to` 都必填（否则返回 400），因为少一个边界，清空的就是整段历史，而不是过滤后的一部分。清空的范围与调用者读取的范围完全一致：管理员清空时，也会删掉只有管理员读取才能看到的未归属行；成员清空时则永远不会。
-- `GET /agents/:agentId/traces` 还接受 `limit` 和 `offset` 分页，以及 `category`（必须搭配 `limit`），用于只列出某一类别的 Session。
+- `GET /agents/:agentId/traces` 还接受 `limit` 和 `offset` 分页，以及 `category`（必须搭配 `limit`），用于只列出某一类别的 Session。分页列表不含不属于任何类别的 `company` 会话；不带 `limit` 的完整目录列出所有 Trace。
 - 任何成员都可以下载 Trace。导入只有所有者能做，与 Agent State 快照导入一样，上限 14MB。导入的文件必须是有效的 Trace JSONL，首条记录必须是 `session_meta`，`session_id` 须可安全用作文件名。session id 与 Agent 已有的重复时拒绝导入（409 `trace_session_exists`），所以导入的文件总是成为新 Session 的 index 001，按首条记录的时间戳存入对应的本地日期目录。
 
 ## Session 级端点

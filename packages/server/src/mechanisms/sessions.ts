@@ -54,8 +54,9 @@ export abstract class SessionDrivers {
 /** SessionOrigins: the mechanism SessionSources implements. */
 @Interface()
 export abstract class SessionOrigins {
-  abstract set(sessionId: string, source: SessionSource): void;
-  abstract get(sessionId: string): SessionSource | undefined;
+  /** `null`: the Session's Trace head records no source (written before it was required). */
+  abstract set(sessionId: string, source: SessionSource | null): void;
+  abstract get(sessionId: string): SessionSource | null | undefined;
   abstract delete(sessionId: string): void;
 }
 

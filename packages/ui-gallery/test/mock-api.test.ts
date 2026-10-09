@@ -115,6 +115,17 @@ describe("the mocked API", () => {
     });
     expect(notes.sessions.some((s) => s.client === "org")).toBe(false);
     expect(notes.counts?.active).toBe(notes.sessions.length);
+    // Without the flag too, as the server does: a company Session is in no category, so a
+    // counted page leaves it out; only the plain list serves it.
+    const counted = await api.listSessions(project, store.f.agents[1]!.agentId, {
+      offset: 0,
+      limit: 10,
+      withCounts: true,
+    });
+    expect(counted.sessions.some((s) => s.source === "company")).toBe(false);
+    expect(counted.counts?.active).toBe(counted.sessions.length);
+    const plain = await api.listSessions(project, store.f.agents[1]!.agentId);
+    expect(plain.sessions.some((s) => s.source === "company")).toBe(true);
   });
 
   it("pages the list by last activity with a cursor, as the sidebar asks for it", async () => {

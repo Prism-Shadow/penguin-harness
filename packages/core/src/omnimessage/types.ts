@@ -154,16 +154,18 @@ export interface SessionMetaPayload {
  * purposes.
  *
  * - `user`: a person's conversation, and the default when nothing names a source: the Web App
- *   composer, `penguin chat`, company mode's desk and ticket Sessions, and forks.
+ *   composer, `penguin chat`, and forks.
  * - `api`: an external program opened it through the Agent API.
  * - `schedule`: a scheduled task opened it for one of its runs.
- * - `subagent`: a `run_subagent` child, whichever Session spawned it.
+ * - `subagent`: a `run_subagent` child, whichever Session spawned it (a company Session's too).
  * - `cli`: `penguin run` created it, the Test Sessions an evaluation launches included.
+ * - `company`: company mode's organization runtime opened it, as an employee's desk or for a
+ *   ticket. Only company mode's own views list it.
  *
  * Which program created the server's index row is a separate fact (the row's `client`); the two
  * can differ, as `penguin chat` (a `cli` client writing a `user` Session) shows.
  */
-export type SessionSource = "user" | "api" | "schedule" | "subagent" | "cli";
+export type SessionSource = "user" | "api" | "schedule" | "subagent" | "cli" | "company";
 
 // ---------------------------------------------------------------------------
 // model_msg — complete messages

@@ -168,8 +168,10 @@ function servedPage(rows: readonly SessionInfo[], query: URLSearchParams): Respo
     const counts = zeroCounts();
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     for (const s of rows) {
-      counts[sessionCategory(s)] += 1;
-      (workspaceCounts[s.workspace] ??= zeroCounts())[sessionCategory(s)] += 1;
+      const category = sessionCategory(s);
+      if (category === null) continue;
+      counts[category] += 1;
+      (workspaceCounts[s.workspace] ??= zeroCounts())[category] += 1;
     }
     Object.assign(body, { counts, workspaceCounts });
   }

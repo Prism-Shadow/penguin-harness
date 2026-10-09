@@ -336,7 +336,10 @@ const groupShares = (
   rows: readonly SessionInfo[],
 ): { active: number; folded: number } => {
   const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
-  for (const s of rows) counts[sessionCategory(s)] += 1;
+  for (const s of rows) {
+    const category = sessionCategory(s);
+    if (category !== null) counts[category] += 1;
+  }
   counts.active = Math.max(counts.active, totals?.active ?? 0);
   for (const category of FOLDER_CATEGORIES)
     counts[category] = Math.max(counts[category], totals?.[category] ?? 0);
@@ -399,8 +402,9 @@ export function Sidebar({
 
   /**
    * The rows this list renders: the user's OWN conversations. An organization's desk and
-   * ticket Sessions (marked by `orgId`, or by the durable `client === "org"` stamp once the
-   * organization is gone) are driven by its scheduler and are reached as themselves in company
+   * ticket Sessions (`company` Sessions, marked by `orgId` too, and by the durable
+   * `client === "org"` stamp that outlives the organization) are driven by its scheduler and
+   * are reached as themselves in company
    * mode — a desk from the 工位 group, a ticket session from its ticket. The store's own
    * fetches already leave them out, totals and Workspace stamps included (the server's
    * `excludeOrg`), so the counts below are the list's exact share; this filter is for a row
@@ -1134,7 +1138,7 @@ export function Sidebar({
     const s = sessions.find((x) => x.sessionId === activeSessionId);
     if (!s) return;
     const category = sessionCategory(s);
-    if (category === "active" || category === "archived") return;
+    if (category === null || category === "active" || category === "archived") return;
     const guard = `${groupMode}\0${activeSessionId}`;
     if (lastAutoExpandedRef.current === guard) return;
     lastAutoExpandedRef.current = guard;

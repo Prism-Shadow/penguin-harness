@@ -254,7 +254,8 @@ export interface CreateSessionOptions {
   /**
    * What kind of conversation this is, recorded in session_meta; absent = `user`, a person's.
    * The subagent spawn site passes `subagent`; a host passes the source its caller stands for
-   * (the server: `schedule` for a scheduled task, `cli` for `penguin run`, `api` for the Agent API).
+   * (the server: `schedule` for a scheduled task, `cli` for `penguin run`, `api` for the Agent API,
+   * `company` for company mode's desk and ticket Sessions).
    */
   source?: SessionSource;
 }
