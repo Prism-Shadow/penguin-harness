@@ -16,6 +16,7 @@ The Plugins page shows every plugin the same way, the library's Skill and hook p
 - Every part started at the date version its plugin carried before, so a copy installed by an earlier release compares equal and no update is offered after the upgrade.
 - The Agent list's `pluginUpdates` compares each installed Skill and hook package with the library's same part, and reports a plugin once when any part is behind; its `version` is the newest date version among the plugin's parts. The organization runtime's per-employee plugin check answers with the same per-part pair.
 - `scripts/check-plugin-versions.mjs` checks parts: a change under `plugins/<p>/skills/<s>/` needs that Skill's `version` raised, and a change to the hook scripts or the `hooks` commands needs `hooks.version` raised; `package.json`, `README.md`, `icon.svg` and the rest of `plugin.json` need nothing. It also refuses a `plugin.json` that keeps a top-level `version`, and a part started below the version its plugin carried at the base commit.
+- The skill-porting Skill gives a ported Skill a date version in its frontmatter, in place of the natural number and the `updated` timestamp it used to write.
 
 ## The Plugins page
 
@@ -31,4 +32,4 @@ The Plugins page shows every plugin the same way, the library's Skill and hook p
 
 - `GET /api/plugins/:plugin/readme` returns the `README.md` at a library plugin's package root, or 404 `readme_not_found`.
 - `PluginItem.version` is the npm version; `PluginItem` gained `source` and `hookVersion`, and each Skill's `version` is its own.
-- `PluginIndexEntry` gained the optional card fields `descriptionZh`, `shortDescription`, `shortDescriptionZh` and `icon`.
+- `PluginIndexEntry` gained the optional card fields `descriptionZh`, `shortDescription`, `shortDescriptionZh` and `icon`. Only the built-in index and a package on the server supply `icon`; the server drops it from every entry of a remote index, since the Web App inlines the SVG.

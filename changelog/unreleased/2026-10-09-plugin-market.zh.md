@@ -16,6 +16,7 @@
 - 每个部件的初始版本取其插件原有的日期版本，早先版本安装的副本因此与库内同版，升级后不出现更新提示。
 - Agent 列表的 `pluginUpdates` 把每个已装 Skill 与钩子包同库内的同名部件比较，任一部件落后即按插件报告一次；报告的 `version` 取该插件各部件中最新的日期版本。组织运行时逐员工检查插件时，也按同一套部件配对作答。
 - `scripts/check-plugin-versions.mjs` 改为按部件校验：改了 `plugins/<p>/skills/<s>/` 必须递增该 Skill 的 `version`，改了钩子脚本或 `hooks` 中的命令必须递增 `hooks.version`；`package.json`、`README.md`、`icon.svg` 与 `plugin.json` 的其余字段无需递增。它还拒绝仍带顶层 `version` 的 `plugin.json`，以及初始版本低于其插件在 base 提交时版本的部件。
+- skill-porting 技能为移植来的 Skill 在 frontmatter 中写日期版本，不再写自然数版本与 `updated` 时间戳。
 
 ## 插件页
 
@@ -31,4 +32,4 @@
 
 - `GET /api/plugins/:plugin/readme` 返回插件库插件包根目录的 `README.md`，没有时返回 404 `readme_not_found`。
 - `PluginItem.version` 为 npm 版本；`PluginItem` 新增 `source` 与 `hookVersion`，各 Skill 的 `version` 是它自己的。
-- `PluginIndexEntry` 新增可选的卡片字段 `descriptionZh`、`shortDescription`、`shortDescriptionZh` 与 `icon`。
+- `PluginIndexEntry` 新增可选的卡片字段 `descriptionZh`、`shortDescription`、`shortDescriptionZh` 与 `icon`。`icon` 只取自内置索引与服务端上的包；远程索引的条目一律丢弃 `icon`，因为 Web App 会把 SVG 内联进页面。

@@ -11,7 +11,10 @@
  *     the descriptions and icon of the package's own plugin.json and icon.svg, so its card
  *     renders on a server the package is not installed on);
  *   - the HTTP registry fetches an `index.json` URL and runs it through the same
- *     validator, so a remote index is trusted no further than the embedded one.
+ *     validator, so a remote index is trusted no further than the embedded one — and less
+ *     in one respect: its entries lose their `icon`, an SVG the Web App inlines into the
+ *     page, which only what ships with this server may supply (the embedded index, and a
+ *     package's own icon.svg on this machine, see localPluginDisplay).
  *
  * A deployment's list is the builtin registry plus the published index (see
  * NIGHTLY_INDEX_URL), merged in http/routes/plugins.ts.
@@ -75,8 +78,16 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
  * publisher's single artifact, so a malformed row means the artifact is broken —
  * unlike a Project's plugin list, whose entries are independent choices skipped one
  * by one.
+ *
+ * `icons: "drop"` is for a document from the network: the Web App draws an entry's icon by
+ * inlining its SVG, so a remote entry's is removed. Removed rather than refused — the rest of
+ * the row still lists, under the puzzle piece.
  */
-export function parsePluginIndex(data: unknown, source: string): PluginIndexEntry[] {
+export function parsePluginIndex(
+  data: unknown,
+  source: string,
+  { icons = "keep" }: { icons?: "keep" | "drop" } = {},
+): PluginIndexEntry[] {
   if (!Array.isArray(data)) {
     throw new Error(`plugin index from ${source} is not an array`);
   }
@@ -85,8 +96,15 @@ export function parsePluginIndex(data: unknown, source: string): PluginIndexEntr
     if (entry === null) {
       throw new Error(`plugin index from ${source} has a malformed entry at index ${i}`);
     }
-    return entry;
+    return icons === "drop" ? withoutIcon(entry) : entry;
   });
+}
+
+/** An index entry with no `icon`: what a remote source's entry becomes (see parsePluginIndex). */
+export function withoutIcon(entry: PluginIndexEntry): PluginIndexEntry {
+  if (!("icon" in entry)) return entry;
+  const { icon: _dropped, ...rest } = entry;
+  return rest;
 }
 
 export const BUILTIN_REGISTRY_SOURCE = "builtin";
@@ -225,7 +243,7 @@ export function httpPluginRegistry(
           `plugin index from ${indexUrl} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-      return parsePluginIndex(data, indexUrl);
+      return parsePluginIndex(data, indexUrl, { icons: "drop" });
     },
     // The shared index format carries no readme location, so a remote source has none to
     // offer yet. Null rather than a guessed URL: inventing one would have the Web App

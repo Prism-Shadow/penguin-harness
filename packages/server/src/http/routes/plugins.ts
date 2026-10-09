@@ -53,6 +53,7 @@ import {
   httpPluginRegistry,
   localPluginDisplay,
   mergeIndexes,
+  withoutIcon,
   NIGHTLY_INDEX_URL,
 } from "../../plugin/registry.js";
 import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
@@ -264,8 +265,11 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   // and gets the default index, while `off` resolves to null and means builtin entries only.
   const url = options.indexUrl === undefined ? NIGHTLY_INDEX_URL : options.indexUrl;
   if (url === null) return [builtin];
+  // The parked document goes through the remote rule too: it was fetched by a previous App,
+  // which may not have dropped the icons.
+  const seed = options.seed ?? null;
   const cache = cachedRegistry(httpPluginRegistry(url, { fetchImpl: options.fetchImpl ?? fetch }), {
-    seed: options.seed ?? null,
+    seed: seed === null ? null : { at: seed.at, entries: seed.entries.map(withoutIcon) },
   });
   options.onCache?.(cache);
   return [builtin, cache];

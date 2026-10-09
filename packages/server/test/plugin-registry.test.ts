@@ -14,6 +14,9 @@
  * - The HTTP registry fetches its index URL and runs the document through the same validator;
  *   an HTTP error, non-JSON and a malformed document fail it; a failed connection is tried
  *   again, an answer is not. No network: fetch is the suite's fetch fake.
+ * - A remote entry never carries an icon (the page inlines it as SVG): the HTTP registry drops
+ *   it and keeps the rest of the row, and so does the route for a document a previous App
+ *   fetched and parked.
  * - A published index may be slow or down without emptying the page: the cache and the
  *   tolerant merge beside the builtin catalogue.
  * - GET /api/plugins/registry and its readme route need a session; the readme route refuses a
@@ -91,6 +94,18 @@ describe("httpPluginRegistry", () => {
     const entries = await httpPluginRegistry(url, registry.fetch).index();
     expect(registry.calls.map((call) => call.url)).toEqual([url]);
     expect(entries).toEqual([VALID_ENTRY]);
+  });
+
+  it("drops a remote entry's icon, an SVG the page would inline, and keeps the rest of the row", async () => {
+    const described: PluginIndexEntry = {
+      ...VALID_ENTRY,
+      descriptionZh: "一个示例插件。",
+      shortDescription: "Demo.",
+    };
+    const registry = fakeFetch(() =>
+      jsonResponse([{ ...described, icon: '<svg onload="alert(1)"></svg>' }]),
+    );
+    expect(await httpPluginRegistry(url, registry.fetch).index()).toEqual([described]);
   });
 
   it("tries a failed connection again, and names the last cause after the final attempt", async () => {
@@ -493,6 +508,19 @@ describe("the route's own merge", () => {
     expect(body.plugins.at(-1)!.name).toBe(published.name);
     // A dead source shortens the listing; it does not empty it.
     expect(body.failures).toEqual([{ source: "dead", error: "published index answered HTTP 404" }]);
+  });
+
+  it("drops the icons of a published document a previous App fetched and parked", async () => {
+    const offline = fakeFetch(() => {
+      throw new TypeError("fetch failed");
+    });
+    const routes = pluginRegistryRoutes({
+      indexUrl: "https://registry.example/index.json",
+      fetchImpl: offline.fetch,
+      seed: { at: Date.now(), entries: [{ ...published, icon: '<svg onload="alert(1)"></svg>' }] },
+    });
+    const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
+    expect(body.plugins.find((entry) => entry.name === published.name)).toEqual(published);
   });
 
   it("with no published source configured, lists the builtin entries alone", async () => {

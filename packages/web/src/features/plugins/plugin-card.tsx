@@ -262,8 +262,10 @@ export function PluginCard(props: PluginCardProps) {
             glyph={20}
           />
           <div className="min-w-0 flex-1">
+            {/* The plugin's name is its id (there is no display name), set in the UI font as a
+                title; monospace is kept for what is code — the specifier on hover, the version. */}
             <span
-              className="block truncate font-mono text-[length:var(--ui-text-code-size)] font-semibold"
+              className="block truncate text-sm font-semibold"
               data-tooltip={row.module?.specifier ?? row.name}
               data-tooltip-content="code"
             >
