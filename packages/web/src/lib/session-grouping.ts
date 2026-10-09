@@ -301,14 +301,17 @@ export function splitPage<T>(fetched: T[], pageSize: number): { items: T[]; hasM
 }
 
 /**
- * The sidebar category a Session renders under — the same precedence the server's
- * `category` list filter applies, so filtered fetching and client rendering can never
- * disagree: archived wins regardless of `source` (archiving is an explicit user action,
- * so the Archived folder must show everything the user put there); otherwise a person's
- * conversation (`user`, or a row the server has not classified yet) is active, and every
- * other source — API, scheduled, subagent and CLI Sessions — goes to the Background folder.
+ * The sidebar category a Session renders under — the same rule the server's `category`
+ * list filter applies, so filtered fetching and client rendering can never disagree. A
+ * company Session (company mode's desk and ticket Sessions) is in none, archived or not: only
+ * company mode's own views list it. Otherwise archived wins regardless of `source` (archiving
+ * is an explicit user action, so the Archived folder must show everything the user put there);
+ * then a person's conversation (`user`, or a row the server has not classified yet) is active,
+ * and every other source — API, scheduled, subagent and CLI Sessions — goes to the Background
+ * folder.
  */
-export function sessionCategory(s: SessionInfo): SessionCategory {
+export function sessionCategory(s: SessionInfo): SessionCategory | null {
+  if (s.source === "company") return null;
   if (s.archived) return "archived";
   return s.source === undefined || s.source === "user" ? "active" : "background";
 }
@@ -335,10 +338,16 @@ export type FolderCategory = (typeof FOLDER_CATEGORIES)[number];
  */
 export type SessionPartition = Record<SessionCategory, SessionInfo[]>;
 
-/** Partitions a group's Sessions for rendering. Input order is preserved within each part. */
+/**
+ * Partitions a group's Sessions for rendering. Input order is preserved within each part; a
+ * company Session, in no category, is in no part.
+ */
 export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
   const parts: SessionPartition = { active: [], background: [], archived: [] };
-  for (const s of sessions) parts[sessionCategory(s)].push(s);
+  for (const s of sessions) {
+    const category = sessionCategory(s);
+    if (category !== null) parts[category].push(s);
+  }
   return parts;
 }
 
@@ -418,9 +427,9 @@ export function aggregateWorkspaceCounts(
  * The Session the UI opens as "the last conversation" (the chat home's auto-select and
  * the collapsed rail's entry): the loaded row the user was last IN — not the one created
  * last, which on a revisited conversation is a different row. Only a person's conversation
- * (an active row) qualifies: archived rows are hidden by choice, and a background Session —
- * one an API caller, a scheduled task, a parent agent or `penguin run` opened — is not a
- * conversation the user was in. Newest by lastActiveAt (stamped from `Date#toISOString`, so
+ * (an active row) qualifies: archived rows are hidden by choice, and neither a background
+ * Session — one an API caller, a scheduled task, a parent agent or `penguin run` opened — nor a
+ * company Session is a conversation of this list the user was in. Newest by lastActiveAt (stamped from `Date#toISOString`, so
  * uniform ISO-8601 UTC like createdAt and comparable as a string), ties broken by sessionId —
  * the list's ordering convention. Input order doesn't matter.
  */
@@ -680,17 +689,19 @@ export function pinnedFirst<T>(
 }
 
 /**
- * The two marks a Session an organization owns can carry — a desk session of one of its
+ * The marks a Session an organization owns can carry — a desk session of one of its
  * employees, or a session contributing to one of its tickets. `client` is stamped on the row
- * when the organization runtime creates the Session and never changes; `orgId` is resolved per
- * read from the organization's own caches. Both are optional on the wire, and a row is an
- * organization's when either says so.
+ * when the organization runtime creates the Session and never changes, and a Session it opened
+ * is a `company` Session; `orgId` is resolved per read from the organization's own caches. All
+ * are optional on the wire, and a row is an organization's when any says so.
  */
 export interface OrgSessionMarks {
   /** The owning organization, resolved per read; absent once the organization is deleted. */
   orgId?: string;
   /** The client that created the Session; "org" is the organization runtime's own stamp. */
   client?: string;
+  /** What kind of conversation it is; "company" for a desk or ticket Session. */
+  source?: string;
 }
 
 /**
@@ -699,7 +710,11 @@ export interface OrgSessionMarks {
  * longer hold the Session, and the row would otherwise reappear somewhere it never belonged.
  */
 export function isOrgSession(row: OrgSessionMarks): boolean {
-  return (row.orgId !== undefined && row.orgId !== "") || row.client === "org";
+  return (
+    (row.orgId !== undefined && row.orgId !== "") ||
+    row.client === "org" ||
+    row.source === "company"
+  );
 }
 
 /**

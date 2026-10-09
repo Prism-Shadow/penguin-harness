@@ -16,6 +16,9 @@
  * agent-evaluation. The evaluation runtime is never picked in this dialog —
  * Evaluate takes the tested agent's own configured model and thinking level, and Optimize reuses
  * what that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
+ *
+ * The conversation is an ordinary Session, listed with the agent's own: only the Test Sessions
+ * it starts through `penguin run` (CLI Sessions) are filed under the Background folder.
  */
 import { useEffect, useState } from "react";
 import type {

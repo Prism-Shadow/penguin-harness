@@ -332,6 +332,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "Pinned sidebar groups, same key space.",
   },
   {
+    kind: "family",
+    key: "penguin.a2uiDraft.",
+    scope: "install",
+    why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
+  },
+  {
     kind: "exact",
     key: "penguin.lastProjectId",
     scope: "install",

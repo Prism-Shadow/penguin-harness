@@ -38,7 +38,7 @@
  * not rendered — the child Agent's final text is already streamed through the parent
  * tool's output gutter.
  *
- * **Rich blocks**: a reply's ```a2ui blocks (a choice, a form, steps, a callout), which the
+ * **Rich blocks**: a reply's ```a2ui blocks (a choice, a form, steps, a callout, a widget), which the
  * Web App draws as components, print as core's text fallback here, streamed and in history
  * alike (see a2ui-stream.ts); every other fence prints as written.
  *

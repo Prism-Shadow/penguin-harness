@@ -7,12 +7,14 @@
  *
  * Scenarios:
  * - Given Sessions of every source, some archived, the list files `user` rows under `active`,
- *   every other source under `background`, and an archived row under `archived` whatever its
- *   source.
+ *   `api` / `schedule` / `subagent` / `cli` rows under `background`, and an archived row under
+ *   `archived` whatever its source — but a `company` row, archived or not, under none of them;
+ *   the plain list still serves it.
  * - Given a category the list no longer has (`subagent`, `schedule`, `benchmark`) or junk,
  *   the list is a 400, never an unfiltered page.
  * - Given the same rows, `counts=1` returns active / background / archived totals over the
- *   whole list whatever the page, the per-Workspace totals sum back to them, and a request
+ *   whole list whatever the page, counting no company row; the per-Workspace totals sum back
+ *   to them, a Workspace holding only company rows has no totals and no stamp, and a request
  *   without `counts=1` carries none.
  * - Given more background rows than a page, `category=background` pages by activity cursor,
  *   serving every background row exactly once and no other.
@@ -23,8 +25,12 @@
  *   has not seen it) one without a source lists as `active` and reads `user`, one with
  *   `benchmark` lists as `background` and reads `cli`; the startup sweep adopts them the same
  *   way.
- * - Given company mode opening a desk Session (no source, client `org`), the Session is
- *   `user` and keeps its `org` client; a child it spawns is `subagent`, in Background.
+ * - Given a Session company mode opened before the source was required (a head without one, the
+ *   row's client `org`), it reads as `company` and is in no category; so does an `org` row that
+ *   has not run yet.
+ * - Given company mode opening a desk Session (`company`, client `org`), the Session is
+ *   `company`, keeps its `org` client and is in no category; a child it spawns is `subagent`,
+ *   in Background.
  * - Given the scheduler opening a Session, it is `schedule`, in Background.
  * (A fork is `user` whatever it was cut from: session-fork.test.ts.)
  */
@@ -93,7 +99,7 @@ describe("session source", () => {
   async function seed(
     n: number,
     source: unknown,
-    opts: { workspace?: string; archived?: boolean; indexed?: boolean } = {},
+    opts: { workspace?: string; archived?: boolean; indexed?: boolean; client?: "org" } = {},
   ): Promise<string> {
     const day = String(n).padStart(2, "0");
     // Unique per case as well: the in-process source registry outlives a deleted Agent (ids
@@ -112,6 +118,7 @@ describe("session source", () => {
         workspace,
         approvalMode: "allow-all",
         title: null,
+        ...(opts.client !== undefined ? { client: opts.client } : {}),
         createdAt: stamp,
         lastActiveAt: stamp,
       });
@@ -134,7 +141,11 @@ describe("session source", () => {
     return sessionId;
   }
 
-  /** One row of every source, a pre-source `user` row, a retired `benchmark` row, and two archived ones. */
+  /**
+   * One row of every source, a pre-source `user` row, a retired `benchmark` row, two archived
+   * ones, and three company rows: one sharing a Workspace with background rows, one archived,
+   * one alone in its Workspace.
+   */
   async function seedEverySource() {
     return {
       user: await seed(1, "user"),
@@ -146,10 +157,13 @@ describe("session source", () => {
       legacyBenchmark: await seed(7, "benchmark"),
       archivedUser: await seed(8, "user", { archived: true }),
       archivedSchedule: await seed(9, "schedule", { archived: true }),
+      company: await seed(10, "company", { workspace: "/tmp/ws-source-shared", client: "org" }),
+      archivedCompany: await seed(11, "company", { archived: true, client: "org" }),
+      companyOnly: await seed(12, "company", { workspace: "/tmp/ws-source-desk", client: "org" }),
     };
   }
 
-  it("files user rows under active, every other source under background, and archived rows under archived whatever their source", async () => {
+  it("files user rows under active, other programs' under background, archived rows under archived, and company rows under none", async () => {
     const rows = await seedEverySource();
     expect(new Set(ids(await list("?category=active")))).toEqual(
       new Set([rows.user, rows.legacyUser]),
@@ -160,6 +174,11 @@ describe("session source", () => {
     expect(new Set(ids(await list("?category=archived")))).toEqual(
       new Set([rows.archivedUser, rows.archivedSchedule]),
     );
+    // Nowhere in the categories, and still a Session: the plain list serves every row.
+    const all = await list("");
+    for (const id of [rows.company, rows.archivedCompany, rows.companyOnly]) {
+      expect(sourceIn(all, id)).toBe("company");
+    }
   });
 
   it("refuses a category the list no longer has, or junk, rather than serving an unfiltered page", async () => {
@@ -169,17 +188,21 @@ describe("session source", () => {
     }
   });
 
-  it("counts=1 totals active, background and archived over the whole list, broken down by Workspace", async () => {
+  it("counts=1 totals active, background and archived over the whole list, broken down by Workspace, counting no company row", async () => {
     await seedEverySource();
     const counted = await list("?category=active&counts=1&limit=1");
     expect(counted.sessions).toHaveLength(1);
     expect(counted.counts).toEqual({ active: 2, background: 5, archived: 2 });
-    // The two background rows sharing a Workspace are counted there together.
+    // The two background rows sharing a Workspace are counted there together, and the company
+    // row beside them is not.
     expect(counted.workspaceCounts?.["/tmp/ws-source-shared"]).toEqual({
       active: 0,
       background: 2,
       archived: 0,
     });
+    // A Workspace holding only a company row is no group of the list: no totals, no stamp.
+    expect(counted.workspaceCounts?.["/tmp/ws-source-desk"]).toBeUndefined();
+    expect(counted.workspaceLatest?.["/tmp/ws-source-desk"]).toBeUndefined();
     const summed = { active: 0, background: 0, archived: 0 };
     for (const ws of Object.values(counted.workspaceCounts ?? {})) {
       for (const key of Object.keys(summed) as (keyof typeof summed)[]) summed[key] += ws[key];
@@ -223,7 +246,7 @@ describe("session source", () => {
 
   it("refuses a source the server writes itself, creating nothing", async () => {
     await configureModels();
-    for (const source of ["api", "schedule", "subagent", "user"]) {
+    for (const source of ["api", "schedule", "subagent", "company", "user"]) {
       expect((await api.post(base(), { source })).status, source).toBe(400);
     }
     expect((await list("")).sessions).toEqual([]);
@@ -255,16 +278,57 @@ describe("session source", () => {
     expect(sourceIn(all, junk)).toBe("user");
   });
 
-  it("opens a company-mode desk Session as user, keeping its org client", async () => {
+  it("reads a Session company mode opened before the source was required as company, in no category", async () => {
+    // Its head records no source; its row carries the organization runtime's `org` stamp.
+    const oldDesk = await seed(1, undefined, { client: "org" });
+    const single = (await (await api.get(`/api/sessions/${oldDesk}`)).json()) as SessionResponse;
+    expect(single.session.source).toBe("company");
+    expect(sourceIn(await list(""), oldDesk)).toBe("company");
+    const counted = await list("?category=active&counts=1");
+    expect(counted.sessions).toEqual([]);
+    expect(counted.counts).toEqual({ active: 0, background: 0, archived: 0 });
+  });
+
+  it("reads an org row that has not run yet as company, in no category", async () => {
+    // A desk opened at a hire and never run, after a restart: no Trace, nothing in the
+    // registry. (Its first run records `company` too: session-loader.test.ts.)
+    const sessionId = `session-2026-07-21-09-${String(cases).padStart(2, "0")}-00-0de5c001`;
+    const stamp = "2026-07-21T09:00:00.000Z";
+    t.deps.sessionsRepo.insert({
+      sessionId,
+      projectId,
+      agentId,
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      workspace: t.root,
+      approvalMode: "allow-all",
+      title: null,
+      client: "org",
+      createdAt: stamp,
+      lastActiveAt: stamp,
+    });
+    expect(sourceIn(await list(""), sessionId)).toBe("company");
+    expect((await list("?counts=1")).counts).toEqual({ active: 0, background: 0, archived: 0 });
+  });
+
+  it("opens a company-mode desk Session as company, keeping its org client, in no category", async () => {
     await configureModels();
-    // The organization runtime's call: no source, the "org" client.
-    const desk = await t.deps.sessionService.createSession({ projectId, agentId, client: "org" });
+    // The organization runtime's call.
+    const desk = await t.deps.sessionService.createSession({
+      projectId,
+      agentId,
+      client: "org",
+      source: "company",
+    });
+    expect(desk.source).toBe("company");
     const got = (await (
       await api.get(`/api/sessions/${desk.sessionId}`)
     ).json()) as SessionResponse;
-    expect(got.session.source).toBe("user");
+    expect(got.session.source).toBe("company");
     expect(got.session.client).toBe("org");
-    expect(ids(await list("?category=active"))).toEqual([desk.sessionId]);
+    const counted = await list("?category=active&counts=1");
+    expect(counted.sessions).toEqual([]);
+    expect(counted.counts).toEqual({ active: 0, background: 0, archived: 0 });
   });
 
   it("files a child a desk Session spawns under Background as subagent", async () => {

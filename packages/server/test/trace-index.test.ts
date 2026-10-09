@@ -3,7 +3,8 @@
  * directory scans), registration-time classification, gate blind spots recovered by
  * the consumers' force-retry, write-time registration (import) and delete coherence.
  * A cache row registered before the source was required (NULL, or the retired `benchmark`)
- * reads as `user` / `cli`, without being rewritten.
+ * reads as a head that records no source (which the session list reads with the row's client)
+ * / as `cli`, without being rewritten.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -206,9 +207,11 @@ describe("trace-index", () => {
     expect(h.traceIndex.repo.listFilesBySession(P, A, IMP)).toEqual([]);
   });
 
-  it("reads a cache row registered before the source was required: NULL as user, benchmark as cli", async () => {
+  it("reads a cache row registered before the source was required: NULL as no recorded source, benchmark as cli", async () => {
     // The derived cache is never migrated: rows an older release registered keep the string
-    // (or the NULL) their head carried, and are read through the same narrowing.
+    // (or the NULL) their head carried, and are read through the same narrowing. NULL stays
+    // "records none": whether that is a person's conversation or a company Session is the
+    // index row's to say (readRecordedSource).
     const row = {
       sessionId: S1,
       projectId: P,
@@ -220,8 +223,8 @@ describe("trace-index", () => {
       firstTs: null,
       metaRead: true,
     };
-    h.traceIndex.repo.upsertSession({ ...row, source: null as unknown as SessionSource });
-    expect(h.traceIndex.repo.getSession(S1)?.source).toBe("user");
+    h.traceIndex.repo.upsertSession({ ...row, source: null });
+    expect(h.traceIndex.repo.getSession(S1)?.source).toBeNull();
     h.traceIndex.repo.upsertSession({ ...row, source: "benchmark" as unknown as SessionSource });
     expect(h.traceIndex.repo.getSession(S1)?.source).toBe("cli");
   });

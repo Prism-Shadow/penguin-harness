@@ -6,8 +6,8 @@
  *   draft, wrongly typed, unknown or half fields are dropped and the rest kept (the permission
  *   picks, the paired model references, the AI-prefill mark only as true, the approval mode's
  *   four values, the skills list); a legacy string model id is always dropped, and so is the
- *   evaluation-run mark (`source: "benchmark"`) an older build stored, so the conversation such a
- *   draft creates is an ordinary one.
+ *   evaluation mark (`source: "benchmark"`) an earlier release saved with an Evaluation Center
+ *   draft, so the conversation such a draft creates is an ordinary one.
  * - Saved drafts read back equal; Project and Session drafts, and two users' drafts of the
  *   same Project, never read or overwrite each other (#68); a cleared draft reads as empty.
  * - Dropping the model pin keeps everything else; dropping the `[default_chat]`-seeded
@@ -98,6 +98,19 @@ describe("parseDraft (field-by-field validation)", () => {
     expect(parseDraft(JSON.stringify({ modelRef: { provider: "anthropic" } }))).toEqual({});
   });
 
+  it("an Evaluation Center draft an earlier release saved reads back as an ordinary one, without its evaluation mark", () => {
+    // Use -> Evaluate once seeded the slot with its prompt and `source: "benchmark"`, which the
+    // draft page sent on to file the Session under Evaluations. Read after an upgrade, the draft
+    // keeps the prompt and creates an ordinary Session.
+    const draft = {
+      text: "evaluate",
+      agentId: "evaluator",
+      skills: ["agent-evaluation"],
+      aiPrefill: true,
+    };
+    expect(parseDraft(JSON.stringify({ ...draft, source: "benchmark" }))).toEqual(draft);
+  });
+
   it("the staged /model target validates exactly like modelRef: half references and non-objects are dropped", () => {
     // The staged switch chip is cached alongside the text it belongs to (a chip lost while its
     // text survived would send that text to the current session on the old model), so a
@@ -130,13 +143,6 @@ describe("parseDraft (field-by-field validation)", () => {
   it("unknown fields do not pass through", () => {
     const out = parseDraft(JSON.stringify({ text: "hi", evil: "x" }));
     expect(out).toEqual({ text: "hi" });
-  });
-
-  it("drops the evaluation-run mark an older build stored, so the draft creates an ordinary conversation", () => {
-    const out = parseDraft(
-      JSON.stringify({ text: "evaluate", agentId: "evaluator", source: "benchmark" }),
-    );
-    expect(out).toEqual({ text: "evaluate", agentId: "evaluator" });
   });
 
   it("skills: non-arrays dropped, non-string elements filtered out, the whole field dropped when empty after filtering", () => {

@@ -543,7 +543,9 @@
    * rules every theme shares (the eyebrow on the h6 rung, the display title in the emphasis ink)
    * live in theme.css and are what the app's group labels and page titles already draw: 11px
    * semibold tracked capitals, and the body ink in light. Icons are the line drawings theme.css
-   * shows by default, as v0.2.13 drew them.
+   * shows by default, as v0.2.13 drew them. `.ui-widget` is a documented no-op too: a reply's
+   * widget keeps its host's card — the hairline box on the surface, muted tiles, medium-weight
+   * numerals.
    */
 }
 

@@ -12,9 +12,10 @@
  *   machines apart, and keeps archived rows in their group.
  * - A Session's folder is decided by archived first, then its source: a person's conversation
  *   (`user`, or not yet classified) is active, every other source goes to Background;
- *   partitioning keeps the order inside each folder.
+ *   partitioning keeps the order inside each folder. A company Session, archived or not, is in
+ *   no category and no part.
  * - The auto-opened "last conversation" is the most recently active person's conversation
- *   (ties by id), never an archived or a background one, scheduled ones included.
+ *   (ties by id), never an archived, a background (scheduled ones included) or a company one.
  * - A page fetched with one extra row reports whether the server has more, never showing it.
  * - Server counts sum per Workspace across Agents (recording which Agents hold each folder) and
  *   stay apart per machine; the newest stamp per group survives aggregation.
@@ -289,10 +290,17 @@ describe("sessionCategory (the bucket a Session renders under = the server's lis
       "archived",
     );
   });
+
+  it("files a company Session under no category, archived or not", () => {
+    expect(sessionCategory(session("/srv/a", at, { source: "company" }))).toBeNull();
+    expect(
+      sessionCategory(session("/srv/a", at, { source: "company", archived: true })),
+    ).toBeNull();
+  });
 });
 
 describe("partitionSessions (per-group active / Background / Archived split)", () => {
-  it("splits active rows from the Background and Archived folders, preserving order within each part", () => {
+  it("splits active rows from the Background and Archived folders, preserving order within each part, and puts company rows in none", () => {
     const user1 = session("/srv/alpha", "2026-07-06T10:00:00.000Z", { source: "user" });
     const sched = session("/srv/alpha", "2026-07-05T10:00:00.000Z", { source: "schedule" });
     const sub = session("/srv/alpha", "2026-07-04T10:00:00.000Z", { source: "subagent" });
@@ -302,7 +310,13 @@ describe("partitionSessions (per-group active / Background / Archived split)", (
       source: "api",
       archived: true,
     });
-    const parts = partitionSessions([user1, sched, sub, user2, cli, gone]);
+    // Company mode's desk, live and archived: in no part at all.
+    const desk = session("/srv/alpha", "2026-07-05T12:00:00.000Z", { source: "company" });
+    const oldDesk = session("/srv/alpha", "2026-06-30T10:00:00.000Z", {
+      source: "company",
+      archived: true,
+    });
+    const parts = partitionSessions([user1, desk, sched, sub, user2, cli, gone, oldDesk]);
     expect(parts.active.map((s) => s.sessionId)).toEqual([user1.sessionId, user2.sessionId]);
     expect(parts.background.map((s) => s.sessionId)).toEqual([
       sched.sessionId,
@@ -310,6 +324,7 @@ describe("partitionSessions (per-group active / Background / Archived split)", (
       cli.sessionId,
     ]);
     expect(parts.archived.map((s) => s.sessionId)).toEqual([gone.sessionId]);
+    expect(Object.values(parts).flat()).toHaveLength(6);
   });
 });
 
@@ -329,6 +344,16 @@ describe("latestConversation (the auto-opened 'last conversation')", () => {
     expect(latestConversation([subAfter, schedAfter, newerUntouched, goneAfter, revisited])).toBe(
       revisited,
     );
+  });
+
+  it("never picks a company Session, however recently its desk ran", () => {
+    const mine = session("/srv/a", "2026-07-01T10:00:00.000Z");
+    const desk = session("/srv/a", "2026-07-02T10:00:00.000Z", {
+      source: "company",
+      lastActiveAt: "2026-07-10T10:00:00.000Z",
+    });
+    expect(latestConversation([desk, mine])).toBe(mine);
+    expect(latestConversation([desk])).toBeNull();
   });
 
   it("ties on lastActiveAt break by sessionId, and no qualifying row yields null", () => {

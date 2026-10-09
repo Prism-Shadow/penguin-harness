@@ -222,13 +222,19 @@ The fork is a new Session with the same agent, model, Workspace and approval mod
 
 A reply can hold blocks that the chat draws as components instead of plain text:
 
-- **Choice**: a question with options. Select an option to put it in the composer. When several picks are allowed, tick them and select **Fill in**. **Other…** moves you to the composer to write your own answer. The option the agent recommends is marked **Recommended**.
+- **Choice**: a question with options. Select an option to put it in the composer. When several picks are allowed, tick them and select **Fill in**. **Other…** clears the composer and moves you there to write your own answer. The option the agent recommends is marked **Recommended**.
 - **Form**: several questions at once. Answer them and select the form's button; the answers go into the composer one per line.
 - **Steps**: a numbered procedure. A warning or caution appears above the step it applies to.
 - **Callout**: a short note, tip, caution or warning on one line, its icon saying which (point at the icon to see the name). A step's warnings, cautions and notes look the same.
 - **Diagram**: a Mermaid diagram, such as a flowchart or a sequence diagram. **Show source** shows the text it is drawn from.
+- **Weather**: the conditions and forecast at a place, with an illustration that moves (rain falls, clouds drift). It stays still when your system is set to reduce motion.
+- **Clock**: the time now in one to four time zones. It ticks live.
+- **Countdown**: the time left until a deadline or an event. It counts down live.
+- **Metrics**: tiles with gauges for a snapshot, such as system resources, a quota or budget left, or the progress of a job. A tile takes the warning or danger colour when its value crosses the thresholds the agent set.
 
-Picking sends nothing. The composer gets ordinary text that you can edit, and you still select **Send**. If the composer holds text you typed, you are asked before it is replaced. Only the latest reply takes answers, and only until a message follows it; earlier replies, subagent conversations and the Trace show the same blocks read-only. A block that cannot be drawn shows its source under a one-line reason.
+Weather and metrics are snapshots the agent took at the time shown on the block; they do not update. Only the clock and the countdown change while you watch.
+
+Picking sends nothing. The composer gets ordinary text that you can edit, and you still select **Send**. If the composer holds text you typed, you are asked before it is replaced or cleared. A form's answers and a multi-select's picks are kept in this browser, so a reload or a visit to another conversation does not lose them; they expire after 7 days. Only the latest reply takes answers, and only until a message follows it; earlier replies, subagent conversations and the Trace show the same blocks read-only. A block that cannot be drawn shows its source under a one-line reason.
 
 Outside the Web App the blocks arrive as plain text. In `penguin chat`, `penguin run` and [remote control](/remote-control) chats, a choice reads as numbered options that you answer with a number or in your own words.
 
@@ -369,7 +375,8 @@ Below each group's active conversations are its two folders, **Background** and 
 
 - **Background** holds the Sessions a program opened rather than you: those an external program opened through the Agent API, a scheduled task's runs, subagent Sessions, and those `penguin run` created, including the Test Sessions an evaluation starts for every case and run. Each row carries a mark naming its source (API, Scheduled, Subagent or CLI), shown on hover.
 - **Archived** holds every archived conversation, whatever its source.
-- Opening a background conversation opens its folder. **Last conversation** and a deleted conversation's successor are only ever your own conversations, never background ones.
+- Company mode's desk and ticket Sessions are in none of these, archived or not, in either mode: they are listed only in [company mode](/company-mode)'s own views.
+- Opening a background conversation opens its folder. **Last conversation** and a deleted conversation's successor are only ever your own conversations, never background or company ones.
 - A group with nothing but folder rows, such as an agent that has only run evaluations, starts collapsed and sorts after the other groups (pinned groups excepted), with a dimmed header counting the folded rows. Once you open it, it stays open for that Project.
 
 A group's active conversations, and each open folder, show ten conversations at a time. **Show N more chats** reveals ten more; rows already loaded come first, and more are fetched from the server only when they run out. Once more than ten show, **Show less** folds back to the first ten. With more than ten groups, the list shows ten groups per page, with a pager below it.

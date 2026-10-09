@@ -883,18 +883,26 @@ router
 const TEMP_WORKSPACE = /[/\\]workspaces[/\\][^/\\]+$/;
 const isTemp = (workspace: string) => workspace === "" || TEMP_WORKSPACE.test(workspace);
 
-/** The server's rule: archived first, then a person's conversation is active and every other source background. */
-function categoryOf(row: SessionInfo): SessionCategory {
+/**
+ * The server's rule: a company Session is in no category; otherwise archived first, then a
+ * person's conversation is active and every other source background.
+ */
+function categoryOf(row: SessionInfo): SessionCategory | null {
+  if (row.source === "company") return null;
   if (row.archived) return "archived";
   return row.source === undefined || row.source === "user" ? "active" : "background";
 }
 
-/** An organization's desk or ticket Session, by its owner or by the durable `org` stamp. */
-const isOrgRow = (row: SessionInfo) => (row.orgId ?? "") !== "" || row.client === "org";
+/** An organization's desk or ticket Session, by its owner, the durable `org` stamp or its source. */
+const isOrgRow = (row: SessionInfo) =>
+  (row.orgId ?? "") !== "" || row.client === "org" || row.source === "company";
 
 function countsOf(rows: readonly SessionInfo[]): SessionCategoryCounts {
   const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
-  for (const row of rows) counts[categoryOf(row)] += 1;
+  for (const row of rows) {
+    const category = categoryOf(row);
+    if (category !== null) counts[category] += 1;
+  }
   return counts;
 }
 
@@ -915,14 +923,21 @@ router
   .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): unknown => {
     const { store, params, query } = ctx;
     // `excludeOrg=1` asks for the user's own rows: an organization's Sessions leave the page
-    // and the totals alike.
+    // and the totals alike. A request for a category, a Workspace group or counts leaves the
+    // company Sessions out too, which no category holds.
     const ownOnly = query.get("excludeOrg") === "1";
     const activity = query.get("order") === "activity";
-    const all = store.f.sessions
-      .filter((s) => s.agentId === params.agentId && !(ownOnly && isOrgRow(s)))
-      .sort(activity ? byActivity : byCreated);
     const category = query.get("category") as SessionCategory | null;
     const group = query.get("workspaceGroup");
+    const classified = category !== null || group !== null || query.get("counts") === "1";
+    const all = store.f.sessions
+      .filter(
+        (s) =>
+          s.agentId === params.agentId &&
+          !(ownOnly && isOrgRow(s)) &&
+          !(classified && categoryOf(s) === null),
+      )
+      .sort(activity ? byActivity : byCreated);
     let rows = category ? all.filter((s) => categoryOf(s) === category) : all;
     if (group !== null) {
       rows = rows.filter((s) => (group === "temp" ? isTemp(s.workspace) : s.workspace === group));

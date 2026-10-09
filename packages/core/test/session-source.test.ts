@@ -6,8 +6,8 @@
  * Scenarios:
  * - Given no source, when a Session is created, its meta records `user`.
  * - Given a source, when a Session is created, its meta records it unchanged.
- * - Given a Trace head with a source, when the Session resumes, the meta its next context
- *   records carries the same source.
+ * - Given a Trace head with a source (a scheduled run's, a company Session's), when the Session
+ *   resumes, the meta its next context records carries the same source.
  * - Given a Trace head written before the source was required (none), the retired
  *   `benchmark`, or junk a third party wrote, when the Session resumes, the source reads as
  *   `user`, `cli` and `user` respectively; the file on disk is left as it was.
@@ -97,16 +97,19 @@ describe("creating a Session", () => {
 });
 
 describe("resuming a Session", () => {
-  it("carries the recorded source into the meta its next context records", async () => {
-    await writeTrace("schedule" satisfies SessionSource);
-    const agent = await createAgent();
-    const session = await agent.resumeSession({ sessionId: SID });
-    try {
-      expect(sourceOf(session)).toBe("schedule");
-    } finally {
-      session.dispose();
-    }
-  });
+  it.each(["schedule", "company"] satisfies SessionSource[])(
+    "carries a recorded %s source into the meta its next context records",
+    async (source) => {
+      await writeTrace(source);
+      const agent = await createAgent();
+      const session = await agent.resumeSession({ sessionId: SID });
+      try {
+        expect(sourceOf(session)).toBe(source);
+      } finally {
+        session.dispose();
+      }
+    },
+  );
 
   it.each([
     { head: "no source", value: undefined, reads: "user" },

@@ -788,11 +788,14 @@ describe("session-index", () => {
     };
     const ids = (body: SessionsResponse) => body.sessions.map((s) => s.sessionId);
 
-    // Without the flag the list keeps its whole-stream contract: every row, every total.
+    // Without the flag the plain list serves every row. A counted list already leaves the desk
+    // out — a Session the organization runtime opened is a company Session, in no category —
+    // but not the ticket session the stamp has not reached: that one is the flag's to drop.
+    expect(ids(await list(""))).toEqual([ticket, desk, own]);
     const full = await list("?counts=1");
-    expect(ids(full)).toEqual([ticket, desk, own]);
-    expect(full.counts!.active).toBe(3);
-    expect(full.workspaceCounts!["/tmp/w-org"]!.active).toBe(2);
+    expect(ids(full)).toEqual([ticket, own]);
+    expect(full.counts!.active).toBe(2);
+    expect(full.workspaceCounts!["/tmp/w-org"]!.active).toBe(1);
     expect(full.workspaceLatest!["/tmp/w-org"]).toBe("2027-01-01T09:30:00.000Z");
 
     // With it, the organization's rows are gone from every part of the answer at once — a

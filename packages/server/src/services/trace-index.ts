@@ -103,9 +103,13 @@ function factsFromRecords(
     sessionId,
     projectId,
     agentId,
-    // Narrowed (an old head's missing source reads as `user`, its `benchmark` as `cli`); without
-    // a meta the value means nothing, and every reader checks metaRead first.
-    source: normalizeSessionSource(meta?.payload.source),
+    // Narrowed (an old head's `benchmark` reads as `cli`), except that a head recording no source
+    // keeps none: what it reads as depends on the Session's index row (readRecordedSource).
+    // Without a meta the value means nothing, and every reader checks metaRead first.
+    source:
+      meta === undefined || meta.payload.source === undefined
+        ? null
+        : normalizeSessionSource(meta.payload.source),
     workspace: meta && typeof meta.payload.workspace === "string" ? meta.payload.workspace : "",
     title: firstPrompt !== null ? fallbackTitle(firstPrompt) : null,
     provider: meta && typeof meta.payload.provider === "string" ? meta.payload.provider : null,

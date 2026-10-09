@@ -1,7 +1,7 @@
 /**
  * Prints the ```a2ui blocks of a streaming assistant reply as their text fallback.
  *
- * The Web App draws these blocks (a choice, a form, steps, a callout) as components. A terminal
+ * The Web App draws these blocks (a choice, a form, steps, a callout, a widget) as components. A terminal
  * cannot, so the CLI prints the readable Markdown each block stands for: core's
  * `toFallbackMarkdown`, the same text a messaging channel receives. A choice becomes numbered
  * options the user answers by typing. The reply arrives in small deltas, and a block is JSON that

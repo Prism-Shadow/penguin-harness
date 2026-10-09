@@ -527,7 +527,8 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 
   // Serves every row straight from the DB, whichever client created it (legacy CLI-direct
   // Traces were adopted by the boot sweep; see SessionService.listSessions) — unless the
-  // caller asks for the user's own rows only (`excludeOrg=1`, development mode's list).
+  // caller asks for the user's own rows only (`excludeOrg=1`, development mode's list) or for
+  // a category, a Workspace group or counts, none of which holds a company Session.
   app.get("/", async (c) => {
     // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
@@ -603,8 +604,8 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const sandbox = parseSandboxPick(body);
-    // Creating-client hint stored on the row ("cli" from the CLI; default "web").
-    // Informational provenance only — lists serve every row regardless.
+    // Creating-client hint stored on the row ("cli" from the CLI; default "web"). Provenance:
+    // only "org", which no request may send, is ever read back as a filter.
     const client = optionalEnum(body, "client", ["web", "cli"] as const);
     // The one source a client may name is `cli` (`penguin run`): every other one is the
     // server's own to write, and absent means `user`, so anything else is a 400 rather than a

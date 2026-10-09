@@ -1777,9 +1777,13 @@ export interface SessionInfo {
   title?: string;
   /**
    * What kind of conversation this is, read from core session_meta — the single source of
-   * truth (the DB stores no source). Every source but `user` files the row under the sidebar's
-   * Background folder, marked with its source. Absent only while the row is not yet classified
-   * (a row whose Trace head has not been read yet), which renders as `user`.
+   * truth (the DB stores no source). A `user` Session is an active row of the sidebar; `api`,
+   * `schedule`, `subagent` and `cli` file the row under its Background folder, marked with its
+   * source; a `company` Session is in no folder of the list at all — company mode's own views
+   * list it. A Trace head that records no source (written before it was required) reads as
+   * `company` for a row the organization runtime opened (`client: "org"`), else as `user`; so
+   * does such a row before its first run. Absent only while any other row is not yet
+   * classified (its Trace head has not been read yet), which renders as `user`.
    */
   source?: SessionSource;
   createdAt: string;
@@ -1862,7 +1866,9 @@ export interface SessionBackgroundTasks {
  * Session list category, the sidebar's three-way split applied server-side: archived wins
  * regardless of source (archiving is an explicit user action); otherwise a `user` Session (or
  * one not yet classified) is `active`, and every other source is `background` — the one
- * folder that holds what programs opened (API, scheduled, subagent and CLI Sessions).
+ * folder that holds what programs opened (API, scheduled, subagent and CLI Sessions). A
+ * `company` Session belongs to none of the three, archived or not: the list leaves it out of
+ * every category and every total.
  */
 export type SessionCategory = "active" | "background" | "archived";
 
@@ -1884,7 +1890,9 @@ export type SessionCategoryCounts = Record<SessionCategory, number>;
  *   `order=activity`, beside `offset`, without `limit`, or when not a parseable stamp and a
  *   valid id split at the first comma.
  * - `category`, `workspaceGroup`, `excludeOrg=1` filter before paging; `counts=1` adds the
- *   whole-list totals below, which no cursor or offset narrows.
+ *   whole-list totals below, which no cursor or offset narrows. A request with `category`,
+ *   `workspaceGroup` or `counts=1` leaves every `company` Session out of the page and the
+ *   totals (it is in no category); one with none of them serves every row.
  */
 export interface SessionsResponse {
   /**

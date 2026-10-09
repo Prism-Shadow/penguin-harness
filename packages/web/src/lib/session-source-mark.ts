@@ -12,7 +12,10 @@ import { ICONS } from "@prismshadow/penguin-ui";
 import { sessionCategory } from "./session-grouping";
 import { S } from "./strings";
 
-const SOURCE_GLYPHS: Record<Exclude<SessionSource, "user">, string> = {
+/** The sources the Background folder holds: a person's and a company Session are never in it. */
+type BackgroundSource = Exclude<SessionSource, "user" | "company">;
+
+const SOURCE_GLYPHS: Record<BackgroundSource, string> = {
   api: ICONS.plug,
   schedule: ICONS.calendar,
   subagent: ICONS.robotPair,
@@ -25,10 +28,13 @@ export interface SourceMark {
   sourceLabel: string;
 }
 
-/** The mark of a row in the Background folder; null for an active or an archived row. */
+/** The mark of a row in the Background folder; null for any other row. */
 export function backgroundSourceMark(s: SessionInfo): SourceMark | null {
-  if (sessionCategory(s) !== "background" || s.source === undefined || s.source === "user") {
-    return null;
-  }
-  return { sourceGlyph: SOURCE_GLYPHS[s.source], sourceLabel: S.chat.sessionSource[s.source] };
+  const source = s.source;
+  if (sessionCategory(s) !== "background" || !isBackgroundSource(source)) return null;
+  return { sourceGlyph: SOURCE_GLYPHS[source], sourceLabel: S.chat.sessionSource[source] };
+}
+
+function isBackgroundSource(source: SessionSource | undefined): source is BackgroundSource {
+  return source !== undefined && source !== "user" && source !== "company";
 }
