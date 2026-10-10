@@ -235,6 +235,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.modelsGroupSort",
+    scope: "browser",
+    why: "How each model group orders its models, as differences from price low to high; a view preference, and a user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
     key: "penguin.pluginsGroupBy",
     scope: "browser",
     why: "How the Plugins page groups its cards (category, status, contents or none) — the MODE, valid against any root.",

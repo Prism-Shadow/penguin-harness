@@ -583,6 +583,16 @@ interface RuntimeEntry {
 const ENTRY_IDLE_MS = 30 * 60 * 1000;
 const ENTRY_SWEEP_INTERVAL_MS = 60 * 1000;
 
+/**
+ * Queue depth cap per session. Every queued follow-up is a full model run waiting to
+ * happen, and the queue has no other brake: org triggers always ask to queue
+ * (queueIfBusy), so a mention storm or an @all fan-out against a busy desk would grow it
+ * without bound and then replay every entry as a model call. The cap refuses the overflow
+ * loudly instead (429 queue_full): the org trigger path records org_dispatch_failed, and
+ * the HTTP caller sees the refusal directly.
+ */
+export const FOLLOW_UP_QUEUE_LIMIT = 16;
+
 /** Composite Agent key (used as a Set key, avoiding projectId/agentId concatenation ambiguity). */
 function agentKey(projectId: string, agentId: string): string {
   return `${projectId}\0${agentId}`;
@@ -892,7 +902,7 @@ export class SessionManager {
 
   /** Add a newly created Session to the active table (status idle), avoiding a redundant load on the next Task. */
   adopt(row: SessionRow, session: RuntimeSession): void {
-    this.entries.set(row.sessionId, {
+    const entry: RuntimeEntry = {
       sessionId: row.sessionId,
       projectId: row.projectId,
       agentId: row.agentId,
@@ -900,7 +910,7 @@ export class SessionManager {
       modelId: row.modelId,
       session,
       status: "idle",
-      approvals: new ApprovalRegistry(),
+      approvals: new ApprovalRegistry(() => this.publishApprovals(entry)),
       abort: null,
       running: null,
       generation: this.generationOf(row.projectId, row.agentId),
@@ -911,7 +921,8 @@ export class SessionManager {
       returnedSteering: [],
       lastActivityMs: Date.now(),
       backgroundTasks: backgroundTaskCounts(session),
-    });
+    };
+    this.entries.set(row.sessionId, entry);
     // Same wiring as ensureEntry: adopt IS the entry path for a session created in this
     // process (POST /sessions), and a listener registered only on the loader path left
     // freshly created sessions unable to deliver idle-arrival completion reports.
@@ -1092,6 +1103,14 @@ export class SessionManager {
       // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
       if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
       if (entry.status !== "idle" && opts?.queueIfBusy) {
+        // The cap refuses the overflow rather than enqueuing it: see FOLLOW_UP_QUEUE_LIMIT.
+        if (entry.followUps.length >= FOLLOW_UP_QUEUE_LIMIT) {
+          throw new HttpError(
+            429,
+            "queue_full",
+            `Session ${entry.sessionId} already has ${entry.followUps.length} queued follow-ups (cap ${FOLLOW_UP_QUEUE_LIMIT}); wait for the session to drain.`,
+          );
+        }
         entry.followUps.push({
           id: randomUUID(),
           input,
@@ -1990,7 +2009,7 @@ export class SessionManager {
       modelId: row.modelId,
       session,
       status: "idle",
-      approvals: new ApprovalRegistry(),
+      approvals: new ApprovalRegistry(() => this.publishApprovals(entry)),
       abort: null,
       running: null,
       generation,
@@ -2463,6 +2482,29 @@ export class SessionManager {
       processes: counts.processes,
       subagents: counts.subagents,
     });
+  }
+
+  /**
+   * Publishes `session_approvals` on the user channel: how many tool calls of this Session wait
+   * for a person now. The Session's own stream carries the calls; this is what lets a list, or
+   * a host watching every Session of a Project, see which one waits without subscribing to each.
+   * Sent for an entry that is being disposed too, so a mark it had is cleared.
+   */
+  private publishApprovals(entry: RuntimeEntry): void {
+    try {
+      this.deps.notifyProjectUsers?.(entry.projectId, {
+        type: "session_approvals",
+        sessionId: entry.sessionId,
+        count: entry.approvals.size,
+      });
+    } catch (err) {
+      // The notifier reads the Project's audience from the database, which shutdown can close
+      // while a run outlives its drain window (the failure publishState guards too). A list
+      // mark is never worth throwing out of an approval's wait, answer or interrupt.
+      this.log(
+        `[session] approvals notice failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** Serialize (mutually exclude) execution by sessionId; cleans up the lock-table entry once its chain drains (avoids unbounded growth). */

@@ -464,7 +464,7 @@ export async function* parseSseBody(
 // Session references
 // ---------------------------------------------------------------------------
 
-/** The 8-hex tail of a session id — the short form `penguin ls` prints. */
+/** The 8-hex tail of a session id — the short form `penguin session ls` prints. */
 export function shortSessionId(sessionId: string): string {
   const m = /-([0-9a-f]{8})$/.exec(sessionId);
   return m === null ? sessionId : m[1]!;

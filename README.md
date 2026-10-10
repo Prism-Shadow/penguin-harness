@@ -104,9 +104,9 @@ The same commands can drive your own Chrome instead, through the PenguinHarness 
 | GLM 5.3          | Z.AI, OpenRouter, TokenDance                                                                     |
 | Hunyuan 3        | OpenRouter                                                                                       |
 | Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance                                      |
-| GPT 5.6          | OpenAI, OpenRouter                                                                               |
-| Gemini 3.7 Flash | Google Gemini, OpenRouter                                                                        |
-| Claude 5         | Anthropic, OpenRouter                                                                            |
+| GPT 6.1          | OpenAI, OpenRouter                                                                               |
+| Gemini 3.8 Flash | Google Gemini, OpenRouter                                                                        |
+| Claude 5.5       | Anthropic, OpenRouter                                                                            |
 | Inkling          | OpenRouter, Fireworks AI                                                                         |
 
 Each family's latest generation only — the app's **Models** page lists every built-in preset, and any OpenAI-protocol endpoint works too: pick a preset, or point a custom endpoint at any of the 1000+ online and local models.

@@ -399,6 +399,12 @@ interface SessionsStoreState {
    * chat header's count both read the field, so this is the one write that moves them.
    */
   setBackgroundTasks: (sessionId: string, tasks: SessionBackgroundTasks | undefined) => void;
+  /**
+   * Live count of tool calls waiting for approval on one row, from the user channel's
+   * `session_approvals`. The row's approvals mark reads it, so a Session that starts waiting
+   * while another one is open is marked at once instead of at the next list fetch.
+   */
+  setPendingApprovals: (sessionId: string, count: number) => void;
 }
 
 /**
@@ -1144,6 +1150,18 @@ export function createSessionsStore() {
           }),
         });
       },
+
+      /** Same drop rule as `setBackgroundTasks`: an unlisted id is ignored, an equal count is a no-op. */
+      setPendingApprovals: (sessionId, count) => {
+        const prev = get().sessions;
+        const target = prev.find((s) => s.sessionId === sessionId);
+        if (!target || target.pendingApprovalCount === count) return;
+        set({
+          sessions: prev.map((s) =>
+            s.sessionId === sessionId ? { ...s, pendingApprovalCount: count } : s,
+          ),
+        });
+      },
     };
   });
 }
@@ -1232,6 +1250,12 @@ export function applyUserEvent(
         ev.sessionId,
         processes > 0 || subagents > 0 ? { processes, subagents } : undefined,
       );
+    return;
+  }
+  // A Session's count of tool calls waiting for approval changed. Like the background counts,
+  // the event carries the count as it now stands, so the row's mark follows without a fetch.
+  if (ev.type === "session_approvals") {
+    store.getState().setPendingApprovals(ev.sessionId, ev.count);
     return;
   }
   // The reconnect landed outside the channel's replay buffer, so an unknown number of the flips

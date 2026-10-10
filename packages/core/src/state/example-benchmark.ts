@@ -3,10 +3,10 @@
  *
  * At the Project level, `benchmarks/example-benchmark/` holds two sample cases (each with
  * statement/ and rubric/ indexed by a README.md), benchmark_config.toml (runs = 2, status =
- * published — the example is a finished Benchmark, not one a Skill is still writing), and a
- * scoreboard.yaml with three sample evaluations, each labelled with default_agent as the Agent it
- * tested — so the evaluation center has data out of the box. Its description states plainly that
- * this is a built-in example and the whole directory can be deleted or replaced.
+ * published — the example is a finished Benchmark, not one a Skill is still writing — and origin
+ * builtin), and a scoreboard.yaml with three sample evaluations, each labelled with default_agent
+ * as the Agent it tested — so the evaluation center has data out of the box. Its description states
+ * plainly that this is a built-in example and the whole directory can be deleted or replaced.
  *
  * It is written when the Project is created (project-benchmarks.ts); a deleted example stays
  * deleted. Whatever else `benchmarks/` holds plays no part — the user's own Benchmarks, or the
@@ -21,21 +21,28 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { stringify as stringifyToml } from "smol-toml";
 import { stringify as stringifyYaml } from "yaml";
+import { writeBenchmarkManifest, type BenchmarkManifest } from "./benchmark-manifest.js";
 import { DEFAULT_AGENT_ID } from "./paths.js";
 
 /** Directory name of the example Benchmark (the directory name is also its identifier). */
 export const EXAMPLE_BENCHMARK_ID = "example-benchmark";
 
-/** Contents of benchmark_config.toml (no model reference here — the model is recorded on each evaluation instead). */
-const EXAMPLE_BENCHMARK_CONFIG = {
+/**
+ * The example's benchmark_config.toml (no model reference here — the model is recorded on each
+ * evaluation instead). Its version names the revision of everything this file writes: move it on
+ * whenever any of that changes (scripts/check-plugin-versions.mjs refuses a change without it).
+ */
+const EXAMPLE_BENCHMARK_MANIFEST: BenchmarkManifest = {
+  id: EXAMPLE_BENCHMARK_ID,
   title: "Example Benchmark",
   description:
     "A built-in example benchmark so the evaluation charts have data out of the box. " +
     "Replace it with your own.",
-  runs: 2,
+  version: "2026.10.09.1",
   status: "published",
+  runs: 2,
+  origin: { kind: "builtin" },
 };
 
 /** Two sample cases: statement and scoring rubric (in English, 3-5 lines each). */
@@ -328,18 +335,14 @@ export function buildExampleScoreboard(): {
 }
 
 /**
- * Writes the example Benchmark — config, the two sample cases, and the scoreboard — into
+ * Writes the example Benchmark — its manifest, the two sample cases, and the scoreboard — into
  * `benchDir`, an existing empty directory. project-benchmarks.ts calls it on a staging
  * directory that it renames into place. Every write settles before a failure is reported, so
  * nothing is still writing into the directory once the caller removes it.
  */
 export async function writeExampleBenchmark(benchDir: string): Promise<void> {
   const results = await Promise.allSettled([
-    fs.writeFile(
-      path.join(benchDir, "benchmark_config.toml"),
-      `${stringifyToml(EXAMPLE_BENCHMARK_CONFIG)}\n`,
-      "utf8",
-    ),
+    writeBenchmarkManifest(benchDir, EXAMPLE_BENCHMARK_MANIFEST),
     fs.writeFile(
       path.join(benchDir, "scoreboard.yaml"),
       stringifyYaml(buildExampleScoreboard()),

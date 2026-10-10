@@ -30,6 +30,8 @@ import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
 import { useStreamSelectionMenu } from "./stream-selection-menu";
 import type { ComposerReference } from "../../lib/workspace-tree";
+import { FIND_LOAD_OLDER_EVENT, FIND_MORE_ATTR } from "../../lib/find-dom";
+import { FindRevealContext, useRegionRevealed } from "../../lib/find-expand";
 
 /**
  * What a reply's rich blocks (```a2ui choices and forms) read from context: whether they take
@@ -253,6 +255,7 @@ export function MessageStream({
   outline,
   older,
   onAddExcerpt,
+  findRegion = "conversation",
 }: {
   items: ChatItem[];
   /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
@@ -274,8 +277,16 @@ export function MessageStream({
    * to a conversation with a composer.
    */
   onAddExcerpt: (reference: ComposerReference) => void;
+  /**
+   * The find-in-page region this transcript is (`data-find-region`). The main conversation and
+   * the subagent panel are two of them, and the bar tells them apart by this value alone
+   * (components/find/find-bar.tsx), which is why it is a prop rather than a constant.
+   */
+  findRegion?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // A search of this region opens its collapsed work groups (lib/find-expand.ts).
+  const revealedForFind = useRegionRevealed(scrollRef);
   const selectionMenu = useStreamSelectionMenu(onAddExcerpt);
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
   const followRef = useRef<StreamFollow | null>(null);
@@ -423,6 +434,21 @@ export function MessageStream({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [follow]);
 
+  // Find bar's "load and keep searching" row (components/find/find-bar.tsx): dispatches this
+  // event on the region element so the bar never needs a callback prop of its own. The guards
+  // are maybeLoadOlder's minus the scrollTop threshold (the click is the request) and minus the
+  // error check, so after a failed backfill the click retries it.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onFindLoadOlder = () => {
+      const o = olderRef.current;
+      if (o && o.hasMore && !o.loading) o.onLoad();
+    };
+    el.addEventListener(FIND_LOAD_OLDER_EVENT, onFindLoadOlder);
+    return () => el.removeEventListener(FIND_LOAD_OLDER_EVENT, onFindLoadOlder);
+  }, []);
+
   /** Back-to-bottom: glide down to the live bottom (reduced motion gets an instant jump); follow re-engages on arrival. */
   const jumpToLatest = () => {
     const el = scrollRef.current;
@@ -472,6 +498,8 @@ export function MessageStream({
           if (scrollElRef) scrollElRef.current = el;
           selectionMenu.hostRef(el);
         }}
+        data-find-region={findRegion}
+        {...(older?.hasMore ? { [FIND_MORE_ATTR]: "true" } : {})}
         // A selection inside the stream answers a secondary click with the app's own menu;
         // everything else keeps the browser's (see stream-selection-menu.tsx).
         onPointerDown={selectionMenu.hostProps.onPointerDown}
@@ -529,7 +557,9 @@ export function MessageStream({
             // Links in replies, reasoning and compaction summaries name files of this Session's
             // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
             <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
-              <MessageItems items={items} ctx={ctx} />
+              <FindRevealContext.Provider value={revealedForFind}>
+                <MessageItems items={items} ctx={ctx} />
+              </FindRevealContext.Provider>
             </WorkspaceLinksProvider>
           )}
         </div>

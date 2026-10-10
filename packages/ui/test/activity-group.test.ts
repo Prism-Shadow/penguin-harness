@@ -44,7 +44,7 @@ describe("ActivityGroup", () => {
     expect(html).toContain(">2 steps</span>");
     expect(html).toContain('data-slot="progress"');
     expect(html).toMatch(
-      /<div data-layout-motion="true" data-fold="settled" data-slot="body" class="grid"><div class="min-h-0 ui-tree [^"]*">/,
+      /<div data-layout-motion="true" data-fold="settled" data-slot="body" class="grid"><div class="min-h-0 min-w-0 ui-tree [^"]*">/,
     );
     expect(html).toContain('<div data-depth="1">first step</div>');
     expect(html).toContain('<div data-depth="1" data-last="true">second step</div>');
@@ -95,7 +95,9 @@ describe("ActivityGroup", () => {
 
   it("keeps a one-piece body out of the tree, and its title in sentence case", () => {
     const html = card({ kind: "event", state: "running", title: "Compacting", children: "report" });
-    expect(html).toContain('data-slot="body" class="grid"><div class="min-h-0">report</div>');
+    expect(html).toContain(
+      'data-slot="body" class="grid"><div class="min-h-0 min-w-0">report</div>',
+    );
     expect(html).not.toContain("ui-tree");
     expect(classTokens(html)).not.toContain("anim-fade");
     expect(classTokens(html)).not.toContain("uppercase");

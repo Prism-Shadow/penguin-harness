@@ -29,7 +29,7 @@
  *   heals the index; a swept channel is re-read before every publish; a Project abort hands
  *   back its in-flight runs; a loader's HttpError passes through; shutdown disposes every
  *   environment and refuses new Tasks, and a run parked on an approval is denied, winds down,
- *   and is disposed only after it has.
+ *   and is disposed only after it has, even once the database has closed under it.
  * - Idle entries are evicted (running ones, pending approvals and working subagents pin them);
  *   invalidating an Agent's or a Project's runtimes rebuilds them at next access, never
  *   mid-run, and publishes a discarded runtime's background count as cleared.
@@ -80,7 +80,7 @@ import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorRecordArgs, ErrorSink } from "../src/runtime/error-recorder.js";
-import { SessionManager } from "../src/runtime/session-manager.js";
+import { SessionManager, FOLLOW_UP_QUEUE_LIMIT } from "../src/runtime/session-manager.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
@@ -122,6 +122,29 @@ function approvalFakeSession(sessionId: string, toolName = "write_file"): Runtim
       yield compactionEnd({ reason: "manual", mode: "summarize", status: "completed" });
     },
   });
+}
+
+/**
+ * A run that parks one call on a person, logging into `order` how the call was decided, whether
+ * the run was aborted by then, when it ended, and when its environment was disposed.
+ */
+function parkedRunSession(order: string[]): RuntimeSession {
+  const fake = fakeSession("session-1", {
+    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+      try {
+        const tc = toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
+        yield tc;
+        order.push(`decided ${await opts.approve(tc)}`);
+        order.push(`aborted ${String(opts.signal.aborted)}`);
+      } finally {
+        order.push("run ended");
+      }
+    },
+  });
+  (fake as { dispose?: () => void }).dispose = () => {
+    order.push("disposed");
+  };
+  return fake;
 }
 
 /**
@@ -196,7 +219,7 @@ describe("session-manager", () => {
   });
   afterEach(() => {
     channels.dispose();
-    db.close();
+    if (db.isOpen) db.close();
   });
 
   it("unknown Session → 404", async () => {
@@ -788,6 +811,42 @@ describe("session-manager", () => {
     expect(states[states.length - 1]).toMatchObject({ state: "idle", queued: 0 });
   });
 
+  it("queueIfBusy: a full queue refuses with 429 instead of growing without bound", async () => {
+    const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
+    const first = await manager.startTask("session-1", [userText("task 1")]);
+    expect(first.queued).toBe(false);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+
+    // Fill the queue to the cap; every entry still queues as before.
+    for (let i = 0; i < FOLLOW_UP_QUEUE_LIMIT; i++) {
+      const q = await manager.startTask("session-1", [userText(`follow-up ${i}`)], {
+        queueIfBusy: true,
+      });
+      expect(q.queued).toBe(true);
+    }
+    expect(manager.pendingFollowUpCount("session-1")).toBe(FOLLOW_UP_QUEUE_LIMIT);
+
+    // The next one is refused loudly — not queued, not started, nothing dropped silently.
+    const err = await manager
+      .startTask("session-1", [userText("overflow")], { queueIfBusy: true })
+      .catch((e: unknown) => e);
+    expect((err as HttpError).status).toBe(429);
+    expect((err as HttpError).code).toBe("queue_full");
+    expect(manager.pendingFollowUpCount("session-1")).toBe(FOLLOW_UP_QUEUE_LIMIT);
+    // Without queueIfBusy the 409 mutual exclusion is unchanged.
+    const conflict = await manager.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
+    expect((conflict as HttpError).code).toBe("task_in_progress");
+
+    // Draining one frees a slot for exactly one more.
+    manager.abortTask("session-1");
+    await waitFor(() => manager.pendingFollowUpCount("session-1") === FOLLOW_UP_QUEUE_LIMIT - 1);
+    const refill = await manager.startTask("session-1", [userText("refill")], {
+      queueIfBusy: true,
+    });
+    expect(refill.queued).toBe(true);
+    expect(manager.pendingFollowUpCount("session-1")).toBe(FOLLOW_UP_QUEUE_LIMIT);
+  });
+
   it("queueIfBusy during compaction: the queue drains once the compaction ends", async () => {
     const runInputs: string[][] = [];
     let releaseCompact: (() => void) | null = null;
@@ -1196,27 +1255,41 @@ describe("session-manager", () => {
     // What a hot swap or an exit meets mid-conversation: a run waiting on an approval nobody
     // in this process will ever give.
     const order: string[] = [];
-    const fake = fakeSession("session-1", {
-      async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
-        try {
-          const tc = toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
-          yield tc;
-          order.push(`decided ${await opts.approve(tc)}`);
-          order.push(`aborted ${String(opts.signal.aborted)}`);
-        } finally {
-          order.push("run ended");
-        }
-      },
-    });
-    (fake as { dispose?: () => void }).dispose = () => {
-      order.push("disposed");
-    };
+    const fake = parkedRunSession(order);
     const manager = makeManager(loaderOf(fake));
     await manager.startTask("session-1", [userText("write it")]);
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
     await manager.shutdown();
     // The environment goes only once the run has let go of it.
+    expect(order).toEqual(["decided deny", "aborted true", "run ended", "disposed"]);
+  });
+
+  it("shutdown still denies, winds down and disposes once the database has closed", async () => {
+    // The approvals count reaches the Project's users through a notifier that reads the
+    // database first (who owns and shares the Project). A handle closed under a run that
+    // outlived its drain window must not stop the shutdown that denies the call.
+    const order: string[] = [];
+    const fake = parkedRunSession(order);
+    const counts: number[] = [];
+    const manager = new SessionManager({
+      sessions,
+      channels,
+      sources,
+      loader: loaderOf(fake),
+      recorder: { record: async () => undefined },
+      notifyProjectUsers: (_projectId, event) => {
+        sessions.findById(ROW.sessionId); // the audience lookup: a database read
+        if (event.type === "session_approvals") counts.push(event.count);
+      },
+      log: () => {},
+    });
+    await manager.startTask("session-1", [userText("write it")]);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    expect(counts).toEqual([1]);
+
+    db.close();
+    await manager.shutdown();
     expect(order).toEqual(["decided deny", "aborted true", "run ended", "disposed"]);
   });
 

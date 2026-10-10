@@ -288,6 +288,7 @@ export function SubagentsView({
                 version={version}
                 ctx={childCtx}
                 onAddExcerpt={addChildExcerpt}
+                findRegion="subagent"
               />
             )}
           </div>

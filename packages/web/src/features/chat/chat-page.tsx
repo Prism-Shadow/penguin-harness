@@ -119,6 +119,7 @@ import { prepareNewChatDraft } from "./new-chat";
 import {
   heldRouteSession,
   resolveRoutedSession,
+  routeSessionOutcome,
   sessionForProject,
   sessionProbeKey,
 } from "./session-project";
@@ -496,6 +497,8 @@ export function ChatPage() {
    */
   const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
   const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
+  /** The probe that failed did so with a 404: the server has no such Session for this user. */
+  const [probeMissingKey, setProbeMissingKey] = useState<string | null>(null);
   const heldSession = useRef<SessionInfo | null>(null);
   heldSession.current = heldRouteSession(
     heldSession.current,
@@ -659,8 +662,8 @@ export function ChatPage() {
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
   // config's level (auto-follow — each model context reads the config, so Agent-config edits
   // keep taking effect). A pin is DURABLE: it survives a reload, shows up in a second tab,
-  // and core applies it from the Session's next LLM request on (soft-limited — the picker's
-  // menu advises compacting first, since the change invalidates the model's cached
+  // and core applies it from the Session's next LLM request on (soft-limited — a pick mid-chat
+  // is confirmed first, offering to compact, since the change invalidates the model's cached
   // context). It is still never written through to the Agent config (that stays draft-only).
   const turnThinkingLevel = selected?.thinkingLevel ?? "";
   // The Agent list may not carry this Session's Agent yet (an Agent an organization created
@@ -869,8 +872,12 @@ export function ChatPage() {
           if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
         } else setProbeFailedKey(probeKey);
       },
-      () => {
-        if (!cancelled) setProbeFailedKey(probeKey);
+      (err: unknown) => {
+        if (cancelled) return;
+        setProbeFailedKey(probeKey);
+        // Only an answer that the Session does not exist settles it as missing; a failure to
+        // get any answer is not that, and keeps the old way on.
+        if (err instanceof ApiError && err.status === 404) setProbeMissingKey(probeKey);
       },
     );
     return () => {
@@ -891,22 +898,34 @@ export function ChatPage() {
     isSessionDeleted,
   ]);
 
+  /**
+   * What becomes of the routed Session (session-project.ts): shown, still being looked for, a
+   * reason to open another conversation, or — the direct lookup said it does not exist — a
+   * dead link the page owns up to in place rather than swapping in some other conversation.
+   */
+  const routeOutcome = routeSessionOutcome({
+    shown: selected !== null,
+    pending: routeSessionPending,
+    routeSessionId,
+    deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
+    missing: probeKey !== null && probeMissingKey === probeKey,
+  });
+
   // Auto-select the last conversation when the route doesn't select one: the most recently
   // ACTIVE loaded conversation of the user's own (`user` source), the same rule the collapsed
   // rail's entry follows — archived rows are hidden by choice and background Sessions were
   // opened by a program, so neither is auto-opened. If there is none, fall back to draft state
-  // (instead of auto-creating one).
+  // (instead of auto-creating one). A routed id missing from the paged list isn't gone until
+  // the direct lookup fails, and one the lookup says does not exist is not replaced at all.
   useEffect(() => {
     if (sessionsLoading || draft) return;
-    if (selected !== null) return;
-    // A routed id missing from the paged list isn't gone until the direct lookup fails.
-    if (routeSessionPending) return;
+    if (routeOutcome !== "redirect") return;
     // An organization's desk or ticket Session is never auto-opened: landing in one by default
     // would put the user inside a conversation the scheduler drives, and company mode's own
     // groups are where it is reached.
     const last = latestConversation(withoutOrgSessions(sessions));
     navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
-  }, [sessionsLoading, draft, selected, routeSessionPending, sessions, navigate]);
+  }, [sessionsLoading, draft, routeOutcome, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
   //
@@ -1536,9 +1555,9 @@ export function ChatPage() {
 
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
-  // from the next LLM request (the picker's menu advises compacting first). Modeled on
-  // onChangePermission — a failed write surfaces as a toast and leaves the level as it
-  // was, rather than showing a level the server does not have.
+  // from the next LLM request (a pick mid-chat reaches here through the confirm dialog, which
+  // offers to compact first). Modeled on onChangePermission — a failed write surfaces as a
+  // toast and leaves the level as it was, rather than showing a level the server does not have.
   const applyTurnThinkingLevel = useCallback(
     (level: string) => {
       if (!selected) return;
@@ -2620,6 +2639,22 @@ export function ChatPage() {
                             )
                       }
                       description={S.chat.sessionOfflineHint}
+                    />
+                  ) : !sessionsLoading && routeOutcome === "notFound" ? (
+                    // A dead link: said in place, with the one way on that fits the mode —
+                    // a new conversation, or back to the organization in company mode.
+                    <EmptyState
+                      title={S.chat.sessionNotFound}
+                      description={S.chat.sessionNotFoundHint}
+                      action={
+                        company.workMode === "company" ? (
+                          <Button onClick={() => navigate("/org")}>
+                            {S.company.backToOverview}
+                          </Button>
+                        ) : (
+                          <Button onClick={newChat}>{S.nav.newChat}</Button>
+                        )
+                      }
                     />
                   ) : sessionsLoading || routeSessionPending ? (
                     <div className="space-y-3 p-6">

@@ -21,6 +21,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 - **展开和收起分组**：点击分组标题即可展开或收起。首次访问时只有 TokenDance 分组是展开的。浏览器会记住你展开过哪些分组，按 Project 分别记录。
 - **调整分组顺序**：拖动分组标题即可移动分组。顺序保存在当前浏览器里，按 Project 分别记录；对话中的模型选择器也用同样的顺序。触摸屏上或搜索时不能拖动。
 - **搜索**：在**搜索模型：id / 名称 / 厂商**里输入，就只显示匹配的模型。搜索期间，所有包含匹配模型的分组都会展开。
+- **组内排序**：分组里的模型按价格从低到高排列。比较的是当前实际计费的价格（已扣除正在进行的促销或空闲时段折扣），输入按输出的三倍计权：（缓存未命中 × 3 + 输出）÷ 4。免费模型排在最前，没有价格的模型排在最后，价格相同的按名称排序。要换一种排法，点击分组标题栏末尾的齿轮，选择**价格（从低到高）**、**价格（从高到低）**或**名称（A→Z）**；当前选项带有勾选标记。每个分组各自记住自己的排法，保存在当前浏览器里。搜索结果同样按它排列；分组之间的顺序和对话中的模型选择器不受影响。
 
 每张模型卡片显示模型的显示名、标签、上下文窗口、价格、密钥状态，以及模型至今已使用的 Token 量。
 
@@ -42,13 +43,13 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 - 分组的余额：TokenDance 和 DeepSeek 分组有 key 之后显示；点击金额打开菜单，可以置顶或更新余额，见[账户余额](#账户余额)；
 - 连接状态：TokenDance、Penguin Go 和 ModelScope 未连接时为**未连接**，点击即开始连接；已连接时为一个**已连接**菜单，内含**同步模型**（仅 Penguin Go）、**重新连接**和**断开连接**，见[连接账户](#连接账户)；
 - **添加模型**（加号图标）：只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow** 和你创建的分组，见[添加模型](#添加模型)；
-- 测速与**设置**（齿轮）：每个分组（包括 **Custom**）都以这两个按钮收尾，因而在每个分组都对齐在同一条右缘上，见[测速](#测速)和[分组设置](#分组设置)。
+- 测速与**设置**（齿轮）：每个分组（包括 **Custom**）都以这两个按钮收尾，因而在每个分组都对齐在同一条右缘上，见[测速](#测速)。齿轮打开一个菜单：先是该分组的排序，然后是**分组设置…**，见[分组设置](#分组设置)。
 
 TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推荐连接 TokenDance 钱包，这样分组里的模型不用手动配置密钥。横幅上的**连接**与分组标题栏上的是同一个流程。点击 × 可以在当前浏览器里隐藏横幅。
 
 标题栏上没有单独填写 key 的按钮：分组密钥在[分组设置](#分组设置)里填写，或在连接分组时写入。
 
-只有 Project owner 能修改模型和凭证。成员可以搜索、展开和收起分组，在自己浏览器里调整分组顺序和收藏，查看、置顶和更新余额，以纯文字查看连接状态，也能以只读方式打开**模型配置**。
+只有 Project owner 能修改模型和凭证。成员可以搜索、展开和收起分组，在自己浏览器里调整分组顺序、收藏和组内排序（成员的齿轮菜单里只有排序），查看、置顶和更新余额，以纯文字查看连接状态，也能以只读方式打开**模型配置**。
 
 ## 新增模型分组
 
@@ -178,7 +179,7 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 
 检测会先探测清理后的 base，再探测它的相邻形式：URL 末尾有 `/v1` 就去掉，没有就加上。每种形式依次尝试三种协议，最多发出六个短探测。base URL 输入框随后会改写为应答的那个形式，并提示「已检测为 {protocol}，base URL 已整理为 {url}」。
 
-要手动设置协议，点击这个后缀。菜单里列出 **OpenAI Responses**（`/responses`）、**Anthropic Messages**（`/v1/messages`）和 **OpenAI Chat Completions**（`/chat/completions`），每一项都标注了客户端会追加到你 URL 末尾的路径。手动选择的协议优先于检测，已经知道端点协议时，根本不必探测。
+要手动设置协议，点击这个后缀。菜单里列出 **OpenAI Responses**（`/responses`）、**Anthropic Messages**（`/v1/messages`）、**OpenAI Chat Completions**（`/chat/completions`）、**Google GenAI (generateContent)**（`/v1beta/models`）和 **MMSP**（`/stream`，即 MMSP 服务器），每一项都标注了客户端会追加到你 URL 末尾的路径。检测不会选出后两种，需要在这里手动选择。手动选择的协议优先于检测，已经知道端点协议时，根本不必探测。
 
 如果检测不出结果，后缀会变成琥珀色，并提示「无法检测接口协议，请检查 API Key 与 base URL。」原因可能是端点不可访问、请求超时、返回的内容不是 API，或者三个路径都不支持。端点仍会报告每次探测的结果，方便调试。
 
@@ -270,7 +271,7 @@ TokenDance 和 DeepSeek 可以查询 key 所属账户的余额。这两个分组
 
 ## 分组设置
 
-每个分组的标题栏都以**设置**（齿轮）收尾，**Custom** 也不例外；只有 Project owner 能看到它。点击后打开「{分组} 分组设置」，编辑组内模型共用的连接信息：API key、base URL 和协议，存在该分组的 `[providers.<分组>]` 表里。
+每个分组的标题栏都以**设置**（齿轮）收尾，**Custom** 也不例外。齿轮菜单的最后一项是**分组设置…**，只有 Project owner 能看到。点击后打开「{分组} 分组设置」，编辑组内模型共用的连接信息：API key、base URL 和协议，存在该分组的 `[providers.<分组>]` 表里。
 
 这些值的唯一来源是 Project 配置文件。每个字段各自解析，取第一个找到的值：先是模型自己的，其次是分组的，都没有即交给客户端缺省：缺省端点、按模型 id 路由，以及[设置 API key](#设置-api-key) 允许时的环境变量。内置模型目录只是参考，不是一层回退：新建 Project 时，目录已把各网关的端点与协议写进这里的分组设置，构建请求时从不读目录。因此模型留空的字段跟随分组，模型上设置的值只对该模型生效。分组密钥只借给访问分组端点的模型，见[设置 API key](#设置-api-key)。
 
@@ -404,10 +405,11 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 | 路由到的客户端 | 快速模式 |
 | --- | --- |
-| OpenAI 协议（`openai-official`、`openai-responses`、`openai-chat`、`openai-chat-vllm-adapter`）、`minimax-official`、`gemini-official`（Interactions API） | 以 `service_tier: "priority"` 发送 |
+| OpenAI 协议（`openai-official`、`openai-responses`、`openai-chat`、`openai-chat-vllm-adapter`）、`minimax-official`、`google-official`（Interactions API） | 以 `service_tier: "priority"` 发送 |
 | Anthropic 协议（`anthropic-official`、`ant-messages`） | 以 `speed: "fast"` 发送，外加 beta 请求头 |
 | `zai-official`、`moonshot-official`、`deepseek-official`、`google-genai`、OpenAI embeddings | 拒绝，不显示开关 |
-| Bedrock 上的 `anthropic-official`，或 Claude 4.6、Sonnet 5.5、Fable 5.1 的 id | 拒绝，不显示开关 |
+| `mmsp` | 转发给 MMSP 服务器，由其上游客户端决定，不显示开关 |
+| Bedrock 上的 `anthropic-official`，或 Claude 4.6、Sonnet 5.5、Haiku 5.5、Fable 5.1 的 id | 拒绝，不显示开关 |
 
 路由跟随条目的 `client_type`；没有设置时，由 `model_id` 开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）指定该厂商的官方客户端。因此同一个上游 id 可能落到不同的客户端。添加在网关分组下的 Kimi 模型（`client_type = "openai-chat"`）可以使用快速模式，同一个 id 路由到 Moonshot 的官方客户端就不行。你自己 base URL 背后的 custom 模型会保留开关：它走 OpenAI 协议，背后很可能就是 OpenAI，但第三方服务器完全可以接受这个参数，然后照常按标准层级提供服务。
 
@@ -538,12 +540,14 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3`
 - `gemini-3.8-flash`
+- `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
-- `gpt-6-astra` / `gpt-5.6` / `gpt-5.5`
+- `gpt-6.1-sol` / `gpt-6-astra` / `gpt-5.6` / `gpt-5.5`
 - `glm-5.3` / `glm-5.3-flash`
 - `kimi-k3`
 - `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
+- `mimo-v2.6-pro` / `mimo-v2.6-flash` / `step-5-preview` / `ling-3.1-flash`（TokenDance）
 - `dots-3-note-preview`（TokenDance 上免费，512K 上下文）
 - `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`、`Qwen/Qwen3.8-Flash-Next`（ModelScope 的 api-inference，没有价格的预置条目）
 
@@ -552,24 +556,26 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 - **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
 - **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，**恢复默认**会把它的价格重置为目录值。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
 - **OpenAI 出现两次。** OpenAI 全系模型出现了两遍：一次直连（用你自己的 OpenAI key，官方牌价），一次在 OpenRouter 上以 `openai/<id>` 形式（网关费率，随其当前促销活动浮动）。
-- **GLM-5.3 Flash 出现六次。** 分别是直连的 `glm-5.3-flash`、TokenDance 与 OpenCode Go 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：MMSP 的 Z.AI 客户端（`zai-official`）只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
+- **GLM-5.3 Flash 出现七次。** 分别是直连的 `glm-5.3-flash`、TokenDance 与 OpenCode Go 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash`、SiliconFlow 的 `zai-org/GLM-5.3-Flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：MMSP 的 Z.AI 客户端（`zai-official`）只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
 - **OpenRouter 免费档。** 目录收录了 `:free` 变体 `nvidia/nemotron-3-ultra-550b-a55b:free`，以及 `openrouter/free` 这个统一的免费模型路由（Free Models Router）。它们不花钱，但 OpenRouter 免费档的限流和数据政策仍然适用。
 
 ### 价格与促销
 
 - **三类价格。** 每个模型都记录 `cache_read`、`cache_write` 和 `output` 三项价格，单位是每百万 Token 多少美元。成本中心按这些价格结算用量。
 - **没有价格的条目。** 价格字段可以整体缺席，含义是「没人查过这家的价格」，而不是免费：这类条目在**模型库**页面不显示价格徽标，成本中心把它的用量报为未计价。目录里目前只有 ModelScope 的预置条目是这样——魔搭的 api-inference 是计费的，但它的模型页面是客户端渲染的，读不到费率。写成三个 0 反而更糟：那会被当作免费档，给一个计费网关打上「Free」徽标。
-- **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）和 Gemini 3.1 Pro（200K 以上）遵循同样的约定。
+- **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）、Gemini 3.1 Pro（200K 以上）和 Claude Haiku 5.5（100K 以上，每项费率为 5 倍）遵循同样的约定。
 - **DeepSeek 空闲时段。** 直连 DeepSeek 的条目记录官方高峰价格，并声明 DeepSeek 的空闲时段规则：工作日北京时间 9:00–12:00 和 14:00–18:00 以外的时段，三项价格全部减半。**模型库**页面在这些时段显示 `省 50%` 标签，成本中心也按这个费率计费。
-  - 八条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、OpenRouter 的 `deepseek/deepseek-v4.1-flash`、Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`，以及 OpenCode Go 的 `deepseek-v4.1-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-v4-pro`。
+  - 十条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813`，OpenRouter 的 `deepseek/deepseek-v4.1-flash`，Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`，以及 OpenCode Go 的 `deepseek-v4.1-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-v4-pro`。
+  - TokenDance 还在高峰时段对这三条再打 8 折，`deepseek-v4.1-flash` 在空闲时段也打。条目无法在时段规则之外再声明固定折扣，所以这些时段按牌价计费，比 TokenDance 实收高 25%。
   - Qwen 转售的 DeepSeek 模型按它自己的时段计费：北京时间每天 22:00 至次日 8:00 半价。两个 Qwen 分组的 `deepseek-v4.1-flash` 和 Token Plan 的 `deepseek-v4-pro-0813` 声明的是这一套，折扣标签的悬停说明写的也是该条目所遵循时段的窗口。
   - 存储的价格始终是高峰价格，所以磁盘上的数值与 Project 创建或同步的时间无关。
-- **固定折扣。** 目前有九个 TokenDance 模型在打折：
-  - `kimi-k3` 打 6 折
-  - `deepseek-v4-flash-0731`、`deepseek-v4-pro-0813`、`glm-5.3`、`glm-5.3-flash` 和 `qwen3.8-max` 打 9 折
+- **固定折扣。** 目前有八个 TokenDance 模型在打折：
+  - `ling-3.0-flash` 打 3.5 折
   - 三条 Doubao Seed 条目（`seed-2.1-pro`、`seed-2.1-turbo`、`seed-evolving`）打 5 折
+  - `glm-5.2` 打 8 折
+  - `glm-5.3`、`glm-5.3-flash` 和 `qwen3.8-max` 打 9 折
 
-  Gemini 3.8 Flash、3.7 Flash 和 3.6 Flash 也打 5 折，google 分组和 OpenRouter 上（`google/gemini-3.8-flash`、`google/gemini-3.7-flash`、`google/gemini-3.6-flash`）都是如此，因为 Google 在 2026-12-31 之前对它们一律减半。Project 预置的是**牌价**：折扣率由服务端另行保存，存在它自己的数据库里，而不写入 `.project_config.toml`，计算成本时再从牌价中扣除，因此成本中心按卖家实际收取的价格计费。模型卡片用标签标出当前实际计费的费率，模型弹窗则写明**此处为牌价，当前促销在此基础上省 N%；修改价格会取消促销**。
+  Gemini 3.8 Flash 和 3.6 Flash 也打 5 折，google 分组和 OpenRouter 上（`google/gemini-3.8-flash`、`google/gemini-3.6-flash`）都是如此，因为 Google 在 2026-12-31 之前对它们一律减半。Project 预置的是**牌价**：折扣率由服务端另行保存，存在它自己的数据库里，而不写入 `.project_config.toml`，计算成本时再从牌价中扣除，因此成本中心按卖家实际收取的价格计费。模型卡片用标签标出当前实际计费的费率，模型弹窗则写明**此处为牌价，当前促销在此基础上省 N%；修改价格会取消促销**。
 - **你自己的价格。** 修改条目的价格会取消它的促销，卡片上的折扣标签也随之消失：此后这个数字由你自己定，不再代表卖家。
 
 ## Project 模型表
@@ -587,7 +593,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 | `model_id` | 上游请求 id |
 | `context_window` | 上下文窗口（Token）。不只是展示，而是实际参与运算：每个请求的有效输出上限和压缩阈值都由它推导，因此请求要求的输出永远不会超过窗口的剩余空间。未设置（或数值小得不合理，低于 4096）时，输出限制关闭，压缩按假定的 128000 计算；窗口较小的模型请填写真实值。在 Web 弹窗中，模型不在模型目录里且这个字段留空时，会写入 1,000,000（手动添加的条目按已知模型处理，而不是当作窗口未知）；如果端点实际支持的窗口更小，就把它调小。`penguin config model add` 省略 `--context-window` 时不写任何默认值 |
 | `max_tokens` | 可选的单模型输出上限（每次请求最多输出的 Token 数）。设置后会覆盖 Agent 的 `model.max_tokens`；未设置就继承这个值。这个上限只是封顶值，不是实际发出的数值：每个请求实际发送 `min(max_tokens, context_window − estimated input − safety margin)`，所以小窗口模型不用手动调整也能正常工作。在 Web 端整表保存时省略这个字段会把它清空 |
-| `client_type` | MMSP 客户端类型：通用协议客户端（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等），或厂商的官方客户端（`deepseek-official`、`anthropic-official` 等）。省略时，模型跟随分组的协议；两者都没有时，MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。自定义端点使用这三种通用协议客户端之一，Web 弹窗可以检测一个 base URL 对应哪一种。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
+| `client_type` | MMSP 客户端类型：通用协议客户端（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等），或厂商的官方客户端（`deepseek-official`、`anthropic-official` 等）。省略时，模型跟随分组的协议；两者都没有时，MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。自定义端点使用 Web 弹窗提供的通用协议客户端之一：上述三种、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）；弹窗可以检测一个 base URL 对应前三种中的哪一种。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
 | `display_name` | 展示名称 |
 | `vision` | 是否支持图像输入，默认 true |
 | `fast_mode` | 可选的快速模式（默认关闭）：开启后，这个模型的 Session 请求会改走供应商更快的服务层级，价格更高。持久化保存的值只有 `true`；在 Web 端整表保存时省略这个字段会把它清空。没有快速层级的模型会拒绝携带这个设置的请求（参见[快速模式](#快速模式)） |

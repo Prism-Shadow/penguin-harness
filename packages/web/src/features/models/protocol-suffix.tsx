@@ -4,11 +4,12 @@
  * passive label into the protocol picker itself.
  *
  * The suffix already displayed the very thing this control selects: the path the MMSP
- * client appends to the base URL (`/responses` / `/v1/messages` / `/chat/completions`),
- * which is one-to-one with the three generic protocol clients. So protocol selection
- * reuses that component rather than occupying a form row of their own: the trigger keeps
- * showing the live path, and clicking it opens a menu of the three protocols (name as the
- * row title, the appended path as its description) — the manual override.
+ * client appends to the base URL (`/responses` / `/v1/messages` / `/chat/completions` /
+ * `/v1beta/models` / `/stream`), which is one-to-one with the protocol clients it offers. So
+ * protocol selection reuses that component rather than occupying a form row of their own: the
+ * trigger keeps showing the live path, and clicking it opens a menu of the protocols
+ * (PROTOCOL_CLIENT_TYPES; name as the row title, the appended path as its description) — the
+ * manual override.
  *
  * Selection only. The detect ACTION lives at the base URL field's top-right, next to its
  * label (per maintainer: same placement idiom as the API key field's "get API key" link),
@@ -40,7 +41,7 @@ import { PROTOCOL_CLIENT_TYPES } from "./protocol-types";
 import type { ProtocolClientType } from "./protocol-types";
 import { toneInk } from "../../lib/tone";
 
-/** Whether a value is one of the three protocols the menu always lists. */
+/** Whether a value is one of the protocols the menu always lists. */
 function isPickerProtocol(value: string): value is ProtocolClientType {
   return (PROTOCOL_CLIENT_TYPES as readonly string[]).includes(value);
 }
@@ -74,7 +75,7 @@ export function ProtocolSuffixMenu({
    * label and leaves every menu row unchecked — nothing may look selected that the user did not
    * select. With one, null is that row's choice, and it is the row shown checked.
    *
-   * A stored protocol outside the three (a group's `client_type` set from the CLI, say) gets a
+   * A stored protocol outside the menu's (a group's `client_type` set from the CLI, say) gets a
    * row of its own, checked, under the follow row: the menu shows what is stored rather than
    * misstating it, and picking that row changes nothing.
    */
