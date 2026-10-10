@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** fix
 - **Scope:** `server`, `web`, `tooling`, `docs`
+- **PR:** [#1023](https://github.com/Prism-Shadow/penguin-harness/pull/1023)
 
 [中文版](2026-10-10-machines-dev-image.zh.md)
 
