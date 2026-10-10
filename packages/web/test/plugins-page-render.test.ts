@@ -1,13 +1,12 @@
 /**
- * The Plugins page's pieces, rendered: the header actions, the grouping and filter selects, a
- * card's actions by kind and role, a server module's confirm, and the detail dialog's sections
- * by kind.
+ * The Plugins page's pieces, rendered: the header actions with the grouping select, a card's
+ * actions by kind and role, a server module's confirm, and the detail dialog's sections by kind.
  *
- * - A member sees the search box and no Settings button; an admin sees Settings, with its words.
- * - Choosing a grouping regroups the cards that way, and choosing a filter's value keeps only
- *   its cards until the option that filters nothing brings them all back.
- * - A chosen value shows as its own name, an idle filter as its option that filters nothing,
- *   and each select keeps an accessible name for what it groups or filters.
+ * - A member sees the search box and the grouping select, and no Settings button; an admin sees
+ *   Settings too, with its words.
+ * - Choosing a grouping in the header regroups the cards that way.
+ * - The grouping select shows the chosen grouping as its own phrase, and keeps an accessible name
+ *   for what it groups.
  * - A server module's card offers an admin Install, or Remove once listed, each with its words;
  *   a member gets the card read-only — its status, and no way to change the server.
  * - A library plugin's card offers any member quick start and "manage installs".
@@ -19,7 +18,7 @@
  *   with the install; a plugin that is both shows About, then Files.
  *
  * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
- * its cards. How the header row wraps on a narrow screen is PageHeader's, not this page's.
+ * its cards. Static markup has no layout, so how the header row wraps on a phone is not here.
  */
 import {
   createElement,
@@ -42,15 +41,12 @@ import {
   type ReadmeState,
 } from "../src/features/plugins/plugin-detail";
 import {
-  NO_FILTERS,
   groupRows,
-  rowMatches,
-  type PluginFilters,
   type PluginGroupBy,
   type PluginRow,
 } from "../src/features/plugins/plugin-groups";
 import type { PluginStatus } from "../src/features/plugins/plugin-status";
-import { PluginControls, PluginsHeaderActions } from "../src/features/plugins/plugins-page";
+import { PluginsHeaderActions } from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";
@@ -90,25 +86,31 @@ const text = (html: string) =>
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ");
 
-const header = (isAdmin: boolean) =>
-  inLocale(PluginsHeaderActions, {
-    query: "",
-    onQuery: () => undefined,
-    isAdmin,
-    machinePicker: null,
-    onOpenSettings: () => undefined,
-  });
+type HeaderProps = Parameters<typeof PluginsHeaderActions>[0];
+const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
+  query: "",
+  onQuery: () => undefined,
+  groupBy: "category",
+  onGroupBy: () => undefined,
+  isAdmin: false,
+  machinePicker: null,
+  onOpenSettings: () => undefined,
+  ...overrides,
+});
+const header = (isAdmin: boolean) => inLocale(PluginsHeaderActions, headerProps({ isAdmin }));
 
 describe("the plugins page header", () => {
-  it("offers a member the search box and no Settings button", () => {
+  it("offers a member the search box and the grouping select, and no Settings button", () => {
     const html = header(false);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
+    expect(buttonText(html, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.category);
     expect(buttonWords(html)).not.toContain(en.plugins.openSettings);
   });
 
-  it("offers an admin the search box and a Settings button that says what it is", () => {
+  it("offers an admin the search box, the grouping select and a Settings button that says what it is", () => {
     const html = header(true);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
+    expect(buttonText(html, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.category);
     expect(buttonWords(html)).toContain(en.plugins.openSettings);
   });
 });
@@ -227,7 +229,7 @@ describe("installing a server module", () => {
   });
 });
 
-describe("the grouping and filter selects", () => {
+describe("the grouping select", () => {
   const rows = [libraryRow, moduleRow("none")];
   const statusOf = (row: PluginRow): PluginStatus =>
     row.library !== undefined ? "installed" : "available";
@@ -235,17 +237,6 @@ describe("the grouping and filter selects", () => {
     { id: "office-productivity", title: "Office Productivity" },
     { id: "sandbox", title: "Agent Sandbox" },
   ];
-  type ControlsProps = Parameters<typeof PluginControls>[0];
-  const props = (overrides: Partial<ControlsProps> = {}): ControlsProps => ({
-    groupBy: "category",
-    onGroupBy: () => undefined,
-    filters: NO_FILTERS,
-    onFilters: () => undefined,
-    rows,
-    statusOf,
-    categories,
-    ...overrides,
-  });
 
   /** Every element in a tree of plain elements, depth first, its children (and lists of them) followed. */
   const elements = (node: ReactNode): ReactElement<Record<string, unknown>>[] => {
@@ -267,10 +258,10 @@ describe("the grouping and filter selects", () => {
     });
   };
 
-  it("choosing to group by status regroups the cards by status", () => {
+  it("choosing to group by status in the header regroups the cards by status", () => {
     let chosen: PluginGroupBy = "category";
-    const tree = PluginControls(
-      props({
+    const tree = PluginsHeaderActions(
+      headerProps({
         onGroupBy: (by) => {
           chosen = by;
         },
@@ -283,38 +274,9 @@ describe("the grouping and filter selects", () => {
     ]);
   });
 
-  it("choosing a category keeps only its cards, until the option that filters nothing brings them all back", () => {
-    let filters: PluginFilters = NO_FILTERS;
-    const onFilters = (next: PluginFilters) => {
-      filters = next;
-    };
-    const kept = () =>
-      rows.filter((row) => rowMatches(row, statusOf(row), filters, "")).map((row) => row.name);
-    choose(PluginControls(props({ onFilters })), en.plugins.filterCategories, "Agent Sandbox");
-    expect(kept()).toEqual(["sandbox-bwrap"]);
-    choose(
-      PluginControls(props({ filters, onFilters })),
-      en.plugins.filterCategories,
-      en.plugins.filterAllCategories,
-    );
-    expect(kept()).toEqual(["data-analysis", "sandbox-bwrap"]);
-  });
-
-  it("show a chosen value as its own name and an idle filter as the option that filters nothing", () => {
-    /** What the select with this accessible name shows while closed. */
-    const shown = (html: string, name: string) => buttonText(html, name);
-    const idle = inLocale(PluginControls, props({ groupBy: "status" }));
-    expect(shown(idle, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.status);
-    expect(shown(idle, en.plugins.filterCategories)).toBe(en.plugins.filterAllCategories);
-    expect(shown(idle, en.plugins.filterKind)).toBe(en.plugins.filterAnyKind);
-    expect(shown(idle, en.plugins.filterState)).toBe(en.plugins.filterAllStatuses);
-    const picked = inLocale(
-      PluginControls,
-      props({ filters: { category: "sandbox", kind: "modules", status: "available" } }),
-    );
-    expect(shown(picked, en.plugins.filterCategories)).toBe("Agent Sandbox");
-    expect(shown(picked, en.plugins.filterKind)).toBe(en.plugins.kindLabel.modules);
-    expect(shown(picked, en.plugins.filterState)).toBe(en.plugins.status.available);
+  it("shows the chosen grouping as its own phrase, under a name that says what it groups", () => {
+    const html = inLocale(PluginsHeaderActions, headerProps({ groupBy: "status" }));
+    expect(buttonText(html, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.status);
   });
 });
 

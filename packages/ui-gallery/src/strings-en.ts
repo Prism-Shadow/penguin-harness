@@ -105,8 +105,7 @@ export const en: GalleryStrings = {
     },
     plugins: {
       title: "Plugins",
-      description:
-        "Every plugin by category, regrouped and filtered by category, contents and status; a card opens its details.",
+      description: "Every plugin by category, to regroup or search; a card opens its details.",
       how: "Sidebar › Plugins.",
     },
     models: {

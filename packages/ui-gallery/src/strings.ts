@@ -131,7 +131,7 @@ export const zh = {
     },
     plugins: {
       title: "插件市场",
-      description: "插件按分类列出，可换分组、按分类、包含与状态筛选；点卡片看详情。",
+      description: "插件按分类列出，可换分组、可搜索；点卡片看详情。",
       how: "侧栏 › 插件市场。",
     },
     models: {
