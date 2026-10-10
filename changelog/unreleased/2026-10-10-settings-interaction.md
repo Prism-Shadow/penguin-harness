@@ -13,6 +13,7 @@ The Web App gained one interaction model for settings, and the Settings dialog w
 - The shared UI package gained an unsaved-changes registry with `useFormDraft`, `useUnsavedChanges`, `useGuardedClose` and `guardLeave`, and `UnsavedChangesHost`, the one prompt every leave asks through. While any form is dirty, the host also holds a `beforeunload` listener, so a reload or a closed tab asks in the browser's own words.
 - The Web App's router moved to a data router, so a navigation can be held: sidebar links, links and redirects anywhere in the app, `?tab=` switches, and the browser's back and forward buttons all ask while a form is dirty.
 - A form counts as changed only while what Save would send differs from what is stored: typing the stored value back makes it clean again, and a switch never makes it dirty.
+- `useGuardedClose` takes a `locked` flag: while a dialog's own save is in flight, Esc, the ×, a press outside and Cancel do nothing, so nobody "discards" edits the request is about to store.
 
 ## The Settings dialog
 
@@ -21,7 +22,7 @@ The Web App gained one interaction model for settings, and the Settings dialog w
 - **Upload limits:** Save is live only while a limit changed and both are whole numbers; a box that is not is marked under it as it is typed.
 - **Plugins:** a card's switch and its on/off fields write when flipped, each to its own entry; everything typed on the card waits for its Save. A card re-read from the server keeps what is being typed, and picking another machine asks first while a card has unsaved edits.
 - **Save, Reset and Cancel:** Save is held while nothing changed or a value is not valid, so the 「当前没有需要保存的修改」 toast no longer appears on these pages. Page forms gained Reset (「重置」), which restores the stored values without asking.
-- **Change password and the admin's add-user and reset-password dialogs:** Save or Create is live only once the fields are valid (a mismatch or an id that breaks the naming rule is named as it is typed), and closing with anything typed asks first.
+- **Change password and the admin's add-user and reset-password dialogs:** Save or Create is live only once the fields are valid (a mismatch or an id that breaks the naming rule is named as it is typed), and closing with anything typed asks first; none of them closes while its save is in flight.
 - **Appearance:** the tray icon switch says why when its write fails, instead of reverting silently.
 - **Company mode:** turning it off joined the guarded consequential actions.
 

@@ -29,7 +29,7 @@ The settings commit model of the [Settings dialog](2026-10-10-settings-interacti
 ## Company mode
 
 - **Organization settings, hire, budget, reporting line, desk renewal, new channel, rename and purpose, new document, new ticket, calendar events, a ticket's sections, and blocking a ticket** gained the guard and the held verb. Pausing or resuming an organization still writes at once, and the fields being typed beside it keep their edits.
-- **Confirmations before an ordinary save were removed:** hiring, a budget or reporting-line change, saving a calendar event and saving a ticket section write at once. Moving a ticket, deleting and the desk renewal keep their confirmations. The reporting-line hint now says the employee's subordinates move with it.
+- **Confirmations before an ordinary save were removed:** hiring, a budget, reporting-line or thinking-level change, saving a calendar event and saving a ticket section write at once. Moving a ticket, deleting and the desk renewal keep their confirmations. The reporting-line hint now says the employee's subordinates move with it.
 - **The finance page's budget editor** no longer saves when focus leaves the box: Enter or the check saves, Esc or the cross cancels, and an edited box asks before the page is left.
 - **The handbook editor's** Save waits for an edit; Cancel, another document and New document ask through the app's one prompt, and so do a route change, an organization switch and a reload.
 
@@ -37,7 +37,8 @@ The settings commit model of the [Settings dialog](2026-10-10-settings-interacti
 
 - **ssh hosts, the manual Benchmark form and the built-in browser's homepage** hold their verb until it can write and ask before a close drops what was typed. A Benchmark whose added case was removed again is unchanged.
 - **The chat's shortcut editor** waits for its write: a refused save leaves the dialog open with the typing, where it used to close and drop it.
+- **Enter no longer submits a form of several fields:** the ssh host dialog, the new channel's id, the new ticket's title and the shortcut's title wait for the button. One-field forms keep Enter: a channel's name, a new handbook document, the Project's display name.
 
 ## Tooling
 
-- `test/form-commit-guard.test.ts` lists these modules among its form modules; the pending lists for this work are empty.
+- `test/form-commit-guard.test.ts` lists these modules among its form modules; with every module converted, its pending lists were removed.

@@ -25,5 +25,5 @@ The Agent settings page, its tabs and the dialogs opened from it moved onto the 
 
 ## Dialogs
 
-- Adding or editing an MCP server, adding a vault key, the scheduled task form (also opened from the chat's scheduled-tasks panel) and Create Agent: the footer button is live once the record is complete and changed; Esc, the ×, a press outside and Cancel ask while anything is typed; a refused save keeps the dialog open with the reason, still unsaved. A switch inside one of them, such as a task's Enabled box, saves with the dialog.
+- Adding or editing an MCP server, adding a vault key, the scheduled task form (also opened from the chat's scheduled-tasks panel) and Create Agent: the footer button is live once the record is complete and changed; Esc, the ×, a press outside and Cancel ask while anything is typed; a refused save keeps the dialog open with the reason, still unsaved, and nothing closes the dialog while its save is in flight. A switch inside one of them, such as a task's Enabled box, saves with the dialog.
 - Each of these dialogs opens on its record, or empty, every time.
