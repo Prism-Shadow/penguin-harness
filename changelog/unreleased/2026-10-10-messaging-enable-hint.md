@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#1029](https://github.com/Prism-Shadow/penguin-harness/pull/1029)
 
 [中文版](2026-10-10-messaging-enable-hint.zh.md)
 
