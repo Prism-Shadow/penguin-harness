@@ -97,7 +97,7 @@ With `--resume`, the original Session fixes the Workspace and model, so `--works
 
 | Input | Behavior |
 | --- | --- |
-| Any text while a Task runs | Mid-run steering. The line is queued and reaches the model between turns as a `[user_steering]` user message, and a `»` acknowledgment echoes the text. Rendering pauses while you type, so streamed output does not overwrite the line. If the Task finishes first, the line is sent as the next normal prompt. |
+| Any text while a Task runs, typed or pasted | Mid-run steering. Enter sends it, a multi-line paste as one message; the text is queued and reaches the model between turns as a `[user_steering]` user message, and a `»` acknowledgment echoes the text. Rendering pauses while you type, so streamed output does not overwrite the line. If the Task finishes first, the text is sent as the next normal prompt: a line already entered at once, a paste not yet entered by the next Enter. |
 | `/goal[:<budget>] <objective>` | Runs goal mode on the objective. The optional budget is a token budget, such as `/goal:500k`. Ctrl-C aborts the whole goal. See [Goal mode](/goal-mode). |
 | `/compact` | Compacts the current context now. |
 | `/clear` | Starts a fresh blank Session in place, on the same Workspace and model. The old Session stays on the server and can be resumed with `--resume`. |
