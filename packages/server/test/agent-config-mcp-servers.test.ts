@@ -7,21 +7,31 @@
  *   own), so a broken server config cannot be saved and silently skipped at the next Session.
  * - POST /config/mcp-test lists a reachable server's prefixed tools, reports an unreachable one
  *   as ok:false with the connect failure, and refuses a malformed entry before connecting.
- * - mcp-test fills an entry's `${KEY}` references from the Agent's vault: a key the vault lacks
- *   answers ok:false naming it, without starting the server; once the key is set the server
- *   connects with the value.
+ * - mcp-test fills an entry's `${KEY}` references from the Agent's vault only when the entry is
+ *   saved on the Agent as tested: a key the vault lacks answers ok:false naming it, without
+ *   starting the server; once the key is set the server connects with the value.
+ * - A new or changed entry that references the vault gets no value, whoever tests it and
+ *   whatever address it names: the answer says to save it first, and nothing is contacted.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { systemConfigPath } from "@prismshadow/penguin-core";
-import type { AgentConfigResponse, ProjectCreateResponse } from "../src/api/types.js";
+import type {
+  AgentConfigResponse,
+  McpServerTestResponse,
+  ProjectCreateResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 describe("agent config: mcpServers", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
+  /** A second user, made a member of the Project by the case that needs one. */
+  let member: ReturnType<typeof apiClient>;
   let projectId: string;
   let configPath: string;
 
@@ -29,6 +39,7 @@ describe("agent config: mcpServers", () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_mcp");
     owner = apiClient(t.app, a.cookie);
+    member = apiClient(t.app, (await provisionUser(t.app, "member_mcp")).cookie);
   });
   afterAll(async () => {
     await t.cleanup();
@@ -119,7 +130,7 @@ describe("agent config: mcpServers", () => {
       expect(body.error).toMatch(/definitely-not-a-real-command-xyz/);
     });
 
-    it("fills the entry's vault references from the Agent's vault, and names a missing key without starting the server", async () => {
+    it("fills the vault into an entry saved on the Agent as tested, and names a key the vault lacks without starting the server", async () => {
       const entry = {
         name: "fx",
         config: {
@@ -128,11 +139,10 @@ describe("agent config: mcpServers", () => {
           env: { FIXTURE_SECRET: "${FIXTURE_SECRET}" },
         },
       };
-      const missing = (await (await owner.post(`${configPath}/mcp-test`, entry)).json()) as {
-        ok: boolean;
-        error?: string;
-        tools?: string[];
-      };
+      expect((await owner.put(configPath, { config: { mcpServers: [entry] } })).status).toBe(200);
+      const missing = (await (
+        await owner.post(`${configPath}/mcp-test`, entry)
+      ).json()) as McpServerTestResponse;
       expect(missing).toMatchObject({
         ok: false,
         error: "needs setup: vault key FIXTURE_SECRET is not set",
@@ -144,10 +154,73 @@ describe("agent config: mcpServers", () => {
       });
       expect(vault.status).toBe(200);
       const res = await owner.post(`${configPath}/mcp-test`, entry);
-      const body = (await res.json()) as { ok: boolean; tools?: string[] };
+      const body = (await res.json()) as McpServerTestResponse;
       expect(body.ok).toBe(true);
       expect(body.tools).toContain("mcp__fx__probe");
       expect(JSON.stringify(body)).not.toContain("probe-value");
+    });
+
+    describe("an entry not saved as it is", () => {
+      // Every request that reaches this address: whether a test contacted it, and with which
+      // Authorization header.
+      let capture: Server;
+      let base: string;
+      const received: (string | undefined)[] = [];
+
+      beforeAll(async () => {
+        capture = createServer((req, res) => {
+          received.push(req.headers.authorization);
+          res.writeHead(404).end();
+        });
+        await new Promise<void>((resolve) => capture.listen(0, "127.0.0.1", resolve));
+        base = `http://127.0.0.1:${(capture.address() as AddressInfo).port}`;
+      });
+      afterAll(async () => {
+        await new Promise((resolve) => capture.close(resolve));
+      });
+
+      it("gets no vault value, even at an address a member types: the answer says to save it first, and nothing is contacted", async () => {
+        received.length = 0;
+        const savedEntry = {
+          name: "web",
+          config: { url: `${base}/saved`, headers: { Authorization: "Bearer ${WEB_TOKEN}" } },
+        };
+        expect((await owner.put(configPath, { config: { mcpServers: [savedEntry] } })).status).toBe(
+          200,
+        );
+        expect(
+          (
+            await owner.put(`/api/projects/${projectId}/agents/default_agent/vault`, {
+              entries: [{ key: "WEB_TOKEN", value: "web-token-value" }],
+            })
+          ).status,
+        ).toBe(200);
+        expect(
+          (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_mcp" })).status,
+        ).toBe(201);
+
+        // The saved entry's name with the member's own address, and an entry of their own.
+        for (const probe of [
+          { name: "web", config: { ...savedEntry.config, url: `${base}/mine` } },
+          { name: "mine", config: { url: `${base}/mine`, headers: { "X-Key": "${WEB_TOKEN}" } } },
+        ]) {
+          const body = (await (
+            await member.post(`${configPath}/mcp-test`, probe)
+          ).json()) as McpServerTestResponse;
+          expect(body).toMatchObject({ ok: false, saveFirst: true });
+          expect(body.error).toMatch(/save this entry first/i);
+        }
+        expect(received).toEqual([]);
+
+        // The saved entry itself is filled in: its own address receives the value.
+        const saved = (await (
+          await member.post(`${configPath}/mcp-test`, savedEntry)
+        ).json()) as McpServerTestResponse;
+        expect(saved.ok).toBe(false);
+        expect(saved.saveFirst).toBeUndefined();
+        expect(received.length).toBeGreaterThan(0);
+        expect(received.every((header) => header === "Bearer web-token-value")).toBe(true);
+      });
     });
 
     it("rejects a malformed entry with 400 before attempting to connect", async () => {

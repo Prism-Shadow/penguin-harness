@@ -434,6 +434,7 @@ Any string value in an entry's `config` (a header, an `env` value, an argument, 
 
 - A reference cannot sit in the host of `url`: the Vault decides what is sent to a Server, never which Server is contacted. The host is judged the way the connection parses the address, however the URL spells it. A path or a query may hold one.
 - A value is substituted once: a Vault value that itself contains `${…}` is not read again.
+- A connection test fills references only into an entry saved on the agent exactly as tested. A new or changed entry that references the Vault is neither filled in nor contacted, and the test says to save it first: otherwise anyone who can test an entry could send a Vault value to an address of their own.
 - A Server may repeat what it was sent when it fails, such as a refusal that quotes the request line or a header, or a process that prints its environment on stderr. Where such a text lands in a warning, a connect result in the Trace or a tool result the model reads, the Vault values in it are replaced with their references. A value shorter than six characters is left as it is: it is no secret, and replacing it would garble the text.
 - `${PLUGIN_ROOT}` is not a Vault key. Installing a plugin's Server replaces it with the plugin package's directory.
 - A Server whose references the Vault cannot fill is not contacted. It is skipped as **needs setup**, and its warning and connect result name the missing keys, never a value. Once the keys are in the Vault, the Server connects at the agent's next model context.

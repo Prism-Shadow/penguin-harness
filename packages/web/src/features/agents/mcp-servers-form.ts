@@ -278,3 +278,37 @@ export function formToServer(form: McpServerFormState): McpFormResult {
     server: { name, ...(form.plugin !== undefined ? { plugin: form.plugin } : {}), config },
   };
 }
+
+/** A JSON value as one string, object keys sorted: two values print alike exactly when they are the same data. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+/**
+ * The entry the edit dialog's test sends: the saved entry itself while the form still says what
+ * it says, else the form's entry (with formToServer's errors, when it has any). The server fills
+ * vault values only into an entry saved exactly as tested, and the form's rebuild of an unchanged
+ * entry is not byte for byte the saved one — it names the transport, leaves defaults out, trims —
+ * so an untouched saved entry is tested as saved, and any change makes it a new entry.
+ */
+export function entryToTest(
+  form: McpServerFormState,
+  saved: MCPServerConfig | undefined,
+): McpFormResult {
+  const built = formToServer(form);
+  if (!built.ok || saved === undefined) return built;
+  const unchanged = formToServer(serverToForm(saved));
+  return unchanged.ok &&
+    unchanged.server.name === built.server.name &&
+    canonicalJson(unchanged.server.config) === canonicalJson(built.server.config)
+    ? { ok: true, server: saved }
+    : built;
+}

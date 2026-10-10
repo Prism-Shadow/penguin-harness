@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   emptyMcpForm,
+  entryToTest,
   formToServer,
   parseKeyValueLines,
   permissionOf,
@@ -171,6 +172,44 @@ describe("formToServer", () => {
       envText: "GOOD=1\nbroken-line",
     });
     expect(built).toMatchObject({ ok: false, errors: { env: { code: "kv_line", line: 2 } } });
+  });
+});
+
+describe("entryToTest", () => {
+  // Saved without an explicit transport and with the default permission spelled out: the
+  // form's own rebuild of it names the transport and leaves the default out.
+  const saved = {
+    name: "web",
+    config: {
+      url: "https://mcp.example.com/mcp",
+      headers: { Authorization: "Bearer ${WEB_TOKEN}" },
+      permission: "auto",
+    },
+  };
+
+  it("tests a saved entry as saved while its form still says what it says", () => {
+    expect(entryToTest(serverToForm(saved), saved)).toEqual({ ok: true, server: saved });
+  });
+
+  it("tests the form's entry once anything changed, and a new entry as the form builds it", () => {
+    const moved = entryToTest(
+      { ...serverToForm(saved), url: "https://elsewhere.example/mcp" },
+      saved,
+    );
+    expect(moved).toEqual({
+      ok: true,
+      server: {
+        name: "web",
+        config: {
+          transport: "http",
+          url: "https://elsewhere.example/mcp",
+          headers: { Authorization: "Bearer ${WEB_TOKEN}" },
+        },
+      },
+    });
+    const renamed = entryToTest({ ...serverToForm(saved), name: "web-2" }, saved);
+    expect(renamed.ok && renamed.server.name).toBe("web-2");
+    expect(entryToTest(serverToForm(saved), undefined)).toEqual(formToServer(serverToForm(saved)));
   });
 });
 

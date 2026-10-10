@@ -1513,6 +1513,9 @@ export const zh = {
     mcpTest: "测试连接",
     /** The MCP table header's button: tests every server in turn (a single one is tested from its edit dialog). */
     mcpTestAll: "全部测试",
+    /** A test of an entry that reads the vault and is not saved as it is: the server fills nothing in (the edit dialog's note, the badge's hover). */
+    mcpTestSaveFirst: "先保存，再测试：用到密钥保险柜中的值的条目，只按保存后的内容测试。",
+    mcpTestSaveFirstBadge: "先保存",
     mcpTesting: "测试中…",
     mcpTestOk: (toolCount: number, latencyMs?: number): string => {
       const timing = latencyMs !== undefined ? `（${(latencyMs / 1000).toFixed(1)}s）` : "";

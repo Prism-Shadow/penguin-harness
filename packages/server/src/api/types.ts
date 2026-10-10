@@ -1424,13 +1424,20 @@ export interface AgentKernelUpdateResponse {
   kernelVersion: string;
 }
 
-/** POST …/config/mcp-test result: reachability of one MCP Server entry (its `${KEY}` references filled in from the Agent's vault first). */
+/**
+ * POST …/config/mcp-test result: reachability of one MCP Server entry. Its `${KEY}` references
+ * are filled in from the Agent's vault only when the entry is saved on the Agent exactly as
+ * tested (same name, same config — the user's rule); a new or changed entry that references the
+ * vault is not filled in and not contacted (`saveFirst`).
+ */
 export interface McpServerTestResponse {
   ok: boolean;
   /** Discovered tool names (`mcp__<server>__<tool>`), present on success. */
   tools?: string[];
-  /** Failure detail (connect error, timeout, server stderr tail; "needs setup: …" naming a vault key the entry references and the vault lacks, with nothing contacted), present on failure. */
+  /** Failure detail (connect error, timeout, server stderr tail; "needs setup: …" naming a vault key a saved entry references and the vault lacks, with nothing contacted), present on failure. */
   error?: string;
+  /** The entry references the vault and is not saved as it is: nothing was filled in or contacted — save it, then test (`error` says so in English). */
+  saveFirst?: boolean;
   /** Connect + discovery wall time (both outcomes) — the models test reports latency, this matches. */
   latencyMs?: number;
 }

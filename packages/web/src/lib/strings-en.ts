@@ -1471,6 +1471,9 @@ export const en: Strings = {
     mcpDuplicateName: "A server with this name already exists",
     mcpTest: "Test connection",
     mcpTestAll: "Test all",
+    mcpTestSaveFirst:
+      "Save it first, then test: an entry that uses values from the vault is tested only as saved.",
+    mcpTestSaveFirstBadge: "Save first",
     mcpTesting: "Testing…",
     mcpTestOk: (toolCount: number, latencyMs?: number): string => {
       const timing = latencyMs !== undefined ? ` (${(latencyMs / 1000).toFixed(1)}s)` : "";

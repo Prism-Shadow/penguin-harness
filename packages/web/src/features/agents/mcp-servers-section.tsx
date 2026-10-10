@@ -10,7 +10,11 @@
  * "test connection" button in a top action row (result as a toast, tool count +
  * latency — the models dialog idiom), and the section header offers a bulk test that
  * probes every configured server sequentially behind a confirm dialog, writing a
- * tone-colored badge onto each row as its result lands (the group speed-test idiom).
+ * tone-colored badge onto each row as its result lands (the group speed-test idiom). The
+ * server fills vault values only into an entry saved as it is (the user's rule): the dialog
+ * sends the saved entry itself while its form is unchanged, and a new or changed entry that
+ * reads the vault is answered "save first", a muted note beside the button rather than a
+ * failure.
  *
  * The permission control mirrors the builtin tool table's, with a third `auto` state: it
  * decides which of the server's tool calls stop for approval, and nothing about what the
@@ -30,6 +34,7 @@ import {
   ConfirmModal,
   GlyphIcon,
   ICONS,
+  ICON_GAP,
   ICON_SIZE,
   InfoPopover,
   Input,
@@ -58,6 +63,7 @@ import { localizedText } from "../chat/skill-use";
 import { McpServerMarks } from "../plugins/plugin-mcp";
 import {
   emptyMcpForm,
+  entryToTest,
   formToServer,
   permissionOf,
   serverToForm,
@@ -116,6 +122,18 @@ function TestBadge({ result }: { result: RowTestResult | undefined }) {
       </span>
     );
   }
+  // The row changed on disk since the list was read: nothing was tested, nothing failed.
+  if (result.saveFirst === true) {
+    return (
+      <span
+        data-tooltip={S.agent.mcpTestSaveFirst}
+        data-tooltip-content="text"
+        className="text-xs whitespace-nowrap text-fg-muted"
+      >
+        {S.agent.mcpTestSaveFirstBadge}
+      </span>
+    );
+  }
   return (
     <span
       data-tooltip={result.error}
@@ -154,6 +172,9 @@ export function McpServersSection({
   // Connectivity probe: runs the current form state through POST /config/mcp-test
   // (server-side connect + discovery, nothing saved); the result pops as a toast.
   const [testing, setTesting] = useState(false);
+  // The probe's "save first" answer (an unsaved entry that reads the vault), shown beside the
+  // test button until the form changes.
+  const [saveFirst, setSaveFirst] = useState(false);
   // Bulk test: confirm dialog open / run in progress / per-row results keyed by server name.
   const [testAllOpen, setTestAllOpen] = useState(false);
   const [testAllRunning, setTestAllRunning] = useState(false);
@@ -251,6 +272,7 @@ export function McpServersSection({
     setEditIndex(null);
     setFieldErrors({});
     setModalError(null);
+    setSaveFirst(false);
   };
 
   const openEdit = (index: number) => {
@@ -260,6 +282,7 @@ export function McpServersSection({
     setEditIndex(index);
     setFieldErrors({});
     setModalError(null);
+    setSaveFirst(false);
   };
 
   const closeModal = () => {
@@ -271,20 +294,28 @@ export function McpServersSection({
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
     setFieldErrors({});
     setModalError(null);
+    setSaveFirst(false);
   };
 
-  /** Probes the current form state (unsaved values on purpose: verify before persisting). */
+  /**
+   * Probes the current form state (unsaved values on purpose: verify before persisting). An
+   * untouched saved entry goes as saved (entryToTest); a new or changed one that reads the
+   * vault is answered "save first" — no vault value is filled into an unsaved entry — which
+   * shows beside the button as a note, not as a failure.
+   */
   const testConnection = async () => {
     if (!form || !projectId) return;
-    const built = formToServer(form);
+    const built = entryToTest(form, editIndex === null ? undefined : servers[editIndex]);
     if (!built.ok) {
       setFieldErrors(built.errors);
       return;
     }
     setTesting(true);
+    setSaveFirst(false);
     try {
       const res = await api.testAgentMcpServer(projectId, agentId, built.server);
       if (res.ok) toastSuccess(S.agent.mcpTestOk(res.tools?.length ?? 0, res.latencyMs));
+      else if (res.saveFirst === true) setSaveFirst(true);
       else toastError(S.agent.mcpTestFail(res.error ?? S.common.unknownError));
     } catch (e) {
       toastError(S.agent.mcpTestFail(apiErrorText(e)));
@@ -522,6 +553,18 @@ export function McpServersSection({
               >
                 {testing ? S.agent.mcpTesting : S.agent.mcpTest}
               </Button>
+              {/* Not a failure: the entry reads the vault and is not saved as it is, so the test
+                  fills nothing in — a muted line with the key in the attention tone, no red. */}
+              {saveFirst && (
+                <span className={`inline-flex items-center ${ICON_GAP.row} text-xs text-fg-muted`}>
+                  <GlyphIcon
+                    d={ICONS.key}
+                    size={ICON_SIZE.inlineGlyph}
+                    className={`shrink-0 ${toneInk.attention}`}
+                  />
+                  {S.agent.mcpTestSaveFirst}
+                </span>
+              )}
             </div>
             <Input
               size="sm"

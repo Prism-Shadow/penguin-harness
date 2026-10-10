@@ -238,7 +238,7 @@ MCP servers add external tools to the agent. Their tools are named `mcp__<name>_
    - **Read-only**: every tool of the server is treated as read-only.
    - **Read & write**: every tool of the server is treated as read & write.
 6. Optional: adjust **connectTimeoutMs** (connecting and discovering tools, 10000 by default), **timeoutMs** and **maxOutputLength**, which apply to every tool of the server.
-7. Optional: select **Test connection** to try the settings before you save. It reports the number of tools found and how long it took.
+7. Optional: select **Test connection** to try the settings before you save. It reports the number of tools found and how long it took. An entry that reads a value from the vault (`${KEY}`, described below) is tested only as saved: while it is new or changed, the test fills nothing in and says to save it first.
 8. Select **Save**.
 
 > [!NOTE]
