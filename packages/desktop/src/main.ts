@@ -192,11 +192,6 @@ function createWindow(url: string): void {
       // The built-in browser's tabs are <webview> guests of this page. This window only:
       // windows it opens are built from their own preferences, which leave the tag off.
       webviewTag: true,
-      // Keep timers and network delivery running at full rate while the window is
-      // unfocused or hidden to the tray: the renderer's SSE stream and its system
-      // notifications (Task completion, question cards, retry countdowns) are only
-      // useful when they fire before the user comes back to look.
-      backgroundThrottling: false,
     },
   });
   builtinBrowser.host(win);

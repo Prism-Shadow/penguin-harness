@@ -47,8 +47,6 @@ import {
 } from "./agent-handoff";
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
-import { splitAskBlocks } from "./ask-block";
-import { AssistantBody } from "./ask-card";
 import type { StreamRenderContext } from "./message-stream";
 
 /**
@@ -308,18 +306,16 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
           <SentMessageMeta atMs={item.atMs} />
         </MessageRow>
       );
-    case "assistant_text": {
+    case "assistant_text":
       // Doesn't attach MessageMeta: this turn's reply timestamp and copy both belong to the
       // stats line right below it (TaskStatsLine) — that line already serves as this reply's
       // footer, and rendering both would pop up two copy buttons in the same spot. The stats
       // line's copy grabs **all** of this turn's assistant text (see collectTaskAssistant),
       // which is more useful than copying segment by segment.
-      // While streaming, or when the reply holds no ```ask blocks, AssistantText owns the
-      // rendering (Markdown, caret, the theme's reveal). Once settled, a reply carrying ```ask
-      // blocks hands off to AssistantBody (ask-card.tsx) so those blocks become interactive
-      // question cards.
-      const tail = (
-        <>
+      // The body (Markdown, caret, the theme's reveal) is AssistantText; the stop reason and a
+      // nested reply's files card follow the text once it is fully revealed.
+      return (
+        <AssistantText text={item.text} streaming={item.streaming}>
           {item.stopReason && item.stopReason !== "completed" && (
             <span className="ml-1 font-mono text-xs text-fg-subtle">[{item.stopReason}]</span>
           )}
@@ -332,25 +328,8 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
               onOpenFile={ctx.onOpenFile}
             />
           )}
-        </>
-      );
-      if (!item.streaming && splitAskBlocks(item.text).some((s) => s.kind === "ask")) {
-        return (
-          <div className="md-body anim-msg my-3 font-sans text-base leading-relaxed text-fg">
-            <AssistantBody
-              text={item.text}
-              {...(ctx.onAnswerQuestions !== undefined ? { onSubmit: ctx.onAnswerQuestions } : {})}
-            />
-            {tail}
-          </div>
-        );
-      }
-      return (
-        <AssistantText text={item.text} streaming={item.streaming}>
-          {tail}
         </AssistantText>
       );
-    }
     case "thinking":
       return <SessionThinking item={item} />;
     case "tool_call":

@@ -6,22 +6,23 @@
  * and, when the window is hidden or unfocused, shows a system notification with the
  * Session's title; clicking focuses the window and opens that Session.
  *
- * The gates and the `new Notification` itself live in lib/system-notify.ts, shared with the
- * transcript's own announcements (a question card arriving, a retry ladder starting to wait).
- * This module's remaining job is the one thing that is specific to completions: reading the
- * transition out of the Session list, which covers every Session rather than only the one on
- * screen — and which is why it sits in the app layout and not on the chat page.
+ * Two gates, both from lib/notification-pref: the user turned the preference on, and the
+ * platform grants permission at this moment. The permission is checked every time rather
+ * than trusted from the moment it was granted — an OS can take it back while the app runs,
+ * and a revoked permission must not be read as "show it anyway". There is no gate on the
+ * desktop shell: the switch that opens this feature is the same in a browser, and the
+ * permission prompt it triggers is one the user just asked for.
  */
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router";
 import { S } from "../lib/strings";
 import { createCompletionTracker } from "../lib/completion-notify";
 import {
+  notificationPermission,
   notificationsEnabledVersion,
   readNotificationsEnabled,
   subscribeNotificationsEnabled,
 } from "../lib/notification-pref";
-import { showSystemNotification } from "../lib/system-notify";
 import { useProject } from "./project";
 import { useSessions } from "./sessions";
 
@@ -37,8 +38,7 @@ export function useCompletionNotifications(): void {
   const setCurrentAgentIdRef = useRef(setCurrentAgentId);
   setCurrentAgentIdRef.current = setCurrentAgentId;
 
-  // The settings switch writes the preference; this follows it without a reload, and it is not
-  // read as a gate here — lib/system-notify.ts owns that.
+  // The settings switch writes the preference; this follows it without a reload.
   useSyncExternalStore(subscribeNotificationsEnabled, notificationsEnabledVersion);
   const enabled = readNotificationsEnabled();
   useEffect(() => {
@@ -49,20 +49,32 @@ export function useCompletionNotifications(): void {
     const completed = trackerRef.current.observe(
       sessions.map((s) => ({ sessionId: s.sessionId, status: s.status })),
     );
+    if (!enabled) return;
+    if (completed.length === 0) return;
+    if (!document.hidden && document.hasFocus()) return;
+    if (notificationPermission() !== "granted") return;
     for (const sessionId of completed) {
       const session = sessions.find((s) => s.sessionId === sessionId);
       const title = session?.title ?? S.chat.defaultSessionTitle;
       const agentId = session?.agentId ?? null;
-      showSystemNotification({
-        tag: `penguin-task-${sessionId}`,
-        title: S.notify.taskCompleteTitle,
-        body: S.notify.taskCompleteBody(title),
-        onClick: () => {
+      try {
+        const notification = new Notification(S.notify.taskCompleteTitle, {
+          body: S.notify.taskCompleteBody(title),
+          // One notification per Session: a newer completion replaces the stale one.
+          tag: `penguin-task-${sessionId}`,
+          icon: "/penguin-logo.svg",
+        });
+        notification.onclick = () => {
+          notification.close();
+          window.focus();
           // Mirrors the sidebar's openSession: the current agent follows the Session.
           if (agentId !== null) setCurrentAgentIdRef.current(agentId);
           navigateRef.current(`/chat/${sessionId}`);
-        },
-      });
+        };
+      } catch {
+        // Notification construction is best-effort; a platform refusing it must not
+        // break the app.
+      }
     }
   }, [enabled, sessions]);
 }
