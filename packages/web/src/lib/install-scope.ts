@@ -235,6 +235,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.modelsGroupSort",
+    scope: "browser",
+    why: "How each model group orders its models, as differences from price low to high; a view preference, and a user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
     key: "penguin.steerMode",
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",

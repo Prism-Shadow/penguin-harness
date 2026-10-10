@@ -291,10 +291,13 @@ test("models: group header actions collapse to icons instead of disappearing", a
   ];
   // The header row: the collapse button sits in its left cluster, beside the group's star.
   const header = tokenDance.locator("xpath=../..");
-  // The header's last action is the settings gear, on this group as on every other.
-  const lastAction = await header.evaluate((header) =>
-    header.querySelector("div.ml-auto > :last-child")?.getAttribute("aria-label"),
-  );
+  // The header's last action is the settings gear, on this group as on every other. A menu's
+  // trigger stands inside the box that anchors its panel, so the last item may hold the button.
+  const lastAction = await header.evaluate((header) => {
+    const last = header.querySelector("div.ml-auto > :last-child");
+    const button = last?.matches("button") ? last : last?.querySelector("button");
+    return button?.getAttribute("aria-label");
+  });
   expect(lastAction, "settings stands last in the header").toBe("设置 TokenDance");
 
   // The expected label regime is derived from the row's measured width against the @3xl

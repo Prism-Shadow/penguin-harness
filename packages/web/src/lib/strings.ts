@@ -12,6 +12,7 @@
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
 import type { PeakWindows } from "../features/models/model-grouping";
+import type { ModelGroupSort } from "../features/models/model-sort";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -1947,9 +1948,21 @@ export const zh = {
     getModelIds: "获取模型 id",
     /** The group settings' link to the vendor's model list (the catalog's modelsUrl). */
     modelList: "前往模型列表",
-    // —— Group settings (the gear at the end of every group header) ——
-    /** The header action and its accessible name. */
+    // —— The gear at the end of every group header: the group's sort, then its settings ——
+    /** The gear's accessible name (followed by the group's name). */
     groupSettings: "设置",
+    /** The gear's hover hint, naming how the group's models are ordered now. */
+    groupMenuTitle: (sort: string): string => `设置 · 排序：${sort}`,
+    /** The gear menu's first section: how the group's models are ordered (radio rows). */
+    sortHeading: "排序",
+    /** The three orders; price is the blended rate billed right now. */
+    sortModes: {
+      "price-asc": "价格（从低到高）",
+      "price-desc": "价格（从高到低）",
+      name: "名称（A→Z）",
+    } satisfies Record<ModelGroupSort, string>,
+    /** The gear menu's last row, under the sort (owner only): opens the group settings dialog. */
+    groupSettingsEntry: "分组设置…",
     groupSettingsTitle: (label: string): string => `${label} 分组设置`,
     /** The clear box under a stored group key. */
     clearGroupKey: "清除分组密钥",
