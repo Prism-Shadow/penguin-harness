@@ -4121,12 +4121,16 @@ export interface BenchmarkCreateResponse {
  * anything else at its top level, a link, a package that is not `published` or a case without
  * both READMEs is refused (400); so is a zip past the caps (413 `benchmark_too_large`: 14MB
  * zipped, 1000 files, 5MB a file, 20MB inflated). The copy is written with origin `zip` and an
- * empty scoreboard. An id already taken is 409 `benchmark_exists` unless `overwrite`.
+ * empty scoreboard. An id already taken is 409 `benchmark_exists` (`details.benchmarkId` names
+ * it) unless `overwrite`.
  */
 export interface BenchmarkArchiveImportRequest {
   /** The zip, base64-encoded. */
   dataBase64: string;
-  /** Replace the Benchmark of the same id whole — its evaluation records and `.jobs/` included. */
+  /**
+   * Replace the Benchmark of the same id whole — its evaluation records and `.jobs/` included.
+   * Refused with 409 `benchmark_busy` while an evaluation of it is still running a trial there.
+   */
   overwrite?: boolean;
 }
 

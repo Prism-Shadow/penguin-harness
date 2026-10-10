@@ -8,9 +8,11 @@
  *   left out. A package zipped at its root imports under the id its manifest declares. An outsider
  *   cannot import.
  * - A second import of a taken id is a 409 whose details name the id, and changes nothing; with
- *   `overwrite` the directory is replaced whole, its evaluation records and `.jobs/` gone.
- *   Overwrites of one id sent at once each land or answer that 409, never a failure, and leave one
- *   whole copy.
+ *   `overwrite` the directory is replaced whole, its evaluation records and `.jobs/` gone — but
+ *   not while an evaluation of it is still running (a trial under `.jobs/` without its result, or
+ *   the Test Agent's State packed for one), which is a 409 `benchmark_busy` that changes nothing
+ *   until the evaluation ends. Overwrites of one id sent at once each land or answer that 409,
+ *   never a failure, and leave one whole copy.
  * - An export carries `benchmark.json` as the file reads and the cases, and none of the copy's
  *   own state (scoreboard, `.jobs/`, dot-entries, symlinks, stray files); it imports back as the
  *   same package with no scores. Exporting an unchanged Benchmark again, later, gives the same
@@ -140,6 +142,10 @@ const SCOREBOARD = [
   "",
 ].join("\n");
 
+/** One evaluation cell's Harbor job under `.jobs/`, and the trial directory Harbor writes in it. */
+const JOB = "CASE-001-contradictions-run1-20261008T100000Z";
+const TRIAL = `${JOB}/report-writing-contradictions__a1B2c3D`;
+
 async function write(dir: string, rel: string, data: string | Uint8Array): Promise<void> {
   const file = path.join(dir, ...rel.split("/"));
   await fs.mkdir(path.dirname(file), { recursive: true });
@@ -261,7 +267,9 @@ describe("benchmark packages", () => {
       expect((await member.post(`${base}/archive`, { dataBase64 })).status).toBe(201);
       const benchDir = path.join(dir, "report-writing-v1");
       await write(benchDir, "scoreboard.yaml", SCOREBOARD);
-      await write(benchDir, ".jobs/trial-1/result.json", "{}");
+      // A finished evaluation's trial: the job and its trial each hold their result.json.
+      await write(benchDir, `.jobs/${JOB}/result.json`, "{}");
+      await write(benchDir, `.jobs/${TRIAL}/result.json`, "{}");
       await write(benchDir, "CASE-003-old/statement/README.md", "# An older case\n");
       expect((await list())[0]!.evaluations).toHaveLength(1);
 
@@ -283,6 +291,49 @@ describe("benchmark packages", () => {
       expect(await exists(path.join(benchDir, "CASE-003-old"))).toBe(false);
       expect((await fs.readdir(dir)).sort()).toEqual(["report-writing-v1"]);
     });
+
+    /** What a running evaluation leaves under `.jobs/`, and what is there once it is done. */
+    const runningEvaluations: Array<
+      [string, (benchDir: string) => Promise<void>, (benchDir: string) => Promise<void>]
+    > = [
+      [
+        "a trial that has no result yet",
+        async (benchDir) => {
+          await write(benchDir, `.jobs/${JOB}/config.json`, "{}");
+          await write(benchDir, `.jobs/${TRIAL}/trial.log`, "running\n");
+        },
+        (benchDir) => write(benchDir, `.jobs/${TRIAL}/result.json`, "{}"),
+      ],
+      [
+        "the Test Agent's State packed for a trial being launched",
+        (benchDir) => write(benchDir, `.jobs/${JOB}.agent-state.tar.gz`, "state"),
+        (benchDir) => fs.rm(path.join(benchDir, ".jobs", `${JOB}.agent-state.tar.gz`)),
+      ],
+    ];
+
+    it.each(runningEvaluations)(
+      "an overwrite while an evaluation runs (%s) is a 409 benchmark_busy that changes nothing, until the evaluation ends",
+      async (_what, run, finish) => {
+        const dataBase64 = zipB64(packageFiles("report-writing-v1"));
+        expect((await member.post(`${base}/archive`, { dataBase64 })).status).toBe(201);
+        const benchDir = path.join(dir, "report-writing-v1");
+        await write(benchDir, "scoreboard.yaml", SCOREBOARD);
+        await run(benchDir);
+
+        const refused = await member.post(`${base}/archive`, { dataBase64, overwrite: true });
+
+        expect(refused.status).toBe(409);
+        expect(((await refused.json()) as ErrorBody).error.code).toBe("benchmark_busy");
+        expect((await list())[0]!.evaluations).toHaveLength(1);
+        expect(await exists(path.join(benchDir, ".jobs"))).toBe(true);
+
+        await finish(benchDir);
+        const replaced = await member.post(`${base}/archive`, { dataBase64, overwrite: true });
+
+        expect(replaced.status).toBe(201);
+        expect((await list())[0]!.evaluations).toEqual([]);
+      },
+    );
 
     it("overwrites of one id sent at once each land or answer 409 benchmark_exists, and leave one whole copy", async () => {
       const dataBase64 = zipB64(packageFiles("report-writing-v1"));

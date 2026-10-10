@@ -8,10 +8,10 @@
  * Content is normally created and refined by the benchmark-design Skill; the server also
  * writes the same layout for a Benchmark created by hand (`create`) or uploaded as a package
  * (`importArchive`, whose copy starts with an empty scoreboard and whose overwrite replaces the
- * directory whole), packs a Benchmark's package for download (`exportArchive`), and removes a
- * Benchmark directory whole (`remove`); it never edits a scoreboard. A built-in Benchmark is
- * read like any other: its cases run elsewhere (their statements say how), and the service does
- * not know or care.
+ * directory whole, though never while an evaluation of it is still running), packs a Benchmark's
+ * package for download (`exportArchive`), and removes a Benchmark directory whole (`remove`); it
+ * never edits a scoreboard. A built-in Benchmark is read like any other: its cases run elsewhere
+ * (their statements say how), and the service does not know or care.
  * A manifest is what makes a directory a Benchmark: `list` skips one without it. A Benchmark
  * from before benchmark.json has `benchmark_config.toml` instead, which the read converts
  * (compat(0.3.0), in core). A manifest that is there but says something unusable lists the
@@ -97,6 +97,43 @@ async function occupied(p: string): Promise<boolean> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
+}
+
+/** A directory's entries in code-unit order; none when it is missing or is not a directory. */
+async function entriesOf(dir: string) {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return [];
+    throw error;
+  }
+}
+
+/**
+ * The first entry under `benchDir/.jobs/` that marks an evaluation still running, or null. A
+ * Benchmark whose cases run through Harbor is evaluated one trial at a time into `.jobs/`
+ * (agent-evaluation's reference/harbor.md): a cell writes the Test Agent's State to
+ * `.jobs/<job>.agent-state.tar.gz` before it launches the trial and removes it when the launch
+ * returns, and Harbor writes the trial into `.jobs/<job>/<trial>/`, whose `result.json` comes
+ * last. Until both are done, that evaluation keeps writing into the Benchmark's directory by path,
+ * its trials and then its scoreboard. A trial whose process was killed leaves the same marks
+ * behind until someone removes them.
+ */
+async function runningTrial(benchDir: string): Promise<string | null> {
+  const jobsDir = path.join(benchDir, ".jobs");
+  for (const job of await entriesOf(jobsDir)) {
+    if (job.isFile() && job.name.endsWith(".agent-state.tar.gz")) return `.jobs/${job.name}`;
+    if (!job.isDirectory()) continue;
+    const jobDir = path.join(jobsDir, job.name);
+    for (const trial of await entriesOf(jobDir)) {
+      if (trial.isDirectory() && !(await occupied(path.join(jobDir, trial.name, "result.json")))) {
+        return `.jobs/${job.name}/${trial.name}`;
+      }
+    }
+  }
+  return null;
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -406,8 +443,10 @@ export class BenchmarkService implements Benchmarks {
    * manifest with the origin rewritten to `zip` and the time of this import (the version stays the
    * package's: it names the content, not the copy), and a `scoreboard.yaml` with no evaluations —
    * a package carries none. A taken id is a 409 unless `overwrite`, which replaces the whole
-   * directory, its scoreboard and `.jobs/` included. The copy is staged and renamed into place,
-   * so a failed write leaves the id as it was.
+   * directory, its scoreboard and `.jobs/` included — except while an evaluation of it is still
+   * running (`runningTrial`), which would go on writing its trials and its scoreboard into the new
+   * copy: 409 `benchmark_busy`. The copy is staged and renamed into place, so a failed write
+   * leaves the id as it was.
    */
   async importArchive(
     projectId: string,
@@ -419,6 +458,14 @@ export class BenchmarkService implements Benchmarks {
     const benchDir = path.join(dir, packaged.id);
     await fs.mkdir(dir, { recursive: true });
     if (!options.overwrite && (await occupied(benchDir))) throw benchmarkExists(packaged.id);
+    const running = options.overwrite ? await runningTrial(benchDir) : null;
+    if (running !== null) {
+      throw new HttpError(
+        409,
+        "benchmark_busy",
+        `Benchmark ${packaged.id} is being evaluated: ${running} marks a trial that has not finished, and the evaluation would go on writing into the new copy. Overwrite it once the evaluation ends.`,
+      );
+    }
     const manifest: BenchmarkManifest = {
       ...packaged,
       origin: { kind: "zip", imported_at: new Date().toISOString() },

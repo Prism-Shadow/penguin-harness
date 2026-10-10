@@ -106,7 +106,7 @@ A Benchmark can also come in as a **package**: its `benchmark.json` and its case
 2. Take one of the dialog's two ways:
    - **Recommended: import it by chatting with the agent.** In **Benchmark source**, paste a link to one package folder in a GitHub repository, a local path or a description. Each built-in Benchmark has its package folder under `packages/` in [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark). The dialog shows the prompt it builds for the Project's default agent. Select **Open a new chat**, review the prompt, and send it; **Copy prompt** copies it instead.
    - **Upload a Benchmark zip.** Select **Choose zip file** and pick a zip a Benchmark page exported, or one with `benchmark.json` and the `CASE-*` folders at its root or inside its only top-level folder.
-3. If a Benchmark with the same id already exists, a confirmation asks before overwriting. Overwriting replaces all of its files and deletes its evaluation records and run results, and cannot be undone.
+3. If a Benchmark with the same id already exists, a confirmation asks before overwriting. Overwriting replaces all of its files and deletes its evaluation records and run results, and cannot be undone. While an evaluation of that Benchmark still has a trial running under its `.jobs` folder, the overwrite is refused, because the evaluation would go on writing into the new copy: wait for it to end, then import again.
 
 The agent resolves the link to a fixed commit, fetches only that folder, reads every file before it writes anything, and asks you before it overwrites a Benchmark. The server never fetches the link itself.
 
@@ -239,6 +239,8 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 2. Read the confirmation: every case and evaluation record will be removed, and this cannot be undone.
 3. Select **Delete**.
 
+Let any evaluation of the Benchmark finish before you delete it. Deleting does not stop a running evaluation, which goes on writing into the Benchmark's directory: the directory comes back without a `benchmark.json`, is not listed, and has to be deleted by hand.
+
 > [!NOTE]
 > Deleting `example-benchmark` or a [built-in Benchmark](#built-in-benchmarks) is final too: they are written only when the Project is created, never again.
 
@@ -248,7 +250,7 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 - **Status.** `status` in `benchmark.json` drives the mask: `draft` shows **Being built**, `failed` shows **Creation failed**, and `published` lifts the mask. A Benchmark whose manifest cannot be read is masked too, as **Manifest can't be read**, with the reason on the icon beside it.
 - **Creating with AI.** The prompt's fixed ending hands the `benchmark-design` Skill the Test Agent's id, a desired baseline score and a pilot-iteration limit, and asks for the baseline to be taken.
 - **Creating manually.** The server writes the form to disk in the layout the Skills read (`POST …/benchmarks`, owner only), with the status `published`.
-- **Importing.** An upload goes to `POST …/benchmarks/archive` (any member), which checks the zip and writes the package to `benchmarks/<id>/` with the origin `zip`, the time of the import and an empty scoreboard; the version stays the package's. An agent's import from a repository folder writes the origin `git`, with the link, the commit and the folder; the `benchmark-design` Skill's `reference/package.md` describes that procedure.
+- **Importing.** An upload goes to `POST …/benchmarks/archive` (any member), which checks the zip and writes the package to `benchmarks/<id>/` with the origin `zip`, the time of the import and an empty scoreboard; the version stays the package's. It refuses an overwrite with `409` `benchmark_busy` while `.jobs/` holds a trial without its `result.json` or a Test Agent State packed for a trial (`*.agent-state.tar.gz`), the marks of an evaluation still running. An agent's import from a repository folder writes the origin `git`, with the link, the commit and the folder; the `benchmark-design` Skill's `reference/package.md` describes that procedure.
 - **Exporting.** `GET …/benchmarks/:id/archive` (any member) packs a published Benchmark's `benchmark.json` and cases into a zip.
 - **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents, on the conversation's own model, which the evaluator agent reads from the `Provider` and `Model ID` lines of its system prompt. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
 - **Deleting.** The server removes the directory whole (`DELETE …/benchmarks/:id`). Deleting a Benchmark while an evaluation is still running can leave a directory behind, because the evaluation keeps writing into it. That directory has no `benchmark.json`, so it is not listed, and you can delete it by hand.

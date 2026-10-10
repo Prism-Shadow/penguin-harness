@@ -7,8 +7,8 @@
  *   of the Project, while creating by hand stays the owner's.
  * - An upload whose id is taken comes back as the overwrite question, about the id the answer's
  *   details name (the picked file's name when they name none); confirming sends the same zip
- *   again with `overwrite`, and the Benchmark comes back as imported. A zip the server refuses
- *   comes back with its reason.
+ *   again with `overwrite`, and the Benchmark comes back as imported. An overwrite refused while
+ *   the Benchmark is being evaluated, and any zip the server refuses, comes back with its reason.
  * - A published Benchmark's header offers Export beside the path's copy button; a draft, a failed
  *   one and one whose manifest cannot be read have no package and offer none.
  */
@@ -101,6 +101,19 @@ describe("a zip upload", () => {
     });
 
     expect(result).toEqual({ kind: "exists", benchmarkId: "picked-file" });
+  });
+
+  it("whose overwrite is refused while the Benchmark is being evaluated comes back with that reason, not the question again", async () => {
+    stubFetch(() =>
+      apiError(409, "benchmark_busy", "Benchmark report-writing-v1 is being evaluated."),
+    );
+
+    const result = await uploadBenchmarkArchive("proj_1", ZIP, {
+      overwrite: true,
+      fallbackId: "picked-file",
+    });
+
+    expect(result).toEqual({ kind: "refused", message: S.errors.byCode.benchmark_busy });
   });
 
   it("that the server refuses comes back with its reason", async () => {
