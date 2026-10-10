@@ -11,6 +11,10 @@
 import type {
   AdminUserCreateResponse,
   AdminUsersResponse,
+  AgentApiKeyCreateResponse,
+  AgentApiKeyInfo,
+  AgentApiResponse,
+  AgentApiSettings,
   AgentConfigResponse,
   AgentCreateResponse,
   AgentHooksResponse,
@@ -21,6 +25,7 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  ApprovalMode,
   AuthResponse,
   BenchmarkCasesResponse,
   BrowserBackendResponse,
@@ -121,7 +126,7 @@ import type {
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
 import { READ_ONLY } from "./errors";
-import { dayKey, effectiveOf } from "./fixtures";
+import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 import type { UsageDay } from "./fixtures";
 import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
@@ -691,6 +696,7 @@ router
       hookCount: 0,
       pluginUpdates: [],
       memoryCount: 0,
+      apiEnabled: false,
     };
     store.f.agents.push(agent);
     const template = store.f.agentConfigs[IDS.agents.notes]!;
@@ -776,29 +782,127 @@ router
   });
 
 // ---------------------------------------------------------------------------------------------
+// An Agent's public API: its switches, approval mode and keys (the stream itself is not mocked)
+// ---------------------------------------------------------------------------------------------
+
+const API_APPROVAL_MODES: readonly ApprovalMode[] = [
+  "allow-all",
+  "deny-all",
+  "read-only",
+  "always-ask",
+];
+
+/** `n` random bytes as base64url, the alphabet the server's keys and key ids are written in. */
+function base64url(n: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(n));
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * The Agent's settings, as the server reads an Agent never configured: off, keyed, allow-all.
+ * The store's own object: answers hand out a copy, as a server's JSON would, since the app keeps
+ * what it is given and a later write here must not reach into its state.
+ */
+const apiOf = (ctx: Ctx): AgentApiSettings => {
+  const agentId = agentOf(ctx).agentId;
+  ctx.store.f.agentApi[agentId] ??= {
+    enabled: false,
+    open: false,
+    approvalMode: "allow-all",
+    keys: [],
+  };
+  return ctx.store.f.agentApi[agentId];
+};
+
+router
+  .get("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => ({
+    api: structuredClone(apiOf(ctx)),
+    serverEnabled: ctx.store.f.serverSettings.agentApiEnabled,
+  }))
+  .put("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => {
+    const settings = apiOf(ctx);
+    const { enabled, open, approvalMode } = record(ctx.body);
+    if (typeof enabled === "boolean") {
+      settings.enabled = enabled;
+      agentOf(ctx).apiEnabled = enabled;
+    }
+    if (typeof open === "boolean") settings.open = open;
+    const mode = API_APPROVAL_MODES.find((m) => m === approvalMode);
+    if (mode !== undefined) settings.approvalMode = mode;
+    return {
+      api: structuredClone(settings),
+      serverEnabled: ctx.store.f.serverSettings.agentApiEnabled,
+    };
+  })
+  .post("/api/projects/:projectId/agents/:agentId/api/keys", (ctx): unknown => {
+    const settings = apiOf(ctx);
+    const name = str(record(ctx.body).name).trim();
+    if (name.length < 1 || name.length > 64) {
+      fail(400, "bad_request", "A key's name is 1 to 64 characters.");
+    }
+    const secret = `penguin_${base64url(32)}`;
+    const key: AgentApiKeyInfo = {
+      keyId: base64url(12),
+      name,
+      prefix: secret.slice(0, 16),
+      createdBy: ctx.store.f.user.userId,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null,
+    };
+    settings.keys.push(key);
+    return json({ key: { ...key }, secret } satisfies AgentApiKeyCreateResponse, 201);
+  })
+  .delete("/api/projects/:projectId/agents/:agentId/api/keys/:keyId", (ctx) => {
+    const settings = apiOf(ctx);
+    const kept = settings.keys.filter((k) => k.keyId !== ctx.params.keyId);
+    if (kept.length === settings.keys.length) fail(404, "key_not_found", "No such key.");
+    settings.keys = kept;
+    return empty();
+  })
+  // Try it: the stream a real run sends, scripted (fixtures.ts), whole in one body.
+  .post("/api/projects/:projectId/agents/:agentId/api/try", (ctx) =>
+    raw(
+      amspTryStream(ctx.body, {
+        agent: `${ctx.params.projectId}/${ctx.params.agentId}`,
+        lang: ctx.store.lang,
+        now: Date.now(),
+      }),
+      {
+        "content-type": "text/event-stream; charset=utf-8",
+      },
+    ),
+  );
+
+// ---------------------------------------------------------------------------------------------
 // Sessions: the list, directories, creation, the row
 // ---------------------------------------------------------------------------------------------
 
 const TEMP_WORKSPACE = /[/\\]workspaces[/\\][^/\\]+$/;
 const isTemp = (workspace: string) => workspace === "" || TEMP_WORKSPACE.test(workspace);
 
-function categoryOf(row: SessionInfo): SessionCategory {
+/**
+ * The server's rule: a company Session is in no category; otherwise archived first, then a
+ * person's conversation is active and every other source background.
+ */
+function categoryOf(row: SessionInfo): SessionCategory | null {
+  if (row.source === "company") return null;
   if (row.archived) return "archived";
-  return row.source ?? "active";
+  return row.source === undefined || row.source === "user" ? "active" : "background";
 }
 
-/** An organization's desk or ticket Session, by its owner or by the durable `org` stamp. */
-const isOrgRow = (row: SessionInfo) => (row.orgId ?? "") !== "" || row.client === "org";
+/** An organization's desk or ticket Session, by its owner, the durable `org` stamp or its source. */
+const isOrgRow = (row: SessionInfo) =>
+  (row.orgId ?? "") !== "" || row.client === "org" || row.source === "company";
 
 function countsOf(rows: readonly SessionInfo[]): SessionCategoryCounts {
-  const counts: SessionCategoryCounts = {
-    active: 0,
-    schedule: 0,
-    subagent: 0,
-    benchmark: 0,
-    archived: 0,
-  };
-  for (const row of rows) counts[categoryOf(row)] += 1;
+  const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
+  for (const row of rows) {
+    const category = categoryOf(row);
+    if (category !== null) counts[category] += 1;
+  }
   return counts;
 }
 
@@ -819,14 +923,21 @@ router
   .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): unknown => {
     const { store, params, query } = ctx;
     // `excludeOrg=1` asks for the user's own rows: an organization's Sessions leave the page
-    // and the totals alike.
+    // and the totals alike. A request for a category, a Workspace group or counts leaves the
+    // company Sessions out too, which no category holds.
     const ownOnly = query.get("excludeOrg") === "1";
     const activity = query.get("order") === "activity";
-    const all = store.f.sessions
-      .filter((s) => s.agentId === params.agentId && !(ownOnly && isOrgRow(s)))
-      .sort(activity ? byActivity : byCreated);
     const category = query.get("category") as SessionCategory | null;
     const group = query.get("workspaceGroup");
+    const classified = category !== null || group !== null || query.get("counts") === "1";
+    const all = store.f.sessions
+      .filter(
+        (s) =>
+          s.agentId === params.agentId &&
+          !(ownOnly && isOrgRow(s)) &&
+          !(classified && categoryOf(s) === null),
+      )
+      .sort(activity ? byActivity : byCreated);
     let rows = category ? all.filter((s) => categoryOf(s) === category) : all;
     if (group !== null) {
       rows = rows.filter((s) => (group === "temp" ? isTemp(s.workspace) : s.workspace === group));

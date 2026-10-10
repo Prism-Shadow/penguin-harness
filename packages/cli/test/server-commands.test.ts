@@ -1,7 +1,8 @@
 /**
  * Server-backed command wiring, driven through `cli()` in-process against the fake
- * server: run (foreground/background/json, goal exit codes and round lines), ls, input
- * (steer vs task), logs, agent ls/create, project ls, cost, schedule ls.
+ * server: run (foreground/background/json, goal exit codes and round lines, the `cli` source
+ * of every Session it creates and the retired `--source`), ls, input (steer vs task), logs,
+ * agent ls/create, project ls, cost, schedule ls.
  */
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -70,6 +71,25 @@ describe("penguin run", () => {
     // The default Workspace is the CLI's cwd, resolved locally.
     expect(create?.body?.workspace).toBe(process.cwd());
     expect(out()).toContain("hello from the model");
+  });
+
+  it("records every Session it creates as a cli Session", async () => {
+    expect(await cli(["run", "-m", "q", "--background"])).toBe(0);
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect(create?.body?.source).toBe("cli");
+  });
+
+  it("accepts the retired --source benchmark as a no-op with a note, and refuses any other value", async () => {
+    expect(await cli(["run", "-m", "q", "--background", "--source", "benchmark"])).toBe(0);
+    expect(stderr.join("")).toContain(t.run.sourceIgnored());
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect(create?.body?.source).toBe("cli");
+
+    stderr.length = 0;
+    expect(await cli(["run", "-m", "q", "--source", "schedule"])).toBe(1);
+    expect(stderr.join("")).toContain("--source");
+    // Refused before anything reached the server: still the one Session from above.
+    expect(server.sessions.size).toBe(1);
   });
 
   it("--background posts and exits with the session id, no stream", async () => {

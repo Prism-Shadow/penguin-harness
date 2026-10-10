@@ -4,16 +4,18 @@
  * - The list reads each benchmark_config.toml's title, description and status (only a literal
  *   draft locks a Benchmark; draft and failed are themselves, anything else is published),
  *   lists a Benchmark that never ran but not a directory without a config, and is empty when
- *   nothing is configured.
+ *   nothing is configured. A staging copy an interrupted seeding left and the Harbor checkouts
+ *   are never listed.
  * - scoreboard.yaml v2's evaluations pass through: the summary, the Agent each tested, the
  *   model-written Case and Evaluation averages and the per-case runs; legacy Scoreboard entries
  *   are neither migrated nor backfilled; the case count is reported.
  * - Members read and outsiders get 404; only the owner creates (the server writes the layout
  *   the Skills read, refusing malformed requests without writing) and deletes a Benchmark whole.
  *
- * Benchmarks are Project-level, so a new Project arrives with default_agent's sample Benchmark;
- * setup deletes that directory (keeping `benchmarks/`), and builtin-agents.test.ts owns its
- * assertions. One app for the file; every case works in a Project of its own.
+ * Benchmarks are Project-level, so a new Project arrives with its Benchmarks (the example and
+ * the built-in ones); setup empties `benchmarks/` (keeping the directory), and
+ * builtin-agents.test.ts owns their assertions. One app for the file; every case works in a
+ * Project of its own.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -67,13 +69,13 @@ describe("benchmarks api", () => {
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-    // Creating the Project seeded default_agent's sample Benchmark at the Project level; these
-    // cases start from an empty benchmarks directory. Only the example goes — the directory
-    // itself stays, because its absence is what asks for the example to be provisioned again.
-    await fs.rm(path.join(benchmarksDir(t.root, projectId), "example-benchmark"), {
-      recursive: true,
-      force: true,
-    });
+    // Creating the Project wrote its Benchmarks (the example and the built-in ones) at the
+    // Project level; these cases start from an empty benchmarks directory. Only its entries go —
+    // the directory itself stays.
+    const seeded = benchmarksDir(t.root, projectId);
+    for (const name of await fs.readdir(seeded)) {
+      await fs.rm(path.join(seeded, name), { recursive: true, force: true });
+    }
     base = `/api/projects/${projectId}/benchmarks`;
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
@@ -84,6 +86,27 @@ describe("benchmarks api", () => {
     expect((await (await owner.get(base)).json()) as BenchmarksResponse).toEqual({
       benchmarks: [],
     });
+  });
+
+  it("never lists a staging copy an interrupted seeding left, or the Harbor checkouts under .harbor/", async () => {
+    const dir = benchmarksDir(t.root, projectId);
+    // A seeding cut short leaves a whole Benchmark, config included, under staging.
+    const staged = path.join(dir, ".seeding", "penguinharness-benchmark-sec-e-AbC123");
+    await fs.mkdir(path.join(staged, "CASE-001-music-harmony", "statement"), { recursive: true });
+    await fs.writeFile(
+      path.join(staged, "benchmark_config.toml"),
+      'title = "PenguinHarness Benchmark Sec E"\nruns = 1\n',
+    );
+    // A Harbor checkout holds the benchmark repository's own benchmarks/ tree.
+    await fs.mkdir(path.join(dir, ".harbor", "penguin-harness-benchmark-0123abc", "benchmarks"), {
+      recursive: true,
+    });
+    const mine = path.join(dir, "report-writing-v1");
+    await fs.mkdir(mine, { recursive: true });
+    await fs.writeFile(path.join(mine, "benchmark_config.toml"), 'title = "Report writing"\n');
+
+    const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
+    expect(body.benchmarks.map((b) => b.id)).toEqual(["report-writing-v1"]);
   });
 
   itWithSymlinks(

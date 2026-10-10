@@ -101,12 +101,13 @@ export interface StreamRenderContext {
   onAnswerQuestions?: (text: string) => Promise<boolean>;
   /**
    * The actions of the reply whose blocks take input: `interactive` set, `fill` putting the
-   * picked text in this conversation's composer, `focus` sending focus there for an answer in
-   * the user's own words, `lang` the interface language. Honored for the main conversation
-   * only, and there for the latest reply with nothing said after it (see a2ui-reply.ts); every
-   * other reply gets the same language with input off. Must keep its identity while its inputs
-   * do: the blocks read it through context, past the memoized Markdown, so a fresh object per
-   * render would re-render every block on every stream frame.
+   * picked text in this conversation's composer (an empty fill, a choice's "Other…", empties
+   * it), `lang` the interface language, and `drafts` + `draftScope` keeping a form's or a
+   * multi-select's answers in progress across a reload. Honored for the main conversation only, and there for the latest
+   * reply with nothing said after it (see a2ui-reply.ts); every other reply gets the same
+   * language with input off and no drafts. Must keep its identity while its inputs do: the
+   * blocks read it through context, past the memoized Markdown, so a fresh object per render
+   * would re-render every block on every stream frame.
    */
   a2uiActions?: A2uiActions;
 }

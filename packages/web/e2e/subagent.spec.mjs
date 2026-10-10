@@ -240,14 +240,14 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
   expect(childMeta, "child trace session_meta").toBeTruthy();
   expect(childMeta.payload.source).toBe("subagent");
 
-  // --- Sidebar: the child session (source=subagent) nests inside the collapsed "Subagents"
-  // folder (per-origin folders sit parallel to "Archived" within the same temp-workspace
-  // group). Reload first so the sidebar list carries the persisted title/source, and the
-  // folder is back to its default collapsed state. ---
+  // --- Sidebar: the child session (source=subagent) nests inside the collapsed "Background"
+  // folder (parallel to "Archived" within the same temp-workspace group). Reload first so the
+  // sidebar list carries the persisted title/source, and the folder is back to its default
+  // collapsed state. ---
   await page.reload();
   const sidebar = page.getByRole("complementary");
-  const subagentFolder = sidebar.getByRole("button", { name: "子智能体（1）" });
-  await expect(subagentFolder, "collapsed Subagents folder").toBeVisible();
+  const subagentFolder = sidebar.getByRole("button", { name: "后台会话（1）" });
+  await expect(subagentFolder, "collapsed Background folder").toBeVisible();
   // Collapsed by default: the child row is not rendered until the folder is expanded.
   await expect(sidebar.getByText("Subagent TODO summary")).toHaveCount(0);
   await subagentFolder.click();

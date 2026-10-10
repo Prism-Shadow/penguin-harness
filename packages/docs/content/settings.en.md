@@ -1,12 +1,12 @@
 ---
 title: Settings
-description: Manage your profile, preferences and password, and, as an admin, users, the proxy, upload limits, company mode and plugins.
+description: Manage your profile, preferences and password, and, as an admin, users, the proxy, upload limits, company mode, the Agent API and plugins.
 ---
 
-**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences and password, and, for an admin, the server's users, proxy, upload limits, company mode and plugins, the sandbox among them.
+**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences and password, and, for an admin, the server's users, proxy, upload limits, company mode, Agent API and plugins, the sandbox among them.
 
 - Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance), [Keyboard shortcuts](#keyboard-shortcuts) and [Account](#account).
-- Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Upload limits](#upload-limits), [Company mode](#company-mode) and [Plugins](#plugins).
+- Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Upload limits](#upload-limits), [Company mode](#company-mode), [Agent API](#agent-api) and [Plugins](#plugins).
 
 ## Open Settings
 
@@ -30,6 +30,7 @@ The rail is grouped into **Personal** and **Server**:
 | [Proxy options](#proxy-options) | Server | Admin only |
 | [Upload limits](#upload-limits) | Server | Admin only |
 | [Company mode](#company-mode) | Server | Admin only |
+| [Agent API](#agent-api) | Server | Admin only |
 | [Plugins](#plugins) | Server | Admin only |
 
 Personal preferences apply the moment they are touched. There is no Save button and nothing to lose by closing the dialog. The nickname on the Profile page is the one exception: typed text needs a commit, and its **Save** sits beside the field rather than under the page.
@@ -260,6 +261,14 @@ Turning it off stops the organization scheduler and every organization route, an
 
 > [!NOTE]
 > Company mode is a beta. See [Company mode](/company-mode).
+
+## Agent API
+
+The **Agent API** page (**Settings › Server › Agent API**) is admin-only and server-global. It holds the **Allow the Agent API** switch, on by default, over every agent's API: the HTTP API through which programs outside PenguinHarness talk to an agent (see [Agent API](/agent-api)).
+
+The switch applies the moment it is flipped. There is no Save button.
+
+Turning it off asks first, because every program calling an agent fails from then on. Once it is off, every Agent API request is refused with `403` `agent_api_disabled`. Each agent's own switch, approval mode and keys are kept, and work again when the switch is back on. Meanwhile each agent's **API** tab shows its switch disabled, with a note saying why, to every member.
 
 ## Plugins
 

@@ -119,6 +119,21 @@ const STAT_LINK_CLASS =
   "transition-colors duration-150 hover:text-gray-800 dark:hover:text-gray-200";
 
 /**
+ * The mark an Agent whose public API is on carries after its name: the plug the API wears
+ * everywhere (the sidebar's Background rows included), with its meaning in the tooltip and for
+ * screen readers. An Agent with the API off carries nothing.
+ */
+export function AgentApiMark({ enabled }: { enabled: boolean }) {
+  if (!enabled) return null;
+  return (
+    <span data-tooltip={S.agent.apiOn} className="shrink-0 text-fg-subtle">
+      <GlyphIcon d={ICONS.plug} size={ICON_SIZE.inlineGlyph} />
+      <span className="sr-only">{S.agent.apiOn}</span>
+    </span>
+  );
+}
+
+/**
  * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
  * already carries (name, descriptions, icon, version); a plugin without an icon.svg draws the
  * puzzle piece rather than the book.
@@ -583,6 +598,7 @@ export function AgentsPage() {
                         {S.chat.machineTag(machineName)}
                       </span>
                     )}
+                    <AgentApiMark enabled={a.apiEnabled} />
                     <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
                       {a.agentId}
                     </span>

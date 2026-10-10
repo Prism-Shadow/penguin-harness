@@ -338,7 +338,10 @@ export const en: Strings = {
       "Install the PenguinHarness Browser extension and pair it, and agents can open and work in pages in your own Chrome, signed in as you are there.",
     pairTitle: "Connect your Chrome",
     pairStepInstall:
-      "Download the extension and unzip it. In Chrome, open chrome://extensions, turn on Developer mode, choose Load unpacked and pick the unzipped folder, then pin the extension to the toolbar.",
+      "Install the extension and pin it to the toolbar. The Chrome Web Store is the recommended source: Chrome keeps the extension up to date.",
+    pairStore: "Open the Chrome Web Store",
+    pairStepInstallZip:
+      "If the store does not open, download the zip and unzip it instead. In chrome://extensions, turn on Developer mode, choose Load unpacked and pick the unzipped folder.",
     pairDownload: "Download the extension (zip)",
     pairStepOpen:
       "Click the PenguinHarness Browser icon in the toolbar and choose Settings to open its pairing page.",
@@ -459,6 +462,14 @@ export const en: Strings = {
     chromeExtensionTitle: "Chrome extension",
     chromeExtensionInfo:
       "When on, every user of this server can pair their own Chrome for agents to work in. When off, every extension disconnects; pairings are kept.",
+    agentApiTitle: "Agent API",
+    agentApiToggle: "Allow the Agent API",
+    agentApiHint:
+      "Off refuses every agent's API requests; per-agent switches, approval modes and keys are kept.",
+    agentApiOffTitle: "Turn the Agent API off?",
+    agentApiOffConfirm:
+      "Every agent's API on this server refuses requests at once, and the programs calling them fail until it is on again. Per-agent switches, approval modes and keys are kept.",
+    agentApiOff: "Turn off",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -1381,6 +1392,7 @@ export const en: Strings = {
     tabHooks: "Hooks",
     tabVault: "Vault",
     tabSchedules: "Schedules",
+    tabApi: "API",
     stateDir: "State path",
     copyStateDir: "Copy State path",
     agentsMd: "AGENTS.md",
@@ -1581,6 +1593,64 @@ export const en: Strings = {
         : `Kernel updated to ${version}; every tab was already current or kept as customized`,
     kernelUpdateKeptIntro: "Kept whole because customized:",
     kernelListSeparator: ", ",
+    apiEnable: "Enable API access",
+    apiEnableHint:
+      "External programs can talk to this agent with the URL, a key and the Agent ID; the conversations appear in the sidebar's Background folder.",
+    apiOwnerOnly: "Only the Project owner can change these settings.",
+    apiAdminOff:
+      "An admin has turned the Agent API off for this server: every API request is refused, and the settings and keys here are kept.",
+    apiApprovalMode: "Approval mode for API conversations",
+    apiApprovalModeHint:
+      "Applies to API conversations created from now on; when a mode asks, the request goes to the caller and can also be answered here.",
+    apiConnection: "Connection",
+    apiBaseUrl: "Base URL",
+    apiAgentId: "Agent ID",
+    apiCopy: (what: string): string => `Copy ${what}`,
+    apiKeys: "Keys",
+    apiKeysEmpty: "No keys yet.",
+    apiNewKey: "New key",
+    apiKeyName: "Key name",
+    apiKeyCreated: "Created",
+    apiKeyLastUsed: "Last used",
+    apiKeyNever: "never",
+    apiKeyShownOnce: "This key is shown once; copy it now.",
+    apiCopySecret: "Copy key",
+    apiKeyDone: "Done",
+    apiDeleteKey: "Delete key",
+    apiDeleteKeyBody: (name: string): string =>
+      `Delete the key "${name}"? Programs using it are refused at once; this cannot be undone.`,
+    apiOpen: "Allow keyless access",
+    apiOpenHint:
+      "Anything that can reach this address can talk to the agent; recommended for loopback use only.",
+    apiExamples: "Examples",
+    apiOpenTitle: "Allow keyless access?",
+    apiOpenBody:
+      "Once on, anything that can reach this server's address can talk to this agent without a key, on the Project's models and credentials, with tools run under the API conversations' approval mode. Turn it on only for a server that listens on loopback.",
+    apiOpenConfirm: "Allow anyway",
+    apiOffTitle: "Turn API access off?",
+    apiOffBody:
+      "External programs can no longer talk to this agent. The approval mode and the keys are kept and work again once it is back on.",
+    apiOff: "Turn off",
+    apiOn: "API access on",
+    apiTry: "Try it",
+    apiTryHint:
+      "Runs the route a program calls, your sign-in in place of a key, and shows what it receives; filed under Background.",
+    apiTryExample: "What time is it now?",
+    apiTryRun: "Run",
+    apiTryStop: "Stop",
+    apiTryFollowUp: "Continue this conversation…",
+    apiTryNewSession: "New conversation",
+    apiTryRendered: "Rendered",
+    apiTryRaw: "Raw",
+    apiTryCopyRaw: "Copy the raw lines",
+    apiTryEmpty: "The stream shows here once you run.",
+    apiTryStatus: "Status",
+    apiTryRequests: "Requests",
+    apiTryTokens: "Tokens (output / total)",
+    apiTryCacheRead: "Cache read",
+    apiTryCacheWrite: "Cache write",
+    apiTryElapsed: "Elapsed",
+    apiTryStreamBroken: "The stream ended before run.done.",
   },
 
   models: {
@@ -2567,8 +2637,6 @@ export const en: Strings = {
   },
 
   chat: {
-    thinkingLevelChangeNote:
-      "Applies right away. Changing it invalidates the model's cached context — compacting first is recommended.",
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",
@@ -3171,6 +3239,10 @@ Scenarios:
     replaceTyped: "Replace",
     replaceTypedBody:
       "Replace what you typed with this prompt? Your text in the composer is cleared.",
+    /** A choice's "Other…" about to empty the composer of text the user typed. */
+    clearTypedTitle: "Clear composer text",
+    clearTyped: "Clear",
+    clearTypedBody: "Clear what you typed to write your own answer?",
     statTokens: "Total Tokens",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "Total Tokens",
@@ -3375,6 +3447,7 @@ Scenarios:
     copyCode: "Copy code",
     copyReply: "Copy reply",
     a2ui: {
+      lang: "en",
       fill: "Fill in",
       other: "Other…",
       recommended: "Recommended",
@@ -3386,6 +3459,45 @@ Scenarios:
       cannotShow: (reason: string) => `This component can't be shown: ${reason}`,
       diagram: "Diagram",
       showSource: "Show source",
+      stepUp: "Increase",
+      stepDown: "Decrease",
+      conditions: {
+        clear: "Clear",
+        "partly-cloudy": "Partly cloudy",
+        cloudy: "Overcast",
+        fog: "Fog",
+        drizzle: "Drizzle",
+        rain: "Rain",
+        "heavy-rain": "Heavy rain",
+        thunder: "Thunderstorm",
+        snow: "Snow",
+        sleet: "Sleet",
+        wind: "Windy",
+      },
+      asOf: (time: string) => `As of ${time}`,
+      source: (name: string) => `Source: ${name}`,
+      feelsLike: "Feels like",
+      humidity: "Humidity",
+      wind: "Wind",
+      precipitation: "Precipitation",
+      high: "High",
+      low: "Low",
+      hourly: "Next hours",
+      daily: "Coming days",
+      today: "Today",
+      weather: "Weather",
+      clock: "Clock",
+      countdown: "Countdown",
+      metrics: "Metrics",
+      localTime: "Local time",
+      countdownDone: "Time's up",
+      unitDays: "days",
+      unitHours: "hours",
+      unitMinutes: "min",
+      unitSeconds: "sec",
+      done: "Done",
+      deltaUp: "up",
+      deltaDown: "down",
     },
     forkSession: "Fork chat from here",
     forkSessionConfirmBody:
@@ -3420,10 +3532,14 @@ Scenarios:
     loadMoreSessions: "Load more chats",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
-      subagent: (n: number) => `Subagents (${n})`,
-      schedule: (n: number) => `Scheduled (${n})`,
-      benchmark: (n: number) => `Evaluations (${n})`,
+      background: (n: number) => `Background (${n})`,
       archived: (n: number) => `Archived (${n})`,
+    },
+    sessionSource: {
+      api: "API",
+      schedule: "Scheduled",
+      subagent: "Subagent",
+      cli: "CLI",
     },
     /** Tooltip of a folder-only group's header (nothing active of its own): what its folders hold, plus the Workspace path where the header has one. */
     folderOnlyGroup: (n: number, path?: string) =>
@@ -4119,6 +4235,8 @@ Scenarios:
     colCase: "Case",
     colRun: "Run",
     colSession: "Session",
+    /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
+    copyTrialName: "Copy Harbor trial name",
     askAi: "Ask AI",
     evaluationDetailTitle: (time: string): string => `Evaluation · ${time}`,
     askEvaluationTitle: "Ask AI about this evaluation",
@@ -4327,7 +4445,7 @@ Scenarios:
       "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
-      "The model that dispatches and totals the runs, the Project's default model unless changed; the tested agent uses the model it is configured with, which is not changed here",
+      "The model this conversation runs on, the Project's default model unless changed; the tested agent is evaluated on this same model, at the thinking level it is configured with",
     evaluateRunsHint:
       "How many times every case runs, averaged; defaults to the Benchmark's configured count",
     evaluateNoteField: "Note",
@@ -4338,8 +4456,10 @@ Scenarios:
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
       `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
       `- runs: \`${p.runs}\`\n\n` +
-      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned subagent per matrix cell (omit `agent_id`), and say in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
-      "the evaluation runtime is the model and thinking level that tested agent is configured with right now. Require every returned result to agree on " +
+      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned subagent per matrix cell (omit `agent_id`), and say in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill. " +
+      "The tested model is this conversation's own: read `Provider` and `Model ID` from your Environment once, before the first `run_subagent`, and pass them as `provider` and `model_id` in every request. " +
+      "An agent stores no model, so look for none in the tested agent's files, the Project configuration or the server; if your Environment lacks either line, stop and ask me. " +
+      "The thinking level is the one the tested agent is configured with. Require every returned result to agree on " +
       "`agent_id`, `provider`, `model_id` and `thinking_level`, and stop rather than merge two labels into one record. Average the runs per case and the cases " +
       "per evaluation as the scoreboard contract specifies, then append exactly ONE evaluation to `scoreboard.yaml`, labelled with `agent_id`, `version`, " +
       "`provider` / `model_id` and `thinking_level`. Change neither the tested agent nor the Benchmark. " +

@@ -272,31 +272,6 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
   });
 });
 
-describe("Agent.createSession session source (session_meta origin marker)", () => {
-  it("records the given source in session_meta; a user-created session carries no source key", async () => {
-    const agent = await createAgent();
-    const ws = path.join(tmpRoot, "ws-source");
-    await fs.mkdir(ws, { recursive: true });
-
-    const scheduled = await agent.createSession({ workspaceDir: ws, source: "schedule" });
-    try {
-      expect((scheduled.metaMessage.payload as { source?: string }).source).toBe("schedule");
-    } finally {
-      scheduled.dispose();
-    }
-
-    // Absent = user-created: the key must not appear at all (Trace consumers treat absence as the default).
-    const plain = await agent.createSession({ workspaceDir: ws });
-    try {
-      expect("source" in (plain.metaMessage.payload as unknown as Record<string, unknown>)).toBe(
-        false,
-      );
-    } finally {
-      plain.dispose();
-    }
-  });
-});
-
 describe("Agent.createSession thinking level (explicit option wins over the Agent config)", () => {
   // A context's level is the LLM object's construction default (the Session's live pin
   // overrides it per request); nothing is recorded — the level is a per-request parameter.

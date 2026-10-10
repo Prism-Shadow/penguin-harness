@@ -1719,7 +1719,7 @@ export class MessagingBridge {
    */
   private relay(entry: BridgeEntry, text: string): void {
     if (!entry.armed) return; // joined mid-run: this run's messages are not a reply
-    // A chat cannot draw the Web App's rich blocks (a choice, a form, steps, a callout), so
+    // A chat cannot draw the Web App's rich blocks (a choice, a form, steps, a callout, a widget), so
     // each one leaves as the readable Markdown it stands for: a choice as numbered options the
     // person answers by number or in their own words. Only the outbound copy changes; the
     // stored message keeps the block. No language is passed, because the bridge has no locale

@@ -57,6 +57,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "chromeExtension",
+      "agentApi",
       "plugins",
       "users",
     ]);
@@ -91,6 +92,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "chromeExtension",
+      "agentApi",
       "plugins",
     ]);
   });
@@ -109,6 +111,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "chromeExtension",
+      "agentApi",
       "plugins",
     ]);
   });

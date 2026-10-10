@@ -4,8 +4,9 @@
  * the chat page shares this same data for status sync / title events / self-healing reload.
  *
  * **Paged per (Agent, category)**: the default load fetches only the **active** category
- * (user-created, non-archived) plus per-category totals — archived / subagent / schedule /
- * benchmark Sessions are not loaded until their collapsed folder is opened. Each pair fetches
+ * (a person's conversations, non-archived) plus per-category totals — background (API,
+ * scheduled, subagent and CLI) and archived Sessions are not loaded until their collapsed
+ * folder is opened. Each pair fetches
  * SIDEBAR_PAGE_SIZE sessions per page (requesting one extra to detect "has more" — see
  * splitPage); `loadMoreFor` fetches a pair's first page when unloaded and the next page
  * otherwise, so every category's paging is independent of the others. A reload resets each
@@ -22,8 +23,9 @@
  * sidebar cuts at it), so a later page can only ever add rows below the ones on screen.
  *
  * **Own rows only**: every fetch asks the server for the user's own conversations
- * (`excludeOrg`), so an organization's desk, ticket and sub-sessions are in neither the rows
- * nor the totals the sidebar builds its groups from. One can still enter through `add()` (the
+ * (`excludeOrg`), and no category holds a company Session anyway, so an organization's desk,
+ * ticket and sub-sessions are in neither the rows nor the totals the sidebar builds its groups
+ * from. One can still enter through `add()` (the
  * chat page's deep-link self-heal): the sidebar drops it at render (withoutOrgSessions), the
  * totals are left alone for it, and a reload carries it over. Live statuses are remembered for
  * EVERY `session_state` the user channel reports (`liveStatuses`), row or no row — company
@@ -466,12 +468,12 @@ export function createSessionsStore() {
     /**
      * Keeps an Agent's category totals — overall and per Workspace — in step with a local
      * list mutation of `session` (no-op while its counts are unknown). An organization's row
-     * never moves them: the server's totals are the user's own rows only (`excludeOrg`), so
-     * such a row — held for the page that deep-linked it — was never counted and must not be
-     * counted out.
+     * never moves them: the server's totals are the user's own rows only (`excludeOrg`), and a
+     * company Session is in no category, so such a row — held for the page that deep-linked
+     * it — was never counted and must not be counted out.
      */
-    const adjustCount = (session: SessionInfo, category: SessionCategory, delta: number) => {
-      if (isOrgSession(session)) return;
+    const adjustCount = (session: SessionInfo, category: SessionCategory | null, delta: number) => {
+      if (category === null || isOrgSession(session)) return;
       const { agentId, workspace } = session;
       const counts = get().countsByAgent;
       const cur = counts.get(agentId);
@@ -486,13 +488,7 @@ export function createSessionsStore() {
         // Keyed by GROUP, as the fetch stores them: the badge belongs to the directory on
         // the machine this Session is on, not to every machine holding that path string.
         const key = workspaceGroupKey(workspace, machineForSession(session.sessionId));
-        const ws = wsCur[key] ?? {
-          active: 0,
-          subagent: 0,
-          schedule: 0,
-          benchmark: 0,
-          archived: 0,
-        };
+        const ws = wsCur[key] ?? { active: 0, background: 0, archived: 0 };
         const next = new Map(workspaceCounts);
         next.set(agentId, {
           ...wsCur,
@@ -517,6 +513,7 @@ export function createSessionsStore() {
       const category = sessionCategory(session);
       if (
         !existed &&
+        category !== null &&
         get().pageState.get(pageKey(session.agentId, category, "", source))?.hasMore === false
       ) {
         adjustCount(session, category, 1);

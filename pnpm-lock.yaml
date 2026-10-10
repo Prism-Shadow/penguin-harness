@@ -46,6 +46,18 @@ importers:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
 
+  packages/amsp:
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
   packages/browser-extension:
     devDependencies:
       '@playwright/test':
@@ -447,6 +459,9 @@ importers:
       '@larksuiteoapi/node-sdk':
         specifier: ^1.73.0
         version: 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../amsp
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -642,6 +657,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../amsp
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -1752,6 +1770,10 @@ packages:
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
     engines: {node: '>=18'}
     hasBin: true
+
+  '@prismshadow/amsp@file:packages/amsp':
+    resolution: {directory: packages/amsp, type: directory}
+    engines: {node: '>=24'}
 
   '@prismshadow/mmsp@0.5.1':
     resolution: {integrity: sha512-CVfU0z3LZhGqNTlAcHxFMr6xFLq/CL11/B1YPM/WL7mzjfrXixdp2XECIcdzWRwZjm8LWZAH+vU+yx5U0pViuQ==}
@@ -6167,6 +6189,8 @@ snapshots:
     dependencies:
       playwright: 1.61.1
 
+  '@prismshadow/amsp@file:packages/amsp': {}
+
   '@prismshadow/mmsp@0.5.1(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
@@ -6306,6 +6330,7 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
@@ -6333,6 +6358,7 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2

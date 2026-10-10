@@ -370,6 +370,7 @@ export const zh = {
       "ui-activity": "正在工作的思考行或工具行：运行中、已完成或出错",
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
+      "ui-widget": "回复里一眼看懂的读数块：天气、时钟、倒计时与指标",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
       "ui-stream": "正在流式输出的文字（回答、思考、压缩摘要、工具输出）：各主题决定新文字如何出现",
       "ui-glyph":
@@ -975,8 +976,116 @@ export const zh = {
       patchLabel: "src/limits.ts 的改动",
       a2ui: "A2UI 组件",
       a2uiHint:
-        "模型写进回复的组件：选择、表单、步骤、提示框和 Mermaid 图。在这里点选或提交，要填入输入框的文字会以提示消息显示。",
+        "模型写进回复的组件：天气、时钟、倒计时和指标小组件，以及选择、表单、步骤、提示框和 Mermaid 图。小组件是模型给出的快照，只有时钟和倒计时会走动；在这里点选或提交，要填入输入框的文字会以提示消息显示。",
       a2uiReply: [
+        {
+          lead: "北京现在的天气：",
+          spec: {
+            type: "weather",
+            place: "北京",
+            condition: "partly-cloudy",
+            temp: 18,
+            unit: "C",
+            summary: "傍晚转阴，夜里可能有小雨",
+            high: 22,
+            low: 12,
+            feelsLike: 17,
+            humidity: 62,
+            windSpeed: 12,
+            windDirection: "东北",
+            hourly: [
+              { time: "14:00", temp: 18, condition: "partly-cloudy", precip: 10 },
+              { time: "15:00", temp: 19, condition: "partly-cloudy", precip: 10 },
+              { time: "16:00", temp: 19, condition: "cloudy", precip: 20 },
+              { time: "17:00", temp: 18, condition: "cloudy", precip: 30 },
+              { time: "18:00", temp: 16, condition: "cloudy", precip: 40, night: true },
+              { time: "19:00", temp: 15, condition: "drizzle", precip: 60, night: true },
+            ],
+            daily: [
+              { date: "2026-10-04", high: 22, low: 12, condition: "partly-cloudy", precip: 20 },
+              { date: "2026-10-05", high: 19, low: 11, condition: "rain", precip: 80 },
+              { date: "2026-10-06", high: 17, low: 9, condition: "cloudy", precip: 30 },
+              { date: "2026-10-07", high: 20, low: 10, condition: "clear", precip: 0 },
+              { date: "2026-10-08", high: 23, low: 11, condition: "wind", precip: 10 },
+            ],
+            asOf: "2026-10-04T14:05+08:00",
+            source: "Open-Meteo",
+          },
+        },
+        {
+          lead: "团队三地现在的时间：",
+          spec: {
+            type: "clock",
+            title: "团队时区",
+            zones: [
+              { zone: "local" },
+              { zone: "America/New_York", label: "纽约" },
+              { zone: "Europe/London", label: "伦敦" },
+            ],
+            style: "both",
+          },
+        },
+        {
+          lead: "离新年还有：",
+          spec: {
+            type: "countdown",
+            to: "2026-12-31T23:59:59+08:00",
+            label: "新年倒计时",
+            doneLabel: "新年快乐",
+          },
+        },
+        {
+          lead: "刚读到的服务状态：",
+          spec: {
+            type: "metrics",
+            title: "服务状态",
+            items: [
+              {
+                label: "CPU",
+                value: 37,
+                max: 100,
+                unit: "%",
+                gauge: "ring",
+                warn: 80,
+                danger: 95,
+                history: [22, 31, 28, 45, 52, 41, 37],
+              },
+              {
+                label: "内存",
+                kind: "used",
+                value: 15.3,
+                max: 16,
+                unit: "GB",
+                decimals: 1,
+                gauge: "bar",
+                warn: 13.6,
+                danger: 15.2,
+                delta: 0.4,
+                deltaLabel: "较昨天",
+              },
+              {
+                label: "API 额度",
+                kind: "remaining",
+                value: 1240,
+                max: 5000,
+                warn: 1000,
+                danger: 250,
+                detail: "3 天后重置",
+              },
+              {
+                label: "本月预算",
+                kind: "remaining",
+                value: 180,
+                max: 1000,
+                prefix: "¥",
+                warn: 300,
+                danger: 100,
+              },
+              { label: "上传", kind: "progress", value: 63, max: 100, unit: "%" },
+            ],
+            asOf: "2026-10-04T14:05+08:00",
+          },
+        },
         {
           lead: "先定下数据库。",
           spec: {
@@ -991,6 +1100,31 @@ export const zh = {
           },
         },
         {
+          lead: "改动已经通过全部检查。",
+          spec: {
+            type: "choice",
+            question: "现在合并吗？",
+            options: [
+              { label: "现在合并", recommended: true },
+              { label: "等评审后再合并" },
+              { label: "先不合并" },
+            ],
+          },
+        },
+        {
+          lead: "发布前要跑的检查可以多选：",
+          spec: {
+            type: "choice",
+            question: "发布前跑哪些检查？",
+            multiple: true,
+            options: [
+              { label: "类型检查", description: "几秒钟，挡住大部分低级错误", recommended: true },
+              { label: "单元测试", description: "大约两分钟" },
+              { label: "端到端测试", description: "大约十五分钟，需要浏览器" },
+            ],
+          },
+        },
+        {
           lead: "部署信息一次填完：",
           spec: {
             type: "form",
@@ -1000,7 +1134,7 @@ export const zh = {
                 id: "region",
                 label: "区域",
                 kind: "single",
-                options: [{ label: "华东" }, { label: "华北" }],
+                options: [{ label: "华东" }, { label: "华北" }, { label: "华南" }],
                 required: true,
               },
               {

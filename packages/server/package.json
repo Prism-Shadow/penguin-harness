@@ -71,6 +71,7 @@
   "dependencies": {
     "@hono/node-server": "^2.0.5",
     "@larksuiteoapi/node-sdk": "^1.73.0",
+    "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@xterm/headless": "^5.5.0",
     "dotenv": "^17.0.0",
