@@ -410,6 +410,12 @@ describe("benchmark packages", () => {
         "benchmark_too_large",
       ],
       [
+        "base64 longer than any zip within 14MB encodes to",
+        () => Buffer.alloc(14 * 1024 * 1024 + 4).toString("base64"),
+        413,
+        "benchmark_too_large",
+      ],
+      [
         "more than 1000 files",
         () => {
           const files = packageFiles("report-writing-v1");

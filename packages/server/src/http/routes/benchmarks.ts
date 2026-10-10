@@ -23,6 +23,8 @@ import type {
   CaseMaterial,
 } from "../../api/types.js";
 import type { BenchmarkCaseInput } from "../../services/benchmark-service.js";
+import { benchmarkTooLarge } from "../../services/benchmark-archive.js";
+import { MAX_ARCHIVE_BYTES } from "../../services/skill-import-limits.js";
 import type { Benchmarks } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 import {
@@ -55,6 +57,12 @@ const MAX_BODY = 100_000;
  * stored value has to stay within to remain usable.
  */
 const MAX_RUNS = 1000;
+
+/**
+ * The longest `dataBase64` a zip within the 14MB cap encodes to. A longer one is refused before it
+ * is decoded: the request body cap follows the admin's attachment budget, which can be far larger.
+ */
+const MAX_ARCHIVE_BASE64 = Math.ceil(MAX_ARCHIVE_BYTES / 3) * 4;
 
 /** A required Markdown body: present, within the cap, and not blank. */
 function requireText(obj: Record<string, unknown>, key: string, maxLen: number, label: string) {
@@ -194,6 +202,10 @@ export function benchmarksRoutes(deps: BenchmarksRouteDeps): Hono<AppEnv> {
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const body = await readJson(c);
     const dataBase64 = requireString(body, "dataBase64");
+    // The same 413 the decoded size would get, answered before a byte is decoded.
+    if (dataBase64.length > MAX_ARCHIVE_BASE64) {
+      throw benchmarkTooLarge("The zip archive exceeds the 14MB limit.");
+    }
     const benchmark = await deps.benchmarks.importArchive(
       projectId,
       Buffer.from(dataBase64, "base64"),
