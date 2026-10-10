@@ -603,8 +603,9 @@ describe("migration 8 → current: model-promotions", () => {
         "machines-columns",
         "browser-extensions",
         "agent-api",
+        "sessions-kept-at",
       ]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(schemaVersion(db)).toBe(15);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -627,8 +628,9 @@ describe("migration 8 → current: model-promotions", () => {
         "machines-columns",
         "browser-extensions",
         "agent-api",
+        "sessions-kept-at",
       ]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(schemaVersion(db)).toBe(15);
     } finally {
       db.close();
     }
@@ -651,8 +653,9 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         "machines-columns",
         "browser-extensions",
         "agent-api",
+        "sessions-kept-at",
       ]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(schemaVersion(db)).toBe(15);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -693,8 +696,12 @@ describe("migration 12 → current: browser-extensions", () => {
   it("creates the pairings table, which holds one row per token and cascades with its user", () => {
     const db = open12();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["browser-extensions", "agent-api"]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "browser-extensions",
+        "agent-api",
+        "sessions-kept-at",
+      ]);
+      expect(schemaVersion(db)).toBe(15);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -749,8 +756,8 @@ describe("migration 13 → current: agent-api", () => {
   it("creates the settings table while a pushed platform boots: one row per Agent, keyed and allow-all unless set", () => {
     const db = open13();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["agent-api"]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["agent-api", "sessions-kept-at"]);
+      expect(schemaVersion(db)).toBe(15);
       const enable = () =>
         db
           .prepare(
@@ -814,6 +821,53 @@ describe("migration 13 → current: agent-api", () => {
     } finally {
       db.close();
       at13.close();
+    }
+  });
+});
+
+/** A database stamped at migration 14: Sessions carry no keep-in-sidebar mark yet. */
+function open14(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  db.exec("ALTER TABLE sessions DROP COLUMN kept_at");
+  db.exec("PRAGMA user_version = 14");
+  return db;
+}
+
+describe("migration 14 → current: sessions-kept-at", () => {
+  const insertSession = (db: DatabaseSync) =>
+    db.exec(
+      "INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, created_at)" +
+        " VALUES ('s1', 'p1', 'coder', 'openai', 'gpt', '/w', '2026-10-11T00:00:00.000Z')",
+    );
+
+  it("adds the mark while a pushed platform boots, leaving every existing Session unmarked", () => {
+    const db = open14();
+    try {
+      insertSession(db);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["sessions-kept-at"]);
+      expect(schemaVersion(db)).toBe(15);
+      expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
+        { session_id: "s1", kept_at: null },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down keeps the column and the marks in it, so a kept Session stays kept", () => {
+    const db = open14();
+    try {
+      insertSession(db);
+      migrate(db);
+      db.exec("UPDATE sessions SET kept_at = '2026-10-11T01:00:00.000Z'");
+      rollbackTo(db, 14);
+      expect(schemaVersion(db)).toBe(14);
+      expect(db.prepare("SELECT kept_at FROM sessions").get()).toEqual({
+        kept_at: "2026-10-11T01:00:00.000Z",
+      });
+    } finally {
+      db.close();
     }
   });
 });

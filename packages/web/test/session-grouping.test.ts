@@ -1,6 +1,6 @@
 /**
- * How the chat sidebar groups Sessions (lib/session-grouping.ts): by Workspace, by time
- * bucket, and into the folders under each group.
+ * How the chat sidebar groups Sessions (lib/session-grouping.ts): by Workspace and by time
+ * bucket, over the rows it lists.
  *
  * - A temporary Workspace (`…/workspaces/<dir>` of an Agent, or an empty path) is recognized
  *   on either path separator; near misses and nested directories are not.
@@ -9,24 +9,25 @@
  *   the server query carries the path only. A label is the path's last segment.
  * - Grouping by Workspace merges Agents on one path (newest Session first, newest group first),
  *   folds every temporary Workspace into one trailing group per machine, keeps one path on two
- *   machines apart, and keeps archived rows in their group.
- * - A Session's folder is decided by archived first, then its source: a person's conversation
- *   (`user`, or not yet classified) is active, every other source goes to Background;
- *   partitioning keeps the order inside each folder. A company Session, archived or not, is in
- *   no category and no part.
- * - The auto-opened "last conversation" is the most recently active person's conversation
- *   (ties by id), never an archived, a background (scheduled ones included) or a company one.
+ *   machines apart, and keeps every row it is given in its group.
+ * - A Session's list follows the server's `archived` (already the listing rule's answer): an
+ *   archived row is the archive page's, every other row the sidebar's — a kept program's row
+ *   included; a subagent or company Session is in no list, whatever its marks. The sidebar
+ *   draws only its own rows, and never an organization's.
+ * - The auto-opened "last conversation" is the most recently active row of the sidebar (ties by
+ *   id), never an archived (a program's unkept run included), a subagent or a company one.
  * - A page fetched with one extra row reports whether the server has more, never showing it.
- * - Server counts sum per Workspace across Agents (recording which Agents hold each folder) and
- *   stay apart per machine; the newest stamp per group survives aggregation.
+ * - Server counts sum per Workspace across Agents (recording which Agents hold each category)
+ *   and stay apart per machine; the newest stamp per group survives aggregation.
  * - Pinned items come first, each partition keeping its order; unknown pins are ignored.
  * - Title search is a case-insensitive substring match; a blank query matches everything and
  *   an untitled Session matches no non-blank query.
  * - Time buckets cut at 24 hours and 30 days on last activity, skewed stamps land newest and
  *   unreadable ones oldest, empty buckets are dropped, and bucket keys never collide with a
  *   path or an Agent id.
- * - Every counted Workspace becomes a group (empty when none of its rows loaded), placed by
- *   the newer of its stamp and its loaded rows, the temp group last; a count of zero forms none.
+ * - Every Workspace counted with an active row becomes a group (empty when none of its rows
+ *   loaded), placed by the newer of its stamp and its loaded rows, the temp group last; a
+ *   Workspace holding only archived rows, or none at all, forms none.
  * - The activity order is last activity, then id, both by code point — where a locale's
  *   collation would rank case or punctuation the other way, it does not follow it.
  * - A merged list's watermark is the most recent cursor among the streams with more; a stream
@@ -48,7 +49,7 @@ import {
   SIDEBAR_PAGE_SIZE,
   TEMP_WORKSPACE_GROUP_KEY,
   TIME_BUCKETS,
-  TIME_FOLDERS_GROUP_KEY,
+  TIME_LIST_KEY,
   aggregateWorkspaceCounts,
   aggregateWorkspaceLatest,
   activityCursorParam,
@@ -59,15 +60,14 @@ import {
   matchesSessionQuery,
   groupSessionsByTime,
   groupSessionsByWorkspace,
+  isSidebarRow,
   isTempWorkspace,
   latestConversation,
-  partitionSessions,
   pinnedFirst,
   sessionCategory,
   splitPage,
   timeBucketOf,
   timeGroupKey,
-  totalCategoryCounts,
   workspaceGroupKey,
   workspaceGroupMachine,
   workspaceGroupPath,
@@ -85,6 +85,7 @@ function session(
     archived?: boolean;
     source?: SessionSource;
     lastActiveAt?: string;
+    client?: SessionInfo["client"];
   } = {},
 ): SessionInfo {
   seq += 1;
@@ -105,6 +106,7 @@ function session(
     hasTrace: false,
     archived: over.archived ?? false,
     ...(over.source !== undefined ? { source: over.source } : {}),
+    ...(over.client !== undefined ? { client: over.client } : {}),
   };
 }
 
@@ -260,7 +262,7 @@ describe("groupSessionsByWorkspace", () => {
     expect(groups.every((g) => g.temp)).toBe(true);
   });
 
-  it("keeps archived sessions in their group (the sidebar splits active/archived per group)", () => {
+  it("keeps every row it is given in its group", () => {
     const active = session("/srv/alpha", "2026-07-02T10:00:00.000Z");
     const archived = session("/srv/alpha", "2026-07-01T10:00:00.000Z", { archived: true });
     const groups = groupSessionsByWorkspace([archived, active]);
@@ -269,77 +271,61 @@ describe("groupSessionsByWorkspace", () => {
   });
 });
 
-describe("sessionCategory (the bucket a Session renders under = the server's list filter)", () => {
+describe("sessionCategory (the list a Session belongs to = the server's list filter)", () => {
   const at = "2026-07-01T10:00:00.000Z";
 
-  it.each(["api", "schedule", "subagent", "cli"] as const)(
-    "files a %s Session under Background",
+  it("lists a person's conversation, a row not yet classified and a kept program's row as active", () => {
+    expect(sessionCategory(session("/srv/a", at, { source: "user" }))).toBe("active");
+    expect(sessionCategory(session("/srv/a", at))).toBe("active");
+    // The server answers `archived: false` for a program's row only once the user kept it.
+    expect(sessionCategory(session("/srv/a", at, { source: "cli" }))).toBe("active");
+  });
+
+  it.each(["user", "api", "schedule", "cli"] as const)(
+    "lists an archived %s Session on the archive page",
     (source) => {
-      expect(sessionCategory(session("/srv/a", at, { source }))).toBe("background");
+      expect(sessionCategory(session("/srv/a", at, { source, archived: true }))).toBe("archived");
     },
   );
 
-  it("files a person's conversation, and a row not yet classified, as active", () => {
-    expect(sessionCategory(session("/srv/a", at, { source: "user" }))).toBe("active");
-    expect(sessionCategory(session("/srv/a", at))).toBe("active");
-  });
-
-  it("files an archived Session as archived, whatever its source", () => {
-    expect(sessionCategory(session("/srv/a", at, { archived: true }))).toBe("archived");
-    expect(sessionCategory(session("/srv/a", at, { source: "cli", archived: true }))).toBe(
-      "archived",
-    );
-  });
-
-  it("files a company Session under no category, archived or not", () => {
-    expect(sessionCategory(session("/srv/a", at, { source: "company" }))).toBeNull();
-    expect(
-      sessionCategory(session("/srv/a", at, { source: "company", archived: true })),
-    ).toBeNull();
-  });
+  it.each(["subagent", "company"] as const)(
+    "lists a %s Session nowhere, archived or not",
+    (source) => {
+      expect(sessionCategory(session("/srv/a", at, { source }))).toBeNull();
+      expect(sessionCategory(session("/srv/a", at, { source, archived: true }))).toBeNull();
+    },
+  );
 });
 
-describe("partitionSessions (per-group active / Background / Archived split)", () => {
-  it("splits active rows from the Background and Archived folders, preserving order within each part, and puts company rows in none", () => {
-    const user1 = session("/srv/alpha", "2026-07-06T10:00:00.000Z", { source: "user" });
-    const sched = session("/srv/alpha", "2026-07-05T10:00:00.000Z", { source: "schedule" });
-    const sub = session("/srv/alpha", "2026-07-04T10:00:00.000Z", { source: "subagent" });
-    const user2 = session("/srv/alpha", "2026-07-03T10:00:00.000Z");
-    const cli = session("/srv/alpha", "2026-07-02T10:00:00.000Z", { source: "cli" });
-    const gone = session("/srv/alpha", "2026-07-01T10:00:00.000Z", {
-      source: "api",
-      archived: true,
-    });
-    // Company mode's desk, live and archived: in no part at all.
-    const desk = session("/srv/alpha", "2026-07-05T12:00:00.000Z", { source: "company" });
-    const oldDesk = session("/srv/alpha", "2026-06-30T10:00:00.000Z", {
-      source: "company",
-      archived: true,
-    });
-    const parts = partitionSessions([user1, desk, sched, sub, user2, cli, gone, oldDesk]);
-    expect(parts.active.map((s) => s.sessionId)).toEqual([user1.sessionId, user2.sessionId]);
-    expect(parts.background.map((s) => s.sessionId)).toEqual([
-      sched.sessionId,
-      sub.sessionId,
-      cli.sessionId,
-    ]);
-    expect(parts.archived.map((s) => s.sessionId)).toEqual([gone.sessionId]);
-    expect(Object.values(parts).flat()).toHaveLength(6);
+describe("isSidebarRow (what the sidebar draws of the rows the store holds)", () => {
+  it("draws the active rows and nothing held for another page", () => {
+    const at = "2026-07-01T10:00:00.000Z";
+    const mine = session("/srv/a", at);
+    const kept = session("/srv/a", at, { source: "api" });
+    const archived = session("/srv/a", at, { archived: true });
+    const child = session("/srv/a", at, { source: "subagent" });
+    const desk = session("/srv/a", at, { source: "company" });
+    // A person's conversation attached to a ticket: a `user` row, but an organization's.
+    const ticket = session("/srv/a", at, { client: "org" });
+    expect([mine, kept, archived, child, desk, ticket].filter(isSidebarRow)).toEqual([mine, kept]);
   });
 });
 
 describe("latestConversation (the auto-opened 'last conversation')", () => {
-  it("picks the most recently active person's conversation regardless of input order; archived and background rows never win", () => {
+  it("picks the most recently active conversation of the sidebar regardless of input order; archived and subagent rows never win", () => {
     // Created first but returned to since: this is the conversation the user was last in,
     // and the one created last is not.
     const revisited = session("/srv/a", "2026-07-01T10:00:00.000Z", {
       lastActiveAt: "2026-07-06T10:00:00.000Z",
     });
     const newerUntouched = session("/srv/a", "2026-07-03T10:00:00.000Z", { source: "user" });
-    // Active more recently than every conversation, but never auto-opened — a scheduled run
-    // included: a program opened it, and the user was not in it.
+    // Active more recently than every conversation, but never auto-opened: a subagent is in no
+    // list, and a scheduled run nobody kept is archived.
     const subAfter = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "subagent" });
-    const schedAfter = session("/srv/a", "2026-07-07T10:00:00.000Z", { source: "schedule" });
+    const schedAfter = session("/srv/a", "2026-07-07T10:00:00.000Z", {
+      source: "schedule",
+      archived: true,
+    });
     const goneAfter = session("/srv/a", "2026-07-09T10:00:00.000Z", { archived: true });
     expect(latestConversation([subAfter, schedAfter, newerUntouched, goneAfter, revisited])).toBe(
       revisited,
@@ -363,7 +349,9 @@ describe("latestConversation (the auto-opened 'last conversation')", () => {
     expect(latestConversation([a, b])).toBe(b);
     expect(latestConversation([b, a])).toBe(b);
     expect(latestConversation([])).toBeNull();
-    expect(latestConversation([session("/srv/a", at, { source: "cli" })])).toBeNull();
+    expect(
+      latestConversation([session("/srv/a", at, { source: "cli", archived: true })]),
+    ).toBeNull();
   });
 });
 
@@ -381,7 +369,7 @@ describe("splitPage (limit+1 fetch trick)", () => {
 });
 
 describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
-  const zero = { active: 0, background: 0, archived: 0 };
+  const zero = { active: 0, archived: 0 };
 
   it("sums each Workspace path across Agents and records which Agents hold each category", () => {
     const byAgent = new Map<string, Record<string, SessionCategoryCounts>>([
@@ -392,16 +380,16 @@ describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
           "/srv/beta": { ...zero, archived: 3 },
         },
       ],
-      ["agent_b", { "/srv/alpha": { ...zero, active: 1, background: 2 } }],
+      ["agent_b", { "/srv/alpha": { ...zero, active: 1, archived: 2 } }],
     ]);
     const groups = aggregateWorkspaceCounts(byAgent);
     expect(groups.get("/srv/alpha")).toEqual({
-      totals: { active: 3, background: 2, archived: 0 },
-      agents: { active: ["agent_a", "agent_b"], background: ["agent_b"], archived: [] },
+      totals: { active: 3, archived: 2 },
+      agents: { active: ["agent_a", "agent_b"], archived: ["agent_b"] },
     });
     expect(groups.get("/srv/beta")).toEqual({
       totals: { ...zero, archived: 3 },
-      agents: { active: [], background: [], archived: ["agent_a"] },
+      agents: { active: [], archived: ["agent_a"] },
     });
     // A group only in another Workspace never appears — its content can't surface elsewhere.
     expect(groups.has("/srv/gamma")).toBe(false);
@@ -421,7 +409,7 @@ describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
     expect(groups.size).toBe(1);
     expect(groups.get(TEMP_WORKSPACE_GROUP_KEY)).toEqual({
       totals: { ...zero, active: 3, archived: 1 },
-      agents: { active: ["agent_a"], background: [], archived: ["agent_a"] },
+      agents: { active: ["agent_a"], archived: ["agent_a"] },
     });
   });
 
@@ -581,35 +569,9 @@ describe("groupSessionsByTime", () => {
 
   it("keys buckets so they can never collide with a Workspace path or an Agent id", () => {
     const keys = TIME_BUCKETS.map(timeGroupKey);
-    expect(new Set([...keys, TIME_FOLDERS_GROUP_KEY, TEMP_WORKSPACE_GROUP_KEY]).size).toBe(
-      keys.length + 2,
-    );
+    expect(new Set([...keys, TIME_LIST_KEY, TEMP_WORKSPACE_GROUP_KEY]).size).toBe(keys.length + 2);
     // "\0" is the one byte a filesystem path and an Agent id cannot contain.
-    for (const key of [...keys, TIME_FOLDERS_GROUP_KEY]) expect(key.startsWith("\0")).toBe(true);
-  });
-});
-
-describe("totalCategoryCounts", () => {
-  const counts = (over: Partial<SessionCategoryCounts>): SessionCategoryCounts => ({
-    active: 0,
-    background: 0,
-    archived: 0,
-    ...over,
-  });
-
-  it("sums every Agent's share, since a time bucket spans all of them", () => {
-    expect(
-      totalCategoryCounts(
-        new Map([
-          ["a", counts({ active: 3, archived: 2 })],
-          ["b", counts({ active: 4, background: 1 })],
-        ]),
-      ),
-    ).toEqual({ active: 7, background: 1, archived: 2 });
-  });
-
-  it("reports zeros for an empty map rather than leaving fields undefined", () => {
-    expect(totalCategoryCounts(new Map())).toEqual({ active: 0, background: 0, archived: 0 });
+    for (const key of [...keys, TIME_LIST_KEY]) expect(key.startsWith("\0")).toBe(true);
   });
 });
 
@@ -641,11 +603,11 @@ describe("aggregateWorkspaceLatest (per-group newest-Session stamp)", () => {
   });
 });
 
-describe("completeWorkspaceGroups (every counted Workspace is a group, placed by recency)", () => {
-  const zero = { active: 0, background: 0, archived: 0 };
+describe("completeWorkspaceGroups (every Workspace counted with a conversation is a group, placed by recency)", () => {
+  const zero = { active: 0, archived: 0 };
   const counted = (totals: Partial<SessionCategoryCounts>) => ({
     totals: { ...zero, ...totals },
-    agents: { active: [], background: [], archived: [] },
+    agents: { active: [], archived: [] },
   });
 
   it("reads a machine-qualified count key as that machine's directory, not as a path", () => {
@@ -719,11 +681,13 @@ describe("completeWorkspaceGroups (every counted Workspace is a group, placed by
     ]);
   });
 
-  it("forms no group for a counted key with nothing left in any category, and none without counts", () => {
+  it("forms no group for a counted key holding only archived rows or none at all, and none without counts", () => {
     const loaded = groupSessionsByWorkspace([session("/srv/alpha", "2026-07-03T09:00:00.000Z")]);
     const counts = new Map([
       ["/srv/alpha", counted({ active: 1 })],
       ["/srv/gone", counted({})],
+      // An evaluation's Workspace: its Test Sessions are archived, so the sidebar shows none.
+      ["/srv/evaluated", counted({ archived: 12 })],
     ]);
     expect(completeWorkspaceGroups(loaded, counts, new Map()).map((g) => g.key)).toEqual([
       "/srv/alpha",
@@ -736,7 +700,7 @@ describe("completeWorkspaceGroups (every counted Workspace is a group, placed by
 
   it("forms the temp group from its counts alone, empty and last, when no temporary row is loaded", () => {
     const loaded = groupSessionsByWorkspace([session("/srv/alpha", "2026-07-03T09:00:00.000Z")]);
-    const counts = new Map([[TEMP_WORKSPACE_GROUP_KEY, counted({ archived: 3 })]]);
+    const counts = new Map([[TEMP_WORKSPACE_GROUP_KEY, counted({ active: 3 })]]);
     const groups = completeWorkspaceGroups(loaded, counts, new Map());
     expect(groups.map((g) => g.key)).toEqual(["/srv/alpha", TEMP_WORKSPACE_GROUP_KEY]);
     expect(groups[1]).toMatchObject({ label: "", fullPath: null, temp: true, sessions: [] });

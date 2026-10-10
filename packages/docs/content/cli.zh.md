@@ -61,7 +61,7 @@ penguin run -m <message> [options]
 | `--json` | 打印最终的 `{sessionId, status, text}` 对象，取代渲染后的流。`text` 拼接主 Session 的 助手文本消息。 | — |
 | `--server <url>` | 目标服务器；见[服务器连接](#服务器连接)。 | — |
 
-`run` 创建的每个 Session 都是 CLI 会话（`source: "cli"`），Web App 把它列在会话列表的**后台会话**折叠夹里，而不是 Agent 的对话之间。`penguin chat` 创建的是普通对话。旧版评估 Skill 传入的 `--source benchmark` 仍被接受，但会被忽略并给出提示。
+`run` 创建的每个 Session 都是 CLI 会话（`source: "cli"`），按规则归档：Web App 把它列在[设置 › 已归档对话](/settings#已归档对话)中，而不是 Agent 的对话之间，在那里取消归档后它会留在侧边栏。同样，取消归档之前，`penguin session ls` 只有加 `-a` 才显示它。`penguin chat` 创建的是普通对话。旧版评估 Skill 传入的 `--source benchmark` 仍被接受，但会被忽略并给出提示。
 
 `--timeout` 到时后，`run` 打印目前已渲染的内容和一行暗色的仍在运行提示（附 session id），然后退出 0，不中止 Task。`--json` 下则打印 `{sessionId, status: "running", text}`。`--timeout 0` 在 POST 完成后立即返回，`--json` 下打印 `{sessionId, status: "running"}`，不含 `text`。对目标模式运行，最终 JSON 对象里的 `status` 就是目标结果。
 
@@ -143,7 +143,7 @@ penguin session rename [session_id] -t <title> [options]
 
 ### penguin session ls
 
-列出 Project 的 Session，默认覆盖所有 Agent，用 `--agent-id` 可只看一个。各列依次为：短 id（即 8 位十六进制尾部，其他命令可以把它当作片段使用）、Agent、标题、运行中/空闲、最近活跃时间和 Workspace 路径的末段。已归档的 Session 只有加 `-a` 才显示。
+列出 Project 的 Session，默认覆盖所有 Agent，用 `--agent-id` 可只看一个。各列依次为：短 id（即 8 位十六进制尾部，其他命令可以把它当作片段使用）、Agent、标题、运行中/空闲、最近活跃时间和 Workspace 路径的末段。已归档的 Session 只有加 `-a` 才显示：包括你归档的，以及在 Web App 中取消归档之前由程序打开的 Session，例如 `run` 创建的 Session、Agent API 的会话和定时任务新开的 Session。
 
 ```bash
 penguin session ls [options]

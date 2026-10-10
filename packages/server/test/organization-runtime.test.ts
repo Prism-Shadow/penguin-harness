@@ -1078,7 +1078,7 @@ describe("organization runtime", () => {
         (await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" })).sessionId;
       const work = await start();
       const archived = await start();
-      sessions.setArchived(archived, new Date(nowMs).toISOString());
+      sessions.setListing([archived], "archived", new Date(nowMs).toISOString());
       const live = [firstDesk, ceoDesk, hrDesk, work];
       const modeOf = (sessionId: string) => sessions.findById(sessionId)?.approvalMode;
       expect([...live, archived].map(modeOf)).toEqual(Array(5).fill("allow-all"));

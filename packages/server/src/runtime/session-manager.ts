@@ -2578,6 +2578,7 @@ export abstract class SessionServiceIface extends Interface<
     SessionServiceImpl,
     | "toInfo"
     | "hasTrace"
+    | "listingOf"
     | "listSessions"
     | "sessionStats"
     | "createSession"

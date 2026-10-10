@@ -563,8 +563,10 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         archived: true,
       },
     ),
+    // A program's Session nobody kept: archived by the listing rule.
     session(IDS.sessions.schedule, IDS.agents.docs, L("每晚同步", "Nightly sync"), ago(0, 420), {
       source: "schedule",
+      archived: true,
     }),
     session(
       IDS.sessions.subagent,
@@ -581,9 +583,20 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       L("评估 CASE-001", "Evaluate CASE-001"),
       ago(3),
       {
-        // A Test Session the evaluation launched through `penguin run`.
+        // A Test Session the evaluation launched through `penguin run`: archived until kept.
         source: "cli",
+        archived: true,
         workspace: `/home/demo/.penguin/data/projects/${IDS.project}/agents/${IDS.agents.docs}/workspaces/case-001`,
+      },
+    ),
+    // A `penguin run` Session the user unarchived: kept in the sidebar, wearing its CLI glyph.
+    session(
+      IDS.sessions.kept,
+      IDS.agents.docs,
+      L("批量重建索引", "Rebuild the index in batch"),
+      ago(1, 120),
+      {
+        source: "cli",
       },
     ),
     // Every row the harness writes; it switched models mid-way, so the row names the new one.

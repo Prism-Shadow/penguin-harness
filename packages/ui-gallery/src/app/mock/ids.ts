@@ -20,11 +20,16 @@ export const IDS = {
     approval: "s-publish",
     /** Older conversations that fill the list. */
     older: ["s-sync-corpus", "s-onboarding", "s-benchmarks", "s-mcp-setup"],
-    /** One row per folder: archived, a scheduled run, a subagent, an evaluation. */
+    /**
+     * The rows the sidebar does not list: archived by hand, a scheduled run and an evaluation
+     * (archived until kept), and a subagent (its parent's Agent panel opens it).
+     */
     archived: "s-archived-migration",
     schedule: "s-nightly-sync",
     subagent: "s-sub-linkcheck",
     benchmark: "s-eval-run",
+    /** A `penguin run` Session the user unarchived: listed among the conversations, with its glyph. */
+    kept: "s-kept-run",
     /** Every row the harness writes into a conversation; the oldest in the list. */
     harness: "s-harness-rows",
     /** The release-notes Agent's own. */
@@ -58,6 +63,7 @@ export const ALL_SESSION_IDS: readonly string[] = [
   IDS.sessions.schedule,
   IDS.sessions.subagent,
   IDS.sessions.benchmark,
+  IDS.sessions.kept,
   IDS.sessions.harness,
   ...IDS.sessions.notes,
   IDS.sessions.orgDesk,

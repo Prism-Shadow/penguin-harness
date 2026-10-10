@@ -61,7 +61,7 @@ penguin run -m <message> [options]
 | `--json` | Prints a final `{sessionId, status, text}` object instead of the rendered stream. `text` joins the main Session's assistant text messages. | — |
 | `--server <url>` | Target server; see [Server connection](#server-connection). | — |
 
-Every Session `run` creates is a CLI Session (`source: "cli"`), which the Web App lists in the **Background** folder of its session list rather than among the agent's conversations. `penguin chat` creates ordinary conversations. The `--source benchmark` that older evaluation skills pass is accepted and ignored, with a note.
+Every Session `run` creates is a CLI Session (`source: "cli"`), which is archived by rule: the Web App lists it under [Settings › Archived chats](/settings#archived-chats) rather than among the agent's conversations, and unarchiving it there keeps it in the sidebar. `penguin session ls` likewise shows it only with `-a` until it is unarchived. `penguin chat` creates ordinary conversations. The `--source benchmark` that older evaluation skills pass is accepted and ignored, with a note.
 
 When `--timeout` expires, `run` prints what has rendered so far and a dim still-running line with the session id, then exits 0 without aborting the Task. Under `--json` it prints `{sessionId, status: "running", text}`. `--timeout 0` returns right after the POST, and under `--json` prints `{sessionId, status: "running"}` with no `text`. For a goal run, the `status` in the final JSON object is the goal outcome.
 
@@ -143,7 +143,7 @@ penguin session rename [session_id] -t <title> [options]
 
 ### penguin session ls
 
-Lists the Project's Sessions, for all agents or for one with `--agent-id`. Columns: short id (the 8-hex tail other commands accept as a fragment), agent, title, running/idle, last active and the end of the Workspace path. Archived Sessions appear only with `-a`.
+Lists the Project's Sessions, for all agents or for one with `--agent-id`. Columns: short id (the 8-hex tail other commands accept as a fragment), agent, title, running/idle, last active and the end of the Workspace path. Archived Sessions appear only with `-a`: the ones you archived, and, until you unarchive them in the Web App, the ones a program opened, such as those `run` creates, Agent API conversations and the new Sessions of scheduled tasks.
 
 ```bash
 penguin session ls [options]

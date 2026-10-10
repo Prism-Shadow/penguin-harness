@@ -290,6 +290,10 @@ To change what comes first, tune \`k1\` and \`b\` in \`src/rag.ts\`; the guard s
         answer:
           "Hooks are configured in hooks.json under the Agent State, one entry per hook point [1].",
       },
+      [IDS.sessions.kept]: {
+        prompt: "Rebuild the search index for every corpus.",
+        answer: "Rebuilt 3 indexes; the largest took 41 s.",
+      },
       [IDS.sessions.notes[0]]: {
         prompt: "Draft the release notes for 0.2.13.",
         answer: "Drafted; see changelog/0.2.13/RELEASE.md.",
@@ -415,6 +419,10 @@ const cited = hits.filter((hit) => fs.existsSync(hit.source));
       [IDS.sessions.benchmark]: {
         prompt: "CASE-001：hooks 是怎么配置的？",
         answer: "hooks 在 Agent State 下的 hooks.json 里配置，每个钩子点一条 [1]。",
+      },
+      [IDS.sessions.kept]: {
+        prompt: "为每个语料库重建搜索索引。",
+        answer: "重建了 3 个索引；最大的一个用了 41 秒。",
       },
       [IDS.sessions.notes[0]]: {
         prompt: "起草 0.2.13 的发布说明。",

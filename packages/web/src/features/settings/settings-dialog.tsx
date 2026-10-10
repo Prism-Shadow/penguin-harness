@@ -22,6 +22,7 @@ import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
 import { ShortcutsSection } from "./shortcuts-section";
+import { ArchivedSessionsSection } from "./archived-sessions-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
@@ -41,6 +42,8 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   appearance: ICONS.sun,
   /** Keyboard: shortcuts. */
   shortcuts: ICONS.keyboard,
+  /** The archive box the sidebar row's archive action wears: archived chats. */
+  archived: ICONS.archive,
   /** Single person: the signed-in account. */
   account: ICONS.user,
   /** A browser window: the agent browser. */
@@ -100,6 +103,7 @@ export function SettingsDialog({
     general: S.settings.generalTitle,
     appearance: S.settings.appearanceTitle,
     shortcuts: S.settings.shortcutsTitle,
+    archived: S.settings.archivedTitle,
     account: S.settings.accountTitle,
     browser: S.settings.browserTitle,
     proxy: S.settings.proxyTitle,
@@ -118,6 +122,7 @@ export function SettingsDialog({
   // Pages whose rows explain themselves one by one carry none.
   const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
     shortcuts: S.settings.shortcutsInfo,
+    archived: S.settings.archivedInfo,
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
@@ -154,6 +159,7 @@ export function SettingsDialog({
       {current === "general" && <GeneralSection />}
       {current === "appearance" && <AppearanceSection />}
       {current === "shortcuts" && <ShortcutsSection />}
+      {current === "archived" && <ArchivedSessionsSection />}
       {current === "account" && <AccountSection />}
       {current === "browser" && <BrowserSection />}
       {current === "proxy" && <ProxySection />}

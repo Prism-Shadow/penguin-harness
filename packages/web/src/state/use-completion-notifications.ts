@@ -4,7 +4,9 @@
  *
  * Watches the tracked Session list for active→idle transitions (lib/completion-notify)
  * and, when the window is hidden or unfocused, shows a system notification with the
- * Session's title; clicking focuses the window and opens that Session.
+ * Session's title; clicking focuses the window and opens that Session. An archived Session —
+ * one a program opened and nobody kept, or one the user filed away — never notifies: its
+ * program reports its own runs, and the click would land on its stub.
  *
  * Two gates, both from lib/notification-pref: the user turned the preference on, and the
  * platform grants permission at this moment. The permission is checked every time rather
@@ -47,7 +49,7 @@ export function useCompletionNotifications(): void {
     // notifications were switched off, are consumed silently here instead of surfacing on
     // a later blur or replaying the moment the preference is switched back on.
     const completed = trackerRef.current.observe(
-      sessions.map((s) => ({ sessionId: s.sessionId, status: s.status })),
+      sessions.flatMap((s) => (s.archived ? [] : [{ sessionId: s.sessionId, status: s.status }])),
     );
     if (!enabled) return;
     if (completed.length === 0) return;

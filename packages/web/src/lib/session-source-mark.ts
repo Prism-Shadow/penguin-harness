@@ -1,7 +1,8 @@
 /**
- * The source mark a row of the sidebar's Background folder carries: which program opened the
- * Session (the Agent API, a scheduled task, a parent agent or `penguin run`), as a registry
- * glyph and the tooltip that names it.
+ * The source mark of a Session a program opened (the Agent API, a scheduled task or `penguin
+ * run`), as a registry glyph and the tooltip that names it. Such a Session is archived until the
+ * user keeps it, so the mark shows on the archive page's rows, and on a sidebar row once the
+ * user has unarchived one.
  *
  * A scheduled task's run takes the calendar, not the alarm clock: the alarm is the separate mark
  * of a scheduled task still to fire into a conversation (the row's `scheduledLabel`), and one
@@ -9,16 +10,14 @@
  */
 import type { SessionInfo, SessionSource } from "@prismshadow/penguin-server/api";
 import { ICONS } from "@prismshadow/penguin-ui";
-import { sessionCategory } from "./session-grouping";
 import { S } from "./strings";
 
-/** The sources the Background folder holds: a person's and a company Session are never in it. */
-type BackgroundSource = Exclude<SessionSource, "user" | "company">;
+/** The sources a program opens a Session for: a person's, a subagent and a company Session are none of them. */
+type ProgramSource = Extract<SessionSource, "api" | "schedule" | "cli">;
 
-const SOURCE_GLYPHS: Record<BackgroundSource, string> = {
+const SOURCE_GLYPHS: Record<ProgramSource, string> = {
   api: ICONS.plug,
   schedule: ICONS.calendar,
-  subagent: ICONS.robotPair,
   cli: ICONS.terminalPrompt,
 };
 
@@ -28,13 +27,13 @@ export interface SourceMark {
   sourceLabel: string;
 }
 
-/** The mark of a row in the Background folder; null for any other row. */
+/** The mark of a Session a program opened; null for any other. */
 export function backgroundSourceMark(s: SessionInfo): SourceMark | null {
   const source = s.source;
-  if (sessionCategory(s) !== "background" || !isBackgroundSource(source)) return null;
+  if (!isProgramSource(source)) return null;
   return { sourceGlyph: SOURCE_GLYPHS[source], sourceLabel: S.chat.sessionSource[source] };
 }
 
-function isBackgroundSource(source: SessionSource | undefined): source is BackgroundSource {
-  return source !== undefined && source !== "user" && source !== "company";
+function isProgramSource(source: SessionSource | undefined): source is ProgramSource {
+  return source === "api" || source === "schedule" || source === "cli";
 }

@@ -1836,7 +1836,13 @@ export interface SessionInfo {
   pendingFollowUpCount: number;
   /** Whether a Trace record exists (a Task has been started). */
   hasTrace: boolean;
-  /** Whether archived (hidden from the default list, grouped under "Archived"). */
+  /**
+   * Whether the Session is archived — the listing rule's answer, never the bare mark: the user
+   * archived it, or a program opened it (source `api`, `schedule` or `cli`) and the user has
+   * not kept it. An archived Session is left out of the sidebar and listed on the archive page
+   * (`/api/me/archived-sessions`). Always false for a `subagent` or `company` Session, which is
+   * in no list.
+   */
   archived: boolean;
   /**
    * Absolute path of the session's latest Trace file (the current context shard); absent
@@ -1889,14 +1895,13 @@ export interface SessionBackgroundTasks {
 }
 
 /**
- * Session list category, the sidebar's three-way split applied server-side: archived wins
- * regardless of source (archiving is an explicit user action); otherwise a `user` Session (or
- * one not yet classified) is `active`, and every other source is `background` — the one
- * folder that holds what programs opened (API, scheduled, subagent and CLI Sessions). A
- * `company` Session belongs to none of the three, archived or not: the list leaves it out of
- * every category and every total.
+ * Session list category, the listing rule applied server-side: `archived` when the user
+ * archived the Session, or when a program opened it (source `api`, `schedule` or `cli`) and the
+ * user has not kept it — unarchiving keeps it; otherwise `active`. A `subagent` or `company`
+ * Session belongs to neither, whatever its marks: the list leaves it out of every category and
+ * every total (a parent's Agent panel and company mode's own views open them).
  */
-export type SessionCategory = "active" | "background" | "archived";
+export type SessionCategory = "active" | "archived";
 
 /** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
 export type SessionCategoryCounts = Record<SessionCategory, number>;
@@ -1917,8 +1922,8 @@ export type SessionCategoryCounts = Record<SessionCategory, number>;
  *   valid id split at the first comma.
  * - `category`, `workspaceGroup`, `excludeOrg=1` filter before paging; `counts=1` adds the
  *   whole-list totals below, which no cursor or offset narrows. A request with `category`,
- *   `workspaceGroup` or `counts=1` leaves every `company` Session out of the page and the
- *   totals (it is in no category); one with none of them serves every row.
+ *   `workspaceGroup` or `counts=1` leaves every `subagent` and `company` Session out of the page
+ *   and the totals (they are in no category); one with none of them serves every row.
  */
 export interface SessionsResponse {
   /**
@@ -1934,7 +1939,7 @@ export interface SessionsResponse {
   /**
    * Present with `counts`: the same totals broken down by Workspace path (only paths
    * with at least one Session appear). The sidebar's workspace grouping decides each
-   * group's folders and "More" from its own share, so a group never advertises
+   * group's existence and "More" from its own active share, so a group never advertises
    * content that lives in other Workspaces.
    */
   workspaceCounts?: Record<string, SessionCategoryCounts>;
@@ -1945,6 +1950,71 @@ export interface SessionsResponse {
    * of their rows.
    */
   workspaceLatest?: Record<string, string>;
+}
+
+/**
+ * The archive page's source filter: `user` is a conversation the user archived by hand (source
+ * `user`, or a row whose Trace has not been read yet); the other three are what a program
+ * opened. `subagent` and `company` Sessions are never archived, so never listed.
+ */
+export type ArchivedSessionSource = "user" | "api" | "schedule" | "cli";
+
+/** Query of GET /api/me/archived-sessions/groups, and the part every archive query shares. */
+export interface ArchivedSessionsQuery {
+  /** Case-insensitive substring of the title (the DB title, else the Trace's first-prompt title); at most 200 characters. */
+  q?: string;
+  source?: ArchivedSessionSource;
+  /** One Project the user can open (404 `project_not_found` otherwise); absent = every Project they own or are a member of. */
+  projectId?: string;
+}
+
+/** One group of the archive page: one Workspace of one Project. */
+export interface ArchivedSessionGroup {
+  projectId: string;
+  projectName: string;
+  /** The Workspace path, as the sidebar groups it; `temp` for the merged temporary Workspaces. */
+  workspace: string;
+  /** Archived Sessions in the group matching the query. */
+  count: number;
+  /** The newest `lastActiveAt` in the group — the order the groups come in, newest first. */
+  latest: string;
+}
+
+/** GET /api/me/archived-sessions/groups. */
+export interface ArchivedSessionGroupsResponse {
+  groups: ArchivedSessionGroup[];
+  /** Sum of the groups' counts. */
+  total: number;
+}
+
+/** Query of GET /api/me/archived-sessions: one group's page, newest activity first. */
+export interface ArchivedSessionsRowsQuery extends ArchivedSessionsQuery {
+  projectId: string;
+  /** The group's `workspace` (a path, or `temp`). */
+  workspace: string;
+  /** 1–100. */
+  limit: number;
+  /** `<lastActiveAt>,<sessionId>` of the last row held, as the Session list's cursor. */
+  before?: string;
+}
+
+/** GET /api/me/archived-sessions. */
+export interface ArchivedSessionsResponse {
+  /** `title` falls back to the Trace's first-prompt title when the row has none. */
+  sessions: SessionInfo[];
+  hasMore: boolean;
+}
+
+/** What an archive-page batch acts on: explicit ids (1–500), or every archived row a filter matches. */
+export type ArchivedSessionsBatch =
+  { sessionIds: string[] } | { filter: ArchivedSessionsQuery & { workspace?: string } };
+
+/** POST /api/me/archived-sessions/unarchive and /delete. */
+export interface ArchivedSessionsBatchResponse {
+  /** Sessions acted on. Unarchive counts only the ones that were archived; delete counts every named one. */
+  done: number;
+  /** Ids that name nothing the user can open (the ids form only; a filter never reports any). */
+  missing: string[];
 }
 
 /** Server directory browsing (the Workspace picker): starts from the home directory by default, can navigate up to the root. */
@@ -2086,7 +2156,11 @@ export interface SessionPatchRequest {
    * is no unpin: the picker only offers concrete levels.
    */
   thinkingLevel?: ThinkingLevelName;
-  /** Archive / unarchive (default list hides archived). */
+  /**
+   * `true` archives (clears the keep mark); `false` unarchives and writes the keep mark, so a
+   * background Session stays in the sidebar through later runs. Announced as `session_archived`.
+   * 409 `session_not_listed` on a `subagent` or `company` Session, which is in no list.
+   */
   archived?: boolean;
   /** Manual rename; non-empty string, overrides the auto-generated title. */
   title?: string;
@@ -3090,6 +3164,23 @@ export type ServerEvent =
       sessionId: string;
       source: SessionSource;
     }
+  /**
+   * The user's listing decision on one Session changed (PATCH `archived`, the archive page's
+   * batch unarchive): an archived row leaves the sidebar, an unarchived one joins it. One per
+   * Session, to the Project's users.
+   */
+  | {
+      type: "session_archived";
+      sessionId: string;
+      projectId: string;
+      agentId: string;
+      archived: boolean;
+    }
+  /**
+   * A Session was deleted (DELETE, the subagent children deleted with it, the archive page's
+   * batch delete): every client drops the row. One per Session, to the Project's users.
+   */
+  | { type: "session_deleted"; sessionId: string; projectId: string }
   | ScheduleServerEvent
   | GoalServerEvent
   | CompanyServerEvent

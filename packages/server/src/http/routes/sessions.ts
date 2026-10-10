@@ -50,6 +50,8 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
+import { deleteSessionTree } from "../../services/session-deletion.js";
+import type { SessionDeletionDeps } from "../../services/session-deletion.js";
 import { HttpError } from "../errors.js";
 import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
@@ -133,6 +135,8 @@ import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
 import { usageRoutes } from "./usage.js";
 import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "./workspace-files.js";
+import { archivedSessionsRoutes } from "./archived-sessions.js";
+import { ArchivedSessionsService } from "../../services/archived-sessions-service.js";
 import { PreviewTokens } from "./preview.js";
 import type {
   Access,
@@ -149,7 +153,7 @@ import type {
   SessionOrigins,
 } from "../../mechanisms/sessions.js";
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
-import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
+import type { TraceIndex, TraceIndexStore, Traces } from "../../mechanisms/traces.js";
 import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
@@ -300,7 +304,7 @@ async function sessionCompactionThreshold(
 }
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
-const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "background", "archived"];
+const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "archived"];
 
 /** Accepted `order` query values of the list endpoint (SessionListOrder, spelled out for validation). */
 const SESSION_LIST_ORDERS: readonly SessionListOrder[] = ["created", "activity"];
@@ -531,6 +535,23 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
   return { budget: (budget as number | undefined) ?? -1 };
 }
 
+/** What deleting a Session reaches, from this route group's deps (shared with the archive page's batch delete). */
+export function sessionDeletionDeps(
+  deps: Pick<
+    SessionsRouteDeps,
+    "config" | "manager" | "traceService" | "sessionsRepo" | "messaging" | "sessionSources"
+  >,
+): SessionDeletionDeps {
+  return {
+    root: deps.config.root,
+    manager: deps.manager,
+    traces: deps.traceService,
+    sessions: deps.sessionsRepo,
+    unbindMessaging: (sessionId) => deps.messaging.unbindSession(sessionId),
+    sources: deps.sessionSources,
+  };
+}
+
 /** Agent-level entry: /api/projects/:p/agents/:a/sessions. */
 export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -558,7 +579,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // offset, since activity moves rows across an offset; see SessionService.listSessions.
     const paging = optionalSessionListPagingQuery(c, order);
     // Optional category filter (paging then applies within the category) and per-category
-    // totals — the sidebar loads active rows only and labels the collapsed folders from counts.
+    // totals — the sidebar loads active rows only and forms its Workspace groups from counts.
     const rawCategory = c.req.query("category");
     if (rawCategory !== undefined && !SESSION_CATEGORIES.includes(rawCategory as SessionCategory)) {
       throw badRequest(`category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
@@ -740,6 +761,15 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       sandbox !== undefined
         ? deps.sessionService.pickSandbox(row, sandbox, c.var.user.isAdmin)
         : undefined;
+    // Archiving is a choice about which list a Session is in; a subagent Session (its parent's
+    // Agent panel opens it) and a company Session (company mode's views list it) are in none.
+    if (archived !== undefined && (await deps.sessionService.listingOf(row)) === null) {
+      throw new HttpError(
+        409,
+        "session_not_listed",
+        "This Session is in no list (a subagent or company Session), so it cannot be archived or unarchived.",
+      );
+    }
     let updated: SessionRow = { ...row };
     if (title !== undefined) {
       // Manual renaming takes priority over auto-generation: TitleGenerator only ever replaces the fallback title it wrote itself, never a manual rename.
@@ -773,9 +803,22 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       updated = { ...updated, thinkingLevel };
     }
     if (archived !== undefined) {
-      const at = archived ? new Date().toISOString() : null;
-      deps.sessionsRepo.setArchived(row.sessionId, at);
-      updated = { ...updated, archivedAt: at };
+      // Archiving clears the keep mark and unarchiving writes it: a background Session the user
+      // unarchived stays in the sidebar through every later run.
+      const at = new Date().toISOString();
+      deps.sessionsRepo.setListing([row.sessionId], archived ? "archived" : "kept", at);
+      updated = {
+        ...updated,
+        archivedAt: archived ? at : null,
+        keptAt: archived ? null : at,
+      };
+      deps.projectEvents.notifyProjectUsers(row.projectId, {
+        type: "session_archived",
+        sessionId: row.sessionId,
+        projectId: row.projectId,
+        agentId: row.agentId,
+        archived,
+      });
     }
     const hasTrace = await deps.sessionService.hasTrace(updated);
     // Re-read after the writes (and after the awaits above): a run finishing anywhere in
@@ -857,38 +900,17 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 
   app.delete("/:sessionId", async (c) => {
     const row = resolveSession(c);
-    // Mark as being deleted and converge active runs (beginSessionDeletion): new
-    // Tasks/compactions are always rejected with 409 during this window
-    // (assertSessionNotDeleting), preventing the race where a new task recreates the
-    // entry and Trace after abort but before the files are deleted, reviving an
-    // already-deleted Session. Interrupt cleanup writes the Trace asynchronously, so we
-    // wait for it to finish (≤5s cap) before deleting the files and index row; the
-    // being-deleted marker is cleared once deletion finishes (success or failure).
-    const runnings = deps.manager.beginSessionDeletion(row.sessionId);
-    try {
-      if (runnings.length > 0) {
-        await Promise.race([
-          Promise.allSettled(runnings).then(() => undefined),
-          new Promise<void>((resolve) => setTimeout(resolve, 5000).unref?.()),
-        ]);
-      }
-      await deps.traceService.deleteSessionTraces(row.projectId, row.agentId, row.sessionId);
-      // The session-level scratchpad (model temp files + input images saved to disk for image-unsupported models) is deleted along with the session.
-      await fs.rm(
-        path.join(scratchpadDir(deps.config.root, row.projectId, row.agentId), row.sessionId),
-        { recursive: true, force: true },
-      );
-      deps.sessionsRepo.deleteById(row.sessionId);
-      // A bound Session takes its messaging bindings with it: close the channel
-      // connection and drop every channel's row (no-op when unbound; bulk Agent/Project
-      // deletes are reconciled by the bridge's next start()).
-      deps.messaging.unbindSession(row.sessionId);
-      // Drop the derived-origin entry along with the Session (bulk Agent/Project deletion
-      // may leave stale entries; session ids are never reused, so they are never matched).
-      deps.sessionSources.delete(row.sessionId);
-    } finally {
-      deps.manager.endSessionDeletion(row.sessionId);
-    }
+    // The shared deletion path (services/session-deletion.ts): running work aborted first, new
+    // Tasks refused with 409 meanwhile, then the files, the row and the bindings — and the
+    // subagent children with their parent. Each deleted Session is announced to the Project's
+    // users, so every list and every open page drops it.
+    await deleteSessionTree(sessionDeletionDeps(deps), row, (sessionId) =>
+      deps.projectEvents.notifyProjectUsers(row.projectId, {
+        type: "session_deleted",
+        sessionId,
+        projectId: row.projectId,
+      }),
+    );
     return c.body(null, 204);
   });
 
@@ -1715,6 +1737,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         auth: "user",
         order: 270,
       },
+      {
+        id: "session-api.archived-sessions",
+        prefix: "/api/me/archived-sessions",
+        auth: "user",
+        order: 275,
+      },
     ],
   },
 })
@@ -1736,6 +1764,7 @@ export class SessionApiRoutes {
   @Use() private readonly modelScopeAuth!: ModelScopeAuth;
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traces!: Traces;
+  @Use() private readonly traceStore!: TraceIndexStore;
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
   @Use() private readonly fileReveal!: FileReveal;
   @Use() private readonly desktop!: Desktop;
@@ -1764,6 +1793,7 @@ export class SessionApiRoutes {
   @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
   @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
+  @Bind("session-api.archived-sessions") archivedSessionsRoutes!: Hono<AppEnv>;
   setup() {
     const manager = this.manager as SessionManager;
     const sessionService = this.sessionService as SessionService;
@@ -1853,5 +1883,30 @@ export class SessionApiRoutes {
       fileReveal: this.fileReveal,
     });
     this.sessionsRoutes = sessionsRoutes(sessionsDeps);
+    const deletion = sessionDeletionDeps(sessionsDeps);
+    const projectEvents = this.projectEvents;
+    this.archivedSessionsRoutes = archivedSessionsRoutes({
+      service: new ArchivedSessionsService({
+        listProjects: (userId) => access.listProjects(userId),
+        canAccess: (userId, projectId) => access.canAccess(userId, projectId),
+        sessions: sessionsRepo,
+        sessionService: {
+          listSessions: (projectId, agentId, opts) =>
+            sessionService.listSessions(projectId, agentId, opts),
+          listingOf: (row) => sessionService.listingOf(row),
+        },
+        traceStore: this.traceStore,
+        deleteSession: (row) =>
+          deleteSessionTree(deletion, row, (sessionId) =>
+            projectEvents.notifyProjectUsers(row.projectId, {
+              type: "session_deleted",
+              sessionId,
+              projectId: row.projectId,
+            }),
+          ),
+        notifyProjectUsers: (projectId, event) =>
+          projectEvents.notifyProjectUsers(projectId, event),
+      }),
+    });
   }
 }
