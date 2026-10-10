@@ -46,8 +46,8 @@ export type ArchiveUploadResult =
 
 /**
  * Posts one zip to the import route. A 409 `benchmark_exists` is the question the overwrite
- * confirm asks, about the id the server's message ends with (`fallbackId`, the picked file's
- * stem, covers a message that does not); anything else refused is a reason to show.
+ * confirm asks, about the id its `details.benchmarkId` names (`fallbackId`, the picked file's
+ * stem, covers an answer without it); anything else refused is a reason to show.
  */
 export async function uploadBenchmarkArchive(
   projectId: string,
@@ -62,8 +62,7 @@ export async function uploadBenchmarkArchive(
     return { kind: "imported", benchmark };
   } catch (e) {
     if (e instanceof ApiError && e.status === 409 && e.code === "benchmark_exists") {
-      const benchmarkId = /:\s*([A-Za-z0-9_-]+)$/.exec(e.message)?.[1] ?? options.fallbackId;
-      return { kind: "exists", benchmarkId };
+      return { kind: "exists", benchmarkId: e.details?.benchmarkId ?? options.fallbackId };
     }
     return { kind: "refused", message: apiErrorText(e) };
   }

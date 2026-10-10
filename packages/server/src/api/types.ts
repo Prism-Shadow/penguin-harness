@@ -33,10 +33,18 @@ import type { WorkflowInfo } from "../mechanisms/workflows.js";
 // General
 // ---------------------------------------------------------------------------
 
-/** Unified error response body; `code` is a machine-readable error code, `message` is a Chinese user-facing message. */
+/**
+ * Unified error response body: `code` is a machine-readable error code, `message` an English
+ * user-facing message, and `details`, on the errors that have them, the facts a client acts on
+ * beside the code (the Benchmark id a 409 `benchmark_exists` is about, say) — read from there,
+ * never parsed out of the message.
+ */
 export interface ErrorBody {
-  error: { code: string; message: string };
+  error: { code: string; message: string; details?: ErrorDetails };
 }
+
+/** An error's structured facts, by name; each code that carries them documents its own. */
+export type ErrorDetails = Readonly<Record<string, string>>;
 
 /** Session approval mode (reuses the CLI enum). */
 export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask";

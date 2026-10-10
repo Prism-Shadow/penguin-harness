@@ -81,9 +81,11 @@ export interface BenchmarkArchive {
   data: Uint8Array;
 }
 
+/** A taken id: `details.benchmarkId` names it, for the Web App's overwrite confirm and the CLI. */
 function benchmarkExists(id: string): HttpError {
-  // The id ends the message: the Web App's overwrite confirm reads it from there.
-  return new HttpError(409, "benchmark_exists", `Benchmark already exists: ${id}`);
+  return new HttpError(409, "benchmark_exists", `Benchmark already exists: ${id}`, undefined, {
+    benchmarkId: id,
+  });
 }
 
 /** Whether anything is under `p`; a symlink counts, wherever it points. */
@@ -334,9 +336,7 @@ export class BenchmarkService implements Benchmarks {
       // that is already there, so two creates of one id cannot both proceed.
       await fs.mkdir(benchDir);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        throw new HttpError(409, "benchmark_exists", `Benchmark already exists: ${input.id}`);
-      }
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw benchmarkExists(input.id);
       throw error;
     }
     const manifest: BenchmarkManifest = {

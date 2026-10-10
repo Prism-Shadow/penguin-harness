@@ -5,9 +5,10 @@
  *
  * - A member is offered Import benchmark beside Create with AI: importing is open to every member
  *   of the Project, while creating by hand stays the owner's.
- * - An upload whose id is taken comes back as the overwrite question, about that id; confirming
- *   sends the same zip again with `overwrite`, and the Benchmark comes back as imported. A zip the
- *   server refuses comes back with its reason.
+ * - An upload whose id is taken comes back as the overwrite question, about the id the answer's
+ *   details name (the picked file's name when they name none); confirming sends the same zip
+ *   again with `overwrite`, and the Benchmark comes back as imported. A zip the server refuses
+ *   comes back with its reason.
  * - A published Benchmark's header offers Export beside the path's copy button; a draft, a failed
  *   one and one whose manifest cannot be read have no package and offer none.
  */
@@ -55,9 +56,18 @@ describe("the Evaluation Center's import entry", () => {
 describe("a zip upload", () => {
   const ZIP = Buffer.from("PK zip bytes").toString("base64");
 
-  it("whose id is taken asks about that id, and the confirmed overwrite resends the same zip", async () => {
+  it("whose id is taken asks about the id the answer's details name, and the confirmed overwrite resends the same zip", async () => {
     const fetch = stubFetch(() =>
-      apiError(409, "benchmark_exists", "Benchmark already exists: report-writing-v1"),
+      json(
+        {
+          error: {
+            code: "benchmark_exists",
+            message: "A Benchmark of this id is already in the Project.",
+            details: { benchmarkId: "report-writing-v1" },
+          },
+        },
+        409,
+      ),
     );
 
     const first = await uploadBenchmarkArchive("proj_1", ZIP, {
@@ -80,6 +90,17 @@ describe("a zip upload", () => {
 
     expect(fetch.requests[1]!.body).toEqual({ dataBase64: ZIP, overwrite: true });
     expect(confirmed).toEqual({ kind: "imported", benchmark: IMPORTED });
+  });
+
+  it("whose id is taken, by an answer that names none, asks about the picked file's own name", async () => {
+    stubFetch(() => apiError(409, "benchmark_exists", "Benchmark already exists"));
+
+    const result = await uploadBenchmarkArchive("proj_1", ZIP, {
+      overwrite: false,
+      fallbackId: "picked-file",
+    });
+
+    expect(result).toEqual({ kind: "exists", benchmarkId: "picked-file" });
   });
 
   it("that the server refuses comes back with its reason", async () => {

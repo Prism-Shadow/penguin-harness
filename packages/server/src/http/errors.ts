@@ -1,13 +1,16 @@
 /**
- * Unified HTTP error: `{error: {code, message}}` response body,
+ * Unified HTTP error: `{error: {code, message, details?}}` response body,
  * with message in English.
  *
  * Routes and services express business errors via throw HttpError; app-level onError
  * uniformly converges these into a JSON response, with unknown errors converged to 500
  * (never leaking internal details to the client).
+ *
+ * `details` carries the facts a client acts on beside the code — the id a 409 is about, say — so
+ * that no client has to parse them out of the message, which is prose and may change.
  */
 import type { Context } from "hono";
-import type { ErrorBody } from "../api/types.js";
+import type { ErrorBody, ErrorDetails } from "../api/types.js";
 
 export class HttpError extends Error {
   constructor(
@@ -15,14 +18,15 @@ export class HttpError extends Error {
     readonly code: string,
     message: string,
     readonly retryAfterSeconds?: number,
+    readonly details?: ErrorDetails,
   ) {
     super(message);
     this.name = "HttpError";
   }
 }
 
-export function errorBody(code: string, message: string): ErrorBody {
-  return { error: { code, message } };
+export function errorBody(code: string, message: string, details?: ErrorDetails): ErrorBody {
+  return { error: { code, message, ...(details !== undefined ? { details } : {}) } };
 }
 
 /**
@@ -51,7 +55,7 @@ export function handleError(err: Error, c: Context): Response {
     if (err.retryAfterSeconds !== undefined) {
       c.header("Retry-After", String(err.retryAfterSeconds));
     }
-    return c.json(errorBody(err.code, err.message), err.status as 400);
+    return c.json(errorBody(err.code, err.message, err.details), err.status as 400);
   }
   // Unknown error: print the stack for diagnosis, but never expose details externally.
   console.error(`[server] Unhandled exception: ${err.stack ?? err.message}`);

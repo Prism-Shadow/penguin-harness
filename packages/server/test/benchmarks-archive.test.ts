@@ -7,7 +7,7 @@
  *   scoreboard and origin `zip`; its files land byte for byte, and a dot-entry inside a case is
  *   left out. A package zipped at its root imports under the id its manifest declares. An outsider
  *   cannot import.
- * - A second import of a taken id is a 409 that names the id and changes nothing; with
+ * - A second import of a taken id is a 409 whose details name the id, and changes nothing; with
  *   `overwrite` the directory is replaced whole, its evaluation records and `.jobs/` gone.
  * - An export carries `benchmark.json` as the file reads and the cases, and none of the copy's
  *   own state (scoreboard, `.jobs/`, dot-entries, symlinks, stray files); it imports back as the
@@ -35,6 +35,7 @@ import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkArchiveImportResponse,
   BenchmarksResponse,
+  ErrorBody,
   ProjectCreateResponse,
 } from "../src/api/types.js";
 import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
@@ -251,7 +252,7 @@ describe("benchmark packages", () => {
       expect(await fs.readdir(dir)).toEqual([]);
     });
 
-    it("a taken id is a 409 naming it; an overwrite replaces the directory whole, its evaluation records and .jobs/ included", async () => {
+    it("a taken id is a 409 whose details name it; an overwrite replaces the directory whole, its evaluation records and .jobs/ included", async () => {
       const dataBase64 = zipB64(packageFiles("report-writing-v1"));
       expect((await member.post(`${base}/archive`, { dataBase64 })).status).toBe(201);
       const benchDir = path.join(dir, "report-writing-v1");
@@ -263,9 +264,11 @@ describe("benchmark packages", () => {
       const again = await member.post(`${base}/archive`, { dataBase64 });
 
       expect(again.status).toBe(409);
-      const error = (await again.json()) as { error: { code: string; message: string } };
-      expect(error.error.code).toBe("benchmark_exists");
-      expect(error.error.message).toMatch(/: report-writing-v1$/);
+      const { error } = (await again.json()) as ErrorBody;
+      expect(error).toMatchObject({
+        code: "benchmark_exists",
+        details: { benchmarkId: "report-writing-v1" },
+      });
       expect((await list())[0]!.evaluations).toHaveLength(1);
 
       const replaced = await member.post(`${base}/archive`, { dataBase64, overwrite: true });
