@@ -181,6 +181,9 @@ import type {
   PluginReadmeResponse,
   SessionsResponse,
   SessionSwitchModelRequest,
+  SessionBatchPageRequest,
+  SessionsBatchRequest,
+  SessionsBatchResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
   SteerRequest,
@@ -813,6 +816,28 @@ export const listSessions = (
     { server: machineId ?? null },
   );
 };
+
+/**
+ * A whole sidebar reload in one round trip: every (Agent, page) pair the sidebar wants,
+ * asked in a single POST instead of one GET each.
+ *
+ * The split matters on a Project with several Agents (and several machines): as individual
+ * requests they were fired all at once and serialised by the browser's six-connections-per-host
+ * limit, so the conversation pane's own message read queued behind dozens of list calls.
+ * One request keeps every answer separate — `results` lines up with `requests`, and an Agent
+ * this server does not host comes back as `ok: false, reason: "absent"` rather than failing
+ * the batch.
+ */
+export const batchSessions = (
+  projectId: string,
+  requests: SessionBatchPageRequest[],
+  machineId?: string | null,
+) =>
+  apiFetch<SessionsBatchResponse>(`/api/projects/${encodeURIComponent(projectId)}/sessions/batch`, {
+    method: "POST",
+    body: { requests } satisfies SessionsBatchRequest,
+    server: machineId ?? null,
+  });
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**

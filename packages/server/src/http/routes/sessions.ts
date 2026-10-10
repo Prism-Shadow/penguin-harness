@@ -13,6 +13,7 @@ import type { Context } from "hono";
 import {
   THINKING_LEVEL_NAMES,
   imageUrlMessage,
+  isValidId,
   scratchpadDir,
   sessionScratchpadDir,
   stripLeadingMarkerBlocks,
@@ -30,12 +31,14 @@ import type {
   RecalledMessageResponse,
   ServerEvent,
   SessionCategory,
+  SessionBatchResult,
   SessionContextResponse,
   SessionCreateResponse,
   SessionForkResponse,
   SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
+  SessionsBatchResponse,
   SubagentMessageResponse,
   RetryNowResponse,
   TaskCreateResponse,
@@ -71,7 +74,12 @@ import type { ChannelHub } from "../../runtime/channel.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
-import type { SessionListOrder, SessionService } from "../../services/session-service.js";
+import type {
+  ActivityCursor,
+  SessionListOrder,
+  SessionListPaging,
+  SessionService,
+} from "../../services/session-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SessionsRouteDeps {
@@ -528,6 +536,147 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
     throw badRequest("goal.budget must be a positive integer, or -1 for unlimited.");
   }
   return { budget: (budget as number | undefined) ?? -1 };
+}
+
+/** How many page requests one batch may carry — the sidebar's whole reload, with room. */
+const MAX_BATCH_REQUESTS = 256;
+
+/** One batch entry, parsed: the Agent it asks about and the list options it asks with. */
+interface BatchPage {
+  agentId: string;
+  paging: SessionListPaging;
+  order: SessionListOrder;
+  category?: SessionCategory;
+  workspaceGroup?: string;
+  withCounts?: true;
+  excludeOrg?: true;
+}
+
+/**
+ * Parse one batch entry under the rules the Agent-level list applies to its query: a limit of
+ * 1–1000, an offset of 0 or more, a cursor only in activity order and never beside an offset,
+ * a known order and category, a non-empty Workspace group. A batch must never serve a page the
+ * single list would have refused, so each of these is the same 400 there and here.
+ */
+function batchPage(entry: unknown, i: number): BatchPage {
+  const at = `requests[${i}]`;
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    throw badRequest(`${at} must be an object.`);
+  }
+  const item = entry as Record<string, unknown>;
+  // An Agent id becomes a path fragment on the reads below: checked before any of them runs.
+  if (typeof item.agentId !== "string" || !isValidId(item.agentId)) {
+    throw badRequest(`${at}.agentId must be a valid id.`);
+  }
+  if (item.order !== undefined && !SESSION_LIST_ORDERS.includes(item.order as SessionListOrder)) {
+    throw badRequest(`${at}.order must be one of ${SESSION_LIST_ORDERS.join(" / ")}.`);
+  }
+  const order = (item.order ?? "created") as SessionListOrder;
+  const limit = item.limit;
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 1000) {
+    throw badRequest(`${at}.limit must be an integer between 1 and 1000.`);
+  }
+  let paging: SessionListPaging;
+  if (item.before !== undefined) {
+    if (order !== "activity") throw badRequest(`${at}.before requires order activity.`);
+    if (item.offset !== undefined) throw badRequest(`${at}.before and offset are exclusive.`);
+    const cursor = item.before as Partial<Record<keyof ActivityCursor, unknown>> | null;
+    const lastActiveAt = cursor?.lastActiveAt;
+    const sessionId = cursor?.sessionId;
+    if (
+      typeof lastActiveAt !== "string" ||
+      Number.isNaN(Date.parse(lastActiveAt)) ||
+      typeof sessionId !== "string" ||
+      !isValidId(sessionId)
+    ) {
+      throw badRequest(`${at}.before must be an activity cursor { lastActiveAt, sessionId }.`);
+    }
+    paging = { before: { lastActiveAt, sessionId }, limit };
+  } else {
+    const offset = item.offset ?? 0;
+    if (typeof offset !== "number" || !Number.isInteger(offset) || offset < 0) {
+      throw badRequest(`${at}.offset must be a non-negative integer.`);
+    }
+    paging = { offset, limit };
+  }
+  if (
+    item.category !== undefined &&
+    !SESSION_CATEGORIES.includes(item.category as SessionCategory)
+  ) {
+    throw badRequest(`${at}.category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
+  }
+  if (
+    item.workspaceGroup !== undefined &&
+    (typeof item.workspaceGroup !== "string" || item.workspaceGroup.trim() === "")
+  ) {
+    throw badRequest(`${at}.workspaceGroup must be a non-empty string.`);
+  }
+  for (const flag of ["withCounts", "excludeOrg"] as const) {
+    if (item[flag] !== undefined && typeof item[flag] !== "boolean") {
+      throw badRequest(`${at}.${flag} must be a boolean.`);
+    }
+  }
+  return {
+    agentId: item.agentId,
+    paging,
+    order,
+    ...(item.category !== undefined ? { category: item.category as SessionCategory } : {}),
+    ...(item.workspaceGroup !== undefined ? { workspaceGroup: item.workspaceGroup as string } : {}),
+    ...(item.withCounts === true ? { withCounts: true as const } : {}),
+    ...(item.excludeOrg === true ? { excludeOrg: true as const } : {}),
+  };
+}
+
+/**
+ * Project-level entry: POST /api/projects/:p/sessions/batch.
+ *
+ * The sidebar's first paint asks every Agent on this server — and every machine it holds a
+ * connection to — for its own first page, plus the other page pairs already open. As one
+ * request per (Agent, pair) that is dozens of round trips fired at once, and HTTP/1.1's six
+ * connections per host serialise them: the conversation pane's own /messages call queued
+ * behind them and the page opened seconds late. One request carrying every page turns that
+ * fan-out into one round trip; the answers stay per-Agent so a missing Agent (404) is still
+ * an ANSWER rather than a failure of the whole batch.
+ */
+export function sessionsBatchRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.post("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    const raw = body.requests;
+    if (!Array.isArray(raw)) throw badRequest("requests must be an array.");
+    if (raw.length > MAX_BATCH_REQUESTS) {
+      throw badRequest(`requests must hold at most ${MAX_BATCH_REQUESTS} entries.`);
+    }
+    // Every entry is checked BEFORE the first query runs: one bad entry fails the whole
+    // request rather than being discovered halfway through a batch.
+    const wanted = raw.map(batchPage);
+    // Sequential on purpose: these are the same in-memory index reads one-per-Agent already
+    // performed, and running them concurrently would only re-introduce the interleaving this
+    // endpoint exists to remove.
+    const results: SessionBatchResult[] = [];
+    for (const { agentId, ...options } of wanted) {
+      try {
+        await deps.agentConfigService.requireExists(projectId, agentId);
+        const out = await deps.sessionService.listSessions(projectId, agentId, options);
+        results.push({ agentId, ok: true, ...out });
+      } catch (err) {
+        // An Agent this server does not host answers 404 — an ANSWER (see the sidebar's own
+        // handling); anything else is a failure to answer, which must not be dressed up as
+        // "no rows" and blank the sidebar.
+        results.push({
+          agentId,
+          ok: false,
+          reason: err instanceof HttpError && err.status === 404 ? "absent" : "error",
+        });
+      }
+    }
+    return c.json({ results } satisfies SessionsBatchResponse);
+  });
+
+  return app;
 }
 
 /** Agent-level entry: /api/projects/:p/agents/:a/sessions. */
@@ -1697,6 +1846,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 250,
       },
       {
+        id: "session-api.sessions-batch",
+        prefix: "/api/projects/:projectId/sessions/batch",
+        auth: "user",
+        order: 255,
+      },
+      {
         id: "session-api.usage",
         prefix: "/api/projects/:projectId/usage",
         auth: "user",
@@ -1759,6 +1914,7 @@ export class SessionApiRoutes {
   @Bind("session-api.agent-config") agentConfigRoutes!: Hono<AppEnv>;
   @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
+  @Bind("session-api.sessions-batch") sessionsBatchRoutes!: Hono<AppEnv>;
   @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
   @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
@@ -1842,6 +1998,7 @@ export class SessionApiRoutes {
     this.agentConfigRoutes = agentConfigRoutes({ agentConfigService, manager, access });
     this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
     this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
+    this.sessionsBatchRoutes = sessionsBatchRoutes(sessionsDeps);
     this.usageRoutes = usageRoutes({ access, usageService: this.usage });
     this.workspaceFilesRoutes = workspaceFilesRoutes({
       access,

@@ -91,6 +91,7 @@ import type {
   SchedulesResponse,
   SemanticIdSuggestResponse,
   ServerSettingsResponse,
+  SessionBatchResult,
   SessionCategory,
   SessionCategoryCounts,
   SessionContextResponse,
@@ -99,6 +100,8 @@ import type {
   SessionInfo,
   SessionProcessesResponse,
   SessionResponse,
+  SessionsBatchResponse,
+  SessionsResponse,
   SessionTracesResponse,
   SshHostResponse,
   SubagentMessageResponse,
@@ -919,65 +922,116 @@ function byActivity(
   return a.sessionId > b.sessionId ? -1 : a.sessionId < b.sessionId ? 1 : 0;
 }
 
+/** One page of an Agent's list, as the GET route's query and the batch route's entries both ask. */
+interface ListAsk {
+  ownOnly: boolean;
+  activity: boolean;
+  category: SessionCategory | null;
+  group: string | null;
+  counts: boolean;
+  /** Activity order only: the rows strictly below the last one the sidebar holds. */
+  before: { lastActiveAt: string; sessionId: string } | null;
+  /** Absent (or not positive): the whole list. */
+  limit: number;
+  offset: number;
+}
+
+/** One Agent's list page from the fixtures, under the server's rules. */
+function listPage(store: DemoStore, agentId: string, ask: ListAsk): SessionsResponse {
+  // `ownOnly` (excludeOrg) asks for the user's own rows: an organization's Sessions leave the
+  // page and the totals alike. A request for a category, a Workspace group or counts leaves
+  // the company Sessions out too, which no category holds.
+  const { ownOnly, activity, category, group, before, limit, offset } = ask;
+  const classified = category !== null || group !== null || ask.counts;
+  const all = store.f.sessions
+    .filter(
+      (s) =>
+        s.agentId === agentId &&
+        !(ownOnly && isOrgRow(s)) &&
+        !(classified && categoryOf(s) === null),
+    )
+    .sort(activity ? byActivity : byCreated);
+  let rows = category ? all.filter((s) => categoryOf(s) === category) : all;
+  if (group !== null) {
+    rows = rows.filter((s) => (group === "temp" ? isTemp(s.workspace) : s.workspace === group));
+  }
+  if (before !== null) {
+    if (!activity) fail(400, "bad_request", "before requires order=activity.");
+    if (!Number.isFinite(Date.parse(before.lastActiveAt)) || !before.sessionId)
+      fail(400, "bad_request", "before must be <lastActiveAt>,<sessionId>.");
+    rows = rows.filter((s) => byActivity(s, before) > 0);
+  }
+  const page = Number.isFinite(limit) && limit > 0 ? rows.slice(offset, offset + limit) : rows;
+  const response: SessionsResponse = { sessions: page };
+  if (ask.counts) {
+    response.counts = countsOf(all);
+    const byWorkspace: Record<string, SessionInfo[]> = {};
+    for (const row of all) (byWorkspace[row.workspace] ??= []).push(row);
+    response.workspaceCounts = Object.fromEntries(
+      Object.entries(byWorkspace).map(([path, list]) => [path, countsOf(list)]),
+    );
+    // The newest CREATION per path, whatever order the page is in.
+    response.workspaceLatest = Object.fromEntries(
+      Object.entries(byWorkspace).map(([path, list]) => [
+        path,
+        list.reduce((latest, row) => (row.createdAt > latest ? row.createdAt : latest), ""),
+      ]),
+    );
+  }
+  return response;
+}
+
 router
-  .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): unknown => {
+  .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): SessionsResponse => {
     const { store, params, query } = ctx;
-    // `excludeOrg=1` asks for the user's own rows: an organization's Sessions leave the page
-    // and the totals alike. A request for a category, a Workspace group or counts leaves the
-    // company Sessions out too, which no category holds.
-    const ownOnly = query.get("excludeOrg") === "1";
-    const activity = query.get("order") === "activity";
-    const category = query.get("category") as SessionCategory | null;
-    const group = query.get("workspaceGroup");
-    const classified = category !== null || group !== null || query.get("counts") === "1";
-    const all = store.f.sessions
-      .filter(
-        (s) =>
-          s.agentId === params.agentId &&
-          !(ownOnly && isOrgRow(s)) &&
-          !(classified && categoryOf(s) === null),
-      )
-      .sort(activity ? byActivity : byCreated);
-    let rows = category ? all.filter((s) => categoryOf(s) === category) : all;
-    if (group !== null) {
-      rows = rows.filter((s) => (group === "temp" ? isTemp(s.workspace) : s.workspace === group));
-    }
-    // `before=<lastActiveAt>,<sessionId>`: the rows strictly below the last one the sidebar
-    // holds, in activity order only.
-    const before = query.get("before");
-    if (before !== null) {
-      if (!activity) fail(400, "bad_request", "before requires order=activity.");
-      const comma = before.indexOf(",");
-      const cursor = { lastActiveAt: before.slice(0, comma), sessionId: before.slice(comma + 1) };
-      if (comma < 0 || !Number.isFinite(Date.parse(cursor.lastActiveAt)) || !cursor.sessionId)
-        fail(400, "bad_request", "before must be <lastActiveAt>,<sessionId>.");
-      rows = rows.filter((s) => byActivity(s, cursor) > 0);
-    }
-    const limit = Number(query.get("limit"));
-    const offset = Number(query.get("offset")) || 0;
-    const page = Number.isFinite(limit) && limit > 0 ? rows.slice(offset, offset + limit) : rows;
-    const response: { sessions: SessionInfo[] } & Partial<
-      Pick<
-        import("@prismshadow/penguin-server/api").SessionsResponse,
-        "counts" | "workspaceCounts" | "workspaceLatest"
-      >
-    > = { sessions: page };
-    if (query.get("counts") === "1") {
-      response.counts = countsOf(all);
-      const byWorkspace: Record<string, SessionInfo[]> = {};
-      for (const row of all) (byWorkspace[row.workspace] ??= []).push(row);
-      response.workspaceCounts = Object.fromEntries(
-        Object.entries(byWorkspace).map(([path, list]) => [path, countsOf(list)]),
-      );
-      // The newest CREATION per path, whatever order the page is in.
-      response.workspaceLatest = Object.fromEntries(
-        Object.entries(byWorkspace).map(([path, list]) => [
-          path,
-          list.reduce((latest, row) => (row.createdAt > latest ? row.createdAt : latest), ""),
-        ]),
-      );
-    }
-    return response;
+    // `before=<lastActiveAt>,<sessionId>`: split at the first comma.
+    const rawBefore = query.get("before");
+    const comma = rawBefore?.indexOf(",") ?? -1;
+    if (rawBefore !== null && comma < 0)
+      fail(400, "bad_request", "before must be <lastActiveAt>,<sessionId>.");
+    return listPage(store, str(params.agentId), {
+      ownOnly: query.get("excludeOrg") === "1",
+      activity: query.get("order") === "activity",
+      category: query.get("category") as SessionCategory | null,
+      group: query.get("workspaceGroup"),
+      counts: query.get("counts") === "1",
+      before:
+        rawBefore === null
+          ? null
+          : { lastActiveAt: rawBefore.slice(0, comma), sessionId: rawBefore.slice(comma + 1) },
+      limit: Number(query.get("limit")),
+      offset: Number(query.get("offset")) || 0,
+    });
+  })
+  // The sidebar's whole reload in one request: each entry answered as the GET route would,
+  // and an Agent the demo does not have is an answer about that Agent (`absent`), never a
+  // failure of the batch.
+  .post("/api/projects/:projectId/sessions/batch", ({ store, body }): SessionsBatchResponse => {
+    const requests = record(body).requests;
+    if (!Array.isArray(requests)) fail(400, "bad_request", "requests must be an array.");
+    const results = requests.map((entry): SessionBatchResult => {
+      const ask = record(entry);
+      const agentId = str(ask.agentId);
+      if (!store.f.agents.some((a) => a.agentId === agentId)) {
+        return { agentId, ok: false, reason: "absent" };
+      }
+      const before = record(ask.before);
+      const page = listPage(store, agentId, {
+        ownOnly: ask.excludeOrg === true,
+        activity: ask.order === "activity",
+        category: (ask.category as SessionCategory | undefined) ?? null,
+        group: typeof ask.workspaceGroup === "string" ? ask.workspaceGroup : null,
+        counts: ask.withCounts === true,
+        before:
+          ask.before === undefined
+            ? null
+            : { lastActiveAt: str(before.lastActiveAt), sessionId: str(before.sessionId) },
+        limit: Number(ask.limit),
+        offset: Number(ask.offset) || 0,
+      });
+      return { agentId, ok: true, ...page };
+    });
+    return { results };
   })
   .get("/api/projects/:projectId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
