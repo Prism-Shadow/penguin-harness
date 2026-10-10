@@ -36,16 +36,23 @@
  * ## The first poll is a DRAIN, and asks for a short deadline
  *
  * An empty cursor means "start from the beginning", so the first poll of a connection can
- * return everything sent while nothing was connected. Its messages are dropped and only its
+ * return everything sent while nothing was connected. Its old messages are dropped and only its
  * cursor is kept — the same choice telegram-connector makes with `offset: -1`, for the same
  * reason: a binding switched on after a week dark must not replay that week as a task flood.
  * A blip is not affected, because a reconnect keeps the cursor it already had. Dropped means
  * not relayed: the context tokens they carry are still learned (see below).
  *
- * The short deadline is what keeps that from eating a live message. A drain parked for the
- * long-poll window returns not the backlog but the first thing a user sends AFTER enabling —
- * and then discards it as backlog. Asking only for what the platform is already holding makes
- * "before this connection" and "after it" the two different things they are meant to be.
+ * "Old" is decided by the message's send time, not by which poll returned it. A drained
+ * message sent within WECHAT_BACKLOG_RELAY_MS of now is handled exactly like a live one: it was
+ * written to a bot the user believed was there — just after the switch was flipped, or while
+ * the server restarted — and dropping it is the "no reply" this channel was reported for. A
+ * week-old backlog is still dropped whole, and so is a message with no send time, which proves
+ * nothing about its age.
+ *
+ * The short deadline keeps the two apart for a message that carries no send time. A drain
+ * parked for the long-poll window returns not the backlog but the first thing a user sends
+ * AFTER enabling; asking only for what the platform is already holding makes "before this
+ * connection" and "after it" the two different things they are meant to be.
  *
  * ## Direct chats only, because that is the whole channel
  *
@@ -190,13 +197,25 @@ const MEDIA_NO_BUDGET =
   "WeChat accepts only about ten messages from the bot per message from the user, and this conversation has used them";
 
 /**
+ * How far back a drained message may have been sent and still be answered (5 minutes).
+ *
+ * Long enough to cover what actually happens between a user's message and the connection that
+ * should read it — a server restart, the seconds after the switch is flipped, a retried drain —
+ * and short enough that re-enabling a binding after a dark spell answers nothing from it. A
+ * send time in the FUTURE is clock skew between the platform and this host, and counts as
+ * recent: the message cannot be older than now.
+ */
+export const WECHAT_BACKLOG_RELAY_MS = 5 * 60_000;
+
+/**
  * How many drains a connection asks for before it proceeds regardless.
  *
  * A drain that closed on its own deadline said nothing about where the platform stands, so
  * spending it there is what lets a whole backlog through later (see the poll loop). But an idle
- * bot's long poll may park until the deadline every time, so the retry has to be bounded: the
- * window in which an arriving message is read as backlog and dropped is already one drain long,
- * and this widens it by one more rather than leaving it open.
+ * bot's long poll may park until the deadline every time, so the retry has to be bounded, or the
+ * connection would ask on the short deadline forever. A message arriving meanwhile is relayed by
+ * its send time (WECHAT_BACKLOG_RELAY_MS); only one carrying none is read as backlog, and this
+ * widens that window by one drain rather than leaving it open.
  */
 const DRAIN_ATTEMPTS = 2;
 
@@ -418,6 +437,7 @@ export interface WeChatConnectorOpts {
   store?: WeChatConversationStore;
   /** Test hook: how long the tail waits for more output before it is sent (default WECHAT_TAIL_FLUSH_MS). */
   tailFlushMs?: number;
+  /** Clock for stored timestamps and the drain's age rule (default: the wall clock). */
   now?: () => number;
 }
 
@@ -914,6 +934,16 @@ export class WeChatConnector implements MessagingChannelConnector {
 
   // —— The long poll ————————————————————————————————————————————————————————
 
+  /**
+   * A drained message the user sent recently enough to be answered (see
+   * WECHAT_BACKLOG_RELAY_MS). No send time proves nothing about age, so it reads as backlog;
+   * one in the future is clock skew and reads as recent.
+   */
+  private sentRecently(evt: WeChatInboundEvent): boolean {
+    const sentAt = evt.createdAtMs;
+    return sentAt !== undefined && this.now() - sentAt <= WECHAT_BACKLOG_RELAY_MS;
+  }
+
   private async poll(
     creds: WeChatCredentials,
     bot: WeChatBotClient,
@@ -968,11 +998,18 @@ export class WeChatConnector implements MessagingChannelConnector {
         cursor = next;
         blipRetried = false;
         if (!drained) {
-          // The cursor above is kept; these messages are not relayed. Everything from before
-          // the connection existed is confirmed rather than relayed — but its tokens are the
-          // newest the user has given, so they are learned, and what was held goes out on them.
+          // The cursor above is kept. Backlog from before the connection existed is confirmed
+          // rather than relayed — but its tokens are the newest the user has given, so they are
+          // learned, and what was held goes out on them. A message sent within
+          // WECHAT_BACKLOG_RELAY_MS is not backlog: it was written to this connection, a moment
+          // early, and takes the live path below exactly.
           for (const evt of messages) {
             if (isClosed()) return;
+            if (this.sentRecently(evt)) {
+              await this.noteInbound(creds.botId, bot, evt, true);
+              await handlers.onMessage(inboundOf(bot, evt));
+              continue;
+            }
             await this.noteInbound(creds.botId, bot, evt, false);
           }
           // A drain that hit its short deadline said nothing about where the platform stands,
@@ -981,8 +1018,8 @@ export class WeChatConnector implements MessagingChannelConnector {
           // live traffic, which is the flood this exists to prevent. Retried instead, a few
           // times: a bounded retry, because an idle bot whose long poll simply parks would
           // otherwise ask forever, and after the bound the old behaviour is the safer of the
-          // two remaining wrongs — replaying a backlog beats discarding the first message a
-          // user sends after enabling.
+          // two remaining wrongs — replaying a backlog beats discarding a message that carries
+          // no send time.
           if (!timedOut || ++drainAttempts >= DRAIN_ATTEMPTS) drained = true;
           continue;
         }

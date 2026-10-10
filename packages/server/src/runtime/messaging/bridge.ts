@@ -818,6 +818,16 @@ export interface MessagingTaskRunnerShape {
      */
     opts: { queueIfBusy: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }>;
+  /**
+   * Pins the Session's runtime against idle eviction while a connection is enabled (`on`), or
+   * releases the pin.
+   */
+  keepLoaded(sessionId: string, on: boolean): void;
+  /**
+   * Loads the Session's runtime ahead of its first message, starting nothing; resolves quietly
+   * for a Session that is gone or being deleted.
+   */
+  preload(sessionId: string): Promise<void>;
 }
 
 /**
@@ -1207,6 +1217,18 @@ export class MessagingBridge {
       sendChain: Promise.resolve(),
     };
     this.entries.set(row.sessionId, entry);
+    // The Session is where this bot lives on the server, so it stays loaded for as long as the
+    // connection is enabled, and is loaded NOW rather than by the first message — which after
+    // an enable or a restart would otherwise wait for a resume from the Trace before anything
+    // else. `disconnect` releases it, and a reconnect re-pins it right here. Not awaited: a slow
+    // or failing load must not hold up the connection, and the first message meets the same
+    // failure and reports it on the binding's status.
+    this.deps.runner.keepLoaded(row.sessionId, true);
+    void this.deps.runner.preload(row.sessionId).catch((err: unknown) => {
+      this.log(
+        `[messaging] preload of ${row.sessionId} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
     // Before the stream can hand over its first event: the binding row's watermark is the
     // only thing that outlived the previous process, and a channel opening a connection is
     // exactly when it replays what it never saw acknowledged. Without this, the first
@@ -1244,6 +1266,7 @@ export class MessagingBridge {
     const entry = this.entries.get(sessionId);
     if (!entry) return;
     this.entries.delete(sessionId);
+    this.deps.runner.keepLoaded(sessionId, false);
     entry.unsubscribe?.();
     try {
       entry.connection?.close();

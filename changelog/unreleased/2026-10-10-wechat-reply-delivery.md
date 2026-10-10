@@ -16,4 +16,6 @@ WeChat replies were lost with `wechat send failed: prepare failed`, most often a
 - A text reply WeChat will not take yet is held instead of dropped, and sent right after the user's next WeChat message, under a short header. The binding panel says that replies are waiting and since when, in place of a send failure; the runtime status reports it as `heldReplySince`.
 - **Send test message** answers with a clear "message the bot in WeChat first" (409 `wechat_needs_recent_message`) when WeChat will not take the message. It is never held.
 - A single network blip on the long poll is retried at once instead of being recorded as a connection interruption.
+- When a WeChat connection comes up, right after it is turned on or after a server restart, messages sent within the previous 5 minutes are answered; older backlog is still skipped. The setup steps no longer ask you to wait 15 seconds before the first message.
+- On every channel, a conversation with an enabled connection stays loaded on the server, and is loaded as soon as the connection comes up, so the first message after a quiet spell or a restart does not wait for the conversation to load.
 - The binding editor's troubleshooting FAQ has a WeChat entry on the reply limits, and the Remote control and Server API docs describe the limits, held replies and the new 409.

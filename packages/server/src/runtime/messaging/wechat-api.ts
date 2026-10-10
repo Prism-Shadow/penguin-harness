@@ -95,8 +95,10 @@ const TRANSFER_TIMEOUT_MS = 60_000;
 /**
  * How long the connection's FIRST poll may take. It is a drain, not a wait: it asks for
  * whatever the platform is already holding, and anything that has not arrived by here is a
- * live message the loop is about to read properly rather than backlog to discard. Parking it
- * for the full long-poll window would drop the first message a user sends after enabling.
+ * live message the loop is about to read properly rather than backlog to discard. Parked for
+ * the full long-poll window it would read the first message a user sends after enabling as
+ * backlog: the connector's age rule (WECHAT_BACKLOG_RELAY_MS) relays that message anyway when
+ * it carries a send time, and this deadline is what keeps one that carries none.
  */
 export const DRAIN_TIMEOUT_MS = 5_000;
 
@@ -193,6 +195,12 @@ export interface WeChatInboundEvent {
   text: string;
   /** The token every send to this user must echo until a newer one arrives (see the module doc). */
   contextToken?: string;
+  /**
+   * `create_time_ms`: when the user sent it, in epoch milliseconds. Absent when the wire omits
+   * it or carries something that is not a positive number. What separates a message sent just
+   * before the connection came up from real backlog (see the connector's drain).
+   */
+  createdAtMs?: number;
   images: WeChatMediaRef[];
   files: WeChatInboundFile[];
 }
@@ -488,6 +496,8 @@ interface WireMessage {
   from_user_id?: string;
   message_type?: number;
   context_token?: string;
+  /** When the message was sent, in epoch MILLISECONDS (the protocol's `create_time_ms`). */
+  create_time_ms?: number;
   item_list?: WireItem[];
 }
 
@@ -570,12 +580,16 @@ export function normalizeWeChatMessage(msg: WireMessage): WeChatInboundEvent | n
     }
   }
   const messageId = msg.message_id;
+  const createdAtMs = msg.create_time_ms;
   return {
     userId,
     messageId: messageId === undefined ? "" : String(messageId),
     text: textOf(items),
     ...(typeof msg.context_token === "string" && msg.context_token !== ""
       ? { contextToken: msg.context_token }
+      : {}),
+    ...(typeof createdAtMs === "number" && Number.isFinite(createdAtMs) && createdAtMs > 0
+      ? { createdAtMs }
       : {}),
     images,
     files,

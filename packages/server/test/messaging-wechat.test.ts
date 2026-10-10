@@ -18,9 +18,10 @@
  *   joins the channel-agnostic read.
  * - The connection is ready before any poll answers; the drain runs until the platform
  *   answers and never again on that connection, without spending itself on a silent window;
- *   the first poll's backlog is dropped, keeping its cursor; a refused token stops the loop
- *   with its own reason; a poll failure is one outage report, recovering on its own, and a
- *   failure that recovers on its own does not silence the refusal behind it.
+ *   the first poll's backlog is dropped, keeping its cursor, except a message sent in the last
+ *   five minutes, which is answered (an older one still teaches its token); a refused token
+ *   stops the loop with its own reason; a poll failure is one outage report, recovering on its
+ *   own, and a failure that recovers on its own does not silence the refusal behind it.
  * - An inbound message reaches the Agent and the reply goes back with the conversation token
  *   (kept across a reconnect); the test message goes to the remembered chat, and is refused
  *   with 409 while no token is known; an empty message gets the not-supported notice; a picture
@@ -1020,6 +1021,53 @@ describe("the wechat conversation ledger", () => {
         [`${WECHAT_HELD_HEADER}\n\nthe answer`, "ctx-live"],
       ]);
       expect(held.at(-1)).toBeNull();
+    } finally {
+      conn.close();
+    }
+  });
+});
+
+/**
+ * The drain decides backlog by send time, over the connector alone with a pinned clock: the
+ * route suite's drain tests use messages without one, which must keep reading as backlog.
+ */
+describe("the wechat drain's age rule", () => {
+  it("answers a drained message sent a minute ago, and drops an hour-old one while learning its token", async () => {
+    const now = Date.parse("2026-10-10T08:00:00.000Z");
+    const earlier = "ilink_user_ccc";
+    const fake = new FakeWeChatTransport();
+    const original = fake.createClient.bind(fake);
+    fake.createClient = ((creds: WeChatCredentials) => {
+      const client = original(creds) as FakeWeChatClient;
+      // What a restart leaves for the first poll: one message from an hour ago, and one sent
+      // while the server was coming back up.
+      client.push(
+        {
+          ...inboundText("from an hour ago", "old-1", "ctx-old"),
+          userId: earlier,
+          createdAtMs: now - 60 * 60_000,
+        },
+        {
+          ...inboundText("sent during the restart", "new-1", "ctx-new"),
+          createdAtMs: now - 60_000,
+        },
+      );
+      return client;
+    }) as FakeWeChatTransport["createClient"];
+    const store = createMemoryWeChatConversationStore();
+    const connector = new WeChatConnector(fake, { retryDelayMs: () => 0, store, now: () => now });
+    const seen: string[] = [];
+    const conn = await connector.connect(SCANNED_CONFIG, {
+      onMessage: (msg) => {
+        seen.push(msg.text ?? "");
+      },
+    });
+    try {
+      // The batch is handled in order, so the old message has been dealt with by now.
+      await waitFor(() => seen.length === 1);
+      expect(seen).toEqual(["sent during the restart"]);
+      expect(store.get(BOT_ID, earlier)?.contextToken).toBe("ctx-old");
+      expect(store.get(BOT_ID, USER)?.contextToken).toBe("ctx-new");
     } finally {
       conn.close();
     }
