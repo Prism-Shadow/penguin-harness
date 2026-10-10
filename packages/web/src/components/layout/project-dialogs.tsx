@@ -34,6 +34,7 @@ import {
   Select,
   SettingRow,
   Switch,
+  discardUnsaved,
   guardLeave,
   toastError,
   toastSuccess,
@@ -128,6 +129,9 @@ function CreateProjectForm({
         projectId: id,
         ...(name.trim() ? { name: name.trim() } : {}),
       });
+      // Saved: forget the form now, not at unmount. The sidebar switches to the new Project next,
+      // and the leave guard would hold that over a form with nothing left unsaved.
+      discardUnsaved(form.scope);
       onCreated(res.project.projectId);
     } catch (e) {
       setRefused(apiErrorText(e));

@@ -20,6 +20,7 @@ import {
   Input,
   Modal,
   Textarea,
+  discardUnsaved,
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
@@ -88,6 +89,9 @@ function NewChannelForm({
         ...(name.trim() !== "" ? { name: name.trim() } : {}),
         ...(purpose.trim() !== "" ? { purpose: purpose.trim() } : {}),
       });
+      // Saved: forget the form now, not at unmount. The sidebar opens the new channel next, and the
+      // leave guard would hold that over a form with nothing left unsaved.
+      discardUnsaved(form.scope);
       onCreated(created);
     } catch (e) {
       const text = apiErrorText(e);

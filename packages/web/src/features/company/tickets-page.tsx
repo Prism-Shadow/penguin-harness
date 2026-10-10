@@ -52,6 +52,7 @@ import {
   Skeleton,
   Switch,
   Textarea,
+  discardUnsaved,
   toastError,
   toastSuccess,
   useFormDraft,
@@ -634,6 +635,9 @@ function CreateTicketForm({
         ...(due ? { due } : {}),
       });
       toastSuccess(S.company.tickets.created);
+      // Saved: forget the form now, not at unmount. The board opens the new ticket next, and the
+      // leave guard would hold that over a form with nothing left unsaved.
+      discardUnsaved(form.scope);
       onCreated(detail.ticketId);
     } catch (e) {
       toastError(apiErrorText(e));

@@ -286,7 +286,10 @@ Checklist for a new settings surface:
    for a record dialog, which gets its own); Save gated on dirty **and** valid; Reset or Cancel;
    errors inline; `adopt` on success only.
 3. Dialog → `useGuardedClose` on `onClose` and Cancel, `locked` while its save is in flight.
-   Page tabs in `?tab=` need nothing more. Non-router switches → `guardLeave`.
+   Page tabs in `?tab=` need nothing more. Non-router switches → `guardLeave`. A dialog whose
+   success hands off to a navigation (open the new record, switch Project, re-read the session)
+   calls `discardUnsaved(form.scope)` once the write lands: its form is still mounted and dirty
+   when the caller navigates, and the router would hold that navigation behind the prompt.
 4. Add the module to `FORM_MODULES` in `test/form-commit-guard.test.ts`; it fails on an `onBlur`
    save, a Save form that does not register, and a `Modal` in a form module whose `onClose` is
    not the guarded one.

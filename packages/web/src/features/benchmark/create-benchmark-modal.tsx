@@ -24,6 +24,7 @@ import {
   Modal,
   PlusIcon,
   Textarea,
+  discardUnsaved,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -176,6 +177,9 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
         })),
       });
       toastSuccess(S.benchmark.created);
+      // Saved: forget the form now, not at unmount. The page opens the new Benchmark next, and the
+      // leave guard would hold that over a form with nothing left unsaved.
+      discardUnsaved(form.scope);
       onCreated(res.benchmark);
       onClose();
     } catch (e) {

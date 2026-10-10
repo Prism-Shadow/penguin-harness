@@ -35,6 +35,7 @@ import {
   Segmented,
   Select,
   Textarea,
+  discardUnsaved,
   toastError,
   toastSuccess,
   useFormDraft,
@@ -745,6 +746,9 @@ function DeskRenewForm({
     try {
       const desk = await api.renewOrgDesk(projectId, orgId, employee.agentId);
       toastSuccess(S.company.chart.renewed);
+      // Saved: forget the form now, not at unmount. The page opens the new desk session next, and
+      // the leave guard would hold that over a form with nothing left unsaved.
+      discardUnsaved(form.scope);
       onRenewed(desk.sessionId);
     } catch (e) {
       toastError(apiErrorText(e));

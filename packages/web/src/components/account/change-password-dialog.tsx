@@ -14,6 +14,7 @@ import {
   Button,
   Modal,
   PasswordInput,
+  discardUnsaved,
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
@@ -60,6 +61,9 @@ function ChangePasswordForm({ onClose }: { onClose: () => void }) {
     setRefused({});
     try {
       await api.changePassword(noOldPassword ? { newPassword } : { oldPassword, newPassword });
+      // Saved: forget the form now, not at unmount. Re-reading the session next may redirect, and
+      // the leave guard would hold that over a form with nothing left unsaved.
+      discardUnsaved(form.scope);
       await refresh();
       onClose();
     } catch (e) {

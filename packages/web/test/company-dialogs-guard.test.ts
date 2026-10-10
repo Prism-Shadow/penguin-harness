@@ -13,12 +13,14 @@
  * - An employee's budget is written by its Save, with no second question; so is a calendar
  *   event (features/company/calendar-page.tsx).
  * - A desk renewal is valid untouched — a plain renewal, writing no workspace — and asks before
- *   Esc drops a changed workspace.
+ *   Esc drops a changed workspace. Once it has renewed, nothing is left unsaved by the time the
+ *   page is told, so the page's move to the new desk session is not held by the leave guard.
  * - A new ticket (features/company/tickets-page.tsx) waits for a title and a slug that keeps
  *   its rule, said under the field as it is typed.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement as h, Fragment } from "react";
+import { hasUnsaved } from "@prismshadow/penguin-ui";
 import type { OrgEmployeeItem, OrganizationSettings } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -406,6 +408,18 @@ describe("a desk renewal", () => {
     await click(button(en.company.chart.renewDesk));
     await waitFor(() => onRenewed.mock.calls.length === 1);
     expect(network.requests.map((r) => r.method)).toEqual(["POST"]);
+  });
+
+  it("leaves nothing unsaved by the time it hands a renewed desk on", async () => {
+    const { onRenewed } = await openRenewal();
+    let unsavedAtHandOff: boolean | null = null;
+    onRenewed.mockImplementation(() => {
+      unsavedAtHandOff = hasUnsaved();
+    });
+    await type(field(en.company.chart.workspace), "docs-v2");
+    await click(button(en.company.chart.renewDesk));
+    await waitFor(() => onRenewed.mock.calls.length === 1);
+    expect(unsavedAtHandOff).toBe(false);
   });
 
   it("asks before Esc drops a changed workspace", async () => {
