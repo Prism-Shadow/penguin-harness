@@ -40,8 +40,10 @@
  *   install or a batch builds one from the checkout (once per batch), installs it under the
  *   checkout's release with the build's own suffix, and keeps it beside — never in — the
  *   server's own hmr store; an unchanged tree is the same image, a changed one a new version;
- *   a failed build ends the job in the build's own words; the image outlives a restart; an
- *   installed server's own image wins.
+ *   a failed build ends the job in the build's own words, and the page says so until a build
+ *   succeeds; an image a job is still installing outlives the builds that land meanwhile and
+ *   goes at the next build after; the image outlives a restart; an installed server's own
+ *   image wins.
  */
 import fs from "node:fs";
 import http from "node:http";
@@ -1803,14 +1805,22 @@ describe("machines API", () => {
      * image down, naming it and reading it back are the real thing.
      */
     const packs: string[] = [];
-    const packing =
-      (build: PushedBuild = CHECKOUT_BUILD): CheckoutPacker =>
-      async (outFile, onLine) => {
+    /**
+     * Packs `trees` in turn, one per build and the last one again once they run out: the
+     * checkout as each build finds it.
+     */
+    const packing = (...trees: PushedBuild[]): CheckoutPacker => {
+      const builds = trees.length === 0 ? [CHECKOUT_BUILD] : trees;
+      let asked = 0;
+      return async (outFile, onLine) => {
+        const build = builds[Math.min(asked, builds.length - 1)]!;
+        asked += 1;
         packs.push(outFile);
         onLine("building the web dist…");
         fs.writeFileSync(outFile, zlib.gzipSync(Buffer.from(JSON.stringify(build))));
         return { ok: true };
       };
+    };
     /** A server running from a checkout: no installed release, and a packer to build with. */
     const checkout = (over: Partial<MachinesEffects> = {}) =>
       boot({ resolvePlan: () => null, packCheckout: packing(), ...over });
@@ -1889,11 +1899,15 @@ describe("machines API", () => {
       expect(new Set(versions).size).toBe(1);
     });
 
-    it("a build that fails ends the job in its own words, installs nothing, and the page says the same", async () => {
+    it("a build that fails ends the job in its own words, installs nothing, and the page says the same until a build succeeds", async () => {
       let installs = 0;
       const said = "vite: build failed in src/app.tsx (3:7): Unexpected token";
+      // The tree breaks, then is mended: the first build fails, the next one packs.
+      let broken = true;
+      const mended = packing();
       await checkout({
-        packCheckout: async () => ({ ok: false, detail: said }),
+        packCheckout: async (outFile, onLine) =>
+          broken ? { ok: false, detail: said } : mended(outFile, onLine),
         install: async () => {
           installs += 1;
           return { kind: "installed", output: "done", identity: IDENTITY };
@@ -1911,6 +1925,70 @@ describe("machines API", () => {
       expect(installs).toBe(0);
       expect(recordsInStore()).toEqual({});
       expect((await listed()).checkoutImage).toEqual({ state: "failed", detail: said });
+
+      broken = false;
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+      expect(installs).toBe(1);
+      expect((await listed()).checkoutImage).toEqual({ state: "built" });
+    });
+
+    it("an image a job is still installing outlives the builds that land meanwhile, and goes at the next build after", async () => {
+      // The far side downloads its release before the image is copied over: minutes in which
+      // other machines get enabled, each building from the tree as it is by then.
+      let release = () => {};
+      const downloading = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let nasImage: string | null = null;
+      let copied: Buffer | null = null;
+      // A web-only edit after the first build: the dev server keeps running, and the image moves on.
+      const edited: PushedBuild = {
+        ...CHECKOUT_BUILD,
+        web: {
+          files: {
+            "index.html": Buffer.from("<!doctype html><title>edited</title>").toString("base64"),
+          },
+        },
+      };
+      await checkout({
+        packCheckout: packing(CHECKOUT_BUILD, edited),
+        install: async (opts) => {
+          if (opts.target.alias === "nas") {
+            nasImage = path.dirname(opts.plan.hmrDir!);
+            await downloading;
+            // What the copy reads, once the release is down.
+            copied = readPushedBuild(nasImage);
+          }
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      const doneOn = (machineId: string) =>
+        jobsOf().some((job) => job.machineId === machineId && !job.queued && !job.running);
+
+      await useBody(["ssh:nas"]);
+      await waitFor(() => nasImage !== null);
+      // Two more enables while nas downloads: the first builds the edited tree, the second
+      // lands on that same image again.
+      await useBody(["ssh:build-box"]);
+      await waitFor(() => doneOn("ssh:build-box"));
+      await useBody(["ssh:build-box"]);
+      await waitFor(() => doneOn("ssh:build-box"));
+      expect(packs).toHaveLength(3);
+
+      release();
+      await waitFor(settled);
+      expect(copied).not.toBeNull();
+      expect(jobsOf().find((job) => job.machineId === "ssh:nas")?.result).toEqual({
+        ok: true,
+        connected: true,
+      });
+      // Nothing holds it any more: the next build sweeps it, and keeps the image in use.
+      await useBody(["ssh:build-box"]);
+      await waitFor(settled);
+      expect(fs.existsSync(nasImage!)).toBe(false);
+      expect((await listed()).checkoutImage).toEqual({ state: "built" });
     });
 
     it("rebuilding an unchanged checkout lands on the image already there: the machine on it gets nothing new", async () => {

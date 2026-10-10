@@ -69,7 +69,7 @@ import type { RemoteTarget } from "./commands.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import type { PushPlan } from "./install-server.js";
 import { CheckoutImage, deployPacker, findCheckout, imageAssets } from "./checkout-image.js";
-import type { CheckoutPacker } from "./checkout-image.js";
+import type { CheckoutBuild, CheckoutPacker } from "./checkout-image.js";
 import { probeServerState } from "./server-state.js";
 import { upgradeRemote } from "./upgrade.js";
 import type { UpgradeOutcome } from "./upgrade.js";
@@ -109,15 +109,13 @@ type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
 type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported";
 
 /**
- * What a job installs, once it has one: a plan and where its installers are, or the failure
- * that left it without.
+ * Runs a job's work with what its batch installs — a plan and where its installers are —
+ * held for as long as the work runs; or answers with the failure that left the batch without.
  */
-type ImageFor = (
+type WithImage = (
   say: Say,
-) => Promise<
-  | { ok: true; plan: PushPlan; assets: () => string | null }
-  | { ok: false; result: MachineJob["result"] }
->;
+  work: (image: { plan: PushPlan; assets: () => string | null }) => Promise<MachineJob["result"]>,
+) => Promise<MachineJob["result"]>;
 
 /**
  * What this service does to the world, injectable as a set. Production passes none of them;
@@ -466,35 +464,36 @@ export class MachinesService {
    * What the jobs of one batch install. An installed server's plan is fixed; a checkout builds
    * its image from the source as the batch finds it, once for the whole batch — the first job
    * to ask starts the build, the others hear it out, and a job that starts after it is done
-   * takes its result rather than building again. Null when this server has nothing to
-   * install and no checkout to build it from.
+   * takes its result rather than building again — and each job holds that image until its
+   * work is done. Null when this server has nothing to install and no checkout to build it
+   * from.
    */
-  #imageForBatch(): ImageFor | null {
-    const plan = this.#effects.resolvePlan(this.dataRoot);
-    if (plan !== null) return async () => ({ ok: true, plan, assets: this.#assets });
+  #imageForBatch(): WithImage | null {
+    const installed = this.#effects.resolvePlan(this.dataRoot);
+    if (installed !== null) return (_say, work) => work({ plan: installed, assets: this.#assets });
     const checkout = this.#checkout;
     if (checkout === null) return null;
-    let built: Awaited<ReturnType<CheckoutImage["build"]>> | null = null;
-    return async (say) => {
+    let built: CheckoutBuild | null = null;
+    return async (say, work) => {
       if (built === null) {
         say("Building the install image from this checkout…", "check");
         built = await checkout.build((line) => say(line));
       }
-      if (built.ok) {
-        // The installers this image was packed with travel in it.
-        const assets = imageAssets(built.plan);
-        return { ok: true, plan: built.plan, assets: () => assets };
-      }
-      return {
-        ok: false,
-        result: {
+      if (!built.ok) {
+        return {
           ok: false,
           step: "build the install image",
           message: built.detail,
           // This server's own lack: installing the program anyway would send nothing new.
           canReplaceProgram: false,
-        },
-      };
+        };
+      }
+      const { plan } = built;
+      // The installers this image was packed with travel in it.
+      const assets = imageAssets(plan);
+      // Held while the job works: the copy comes after the far side has downloaded its
+      // release, and the builds other batches run meanwhile must not prune the image.
+      return checkout.holding(plan, () => work({ plan, assets: () => assets }));
     };
   }
 
@@ -807,14 +806,12 @@ export class MachinesService {
     if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
       return { ok: false, why: "self" };
     }
-    const image = this.#imageForBatch();
-    if (image === null) return { ok: false, why: "no-image" };
+    const withImage = this.#imageForBatch();
+    if (withImage === null) return { ok: false, why: "no-image" };
 
-    this.#startJob("install", machine, { offerReplaceProgram: !replaceProgram }, async (say) => {
-      const ready = await image(say);
-      if (!ready.ok) return ready.result;
-      return this.#installWork(projectId, machine, ready, replaceProgram, say);
-    });
+    this.#startJob("install", machine, { offerReplaceProgram: !replaceProgram }, (say) =>
+      withImage(say, (image) => this.#installWork(projectId, machine, image, replaceProgram, say)),
+    );
     return { ok: true };
   }
 
@@ -1000,7 +997,7 @@ export class MachinesService {
     replaceProgram = false,
   ): { refused: { machineId: string; why: MachineUseRefusal }[] } {
     const refused: { machineId: string; why: MachineUseRefusal }[] = [];
-    const image = this.#imageForBatch();
+    const withImage = this.#imageForBatch();
     for (const address of new Set(addresses)) {
       const machine = this.#allMachines().find((entry) => entry.id === address);
       if (machine === undefined) {
@@ -1011,15 +1008,13 @@ export class MachinesService {
         refused.push({ machineId: address, why: "self" });
         continue;
       }
-      if (image === null) {
+      if (withImage === null) {
         refused.push({ machineId: address, why: "no-image" });
         continue;
       }
-      this.#startJob("use", machine, { offerReplaceProgram: !replaceProgram }, async (say) => {
-        const ready = await image(say);
-        if (!ready.ok) return ready.result;
-        return this.#useWork(projectId, address, ready, replaceProgram, say);
-      });
+      this.#startJob("use", machine, { offerReplaceProgram: !replaceProgram }, (say) =>
+        withImage(say, (image) => this.#useWork(projectId, address, image, replaceProgram, say)),
+      );
     }
     return { refused };
   }
@@ -1502,17 +1497,21 @@ export class MachinesService {
       .all()
       .filter((row) => row.version !== null && row.version !== plan.version)
       .map((row) => row.address);
-    await this.#sweep(behind, async (address, target) => {
-      const outcome = await this.#handOverBuild(address, target, plan, () => {});
-      // Recorded only when the machine also wrote it down: a swap it could not persist is
-      // gone at its next restart, and a record of it would outlive the thing it records.
-      if (outcome.kind === "upgraded" && outcome.persisted) {
-        this.repo.patch(address, {
-          version: plan.version,
-          installedAt: this.#effects.now().toISOString(),
-        });
-      }
-    });
+    const sweep = () =>
+      this.#sweep(behind, async (address, target) => {
+        const outcome = await this.#handOverBuild(address, target, plan, () => {});
+        // Recorded only when the machine also wrote it down: a swap it could not persist is
+        // gone at its next restart, and a record of it would outlive the thing it records.
+        if (outcome.kind === "upgraded" && outcome.persisted) {
+          this.repo.patch(address, {
+            version: plan.version,
+            installedAt: this.#effects.now().toISOString(),
+          });
+        }
+      });
+    // A checkout's image is held for the sweep as for a job: builds the page starts meanwhile
+    // must not prune what is being handed over.
+    await (this.#checkout?.holding(plan, sweep) ?? sweep());
   }
 
   /**

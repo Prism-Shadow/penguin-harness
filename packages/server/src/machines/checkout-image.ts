@@ -20,7 +20,8 @@
  * so a dev server starts as fast as it did. One build at a time; an ask while one runs gets
  * that one. The packer is deterministic and an image is named by its content, so rebuilding
  * an unchanged tree lands on the image already there: the same harness, the same version,
- * nothing for an install to send.
+ * nothing for an install to send. A build prunes the older images, never one a job is still
+ * installing (`holding`).
  */
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -60,6 +61,12 @@ export class CheckoutImage {
   /** The last build's failure, until a build succeeds. */
   #failure: string | null = null;
   #runs = 0;
+  /**
+   * The images jobs are still installing or handing over, by id, with how many hold each: a
+   * job copies its image minutes after the build, once the far side has its release, and the
+   * builds that land meanwhile must not prune it.
+   */
+  readonly #held = new Map<string, number>();
 
   constructor(
     /** `<root>/machines/checkout-image`. */
@@ -96,6 +103,24 @@ export class CheckoutImage {
       this.#listeners.clear();
     });
     return this.#building;
+  }
+
+  /**
+   * Runs `work` with the plan's image held, so no build prunes it before `work` is done. A
+   * plan that is not one of these images runs as it is.
+   */
+  async holding<T>(plan: PushPlan, work: () => Promise<T>): Promise<T> {
+    const image = plan.hmrDir === null ? null : path.dirname(plan.hmrDir);
+    const id = image !== null && path.dirname(image) === this.dir ? path.basename(image) : null;
+    if (id === null || !IMAGE_ID.test(id)) return work();
+    this.#held.set(id, (this.#held.get(id) ?? 0) + 1);
+    try {
+      return await work();
+    } finally {
+      const left = (this.#held.get(id) ?? 1) - 1;
+      if (left > 0) this.#held.set(id, left);
+      else this.#held.delete(id);
+    }
   }
 
   #currentId(): string | null {
@@ -137,7 +162,8 @@ export class CheckoutImage {
       const pointer = path.join(this.dir, `${CURRENT}.${process.pid}.tmp`);
       await fsp.writeFile(pointer, id);
       await fsp.rename(pointer, path.join(this.dir, CURRENT));
-      // The image a job started before this build may still be sending stays; older ones go.
+      // The image this build replaces stays, and so does any image a job still holds; the
+      // rest go.
       await this.#prune(new Set([id, ...(previous === null ? [] : [previous])]));
       const plan = this.plan();
       if (plan === null) return this.#failed("the image was written but cannot be read back.");
@@ -171,7 +197,7 @@ export class CheckoutImage {
 
   async #prune(keep: ReadonlySet<string>): Promise<void> {
     for (const name of await fsp.readdir(this.dir)) {
-      if (IMAGE_ID.test(name) && !keep.has(name)) {
+      if (IMAGE_ID.test(name) && !keep.has(name) && !this.#held.has(name)) {
         await fsp.rm(path.join(this.dir, name), { recursive: true, force: true }).catch(() => {});
       }
     }
