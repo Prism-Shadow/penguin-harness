@@ -11,6 +11,8 @@ This Skill changes the Benchmark, never the Test Agent. It does not run or score
 
 A Benchmark whose Cases are run through Harbor (their statements say so; the built-in PenguinHarness Benchmarks) is a frozen upstream task set that ships with PenguinHarness: never create, refine, recalibrate or re-baseline one.
 
+Importing an existing Benchmark package (a repository folder link or a local folder) is not design: follow `reference/package.md`, which also defines what a package holds.
+
 ## Before you start
 
 If the request does not identify a Test Agent, target capability, desired baseline score, and Pilot iteration limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them. Treat the current Agent as the **Builder**. A user-specified evaluation `(provider, model_id)` takes priority; otherwise inherit the current Builder Session's complete `Provider` and `Model ID` from the Environment. Never use a Project default as an implicit evaluation runtime.

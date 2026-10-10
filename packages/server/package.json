@@ -50,6 +50,10 @@
       "types": "./dist/secret-file.d.ts",
       "import": "./dist/secret-file.js"
     },
+    "./benchmark-package": {
+      "types": "./dist/benchmark-package.d.ts",
+      "import": "./dist/benchmark-package.js"
+    },
     "./plugin": {
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"

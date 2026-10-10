@@ -2081,6 +2081,14 @@ router
     ctx.store.f.benchmarks = ctx.store.f.benchmarks.filter((b) => b.id !== benchmark.id);
     return empty();
   })
+  .post("/api/projects/:projectId/benchmarks/archive", () => readOnly("import a Benchmark package"))
+  .get("/api/projects/:projectId/benchmarks/:benchmarkId/archive", (ctx) => {
+    const benchmark = benchmarkOf(ctx);
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${benchmark.id}-v${benchmark.version ?? "0"}.zip"`,
+    });
+  })
   .get("/api/projects/:projectId/benchmarks/:benchmarkId/cases/:caseId/files", (ctx) =>
     listCaseFiles(ctx, "statement"),
   )

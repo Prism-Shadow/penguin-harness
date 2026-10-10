@@ -58,7 +58,6 @@ export const en: Strings = {
     noneInUse: "No machine in use yet.",
     sshHint:
       "A machine can be added when this server's account can ssh into it by key (`ssh <alias>` works in a terminal here). Whoever set up ssh can put it in ~/.ssh/config.",
-    now: "now",
     allHosts: (count: number) => `${count} more in ~/.ssh/config`,
     expand: "Expand",
     fewer: "Collapse",
@@ -94,27 +93,22 @@ export const en: Strings = {
     updateAll: (count: number) => `Update all (${count})`,
     updateAllConfirm: (count: number) =>
       `Update ${count === 1 ? "this machine" : `these ${count} machines`} to this server's version? Each one reinstalls the program, restarts its server and reconnects, so anyone using it is briefly cut off.`,
-    /** Asked before letting machines go: the connection drops, the install stays. */
+    /** Asked before letting a machine go: the connection drops, the install stays. */
     stopUsingOne: (alias: string) =>
       `Disable ${alias}? This Project disconnects from it and stops listing it; whatever is running through it is cut off. The program stays on that machine, so you can enable it again later.`,
-    stopUsingMany: (count: number) =>
-      `Disable these ${count} machines? This Project disconnects from them and stops listing them; whatever is running through them is cut off. The program stays on those machines, so you can enable them again later.`,
-    selectedCount: (count: number) => `${count} selected`,
-    pickAll: "all",
-    pickNone: "none",
     state: {
-      serving: "Serving",
+      serving: "Running",
       queued: "Queued",
       working: "Working",
       ready: "Connected",
       failed: "Failed",
       installedOnly: "Installed",
-      behind: "Behind",
-      notConnected: "Offline",
+      behind: "Update available",
+      notConnected: "Not connected",
       unreachable: "Unreachable",
-      stopped: "Stopped",
-      linkedStopped: "Connected, not serving",
-      unknown: "Unchecked",
+      stopped: "Not running",
+      linkedStopped: "Connected, not running",
+      unknown: "Not checked",
     },
     phase: {
       check: "Checking the machine…",
@@ -124,30 +118,107 @@ export const en: Strings = {
       connect: "Connecting…",
       sync: "Handing over the Model config…",
     },
+    step: {
+      check: "Check the machine",
+      install: "Install the program",
+      handover: "Send the build",
+      restart: "Restart its server",
+      connect: "Connect",
+      sync: "Sync the Model config",
+    },
     stepOf: (step: number, total: number) => `step ${step} of ${total}`,
     queued: "Waiting its turn behind the machines before it.",
     working: "Working…",
     failedAt: (step: string) => `Failed at "${step}".`,
     replaceProgram: "Force install",
-    replaceProgramWhy:
-      "Whatever is on that machine now, put this build's program there and restart its server — anyone using it will be interrupted.",
+    replaceProgramWhy: "Reinstalls the program even if the version already matches",
     replaceProgramConfirm: (alias: string) =>
       `Force install on ${alias}? Whatever is on that machine now, this server's build is installed and its server restarted; anyone using it will be interrupted.`,
     refusedSelf: (alias: string) => `${alias} is the machine this server runs on; nothing to add.`,
     refusedUnknown: (alias: string) => `${alias} is not in this server's ssh config.`,
-    details: "Details",
-    detailInstalled: "Installed",
-    detailSince: "Since",
-    detailVersion: "Version",
-    detailStarted: "Started",
-    detailServer: "Server",
-    detailChecked: "Checked",
-    detailMachineId: "Machine id",
-    detailRoot: "Server root",
-    serverUpOn: (port: number) => `up on port ${port}`,
-    output: "Output",
     agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
+    updateNotice: (count: number) =>
+      count === 1 ? "1 machine to update" : `${count} machines to update`,
+    card: {
+      local: "local",
+      ssh: "ssh",
+      updateNeeded: "Update needed",
+      update: "Update",
+    },
+    detail: {
+      describeRemote: (alias: string) => `A remote machine, reached over ssh as ${alias}.`,
+      describeLocal: "The machine this server runs on; no ssh involved.",
+      newerAvailable: (version: string) => `${version} is available`,
+      facts: "Details",
+      progress: "Progress",
+      actions: "Actions",
+      fact: {
+        connection: "Connection",
+        viaSsh: (alias: string) => `ssh · ${alias}`,
+        local: "This machine, no ssh",
+        host: "Address",
+        root: "Data directory",
+        service: "Remote server",
+        serviceLocal: "Server",
+        running: (port: number) => `Running on port ${port}`,
+        stopped: "Not running",
+        unreachable: "Unreachable",
+        checked: "Last checked",
+        installed: "Installed",
+        version: "Version",
+        latest: (version: string) => `${version} (latest)`,
+        behind: (version: string, latest: string) => `${version} · ${latest} available`,
+        installedAt: "Installed on",
+        started: "Started",
+        machineId: "Machine id",
+      },
+      copyMachineId: "Copy machine id",
+      lastJobDone: "The last job finished.",
+      failedAtStep: (step: string, message: string) => `Failed at "${step}": ${message}`,
+      showLog: "Show log",
+      logLabel: "Job log",
+      primary: {
+        update: "Update",
+        updateWhy: (version: string) =>
+          `Updates to ${version}, restarting its server and reconnecting.`,
+        start: "Start server",
+        startWhy: "Starts the server on that machine and connects.",
+        connect: "Connect",
+        connectWhy: "Connects to the server on that machine, starting it first if needed.",
+        tryAgain: "Try again",
+        tryAgainWhy: "Tries ssh again; make sure the machine is on and reachable first.",
+        retry: "Retry",
+        retryWhy: "Runs the whole job again from the start",
+      },
+      maintenance: "Maintenance",
+      leave: "Stop using",
+      configureSsh: "Configure ssh",
+      configureSshWhy: "Changes the address, user, port and key used to reach the machine",
+      hold: {
+        moving: "The machine is busy with a job; available when it finishes",
+        noImage: "This server has no version to install",
+        noConnection: "Not connected, so there is nothing to disconnect",
+        unreachable: "The machine could not be reached at the last check",
+      },
+    },
+    verbs: {
+      install: "Install program",
+      installWhy: "Installs this server's version on the machine",
+      connect: "Reconnect",
+      connectWhy: "Connects to the machine again, starting its server if needed",
+      restart: "Restart server",
+      restartWhy: "Restarts the server on the machine",
+      stopUsingWhy: "Disconnects and removes it from this Project; the program stays installed",
+      disconnect: "Disconnect",
+      disconnectWhy: "Drops the connection only; the server on the machine keeps running",
+      release: "Remove from Project",
+      releaseWhy: "This Project stops listing it; the connection and the program stay as they are",
+      disconnectConfirm: (alias: string) =>
+        `Disconnect from ${alias}? Every Project using it shares this connection, and whatever is running through it is cut off; the server over there keeps running, and you can connect again later.`,
+      releaseConfirm: (alias: string) =>
+        `Remove ${alias} from this Project? It is no longer listed here and no longer receives this Project's Model config; the program and the connection over there stay as they are, and you can enable it again from Add machines….`,
+    },
   },
 
   /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */
@@ -1516,6 +1587,14 @@ export const en: Strings = {
     livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
+    employeesSection: "Company employees",
+    employeesSectionInfo:
+      "These agents are employees of an organization and work in company mode. You can still chat with them and change their settings here; one can be deleted only after it leaves its organization in company mode.",
+    employmentLine: (orgName: string, title: string): string => `${orgName} · ${title}`,
+    employedUndeletable: (employments: ReadonlyArray<{ orgName: string; title: string }>): string =>
+      `This agent is an employee of ${employments.map((e) => `organization "${e.orgName}" (${e.title})`).join(", ")}; make it leave ${employments.length > 1 ? "those organizations" : "the organization"} in company mode first`,
+    employeeMark: (employments: ReadonlyArray<{ orgName: string; title: string }>): string =>
+      `Company employee: ${employments.map((e) => `${e.orgName} · ${e.title}`).join(", ")}`,
     deleteConfirm: (name: string): string =>
       `Delete agent "${name}"? Its directory (including all Traces) will be removed recursively and cannot be recovered.`,
     stateTitle: "Agent State",
@@ -3262,6 +3341,9 @@ Scenarios:
     sessionOnOfflineMachineUnknown:
       "This conversation is on a machine that is not connected right now.",
     sessionOfflineHint: "It will open as soon as the connection is back.",
+    sessionNotFound: "This conversation does not exist or was deleted",
+    sessionNotFoundHint:
+      "The conversation this link points to is gone, or you do not have access to it.",
     emptyStream: "Send a message to start the conversation",
     historyLoadFailed: "Failed to load history",
     statsLabel: "Stats",
@@ -4565,6 +4647,45 @@ Scenarios:
         "and finish by reporting the baseline score, the final score, the retained version and what the method changed."
       );
     },
+    // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
+    importBenchmark: "Import benchmark",
+    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatWhy:
+      "The agent pins the link to one commit, fetches only that folder and reads every file before writing it to the Evaluation Center — more reliable than a bare upload.",
+    importSourceLabel: "Benchmark source",
+    importSourceHint:
+      "A folder link in a GitHub repository (such as …/tree/<commit>/packages/<id>), a local path, or a description",
+    importSourcePlaceholder:
+      "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/…",
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    importPromptLead: {
+      repoFolderUrl: (s: string): string =>
+        `Import the Benchmark package at this repository folder into this Project's Evaluation Center: ${s}.`,
+      localPath: (s: string): string => `Import the Benchmark package under this local path: ${s}.`,
+      reference: (s: string): string => `Find and import this Benchmark as a package: ${s}.`,
+    },
+    importPromptTail: (projectId: string): string =>
+      [
+        "The package is a folder with `benchmark_config.toml` (keys: id, title, description, version `YYYY.MM.DD.N`, status, runs, and an `[origin]` table) and one `CASE-*/` per case, holding `statement/README.md` and `rubric/README.md`.",
+        "Fetch only that folder, at a commit, into a temporary directory: resolve the link's branch or tag to its 40-hex commit (`git ls-remote`), download it (a codeload tarball or a sparse checkout), and read every file before importing anything — refuse if it is not a Benchmark package, if its `status` is not `published`, or if it holds anything but text materials. Do not copy large upstream materials; the statements link them.",
+        `Import it with \`penguin benchmark import <the folder> --project-id ${projectId} --origin-url <the link as given> --origin-ref <the 40-hex commit> --origin-path <the folder inside the repository>\` (without the \`--origin-*\` options for a source that is not a repository folder). The server checks it as it checks an uploaded zip and writes \`benchmarks/<id>/\` itself, with the git origin, the package's \`version\` and a \`scoreboard.yaml\` holding \`evaluations: []\`; never write under \`benchmarks/\` yourself.`,
+        "If the command says the Benchmark already exists, stop and ask me before overwriting — an overwrite (`--overwrite`) replaces the whole directory, its `scoreboard.yaml` and `.jobs/` included, and the server refuses it while an evaluation of that Benchmark is still running. Then report the id, title, version and case count the command printed; the Evaluation Center lists it from then on.",
+        'If the `benchmark-design` skill is installed, read its `reference/package.md` ("Importing a package") first.',
+      ].join("\n"),
+    importCopyPrompt: "Copy prompt",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a Benchmark zip",
+    importUploadDesc:
+      "A zip exported from the Evaluation Center, or one with benchmark_config.toml and the CASE-*/ folders at its root or in its only top-level folder. The cases come in, the evaluation records do not: they start empty. Import only sources you trust.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Benchmark imported",
+    importOverwriteTitle: "Overwrite the existing Benchmark",
+    importOverwriteBody: (id: string): string =>
+      `The Benchmark "${id}" already exists. Overwriting replaces all of its files, and its evaluation records (the scoreboard) and run results are deleted with them. This cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
+    exportBenchmark: "Export",
   },
 
   /** Company mode: the organization switcher and dialogs, and the six organization pages. */
@@ -4601,6 +4722,7 @@ Scenarios:
     orgGoneBody:
       "It may have been deleted, or you may no longer have access to the Project it belongs to.",
     backToOrgs: "Back to organizations",
+    backToOverview: "Back to the overview",
     /** Create dialog. */
     createTitle: "New organization",
     orgId: "Organization id",
@@ -4740,6 +4862,7 @@ Scenarios:
       temporaryEntry: (title: string): string => `Temporary · ${title}`,
       closeTemporary: "Remove from Temporary",
       closeAllTemporary: "Close all",
+      agentMissing: "Agent deleted; its desk cannot be opened",
     },
     overview: {
       title: "Overview",
@@ -4830,6 +4953,10 @@ Scenarios:
       renewDesk: "New desk session",
       leave: "Leave the organization",
       ceoCannotLeave: "The CEO cannot leave",
+      setThinkingLevel: "Set thinking level",
+      agentMissing: "Agent deleted",
+      ceoMissing: (ceoId: string): string =>
+        `The CEO's Agent was deleted, so the organization cannot run: create an Agent with the id ${ceoId} again to restore it.`,
       invalidEntry: "This entry is invalid",
       workspaceTail: "Workspace",
       /** Hire dialog. */
@@ -4904,6 +5031,14 @@ Scenarios:
       currentValue: (value: string): string => `Current: ${value}`,
       manager: "Manager",
       reportsToHint: "Only employees outside its own subtree are listed",
+      thinkingLevelTitle: (name: string): string => `Set ${name}'s thinking level`,
+      thinkingLevelInfo:
+        "Written to the employee's Agent config, the same setting as this Agent's in development mode. The desk session uses it from its next model context and new ticket sessions open on it; a level picked inside the desk session pins only that session.",
+      thinkingLevelDefault: (level: string): string => `Project default (${level})`,
+      thinkingLevelConfirm: (name: string, level: string): string =>
+        `Change ${name}'s thinking level to "${level}"? This writes the Agent's config.`,
+      thinkingLevelPinned: (level: string): string =>
+        `The current desk session is pinned to "${level}" on its own; this setting reaches the desk from its next desk session.`,
     },
     calendar: {
       title: "Calendar",
@@ -5380,6 +5515,8 @@ Scenarios:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       skill_too_large: "This skill directory exceeds the import limits.",
       hook_too_large: "This hook package exceeds the import limits.",
+      benchmark_busy:
+        "This Benchmark is being evaluated: a run under its .jobs/ has not finished, and overwriting it now would let that evaluation go on writing into the new copy. Overwrite it once the evaluation ends.",
       file_not_found: "This file no longer exists.",
       not_pending: "This steering message already reached the model and can no longer be recalled.",
       follow_up_started: "This follow-up already started and can no longer be recalled.",
@@ -5461,6 +5598,8 @@ Scenarios:
       calendar_event_exists: "A calendar event with that name already exists.",
       calendar_event_not_found: "That calendar event no longer exists.",
       desk_unavailable: "The desk session could not be opened.",
+      agent_employed:
+        "This agent is still an employee of an organization: make it leave in company mode, then delete it.",
       ticket_not_found: "That ticket no longer exists.",
       ticket_invalid: "This ticket file needs repair; it accepts no changes until then.",
       ticket_session_failed: "The ticket session could not be started.",

@@ -4,6 +4,8 @@
  *   GET /api/projects/:p/benchmarks (any member, read-only)
  *   POST /api/projects/:p/benchmarks (owner: create a Benchmark by hand)
  *   DELETE /api/projects/:p/benchmarks/:benchmarkId (owner: remove the directory whole)
+ *   POST /api/projects/:p/benchmarks/archive (any member: import a package from a zip)
+ *   GET /api/projects/:p/benchmarks/:benchmarkId/archive (any member: export the package)
  *   GET /api/projects/:p/benchmarks/:benchmarkId/cases
  *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/files
  *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/files/content
@@ -15,8 +17,16 @@
 import { Hono, type Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { BenchmarkCreateResponse, CaseMaterial } from "../../api/types.js";
+import type {
+  BenchmarkArchiveGitOrigin,
+  BenchmarkArchiveImportResponse,
+  BenchmarkCreateResponse,
+  CaseMaterial,
+} from "../../api/types.js";
 import type { BenchmarkCaseInput } from "../../services/benchmark-service.js";
+import { benchmarkTooLarge } from "../../services/benchmark-archive.js";
+import { isHttpUrl } from "../../services/protocol-detect.js";
+import { MAX_ARCHIVE_BYTES } from "../../services/skill-import-limits.js";
 import type { Benchmarks } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 import {
@@ -49,6 +59,35 @@ const MAX_BODY = 100_000;
  * stored value has to stay within to remain usable.
  */
 const MAX_RUNS = 1000;
+
+/**
+ * The longest `dataBase64` a zip within the 14MB cap encodes to. A longer one is refused before it
+ * is decoded: the request body cap follows the admin's attachment budget, which can be far larger.
+ */
+const MAX_ARCHIVE_BASE64 = Math.ceil(MAX_ARCHIVE_BYTES / 3) * 4;
+
+/** The only `ref` a git origin records: a commit, since a branch or a tag can move. */
+const COMMIT = /^[0-9a-f]{40}$/;
+
+/**
+ * An import request's `origin`: absent, or the repository folder the package was fetched from
+ * (`{kind: "git", url, ref, path}`) — an http(s) link, the 40-character commit it resolved to and
+ * the folder inside the repository. The server never fetches or opens them: they go into the copy's
+ * manifest, and the Benchmark's page links the url.
+ */
+function optionalGitOrigin(body: Record<string, unknown>): BenchmarkArchiveGitOrigin | undefined {
+  const raw = body.origin;
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) throw badRequest("origin must be an object.");
+  const origin = raw as Record<string, unknown>;
+  if (origin.kind !== "git") throw badRequest('origin.kind must be "git".');
+  const url = requireString(origin, "url", { minLen: 1, maxLen: 2048, label: "origin.url" });
+  if (!isHttpUrl(url)) throw badRequest("origin.url must be an http(s) link.");
+  const ref = requireString(origin, "ref", { label: "origin.ref" });
+  if (!COMMIT.test(ref)) throw badRequest("origin.ref must be a 40-character commit id.");
+  const folder = requireString(origin, "path", { minLen: 1, maxLen: 1024, label: "origin.path" });
+  return { kind: "git", url, ref, path: folder };
+}
 
 /** A required Markdown body: present, within the cap, and not blank. */
 function requireText(obj: Record<string, unknown>, key: string, maxLen: number, label: string) {
@@ -177,6 +216,46 @@ export function benchmarksRoutes(deps: BenchmarksRouteDeps): Hono<AppEnv> {
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.benchmarks.remove(projectId, benchmarkId);
     return c.body(null, 204);
+  });
+
+  // Import a package from a zip. Unlike creating or deleting, this is open to every member: a
+  // Benchmark belongs to the Project, and anyone in it may bring one in. With `overwrite` it
+  // replaces a Benchmark of the same id whole, evaluation records included — the Web App says so
+  // before it sends one. `penguin benchmark import` posts here too, with the repository folder
+  // an Agent fetched the package from as `origin`, so the same checks hold whoever imports.
+  app.post("/archive", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    const dataBase64 = requireString(body, "dataBase64");
+    // The same 413 the decoded size would get, answered before a byte is decoded.
+    if (dataBase64.length > MAX_ARCHIVE_BASE64) {
+      throw benchmarkTooLarge("The zip archive exceeds the 14MB limit.");
+    }
+    const origin = optionalGitOrigin(body);
+    const benchmark = await deps.benchmarks.importArchive(
+      projectId,
+      Buffer.from(dataBase64, "base64"),
+      { overwrite: body.overwrite === true, ...(origin !== undefined ? { origin } : {}) },
+    );
+    return c.json({ benchmark } satisfies BenchmarkArchiveImportResponse, 201);
+  });
+
+  // Export a published Benchmark's package: a direct binary attachment, as the Skill and hook
+  // exports are, which the import above takes back unchanged.
+  app.get("/:benchmarkId/archive", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const benchmarkId = requireValidId(c, "benchmarkId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const { fileName, data } = await deps.benchmarks.exportArchive(projectId, benchmarkId);
+    return new Response(new Uint8Array(data), {
+      headers: {
+        "Content-Type": "application/zip",
+        // An id and a date version: the encoded name is the name itself.
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   });
 
   app.get("/:benchmarkId/cases", async (c) => {

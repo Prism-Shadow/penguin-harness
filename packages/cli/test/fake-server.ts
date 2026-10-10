@@ -258,6 +258,26 @@ export class FakeServer {
   schedules: Json = { schedules: [], invalidFiles: [] };
   /** Named schedule store behind add/update/rm: name -> the stored item (single-agent tests). */
   readonly scheduleItems = new Map<string, Json>();
+  /**
+   * What POST …/benchmarks/archive (`penguin benchmark import`) answers for a request body; by
+   * default the import went through and the Benchmark lists as below.
+   */
+  benchmarkImport: (body: Json) => { status: number; body: unknown } = () => ({
+    status: 201,
+    body: {
+      benchmark: {
+        id: "report-writing-v1",
+        title: "Report writing under conflicting sources",
+        status: "published",
+        runs: 1,
+        version: "2026.10.08.3",
+        origin: { kind: "zip", importedAt: "2026-10-09T08:00:00.000Z" },
+        caseCount: 2,
+        evaluations: [],
+        agentIds: [],
+      },
+    },
+  });
   /** Company mode: organizations keyed by org id. */
   readonly orgs = new Map<string, FakeOrgState>();
   /**
@@ -1749,6 +1769,11 @@ export class FakeServer {
       }
     }
     const viaToken = authorization !== undefined;
+
+    if (method === "POST" && /^\/api\/projects\/[^/]+\/benchmarks\/archive$/.test(apiPath)) {
+      const answer = this.benchmarkImport(body ?? {});
+      return this.json(answer.body, answer.status);
+    }
 
     if (apiPath.startsWith("/api/builtin-browser/")) {
       const answer = this.builtinBrowser({

@@ -78,7 +78,7 @@ Agent 是 Project 里配置好的助手。每个 Agent 都有自己的指令、�
 
 ## 删除 Agent
 
-只有 Project owner 能删除 Agent。内置的 `default_agent` 不能删除。
+只有 Project owner 能删除 Agent。内置的 `default_agent` 不能删除，组织的员工也不能：它们列在**公司模式员工**一节，在公司模式离任之后才能删除（见[员工就是 Agent](/company-mode#员工就是-agent)）。
 
 1. 在 Agent 卡片上选择删除按钮（**删除 Agent**）。
 2. 确认。

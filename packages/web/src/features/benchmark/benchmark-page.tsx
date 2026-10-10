@@ -8,7 +8,9 @@
  * enters the Benchmark's own page (`/benchmark/:benchmarkId`) instead of splitting this one in
  * two, the way an Agent's card enters its settings. `?agentId=` narrows the list to the
  * Benchmarks that tested that Agent. The list is read off this server and every machine it holds
- * (benchmark-sources.ts): a Benchmark written on a machine is listed too, under its id.
+ * (benchmark-sources.ts): a Benchmark written on a machine is listed too, under its id. Besides
+ * creating one, any member may import one (benchmark-import-modal.tsx): through an Agent from a
+ * repository folder, or from a package zip.
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -41,6 +43,7 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { OPENS_DETAIL_CLASS, cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
@@ -54,6 +57,7 @@ import { AiCreateModal, pickDefaultAgent } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { latestWithDelta, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
 import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
+import { ImportBenchmarkModal } from "./benchmark-import-modal";
 import { benchmarkRoute } from "./benchmark-route";
 import { fetchBenchmarks } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
@@ -75,18 +79,32 @@ function deltaTone(delta: number | null): string {
  * with AI opens a conversation, which any member of the Project may start; creating by hand posts
  * the cases for the server to write under the Project's `benchmarks/`, which only the owner may
  * do (the route answers anyone else with 403). So a member is offered the AI button by itself,
- * the way the scheduled-tasks tab offers it.
+ * the way the scheduled-tasks tab offers it. Given `onImport` (the header), Import benchmark
+ * stands before the pair, for everyone: a Benchmark belongs to the Project, and any member may
+ * bring one in.
  */
 export function BenchmarkCreateButtons({
   isOwner,
   onAi,
   onManual,
+  onImport,
 }: {
   isOwner: boolean;
   onAi: () => void;
   onManual: () => void;
+  onImport?: () => void;
 }) {
-  return <AiCreateButtons size="sm" onAi={onAi} {...(isOwner ? { onManual } : {})} />;
+  const create = <AiCreateButtons size="sm" onAi={onAi} {...(isOwner ? { onManual } : {})} />;
+  if (onImport === undefined) return create;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="secondary" onClick={onImport}>
+        <GlyphIcon d={ICONS.upload} />
+        {S.benchmark.importBenchmark}
+      </Button>
+      {create}
+    </div>
+  );
 }
 
 /**
@@ -195,7 +213,13 @@ export function BenchmarkCard({
         ? S.benchmark.creationFailedHint
         : S.benchmark.creationFailedHintMember;
   return (
-    <Card padding="md" className="relative flex flex-wrap items-center gap-x-6 gap-y-2">
+    <Card
+      padding="md"
+      className={`relative flex flex-wrap items-center gap-x-6 gap-y-2 ${masked ? "" : OPENS_DETAIL_CLASS}`}
+      // A click anywhere else on the body enters the page too (lib/card-open.ts); a masked card
+      // enters nothing.
+      {...(masked ? {} : { onClick: cardBodyClick(onOpen) })}
+    >
       <button
         type="button"
         onClick={onOpen}
@@ -362,6 +386,7 @@ export function BenchmarkPage() {
   const [aiOpen, setAiOpen] = useState(false);
   const [aiTarget, setAiTarget] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   /** The Benchmark whose Use dialog is open, if any. */
   const [using, setUsing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -508,10 +533,10 @@ export function BenchmarkPage() {
     <>
       <PageFrame width="lg">
         {/* The title row and the step cards are one header, so the gap below it stays one gap —
-            the Agents and Models headers have the same shape. Search plus the two create entry
-            points: below sm the search box takes a line of its own and the pair of buttons
-            wraps under it, since three controls sharing a phone's width would leave the box too
-            narrow to read what was typed into it. */}
+            the Agents and Models headers have the same shape. Search, then Import benchmark and
+            the two create entry points: below sm the search box takes a line of its own and the
+            buttons wrap under it, since the controls sharing a phone's width would leave the box
+            too narrow to read what was typed into it. */}
         <PageHeader
           title={S.benchmark.title}
           actions={
@@ -529,6 +554,7 @@ export function BenchmarkPage() {
                 isOwner={isOwner}
                 onAi={openAi}
                 onManual={() => setManualOpen(true)}
+                onImport={() => setImportOpen(true)}
               />
             </>
           }
@@ -596,6 +622,18 @@ export function BenchmarkPage() {
         projectId={projectId}
         onCreated={(benchmark) => open(benchmark.id)}
       />
+      {importOpen && (
+        <ImportBenchmarkModal
+          projectId={projectId}
+          agents={agents}
+          onClose={() => setImportOpen(false)}
+          // The list is read again whole: an overwrite replaced a card, and machines merge in.
+          onImported={() => {
+            setImportOpen(false);
+            setReload((n) => n + 1);
+          }}
+        />
+      )}
       {usingBenchmark && (
         <UseBenchmarkModal
           key={usingBenchmark.id}

@@ -195,7 +195,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
-| Agent 自进化 | `rsi-default` | Default RSI Toolkit：用四个 Skill 构成「试跑 → 反思 → 提升」的循环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent）。2026.10.09.3 及更早的版本名为 `agent-tuning`，各 Skill 名称不变 |
+| Agent 自进化 | `rsi-default` | Default RSI Toolkit：用四个 Skill 构成「试跑 → 反思 → 提升」的循环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent）。2026.10.09.5 及更早的版本名为 `agent-tuning`，各 Skill 名称不变 |
 | | `rsi-opro` | OPRO，出自 [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409)（Yang 等，2023）：依据历史指令与分数提出新指令，保留得分最高的一条。自成一体：自带初始化与评测参考，另附一个演示任务 |
 | | `rsi-ape` | APE，出自 [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910)（Zhou 等，2022）：从输入 / 输出示例归纳候选指令，保留最优者。自成一体：自带初始化与评测参考，另附一个演示任务 |
 | | `rsi-ace` | ACE，出自 [Agentic Context Engineering](https://arxiv.org/abs/2510.04618)（Zhang 等，2025）：从训练轨迹进化出一本规则手册（playbook）。自成一体：自带初始化与评测参考 |

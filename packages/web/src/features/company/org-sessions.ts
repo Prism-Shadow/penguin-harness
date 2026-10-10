@@ -36,9 +36,11 @@ import type { SessionActivity } from "../../lib/session-activity";
 export type LiveSessionStatuses = ReadonlyMap<string, SessionStatus>;
 
 /**
- * One employee's desk row. `sessionId` is null only while neither cache names the employee's
+ * One employee's desk row. `sessionId` is null while neither cache names the employee's
  * desk — the server opens one at hire time and re-opens a missing one on its next pass, so
- * this is the window between a hire and the next read of the chart or the sessions route.
+ * this is the window between a hire and the next read of the chart or the sessions route —
+ * and for good when the employee's Agent was deleted (`agentMissing`): nothing can open that
+ * desk until a person makes the employee leave or recreates the Agent.
  */
 export interface OrgDeskRow {
   agentId: string;
@@ -53,6 +55,8 @@ export interface OrgDeskRow {
    * absent when it has none, or while that route has not listed the desk.
    */
   messagingChannel?: MessagingChannel;
+  /** The employee's Agent no longer exists (the chart says so): the row is never opened. */
+  agentMissing?: true;
 }
 
 /**
@@ -84,6 +88,18 @@ export function deskRows(
     }));
   }
   return chart.employees.map((e) => {
+    // An employee whose Agent is gone has no desk anyone can open: no id, whatever a cache
+    // still says, so no click or row menu reaches a conversation of another Agent.
+    if (e.agentMissing === true) {
+      return {
+        agentId: e.agentId,
+        name: e.name,
+        jobTitle: e.title,
+        sessionId: null,
+        status: "idle",
+        agentMissing: true,
+      };
+    }
     const desk = snapshot.get(e.agentId);
     const sessionId = desk?.sessionId ?? e.desk?.sessionId ?? null;
     const liveStatus = sessionId === null ? undefined : live?.get(sessionId);
