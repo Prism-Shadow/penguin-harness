@@ -2473,11 +2473,20 @@ export class SessionManager {
    * Sent for an entry that is being disposed too, so a mark it had is cleared.
    */
   private publishApprovals(entry: RuntimeEntry): void {
-    this.deps.notifyProjectUsers?.(entry.projectId, {
-      type: "session_approvals",
-      sessionId: entry.sessionId,
-      count: entry.approvals.size,
-    });
+    try {
+      this.deps.notifyProjectUsers?.(entry.projectId, {
+        type: "session_approvals",
+        sessionId: entry.sessionId,
+        count: entry.approvals.size,
+      });
+    } catch (err) {
+      // The notifier reads the Project's audience from the database, which shutdown can close
+      // while a run outlives its drain window (the failure publishState guards too). A list
+      // mark is never worth throwing out of an approval's wait, answer or interrupt.
+      this.log(
+        `[session] approvals notice failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** Serialize (mutually exclude) execution by sessionId; cleans up the lock-table entry once its chain drains (avoids unbounded growth). */
