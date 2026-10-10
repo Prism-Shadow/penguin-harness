@@ -86,7 +86,7 @@ describe("penguin org roadmap item", () => {
         agentId: "dev1",
       },
     });
-    expect(JSON.parse(h.out[0])).toEqual(roadmap);
+    expect(JSON.parse(h.out[0]!)).toEqual(roadmap);
   });
 
   it("the list and typed flags land as themselves: employees a list, --stacked-on null a null, --proposal a number", async () => {
@@ -200,8 +200,8 @@ describe("penguin org roadmap item", () => {
       suffix: "/roadmap.item.remove/runs",
       body: { subject: "roadmap:3", params: { key: "notice-batch" }, via: "cli", agentId: "dev1" },
     });
-    expect(JSON.parse(h.out[0])).toEqual(roadmap);
+    expect(JSON.parse(h.out[0]!)).toEqual(roadmap);
     await h.exec(["org", "roadmap", "item", "remove", "3", "notice-batch", "--json"]);
-    expect(JSON.parse(h.out[1])).toEqual({ run: removeRun, result: roadmap });
+    expect(JSON.parse(h.out[1]!)).toEqual({ run: removeRun, result: roadmap });
   });
 });
