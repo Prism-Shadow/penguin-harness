@@ -15,8 +15,9 @@
  *   default_project / default_agent); Workspace = the CLI's cwd (resolved locally —
  *   server and CLI share the machine in the default flow); model = the Project default;
  *   approval mode allow-all (the historical run default).
- * - Every Session it creates is recorded as a `cli` Session (`session_meta.source`), which the
- *   Web App lists in the Background folder; `penguin chat` creates `user` Sessions instead.
+ * - Every Session it creates is recorded as a `cli` Session (`session_meta.source`), which is
+ *   archived until the user unarchives it (the Web App's Settings › Archived chats, `session ls
+ *   -a`); `penguin chat` creates `user` Sessions instead.
  * - `--session` accepts a full id or a unique fragment; it excludes `--workspace` and the
  *   model pair (neither can change after creation); `--approve` PATCHes the mode.
  * - `--title` names the Session (the manual rename the Web App's "Rename chat" does —

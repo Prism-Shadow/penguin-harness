@@ -1803,13 +1803,15 @@ export interface SessionInfo {
   title?: string;
   /**
    * What kind of conversation this is, read from core session_meta — the single source of
-   * truth (the DB stores no source). A `user` Session is an active row of the sidebar; `api`,
-   * `schedule`, `subagent` and `cli` file the row under its Background folder, marked with its
-   * source; a `company` Session is in no folder of the list at all — company mode's own views
-   * list it. A Trace head that records no source (written before it was required) reads as
-   * `company` for a row the organization runtime opened (`client: "org"`), else as `user`; so
-   * does such a row before its first run. Absent only while any other row is not yet
-   * classified (its Trace head has not been read yet), which renders as `user`.
+   * truth (the DB stores no source). With the user's marks it decides where the Session is
+   * listed (`archived`): a `user` Session is in the sidebar until archived; an `api`,
+   * `schedule` or `cli` Session is archived until the user keeps it, and in the sidebar marked
+   * with its source once kept; a `subagent` or `company` Session is in no list — its parent's
+   * Agent panel and company mode's own views open them. A Trace head that records no source
+   * (written before it was required) reads as `company` for a row the organization runtime
+   * opened (`client: "org"`), else as `user`; so does such a row before its first run. Absent
+   * only while any other row is not yet classified (its Trace head has not been read yet),
+   * which renders as `user`.
    */
   source?: SessionSource;
   createdAt: string;
@@ -3154,8 +3156,8 @@ export type ServerEvent =
   /**
    * A Session now exists. On the user channel for every creation — the CLI, another tab,
    * a schedule, an agent spawning a child — so the list learns about rows it did not make;
-   * and on the parent Session's channel for a subagent, so a tab watching the parent run
-   * refreshes in place. `source` is what the new Session's meta records.
+   * and on the parent Session's channel for a subagent, which no list shows. `source` is what
+   * the new Session's meta records, and it tells a client which list, if any, the row joins.
    */
   | {
       type: "session_created";
