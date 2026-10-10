@@ -126,7 +126,7 @@ export abstract class Traces {
     projectId: string,
     agentId: string,
     sessionId: string,
-  ): Promise<Array<{ sessionId: string; agentId: string | null }>>;
+  ): Promise<Array<{ sessionId: string; agentId: string | null; spawnedAt: string }>>;
   abstract deleteSessionTraces(
     projectId: string,
     agentId: string,

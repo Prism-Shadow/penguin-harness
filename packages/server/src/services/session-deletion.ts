@@ -8,6 +8,11 @@
  * pointer records of the parent's Trace (Traces.subagentChildren) once the parent's own runs have
  * stopped, since a run still in flight could spawn another; core spawns children one level deep,
  * and the walk recurses anyway, behind the same depth backstop the history read uses.
+ *
+ * Only the children a Session spawned itself are its own. A fork copies its source's history,
+ * the source's pointer records with it, so its Trace names children that still belong to the
+ * source — and that the source's history still shows. A pointer recorded before the Session was
+ * created is one of those copies, and the child it names is left where it is.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -31,11 +36,13 @@ export interface SessionDeletionDeps {
   sources: Pick<SessionOrigins, "delete">;
 }
 
-/** The Session to delete: its id and where its files live. */
+/** The Session to delete: its id, where its files live, and when it was created. */
 export interface DeletedSession {
   sessionId: string;
   projectId: string;
   agentId: string;
+  /** ISO time; a `subagent` pointer recorded before it was copied in by a fork. */
+  createdAt: string;
 }
 
 /** How long a deletion waits for an aborted run's interrupt cleanup before removing its files. */
@@ -84,6 +91,10 @@ async function deleteOne(
       );
       for (const child of children) {
         if (visited.has(child.sessionId)) continue;
+        // A pointer older than this Session came in with a fork's copy of its source's
+        // history: the child is the source's. An unreadable time proves nothing either way,
+        // and a child left behind costs less than one deleted from under another Session.
+        if (!(Date.parse(child.spawnedAt) >= Date.parse(row.createdAt))) continue;
         visited.add(child.sessionId);
         // The index row is the better witness of where the child lives; a child that never
         // got one (a Trace another process wrote) is found through the Trace index instead.
@@ -93,7 +104,13 @@ async function deleteOne(
         if (agentId === null) continue;
         await deleteOne(
           deps,
-          { sessionId: child.sessionId, projectId: row.projectId, agentId },
+          {
+            sessionId: child.sessionId,
+            projectId: row.projectId,
+            agentId,
+            // A child with no row was created when its pointer was recorded.
+            createdAt: childRow?.createdAt ?? child.spawnedAt,
+          },
           onDeleted,
           visited,
           depth + 1,

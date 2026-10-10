@@ -91,7 +91,8 @@ describe("the archive page", () => {
   /**
    * A Session as an earlier process left it: its index row (with `title` stored when given) and,
    * unless `trace: false`, a Trace whose head records `source` and whose first prompt is
-   * `prompt`. Each seed is newer than the one before it.
+   * `prompt`, then the `extra` records, written when the Session was (a `subagent` pointer it
+   * records is its own child). Each seed is newer than the one before it.
    */
   async function seed(
     projectId: string,
@@ -139,7 +140,7 @@ describe("the archive page", () => {
       await writeTraceFile(t.root, projectId, AGENT, DAY, sessionId, 1, [
         sessionMeta(meta as Parameters<typeof sessionMeta>[0]),
         userText(opts.prompt ?? `work ${n}`),
-        ...(opts.extra ?? []),
+        ...(opts.extra ?? []).map((message) => ({ ...message, timestamp: stamp })),
       ]);
     }
     return sessionId;

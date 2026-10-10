@@ -345,19 +345,21 @@ export class TraceService implements Traces {
   /**
    * The direct subagent children of a Session: the ids its Trace's `subagent` pointer records
    * name, in Trace order, each with the Agent whose Trace directory holds the child (a child may
-   * run under another Agent of the Project; null when no Trace of it is indexed). Deleting a
-   * Session deletes these with it. Only the pointer records matter, so each shard is scanned as
+   * run under another Agent of the Project; null when no Trace of it is indexed) and the time
+   * the pointer was recorded. A fork copies its source's records, pointers included, under their
+   * own times, so a pointer older than the Session names a child of the Session it was forked
+   * from (see session-deletion.ts). Only the pointer records matter, so each shard is scanned as
    * text and only the lines that can hold one are parsed.
    */
   async subagentChildren(
     projectId: string,
     agentId: string,
     sessionId: string,
-  ): Promise<Array<{ sessionId: string; agentId: string | null }>> {
+  ): Promise<Array<{ sessionId: string; agentId: string | null; spawnedAt: string }>> {
     const files = await this.locateAll(projectId, agentId, sessionId);
     const ctx = { projectScanned: false };
     const seen = new Set<string>([sessionId]);
-    const out: Array<{ sessionId: string; agentId: string | null }> = [];
+    const out: Array<{ sessionId: string; agentId: string | null; spawnedAt: string }> = [];
     for (const file of files) {
       let text: string;
       try {
@@ -379,6 +381,7 @@ export class TraceService implements Traces {
         out.push({
           sessionId: child,
           agentId: await this.resolveChildAgent(projectId, child, ctx),
+          spawnedAt: msg.timestamp,
         });
       }
     }
