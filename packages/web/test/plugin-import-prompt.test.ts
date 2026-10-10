@@ -1,9 +1,10 @@
 /**
  * The plugin import dialog's sources:
  *
- * - The server installs an npm package name or an https link as it is; a plain http, file or
- *   ssh link, a path, a link with credentials, an alias behind a name and a description are for
- *   an Agent instead.
+ * - The npm tab takes a package name, the link tab an https link to a repository or a tarball,
+ *   and neither takes the other's: the server reads the two apart the same way. A plain http,
+ *   file or ssh link, a path, a link with credentials, an alias behind a name and a description
+ *   go to neither; they are for an Agent instead.
  * - The Agent's prompt names the source, asks for a review before anything is installed, and
  *   installs with `penguin plugin install` in this Project; a local folder is routed to the zip
  *   upload.
@@ -14,7 +15,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   buildPluginImportPrompt,
   classifyPluginSource,
-  isDirectPluginSource,
+  isNpmPluginName,
+  isPluginLink,
   readReplaceQuestion,
 } from "../src/features/plugins/plugin-import-prompt";
 import { setActiveStrings } from "../src/lib/strings";
@@ -25,32 +27,33 @@ beforeEach(() => {
 });
 
 describe("what the server installs as it is", () => {
-  it("is a package name or an https link, and nothing else", () => {
-    for (const direct of [
-      "@acme/notes",
-      "notes@1.2.0",
-      "notes@^1.2",
-      "notes@latest",
-      "https://github.com/acme/notes",
-      "git+https://github.com/acme/notes.git",
-      "github:acme/notes#v1.0.0",
-      "https://example.com/notes-1.0.0.tgz",
-    ]) {
-      expect(isDirectPluginSource(direct), direct).toBe(true);
-    }
-    for (const other of [
-      "",
-      "the notes plugin from the docs",
-      "http://example.com/notes.tgz",
-      "file:../notes",
-      "git+ssh://git@github.com/acme/notes.git",
-      "https://user:secret@example.com/notes.tgz",
-      "notes@npm:other",
-      "/srv/plugins/notes",
-      "../notes",
-    ]) {
-      expect(isDirectPluginSource(other), other).toBe(false);
-    }
+  const names = ["@acme/notes", "notes@1.2.0", "notes@^1.2", "notes@latest"];
+  const links = [
+    "https://github.com/acme/notes",
+    "git+https://github.com/acme/notes.git",
+    "github:acme/notes#v1.0.0",
+    "https://example.com/notes-1.0.0.tgz",
+  ];
+  const neither = [
+    "",
+    "the notes plugin from the docs",
+    "http://example.com/notes.tgz",
+    "file:../notes",
+    "git+ssh://git@github.com/acme/notes.git",
+    "https://user:secret@example.com/notes.tgz",
+    "notes@npm:other",
+    "/srv/plugins/notes",
+    "../notes",
+  ];
+
+  it("is a package name on the npm tab, and nothing else", () => {
+    for (const name of names) expect(isNpmPluginName(` ${name} `), name).toBe(true);
+    for (const other of [...links, ...neither]) expect(isNpmPluginName(other), other).toBe(false);
+  });
+
+  it("is an https link on the link tab, and nothing else", () => {
+    for (const link of links) expect(isPluginLink(` ${link} `), link).toBe(true);
+    for (const other of [...names, ...neither]) expect(isPluginLink(other), other).toBe(false);
   });
 });
 

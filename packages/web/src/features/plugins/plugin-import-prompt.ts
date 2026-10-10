@@ -1,9 +1,9 @@
 /**
  * The Plugins page's import dialog, its pure half (unit tested): which pasted sources the server
- * installs as they are — an npm package name, or an https link to a git repository or a
- * tarball, the rule the server enforces (its plugin/source.ts; the server stays the authority) —
- * and the prompt that hands anything else to an Agent, which finds and reviews the package and
- * then installs it with `penguin plugin install`.
+ * installs as they are — an npm package name on the npm tab, an https link to a git repository
+ * or a tarball on the link tab: the server's two kinds of source (its plugin/source.ts; the
+ * server stays the authority) — and the prompt that hands anything else to an Agent, which finds
+ * and reviews the package and then installs it with `penguin plugin install`.
  */
 import { S } from "../../lib/strings";
 
@@ -13,11 +13,26 @@ const NPM_NAME =
 /** `github:<owner>/<repo>[#<ref>]`, npm's shorthand for a GitHub repository. */
 const GITHUB_SHORTHAND = /^github:[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(?:#[A-Za-z0-9._/-]+)?$/;
 
-/** Whether the server installs `input` as it is: a package name, or an https link without credentials. */
-export function isDirectPluginSource(input: string): boolean {
+/** Longer than any real link; the server's cap, so a pasted page is refused here too. */
+const MAX_SOURCE_LENGTH = 2048;
+
+/** The trimmed source when it is one token the server would read, else null. */
+function oneToken(input: string): string | null {
   const s = input.trim();
-  if (s === "" || s.length > 2048 || /\s/.test(s)) return false;
-  if (NPM_NAME.test(s) || GITHUB_SHORTHAND.test(s)) return true;
+  return s === "" || s.length > MAX_SOURCE_LENGTH || /\s/.test(s) ? null : s;
+}
+
+/** Whether the server installs `input` from the npm registry: a package name, optionally `@<version>`. */
+export function isNpmPluginName(input: string): boolean {
+  const s = oneToken(input);
+  return s !== null && NPM_NAME.test(s);
+}
+
+/** Whether the server fetches `input` itself: an https link without credentials, or `github:<owner>/<repo>`. */
+export function isPluginLink(input: string): boolean {
+  const s = oneToken(input);
+  if (s === null) return false;
+  if (GITHUB_SHORTHAND.test(s)) return true;
   try {
     const url = new URL(s.startsWith("git+") ? s.slice("git+".length) : s);
     return url.protocol === "https:" && url.username === "" && url.password === "";

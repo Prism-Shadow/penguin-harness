@@ -177,11 +177,12 @@ Any plugin can be exported, and an admin can install more on the server: a plugi
 
 To export a plugin, open its details and select **Export**. The download is the plugin's package as a zip, named `<name>-v<version>.zip`, which another server imports as it is. Anyone who can open the **Plugins** page can export a plugin whose package is on this server.
 
-To import a plugin, select **Import plugin** in the page header. Only admins see the button. The dialog offers three ways:
+To import a plugin, select **Import plugin** in the page header. Only admins see the button. Each tab of the dialog is one way in, and it opens on **From npm**:
 
-- **Install from npm or a link**: type an npm package name, such as `@scope/name` or `name@1.2.0`, or an https link to a git repository or a tarball, such as `https://github.com/acme/penguin-notes`, and select **Install**. The server installs it with npm. A link or a name it cannot read, such as a path or an `http:` link, is refused before anything runs.
-- **Or let an agent install it in a chat**: for a web page, a repository or a description, type the source. The dialog builds a prompt for the Project's default agent, which reviews the package before installing it with [`penguin plugin install`](/cli#penguin-plugin). Select **Copy prompt**, or **Open a new chat** to start a draft with it; nothing is sent until you send it.
-- **Upload a plugin zip**: choose a zip of a plugin's package directory, such as an exported plugin. `package.json` sits at its root or in its one top-level directory, and it holds no `node_modules`. When the server has another version of the package, the dialog asks before replacing it. Upload only what you trust.
+- **From npm**: type an npm package name, which may carry a version, range or tag, such as `@scope/name` or `name@1.2.0`, and select **Install**. The server installs it from the npm registry.
+- **From a link**: type an https link to a git repository or a tarball, such as `https://github.com/acme/penguin-notes`, and select **Install**. The server fetches and installs it with npm, from any https address you give, internal ones included. A path, an `http:` link or a link with credentials is refused before anything runs.
+- **Upload a zip**: choose a zip of a plugin's package directory, such as an exported plugin. `package.json` sits at its root or in its one top-level directory, and it holds no `node_modules`. When the server has another version of the package, the dialog asks before replacing it. Upload only what you trust.
+- **Ask an agent**: for a web page, a repository or a description, type the source. The dialog builds a prompt for the Project's default agent, which reviews the package before installing it with [`penguin plugin install`](/cli#penguin-plugin). Select **Copy prompt**, or **Open a new chat** to start a draft with it; nothing is sent until you send it.
 
 However it arrives, the package's install scripts run on the server as the server's user, as when a package is installed from npm. A package under the name of a server plugin that ships with PenguinHarness is refused, and so is a package that turns out not to be a plugin; by the time a link is refused, its install scripts have already run.
 

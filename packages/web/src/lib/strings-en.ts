@@ -2415,21 +2415,33 @@ export const en: Strings = {
     deleteConfirmBody: (name: string) =>
       `${name} leaves the server and the plugin library; the copies of its skills and hooks installed on agents stay.`,
     deletedToast: (name: string) => `Deleted ${name} from the server`,
-    /** The import dialog (admin): npm or a link, an Agent in a chat, or an uploaded zip. */
+    /** The import dialog (admin): a tab for each way in — npm, a link, a zip, or an Agent in a chat. */
     importPlugin: "Import plugin",
     importServerWide: "A plugin is installed on the whole server and shared by every Project.",
-    importDirectTitle: "Install from npm or a link",
-    importDirectWhy:
-      "An npm package name, name@version, or an https link to a git repository or a tarball; the server installs it directly.",
-    importSpecifierLabel: "Package name or link",
-    importSpecifierPlaceholder: "@scope/name, name@1.2.0 or https://github.com/…",
-    importSpecifierInvalid:
-      "Not an npm package name or an https link; for anything else, let an agent install it in a chat.",
+    importTabs: {
+      npm: "From npm",
+      link: "From a link",
+      zip: "Upload a zip",
+      agent: "Ask an agent",
+    },
+    /** The npm tab: a package name, which the server installs from the registry itself. */
+    importNpmWhy:
+      "An npm package name, which may carry a version, range or tag; the server installs it from the npm registry.",
+    importNpmLabel: "npm package name",
+    importNpmPlaceholder: "@scope/name or name@1.2.0",
+    importNpmInvalid:
+      "Not an npm package name; give a link under From a link, and let an agent install anything else.",
+    /** The link tab: an https link npm fetches, from wherever the server's network reaches. */
+    importLinkWhy:
+      "An https link to a git repository or a tarball; the server fetches and installs it — from any https address you give, internal ones included.",
+    importLinkLabel: "Link",
+    importLinkPlaceholder: "https://github.com/… or github:owner/repo",
+    importLinkInvalid:
+      "Not an https link; give a package name under From npm, and let an agent install anything else.",
     importCost:
       "When the plugin carries server modules, installing reloads the server's plugins, which stops the agent runs in progress in every Project.",
-    /** Under the npm / link install and the zip upload: what installing runs, said plainly. */
+    /** On the npm, link and zip tabs: what installing runs, said plainly. */
     importScriptsRun: "The package's install scripts run on the server as the server's user.",
-    importAgentTitle: "Or let an agent install it in a chat",
     importAgentWhy:
       "For a page, a repository or a description: the agent finds and reviews the package first, then installs it with penguin plugin install.",
     importSourceLabel: "Plugin source",
@@ -2445,8 +2457,7 @@ export const en: Strings = {
         `Find the PenguinHarness plugin described here and install it on this server: ${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `A plugin is an npm package that runs on the server: before installing anything, read its package.json, plugin.json and every script it ships, and say what it does and what it would run. If it is not a PenguinHarness plugin (a plugin.json beside skills/ or hooks/, or the ifaces.json of server modules), or anything in it looks unsafe, stop and tell me. Then install it with \`penguin plugin install <npm name or https link> --project-id ${projectId}\` and report the installed name and version. Do not install a local folder: zip it without node_modules and tell me where the zip is, and I will upload it with "Upload a plugin zip".`,
-    importUploadTitle: "Upload a plugin zip",
+      `A plugin is an npm package that runs on the server: before installing anything, read its package.json, plugin.json and every script it ships, and say what it does and what it would run. If it is not a PenguinHarness plugin (a plugin.json beside skills/ or hooks/, or the ifaces.json of server modules), or anything in it looks unsafe, stop and tell me. Then install it with \`penguin plugin install <npm name or https link> --project-id ${projectId}\` and report the installed name and version. Do not install a local folder: zip it without node_modules and tell me where the zip is, and I will upload it under "Upload a zip".`,
     importUploadDesc:
       "A zip of the plugin's package directory: package.json at its root or in its one top-level directory, no node_modules — such as another server's Export. Upload only what you trust.",
     importUploadAction: "Choose a zip file",

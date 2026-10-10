@@ -41,7 +41,6 @@ import {
   ConfirmModal,
   GlyphIcon,
   ICONS,
-  ICON_SIZE,
   Notice,
   PageFrame,
   PageHeader,
@@ -957,9 +956,10 @@ export function PluginControls({
 /**
  * The page header's actions, the Models page's shape: search for everyone (a member filters the
  * list too), then, for an admin, the machine picker (which machine's plugins the rows show, and
- * which table an install or a removal edits: the shared one, or that machine's own), Import
- * plugin, and Settings, which opens the Settings dialog's Plugins page. Settings is a secondary
- * button in the Agents page header's look: the small rung, its glyph before words that always show.
+ * which table an install or a removal edits: the shared one, or that machine's own), then the
+ * pair the Agents page header has, in its look: Import plugin, the primary button, and Settings,
+ * the secondary one, which opens the Settings dialog's Plugins page — the small rung, each glyph
+ * before words that always show.
  */
 export function PluginsHeaderActions({
   query,
@@ -992,20 +992,16 @@ export function PluginsHeaderActions({
       {isAdmin && (
         <>
           {machinePicker}
-          <Button
-            size="sm"
-            className="h-8 shrink-0"
-            aria-label={S.plugins.importPlugin}
-            title={S.plugins.importPlugin}
-            onClick={onImport}
-          >
-            <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
-            <span className="hidden @3xl:inline">{S.plugins.importPlugin}</span>
-          </Button>
-          <Button size="sm" variant="secondary" onClick={onOpenSettings}>
-            <GlyphIcon d={ICONS.gear} />
-            {S.plugins.openSettings}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="primary" onClick={onImport}>
+              <GlyphIcon d={ICONS.upload} />
+              {S.plugins.importPlugin}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={onOpenSettings}>
+              <GlyphIcon d={ICONS.gear} />
+              {S.plugins.openSettings}
+            </Button>
+          </div>
         </>
       )}
     </>

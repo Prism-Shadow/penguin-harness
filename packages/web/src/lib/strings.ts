@@ -2500,20 +2500,30 @@ export const zh = {
     deleteConfirmBody: (name: string) =>
       `将从服务端删除 ${name}，插件库不再列出它；各 Agent 已安装的技能与钩子副本不受影响。`,
     deletedToast: (name: string) => `已从服务端删除 ${name}`,
-    /** The import dialog (admin): npm or a link, an Agent in a chat, or an uploaded zip. */
+    /** The import dialog (admin): a tab for each way in — npm, a link, a zip, or an Agent in a chat. */
     importPlugin: "导入插件",
     importServerWide: "插件安装到整个服务端，所有 Project 共用。",
-    importDirectTitle: "从 npm 或链接安装",
-    importDirectWhy:
-      "npm 包名、name@版本，或指向 git 仓库或 tarball 的 https 链接，由服务端直接安装。",
-    importSpecifierLabel: "包名或链接",
-    importSpecifierPlaceholder: "@scope/name、name@1.2.0 或 https://github.com/…",
-    importSpecifierInvalid: "不是 npm 包名或 https 链接；其他来源请让 Agent 在对话中安装。",
+    importTabs: {
+      npm: "从 npm 安装",
+      link: "从链接安装",
+      zip: "上传 zip 包",
+      agent: "让 Agent 安装",
+    },
+    /** The npm tab: a package name, which the server installs from the registry itself. */
+    importNpmWhy: "npm 包名，可带版本、范围或标签，由服务端直接从 npm 仓库安装。",
+    importNpmLabel: "npm 包名",
+    importNpmPlaceholder: "@scope/name 或 name@1.2.0",
+    importNpmInvalid: "不是 npm 包名；链接请在「从链接安装」中填写，其他来源请让 Agent 安装。",
+    /** The link tab: an https link npm fetches, from wherever the server's network reaches. */
+    importLinkWhy:
+      "指向 git 仓库或 tarball 的 https 链接，由服务端直接获取并安装；服务端会访问你给出的任意 https 地址，包括内网地址。",
+    importLinkLabel: "链接",
+    importLinkPlaceholder: "https://github.com/… 或 github:owner/repo",
+    importLinkInvalid: "不是 https 链接；包名请在「从 npm 安装」中填写，其他来源请让 Agent 安装。",
     importCost:
       "插件带有服务端模块时，安装会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。",
-    /** Under the npm / link install and the zip upload: what installing runs, said plainly. */
+    /** On the npm, link and zip tabs: what installing runs, said plainly. */
     importScriptsRun: "这个包的安装脚本会以服务端用户的身份在服务器上运行。",
-    importAgentTitle: "或让 Agent 在对话中安装",
     importAgentWhy:
       "适合网页、仓库或一段描述：Agent 先找到并审阅插件包，再用 penguin plugin install 安装。",
     importSourceLabel: "插件来源",
@@ -2529,8 +2539,7 @@ export const zh = {
         `找到下面描述的 PenguinHarness 插件并安装到本服务端：${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `插件是在服务端运行的 npm 包：安装前先读完它的 package.json、plugin.json 和随附的全部脚本，说明它做什么、会运行什么；它不是 PenguinHarness 插件（plugin.json 旁有 skills/ 或 hooks/，或带服务端模块的 ifaces.json），或其中有任何可疑之处时，停下来告诉我。确认无误后运行 \`penguin plugin install <npm 包名或 https 链接> --project-id ${projectId}\` 安装，并报告装上的包名和版本。来源是本地文件夹时不要安装：把它打成 zip（不含 node_modules），告诉我 zip 的位置，由我在「上传插件 zip 包」中上传。`,
-    importUploadTitle: "上传插件 zip 包",
+      `插件是在服务端运行的 npm 包：安装前先读完它的 package.json、plugin.json 和随附的全部脚本，说明它做什么、会运行什么；它不是 PenguinHarness 插件（plugin.json 旁有 skills/ 或 hooks/，或带服务端模块的 ifaces.json），或其中有任何可疑之处时，停下来告诉我。确认无误后运行 \`penguin plugin install <npm 包名或 https 链接> --project-id ${projectId}\` 安装，并报告装上的包名和版本。来源是本地文件夹时不要安装：把它打成 zip（不含 node_modules），告诉我 zip 的位置，由我在「上传 zip 包」中上传。`,
     importUploadDesc:
       "插件包目录的 zip：package.json 在根目录或唯一的顶层目录内，不含 node_modules，例如另一台服务端「导出」的文件。只上传你信任的来源。",
     importUploadAction: "选择 zip 文件",
