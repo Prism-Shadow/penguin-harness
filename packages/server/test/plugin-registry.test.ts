@@ -63,10 +63,18 @@ describe("parsePluginIndex", () => {
   it("accepts a flat array of per-version entries and preserves order", () => {
     const doc = [
       VALID_ENTRY,
-      { ...VALID_ENTRY, version: "1.1.0", keywords: ["linux"], updatedAt: 1755600000 },
+      {
+        ...VALID_ENTRY,
+        version: "1.1.0",
+        keywords: ["linux"],
+        os: ["linux"],
+        updatedAt: 1755600000,
+      },
     ];
     const parsed = parsePluginIndex(doc, "test");
     expect(parsed.map((e) => e.version)).toEqual(["1.0.0", "1.1.0"]);
+    // A present `os` — the platforms the plugin runs on — validates and is carried through.
+    expect(parsed[1].os).toEqual(["linux"]);
   });
 
   it("rejects a non-array document and names the source", () => {
@@ -81,6 +89,7 @@ describe("parsePluginIndex", () => {
       { ...VALID_ENTRY, version: 2 },
       { ...VALID_ENTRY, authors: "Example" },
       { ...VALID_ENTRY, keywords: [1] },
+      { ...VALID_ENTRY, os: "linux" },
       { ...VALID_ENTRY, updatedAt: "yesterday" },
       // A present integrity must be a key the store can use.
       { ...VALID_ENTRY, integrity: "sha512-abc" },
@@ -313,6 +322,28 @@ describe("the builtin index and the packages it lists", () => {
     for (const [name, { dir }] of sandboxes) {
       expect(name, `plugins/${dir}`).toBe(`@penguinharness/${dir}`);
     }
+  });
+
+  it("marks each backend with the platforms it runs on, in process.platform words", () => {
+    // The index the build carries is rebuilt from the packages' own package.json, so the
+    // mark is whatever the package declares — asserted per backend, since a backend that
+    // drops it would install as a plain plugin on a platform it cannot run on.
+    const platforms = ["linux", "darwin", "win32"];
+    const entryOf = (name: string) => {
+      const pkg = packages.get(name);
+      if (pkg === undefined) throw new Error(`${name} is not a plugin package`);
+      return manifestOf(pkg.manifest as never, name, pkg.manifest.version, hash("c"));
+    };
+    for (const [name, { manifest }] of built) {
+      const entry = manifestOf(manifest as never, name, manifest.version, hash("c"));
+      for (const os of entry.os ?? []) expect(platforms, name).toContain(os);
+    }
+    const osOf = (name: string) => entryOf(name).os;
+    expect(osOf("@penguinharness/sandbox-bwrap")).toEqual(["linux"]);
+    expect(osOf("@penguinharness/sandbox-seatbelt")).toEqual(["darwin"]);
+    expect(osOf("@penguinharness/sandbox-wsl")).toEqual(["win32"]);
+    // sandbox-dsh runs everywhere.
+    expect(osOf("@penguinharness/sandbox-dsh")).toBeUndefined();
   });
 
   it("describes every package the build ships from its own package.json", () => {

@@ -248,13 +248,15 @@ export function PluginsPage() {
   const [installed, setInstalled] = useState<InstalledMap>(new Map());
   /** What this Project asks for of the module plugins, and which of those the process runs. */
   const [deployment, setDeployment] = useState<InstalledPluginsResponse | null>(null);
-  /** The registry: every module plugin this deployment could ask for. */
+  /** The registry: every module plugin this deployment could ask for. Null until it answers. */
   const [index, setIndex] = useState<PluginIndexEntry[] | null>(null);
   /**
-   * Sources that answered with nothing. A published index that is down shortens the list
-   * instead of emptying it (the server merges tolerantly), so the page has to say so — a
-   * silently shorter list reads as "that plugin does not exist".
+   * The registry's request failed. A published index that is down shortens the list instead
+   * of emptying it (the server merges tolerantly), and the whole request failing leaves none
+   * of it — so the page has to say so: a silently shorter list reads as "that plugin does
+   * not exist", and a missing entry must not claim the registry had answered.
    */
+  const [registryFailed, setRegistryFailed] = useState(false);
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
@@ -332,9 +334,15 @@ export function PluginsPage() {
       (res) => {
         if (cancelled) return;
         setIndex(res);
+        setRegistryFailed(false);
       },
       () => {
-        if (!cancelled) setIndex([]);
+        // An empty answer is an answer; a failed request is not, and the rows with no entry
+        // must not read as though the registry had said "not listed".
+        if (!cancelled) {
+          setIndex([]);
+          setRegistryFailed(true);
+        }
       },
     );
     return () => {
@@ -685,6 +693,9 @@ export function PluginsPage() {
 
   const allInstalled = installedPluginRows(groups ?? [], locale, deployment, index ?? [], view);
   const allAvailable = availablePluginRows(deployment, index ?? [], view);
+  /** The registry as an installed row reads it: not answered yet, failed, or answered. */
+  const registry: "loading" | "failed" | "answered" =
+    index === null ? "loading" : registryFailed ? "failed" : "answered";
   const facets = pluginFacets([...allInstalled, ...allAvailable]);
   const picked = { categories: pickedCategories, kinds: pickedKinds, states: pickedStates };
   const filtering =
@@ -836,6 +847,8 @@ export function PluginsPage() {
                     unsatisfied={row.unsatisfied}
                     shipped={row.shipped}
                     shared={row.shared}
+                    version={row.version}
+                    registry={registry}
                     busy={pendingSpecifier === row.specifier}
                     blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
                     onInstall={null}
@@ -882,6 +895,7 @@ export function PluginsPage() {
                     entry={row.entry}
                     state={row.state}
                     shipped={row.shipped}
+                    otherPlatform={row.otherPlatform}
                     busy={pendingSpecifier === row.specifier}
                     blocked={
                       viewMachine === undefined ||
@@ -1027,6 +1041,16 @@ interface ModulePluginRow {
   shipped: boolean;
   /** Listed in the shared table: every machine runs it, and the page does not edit that table. */
   shared?: true;
+  /**
+   * The version of the copy the machine in view resolves — what is on its disk, which can lag
+   * what the registry lists. Installed rows only; shown instead of the registry's number.
+   */
+  version?: string;
+  /**
+   * The platforms the registry says it runs on, when the machine in view is none of them
+   * (`process.platform` words). Such a row is not a plain install: it says so, and offers none.
+   */
+  otherPlatform?: string[];
 }
 /**
  * What a listed module plugin is on the machine in view: running; waiting for a runtime that
@@ -1134,6 +1158,45 @@ function stateIn(
 }
 
 /**
+ * The version of the copy the machine in view has on disk: that machine's own answer for
+ * another machine, this server's otherwise — what it resolves there, which is not
+ * necessarily what the registry lists (a machine can hold an older copy than the index).
+ */
+function versionIn(
+  listed: InstalledPluginsResponse["plugins"][number],
+  view: PluginView | undefined,
+  selfId: string | undefined,
+): string | undefined {
+  if (view === undefined || view.machineId === selfId) return listed.version;
+  return view.remote?.plugins.find((p) => p.specifier === listed.specifier)?.version;
+}
+
+/**
+ * The platforms an entry runs on when the machine in view is none of them, else undefined.
+ * Unknown either way — no `os` on the entry, or a server too old to say its platform — reads
+ * as applicable: the backend itself still declines to load where it cannot run.
+ */
+function otherPlatformOf(
+  entry: PluginIndexEntry | undefined,
+  platform: string | undefined,
+): string[] | undefined {
+  const os = entry?.os;
+  if (os === undefined || os.length === 0 || platform === undefined) return undefined;
+  return os.includes(platform) ? undefined : os;
+}
+
+/** A `process.platform` word as people name the OS; the same in every UI language. */
+export function platformName(platform: string): string {
+  return platform === "darwin"
+    ? "macOS"
+    : platform === "win32"
+      ? "Windows"
+      : platform === "linux"
+        ? "Linux"
+        : platform;
+}
+
+/**
  * What is installed, in one list: the library's plugins — they ship with the build, so
  * every Agent may use them, and the category their group gave them rides along as a tag —
  * followed by the module plugins the machine in view runs (its own table and the shared one;
@@ -1155,11 +1218,13 @@ export function installedPluginRows(
   }
   for (const listed of deployment?.plugins ?? []) {
     if (!runsOn(listed, machineId)) continue;
+    const version = versionIn(listed, view, deployment?.machineId);
     rows.push({
       kind: "module",
       specifier: listed.specifier,
       entry: indexEntryOf(index, listed.specifier),
       ...stateIn(listed, view, deployment?.machineId),
+      ...(version === undefined ? {} : { version }),
       shipped:
         listed.builtin || (view?.remote ?? deployment)?.shipped.includes(listed.specifier) === true,
       // Shown as shared even when the machine's own table lists it too: removing it from
@@ -1187,7 +1252,8 @@ export function indexEntryOf(
 /**
  * What could be asked for: the index's entries this Project does not list yet, and what
  * the build ships that the index does not know (offered with no description — the build
- * has it, so it is installable without a download).
+ * has it, so it is installable without a download). An entry for another platform than the
+ * machine in view's is kept, marked, and sorted after the rest: it is not a plain install.
  */
 export function availablePluginRows(
   deployment: InstalledPluginsResponse | null,
@@ -1200,20 +1266,23 @@ export function availablePluginRows(
   const listed = new Set(
     (deployment?.plugins ?? []).filter((p) => runsOn(p, machineId)).map((p) => p.specifier),
   );
-  // What the machine in view ships, when it answered; this server's otherwise.
-  const shippedList = (view?.remote ?? deployment)?.shipped ?? [];
+  // What the machine in view ships and runs on, when it answered; this server's otherwise.
+  const answer = view?.remote ?? deployment;
+  const shippedList = answer?.shipped ?? [];
   const seen = new Set<string>();
   const rows: ModulePluginRow[] = [];
   for (const { name } of index) {
     if (listed.has(name) || seen.has(name)) continue;
     seen.add(name);
     const entry = indexEntryOf(index, name)!;
+    const otherPlatform = otherPlatformOf(entry, answer?.platform);
     rows.push({
       kind: "module",
       specifier: entry.name,
       entry,
       state: "none",
       shipped: shippedList.includes(entry.name),
+      ...(otherPlatform === undefined ? {} : { otherPlatform }),
     });
   }
   for (const name of shippedList) {
@@ -1221,7 +1290,11 @@ export function availablePluginRows(
     seen.add(name);
     rows.push({ kind: "module", specifier: name, entry: undefined, state: "none", shipped: true });
   }
-  return rows;
+  // Stable within each half: the registry's order. Other platforms sort last.
+  return [
+    ...rows.filter((r) => r.otherPlatform === undefined),
+    ...rows.filter((r) => r.otherPlatform !== undefined),
+  ];
 }
 
 /**
@@ -1809,6 +1882,9 @@ export function ModuleRow({
   unsatisfied,
   shipped,
   shared,
+  version,
+  otherPlatform,
+  registry = "answered",
   busy,
   blocked,
   onInstall,
@@ -1819,6 +1895,12 @@ export function ModuleRow({
   specifier: string;
   entry: PluginIndexEntry | undefined;
   state: ModuleState;
+  /** The version of the copy on the machine in view's disk, for an installed row: shown instead of the registry's. */
+  version?: string;
+  /** The platforms it runs on, when the machine in view is none of them: marked, and no Install. */
+  otherPlatform?: string[];
+  /** Whether the registry has not answered yet, or its request failed — a missing entry then says nothing or why. */
+  registry?: "loading" | "failed" | "answered";
   /** Why it failed to load, when it did. */
   error?: string;
   /** What the running build lacks for it, when it cannot fully run it. */
@@ -1842,24 +1924,30 @@ export function ModuleRow({
   // A shared row's disabled Remove is described by its visible tag and the hint the tag's
   // tooltip shows, so a screen reader learns why it is unavailable without hovering.
   const sharedId = useId();
+  const platforms = otherPlatform?.map(platformName).join(" / ");
   const stateText =
-    state === "active"
-      ? S.plugins.stateActive
-      : state === "pending"
-        ? S.plugins.installedRestart
-        : state === "failed"
-          ? S.plugins.stateFailed
-          : state === "disabled"
-            ? S.plugins.stateDisabled
-            : state === "unsynced"
-              ? S.plugins.notSynced
-              : S.plugins.notInstalled;
+    platforms !== undefined && state === "none"
+      ? S.plugins.otherPlatform(platforms)
+      : state === "active"
+        ? S.plugins.stateActive
+        : state === "pending"
+          ? S.plugins.installedRestart
+          : state === "failed"
+            ? S.plugins.stateFailed
+            : state === "disabled"
+              ? S.plugins.stateDisabled
+              : state === "unsynced"
+                ? S.plugins.notSynced
+                : S.plugins.notInstalled;
   // Metadata line, the library card's shape: version · updated · what it is here.
   const updated =
     entry?.updatedAt === undefined
       ? null
       : formatRelativeDate(new Date(entry.updatedAt * 1000).toISOString().slice(0, 10), locale);
-  const meta = [entry === undefined ? null : `v${entry.version}`, updated]
+  // An installed row states what is on disk; the registry's number is what an install of an
+  // available row would be offered — not what an older copy already installed is.
+  const shownVersion = state === "none" ? entry?.version : version;
+  const meta = [shownVersion === undefined ? null : `v${shownVersion}`, updated]
     .filter((v): v is string => v !== null)
     .join(" · ");
   // An index entry that names no integrity: listed, but neither the build nor this machine's
@@ -1887,7 +1975,17 @@ export function ModuleRow({
             data-tooltip={entry?.description}
             data-tooltip-content="text"
           >
-            {entry?.description ?? S.plugins.shippedNoEntry}
+            {entry?.description ??
+              // Before the registry answers, a missing entry says nothing: a no-break space
+              // holds the line rather than claiming "no entry" that the answer may contradict;
+              // a failed request says why, for the same reason.
+              (registry === "loading"
+                ? "\u00a0"
+                : registry === "failed"
+                  ? S.plugins.registryUnavailable
+                  : shipped
+                    ? S.plugins.shippedNoEntry
+                    : S.plugins.noEntry)}
           </p>
         </div>
       </div>
@@ -1993,8 +2091,12 @@ export function ModuleRow({
                 className="h-8 shrink-0"
                 aria-label={`${busy ? S.plugins.installing : S.plugins.install} ${specifier}`}
                 aria-busy={busy}
-                title={cannotInstall ?? (busy ? S.plugins.installing : S.plugins.install)}
-                disabled={busy || blocked || cannotInstall !== null}
+                title={
+                  platforms !== undefined
+                    ? S.plugins.otherPlatformHint(platforms)
+                    : cannotInstall ?? (busy ? S.plugins.installing : S.plugins.install)
+                }
+                disabled={busy || blocked || cannotInstall !== null || platforms !== undefined}
                 onClick={onInstall}
               >
                 {busy ? (

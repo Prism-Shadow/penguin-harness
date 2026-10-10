@@ -404,7 +404,9 @@ export interface PluginDeclaration {
 export async function readPluginDeclaration(
   specifier: string,
   bases: readonly PluginBase[],
-): Promise<{ modules: string[]; replaces: string[]; builtin: boolean } | { error: string }> {
+): Promise<
+  { modules: string[]; replaces: string[]; builtin: boolean; version?: string } | { error: string }
+> {
   const fault = specifierFault(specifier);
   if (fault !== null) return { error: fault };
   const resolved = resolvePlugin(specifier, bases);
@@ -423,11 +425,23 @@ export async function readPluginDeclaration(
     return { error: err instanceof Error ? err.message : String(err) };
   }
   if (read === null) return { error: `no package.json above ${resolved.file}` };
+  const version = await readManifestVersion(read.where);
   return {
     modules: [...read.plugin.modules],
     replaces: [...read.plugin.replaces],
     builtin: resolved.base.builtin,
+    ...(version === undefined ? {} : { version }),
   };
+}
+
+/** The `version` a package.json states, or undefined when it states none or cannot be read. */
+async function readManifestVersion(manifest: string): Promise<string | undefined> {
+  try {
+    const { version } = JSON.parse(await fs.readFile(manifest, "utf8")) as { version?: unknown };
+    return typeof version === "string" ? version : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

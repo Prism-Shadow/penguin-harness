@@ -8,6 +8,9 @@
   "categories": [
     "sandbox"
   ],
+  "penguinOs": [
+    "darwin"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",

@@ -292,6 +292,31 @@ describe("installed plugins", () => {
     });
   });
 
+  it("reports the version of the copy on disk, not the one an index lists", async () => {
+    // An index can name a version the copy on this machine is not: the store keys an entry
+    // by the package's own package.json, and the row describes what resolves here — the
+    // page shows the copy this server runs, whatever the listing claims.
+    await ship({ name: "@acme/disk", module: "Disk", version: "0.2.2" });
+    const indexFile = path.join(t.root, "install", "plugins", "index.json");
+    const rows = JSON.parse(await fs.readFile(indexFile, "utf8")) as {
+      name: string;
+      version: string;
+    }[];
+    rows.find((r) => r.name === "@acme/disk")!.version = "0.2.3";
+    await fs.writeFile(indexFile, JSON.stringify(rows));
+    const saved = await admin.put("/api/projects/default_project/plugins/installed", {
+      plugins: ["@acme/disk"],
+    });
+    expect(saved.status).toBe(200);
+    const res = await view();
+    expect(res.platform).toBe(process.platform);
+    expect(res.plugins[0]).toMatchObject({
+      specifier: "@acme/disk",
+      version: "0.2.2",
+      active: true,
+    });
+  });
+
   it("reports why a listed plugin failed to load, not a restart that would not help", async () => {
     // A shipped package that throws on import.
     await ship({

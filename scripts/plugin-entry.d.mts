@@ -37,6 +37,8 @@ export interface EntryManifest {
   homepage?: string;
   keywords?: string[];
   categories?: string[];
+  /** The platforms the plugin runs on, `process.platform` words; absent means every platform. */
+  os?: string[];
   integrity: string;
 }
 export declare function manifestOf(

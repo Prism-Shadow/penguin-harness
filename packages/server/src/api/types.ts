@@ -4281,6 +4281,14 @@ export interface PluginIndexEntry {
   keywords?: string[];
   /** Capability floor(s) the plugin provides on (e.g. "sandbox"). */
   categories?: string[];
+  /**
+   * The platforms the plugin runs on, in package.json's `os` vocabulary (`process.platform`
+   * values: "linux", "darwin", "win32"). Absent means every platform. The builtin index reads
+   * it from the package's own `penguinOs` field rather than npm's `os`, which would make npm
+   * refuse the package outright — and the builtin prefix installs every backend on every
+   * platform it is built on.
+   */
+  os?: string[];
   /** Unix timestamp (seconds) of the entry's last update. */
   updatedAt?: number;
   /**
@@ -7262,6 +7270,12 @@ export interface InstalledPlugin {
   /** Node names the package declares it stands in for. */
   replaces: string[];
   /**
+   * The version of the copy this server resolves, read from its own package.json — what is on
+   * disk, which is not necessarily what a registry lists (a data-root install shadows the
+   * shipped copy). Absent when the package does not resolve here.
+   */
+  version?: string;
+  /**
    * Why the package is not running: unresolvable, or a load that
    * failed (an import that threw, a module name another plugin already took). Only ever
    * reported for a plugin this server is asked to run (`here`).
@@ -7297,6 +7311,12 @@ export interface InstalledPluginsResponse {
   file: string;
   /** This server's own machine id — the key of its `[plugins.<machineId>]` table. */
   machineId: string;
+  /**
+   * The platform this server runs on (`process.platform`), matched against an index entry's
+   * `os`: the page marks a plugin for another platform rather than offering it as a plain
+   * install. Absent from servers that predate it.
+   */
+  platform?: string;
   /** A listed plugin neither runs, nor failed to load, nor is one this build cannot run: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
 }

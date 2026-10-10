@@ -226,7 +226,10 @@ const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v 
 /**
  * The index manifest of a package, from its own package.json, with `integrity`. `categories`
  * is the package's own top-level field (the shape VS Code's extension manifests use): npm
- * has no such field, and the index needs one to group the catalogue.
+ * has no such field, and the index needs one to group the catalogue. `os` — the platforms the
+ * plugin runs on, `process.platform` words — is the package's `penguinOs`: a private field,
+ * because npm's own `os` would make npm refuse the package on every other platform, and the
+ * builtin prefix installs every backend on every platform it is built on.
  */
 export function manifestOf(pkg, name, version, integrity) {
   const authors = [pkg.author, ...(Array.isArray(pkg.contributors) ? pkg.contributors : [])]
@@ -242,6 +245,7 @@ export function manifestOf(pkg, name, version, integrity) {
         : undefined;
   const keywords = strings(pkg.keywords);
   const categories = strings(pkg.categories);
+  const os = strings(pkg.penguinOs);
   return {
     name,
     version,
@@ -252,6 +256,7 @@ export function manifestOf(pkg, name, version, integrity) {
     ...(typeof pkg.homepage === "string" ? { homepage: pkg.homepage } : {}),
     ...(keywords.length > 0 ? { keywords } : {}),
     ...(categories.length > 0 ? { categories } : {}),
+    ...(os.length > 0 ? { os } : {}),
     integrity,
   };
 }

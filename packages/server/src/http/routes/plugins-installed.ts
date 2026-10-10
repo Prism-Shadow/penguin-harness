@@ -186,6 +186,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         builtin: shipped.includes(specifier),
         modules: declared.modules,
         replaces: declared.replaces,
+        ...(declared.version === undefined ? {} : { version: declared.version }),
         ...(!active && failure !== undefined ? { error: failure } : {}),
         ...(unmet !== undefined
           ? { unsatisfied: { disabled: unmet.disabled, reason: unmet.reason } }
@@ -200,6 +201,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       shipped,
       file: PLUGINS_FILE,
       machineId: deps.machineId,
+      platform: process.platform,
       // A plugin this server is asked to run that neither runs nor failed is waiting for a
       // runtime that can re-assemble the App — otherwise applying already loaded it. One
       // this build cannot run is not waiting: a restart boots the same build.

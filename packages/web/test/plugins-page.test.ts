@@ -6,6 +6,9 @@
  *   tagged and not removable, its own rows removable, another machine's plugin offered; a
  *   plugin in this server's table alone counts as installed. Another machine: the state that
  *   machine reports, and what it has not received yet.
+ * - An installed row carries the version on that machine's disk, not the registry's. An entry
+ *   for another platform than the machine in view's is marked and sorted last; unknown
+ *   platforms mark nothing.
  * - A plugin is installed on an Agent once any part of it is there (a skill, or its hook
  *   package), read off the two installed lists; nothing is installed for an Agent with no
  *   snapshot or for a plugin that ships nothing.
@@ -17,7 +20,7 @@
  *   every plugin it is behind on, and counts distinct plugins as the notice does.
  */
 import { describe, expect, it } from "vitest";
-import type { InstalledPluginsResponse } from "@prismshadow/penguin-server/api";
+import type { InstalledPluginsResponse, PluginIndexEntry } from "@prismshadow/penguin-server/api";
 import {
   availablePluginRows,
   installedPluginRows,
@@ -61,6 +64,16 @@ const deployment: InstalledPluginsResponse = {
 
 const modules = (rows: ReturnType<typeof installedPluginRows>) =>
   rows.flatMap((r) => (r.kind === "module" ? [r] : []));
+
+/** One registry entry, as the merged index would list it — optionally for one platform only. */
+const entry = (name: string, os?: string[]): PluginIndexEntry => ({
+  name,
+  version: "0.2.3",
+  description: `${name}, as the registry describes it`,
+  authors: [],
+  license: "MIT",
+  ...(os === undefined ? {} : { os }),
+});
 
 describe("plugin rows per machine", () => {
   it("this server: its own table and the shared one, and only its own rows can be removed", () => {
@@ -302,5 +315,72 @@ describe("pluginUpdatePlan", () => {
     ]);
     expect(plan.plugins).toEqual(["shared"]);
     expect(plan.perAgent).toHaveLength(3);
+  });
+});
+
+describe("module plugin versions and platforms", () => {
+  it("an installed row carries the version on that machine's disk, not the registry's", () => {
+    const onDisk: InstalledPluginsResponse = {
+      ...deployment,
+      plugins: [
+        {
+          ...row("@acme/shared", { everywhere: true, machines: [], here: true }),
+          version: "0.2.2",
+        },
+      ],
+    };
+    const view: PluginView = { machineId: SELF, remote: null };
+    // The registry lists 0.2.3; the copy this server resolves and runs is 0.2.2, and that is
+    // what the row states.
+    const rows = modules(installedPluginRows([], "en", onDisk, [entry("@acme/shared")], view));
+    expect(rows.map((r) => [r.specifier, r.version])).toEqual([["@acme/shared", "0.2.2"]]);
+  });
+
+  it("another machine's row carries the version that machine's own answer states", () => {
+    const remote: InstalledPluginsResponse = {
+      ...deployment,
+      machineId: GPU,
+      plugins: [
+        {
+          ...row("@acme/gpu-only", { everywhere: false, machines: [GPU], here: true }),
+          version: "0.2.4",
+        },
+      ],
+    };
+    const rows = modules(installedPluginRows([], "en", deployment, [], { machineId: GPU, remote }));
+    expect(rows.map((r) => [r.specifier, r.version])).toEqual([
+      ["@acme/shared", undefined],
+      ["@acme/gpu-only", "0.2.4"],
+    ]);
+  });
+
+  it("marks an entry for another platform, keeps it, and sorts it after the rest", () => {
+    const view: PluginView = { machineId: SELF, remote: null };
+    const linux = { ...deployment, plugins: [], platform: "linux" };
+    const index = [entry("@acme/m", ["darwin"]), entry("@acme/a"), entry("@acme/t", ["linux"])];
+    expect(
+      availablePluginRows(linux, index, view).map((r) => [r.specifier, r.otherPlatform]),
+    ).toEqual([
+      ["@acme/a", undefined],
+      ["@acme/t", undefined],
+      ["@acme/m", ["darwin"]],
+    ]);
+  });
+
+  it("judges the platform by the machine in view, and not at all when it is not known", () => {
+    const index = [entry("@acme/mac", ["darwin"])];
+    const linux = { ...deployment, plugins: [], platform: "linux" };
+    // The machine in view is a mac: not for another platform there.
+    const remote: InstalledPluginsResponse = {
+      ...deployment,
+      machineId: GPU,
+      plugins: [],
+      platform: "darwin",
+    };
+    const there: PluginView = { machineId: GPU, remote };
+    expect(availablePluginRows(linux, index, there)[0]!.otherPlatform).toBeUndefined();
+    // A server that predates `platform` does not say: offered as before.
+    const old = { ...deployment, plugins: [] };
+    expect(availablePluginRows(old, index)[0]!.otherPlatform).toBeUndefined();
   });
 });
