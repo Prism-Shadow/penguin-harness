@@ -1,14 +1,29 @@
 /**
- * Router (react-router v7 declarative style): /login is public; all other routes go through
- * the RequireAuth guard (redirects to /login when not authenticated) and are wrapped in
- * ProjectProvider + AppLayout.
+ * Router: /login is public; all other routes go through the RequireAuth guard (redirects to
+ * /login when not authenticated) and are wrapped in ProjectProvider + AppLayout.
+ *
+ * A data router (`createBrowserRouter` + `RouterProvider`) rather than the declarative
+ * `<BrowserRouter>`, for one reason: only a data router can block a navigation, and leaving a
+ * form with unsaved edits has to ask first — the browser's back and forward buttons included.
+ * The routes are still declared as `<Route>` elements and nothing loads data through the
+ * router; the root route only puts the `NavigationGuard` above every page.
  *
  * The app normally routes on the browser's address bar. A host that mounts it inside another
  * document (the component gallery frames it against a mocked API) passes `initialPath`
  * instead: the router then runs in memory from that path, so the app navigates without
  * touching the host document's URL — the only seam the app needs to be mounted elsewhere.
  */
-import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from "react-router";
+import { useState } from "react";
+import {
+  Navigate,
+  Outlet,
+  Route,
+  RouterProvider,
+  createBrowserRouter,
+  createMemoryRouter,
+  createRoutesFromElements,
+} from "react-router";
+import { NavigationGuard } from "./lib/unsaved/navigation-guard";
 import { useAuth } from "./state/auth";
 import { useRuntimeLanguages } from "./features/chat/use-runtime-languages";
 import { ProjectProvider } from "./state/project";
@@ -105,9 +120,19 @@ function LoginRoute() {
   return <LoginPage />;
 }
 
-export function AppRouter({ initialPath }: { initialPath?: string } = {}) {
-  const routes = (
-    <Routes>
+/** The root of every route: the leave guard above the page the route renders. */
+function RootFrame() {
+  return (
+    <>
+      <NavigationGuard />
+      <Outlet />
+    </>
+  );
+}
+
+function appRoutes() {
+  return createRoutesFromElements(
+    <Route element={<RootFrame />}>
       <Route path="/login" element={<LoginRoute />} />
       <Route
         path="/terminal"
@@ -160,11 +185,22 @@ export function AppRouter({ initialPath }: { initialPath?: string } = {}) {
             SettingsDialog); their old routes fall through to the catch-all. */}
         <Route path="*" element={<Navigate to="/chat" replace />} />
       </Route>
-    </Routes>
+    </Route>,
   );
-  return initialPath === undefined ? (
-    <BrowserRouter>{routes}</BrowserRouter>
-  ) : (
-    <MemoryRouter initialEntries={[initialPath]}>{routes}</MemoryRouter>
+}
+
+/**
+ * The address-bar router, created once for the page's life: it listens to the window's history,
+ * so a second one (a language switch remounts the tree; StrictMode runs initializers twice)
+ * would be a second listener acting on every back and forward.
+ */
+let browserRouter: ReturnType<typeof createBrowserRouter> | null = null;
+
+export function AppRouter({ initialPath }: { initialPath?: string } = {}) {
+  const [router] = useState(() =>
+    initialPath === undefined
+      ? (browserRouter ??= createBrowserRouter(appRoutes()))
+      : createMemoryRouter(appRoutes(), { initialEntries: [initialPath] }),
   );
+  return <RouterProvider router={router} />;
 }

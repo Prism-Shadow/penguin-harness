@@ -90,6 +90,11 @@ export * from "./components/overlays/paged-dialog/paged-dialog";
 export * from "./components/overlays/drawer/drawer";
 export * from "./components/overlays/drawer/sheet";
 export * from "./components/overlays/lightbox/lightbox";
+// The unsaved-changes guard: the registry every dirty form joins, the hooks that join it and
+// guard a dialog's close, and the host that draws the one discard prompt and the unload guard.
+export * from "./components/forms/unsaved-changes/unsaved-changes";
+export * from "./components/forms/unsaved-changes/use-unsaved-changes";
+export * from "./components/forms/unsaved-changes/unsaved-changes-host";
 export * from "./motion/spring";
 export * from "./motion/sheet-physics";
 export * from "./motion/use-reduced-motion";

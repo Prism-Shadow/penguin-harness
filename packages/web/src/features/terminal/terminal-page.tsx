@@ -69,11 +69,14 @@ export function parseTerminalParams(search: string): TerminalPageParams {
   };
 }
 
-/** Rewrites `?id=` in place (keeping cwd/name so "New terminal" can recreate alike). */
+/**
+ * Rewrites `?id=` in place (keeping cwd/name so "New terminal" can recreate alike). The entry's
+ * state is kept: the router stores its position in it, and back and forward measure from it.
+ */
 function writeIdToUrl(id: string): void {
   const url = new URL(location.href);
   url.searchParams.set("id", id);
-  history.replaceState(null, "", url);
+  history.replaceState(history.state, "", url);
 }
 
 async function attachOrCreate(
@@ -152,7 +155,7 @@ export function TerminalPage() {
     localStorage.removeItem(STORAGE_KEY);
     const url = new URL(location.href);
     url.searchParams.delete("id");
-    history.replaceState(null, "", url);
+    history.replaceState(history.state, "", url);
     setStatus("connecting");
     setDetail("");
     setInfo(null);

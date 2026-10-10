@@ -585,6 +585,8 @@ export const zh = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
+    /** Under the two switches while the address has unsaved edits: they act on the saved address. */
+    saveProxyAddressFirst: "先保存代理地址",
     /** Reachability test: the block's heading, and its button at rest and while probing. */
     proxyProbe: "连通性测速",
     proxyProbeRun: "测速",
@@ -1038,10 +1040,17 @@ export const zh = {
     /** Confirm-before-save dialog shared by the settings forms (writes go to server-side config files). */
     confirmSaveTitle: "保存修改",
     confirmSaveBody: "确定保存这些修改吗？修改将写入服务器上的配置文件。",
-    /** Leaving or cancelling a form that holds unsaved edits (Agent settings tabs, the handbook editor, the binding dialog). */
+    /**
+     * The one prompt every way of leaving a form with unsaved edits shows (the shared UI
+     * package's UnsavedChangesHost): its accessible name, the question, the danger button that
+     * discards and leaves, and the button that stays with the edits.
+     */
     discardTitle: "放弃未保存的修改",
-    discardBody: "放弃尚未保存的修改？放弃后无法找回。",
-    discard: "放弃",
+    discardBody: "放弃未保存的修改？未保存的内容将丢失。",
+    discard: "放弃修改",
+    keepEditing: "继续编辑",
+    /** A page form's button beside Save: puts every field back to what is stored, without asking. */
+    reset: "重置",
     none: "（无）",
     retry: "重试",
     unknownError: "请求失败，请稍后重试",

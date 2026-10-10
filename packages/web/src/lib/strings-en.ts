@@ -509,6 +509,8 @@ export const en: Strings = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
+    /** Under the two switches while the address has unsaved edits: they act on the saved address. */
+    saveProxyAddressFirst: "Save the proxy address first",
     /** Reachability test: the block's heading, and its button at rest and while probing. */
     proxyProbe: "Reachability test",
     proxyProbeRun: "Test",
@@ -973,10 +975,17 @@ export const en: Strings = {
     confirmSaveTitle: "Save changes",
     confirmSaveBody:
       "Save these changes? They will be written to the configuration files on the server.",
-    /** Leaving or cancelling a form that holds unsaved edits (Agent settings tabs, the handbook editor, the binding dialog). */
+    /**
+     * The one prompt every way of leaving a form with unsaved edits shows (the shared UI
+     * package's UnsavedChangesHost): its accessible name, the question, the danger button that
+     * discards and leaves, and the button that stays with the edits.
+     */
     discardTitle: "Discard unsaved changes",
-    discardBody: "Discard your unsaved changes? They cannot be recovered.",
-    discard: "Discard",
+    discardBody: "Discard unsaved changes? What you typed will be lost.",
+    discard: "Discard changes",
+    keepEditing: "Keep editing",
+    /** A page form's button beside Save: puts every field back to what is stored, without asking. */
+    reset: "Reset",
     none: "(none)",
     retry: "Retry",
     unknownError: "Request failed, please try again later",
