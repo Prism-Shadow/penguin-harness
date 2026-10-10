@@ -78,7 +78,7 @@ function unzipBounded(archive: Uint8Array): Record<string, Uint8Array> {
 
 /**
  * Decodes and checks an uploaded plugin zip. Refuses (400 `plugin_archive_invalid`, saying why)
- * a corrupt or empty zip, a path leaving the package, `node_modules/`, a layout without
+ * a corrupt or empty zip, a path leaving the package, `node_modules/`, a `.npmrc`, a layout without
  * package.json at the top, a package.json without a valid npm name — whose unscoped part is a
  * plugin name — or release version, and a package that is not a plugin or that the library
  * would not read; 413 `plugin_too_large` over the caps.
@@ -104,6 +104,13 @@ export async function parsePluginArchive(archive: Uint8Array): Promise<PluginArc
     if (name.split("/").includes("node_modules")) {
       throw invalid(
         `node_modules is not part of a plugin package — installing it resolves the dependencies: ${name}`,
+      );
+    }
+    // npm reads a .npmrc in the directory it runs in, and the package is packed in its own:
+    // one in the zip would configure npm on the server. npm never packs one into a package.
+    if (name.split("/").at(-1) === ".npmrc") {
+      throw invalid(
+        `.npmrc is not part of a plugin package — it would configure npm on the server: ${name}`,
       );
     }
   }

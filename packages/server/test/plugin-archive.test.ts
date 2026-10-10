@@ -10,9 +10,12 @@
  * - A zip holding another version of an installed package asks before replacing it; the same
  *   version is left as it is.
  * - A malicious or malformed zip is refused before anything is installed: a path leaving the
- *   package, node_modules, no package.json at the top, a name that is not a package name, a
- *   package that is not a plugin or that the library would not read, and an archive past the
- *   caps, read before it inflates.
+ *   package, node_modules, a .npmrc (npm would read it while packing), no package.json at the
+ *   top, a name that is not a package name, a package that is not a plugin or that the library
+ *   would not read, and an archive past the caps, read before it inflates.
+ * - Nothing replaces a module the build ships: a zip under its name is refused before it
+ *   installs, a link that turns out to be one is taken back; so is a link to a package that is no
+ *   plugin, and both refusals say its install scripts have already run.
  * - What POST installs is a registry name or an https link; a path, a plain http, ssh or file
  *   link, credentials in a link and an alias behind a name are refused before npm runs.
  * - Export is the package as a zip that imports back as it was — a library plugin's and a
@@ -97,6 +100,8 @@ async function modulePackage(): Promise<Files> {
  */
 function fakeNpm() {
   const calls: string[] = [];
+  /** The packages taken back out of the prefix, in order. */
+  const removed: string[] = [];
   const links = new Map<string, Files>();
   const place = async (root: string, files: Files, spec: string): Promise<InstalledPackage> => {
     const prefix = path.join(root, "plugins");
@@ -122,6 +127,7 @@ function fakeNpm() {
   };
   return {
     calls,
+    removed,
     links,
     install: async (root: string, source: string) => {
       calls.push(source);
@@ -133,7 +139,19 @@ function fakeNpm() {
       calls.push("<zip>");
       return place(root, files, "file:archives/upload.tgz");
     },
-    remove: async () => {},
+    remove: async (root: string, name: string) => {
+      removed.push(name);
+      const prefixFile = path.join(root, "plugins", "package.json");
+      const own = JSON.parse(await fs.readFile(prefixFile, "utf8")) as {
+        dependencies?: Record<string, string>;
+      };
+      delete own.dependencies?.[name];
+      await fs.writeFile(prefixFile, JSON.stringify(own));
+      await fs.rm(path.join(root, "plugins", "node_modules", ...name.split("/")), {
+        recursive: true,
+        force: true,
+      });
+    },
   };
 }
 
@@ -285,6 +303,12 @@ describe("plugin import and export", () => {
       /node_modules/,
     );
     await refused(
+      { ...notesPackage(), ".npmrc": "ignore-scripts=false\n" },
+      400,
+      "plugin_archive_invalid",
+      /\.npmrc/,
+    );
+    await refused(
       { "a/package.json": "{}", "b/plugin.json": "{}" },
       400,
       "plugin_archive_invalid",
@@ -328,6 +352,65 @@ describe("plugin import and export", () => {
       /archive limits/,
     );
     expect(npm.calls).toEqual([]);
+  });
+
+  it("never lets a package replace a module the build ships, nor keeps a link that is no plugin", async () => {
+    const admin = await boot();
+    // A module the build ships: in the installation's plugins/ prefix, which the program's
+    // entry points into for the length of the test.
+    const programEntry = process.argv[1];
+    const prefix = path.join(t.root, "install", "plugins");
+    process.argv[1] = path.join(t.root, "install", "bin", "server.js");
+    try {
+      await fs.mkdir(prefix, { recursive: true });
+      await fs.writeFile(
+        path.join(prefix, "package.json"),
+        JSON.stringify({
+          name: "prefix",
+          private: true,
+          dependencies: { "@acme/sandbox-x": "1.0.0" },
+        }),
+      );
+      await writeClassPackage(path.join(prefix, "node_modules", "@acme", "sandbox-x"), {
+        name: "@acme/sandbox-x",
+        module: "ShippedX",
+      });
+      const impostor = await modulePackage();
+
+      // A zip under its name is refused before anything installs.
+      const zipped = await importZip(admin, impostor);
+      expect(zipped.status).toBe(409);
+      expect(await zipped.json()).toMatchObject({ error: { code: "plugin_shipped" } });
+      expect(npm.calls).toEqual([]);
+
+      // A link names its package only once npm has fetched it: it is taken back out.
+      npm.links.set("https://github.com/evil/sandbox-x", impostor);
+      const linked = await admin.post("/api/projects/default_project/plugins/installed", {
+        specifier: "https://github.com/evil/sandbox-x",
+      });
+      expect(linked.status).toBe(409);
+      const shipped = (await linked.json()) as { error: { code: string; message: string } };
+      expect(shipped.error.code).toBe("plugin_shipped");
+      expect(shipped.error.message).toMatch(/install scripts had already run/);
+      expect(npm.removed).toEqual(["@acme/sandbox-x"]);
+    } finally {
+      if (programEntry !== undefined) process.argv[1] = programEntry;
+    }
+
+    // A link to a package that is no plugin is taken back too, and says what already happened.
+    npm.links.set("https://example.com/left-pad-1.0.0.tgz", {
+      "package.json": JSON.stringify({ name: "left-pad", version: "1.0.0" }),
+      "index.js": "export {};\n",
+    });
+    const res = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "https://example.com/left-pad-1.0.0.tgz",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("not_a_plugin");
+    expect(body.error.message).toMatch(/install scripts had already run/);
+    expect(npm.removed).toEqual(["@acme/sandbox-x", "left-pad"]);
+    expect(await projectConfig()).not.toContain("left-pad");
   });
 
   it("installs a registry name or an https link, and refuses anything else before npm runs", async () => {

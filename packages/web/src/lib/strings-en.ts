@@ -2426,6 +2426,8 @@ export const en: Strings = {
       "Not an npm package name or an https link; for anything else, let an agent install it in a chat.",
     importCost:
       "When the plugin carries server modules, installing reloads the server's plugins, which stops the agent runs in progress in every Project.",
+    /** Under the npm / link install and the zip upload: what installing runs, said plainly. */
+    importScriptsRun: "The package's install scripts run on the server as the server's user.",
     importAgentTitle: "Or let an agent install it in a chat",
     importAgentWhy:
       "For a page, a repository or a description: the agent finds and reviews the package first, then installs it with penguin plugin install.",

@@ -2510,6 +2510,8 @@ export const zh = {
     importSpecifierInvalid: "不是 npm 包名或 https 链接；其他来源请让 Agent 在对话中安装。",
     importCost:
       "插件带有服务端模块时，安装会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。",
+    /** Under the npm / link install and the zip upload: what installing runs, said plainly. */
+    importScriptsRun: "这个包的安装脚本会以服务端用户的身份在服务器上运行。",
     importAgentTitle: "或让 Agent 在对话中安装",
     importAgentWhy:
       "适合网页、仓库或一段描述：Agent 先找到并审阅插件包，再用 penguin plugin install 安装。",

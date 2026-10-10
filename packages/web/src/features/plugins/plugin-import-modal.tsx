@@ -214,6 +214,7 @@ export function ImportPluginModal({
               </Button>
             </div>
             <p className="mt-1.5 text-xs text-fg-muted">{S.plugins.importCost}</p>
+            <p className="mt-1 text-xs text-fg-muted">{S.plugins.importScriptsRun}</p>
             {directError !== null && (
               <p className={`mt-1.5 text-xs ${toneInk.danger}`}>{directError}</p>
             )}
@@ -270,6 +271,7 @@ export function ImportPluginModal({
               <HiddenFileInput accept=".zip" disabled={uploading} onChange={onPickFile} />
               {uploading ? S.plugins.installing : S.plugins.importUploadAction}
             </label>
+            <p className="mt-1.5 text-xs text-fg-muted">{S.plugins.importScriptsRun}</p>
             {uploadError !== null && (
               <p className={`mt-1.5 text-xs ${toneInk.danger}`}>{uploadError}</p>
             )}
