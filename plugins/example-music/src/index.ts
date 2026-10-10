@@ -7,14 +7,16 @@
  * When a reply links a Workspace file with one of these extensions, the app's own `audio` renderer
  * draws a player below the paragraph that holds the link; the link itself is left as it is.
  *
- * The Agent learns to make such a file and link it from this package's `skills/send-music/`, which
- * reaches an Agent by being installed onto it by hand (README.md): a code plugin has no way to
- * contribute a Skill.
+ * The Agent learns to make such a file and link it from this package's `skills/send-music/`,
+ * which the module declares on the server's `PluginSkillsProvider.skills` slot: while the
+ * package is enabled (a Project lists it), that skill is installable onto an Agent through the
+ * plugin install route, by this package name — the same install the plugin library's skills
+ * take. No Project listing it, nothing installable.
  */
 import { Component } from "@prismshadow/penguin-core/plugin";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 
-/** The plugin's one module: nothing to bind, only the rule it contributes. */
+/** The plugin's one module: nothing to bind, only the rule and the skill it contributes. */
 @Component({
   contributes: {
     "WebModule.fileRenderers": [
@@ -24,6 +26,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         renderer: { builtin: "audio" },
       },
     ],
+    "PluginSkillsProvider.skills": [{ id: "example-music.send-music", path: "skills/send-music" }],
   },
 })
 export class MusicFiles {}

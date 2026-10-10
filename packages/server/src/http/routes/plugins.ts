@@ -9,8 +9,9 @@
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
  * Installing a plugin writes each of its skills to agent_state/skills/<name>/ and its hook
  * package to agent_state/hooks/<plugin>/ (hooks.json + scripts); reinstalling overwrites with
- * library content (i.e. an update). Installed skills and hook packages keep their own routes
- * (skills.ts, hooks.ts).
+ * library content (i.e. an update). A name the library does not carry resolves against the
+ * enabled code plugins' contributed skills (plugin/skills.ts) — the same writer, no hook
+ * package. Installed skills and hook packages keep their own routes (skills.ts, hooks.ts).
  *
  * Library and registry are two views of one kind of thing — a package of skills and/or
  * hooks. The library is what this build carries; the registry is what the deployment can
@@ -24,11 +25,14 @@
 import { Hono } from "hono";
 import {
   installPlugin,
+  installSkill,
   listInstalledHooks,
   listInstalledSkills,
   libraryPlugin,
   loadPluginGroups,
 } from "@prismshadow/penguin-core";
+import type { LibraryPlugin } from "@prismshadow/penguin-core";
+import type { PluginSkills } from "../../plugin/skills.js";
 import type {
   AgentPluginsInstallResponse,
   PluginFilesResponse,
@@ -67,12 +71,13 @@ export interface PluginsRouteDeps {
   access: Access;
   agentConfigService: AgentConfig;
   manager: ManagerIface;
+  /** The skills enabled code plugins contribute (plugin/skills.ts): their package names install like library names. */
+  pluginSkills: Pick<PluginSkills, "resolve">;
 }
 import { HttpError } from "../errors.js";
 import { badRequest, optionalStringArray, readJson, requireValidId } from "../validate.js";
 import {
   pluginFiles,
-  resolveLibraryPlugins,
   toHookItem,
   toPluginItem,
   toSkillItem,
@@ -119,10 +124,26 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     const names = optionalStringArray(await readJson(c), "names") ?? [];
     if (names.length === 0) throw badRequest("names must be a non-empty array.");
     // Verify every name up front before writing anything: an unknown name rejects the whole
-    // request rather than leaving a half-installed state.
-    const plugins = resolveLibraryPlugins(names);
-    for (const plugin of plugins) {
+    // request rather than leaving a half-installed state. A name is a library plugin's (its
+    // directory name) or an enabled code plugin's (the package specifier a Project's [plugins]
+    // table lists, whose skills arrive through the contributes slot — plugin/skills.ts).
+    const library: LibraryPlugin[] = [];
+    const rest: string[] = [];
+    for (const name of names) {
+      const plugin = libraryPlugin(name);
+      if (plugin !== undefined) library.push(plugin);
+      else rest.push(name);
+    }
+    const contributed = rest.length > 0 ? await deps.pluginSkills.resolve(rest) : [];
+    for (const plugin of library) {
       await installPlugin(deps.config.root, projectId, agentId, plugin);
+    }
+    // A code plugin ships skills only — no hook package to install — and each lands through
+    // the same writer a library skill does, so an installed copy is the same shape on disk.
+    for (const plugin of contributed) {
+      for (const skill of plugin.skills) {
+        await installSkill(deps.config.root, projectId, agentId, skill);
+      }
     }
     // Core reads hook packages when a model context opens: a conversation that is running
     // would keep the old set — or none — until its next compaction. Rebuilding the runtime
@@ -169,6 +190,7 @@ export class PluginRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly manager!: ManagerIface;
+  @Use() private readonly pluginSkills!: PluginSkills;
   @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;
@@ -178,6 +200,7 @@ export class PluginRoutes {
       access: this.access,
       agentConfigService: this.agentConfig,
       manager: this.manager,
+      pluginSkills: this.pluginSkills,
     };
     this.libraryRoutes = pluginLibraryRoutes();
     this.pluginRoutes = agentPluginsRoutes(deps);

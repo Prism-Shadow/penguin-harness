@@ -48,6 +48,7 @@ import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js"
 import { DiscordTransportProvider } from "./runtime/messaging/discord-connector.js";
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
+import { PluginSkills, PluginSkillsProvider } from "./plugin/skills.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -475,12 +476,13 @@ export class CompanyModule {}
     PluginRoutes,
     PluginRegistryRoutes,
     InstalledPluginRoutes,
+    PluginSkillsProvider,
     PluginUiRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
   ],
-  exports: [Http, WebShell, UpdateCheck, HttpFetch],
+  exports: [Http, WebShell, UpdateCheck, HttpFetch, PluginSkills],
 })
 export class ApiModule {}
 
