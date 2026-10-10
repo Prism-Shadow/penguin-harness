@@ -312,6 +312,9 @@ export function AddMachineDialog({
   const [installNow, setInstallNow] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The host this dialog wrote into the ssh config, when what followed failed: a second Add
+  // rewrites that block with the form as it now stands instead of refusing the name it wrote.
+  const [written, setWritten] = useState<string | null>(null);
 
   // The lines beside each name come from the config once, when the dialog opens; the rows
   // themselves are the page's list, so a host without them still shows by its name.
@@ -346,10 +349,14 @@ export function AddMachineDialog({
   const submit = async () => {
     if (busy) return;
     setError(null);
+    const name = form.alias.trim();
     if (tab === "manual") {
       const found = validateHostForm(form);
-      const name = form.alias.trim();
-      if (found.alias === undefined && state.machines.some((machine) => machine.alias === name)) {
+      if (
+        found.alias === undefined &&
+        name !== written &&
+        state.machines.some((machine) => machine.alias === name)
+      ) {
         found.alias = S.machines.host.exists;
       }
       if (hasErrors(found)) {
@@ -362,7 +369,13 @@ export function AddMachineDialog({
     const plan = addPlan(tab, [...picked], form.alias, installNow);
     setBusy(true);
     try {
-      if (plan.writeHost) await api.addSshHost(projectId, hostRequest(form));
+      if (plan.writeHost && name === written) {
+        const { alias, ...block } = hostRequest(form);
+        await api.updateSshHost(projectId, alias, block);
+      } else if (plan.writeHost) {
+        await api.addSshHost(projectId, hostRequest(form));
+        setWritten(name);
+      }
       const answer =
         plan.verb === "use"
           ? await api.useMachines(projectId, plan.machines)
