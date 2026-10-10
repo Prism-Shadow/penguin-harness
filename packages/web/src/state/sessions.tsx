@@ -747,7 +747,7 @@ export function createSessionsStore() {
             string,
             Readonly<Record<string, SessionCategoryCounts>>
           >();
-          // Counts are SUMMED across sources, not overwritten: a folder badge that counted
+          // Counts are SUMMED across sources, not overwritten: a group's count that counted
           // one machine would contradict the rows underneath it (mergeCounts).
           const countParts = new Map<string, SessionCategoryCounts[]>();
           // Each answer with the machine that gave it: a path means a directory only
@@ -1557,9 +1557,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     const contextChanged = appliedContext.current !== contextKey;
     appliedContext.current = contextKey;
     // Sync the fetch context and reset the loaded pages in the same synchronous step:
-    // reload() picks the categories to refetch from pageState, so a Project switch can't
-    // carry folder page state across via shared Agent ids (default_agent exists in every
-    // Project).
+    // reload() picks the pages to refetch from pageState, so a Project switch can't carry
+    // page state across via shared Agent ids (default_agent exists in every Project).
     // deletedSessionIds is deliberately NOT reset: session ids are globally unique and never
     // reused, so a Session deleted before a Project switch is still deleted after it — and
     // re-arming its lookup would just re-create the 404 this set exists to prevent.
