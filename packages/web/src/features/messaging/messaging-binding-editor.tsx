@@ -38,6 +38,14 @@
  *
  * The GET is re-polled while the host shows the editor (the hook's `poll` flag) so
  * connect/error flips show up live.
+ *
+ * Under the settings commit model the credentials and the delivery switches are one record per
+ * channel: they wait for Save, which is live once the selected channel's form differs from what
+ * is stored and nothing in it is wrong (a malformed value is said under its field as it is
+ * typed; an empty required one is marked by its asterisk). The connection switch is the instant
+ * control beside them, gated while the form holds unsaved edits. Each host registers the
+ * editor's unsaved edits with the shared guard under a scope of its own, so leaving it asks
+ * first — the dialog's close, the dock tab's ×, a route change.
  */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -210,11 +218,16 @@ export interface MessagingBindingEditorState {
   selectChannel(channel: MessagingChannel): void;
   /** Per-channel server-side facts (secret / enabled / status / chat-known). */
   channels: ChannelFactsMap;
+  /** What is wrong with the selected channel's draft, per field, once it has unsaved edits. */
   fieldErrors: MessagingFormErrors;
   /** Unsaved edits on the SELECTED channel (a typed secret and a checked clear box count). */
   dirty: boolean;
+  /** The selected channel's draft can be sent as it is. */
+  valid: boolean;
   /** Unsaved edits on ANY channel's form — every form stays editable across a switch, so this is what closing the editor throws away. */
   unsavedAny: boolean;
+  /** Puts every channel's form back to what is stored: what the leave prompt's "discard" runs. */
+  discard(): void;
   busy: boolean;
   toggling: boolean;
   testing: boolean;
@@ -295,7 +308,6 @@ export function useMessagingBinding(
     qq: EMPTY_FACTS,
     wechat: EMPTY_FACTS,
   });
-  const [fieldErrors, setFieldErrors] = useState<MessagingFormErrors>({});
   const [busy, setBusy] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -353,7 +365,6 @@ export function useMessagingBinding(
 
   const patchForm = (patch: Partial<MessagingFormState>) => {
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
-    setFieldErrors({});
   };
 
   const selectChannel = (channel: MessagingChannel) => {
@@ -379,6 +390,20 @@ export function useMessagingBinding(
     (["feishu", "telegram", "qq", "wechat"] as const).some((channel) =>
       formDirty({ ...form, channel }, baseline),
     );
+  /** The selected channel's draft as Save would send it, or what is wrong with it. */
+  const built = form === null ? null : formToPut(form, channels[form.channel].secretConfigured);
+  const valid = built !== null && built.ok;
+  // Said under the fields once there is something to save; an empty required field is marked by
+  // its asterisk instead.
+  const fieldErrors: MessagingFormErrors =
+    dirty && built !== null && !built.ok
+      ? Object.fromEntries(Object.entries(built.errors).filter(([, code]) => code !== "required"))
+      : {};
+  const discard = () => {
+    setForm((prev) =>
+      prev !== null && baseline !== null ? { ...baseline, channel: prev.channel } : prev,
+    );
+  };
 
   /** One channel's PUT/state response lands only in that channel's facts + form baseline. */
   const applyChannel = (
@@ -449,12 +474,7 @@ export function useMessagingBinding(
 
   /** Save = persist the selected channel's credentials (no connection side effect; the toggle owns that). */
   const save = async () => {
-    if (!form) return;
-    const built = formToPut(form, channels[form.channel].secretConfigured);
-    if (!built.ok) {
-      setFieldErrors(built.errors);
-      return;
-    }
+    if (built === null || !built.ok) return;
     setBusy(true);
     try {
       const res =
@@ -508,7 +528,9 @@ export function useMessagingBinding(
     channels,
     fieldErrors,
     dirty,
+    valid,
     unsavedAny,
+    discard,
     busy,
     toggling,
     testing,

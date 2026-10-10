@@ -38,7 +38,24 @@ const SCAN = scanSources([".tsx", ".ts"]);
 /** Modules under packages/web/src whose forms follow the model; check 3 runs on each. */
 const FORM_MODULES: readonly string[] = [
   "components/account/change-password-dialog.tsx",
+  "components/layout/project-dialogs.tsx",
   "features/admin/admin-users-page.tsx",
+  "features/benchmark/create-benchmark-modal.tsx",
+  "features/builtin-browser/homepage-dialog.tsx",
+  "features/chat/shortcuts-folder.tsx",
+  "features/company/calendar-page.tsx",
+  "features/company/channel-dialogs.tsx",
+  "features/company/employee-dialogs.tsx",
+  "features/company/finance-page.tsx",
+  "features/company/handbook-page.tsx",
+  "features/company/org-dialogs.tsx",
+  "features/company/ticket-dialog.tsx",
+  "features/company/tickets-page.tsx",
+  "features/machines/ssh-host-dialog.tsx",
+  "features/messaging/messaging-binding-modal.tsx",
+  "features/messaging/messaging-panel.tsx",
+  "features/models/models-page.tsx",
+  "features/models/provider-settings-dialog.tsx",
   "features/settings/plugin-config-card.tsx",
   "features/settings/profile-section.tsx",
   "features/settings/proxy-section.tsx",
@@ -53,11 +70,21 @@ const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
     "DeleteUserDialog",
     "a two-step confirmation with nothing typed",
   ],
+  [
+    "features/company/org-dialogs.tsx",
+    "CreateOrganizationDialog",
+    "its draft is kept in the browser on every keystroke and restored on reopen (spec 06), so a close loses nothing",
+  ],
+  ["features/models/models-page.tsx", "ModelsPage", "the speed-test confirmation: nothing typed"],
+  [
+    "features/models/models-page.tsx",
+    "ModelOAuthDialog",
+    "an authorization flow: closing abandons the flow, and its one code field is submitted by its own button",
+  ],
 ];
 
 /** Modules that offer Save or Create but do not register yet, with the package converting them. */
 const PENDING_SAVE_FORMS: ReadonlyArray<readonly [string, "WP-B" | "WP-C"]> = [
-  ["components/layout/project-dialogs.tsx", "WP-C"],
   ["features/agents/agent-settings-page.tsx", "WP-B"],
   ["features/agents/agents-page.tsx", "WP-B"],
   ["features/agents/api-tab.tsx", "WP-B"],
@@ -66,27 +93,11 @@ const PENDING_SAVE_FORMS: ReadonlyArray<readonly [string, "WP-B" | "WP-C"]> = [
   ["features/agents/prompt-injection-controls.tsx", "WP-B"],
   ["features/agents/save-confirm.tsx", "WP-B"],
   ["features/agents/vault-tab.tsx", "WP-B"],
-  ["features/builtin-browser/homepage-dialog.tsx", "WP-C"],
-  ["features/chat/shortcuts-folder.tsx", "WP-C"],
-  ["features/company/calendar-page.tsx", "WP-C"],
-  ["features/company/channel-dialogs.tsx", "WP-C"],
-  ["features/company/employee-dialogs.tsx", "WP-C"],
-  ["features/company/handbook-page.tsx", "WP-C"],
-  ["features/company/org-dialogs.tsx", "WP-C"],
-  ["features/company/ticket-dialog.tsx", "WP-C"],
-  ["features/company/tickets-page.tsx", "WP-C"],
-  ["features/machines/ssh-host-dialog.tsx", "WP-C"],
-  ["features/messaging/messaging-binding-modal.tsx", "WP-C"],
-  ["features/messaging/messaging-panel.tsx", "WP-C"],
-  ["features/models/provider-settings-dialog.tsx", "WP-C"],
   ["features/schedules/schedule-form-modal.tsx", "WP-B"],
 ];
 
 /** Typed controls that still commit from their own handler, with the package fixing them. */
-const PENDING_HANDLER_COMMITS: ReadonlyArray<readonly [string, "WP-B" | "WP-C"]> = [
-  // The finance budget editor writes when focus leaves it.
-  ["features/company/finance-page.tsx", "WP-C"],
-];
+const PENDING_HANDLER_COMMITS: ReadonlyArray<readonly [string, "WP-B" | "WP-C"]> = [];
 
 /** Modules outside the model, each with the reason. */
 const EXCUSED_FILES: ReadonlyArray<readonly [string, string]> = [

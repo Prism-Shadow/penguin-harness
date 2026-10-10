@@ -1998,8 +1998,10 @@ export const en: Strings = {
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
       `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
-    confirmSaveTitle: "Save model settings",
-    confirmSave: (name: string): string => `Save the changes to "${name}"?`,
+    addAction: "Add",
+    confirmCancelPromotionTitle: "Cancel promotion",
+    confirmCancelPromotion: (name: string, pct: number): string =>
+      `Saving ends the ${pct}% promotion on "${name}": a changed price or model identity cancels it. Save anyway?`,
     confirmDefaultTitle: "Set as default model",
     confirmDefault: (name: string): string =>
       `Make "${name}" the default model? New sessions will use it by default.`,
@@ -4782,16 +4784,10 @@ Scenarios:
       budget: "Monthly budget",
       budgetHint:
         "A monthly cap, leave empty for unbounded; counts the employee plus every subordinate",
-      hireConfirm: (name: string, manager: string): string =>
-        `Add ${name} to the organization, reporting to ${manager}? This rewrites the chart file.`,
       hired: (name: string): string => `Hired ${name}`,
       /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `Set the budget of ${name}`,
-      budgetConfirm: (name: string, budget: string): string =>
-        `Set the monthly budget of ${name} to ${budget}? Past 80% warns; at 100% its automatic triggers pause.`,
       reportsToTitle: (name: string): string => `Change who ${name} reports to`,
-      reportsToConfirm: (name: string, manager: string): string =>
-        `Have ${name} report to ${manager}? Its subordinates move along with it.`,
       reportsToCycle: "Cannot report to itself or to one of its own subordinates",
       renewDeskTitle: (name: string): string => `A new desk session for ${name}`,
       renewDeskExplain:
@@ -4823,7 +4819,8 @@ Scenarios:
       clearBudget: "Set unbounded",
       currentValue: (value: string): string => `Current: ${value}`,
       manager: "Manager",
-      reportsToHint: "Only employees outside its own subtree are listed",
+      reportsToHint:
+        "Only employees outside its own subtree are listed; its subordinates move along with it",
     },
     calendar: {
       title: "Calendar",
@@ -4850,8 +4847,6 @@ Scenarios:
       periodHint: "30m / 12h / 7d, empty for a one-off; 5m at the shortest",
       delete: "Delete event",
       deleteConfirm: (name: string): string => `Delete event "${name}"?`,
-      saveConfirm: (name: string): string =>
-        `Save event "${name}"? This rewrites its calendar file.`,
       outcome: "Outcome",
       lastFired: "Last fired",
       nextFire: "Next fire",
@@ -4977,8 +4972,6 @@ Scenarios:
         "This ticket is invalid: its status disagrees with its column, or its id is duplicated",
       invalidFiles: "Ticket files that failed to parse",
       edit: "Edit fields",
-      saveConfirm: (title: string): string =>
-        `Save the changes to "${title}"? This rewrites the ticket file.`,
       saved: "Ticket saved",
       created: "Ticket created",
       detail: "Ticket detail",

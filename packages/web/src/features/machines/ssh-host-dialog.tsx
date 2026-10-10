@@ -8,6 +8,10 @@
  *
  * A block written by hand is shown but not saved: it may carry options this form does not
  * know, and rewriting it would drop them. The form says so and points at the file.
+ *
+ * Save (Add) is live once a field changed and nothing in the form is wrong: a malformed value is
+ * said under its field as it is typed, an empty required one is marked by its asterisk. Closing
+ * the dialog with edits asks first; nothing closes it while the write is in flight.
  */
 import { useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
@@ -16,10 +20,19 @@ import type {
   SshHostRequest,
   SshHostResponse,
 } from "@prismshadow/penguin-server/api";
-import { Button, Input, Modal, NoticeStrip, toastSuccess } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Input,
+  Modal,
+  NoticeStrip,
+  toastSuccess,
+  useFormDraft,
+  useGuardedClose,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { closeUnlessBusy } from "../../lib/busy-close";
 
 type Field = "alias" | "hostName" | "user" | "port" | "identityFile";
 type Form = Record<Field, string>;
@@ -91,22 +104,34 @@ export function SshHostDialog({
   const m = S.machines.host;
   const editing = mode.kind === "edit";
   const locked = mode.kind === "edit" && !mode.host.editable;
-  const [form, setForm] = useState<Form>(() => initialForm(mode));
-  const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
+  const draft = useFormDraft<Form>(initialForm(mode), {
+    normalize: (f) => ({
+      alias: f.alias.trim(),
+      hostName: f.hostName.trim(),
+      user: f.user.trim(),
+      port: f.port.trim(),
+      identityFile: f.identityFile.trim(),
+    }),
+  });
+  const form = draft.draft;
+  /** What the server refused, under the alias; cleared by the next keystroke. */
+  const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, draft.scope));
+  const found = validateHostForm(form);
+  const valid = Object.values(found).every((error) => error === undefined);
+  /** A field's problem as shown: a malformed value; an empty required field has its asterisk. */
+  const shown = (field: Field): string | undefined =>
+    found[field] === S.common.requiredField ? undefined : found[field];
+  const canSave = draft.dirty && valid && !busy && !locked;
 
   const set = (field: Field) => (event: ChangeEvent<HTMLInputElement>) => {
-    setForm((prev) => ({ ...prev, [field]: event.target.value }));
-    setErrors((prev) => (prev[field] === undefined ? prev : { ...prev, [field]: undefined }));
+    draft.patch({ [field]: event.target.value } as Partial<Form>);
+    setRefused(undefined);
   };
 
   const submit = async () => {
-    if (locked) return;
-    const found = validateHostForm(form);
-    if (Object.values(found).some((error) => error !== undefined)) {
-      setErrors(found);
-      return;
-    }
+    if (!canSave) return;
     setBusy(true);
     try {
       const request = hostRequest(form);
@@ -124,34 +149,27 @@ export function SshHostDialog({
     } catch (err) {
       // A refused alias lands under its field; anything else under the form's first field.
       const text = apiErrorText(err);
-      setErrors(
-        text.includes("already") || text.includes("已") ? { alias: m.exists } : { alias: text },
-      );
+      setRefused(text.includes("already") || text.includes("已") ? m.exists : text);
     } finally {
       setBusy(false);
     }
   };
 
   const onEnter = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" && !busy) void submit();
+    if (event.key === "Enter") void submit();
   };
 
   return (
     <Modal
       open
       title={editing ? m.editTitle : m.addTitle}
-      onClose={onClose}
+      onClose={requestClose}
       footer={
         <>
-          <Button size="sm" onClick={onClose}>
+          <Button size="sm" disabled={busy} onClick={requestClose}>
             {S.common.cancel}
           </Button>
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={busy || locked}
-            onClick={() => void submit()}
-          >
+          <Button size="sm" variant="primary" disabled={!canSave} onClick={() => void submit()}>
             {busy ? S.common.saving : editing ? S.common.save : m.add}
           </Button>
         </>
@@ -168,7 +186,7 @@ export function SshHostDialog({
           label={m.alias}
           required
           hint={editing ? undefined : m.aliasHint}
-          error={errors.alias}
+          error={refused ?? shown("alias")}
           value={form.alias}
           onChange={set("alias")}
           onKeyDown={onEnter}
@@ -183,7 +201,7 @@ export function SshHostDialog({
           label={m.hostName}
           required
           hint={m.hostNameHint}
-          error={errors.hostName}
+          error={shown("hostName")}
           value={form.hostName}
           onChange={set("hostName")}
           onKeyDown={onEnter}
@@ -198,7 +216,7 @@ export function SshHostDialog({
             size="sm"
             label={m.user}
             hint={m.userHint}
-            error={errors.user}
+            error={shown("user")}
             value={form.user}
             onChange={set("user")}
             onKeyDown={onEnter}
@@ -211,7 +229,7 @@ export function SshHostDialog({
             size="sm"
             label={m.port}
             hint={m.portHint}
-            error={errors.port}
+            error={shown("port")}
             value={form.port}
             onChange={set("port")}
             onKeyDown={onEnter}
@@ -226,7 +244,7 @@ export function SshHostDialog({
           size="sm"
           label={m.identityFile}
           hint={m.identityFileHint}
-          error={errors.identityFile}
+          error={shown("identityFile")}
           value={form.identityFile}
           onChange={set("identityFile")}
           onKeyDown={onEnter}

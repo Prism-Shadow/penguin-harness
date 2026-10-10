@@ -2106,8 +2106,12 @@ export const zh = {
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
-    confirmSaveTitle: "保存模型配置",
-    confirmSave: (name: string): string => `确定保存对「${name}」的配置修改？`,
+    /** The add-model dialog's footer verb (the settings dialog's is the common Save). */
+    addAction: "添加",
+    /** A save that changes a promoted row's price or identity: the server then drops the promotion. */
+    confirmCancelPromotionTitle: "取消促销",
+    confirmCancelPromotion: (name: string, pct: number): string =>
+      `保存后「${name}」当前省 ${pct}% 的促销将被取消：修改价格或模型标识会结束促销。确定保存？`,
     confirmDefaultTitle: "设为默认模型",
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
@@ -4889,16 +4893,10 @@ Benchmark：
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
       budget: "月预算",
       budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
-      hireConfirm: (name: string, manager: string): string =>
-        `将 ${name} 加入组织，汇报给 ${manager}？会改写组织图文件。`,
       hired: (name: string): string => `已招募 ${name}`,
       /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `设置 ${name} 的预算`,
-      budgetConfirm: (name: string, budget: string): string =>
-        `将 ${name} 的月预算改为 ${budget}？超过 80% 告警，达到 100% 暂停其自动触发。`,
       reportsToTitle: (name: string): string => `调整 ${name} 的汇报线`,
-      reportsToConfirm: (name: string, manager: string): string =>
-        `让 ${name} 改为汇报给 ${manager}？其下属随之一起移动。`,
       reportsToCycle: "不能汇报给自己或自己的下属",
       renewDeskTitle: (name: string): string => `为 ${name} 换工位`,
       renewDeskExplain: "换工位会开一个新的工位会话并重置上下文；改了工作区就写入员工树。",
@@ -4928,7 +4926,7 @@ Benchmark：
       clearBudget: "设为不限",
       currentValue: (value: string): string => `当前：${value}`,
       manager: "上级",
-      reportsToHint: "只列出不在其下属范围内的员工",
+      reportsToHint: "只列出不在其下属范围内的员工；其下属随之一起移动",
     },
     calendar: {
       title: "日历",
@@ -4955,7 +4953,6 @@ Benchmark：
       periodHint: "30m / 12h / 7d，留空为一次性；最短 5m",
       delete: "删除日程",
       deleteConfirm: (name: string): string => `确认删除日程「${name}」？`,
-      saveConfirm: (name: string): string => `保存日程「${name}」？会改写它的日程文件。`,
       outcome: "结果",
       lastFired: "最近触发",
       nextFire: "下次触发",
@@ -5064,7 +5061,6 @@ Benchmark：
       invalid: "该工单无效：状态与所在列不符，或 id 重复",
       invalidFiles: "无法解析的工单文件",
       edit: "编辑字段",
-      saveConfirm: (title: string): string => `保存对「${title}」的修改？会改写工单文件。`,
       saved: "工单已保存",
       created: "工单已创建",
       detail: "工单详情",

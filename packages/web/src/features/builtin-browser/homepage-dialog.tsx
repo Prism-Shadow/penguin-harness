@@ -6,12 +6,22 @@
  * homepage, so new tabs open blank again and the Home button goes away.
  *
  * Mounted for one opening at a time (the panel renders it only while it is open), so every
- * opening starts from the homepage as saved.
+ * opening starts from the homepage as saved. Save (or Enter) is live once the page the entry
+ * opens differs from the saved one; closing with a changed entry asks first, and nothing closes
+ * the dialog while its write is in flight.
  */
 import { useState } from "react";
-import { Button, Input, Modal, toastError } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Input,
+  Modal,
+  toastError,
+  useFormDraft,
+  useGuardedClose,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
+import { closeUnlessBusy } from "../../lib/busy-close";
 import { S } from "../../lib/strings";
 import { homepageFromInput } from "./address";
 import { dispatchBrowser } from "./browser-store";
@@ -27,12 +37,16 @@ export function HomepageDialog({
   currentPage: string | null;
   onClose: () => void;
 }) {
-  const [text, setText] = useState(homepage ?? "");
+  // Compared as the page an entry opens: a bare domain typed for its https form is no change.
+  const form = useFormDraft(homepage ?? "", { normalize: homepageFromInput });
+  const text = form.draft;
+  const setText = form.setDraft;
   const [saving, setSaving] = useState(false);
+  const requestClose = useGuardedClose(...closeUnlessBusy(saving, onClose, form.scope));
   const target = homepageFromInput(text);
 
   const save = async () => {
-    if (saving) return;
+    if (saving || !form.dirty) return;
     setSaving(true);
     try {
       const saved = await api.putBuiltinBrowserSettings({ homepage: target });
@@ -49,13 +63,18 @@ export function HomepageDialog({
     <Modal
       open
       title={S.builtinBrowser.homepageTitle}
-      onClose={onClose}
+      onClose={requestClose}
       footer={
         <>
-          <Button size="sm" onClick={onClose} disabled={saving}>
+          <Button size="sm" onClick={requestClose} disabled={saving}>
             {S.common.cancel}
           </Button>
-          <Button size="sm" variant="primary" onClick={() => void save()} disabled={saving}>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => void save()}
+            disabled={saving || !form.dirty}
+          >
             {saving ? S.common.saving : S.common.save}
           </Button>
         </>

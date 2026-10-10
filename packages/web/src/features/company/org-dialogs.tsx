@@ -9,7 +9,8 @@
  * settings: name, mission, model, workspace, timezone, working language, approval mode, and
  * pause / resume — the one lifecycle control there is, since an organization is never deleted
  * through the App. Pause / resume writes its own PATCH the moment it is clicked; everything
- * else is a draft until Save.
+ * else is a draft until Save, which is live once a field differs from what is stored and none
+ * of the required ones is empty. Closing the settings with unsaved edits asks first.
  *
  * What the create dialog holds is kept as a draft (org-draft.ts) per user and Project, so an
  * accidental close, a reload or a switch back to development mode does not cost the mission
@@ -50,11 +51,14 @@ import {
   Textarea,
   toastError,
   toastSuccess,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { closeUnlessBusy } from "../../lib/busy-close";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -534,14 +538,7 @@ export function CreateOrganizationDialog({
   );
 }
 
-export function OrganizationSettingsDialog({
-  open,
-  projectId,
-  orgId,
-  onClose,
-  onChanged,
-  onDeleted,
-}: {
+interface OrganizationSettingsProps {
   open: boolean;
   projectId: string;
   orgId: string;
@@ -550,22 +547,68 @@ export function OrganizationSettingsDialog({
   onChanged: () => void;
   /** The organization was deleted: the caller refreshes the list and leaves its pages. */
   onDeleted?: () => void;
-}) {
-  /** Stored settings as loaded on open (null until then) — the no-change baseline. */
+}
+
+/** The settings form's fields, as typed. */
+interface OrgSettingsDraft {
+  name: string;
+  mission: string;
+  timezone: string;
+  language: OrgLanguage;
+  approvalMode: OrgApprovalMode;
+  modelRef: ModelRefDto | null;
+  workspace: string;
+}
+
+/** What the stored settings open the form as (empty fields until they are read). */
+function orgSettingsDraft(settings: OrganizationSettings | null): OrgSettingsDraft {
+  return {
+    name: settings?.name ?? "",
+    mission: settings?.mission ?? "",
+    timezone: settings?.timezone ?? "",
+    language: settings?.language ?? DEFAULT_ORG_LANGUAGE,
+    approvalMode: settings?.approvalMode ?? "allow-all",
+    modelRef: settings?.model ?? null,
+    workspace: settings?.workspace ?? "",
+  };
+}
+
+/** A draft as a save compares it: text trimmed, the model as its paired reference alone. */
+const normalizedOrgDraft = (d: OrgSettingsDraft) => ({
+  ...d,
+  name: d.name.trim(),
+  mission: d.mission.trim(),
+  timezone: d.timezone.trim(),
+  workspace: d.workspace.trim(),
+  modelRef:
+    d.modelRef === null ? null : { provider: d.modelRef.provider, modelId: d.modelRef.modelId },
+});
+
+export function OrganizationSettingsDialog(props: OrganizationSettingsProps) {
+  // Mounted only while open, so every opening reads the stored settings afresh.
+  return props.open ? <OrganizationSettingsForm {...props} /> : null;
+}
+
+function OrganizationSettingsForm({
+  projectId,
+  orgId,
+  onClose,
+  onChanged,
+  onDeleted,
+}: OrganizationSettingsProps) {
+  /** Stored settings as loaded on open (null until then) — the form's baseline. */
   const [settings, setSettings] = useState<OrganizationSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [mission, setMission] = useState("");
-  const [timezone, setTimezone] = useState("");
-  const [language, setLanguage] = useState<OrgLanguage>(DEFAULT_ORG_LANGUAGE);
-  const [approvalMode, setApprovalMode] = useState<OrgApprovalMode>("allow-all");
-  const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
-  const [workspace, setWorkspace] = useState("");
+  const form = useFormDraft(orgSettingsDraft(settings), { normalize: normalizedOrgDraft });
+  const { name, mission, timezone, language, approvalMode, modelRef, workspace } = form.draft;
   const [busy, setBusy] = useState(false);
   /** The delete confirmation, and what has been typed into it (the id, to mean it). */
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [typedId, setTypedId] = useState("");
-  const { models, error: modelsError } = useProjectModels(projectId, open);
+  const { models, error: modelsError } = useProjectModels(projectId, true);
+  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  /** The organization always has a name, a mission and a timezone: an emptied one holds Save. */
+  const valid = name.trim() !== "" && mission.trim() !== "" && timezone.trim() !== "";
 
   const doDelete = async () => {
     setBusy(true);
@@ -582,17 +625,6 @@ export function OrganizationSettingsDialog({
     }
   };
 
-  const adopt = (next: OrganizationSettings) => {
-    setSettings(next);
-    setName(next.name);
-    setMission(next.mission);
-    setTimezone(next.timezone);
-    setLanguage(next.language ?? DEFAULT_ORG_LANGUAGE);
-    setApprovalMode(next.approvalMode);
-    setModelRef(next.model ?? null);
-    setWorkspace(next.workspace ?? "");
-  };
-
   const load = useCallback(() => {
     let cancelled = false;
     setSettings(null);
@@ -600,7 +632,7 @@ export function OrganizationSettingsDialog({
     void api
       .getOrganization(projectId, orgId)
       .then((detail) => {
-        if (!cancelled) adopt(detail.settings);
+        if (!cancelled) setSettings(detail.settings);
       })
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(apiErrorText(e));
@@ -610,15 +642,16 @@ export function OrganizationSettingsDialog({
     };
   }, [projectId, orgId]);
 
-  useEffect(() => {
-    if (!open) return;
-    return load();
-  }, [open, load]);
+  useEffect(() => load(), [load]);
 
+  /**
+   * One PATCH; the answer becomes the stored settings. The pause / resume writes through here
+   * alone, and the typed fields beside it keep their edits against the new baseline.
+   */
   const patch = async (body: OrganizationPatchRequest) => {
     setBusy(true);
     try {
-      adopt(await api.patchOrganization(projectId, orgId, body));
+      setSettings(await api.patchOrganization(projectId, orgId, body));
       toastSuccess(S.common.saved);
       onChanged();
       return true;
@@ -631,11 +664,11 @@ export function OrganizationSettingsDialog({
   };
 
   const save = () => {
-    if (settings === null) return;
+    if (settings === null || !form.dirty || !valid) return;
     const body: OrganizationPatchRequest = {};
-    if (name.trim() && name.trim() !== settings.name) body.name = name.trim();
-    if (mission.trim() && mission.trim() !== settings.mission) body.mission = mission.trim();
-    if (timezone.trim() && timezone.trim() !== settings.timezone) body.timezone = timezone.trim();
+    if (name.trim() !== settings.name) body.name = name.trim();
+    if (mission.trim() !== settings.mission) body.mission = mission.trim();
+    if (timezone.trim() !== settings.timezone) body.timezone = timezone.trim();
     if (language !== (settings.language ?? DEFAULT_ORG_LANGUAGE)) body.language = language;
     if (approvalMode !== settings.approvalMode) body.approvalMode = approvalMode;
     // Clearing sends null: the organization returns to the Project default / its own directory.
@@ -647,10 +680,6 @@ export function OrganizationSettingsDialog({
     if (nextWorkspace !== (settings.workspace ?? "")) {
       body.workspace = nextWorkspace === "" ? null : nextWorkspace;
     }
-    if (Object.keys(body).length === 0) {
-      onClose();
-      return;
-    }
     void patch(body).then((ok) => {
       if (ok) onClose();
     });
@@ -660,16 +689,21 @@ export function OrganizationSettingsDialog({
   const paused = settings?.status === "paused";
   return (
     <Modal
-      open={open}
+      open
       title={S.company.settingsTitle}
-      onClose={onClose}
+      onClose={requestClose}
       widthClass="sm:max-w-lg"
       footer={
         <>
-          <Button size="sm" onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={requestClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button size="sm" variant="primary" disabled={!hydrated || busy} onClick={save}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!hydrated || busy || !form.dirty || !valid}
+            onClick={save}
+          >
             {S.common.save}
           </Button>
         </>
@@ -702,36 +736,43 @@ export function OrganizationSettingsDialog({
         <Input
           label={S.company.displayName}
           size="sm"
+          required
           value={name}
           disabled={!hydrated || busy}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => form.patch({ name: e.target.value })}
         />
         <Textarea
           label={S.company.mission}
           size="sm"
           rows={3}
+          required
           value={mission}
           disabled={!hydrated || busy}
           info={S.company.missionHint}
-          onChange={(e) => setMission(e.target.value)}
+          onChange={(e) => form.patch({ mission: e.target.value })}
         />
         <ModelField
           models={models}
           loadError={modelsError}
           value={modelRef}
-          onChange={setModelRef}
+          onChange={(next) => form.patch({ modelRef: next })}
           disabled={!hydrated || busy}
         />
-        <WorkspaceField projectId={projectId} value={workspace} onChange={setWorkspace} />
+        <WorkspaceField
+          projectId={projectId}
+          value={workspace}
+          onChange={(next) => form.patch({ workspace: next })}
+        />
         <Input
           label={S.company.timezone}
           size="sm"
+          required
           value={timezone}
           disabled={!hydrated || busy}
           hint={S.company.timezoneHint}
           info={S.company.timezoneInfo}
           className="font-mono"
-          onChange={(e) => setTimezone(e.target.value)}
+          onChange={(e) => form.patch({ timezone: e.target.value })}
         />
         <div>
           <InfoFieldLabel label={S.company.language} info={S.company.languageInfo} />
@@ -740,7 +781,7 @@ export function OrganizationSettingsDialog({
             aria-label={S.company.language}
             value={language}
             disabled={!hydrated || busy}
-            onChange={(e) => setLanguage(e.target.value as OrgLanguage)}
+            onChange={(e) => form.patch({ language: e.target.value as OrgLanguage })}
           >
             {ORG_LANGUAGES.map((l) => (
               <option key={l} value={l}>
@@ -756,7 +797,7 @@ export function OrganizationSettingsDialog({
             aria-label={S.company.approvalMode}
             value={approvalMode}
             disabled={!hydrated || busy}
-            onChange={(e) => setApprovalMode(e.target.value as OrgApprovalMode)}
+            onChange={(e) => form.patch({ approvalMode: e.target.value as OrgApprovalMode })}
           >
             {APPROVAL_MODES.map((m) => (
               <option key={m} value={m}>
