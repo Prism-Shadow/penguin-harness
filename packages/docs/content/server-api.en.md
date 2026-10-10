@@ -544,15 +544,15 @@ Benchmarks belong to the Project, not to an agent: one Benchmark can evaluate an
 | --- | --- | --- |
 | GET | `/benchmarks` | Benchmark scoring data |
 | POST | `/benchmarks` | Creates a Benchmark by hand (owner only) |
-| DELETE | `/benchmarks/:benchmarkId` | Deletes a Benchmark directory with its cases, config and scoreboard (owner only; 204, or 404 when absent) |
+| DELETE | `/benchmarks/:benchmarkId` | Deletes a Benchmark directory with its cases, manifest and scoreboard (owner only; 204, or 404 when absent) |
 | GET | `/benchmarks/:benchmarkId/cases` | A Benchmark's cases: each case's id and the heading of its statement README. Rubrics are never returned |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files` | Browses one case's `statement/` |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files/content` | Reads one file of the statement (`?path=`, `?preview=1`, `?download=1`) |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files` | Browses one case's `rubric/` |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content` | Reads one file of the rubric, with the same parameters |
 
-- `GET /benchmarks` lists only directories that hold a `benchmark_config.toml`. A directory without one, which is what a Benchmark deleted during an evaluation leaves behind, is skipped. Each entry carries `status`: `draft` while the Skill is still building the Benchmark, `failed` when its calibration never finished, and `published` otherwise.
-- `POST /benchmarks` takes `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}` and answers 201 `{benchmark}`. The server writes `benchmark_config.toml` (with `status = "published"`), a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (with the title as its heading) and `rubric/README.md`. Ids use the same characters as agent ids, and case ids start with `CASE-`. If the directory already exists, the route returns 409 `benchmark_exists`.
+- `GET /benchmarks` lists only directories that hold a `benchmark_config.toml`. A directory without one, which is what a Benchmark deleted during an evaluation leaves behind, is skipped. Each entry carries `status` (`draft` while the Skill is still building the Benchmark, `failed` when its calibration never finished, and `published` otherwise) and, when the manifest has them, the date `version` and the `origin` (`{kind, url?, ref?, path?, importedAt?}`, `kind` one of `builtin`, `manual`, `agent`, `git`, `zip`); a manifest written by an earlier release has neither. A Benchmark whose manifest cannot be used is listed under its directory name as `failed`, with `manifestError` (`{code, message}`; `code` is `benchmark_manifest_invalid` or `benchmark_id_mismatch`) and without `version` or `origin`. A manifest the filesystem cannot read fails the request.
+- `POST /benchmarks` takes `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}` and answers 201 `{benchmark}`. The server writes `benchmark_config.toml` (with the `id`, `status = "published"`, the day's first version and origin `manual`), a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (with the title as its heading) and `rubric/README.md`. Ids use the same characters as agent ids, and case ids start with `CASE-`. If the directory already exists, the route returns 409 `benchmark_exists`.
 - The file-content routes apply the same inline hardening as Workspace files; see [Workspace file responses](#workspace-file-responses).
 
 ## Organizations (company mode)
@@ -1183,7 +1183,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 
 ### Wire Format
 
-Default (unnamed) SSE events carry raw OmniMessage envelopes as single-line JSON: the same protocol the SDK yields and the Trace stores (see [OmniMessage Protocol](/omni-message)). Events named `server_event` carry the `ServerEvent` union:
+Default (unnamed) SSE events carry raw OmniMessage envelopes as single-line JSON: the same protocol the SDK yields and the Trace stores (see [OmniMessage Protocol](/omni-message)). Events named `ping` are the heartbeat (see [Delivery Guarantees](#delivery-guarantees)). Events named `server_event` carry the `ServerEvent` union:
 
 ```ts
 export type ServerEvent =
@@ -1257,9 +1257,10 @@ export type ServerEvent =
 
 - Event ids increase monotonically per channel and have the form `<epoch>-<seq>`.
 - Each channel keeps a bounded replay buffer: the most recent 10,000 events or 8MB.
-- On reconnect with `Last-Event-ID`, the server replays the gap if the id is still in the buffer. Otherwise it first sends `resync_required`, and the client refetches `/messages` before continuing.
-- A heartbeat comment line is written every 20 seconds. The same beat re-checks the session behind the connection and ends the stream when that session is gone or has expired, so a client whose sign-in was revoked stops streaming instead of waiting for its next request to fail. Revoking sessions directly — an admin resetting a password or deleting an account — ends that user's open streams at once; the heartbeat is the catch-all. A stream authenticated by the local API token has no session row and is left alone.
-- Event order: on a reconnect that carries `Last-Event-ID`, the replayed gap (or `resync_required`) arrives first, then the initial events (the authoritative `task_state` snapshot and any still-pending `approval_request`s), then the live stream. A fresh connection without `Last-Event-ID` skips the replay, so its first event is the `task_state` snapshot.
+- On reconnect with `Last-Event-ID`, the server replays the gap if the id is still in the buffer. Otherwise it first sends `resync_required`, and the client refetches `/messages` before continuing. A client that opens a new connection itself can pass the id as the `lastEventId` query parameter instead, since an `EventSource` cannot set headers. When both are present, the header wins.
+- A `ping` event (`data: {}`, no `id:` line) is sent right after the initial events and then every 20 seconds. A browser hands it to the page, unlike a comment line, so a client that has received one can treat a long silence as a dead connection. Without an id it moves neither the client's `Last-Event-ID` nor the replay position. The same beat re-checks the session behind the connection and ends the stream when that session is gone or has expired, so a client whose sign-in was revoked stops streaming instead of waiting for its next request to fail. Revoking sessions directly — an admin resetting a password or deleting an account — ends that user's open streams at once; the heartbeat is the catch-all. A stream authenticated by the local API token has no session row and is left alone.
+- A stream whose socket sends nothing for 40 seconds (up to 80 while a write is pending) is closed. With a `ping` every 20 seconds, only a peer that stopped reading, as behind a half-open connection or a stuck proxy, lets a stream go that quiet. A client that is still there finds the stream ended, reconnects and resumes from its last event id.
+- Event order: on a reconnect that carries `Last-Event-ID` (or `lastEventId`), the replayed gap (or `resync_required`) arrives first, then the initial events (the authoritative `task_state` snapshot and any still-pending `approval_request`s), then a `ping`, then the live stream. A fresh connection without either skips the replay, so its first event is the `task_state` snapshot.
 
 ### Recommended Client Pattern
 
@@ -1270,6 +1271,7 @@ The bundled Web App connects in this order:
 3. If the response carries `live` (a Task is running), drop the buffered partial events the cursor already covers and apply `live.fragments` on top of the history. The in-progress message reappears with its streamed prefix intact.
 4. Replay the buffer, removing the overlap.
 5. Continue with the live stream.
+6. Once the stream has sent a `ping`, treat 50 seconds without any event as a dead connection: close it and reconnect with `?lastEventId=` set to the last id received. Check at once when the page becomes visible, since background timers run late. A stream that never sends `ping` comes from a server older than the heartbeat event; leave it to the browser's own reconnection.
 
 ## Type Imports
 

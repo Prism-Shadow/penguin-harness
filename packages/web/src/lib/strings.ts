@@ -69,7 +69,6 @@ export const zh = {
     noneInUse: "还没有在用的机器。",
     sshHint:
       "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
-    now: "刚刚",
     /** The chevron row at the foot of the picker's list: the matches it has not shown yet. */
     allHosts: (count: number) => `ssh 配置中另有 ${count} 台`,
     expand: "展开",
@@ -111,28 +110,25 @@ export const zh = {
     updateAll: (count: number) => `全部更新（${count}）`,
     updateAllConfirm: (count: number) =>
       `把这 ${count} 台机器更新到本服务端的版本？每台都会重装程序、重启服务并重新连接，期间正在用它的人会短暂断开。`,
-    /** Asked before letting machines go: the connection drops, the install stays. */
+    /** Asked before letting a machine go: the connection drops, the install stays. */
     stopUsingOne: (alias: string) =>
       `停用 ${alias}？本 Project 会断开与它的连接并不再列出它，正在经它进行的工作会中断。程序仍留在那台机器上，之后可以重新启用。`,
-    stopUsingMany: (count: number) =>
-      `停用这 ${count} 台机器？本 Project 会断开与它们的连接并不再列出它们，正在经它们进行的工作会中断。程序仍留在那些机器上，之后可以重新启用。`,
-    /** The floating bar over a selection. */
-    selectedCount: (count: number) => `已选 ${count} 台`,
-    pickAll: "全选",
-    pickNone: "清空",
-    /** The one word in a row's State column, keyed by the row's reading; `serving` is this server's. */
+    /**
+     * The one word for a machine's state, keyed by its reading; `serving` is this server's. The
+     * card's mark and the Machine dialog's status chip both say it.
+     */
     state: {
-      serving: "服务中",
+      serving: "运行中",
       queued: "排队中",
       working: "处理中",
       ready: "已连接",
       failed: "失败",
       installedOnly: "已安装",
-      behind: "待更新",
+      behind: "有新版本",
       notConnected: "未连接",
       unreachable: "连不上",
       stopped: "未运行",
-      linkedStopped: "已连接，未在提供服务",
+      linkedStopped: "已连接，服务未运行",
       unknown: "未检查",
     },
     /** The stepper's steps, in pipeline order, as the caption under a working row. */
@@ -144,35 +140,127 @@ export const zh = {
       connect: "建立连接…",
       sync: "下发模型配置…",
     },
+    /** The same steps by name, in pipeline order: the Machine dialog's step list. */
+    step: {
+      check: "检查机器",
+      install: "安装程序",
+      handover: "传送构建",
+      restart: "重启服务",
+      connect: "建立连接",
+      sync: "同步模型配置",
+    },
     stepOf: (step: number, total: number) => `第 ${step}/${total} 步`,
     queued: "排队中，等前面的机器处理完。",
     working: "处理中…",
     failedAt: (step: string) => `失败于「${step}」。`,
-    /** The forced install a failed job may offer. */
+    /** The forced install a failed job may offer, and how it differs from an install. */
     replaceProgram: "强制安装",
-    replaceProgramWhy:
-      "无论那台机器上现在是什么，都把这个构建的程序装上去并重启它的服务——正在用它的人会被打断。",
+    replaceProgramWhy: "即使版本已一致，也重新安装程序",
     replaceProgramConfirm: (alias: string) =>
       `在 ${alias} 上强制安装？无论那台机器上现在是什么，都会装上本服务端的构建并重启它的服务，正在用它的人会被打断。`,
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
     refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
-    /** The detail pane. */
-    details: "详情",
-    detailInstalled: "已安装",
-    detailSince: "安装于",
-    /** This server's own card says what build it runs and since when, not what was installed. */
-    detailVersion: "版本",
-    detailStarted: "启动于",
-    detailServer: "对端服务",
-    detailChecked: "上次检查",
-    detailMachineId: "机器 ID",
-    detailRoot: "服务端根目录",
-    serverUpOn: (port: number) => `运行中，端口 ${port}`,
-    /** The progress log's own heading, so the block is not an unlabelled wall of text. */
-    output: "输出",
     agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
+    /** The notice under the title while machines carry another build; its action updates them all. */
+    updateNotice: (count: number) => `${count} 台机器待更新`,
+    /** A machine's card (machine-card.tsx): the stats line and the verbs beside it. */
+    card: {
+      /** How this server reaches the machine; the dialog says it in full. */
+      local: "本机",
+      ssh: "ssh",
+      /** The pill beside the version of a machine on another build. */
+      updateNeeded: "需要更新",
+      update: "更新",
+    },
+    /**
+     * The Machine dialog (machine-detail-dialog.tsx): a header under the alias, then Details,
+     * Progress and Actions.
+     */
+    detail: {
+      /** The header's line under the status: how this server reaches the machine. */
+      describeRemote: (alias: string) => `通过 ssh 别名「${alias}」连接的远程机器。`,
+      describeLocal: "本服务端所在的机器，不经 ssh。",
+      /** A machine on another build than this server's: the version this server would install. */
+      newerAvailable: (version: string) => `有新版本 ${version}`,
+      facts: "基本信息",
+      progress: "处理进度",
+      actions: "操作",
+      /** Details: each fact's label, and the values said in words. */
+      fact: {
+        connection: "连接方式",
+        viaSsh: (alias: string) => `ssh · ${alias}`,
+        local: "本机，不经 ssh",
+        host: "主机地址",
+        root: "数据目录",
+        service: "远端服务",
+        serviceLocal: "服务",
+        running: (port: number) => `运行中（端口 ${port}）`,
+        stopped: "未运行",
+        unreachable: "连不上",
+        checked: "上次检查",
+        installed: "已安装",
+        version: "版本",
+        latest: (version: string) => `${version}（最新）`,
+        behind: (version: string, latest: string) => `${version} · 可更新到 ${latest}`,
+        installedAt: "安装时间",
+        started: "启动于",
+        machineId: "机器 ID",
+      },
+      copyMachineId: "复制机器 ID",
+      /** Progress: a job that finished well, in one line. */
+      lastJobDone: "上次任务已完成。",
+      failedAtStep: (step: string, message: string) => `在「${step}」这一步失败：${message}`,
+      showLog: "查看日志",
+      logLabel: "任务日志",
+      /** The one thing to do for a machine, and what it does, said beside it. */
+      primary: {
+        update: "更新",
+        updateWhy: (version: string) => `更新到 ${version}，会重启服务并重新连接。`,
+        start: "启动服务",
+        startWhy: "启动那台机器上的服务并连接。",
+        connect: "连接",
+        connectWhy: "连接到那台机器上的服务，没在运行就先启动它。",
+        tryAgain: "重试连接",
+        tryAgainWhy: "再次通过 ssh 连接；请先确认那台机器开着、网络通。",
+        retry: "重试",
+        retryWhy: "从头再跑一遍整个流程",
+      },
+      /** The captions of the two groups of Actions: the single steps, and the ways out. */
+      maintenance: "维护",
+      leave: "退出",
+      configureSsh: "配置 ssh",
+      configureSshWhy: "修改连接这台机器用的地址、用户、端口和密钥",
+      /**
+       * Why a verb waits on the machine, said in its row in place of what it does. A request in
+       * flight holds every verb too, for a moment, and has no line of its own.
+       */
+      hold: {
+        moving: "这台机器正在处理任务，完成后可用",
+        noImage: "本服务端没有可安装的版本",
+        noConnection: "当前没有连接，无需断开",
+        unreachable: "上次检查时连不上这台机器",
+      },
+    },
+    /** The single steps and the ways out the dialog offers, each with what it does in one line. */
+    verbs: {
+      install: "安装程序",
+      installWhy: "把本服务端的版本装到这台机器上",
+      connect: "重新连接",
+      connectWhy: "重新连上这台机器，必要时先启动它的服务",
+      restart: "重启服务",
+      restartWhy: "重启这台机器上的服务",
+      stopUsingWhy: "断开连接并移出本 Project，程序仍留在这台机器上",
+      disconnect: "断开",
+      disconnectWhy: "只断开连接，这台机器上的服务继续运行",
+      release: "移出 Project",
+      releaseWhy: "本 Project 不再列出它，连接和程序都不变",
+      disconnectConfirm: (alias: string) =>
+        `断开与 ${alias} 的连接？这条连接由使用它的所有 Project 共用，正在经它进行的工作会中断；那台机器上的服务继续运行，之后可以重新连接。`,
+      releaseConfirm: (alias: string) =>
+        `把 ${alias} 移出本 Project？它不再列在这里，本 Project 的模型配置也不再同步给它；那台机器上的程序与连接保持不变，之后可以从「添加机器…」重新启用。`,
+    },
   },
 
   /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */
@@ -4297,6 +4385,15 @@ Benchmark：
     optimize: "优化",
     view: "查看",
     copyPath: "复制目录路径",
+    /** The Benchmark page's header: its manifest's version, and the repository folder it was imported from. */
+    versionLabel: "版本",
+    sourceLabel: "来源",
+    /** A Benchmark whose benchmark_config.toml cannot be read: masked like a failed one, the reason behind an icon. */
+    manifestBroken: "清单无法读取",
+    manifestBrokenHint: "修好它的 benchmark_config.toml 即可使用，也可以删除它",
+    manifestBrokenHintMember: "修好它的 benchmark_config.toml 后即可使用",
+    /** The Benchmark page's notice: the hint, then the reason the server gave. */
+    manifestBrokenDetail: (hint: string, reason: string): string => `${hint}。原因：${reason}`,
     deleteBenchmark: "删除 Benchmark",
     deleteConfirm: (title: string): string =>
       `确定删除「${title}」吗？它的全部题目与评估记录都会被删除，无法恢复。`,
@@ -4477,7 +4574,7 @@ Benchmark：
       "- desired_baseline_score：`<50`（上文另有要求时以上文为准）\n" +
       "- pilot_iteration_limit：`4`（上文另有要求时以上文为准）\n\n" +
       "Benchmark 与 Agent 平级：在 Project 的 `benchmarks/<benchmark_id>/` 下（不在被测智能体目录内）创建 `benchmark_config.toml`" +
-      "（title、description、runs = 1；不记录被测智能体）、" +
+      '（id 与目录名相同、title、description、version 为当天的日期版本 `"YYYY.MM.DD.1"`、status、runs = 1，以及 `kind = "agent"` 的 `[origin]` 表；不记录被测智能体）、' +
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
       "每一次试测都必须通过 `run_subagent` 派发子会话，并在子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +

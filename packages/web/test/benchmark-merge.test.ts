@@ -108,6 +108,42 @@ describe("mergeBenchmarks", () => {
     expect(merged[0]).toMatchObject({ title: "Here", runs: 3, caseCount: 5 });
   });
 
+  it("keeps the first source's version and origin, and takes them from the next source when the first names none, unless its copy cannot be read", () => {
+    const OLDER = "olderServerMachine";
+    const merged = mergeBenchmarks([
+      {
+        machineId: null,
+        benchmarks: [benchmark("here", { version: "2026.10.09.2", origin: { kind: "manual" } })],
+      },
+      // A machine whose server predates versions names no version at all; the copy of "broken"
+      // there cannot be read, which is a fact about it, not an absence.
+      {
+        machineId: OLDER,
+        benchmarks: [
+          benchmark("here"),
+          benchmark("there"),
+          benchmark("broken", {
+            status: "failed",
+            manifestError: { code: "benchmark_id_mismatch", message: "copied" },
+          }),
+        ],
+      },
+      {
+        machineId: MACHINE,
+        benchmarks: [
+          benchmark("here", { version: "2026.10.01.1", origin: { kind: "zip" } }),
+          benchmark("there", { version: "2026.10.05.1", origin: { kind: "agent" } }),
+          benchmark("broken", { version: "2026.10.07.1", origin: { kind: "agent" } }),
+        ],
+      },
+    ]);
+    expect(merged.map((b) => [b.id, b.version, b.origin?.kind])).toEqual([
+      ["here", "2026.10.09.2", "manual"],
+      ["there", "2026.10.05.1", "agent"],
+      ["broken", undefined, undefined],
+    ]);
+  });
+
   it("names every Agent either scoreboard tested, in first-seen order", () => {
     const merged = mergeBenchmarks([
       { machineId: null, benchmarks: [benchmark("example", { agentIds: ["a", "b"] })] },
