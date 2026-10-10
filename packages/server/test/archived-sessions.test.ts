@@ -22,6 +22,9 @@
  * - Given a filter naming one Workspace, unarchive acts on that Workspace only.
  * - Given ids, delete removes each Session's Trace files and row, and its subagent children with
  *   it; an id the user cannot open is reported missing.
+ * - Given a group's batch pinned to the time its count was read, it acts on the Sessions that
+ *   count saw: one archived or created after it is left alone, and so is a running one, which a
+ *   group's delete never aborts (deleting it by id still does).
  * - Given a running archived Session, delete aborts its run before the files go.
  * - Given a subagent or company Session, archiving or unarchiving it is a 409 that changes
  *   nothing.
@@ -108,12 +111,14 @@ describe("the archive page", () => {
       prompt?: string;
       trace?: boolean;
       extra?: OmniMessage[];
+      /** When it was created and last active (ISO); by default each seed is a second newer. */
+      at?: string;
     } = {},
   ): Promise<string> {
     seq += 1;
     const n = String(seq).padStart(4, "0");
     const sessionId = `session-${DAY}-09-00-00-a7c1${n}`;
-    const stamp = new Date(Date.UTC(2026, 9, 11, 9, 0, 0) + seq * 1000).toISOString();
+    const stamp = opts.at ?? new Date(Date.UTC(2026, 9, 11, 9, 0, 0) + seq * 1000).toISOString();
     const workspace = opts.workspace ?? "/tmp/arch-ws-a";
     const traced = opts.trace !== false;
     t.deps.sessionsRepo.insert({
@@ -375,6 +380,62 @@ describe("the archive page", () => {
     expect(t.deps.sessionsRepo.findById(ids.hidden)).not.toBeNull();
   });
 
+  it("acts on a group as its count saw it: what came after is untouched, and a running Session is not aborted", async () => {
+    const w = await world();
+    const ws = "/tmp/arch-ws-snapshot";
+    const ago = (seconds: number) => new Date(Date.now() - seconds * 1000).toISOString();
+    const counted = await seed(w.p1, { source: "cli", workspace: ws, at: ago(120) });
+    const byHand = await seed(w.p1, { workspace: ws, at: ago(110) });
+    expect((await w.owner.patch(`/api/sessions/${byHand}`, { archived: true })).status).toBe(200);
+    const running = await seed(w.p1, { source: "cli", workspace: ws, at: ago(100) });
+    t.deps.manager.adopt(
+      t.deps.sessionsRepo.findById(running)!,
+      fakeSession(running, {
+        async *run(_input, { signal }) {
+          yield requestBegin();
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve()));
+        },
+      }),
+    );
+    await t.deps.manager.startTask(running, [userText("long job")]);
+    await waitFor(() => t.deps.manager.statusOf(running) === "running");
+    const laterByHand = await seed(w.p1, { workspace: ws, at: ago(90) });
+
+    const snapshot = await groups(w.owner, `?projectId=${w.p1}`);
+    expect(snapshot.groups.find((g) => g.workspace === ws)?.count).toBe(3);
+    // After the count: a program opens another Session, and the user archives a conversation.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const arrived = await seed(w.p1, {
+      source: "api",
+      client: "api",
+      trace: false,
+      workspace: ws,
+      at: new Date().toISOString(),
+    });
+    expect((await w.owner.patch(`/api/sessions/${laterByHand}`, { archived: true })).status).toBe(
+      200,
+    );
+
+    const filter = { projectId: w.p1, workspace: ws, until: snapshot.asOf };
+    expect(await batch(w.owner, "delete", { filter })).toEqual({ done: 2, missing: [] });
+    for (const gone of [counted, byHand]) expect(t.deps.sessionsRepo.findById(gone)).toBeNull();
+    expect(t.deps.manager.statusOf(running)).toBe("running");
+    for (const kept of [running, arrived, laterByHand]) {
+      expect(await archivedFlag(w.owner, kept), kept).toBe(true);
+    }
+    // Unarchiving the group as that count saw it reaches the running Session, and only it.
+    expect(await batch(w.owner, "unarchive", { filter })).toEqual({ done: 1, missing: [] });
+    expect(await archivedFlag(w.owner, running)).toBe(false);
+    expect(await archivedFlag(w.owner, arrived)).toBe(true);
+    expect(await archivedFlag(w.owner, laterByHand)).toBe(true);
+    // Named by id, a running Session is still aborted and deleted.
+    expect(await batch(w.owner, "delete", { sessionIds: [running] })).toEqual({
+      done: 1,
+      missing: [],
+    });
+    expect(t.deps.sessionsRepo.findById(running)).toBeNull();
+  });
+
   it("aborts a running Session's run before deleting it", async () => {
     const w = await world();
     const running = await seed(w.p1, { source: "cli" });
@@ -482,6 +543,7 @@ describe("the archive page", () => {
     );
     expect(await post({ sessionIds: ["../etc"] })).toBe(400);
     expect(await post({ filter: { source: "subagent" } })).toBe(400);
+    expect(await post({ filter: { until: "yesterday" } })).toBe(400);
     expect(await archivedFlag(w.owner, ids.cliA)).toBe(true);
   });
 });

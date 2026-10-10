@@ -9,7 +9,9 @@
  *   "less" folds back to ten.
  * - A new query or filter starts over: no rows, no reveal, no selection.
  * - An action takes its rows off the page at once, then reads the counts and every shown group
- *   again (as far as each was revealed), so what is left is the server's word.
+ *   again (as far as each was revealed), so what is left is the server's word. A whole group's
+ *   action carries the time its count was read at, so it acts on the Sessions that count saw
+ *   and on none archived, created or run after it.
  * - The page follows the user channel: a Session archived, unarchived, deleted or opened by a
  *   program elsewhere refreshes it the same way, debounced; a run starting or settling redraws
  *   its row's busy glyph in place, with nothing read again.
@@ -63,8 +65,12 @@ export interface GroupRows {
   loading: boolean;
 }
 
-/** What an action acts on: chosen rows, or every archived row of one group the filters match. */
-export type ArchiveTarget = { kind: "ids"; ids: string[] } | { kind: "group"; key: string };
+/**
+ * What an action acts on: chosen rows, or the archived rows of one group the filters match that
+ * its count, read at `until` (the groups' `asOf`), saw.
+ */
+export type ArchiveTarget =
+  { kind: "ids"; ids: string[] } | { kind: "group"; key: string; until?: string };
 
 export interface ArchiveState {
   filters: ArchiveFilters;
@@ -72,6 +78,8 @@ export interface ArchiveState {
   groups: ArchivedSessionGroup[] | null;
   /** Sum of the groups' counts. */
   total: number;
+  /** When the server took the counts on screen; null until the first answer. */
+  asOf: string | null;
   /** Groups shown (a multiple of ARCHIVE_GROUP_PAGE). */
   groupLimit: number;
   /** Each shown group's rows, by groupKey. */
@@ -96,6 +104,14 @@ export function shownGroups(state: ArchiveState): ArchivedSessionGroup[] {
 /** The rows of one group on screen: the first `cap` of those held. */
 export function shownRows(rows: GroupRows | undefined): SessionInfo[] {
   return rows === undefined ? [] : rows.sessions.slice(0, rows.cap);
+}
+
+/**
+ * A whole group as an action's target, pinned to the counts on screen: what the user is shown
+ * counted is what the action acts on.
+ */
+export function groupTarget(state: ArchiveState, key: string): ArchiveTarget {
+  return { kind: "group", key, ...(state.asOf !== null ? { until: state.asOf } : {}) };
 }
 
 /** How many Sessions an action on `target` acts on, as the confirm before a delete counts them. */
@@ -214,8 +230,9 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       const caps = new Map([...get().rows].map(([key, rows]) => [key, rows.cap]));
       let groups: ArchivedSessionGroup[];
       let total: number;
+      let asOf: string;
       try {
-        ({ groups, total } = await api.listArchivedSessionGroups(query(get().filters)));
+        ({ groups, total, asOf } = await api.listArchivedSessionGroups(query(get().filters)));
       } catch (err) {
         if (g !== gen) return;
         set({ error: apiErrorText(err) });
@@ -226,7 +243,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       // Rows of groups that are gone go with them.
       const present = new Set(groups.map(groupKey));
       const rows = new Map([...get().rows].filter(([key]) => present.has(key)));
-      set({ groups, total, rows, error: null });
+      set({ groups, total, asOf, rows, error: null });
       await fillGroups(g, groups.slice(0, get().groupLimit), (key) =>
         keep ? (caps.get(key) ?? ARCHIVE_ROW_PAGE) : ARCHIVE_ROW_PAGE,
       );
@@ -260,12 +277,14 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       }
       const group = get().groups?.find((g) => groupKey(g) === target.key);
       if (group === undefined) return [];
+      const until = target.until ?? get().asOf;
       return [
         {
           filter: {
             ...query(get().filters),
             projectId: group.projectId,
             workspace: group.workspace,
+            ...(until !== null ? { until } : {}),
           },
         },
       ];
@@ -299,6 +318,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       filters: { q: "", source: null, projectId: null },
       groups: null,
       total: 0,
+      asOf: null,
       groupLimit: ARCHIVE_GROUP_PAGE,
       rows: new Map(),
       selection: new Set(),
@@ -310,6 +330,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
           filters,
           groups: null,
           total: 0,
+          asOf: null,
           groupLimit: ARCHIVE_GROUP_PAGE,
           rows: new Map(),
           selection: new Set(),

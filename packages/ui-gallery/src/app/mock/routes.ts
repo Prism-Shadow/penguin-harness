@@ -1144,7 +1144,7 @@ router
         });
       }
     }
-    return { groups: [...groups.values()], total: rows.length };
+    return { groups: [...groups.values()], total: rows.length, asOf: new Date().toISOString() };
   })
   .get("/api/me/archived-sessions", ({ store, query }): ArchivedSessionsResponse => {
     const rows = archivedRows(store, query);

@@ -7,6 +7,9 @@
  *   GET  /            one group's page, newest activity first, by cursor
  *   POST /unarchive   unarchive explicit ids, or every archived row a filter matches
  *   POST /delete      delete them the same way
+ *
+ * A group's batch is a filter carrying the snapshot its count was read at (`until`, the groups
+ * response's `asOf`), so it acts on the rows the user saw counted and on none that came after.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -79,6 +82,14 @@ function queryOf(c: Context<AppEnv>): Record<string, unknown> {
   return c.req.query();
 }
 
+/** A filter's snapshot time: an ISO time, as the groups response's `asOf` gives it. */
+function parseUntil(raw: unknown): string {
+  if (typeof raw !== "string" || !Number.isFinite(Date.parse(raw))) {
+    throw badRequest("until must be an ISO time.");
+  }
+  return raw;
+}
+
 /** A batch's body: `{sessionIds}` (1–500 ids) or `{filter}`, exactly one of them. */
 async function parseBatch(c: Context<AppEnv>): Promise<ArchivedSessionsBatch> {
   const body = await readJson(c);
@@ -104,6 +115,7 @@ async function parseBatch(c: Context<AppEnv>): Promise<ArchivedSessionsBatch> {
     filter: {
       ...parseQuery(raw),
       ...(raw.workspace !== undefined ? { workspace: parseWorkspace(raw.workspace) } : {}),
+      ...(raw.until !== undefined ? { until: parseUntil(raw.until) } : {}),
     },
   };
 }

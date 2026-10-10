@@ -7,7 +7,8 @@
  * - A search box and two filters (source, Project) on top, and under them, while rows are
  *   chosen, the batch bar: both stay put while the list scrolls in its own box below, so a batch
  *   chosen far down the list is still in reach. The list holds the groups, one per Workspace of
- *   a Project, newest first, each with its count and a ⋯ menu acting on the whole group.
+ *   a Project, newest first, each with its count and a ⋯ menu acting on the whole group as
+ *   that count saw it.
  * - A row: a box to choose it (shown on hover or focus, always on touch, and on every row while
  *   anything is chosen), the title and the time, the source's glyph, a busy glyph while it runs,
  *   then a delete icon and Unarchive. Choosing rows brings up one bar for the batch.
@@ -47,6 +48,7 @@ import {
   ARCHIVE_ROW_PAGE,
   createArchiveStore,
   groupKey,
+  groupTarget,
   shownGroups,
   shownRows,
   targetCount,
@@ -223,6 +225,7 @@ export function ArchivedSessionsSection() {
               <ArchiveGroup
                 key={groupKey(group)}
                 group={group}
+                whole={groupTarget(state, groupKey(group))}
                 rows={state.rows.get(groupKey(group))}
                 selection={state.selection}
                 choosing={choosing}
@@ -273,6 +276,7 @@ export function ArchivedSessionsSection() {
 /** One group: its header (Project › Workspace, the count, the ⋯ menu) and its rows. */
 function ArchiveGroup({
   group,
+  whole,
   rows,
   selection,
   choosing,
@@ -284,6 +288,8 @@ function ArchiveGroup({
   onDelete,
 }: {
   group: ArchivedSessionGroup;
+  /** The whole group as its ⋯ menu acts on it: the Sessions its count on screen saw. */
+  whole: ArchiveTarget;
   rows: GroupRows | undefined;
   selection: ReadonlySet<string>;
   choosing: boolean;
@@ -294,7 +300,6 @@ function ArchiveGroup({
   onUnarchive: (target: ArchiveTarget) => void;
   onDelete: (target: ArchiveTarget, title?: string) => void;
 }) {
-  const key = groupKey(group);
   const temp = group.workspace === "temp";
   const workspace = temp ? S.chat.tempWorkspaces : workspaceLabel(group.workspace);
   const shown = shownRows(rows);
@@ -327,8 +332,8 @@ function ArchiveGroup({
         </span>
         <GroupMenu
           disabled={busy}
-          onUnarchiveAll={() => onUnarchive({ kind: "group", key })}
-          onDeleteAll={() => onDelete({ kind: "group", key })}
+          onUnarchiveAll={() => onUnarchive(whole)}
+          onDeleteAll={() => onDelete(whole)}
         />
       </div>
       {rows === undefined || (rows.loading && shown.length === 0) ? (

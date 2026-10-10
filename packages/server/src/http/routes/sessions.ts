@@ -1910,6 +1910,7 @@ export class SessionApiRoutes {
               projectId: row.projectId,
             }),
           ),
+        statusOf: (sessionId) => manager.statusOf(sessionId),
         notifyProjectUsers: (projectId, event) =>
           projectEvents.notifyProjectUsers(projectId, event),
       }),

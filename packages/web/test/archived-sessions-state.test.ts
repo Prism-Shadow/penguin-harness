@@ -10,7 +10,9 @@
  *   filters ride on every request.
  * - Given rows chosen across groups, unarchiving them takes them off the page at once, then
  *   reads the counts and every shown group again, keeping each group's reveal.
- * - Given a group's own action, it names the group through a filter carrying the current query.
+ * - Given a group's own action, it names the group through a filter carrying the current query
+ *   and the time the count on screen was read at — the one the confirm counted, even when the
+ *   page has read itself again since.
  * - Given an action the server refuses, the rows stay and the failure is reported.
  * - Given a burst of user-channel events about the archive, the page reads itself again once;
  *   an event about something else does nothing.
@@ -28,6 +30,7 @@ import {
   ARCHIVE_REFRESH_DELAY_MS,
   createArchiveStore,
   groupKey,
+  groupTarget,
   shownGroups,
   shownRows,
 } from "../src/features/settings/archived-sessions-state";
@@ -42,6 +45,8 @@ let rows: SessionInfo[];
 let fetch: FakeFetch;
 /** An action the server refuses, when set. */
 let refuse = false;
+/** The time the fake server says it took the counts at (the groups' `asOf`). */
+let asOf = "2026-10-11T10:00:00.000Z";
 
 function row(sessionId: string, workspace: string, minute: number, title = sessionId): SessionInfo {
   const at = new Date(Date.UTC(2026, 9, 11, 9, minute)).toISOString();
@@ -108,7 +113,7 @@ function serve(request: FetchRequest): Response {
       }
     }
     const list = [...groups.values()];
-    return json({ groups: list, total: list.reduce((n, g) => n + g.count, 0) });
+    return json({ groups: list, total: list.reduce((n, g) => n + g.count, 0), asOf });
   }
   if (request.path === "/api/me/archived-sessions") {
     const before = request.query.get("before");
@@ -135,6 +140,7 @@ function serve(request: FetchRequest): Response {
 beforeEach(() => {
   rows = [];
   refuse = false;
+  asOf = "2026-10-11T10:00:00.000Z";
   fetch = stubFetch(serve);
 });
 afterEach(() => vi.useRealTimers());
@@ -259,10 +265,26 @@ describe("the archive page", () => {
       .remove({ kind: "group", key: groupKey({ projectId: "p", workspace: "/a" }) });
     expect(fetch.requests[0]!.path).toBe("/api/me/archived-sessions/delete");
     expect(fetch.requests[0]!.body).toEqual({
-      filter: { q: "deploy", projectId: "p", workspace: "/a" },
+      filter: { q: "deploy", projectId: "p", workspace: "/a", until: asOf },
     });
     // Only what the query matched went; the rest of the group is still archived.
     expect(rows.map((s) => s.sessionId).sort()).toEqual(["a-00", "a-01", "a-02", "b-00", "b-01"]);
+  });
+
+  it("acts on a whole group as the count the confirm showed saw it, after the page read itself again", async () => {
+    rows = run("a", "/a", 3);
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    // The confirm is asked with the group as it stands on screen.
+    const asked = groupTarget(store.getState(), groupKey({ projectId: "p", workspace: "/a" }));
+    const counted = asOf;
+    asOf = "2026-10-11T10:05:00.000Z";
+    await store.getState().refresh();
+    fetch.requests.length = 0;
+    await store.getState().remove(asked);
+    expect(fetch.requests[0]!.body).toEqual({
+      filter: { projectId: "p", workspace: "/a", until: counted },
+    });
   });
 
   it("keeps the rows and reports the failure when the server refuses an action", async () => {

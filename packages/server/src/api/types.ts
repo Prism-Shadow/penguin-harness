@@ -2006,6 +2006,11 @@ export interface ArchivedSessionGroupsResponse {
   groups: ArchivedSessionGroup[];
   /** Sum of the groups' counts. */
   total: number;
+  /**
+   * The server's time when these counts were taken (ISO). A group's batch passes it as its
+   * filter's `until`, so it acts on the Sessions the count saw and on none that came after.
+   */
+  asOf: string;
 }
 
 /** Query of GET /api/me/archived-sessions: one group's page, newest activity first. */
@@ -2028,11 +2033,25 @@ export interface ArchivedSessionsResponse {
 
 /** What an archive-page batch acts on: explicit ids (1–500), or every archived row a filter matches. */
 export type ArchivedSessionsBatch =
-  { sessionIds: string[] } | { filter: ArchivedSessionsQuery & { workspace?: string } };
+  { sessionIds: string[] } | { filter: ArchivedSessionsBatchFilter };
+
+/** A batch's filter: the archive query, one group's Workspace, and the snapshot it was counted at. */
+export interface ArchivedSessionsBatchFilter extends ArchivedSessionsQuery {
+  workspace?: string;
+  /**
+   * The groups response's `asOf` the user acted on (ISO): only Sessions archived by then and
+   * not active since are acted on, so one archived or run after the count is left alone.
+   */
+  until?: string;
+}
 
 /** POST /api/me/archived-sessions/unarchive and /delete. */
 export interface ArchivedSessionsBatchResponse {
-  /** Sessions acted on. Unarchive counts only the ones that were archived; delete counts every named one. */
+  /**
+   * Sessions acted on. Unarchive counts only the ones that were archived. Delete counts every
+   * named one; a filter's delete leaves a running Session alone (it is not aborted) and does not
+   * count it.
+   */
   done: number;
   /** Ids that name nothing the user can open (the ids form only; a filter never reports any). */
   missing: string[];

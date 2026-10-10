@@ -20,6 +20,7 @@ import type {
   ArchivedSessionGroupsResponse,
   ArchivedSessionSource,
   ArchivedSessionsBatch,
+  ArchivedSessionsBatchFilter,
   ArchivedSessionsBatchResponse,
   ArchivedSessionsQuery,
   ArchivedSessionsResponse,
@@ -28,6 +29,7 @@ import type {
   SessionCategory,
   SessionInfo,
   SessionSource,
+  SessionStatus,
 } from "../api/types.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import { HttpError } from "../http/errors.js";
@@ -55,8 +57,10 @@ export interface ArchivedSessionsDeps {
   traceStore: Pick<TraceIndexStore, "listSessionsByAgent">;
   /** Deletes one Session the way DELETE /api/sessions/:id does (children and events included). */
   deleteSession(row: SessionRow): Promise<void>;
+  /** A Session's run status: a filter's delete leaves a running one alone. */
+  statusOf(sessionId: string): SessionStatus;
   notifyProjectUsers(projectId: string, event: ServerEvent): void;
-  /** The clock the keep mark is stamped with (tests pin it). */
+  /** The clock the keep mark and the groups' `asOf` are read from (tests pin it). */
   now?: () => string;
 }
 
@@ -83,14 +87,30 @@ function archivedSourceOf(source: SessionSource | undefined): ArchivedSessionSou
   return source === "api" || source === "schedule" || source === "cli" ? source : "user";
 }
 
+/**
+ * Whether a group's count taken at `until` saw this archived row, and nothing has happened to it
+ * since: archived by then — by hand at `archivedAt`, or by the rule since it was created — and
+ * not active after it. A Session archived, created or run after the snapshot is left alone.
+ */
+function countedBy(row: SessionRow, until: string): boolean {
+  const at = Date.parse(until);
+  return Date.parse(row.archivedAt ?? row.createdAt) <= at && Date.parse(row.lastActiveAt) <= at;
+}
+
 export class ArchivedSessionsService {
   constructor(private readonly deps: ArchivedSessionsDeps) {}
+
+  private now(): string {
+    return this.deps.now?.() ?? new Date().toISOString();
+  }
 
   /** The groups holding archived Sessions that match, newest activity first, with their counts. */
   async groups(
     userId: string,
     query: ArchivedSessionsQuery,
   ): Promise<ArchivedSessionGroupsResponse> {
+    // Read before the rows: every row the counts include was archived by this time.
+    const asOf = this.now();
     const entries = await this.matching(userId, query);
     const byKey = new Map<string, ArchivedSessionGroup>();
     for (const { row, projectName, workspace } of entries) {
@@ -114,7 +134,7 @@ export class ArchivedSessionsService {
       if (a.projectId !== b.projectId) return a.projectId < b.projectId ? -1 : 1;
       return a.workspace < b.workspace ? -1 : a.workspace > b.workspace ? 1 : 0;
     });
-    return { groups, total: entries.length };
+    return { groups, total: entries.length, asOf };
   }
 
   /**
@@ -163,7 +183,7 @@ export class ArchivedSessionsService {
       if ((await this.deps.sessionService.listingOf(row)) === "archived") archived.push(row);
     }
     if (archived.length > 0) {
-      const at = this.deps.now?.() ?? new Date().toISOString();
+      const at = this.now();
       this.deps.sessions.setListing(
         archived.map((row) => row.sessionId),
         "kept",
@@ -184,19 +204,26 @@ export class ArchivedSessionsService {
 
   /**
    * Deletes what the target names, one Session after another down the single-Session path, so
-   * a running one is aborted first and its subagent children go with it. A named Session
-   * already deleted as another's child counts as done.
+   * its subagent children go with it. A Session named by id that is running is aborted first;
+   * a filter — a whole group — leaves a running one alone, since nobody named it, and does not
+   * count it. A named Session already deleted as another's child counts as done.
    */
   async delete(
     userId: string,
     target: ArchivedSessionsBatch,
   ): Promise<ArchivedSessionsBatchResponse> {
     const { rows, missing } = await this.resolve(userId, target);
+    const named = "sessionIds" in target;
+    let done = 0;
     for (const row of rows) {
       const current = this.deps.sessions.findById(row.sessionId);
-      if (current !== null) await this.deps.deleteSession(current);
+      if (current !== null) {
+        if (!named && this.deps.statusOf(current.sessionId) !== "idle") continue;
+        await this.deps.deleteSession(current);
+      }
+      done += 1;
     }
-    return { done: rows.length, missing };
+    return { done, missing };
   }
 
   /**
@@ -219,9 +246,10 @@ export class ArchivedSessionsService {
       }
       return { rows, missing };
     }
+    const { until } = target.filter;
     for (const { row: listed } of await this.matching(userId, target.filter)) {
       const row = this.deps.sessions.findById(listed.sessionId);
-      if (row !== null) rows.push(row);
+      if (row !== null && (until === undefined || countedBy(row, until))) rows.push(row);
     }
     return { rows, missing };
   }
@@ -229,7 +257,7 @@ export class ArchivedSessionsService {
   /** Every archived Session the query matches, across the Projects it covers. */
   private async matching(
     userId: string,
-    query: ArchivedSessionsQuery & { workspace?: string },
+    query: ArchivedSessionsBatchFilter,
   ): Promise<ArchivedEntry[]> {
     const q = query.q?.trim().toLowerCase() ?? "";
     const out: ArchivedEntry[] = [];
