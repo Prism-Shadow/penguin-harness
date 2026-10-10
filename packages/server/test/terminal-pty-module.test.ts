@@ -29,6 +29,9 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
+/** A directory as module resolution reports it: macOS's temp dir is a symlink into /private. */
+const real = (dir: string) => fs.realpathSync(dir);
+
 /**
  * A node-pty package under `<dir>/node_modules/node-pty` that loads, or fails as a foreign
  * binding does; `binding` puts a file at build/Release/pty.node that no loader accepts.
@@ -73,14 +76,14 @@ describe("node-pty for a pushed platform", () => {
     const { sources, lib } = await machine({ program: true, pushed: true });
     const loaded = loadNodePtyFrom(sources);
     expect((loaded.pty as unknown as { copy: string }).copy).toBe("program");
-    expect(loaded.dir).toBe(path.join(lib, "node_modules", "node-pty"));
+    expect(loaded.dir).toBe(real(path.join(lib, "node_modules", "node-pty")));
   });
 
   it("falls back to the pushed copy when the program's has no binding for this machine", async () => {
     const { sources, assets } = await machine({ program: false, pushed: true });
     const loaded = loadNodePtyFrom(sources);
     expect((loaded.pty as unknown as { copy: string }).copy).toBe("pushed");
-    expect(loaded.dir).toBe(path.join(assets, "node_modules", "node-pty"));
+    expect(loaded.dir).toBe(real(path.join(assets, "node_modules", "node-pty")));
   });
 
   it("says why a binding that is there would not load, instead of node-pty's last miss", async () => {
