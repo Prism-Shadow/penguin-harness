@@ -12,9 +12,9 @@
 ## 导入
 
 - 弹窗沿用技能页的两条路径。推荐路径把粘贴的来源（Prism-Shadow/penguin-harness-benchmark 等仓库里一个文件夹的链接、本地路径或一段描述）生成发给 Project 默认 Agent 的提示词，并作为新对话的草稿打开。提示词要求 Agent 把链接解析到 40 位提交号、只把那一个文件夹取回到临时目录、读完每个文件，再用 `penguin benchmark import` 以该文件夹为来源导入本 Project，覆盖前先询问；Agent 自己从不往 `benchmarks/` 下写东西。服务端不抓取任何链接。
-- `penguin benchmark import <dir-or-zip> [--overwrite] [--origin-url <link> --origin-ref <commit> --origin-path <folder>]` 把 zip 原样、或把文件夹连同每个条目原样打成 zip，发到当前 Project 的 zip 导入路由，于是 Agent 的导入与上传经过同一套检查，副本由服务端写入。三个来源选项一起给出时，副本的来源记为带链接、提交与文件夹的 `git`；路由以 `origin` 接收它们，其他形式一律拒收。命令在发送之前先按导入的上限检查文件夹；id 已被占用时，命令点出是哪个 Benchmark，并提示 `--overwrite`。
 - 另一条路径把 zip 上传到 `POST /api/projects/:p/benchmarks/archive`，任何成员都可调用。服务端只接受 `benchmark.json` 与 `CASE-*` 目录，放在根目录或唯一一个以 id 命名的顶层目录里。zip-slip 路径、含控制字符或与另一条目只差大小写的名字、链接、`scoreboard.yaml`、`.jobs/` 与顶层其他条目、`status` 不是 `published`、缺少任一 README 的题目返回 400；超过 14MB、1000 个文件、单个文件 5MB 或解开后 20MB 的返回 413 `benchmark_too_large`，大小在解压任何内容之前读取。服务端原样写入各题，清单写入来源 `zip` 与导入时间，并写入 `evaluations: []`。
 - id 已被占用时返回 409 `benchmark_exists`，以 `details.benchmarkId` 给出该 id。弹窗随即确认是否覆盖，写明会删除的评估记录与运行结果，再带上 `overwrite` 重新上传同一个 zip，整个目录随之替换。导入或覆盖在检查之后、写入之前被同 id 的另一次导入抢先时，同样返回这个 409。Benchmark 的 `.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State 时，说明还有评估会接着往新副本里写，覆盖改为返回 409 `benchmark_busy`，弹窗在上传按钮下方显示这条拒绝。
+- `penguin benchmark import <dir-or-zip> [--overwrite] [--origin-url <link> --origin-ref <commit> --origin-path <folder>]` 把 zip 原样、或把文件夹连同每个条目原样打成 zip，发到当前 Project 的 zip 导入路由，于是 Agent 的导入与上传经过同一套检查，副本由服务端写入。三个来源选项一起给出时，副本的来源记为带链接、提交与文件夹的 `git`；路由以 `origin` 接收它们，其他形式一律拒收。命令在发送之前先按导入的上限检查文件夹；id 已被占用时，命令点出是哪个 Benchmark，并提示 `--overwrite`。
 
 ## 导出
 
