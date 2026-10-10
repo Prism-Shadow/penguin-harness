@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `cli`, `skills`
+- **PR:** [#1024](https://github.com/Prism-Shadow/penguin-harness/pull/1024)
 - **Breaking:** yes — 不再读取 `plugin.json`；插件在自己的 `package.json` 中描述自己
 
 [English](2026-10-10-plugin-package-json.md)

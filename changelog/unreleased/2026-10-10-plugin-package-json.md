@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `cli`, `skills`
+- **PR:** [#1024](https://github.com/Prism-Shadow/penguin-harness/pull/1024)
 - **Breaking:** yes — `plugin.json` is no longer read; a plugin describes itself in its `package.json`
 
 [中文版](2026-10-10-plugin-package-json.zh.md)
