@@ -861,7 +861,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     restartPending: false,
   };
   // The sandbox backends' cards: their rows carry the bilingual descriptions and the shield
-  // icons the packages' own plugin.json and icon.svg hold.
+  // icons the packages' own package.json (its `penguin` block) and icon hold.
   const shield = (inner: string) =>
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`;
   const pluginIndex: PluginIndexResponse = {

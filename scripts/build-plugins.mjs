@@ -130,9 +130,9 @@ function run(name, args, cwd) {
 }
 
 /**
- * What a plugin's pack depends on: its sources, its manifests (`package.json`, and the
- * `plugin.json` and `icon.svg` its card on the Plugins page reads), its README, its build
- * config — and every other directory the package SHIPS.
+ * What a plugin's pack depends on: its sources, its manifest (`package.json`, whose `penguin`
+ * block its card on the Plugins page reads, with `icon.svg`), its README, its build config —
+ * and every other directory the package SHIPS.
  *
  * That last part is not decoration. A plugin may carry files its code never imports (the Windows
  * backend ships the PowerShell script its setup runs), and hashing only `src/` meant editing one
@@ -140,7 +140,7 @@ function run(name, args, cwd) {
  * fix nobody could find on the host was a file that had never left this machine.
  */
 async function sourceHash(dir, into) {
-  for (const rel of ["package.json", "plugin.json", "icon.svg", "README.md", "tsup.config.ts"]) {
+  for (const rel of ["package.json", "icon.svg", "README.md", "tsup.config.ts"]) {
     const file = path.join(dir, rel);
     if (fs.existsSync(file))
       into
@@ -165,7 +165,10 @@ async function sourceHash(dir, into) {
   }
 }
 
-/** Every plugin package under `plugins/`: a package.json that declares `penguin`. */
+/**
+ * Every plugin package under `plugins/` with a code entry (`main` or `exports`): the packages of
+ * server modules.
+ */
 async function pluginPackages() {
   const out = [];
   const entries = fs.existsSync(PLUGINS_SRC) ? await fsp.readdir(PLUGINS_SRC) : [];

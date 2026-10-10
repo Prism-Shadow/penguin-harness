@@ -4102,9 +4102,18 @@ export interface HookItem {
   icon?: string;
 }
 
-/** One library plugin as the listing describes it: the manifest fields plus what it ships (skill bodies and scripts are never sent). */
+/**
+ * One library plugin as the listing describes it: the manifest fields (its package.json — npm's
+ * fields and the `penguin` block) plus what it ships (skill bodies and scripts are never sent).
+ * Every field but the identity, the version and the contents is optional: a field the package
+ * does not carry is missing here, and the page says so rather than inventing one.
+ */
 export interface PluginItem {
   name: string;
+  /** Display name (`penguin.title`, `title_zh`); absent → the page shows `name`. */
+  title?: string;
+  titleZh?: string;
+  /** English one-liner (package.json `description`); "" when the package carries none. */
   description: string;
   descriptionZh?: string;
   shortDescription?: string;
@@ -4115,15 +4124,20 @@ export interface PluginItem {
   package: string;
   /** Where the plugin comes from: `builtin` — a package this build ships; `installed` — one an admin installed on the server (by name, link or zip). */
   source: "builtin" | "installed";
+  /** The package's npm `author` (a name), `license`, `homepage` and `repository` URL, for the detail dialog. */
+  author?: string;
+  license?: string;
+  homepage?: string;
+  repository?: string;
   /** The plugin's skills (metadata only), each with its own dated `version`. */
   skills: SkillMetadataItem[];
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
-  /** The hook package's own dated version (plugin.json `hooks.version`, `YYYY.MM.DD.N`); absent without a hook package. */
+  /** The hook package's own dated version (`penguin.hooks.version`, `YYYY.MM.DD.N`); absent without a hook package. */
   hookVersion?: string;
-  /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
+  /** The plugin's raw icon SVG (`icon.svg` at the package root, or `penguin.icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
-  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`); absent = pre-select its first skill. */
+  /** The demo the Plugins page's quick start pre-fills (`penguin.quick_start`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
 }
 
@@ -4236,9 +4250,9 @@ export interface PluginIndexEntry {
   shortDescription?: string;
   shortDescriptionZh?: string;
   /**
-   * The plugin's raw icon.svg (optional; the card draws the puzzle piece without it). The
-   * listing fills these display fields from the package's own `plugin.json` and `icon.svg`
-   * when the package is on this server, over whatever the index row says.
+   * The plugin's raw icon SVG (optional; the card draws the puzzle piece without it). The
+   * listing fills these display fields from the package's own package.json (its `penguin`
+   * block) and icon when the package is on this server, over whatever the index row says.
    */
   icon?: string;
   authors: string[];

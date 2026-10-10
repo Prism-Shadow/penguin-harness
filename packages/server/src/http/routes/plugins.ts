@@ -35,7 +35,9 @@ import {
   libraryPluginPackage,
   libraryPluginReadme,
   loadPluginGroups,
+  parsePluginPackage,
 } from "@prismshadow/penguin-core";
+import type { PluginPackageManifest } from "@prismshadow/penguin-core";
 import type {
   AgentPluginsInstallResponse,
   PluginFilesResponse,
@@ -243,9 +245,10 @@ export interface PluginRoutesOptions {
 
 /**
  * The server modules an admin installed from a link or a zip: packages of the prefix carrying
- * an `ifaces.json` that no index lists. Their row is their own package.json, described by the
- * card plugin.json when the package has one — the listing then lets the package describe itself
- * further, as it does every package on this machine.
+ * an `ifaces.json` that no index lists. Their row is their own package.json's npm fields, read
+ * by core's manifest reader; the listing then lets the package describe itself further (its
+ * `penguin` block and its icon), as it does every package on this machine. A package.json that
+ * will not read lists no row.
  */
 async function prefixEntries(
   prefix: string | null,
@@ -257,35 +260,22 @@ async function prefixEntries(
     if (listed.has(name) || !PACKAGE_NAME.test(name)) continue;
     const dir = installedPackageDir(prefix, name);
     if (!existsSync(path.join(dir, "ifaces.json"))) continue;
-    let pkg: { version?: unknown; description?: unknown; license?: unknown; author?: unknown };
+    const file = path.join(dir, "package.json");
+    let manifest: PluginPackageManifest;
     try {
-      pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as typeof pkg;
+      manifest = parsePluginPackage(JSON.parse(await fs.readFile(file, "utf8")), file).manifest;
     } catch {
       continue;
     }
-    let card: { description?: unknown } = {};
-    try {
-      card = JSON.parse(await fs.readFile(path.join(dir, "plugin.json"), "utf8")) as typeof card;
-    } catch {
-      // No card: package.json's description is the row's.
-    }
-    const author =
-      typeof pkg.author === "string"
-        ? pkg.author
-        : typeof (pkg.author as { name?: unknown } | undefined)?.name === "string"
-          ? (pkg.author as { name: string }).name
-          : null;
     entries.push({
       name,
-      version: typeof pkg.version === "string" ? pkg.version : "",
-      description:
-        typeof card.description === "string" && card.description !== ""
-          ? card.description
-          : typeof pkg.description === "string"
-            ? pkg.description
-            : "",
-      authors: author === null ? [] : [author],
-      license: typeof pkg.license === "string" ? pkg.license : "",
+      version: manifest.version,
+      description: manifest.description,
+      authors: manifest.author === undefined ? [] : [manifest.author],
+      license: manifest.license ?? "",
+      ...(manifest.repository !== undefined ? { repository: manifest.repository } : {}),
+      ...(manifest.homepage !== undefined ? { homepage: manifest.homepage } : {}),
+      ...(manifest.keywords.length > 0 ? { keywords: manifest.keywords } : {}),
     });
   }
   return entries;
@@ -307,9 +297,9 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
 
   app.get("/", async (c) => {
     const { entries, failures } = await listing();
-    // A package on this machine describes itself: its own plugin.json and icon.svg win over
-    // what an index row says, so an installed package's card shows its icon and both languages
-    // even where its index row carries neither.
+    // A package on this machine describes itself: its own package.json `penguin` block and icon
+    // win over what an index row says, so an installed package's card shows its icon and both
+    // languages even where its index row carries neither.
     const here = bases();
     const plugins = await Promise.all(
       entries.map(async (entry) => ({ ...entry, ...(await localPluginDisplay(entry.name, here)) })),

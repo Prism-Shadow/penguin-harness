@@ -2386,6 +2386,8 @@ export const en: Strings = {
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "Ships with this build; the registry has no entry for it yet.",
+    /** In place of the description of a package that carries none. */
+    noDescription: "No description",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
     libraryBuiltinHint: "Ships with this build; install it to an agent to use it there.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
@@ -2395,6 +2397,9 @@ export const en: Strings = {
     detailFiles: "Files",
     detailSkills: "Skills",
     detailHooks: "Hooks",
+    /** The detail dialog's links to the package's homepage and repository: their names and hover hints. */
+    detailHomepage: "Homepage",
+    detailRepository: "Repository",
     /** In place of the README of a package that is not on this server. */
     readmeAfterInstall: "The README shows once the plugin is installed",
     /** The tag of a plugin an admin installed on this server (not shipped with the build). */
@@ -2432,14 +2437,19 @@ export const en: Strings = {
     importLinkPlaceholder: "https://github.com/… or github:owner/repo",
     importLinkInvalid:
       "Not an https link; give a package name under From npm, and let an agent install anything else.",
+    /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
+    importLinkSubpath:
+      "A folder or a file inside a repository, which npm cannot install: let an agent port it.",
+    importLinkAskAgent: "Ask an agent",
     importCost:
       "When the plugin carries server modules, installing reloads the server's plugins, which stops the agent runs in progress in every Project.",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
     importScriptsRun: "The package's install scripts run on the server as the server's user.",
     importAgentWhy:
-      "For a page, a repository or a description: the agent finds and reviews the package first, then installs it with penguin plugin install.",
+      "For a page, a repository, a folder in a repository, or a Codex or Claude Code plugin: the agent reviews it — porting it into a PenguinHarness package first when it is not one — then installs it with penguin plugin install.",
     importSourceLabel: "Plugin source",
-    importSourcePlaceholder: "A link, a local path or a description",
+    importSourcePlaceholder:
+      "A link such as https://github.com/owner/repo/tree/main/plugins/name, a local path or a description",
     importSourceToken: "<plugin source>",
     importPromptLabel: "Prompt for the agent",
     /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
@@ -2451,7 +2461,7 @@ export const en: Strings = {
         `Find the PenguinHarness plugin described here and install it on this server: ${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `A plugin is an npm package that runs on the server: before installing anything, read its package.json, plugin.json and every script it ships, and say what it does and what it would run. If it is not a PenguinHarness plugin (a plugin.json beside skills/ or hooks/, or the ifaces.json of server modules), or anything in it looks unsafe, stop and tell me. Then install it with \`penguin plugin install <npm name or https link> --project-id ${projectId}\` and report the installed name and version. Do not install a local folder: zip it without node_modules and tell me where the zip is, and I will upload it under "Upload a zip".`,
+      `A PenguinHarness plugin is an npm package: its package.json (name, version, description, and a \`penguin\` block the plugin card reads) beside \`skills/<name>/SKILL.md\` and/or \`hooks/\`. Whatever the source, before installing anything, read its package.json and every script it ships, and say what it does and what it would run; if anything looks unsafe, stop and tell me. If the source already is such a package — on npm, at an https link to a git repository or a tarball, or in a local folder — install it with \`penguin plugin install <npm name, https link or folder> --project-id ${projectId}\`. If it is anything else — a folder or a file inside a GitHub repository, a Codex (\`.codex-plugin\`) or Claude Code (\`.claude-plugin\`) plugin, a skills repository — read the \`plugin-porting\` skill and follow it: fetch the source at a pinned commit, build the package in a scratch folder, review it, then install that folder the same way. Report the installed name and version, the skills it carries and what you left out.`,
     importUploadDesc:
       "A zip of the plugin's package directory: package.json at its root or in its one top-level directory, no node_modules — such as another server's Export. Upload only what you trust.",
     importUploadAction: "Choose a zip file",

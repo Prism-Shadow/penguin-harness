@@ -19,6 +19,18 @@
  * - The detail dialog: a plugin of Skills shows its description and its files; a server module
  *   its description and README, and no files; one not on this server says the README comes
  *   with the install; a plugin that is both shows About, then Files.
+ * - A plugin whose package carries no description shows the placeholder on its card and in its
+ *   dialog, and the card still opens the dialog, files and all. A shipped package no index
+ *   knows still says it ships with the build instead.
+ * - A plugin whose package gives a display name shows it on the card and as the dialog's title
+ *   (in the UI language), and the dialog names the package beneath it; without one, the name
+ *   stands and no package line is added.
+ * - The dialog lists the package's author and license — a server module's from its index entry —
+ *   and links only to what a browser can safely open, in a new tab: an https homepage and a
+ *   `git+https://….git` repository link to their pages, a `javascript:` repository is no link,
+ *   and a package carrying none of these links nowhere.
+ * - A package's URL as package.json writes it (`git+https://….git`, `github:o/r`) becomes the
+ *   page it names; anything not http(s) becomes no link.
  *
  * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
  * its cards. Static markup has no layout, so how the header row wraps on a phone is not here.
@@ -49,6 +61,7 @@ import {
   type PluginGroupBy,
   type PluginRow,
 } from "../src/features/plugins/plugin-groups";
+import { rowTitle, webLink } from "../src/features/plugins/plugin-marks";
 import type { PluginStatus } from "../src/features/plugins/plugin-status";
 import { PluginsHeaderActions } from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
@@ -369,5 +382,126 @@ describe("the detail dialog", () => {
     expect(about).toBeGreaterThanOrEqual(0);
     expect(html.indexOf("Usage")).toBeGreaterThan(about);
     expect(html.indexOf(en.plugins.detailFiles)).toBeGreaterThan(html.indexOf("Usage"));
+  });
+});
+
+describe("a plugin with no description", () => {
+  const bare: PluginRow = { ...libraryRow, library: { ...LIBRARY, description: "" } };
+
+  it("shows the placeholder on its card, which still opens its dialog, and in the dialog", () => {
+    const html = card(bare, false);
+    // The placeholder sits in the card's body, the button that opens the dialog.
+    expect(buttonWords(html).some((w) => w.includes(en.plugins.noDescription))).toBe(true);
+    const dialog = sections(bare, { kind: "none" });
+    expect(dialog).toContain(en.plugins.noDescription);
+    expect(dialog).toContain("FILE-BROWSER");
+  });
+
+  it("leaves a shipped package no index knows saying it ships with the build, not the placeholder", () => {
+    const unknown: PluginRow = {
+      key: "module:@penguinharness/sandbox-dsh",
+      name: "sandbox-dsh",
+      category: "sandbox",
+      module: {
+        specifier: "@penguinharness/sandbox-dsh",
+        entry: undefined,
+        state: "none",
+        shipped: true,
+      },
+    };
+    for (const html of [text(card(unknown, false)), sections(unknown, { kind: "none" })]) {
+      expect(html).toContain(en.plugins.shippedNoEntry);
+      expect(html).not.toContain(en.plugins.noDescription);
+    }
+  });
+});
+
+describe("a plugin's display name", () => {
+  const titled: PluginRow = {
+    key: "library:notes",
+    name: "notes",
+    category: "other",
+    library: {
+      ...LIBRARY,
+      name: "notes",
+      title: "Notes Pro",
+      titleZh: "笔记专业版",
+      package: "@acme/notes",
+      source: "installed",
+    },
+  };
+
+  it("shows on the card and as the dialog's title, with the package name beneath it", () => {
+    const onCard = text(card(titled, false));
+    expect(onCard).toContain("Notes Pro");
+    expect(onCard).not.toMatch(/\bnotes\b/);
+    expect(rowTitle(titled, "en")).toBe("Notes Pro");
+    expect(rowTitle(titled, "zh")).toBe("笔记专业版");
+    expect(sections(titled, { kind: "none" })).toContain("@acme/notes");
+    // Without a display name the plugin's name stands, and no package line joins it.
+    expect(rowTitle(libraryRow, "en")).toBe("data-analysis");
+    expect(sections(libraryRow, { kind: "none" })).not.toContain(LIBRARY.package);
+  });
+});
+
+describe("the package's own details in the dialog", () => {
+  /** Every link in the markup: where it goes, its name, and whether it opens apart from this page. */
+  const links = (html: string) =>
+    [...html.matchAll(/<a\s([^>]*)>/g)].map((m) => ({
+      href: /href="([^"]*)"/.exec(m[1]!)?.[1],
+      name: /aria-label="([^"]*)"/.exec(m[1]!)?.[1],
+      apart: m[1]!.includes('target="_blank"') && m[1]!.includes('rel="noopener noreferrer"'),
+    }));
+  const details = (row: PluginRow) =>
+    inLocale(PluginDetailSections, {
+      row,
+      head: HEAD,
+      readme: { kind: "none" },
+      files: null,
+      locale: "en",
+    });
+
+  it("shows the author and license, and links only what a browser can safely open, in a new tab", () => {
+    const html = details({
+      ...libraryRow,
+      library: {
+        ...LIBRARY,
+        author: "Acme Labs",
+        license: "MIT",
+        homepage: "https://acme.example/notes",
+        repository: "javascript:alert(1)",
+      },
+    });
+    expect(text(html)).toContain("Acme Labs · MIT");
+    expect(links(html)).toEqual([
+      { href: "https://acme.example/notes", name: en.plugins.detailHomepage, apart: true },
+    ]);
+    expect(html).not.toContain("javascript:");
+    // A repository as npm writes it links to its page.
+    const repositoryOnly = details({
+      ...libraryRow,
+      library: { ...LIBRARY, repository: "git+https://github.com/acme/notes.git" },
+    });
+    expect(links(repositoryOnly)).toEqual([
+      { href: "https://github.com/acme/notes", name: en.plugins.detailRepository, apart: true },
+    ]);
+    // A server module's come from its index entry; a package with none of them links nowhere.
+    expect(text(details(moduleRow("none", false)))).toContain("Prism Shadow · Apache-2.0");
+    expect(links(details(libraryRow))).toEqual([]);
+  });
+
+  it("turns a URL as package.json writes it into the page it names, and anything else into no link", () => {
+    expect(webLink("git+https://github.com/acme/notes.git")).toBe("https://github.com/acme/notes");
+    expect(webLink("github:acme/notes")).toBe("https://github.com/acme/notes");
+    expect(webLink("http://acme.example/notes")).toBe("http://acme.example/notes");
+    for (const unsafe of [
+      "javascript:alert(1)",
+      "git+ssh://git@github.com/acme/notes.git",
+      "file:///srv/notes",
+      "acme/notes",
+      undefined,
+    ]) {
+      expect(webLink(unsafe), String(unsafe)).toBeNull();
+    }
   });
 });

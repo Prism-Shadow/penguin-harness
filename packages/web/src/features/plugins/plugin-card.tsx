@@ -1,12 +1,13 @@
 /**
  * One plugin's card on the Plugins page — every plugin wears the same one, a library plugin of
  * Skills and hooks and a server module such as an Agent Sandbox backend alike: a rounded icon
- * tile (the plugin's own icon.svg, else the puzzle piece) centred against the name and the
- * one-line description, a metadata line `v<npm version> · <status> · used by N agents` (the
- * last for a plugin with Skills or hooks only), and a tag line — the category (outside the
- * category's own section), "built in", where a module runs. The card body opens the detail
- * dialog; the actions sit beside it, light icon buttons whose words show once the card is wide
- * enough:
+ * tile (the plugin's own icon, else the puzzle piece) centred against its title (the package's
+ * display name, else the plugin's name) and the one-line description (the "no description"
+ * placeholder, in the same muted ink, when the package carries none), a metadata line
+ * `v<npm version> · <status> · used by N agents` (the last for a plugin with Skills or hooks
+ * only), and a tag line — the category (outside the category's own section), "built in", where
+ * a module runs. The card body opens the detail dialog; the actions sit beside it, light icon
+ * buttons whose words show once the card is wide enough:
  *
  * - Skills / hooks (any member): the update nudge while an Agent is behind (the plugins trail's
  *   last stop, so it carries the dot), quick start, and "manage installs" — a dialog listing
@@ -49,6 +50,7 @@ import {
   rowInstalledOnServer,
   rowIcon,
   rowShortDescription,
+  rowTitle,
   rowVersion,
   statusHint,
 } from "./plugin-marks";
@@ -63,8 +65,9 @@ import {
 const INSTALL_ICON = ICONS.download;
 
 /**
- * A library plugin's quick start: what its plugin.json declares, else its first skill invoked
- * by name (the prompt read at click time, in the UI language); null for a plugin with neither.
+ * A library plugin's quick start: what its package.json's `penguin.quick_start` declares, else its
+ * first skill invoked by name (the prompt read at click time, in the UI language); null for a
+ * plugin with neither.
  */
 export function libraryQuickStart(
   plugin: Pick<PluginItem, "skills" | "quickStart">,
@@ -136,6 +139,8 @@ export function PluginCard(props: PluginCardProps) {
   const hint = statusHint(row, status, usage);
   const version = rowVersion(row);
   const description = rowShortDescription(row, locale);
+  // What the dialogs below call the plugin: what its card does.
+  const title = rowTitle(row, locale);
   const behind = usage?.behind ?? [];
 
   const confirmUpdate = async () => {
@@ -332,14 +337,14 @@ export function PluginCard(props: PluginCardProps) {
             glyph={20}
           />
           <div className="min-w-0 flex-1">
-            {/* The plugin's name is its id (there is no display name), set in the UI font as a
-                title; monospace is kept for what is code — the specifier on hover, the version. */}
+            {/* The package's display name, else the plugin's name (its id), set in the UI font as
+                a title; monospace is kept for what is code — the specifier on hover, the version. */}
             <span
               className="block truncate text-sm font-semibold"
               data-tooltip={row.module?.specifier ?? row.name}
               data-tooltip-content="code"
             >
-              {row.name}
+              {rowTitle(row, locale)}
             </span>
             <p
               className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
@@ -385,7 +390,7 @@ export function PluginCard(props: PluginCardProps) {
       {plugin !== undefined && installOpen && (
         <Modal
           open
-          title={S.skills.manageInstallTitle(plugin.name)}
+          title={S.skills.manageInstallTitle(title)}
           onClose={() => setInstallOpen(false)}
         >
           <div className="space-y-1">
@@ -413,7 +418,7 @@ export function PluginCard(props: PluginCardProps) {
       {plugin !== undefined && pendingUpdate !== null && (
         <ConfirmModal
           open
-          title={S.plugins.updateConfirmTitle(plugin.name)}
+          title={S.plugins.updateConfirmTitle(title)}
           tone="primary"
           confirmLabel={S.skills.updateAction}
           cancelLabel={S.common.cancel}
@@ -423,7 +428,7 @@ export function PluginCard(props: PluginCardProps) {
         >
           <div className="space-y-3">
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              {S.plugins.updateConfirmWarning(plugin.name)}
+              {S.plugins.updateConfirmWarning(title)}
             </p>
             {/* Per Agent, the parts the reinstall rewrites, old → new, so it is clear exactly what gets overwritten. */}
             <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
@@ -481,7 +486,7 @@ export function PluginCard(props: PluginCardProps) {
       {plugin !== undefined && pendingUninstall !== null && (
         <ConfirmModal
           open
-          title={S.plugins.uninstallConfirmTitle(plugin.name)}
+          title={S.plugins.uninstallConfirmTitle(title)}
           confirmLabel={S.skills.uninstall}
           cancelLabel={S.common.cancel}
           onClose={() => setPendingUninstall(null)}
@@ -493,7 +498,7 @@ export function PluginCard(props: PluginCardProps) {
         >
           <p className="text-sm text-gray-600 dark:text-gray-300">
             {S.plugins.uninstallConfirmBody(
-              plugin.name,
+              title,
               uninstallAgent ? agentDisplayName(uninstallAgent) : pendingUninstall,
             )}
           </p>

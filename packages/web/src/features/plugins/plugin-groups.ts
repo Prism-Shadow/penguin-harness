@@ -42,7 +42,10 @@ export interface ModulePart {
 export interface PluginRow {
   /** Identity on the page: `library:<name>`, or `module:<specifier>` for a module-only row. */
   key: string;
-  /** What the card and the dialog call it: the library name, or the unscoped package name. */
+  /**
+   * The plugin's name: the library name, or the unscoped package name. The card and the dialog
+   * call it this unless the package gives a display name (`rowTitle`).
+   */
   name: string;
   /** The category the row is grouped by: a library category id, `sandbox` or `other`. */
   category: string;
@@ -228,7 +231,7 @@ export function primaryKind(row: PluginRow): PluginKind {
   return (row.library?.skills.length ?? 0) > 0 ? "skills" : "hooks";
 }
 
-/** Whether a row passes the search box: its names, descriptions and keywords hold the query. */
+/** Whether a row passes the search box: its names, display names, descriptions and keywords hold the query. */
 export function rowMatches(row: PluginRow, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (q === "") return true;
@@ -236,6 +239,8 @@ export function rowMatches(row: PluginRow, query: string): boolean {
   const entry = row.module?.entry;
   const text = [
     row.name,
+    plugin?.title,
+    plugin?.titleZh,
     plugin?.description,
     plugin?.descriptionZh,
     plugin?.shortDescription,

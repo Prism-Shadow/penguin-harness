@@ -6,7 +6,17 @@
  * - The server's refusal reaches the caller as it said it, with a failing exit code.
  * - `remove` drops the plugin; `list` shows the server modules the Project lists, with their
  *   state, and the packages of Skills or hooks installed on the server.
+ * - A local package directory is read with the plugin library's reader, zipped under one
+ *   top-level directory without node_modules or .git, and posted to the zip route.
+ * - A directory the library would refuse, or one that is no plugin at all, is reported and
+ *   nothing is posted.
+ * - Another version on the server answers 409: the CLI says how to replace it, and
+ *   `--overwrite` sends the same package again with `overwrite`.
  */
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { strFromU8, unzipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/index.js";
 import { getMessages } from "../src/i18n.js";
@@ -88,6 +98,106 @@ describe("penguin plugin install", () => {
     });
     expect(await cli(["plugin", "install", "@acme/notes"])).not.toBe(0);
     expect(stderr.join("")).toContain("Only an admin can perform this operation.");
+  });
+});
+
+describe("penguin plugin install <directory>", () => {
+  let work: string | null = null;
+  afterEach(async () => {
+    if (work !== null) await fs.rm(work, { recursive: true, force: true });
+    work = null;
+  });
+
+  /** A package directory holding `files` (paths relative to it); answers its path. */
+  async function packageDir(files: Record<string, string>): Promise<string> {
+    work = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-plugin-"));
+    const dir = path.join(work, "notes-port");
+    for (const [rel, text] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+      await fs.writeFile(path.join(dir, rel), text);
+    }
+    return dir;
+  }
+
+  const NOTES = {
+    "package.json": JSON.stringify({
+      name: "@acme/notes",
+      version: "1.0.0",
+      description: "Take notes.",
+      penguin: { short_description: "Notes.", category: "office-productivity" },
+    }),
+    "skills/notes/SKILL.md":
+      "---\nname: notes\ndescription: Take notes.\nversion: 2026.10.10.1\n---\n\nBody.\n",
+    "node_modules/left-pad/index.js": "module.exports = 1;\n",
+    ".git/HEAD": "ref: refs/heads/main\n",
+  };
+
+  /** The files of the zip the last archive request carried. */
+  const uploaded = () => {
+    const post = server.requests.find((r) => r.path.endsWith("/plugins/installed/archive"));
+    const zip = Buffer.from(String(post?.body?.dataBase64), "base64");
+    return Object.keys(unzipSync(new Uint8Array(zip))).sort();
+  };
+
+  it("reads the package, zips it under one directory without node_modules or .git, and posts it to the zip route", async () => {
+    const dir = await packageDir(NOTES);
+    expect(await cli(["plugin", "install", dir, "--project-id", "proj-1"])).toBe(0);
+    const post = server.requests.find((r) => r.method === "POST");
+    expect(post?.path).toBe("/api/projects/proj-1/plugins/installed/archive");
+    expect(post?.body).not.toHaveProperty("overwrite");
+    expect(uploaded()).toEqual(["notes/package.json", "notes/skills/notes/SKILL.md"]);
+    const zip = unzipSync(new Uint8Array(Buffer.from(String(post?.body?.dataBase64), "base64")));
+    expect(JSON.parse(strFromU8(zip["notes/package.json"]!))).toMatchObject({
+      name: "@acme/notes",
+    });
+    expect(out()).toContain(t.plugin.installed("@acme/notes", "1.0.0"));
+    expect(out()).toContain(t.plugin.libraryNext());
+  });
+
+  it("reports a directory the library would refuse, or one that is no plugin, and posts nothing", async () => {
+    const noVersion = await packageDir({
+      ...NOTES,
+      "package.json": JSON.stringify({ name: "@acme/notes", description: "Take notes." }),
+    });
+    expect(await cli(["plugin", "install", noVersion])).not.toBe(0);
+    expect(stderr.join("")).toContain("no release version");
+    await fs.rm(work!, { recursive: true, force: true });
+
+    const empty = await packageDir({
+      "package.json": JSON.stringify({ name: "x", version: "1.0.0" }),
+    });
+    expect(await cli(["plugin", "install", empty])).not.toBe(0);
+    expect(stderr.join("")).toContain(t.plugin.dirNotPlugin(empty));
+    expect(server.requests.filter((r) => r.method === "POST")).toEqual([]);
+  });
+
+  it("says how to replace another version on the server, and --overwrite sends it again with overwrite", async () => {
+    server.plugins.archive = (body) =>
+      body.overwrite === true
+        ? {
+            status: 201,
+            body: {
+              installed: { name: "@acme/notes", version: "1.0.0", library: true, modules: false },
+            },
+          }
+        : {
+            status: 409,
+            body: {
+              error: {
+                code: "plugin_exists",
+                message: "Plugin @acme/notes is installed at 0.9.0; the zip holds 1.0.0.",
+              },
+            },
+          };
+    const dir = await packageDir(NOTES);
+    expect(await cli(["plugin", "install", dir])).not.toBe(0);
+    expect(stderr.join("")).toContain("is installed at 0.9.0");
+    expect(stderr.join("")).toContain(t.plugin.overwriteHint());
+
+    expect(await cli(["plugin", "install", dir, "--overwrite"])).toBe(0);
+    const posts = server.requests.filter((r) => r.method === "POST");
+    expect(posts.map((r) => r.body?.overwrite)).toEqual([undefined, true]);
+    expect(out()).toContain(t.plugin.installed("@acme/notes", "1.0.0"));
   });
 });
 

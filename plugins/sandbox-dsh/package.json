@@ -3,6 +3,16 @@
   "version": "0.2.3",
   "type": "module",
   "description": "DeepSeek Harness sandbox adaptor for PenguinHarness: the DSH local backend chain behind the harness's own sandbox interface.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "sandbox",
+    "linux",
+    "macos",
+    "windows",
+    "dsh",
+    "filesystem-only"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -23,7 +33,6 @@
   "files": [
     "dist",
     "README.md",
-    "plugin.json",
     "icon.svg",
     "ifaces.json",
     "LICENSE"
@@ -47,5 +56,13 @@
     "@prismshadow/penguin-core": "workspace:*",
     "tsup": "^8.3.0",
     "vitest": "^3.2.6"
+  },
+  "penguin": {
+    "description_zh": "PenguinHarness 的 DeepSeek Harness 沙箱适配器：把 DSH 的本地后端链接入本框架自己的沙箱接口。",
+    "short_description": "Linux, macOS and Windows: confine file writes only.",
+    "short_description_zh": "Linux、macOS 与 Windows：只限制文件写入。",
+    "category": "sandbox",
+    "icon": "icon.svg",
+    "preinstall": false
   }
 }

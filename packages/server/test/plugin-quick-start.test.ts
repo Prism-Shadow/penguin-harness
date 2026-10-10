@@ -1,6 +1,7 @@
 /**
- * A library plugin carries its quick start in plugin.json, listed on GET /api/plugins. The page
- * only pre-fills a draft from it, so what is checked here is that the demo reaches it.
+ * A library plugin carries its quick start in its package.json (`penguin.quick_start`), listed
+ * on GET /api/plugins. The page only pre-fills a draft from it, so what is checked here is that
+ * the demo reaches it.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PluginLibraryResponse } from "../src/api/types.js";

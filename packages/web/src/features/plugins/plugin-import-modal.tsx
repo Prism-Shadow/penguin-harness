@@ -8,15 +8,20 @@
  *   (each checked here the way the server reads it, plugin-import-prompt.ts), installed by the
  *   server itself through the Project's plugin route; what it may cost the runs in progress sits
  *   under the button in small type. A value the tab does not take is said so at the field and
- *   never sent.
+ *   never sent. A link to a folder or a file inside a repository, which npm cannot install, is
+ *   said so with an "Ask an agent" action under the field: it moves to the agent tab with the
+ *   link as the source.
  * - Upload a zip: the package directory, what another server's Export downloads. Another version
  *   on the server answers 409, and the replace confirm names both versions.
- * - Ask an agent: anything else — a page, a repository, a description — becomes a prompt
- *   (previewed read-only) for the Project's default Agent, which reviews the package and installs
- *   it with `penguin plugin install`; nothing is sent until the user sends it.
+ * - Ask an agent: anything else — a page, a repository or a folder in one, a Codex or Claude Code
+ *   plugin, a description — becomes a prompt (previewed read-only) for the Project's default
+ *   Agent, which reviews the source, ports it into a PenguinHarness package first when it is not
+ *   one (the `plugin-porting` skill), and installs it with `penguin plugin install`; nothing is
+ *   sent until the user sends it.
  *
  * The tabs and their fields live in the dialog's body, so every opening starts on the npm tab
- * with nothing typed.
+ * with nothing typed; the body can be opened on another tab holding a value instead, the state
+ * the link tab's hand-off leaves it in.
  */
 import { useState } from "react";
 import type { ChangeEvent } from "react";
@@ -46,6 +51,7 @@ import {
   buildPluginImportPrompt,
   isNpmPluginName,
   isPluginLink,
+  isRepoSubpathLink,
   readReplaceQuestion,
   type ReplaceQuestion,
 } from "./plugin-import-prompt";
@@ -61,6 +67,16 @@ export type DirectTab = Extract<ImportTab, "npm" | "link">;
 /** Whether the npm tab (a package name) or the link tab (an https link) takes `input`. */
 export function tabTakes(tab: DirectTab, input: string): boolean {
   return tab === "npm" ? isNpmPluginName(input) : isPluginLink(input);
+}
+
+/**
+ * What the link field says of `input`: nothing (null) while it is empty or a link the tab takes;
+ * `subpath` for a folder or a file inside a repository, which an Agent can port instead; and
+ * `invalid` for anything else the tab does not take.
+ */
+export function linkFieldFault(input: string): "subpath" | "invalid" | null {
+  if (input.trim() === "" || isPluginLink(input)) return null;
+  return isRepoSubpathLink(input) ? "subpath" : "invalid";
 }
 
 /** The toast for what an install put on the server. */
@@ -123,8 +139,16 @@ export async function uploadPluginArchive(
   }
 }
 
+/** Where the dialog's body opens: a tab, and what its field holds — the npm or the link tab's value, or the agent tab's source. */
+export interface ImportOpening {
+  tab: ImportTab;
+  value?: string;
+}
+
 export interface ImportPluginTabsProps {
   projectId: string;
+  /** Where the body opens; the npm tab with nothing typed when absent. */
+  initial?: ImportOpening;
   /** Opens a new chat draft holding the prompt; null when there is no Agent to send it to. */
   onOpenChat: ((text: string) => void) | null;
   /** After an install landed: what the server says it installed (null when it did not), and the name to fall back on. */
@@ -132,13 +156,22 @@ export interface ImportPluginTabsProps {
 }
 
 /** The dialog's body: the server-wide line, then the tabs with the active one's form. */
-export function ImportPluginTabs({ projectId, onOpenChat, onLanded }: ImportPluginTabsProps) {
-  const [tab, setTab] = useState<ImportTab>(IMPORT_TABS[0]);
+export function ImportPluginTabs({
+  projectId,
+  initial = { tab: IMPORT_TABS[0] },
+  onOpenChat,
+  onLanded,
+}: ImportPluginTabsProps) {
+  const opened = (at: ImportTab) => (initial.tab === at ? (initial.value ?? "") : "");
+  const [tab, setTab] = useState<ImportTab>(initial.tab);
   // What each direct tab holds survives a look at another tab.
-  const [typed, setTyped] = useState<Record<DirectTab, string>>({ npm: "", link: "" });
+  const [typed, setTyped] = useState<Record<DirectTab, string>>(() => ({
+    npm: opened("npm"),
+    link: opened("link"),
+  }));
   const [installing, setInstalling] = useState(false);
   const [directError, setDirectError] = useState<string | null>(null);
-  const [source, setSource] = useState("");
+  const [source, setSource] = useState(() => opened("agent"));
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   // Non-null shows the replace confirm (the upload answered 409 plugin_exists).
@@ -194,10 +227,29 @@ export function ImportPluginTabs({ projectId, onOpenChat, onLanded }: ImportPlug
     reader.readAsDataURL(file);
   };
 
+  /** The link tab's way out for a repository folder: the agent tab, the link as its source. */
+  const askAgentWith = (link: string) => {
+    setSource(link.trim());
+    setTab("agent");
+    setDirectError(null);
+  };
+
   const directPanel = (from: DirectTab) => {
     const value = typed[from];
-    const refused = value.trim() !== "" && !tabTakes(from, value);
     const npm = from === "npm";
+    const fault = !npm
+      ? linkFieldFault(value)
+      : value.trim() === "" || tabTakes("npm", value)
+        ? null
+        : "invalid";
+    const error =
+      fault === null
+        ? null
+        : fault === "subpath"
+          ? S.plugins.importLinkSubpath
+          : npm
+            ? S.plugins.importNpmInvalid
+            : S.plugins.importLinkInvalid;
     return (
       <>
         <p className="text-xs text-fg-muted">
@@ -213,10 +265,13 @@ export function ImportPluginTabs({ projectId, onOpenChat, onLanded }: ImportPlug
               placeholder={npm ? S.plugins.importNpmPlaceholder : S.plugins.importLinkPlaceholder}
               autoComplete="off"
               spellCheck={false}
-              {...(refused
-                ? { error: npm ? S.plugins.importNpmInvalid : S.plugins.importLinkInvalid }
-                : {})}
+              {...(error !== null ? { error } : {})}
             />
+            {fault === "subpath" && (
+              <Button size="sm" variant="link" className="mt-1" onClick={() => askAgentWith(value)}>
+                {S.plugins.importLinkAskAgent}
+              </Button>
+            )}
           </div>
           <Button
             size="sm"

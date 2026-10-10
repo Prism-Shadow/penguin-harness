@@ -371,7 +371,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         installed.name,
         400,
         "not_a_plugin",
-        `${installed.name} is not a PenguinHarness plugin: it carries neither a plugin.json beside skills/ or hooks/ nor the ifaces.json of server modules.`,
+        `${installed.name} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor the ifaces.json of server modules.`,
       );
     }
     return kinds;

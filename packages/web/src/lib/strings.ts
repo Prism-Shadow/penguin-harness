@@ -2470,6 +2470,8 @@ export const zh = {
     noMatch: "没有匹配的插件。",
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
+    /** In place of the description of a package that carries none. */
+    noDescription: "暂无描述",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
     libraryBuiltinHint: "随本次构建自带；安装到 Agent 即可在那里使用。",
     /** Plugin count in the group header (small text to the right of the category name). */
@@ -2481,6 +2483,9 @@ export const zh = {
     detailFiles: "文件",
     detailSkills: "技能",
     detailHooks: "钩子",
+    /** The detail dialog's links to the package's homepage and repository: their names and hover hints. */
+    detailHomepage: "主页",
+    detailRepository: "代码仓库",
     /** In place of the README of a package that is not on this server. */
     readmeAfterInstall: "安装后可查看 README",
     /** The tag of a plugin an admin installed on this server (not shipped with the build). */
@@ -2514,14 +2519,18 @@ export const zh = {
     importLinkLabel: "链接",
     importLinkPlaceholder: "https://github.com/… 或 github:owner/repo",
     importLinkInvalid: "不是 https 链接；包名请在「从 npm 安装」中填写，其他来源请让 Agent 安装。",
+    /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
+    importLinkSubpath: "这是仓库中的文件夹或文件，npm 无法直接安装：请让 Agent 把它转成插件包。",
+    importLinkAskAgent: "改为让 Agent 安装",
     importCost:
       "插件带有服务端模块时，安装会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
     importScriptsRun: "这个包的安装脚本会以服务端用户的身份在服务器上运行。",
     importAgentWhy:
-      "适合网页、仓库或一段描述：Agent 先找到并审阅插件包，再用 penguin plugin install 安装。",
+      "适合网页、仓库、仓库中的文件夹，或 Codex / Claude Code 插件：Agent 先审阅它——不是 PenguinHarness 插件包时先转成插件包——再用 penguin plugin install 安装。",
     importSourceLabel: "插件来源",
-    importSourcePlaceholder: "链接、本地路径或一段描述",
+    importSourcePlaceholder:
+      "链接（如 https://github.com/owner/repo/tree/main/plugins/name）、本地路径或一段描述",
     importSourceToken: "<插件来源>",
     importPromptLabel: "发送给 Agent 的 Prompt",
     /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
@@ -2533,7 +2542,7 @@ export const zh = {
         `找到下面描述的 PenguinHarness 插件并安装到本服务端：${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `插件是在服务端运行的 npm 包：安装前先读完它的 package.json、plugin.json 和随附的全部脚本，说明它做什么、会运行什么；它不是 PenguinHarness 插件（plugin.json 旁有 skills/ 或 hooks/，或带服务端模块的 ifaces.json），或其中有任何可疑之处时，停下来告诉我。确认无误后运行 \`penguin plugin install <npm 包名或 https 链接> --project-id ${projectId}\` 安装，并报告装上的包名和版本。来源是本地文件夹时不要安装：把它打成 zip（不含 node_modules），告诉我 zip 的位置，由我在「上传 zip 包」中上传。`,
+      `PenguinHarness 插件是一个 npm 包：package.json（name、version、description，以及插件卡片读取的 \`penguin\` 块）旁边是 \`skills/<name>/SKILL.md\` 和／或 \`hooks/\`。无论来源是什么，安装前先读完它的 package.json 和随附的全部脚本，说明它做什么、会运行什么；有任何可疑之处就停下来告诉我。来源本身已是这样的包时——在 npm 上、在指向 git 仓库或 tarball 的 https 链接处，或在本地文件夹中——用 \`penguin plugin install <npm 包名、https 链接或文件夹> --project-id ${projectId}\` 安装。来源是其他形态时——GitHub 仓库中的文件夹或文件、Codex（\`.codex-plugin\`）或 Claude Code（\`.claude-plugin\`）插件、Skill 仓库——先读 \`plugin-porting\` Skill 并照做：在固定的 commit 上获取来源，在临时文件夹中构建插件包并审阅，再以同样的方式安装该文件夹。最后报告装上的包名和版本、包含的 Skill，以及你舍弃了哪些内容。`,
     importUploadDesc:
       "插件包目录的 zip：package.json 在根目录或唯一的顶层目录内，不含 node_modules，例如另一台服务端「导出」的文件。只上传你信任的来源。",
     importUploadAction: "选择 zip 文件",

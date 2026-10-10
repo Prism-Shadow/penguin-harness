@@ -6,9 +6,9 @@
  *
  * On the way in nothing is trusted that has not been checked: the caps are read from the
  * central directory before a byte inflates (as the Skill archive's are), every path is
- * zip-slip-checked, and the package must be a plugin — a plugin.json beside skills or a hook
- * package that the library would read as it is (checked with the library's own reader), or the
- * `ifaces.json` of server modules. Installing it is then npm's (plugin/install.ts).
+ * zip-slip-checked, and the package must be a plugin — skills or a hook package beside its
+ * package.json that the library would read as it is (checked with the library's own reader), or
+ * the `ifaces.json` of server modules. Installing it is then npm's (plugin/install.ts).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -156,32 +156,23 @@ export async function parsePluginArchive(archive: Uint8Array): Promise<PluginArc
   }
 
   const has = (dir: string) => [...rel.keys()].some((file) => file.startsWith(`${dir}/`));
-  const library = rel.has("plugin.json") && (has("skills") || has("hooks"));
+  const library = has("skills") || has("hooks");
   const modules = rel.has("ifaces.json");
   if (!library && !modules) {
     throw invalid(
-      "Not a PenguinHarness plugin: the package carries neither a plugin.json beside skills or a hook package, nor the ifaces.json of server modules.",
+      "Not a PenguinHarness plugin: the package carries neither skills/ nor hooks/ nor the ifaces.json of server modules.",
     );
   }
-  if (rel.has("plugin.json")) await checkWithLibrary(rel, library);
+  if (library) await checkWithLibrary(rel);
   return { name, version: manifest.version, files: rel, library, modules };
 }
 
 /**
- * Reads the package the way the library will once it is installed (a temp copy, removed after):
- * a library plugin through the library's own reader, a server module's card plugin.json as JSON.
- * What the reader refuses is refused here, naming the file inside the package.
+ * Reads a library plugin the way the library will once it is installed (a temp copy, removed
+ * after), with the library's own reader. What the reader refuses is refused here, naming the file
+ * inside the package; what it reads with a warning, it lists with that field missing.
  */
-async function checkWithLibrary(files: ReadonlyMap<string, Uint8Array>, library: boolean) {
-  if (!library) {
-    try {
-      const card = JSON.parse(strFromU8(files.get("plugin.json")!)) as unknown;
-      if (typeof card !== "object" || card === null || Array.isArray(card)) throw new Error();
-    } catch {
-      throw invalid("plugin.json is not a JSON object.");
-    }
-    return;
-  }
+async function checkWithLibrary(files: ReadonlyMap<string, Uint8Array>) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-check-"));
   try {
     for (const [rel, bytes] of files) {

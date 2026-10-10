@@ -84,14 +84,16 @@ export function pluginFiles(plugin: LibraryPlugin): Record<string, string> {
 }
 
 /**
- * A library plugin as the listing describes it: its npm version, and each part's dated version
- * (every skill's, the hook package's) for the update dialog to name what changes. Its skills go
- * without their icon: it is the plugin's, sent once on the plugin itself. Every library plugin
- * is one this build ships.
+ * A library plugin as the listing describes it: its manifest's display fields (each only when the
+ * package carries it), its npm version, and each part's dated version (every skill's, the hook
+ * package's) for the update dialog to name what changes. Its skills go without their icon: it is
+ * the plugin's, sent once on the plugin itself.
  */
 export function toPluginItem(plugin: LibraryPlugin): PluginItem {
   return {
     name: plugin.name,
+    ...(plugin.title !== undefined ? { title: plugin.title } : {}),
+    ...(plugin.titleZh !== undefined ? { titleZh: plugin.titleZh } : {}),
     description: plugin.description,
     ...(plugin.descriptionZh !== undefined ? { descriptionZh: plugin.descriptionZh } : {}),
     ...(plugin.shortDescription !== undefined ? { shortDescription: plugin.shortDescription } : {}),
@@ -101,6 +103,10 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
     version: plugin.version,
     package: plugin.packageName,
     source: plugin.source ?? "builtin",
+    ...(plugin.author !== undefined ? { author: plugin.author } : {}),
+    ...(plugin.license !== undefined ? { license: plugin.license } : {}),
+    ...(plugin.homepage !== undefined ? { homepage: plugin.homepage } : {}),
+    ...(plugin.repository !== undefined ? { repository: plugin.repository } : {}),
     skills: plugin.skills.map(({ icon: _icon, ...skill }) => toSkillItem(skill)),
     hooks: plugin.hooks ? hookEvents(plugin.hooks.manifest) : [],
     ...(plugin.hooks !== undefined ? { hookVersion: plugin.hooks.manifest.version } : {}),

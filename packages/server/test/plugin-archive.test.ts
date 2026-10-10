@@ -4,7 +4,11 @@
  * - An admin installs a plugin of Skills from a zip: it joins the library as installed on the
  *   server, and no Project's list names it (nothing loads a package of Skills).
  * - A package of server modules from a zip is listed for this machine alone: another machine
- *   handed its name would fetch whatever the registry has under it.
+ *   handed its name would fetch whatever the registry has under it; its row reads its own
+ *   package.json.
+ * - A zip of Skills whose package.json has only a name and a version installs, and lists with
+ *   no description, category, icon or quick start — nothing invented; an unversioned skill
+ *   reads as unversioned.
  * - A member is refused every install path; the local API token an Agent's `penguin plugin
  *   install` carries installs as the admin.
  * - A zip holding another version of an installed package asks before replacing it; the same
@@ -17,7 +21,8 @@
  *   installs, a link that turns out to be one is taken back; so is a link to a package that is no
  *   plugin, and both refusals say its install scripts have already run.
  * - What POST installs is a registry name or an https link; a path, a plain http, ssh or file
- *   link, credentials in a link and an alias behind a name are refused before npm runs.
+ *   link, credentials in a link, an alias behind a name and a link to a folder or a file inside a
+ *   GitHub repository are refused before npm runs.
  * - Export is the package as a zip that imports back as it was — a library plugin's and a
  *   listed server module's; an unlisted name, or one that is a path, is not answered.
  * - npm itself, once: an uploaded package is packed without its scripts and installed, kept as
@@ -63,8 +68,12 @@ const skill = (name: string, version = "2026.10.01.1") =>
 
 /** A plugin of Skills, `@acme/notes` at `version`, as files of its package directory. */
 const notesPackage = (version = "1.0.0"): Files => ({
-  "package.json": JSON.stringify({ name: "@acme/notes", version, description: "Notes." }),
-  "plugin.json": JSON.stringify({ description: "Take notes.", category: "office-productivity" }),
+  "package.json": JSON.stringify({
+    name: "@acme/notes",
+    version,
+    description: "Take notes.",
+    penguin: { title: "Notes", category: "office-productivity" },
+  }),
   "icon.svg": "<svg viewBox='0 0 24 24'/>\n",
   "skills/notes/SKILL.md": skill("notes"),
 });
@@ -79,11 +88,12 @@ async function modulePackage(): Promise<Files> {
     ) as object;
     await fs.writeFile(
       path.join(dir, "package.json"),
-      JSON.stringify({ ...manifest, version: "0.3.0" }),
-    );
-    await fs.writeFile(
-      path.join(dir, "plugin.json"),
-      JSON.stringify({ description: "A sandbox." }),
+      JSON.stringify({
+        ...manifest,
+        version: "0.3.0",
+        description: "A sandbox.",
+        penguin: { short_description: "Sandbox X.", category: "sandbox" },
+      }),
     );
     const files: Files = {};
     for (const name of await fs.readdir(dir)) files[name] = await fs.readFile(path.join(dir, name));
@@ -217,12 +227,34 @@ describe("plugin import and export", () => {
       }),
     ]);
     expect(await projectConfig()).toContain(`[plugins.${body.machineId}]\n"@acme/sandbox-x"`);
-    // The registry lists it from its own package, so its card and its export have a row.
+    // The registry lists it from its own package — its npm fields, then its `penguin` block — so
+    // its card and its export have a row.
     const index = (await (await admin.get("/api/plugins/registry")).json()) as PluginIndexResponse;
     expect(index.plugins.find((e) => e.name === "@acme/sandbox-x")).toMatchObject({
       version: "0.3.0",
       description: "A sandbox.",
+      shortDescription: "Sandbox X.",
     });
+  });
+
+  it("installs a zip of Skills whose package.json carries only a name and a version, and lists it with nothing invented", async () => {
+    const admin = await boot();
+    const res = await importZip(admin, {
+      "package.json": JSON.stringify({ name: "bare-skills", version: "0.1.0" }),
+      // Ported as it was found: no dated version on the skill, which reads as unversioned.
+      "skills/bare/SKILL.md": "---\nname: bare\ndescription: Do bare things.\n---\n\nBody.\n",
+    });
+    expect(res.status).toBe(201);
+    const groups = ((await (await admin.get("/api/plugins")).json()) as PluginLibraryResponse)
+      .groups;
+    const bare = groups.find((g) => g.id === "other")?.plugins.find((p) => p.name === "bare-skills");
+    expect(bare).toMatchObject({ description: "", version: "0.1.0", source: "installed" });
+    for (const key of ["title", "shortDescription", "icon", "quickStart", "author", "license"]) {
+      expect(bare, key).not.toHaveProperty(key);
+    }
+    expect(bare?.skills).toEqual([
+      expect.objectContaining({ name: "bare", description: "Do bare things.", version: "" }),
+    ]);
   });
 
   it("refuses a member every install path, and installs for the local API token an Agent's CLI carries", async () => {
@@ -309,7 +341,7 @@ describe("plugin import and export", () => {
       /\.npmrc/,
     );
     await refused(
-      { "a/package.json": "{}", "b/plugin.json": "{}" },
+      { "a/package.json": "{}", "b/README.md": "# B\n" },
       400,
       "plugin_archive_invalid",
       /package\.json at its root/,
@@ -336,10 +368,10 @@ describe("plugin import and export", () => {
       /Not a PenguinHarness plugin/,
     );
     await refused(
-      { ...notesPackage(), "skills/notes/SKILL.md": "---\nname: notes\ndescription: x\n---\n" },
+      { ...notesPackage(), "skills/notes/SKILL.md": "No frontmatter at all.\n" },
       400,
       "plugin_archive_invalid",
-      /skills[/\\]notes[/\\]SKILL\.md: version must be YYYY\.MM\.DD\.N/,
+      /skills[/\\]notes[/\\]SKILL\.md has no frontmatter with a name/,
     );
     // Past the caps, read from the central directory: 2001 files, or one declared past 5MB.
     const many: Files = { ...notesPackage() };
@@ -431,11 +463,18 @@ describe("plugin import and export", () => {
       "http://example.com/x.tgz",
       "git+ssh://git@github.com/acme/notes.git",
       "https://user:secret@example.com/x.tgz",
+      // A folder or a file inside a repository: npm installs a whole repository or nothing.
+      "https://github.com/acme/plugins/tree/main/plugins/notes",
+      "https://github.com/acme/plugins/blob/main/plugins/notes/README.md",
     ]) {
       const res = await post(bad);
       expect(res.status, bad).toBe(400);
       expect(await res.json()).toMatchObject({ error: { code: "bad_request" } });
     }
+    const folder = await post("https://github.com/acme/plugins/tree/main/plugins/notes");
+    expect(((await folder.json()) as { error: { message: string } }).error.message).toContain(
+      "a folder or a file inside a repository",
+    );
     expect(npm.calls).toEqual([]);
 
     for (const good of [
@@ -466,7 +505,6 @@ describe("plugin import and export", () => {
     expect(Object.keys(unzipSync(exported)).sort()).toEqual([
       "notes/icon.svg",
       "notes/package.json",
-      "notes/plugin.json",
       "notes/skills/notes/SKILL.md",
     ]);
 

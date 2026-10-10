@@ -1,16 +1,18 @@
 ---
 name: skill-porting
 description: Install skills from external ecosystems into this agent's agent_state/skills/ — resolve Claude Code plugin marketplaces, the Codex plugin repo, skills.sh registry names, GitHub repos, or local folders to their skill directories, review every file, and normalize SKILL.md frontmatter to the Penguin format.
-version: 2026.10.09.1
+version: 2026.10.10.1
 ---
 
 # Skill Porting
 
-A Penguin plugin is a package a deployment installs to add capability the harness does not ship, and nothing here produces one: the wider ecosystem's plugins are wrappers around plain skill directories — a `SKILL.md` plus support files — which is exactly the shape Penguin installs. This skill turns any common external source into installed skills: locate the source, fetch it at a pinned revision, review everything, normalize the frontmatter, copy into `agent_state/skills/<name>/`, verify.
+The wider ecosystem's plugins are mostly wrappers around plain skill directories — a `SKILL.md` plus support files — which is exactly the shape Penguin installs. This skill turns any common external source into skills installed on this agent: locate the source, fetch it at a pinned revision, review everything, normalize the frontmatter, copy into `agent_state/skills/<name>/`, verify.
 
 ## Before you start
 
 If the user's message only invokes this skill (e.g. "use skill-porting skill") without naming a skill or a source, ask what skill they want and where it comes from (a marketplace plugin name, a repo URL, a `skills add` spec, or a local path).
+
+To make a whole plugin available to every agent on the server instead — a Codex or Claude Code plugin, a skills repository, a folder in a GitHub repository, turned into a PenguinHarness plugin package and installed with `penguin plugin install` — use the `plugin-porting` skill.
 
 Safety is non-negotiable — an installed skill becomes durable instructions this agent follows in every future session:
 

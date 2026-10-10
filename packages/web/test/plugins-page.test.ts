@@ -13,7 +13,8 @@
  *   and the folded sections are remembered per browser; nothing usable stored reads as
  *   category with nothing folded.
  * - The search box narrows the rows to those whose names, descriptions (in either language) or
- *   keywords hold the query, whatever its case; a query nothing holds leaves none.
+ *   keywords hold the query, whatever its case; a query nothing holds leaves none. A plugin's
+ *   display name, in either language, finds it too.
  * - The "update all" plan is empty when no Agent is behind, sends one request per Agent with
  *   every plugin it is behind on, and counts distinct plugins as the notice does.
  */
@@ -147,7 +148,15 @@ const GROUPS: PluginGroupItem[] = [
     id: "office-productivity",
     title: "Office Productivity",
     titleZh: "办公效率",
-    plugins: [plugin("goal", { skills: [], hooks: ["stop"], hookVersion: "2026.10.04.1" })],
+    plugins: [
+      plugin("goal", {
+        title: "Goal Mode",
+        titleZh: "目标模式",
+        skills: [],
+        hooks: ["stop"],
+        hookVersion: "2026.10.04.1",
+      }),
+    ],
   },
   {
     id: "software-development",
@@ -313,6 +322,13 @@ describe("search", () => {
     expect(keep("LINUX")).toEqual(["sandbox-bwrap", "sandbox-wsl"]);
     expect(keep("mystery")).toEqual(["mystery"]);
     expect(keep("no plugin says this")).toEqual([]);
+  });
+
+  it("finds a plugin by its display name in either language", () => {
+    const { rows } = pageRows();
+    const keep = (query: string) => rows.filter((row) => rowMatches(row, query)).map((r) => r.name);
+    expect(keep("goal mode")).toEqual(["goal"]);
+    expect(keep("目标")).toEqual(["goal"]);
   });
 });
 

@@ -1,7 +1,12 @@
 {
   "name": "@penguinharness/skill-porting",
   "version": "0.2.13",
-  "description": "Install skills from external ecosystems into this agent's agent_state/skills/ — resolve Claude Code plugin marketplaces, the Codex plugin repo, skills.sh registry names, GitHub repos, or local folders to their skill directories, review every file, and normalize SKILL.md frontmatter to the Penguin format.",
+  "description": "Port from external ecosystems after reviewing every file: skills into this agent's agent_state/skills/ (Claude Code plugin marketplaces, the Codex plugin repo, skills.sh registry names, GitHub repos, local folders), or a whole plugin (a Codex or Claude Code plugin, a skills repository, a folder in a GitHub repository) into a PenguinHarness plugin package installed on the server with penguin plugin install.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -9,7 +14,6 @@
     "directory": "plugins/skill-porting"
   },
   "files": [
-    "plugin.json",
     "icon.svg",
     "skills",
     "hooks",
@@ -17,5 +21,19 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "penguin": {
+    "description_zh": "审阅每个文件后从外部生态移植：把 Skill 装进本 Agent 的 agent_state/skills/（Claude Code 插件市场、Codex 插件仓库、skills.sh 注册名、GitHub 仓库、本地文件夹），或把整个插件（Codex 或 Claude Code 插件、Skill 仓库、GitHub 仓库中的文件夹）转成 PenguinHarness 插件包，用 penguin plugin install 装到服务端。",
+    "short_description": "Port external skills into this agent, or plugins onto the server.",
+    "short_description_zh": "把外部 Skill 移植进本 Agent，或把外部插件移植到服务端。",
+    "category": "ai-app-development",
+    "icon": "icon.svg",
+    "quick_start": {
+      "prompt": "Show me the skills available in the Claude Code plugin marketplace and recommend two that would suit this agent. Do not install anything yet.",
+      "prompt_zh": "列出 Claude Code 插件市场里可移植的技能，推荐两个适合这个 Agent 的。先不要安装任何东西。",
+      "skills": [
+        "skill-porting"
+      ]
+    }
   }
 }

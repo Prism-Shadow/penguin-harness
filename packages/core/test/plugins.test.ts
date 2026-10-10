@@ -1,16 +1,21 @@
 /**
  * The plugin library's file source of truth and core's loader: one npm package per plugin under the repo's `plugins/`
- * (manifest fields, the skills and hook packages they ship), the version scheme, the
- * category grouping, the preinstall filter, the name lookups, the doc conventions every
- * shipped skill follows, and the README tables that repeat the library for human readers.
+ * (its package.json is the manifest: npm's fields and a `penguin` block; the skills and hook
+ * packages it ships), the version scheme, the category grouping, the preinstall filter, the name
+ * lookups, the doc conventions every shipped skill follows, and the README tables that repeat the
+ * library for human readers.
+ *
+ * The shipped library, as it is in the repo:
+ * - Every shipped package.json reads with no warning: a description, both short descriptions, a
+ *   known category, a safe icon — and no plugin.json is shipped or left on disk.
  *
  * Versions, on a fixture library a temp host package carries (usePushedPluginLibrary):
- * - A plugin's version is the npm version beside its plugin.json; a version left in
- *   plugin.json is ignored, not refused.
+ * - A plugin's version is the npm version of its package.json.
  * - Each skill keeps its own dated version through the loader's stamp, and the hook package
- *   carries `hooks.version`.
- * - A skill without a dated version, or a hook package without `hooks.version`, fails the
- *   load naming the file, rather than reading as a version every install is behind.
+ *   carries `penguin.hooks.version`.
+ * - A shipped skill without a dated version, or shipped `hooks/` without
+ *   `penguin.hooks.version`, fails the load naming the file, rather than reading as a version
+ *   every install is behind; so does any other warning-level fault in a shipped package.
  *
  * What the operator installed on the server, on a fixture prefix (useInstalledPluginPrefix):
  * - A package of Skills the prefix depends on joins the library as installed, under its name
@@ -19,6 +24,14 @@
  *   prefix's own packages stay out.
  * - An installed package that will not read is left out with a warning; the library still
  *   loads.
+ * - Missing is missing: a package.json with only a name and a version lists its skills with no
+ *   description, no category (Other), no icon and no quick start.
+ * - What a shipped package fails on, an installed one lists through, with the field missing and
+ *   one warning: a malformed field, `hooks/` without a hook version (the skills still list), a
+ *   skill without a version (unversioned, never flagged behind), an unsafe or oversized icon, a
+ *   binary file in a skill (left out; the text beside it installs).
+ * - An old package that still carries a plugin.json lists by its directories; nothing is read
+ *   from the plugin.json.
  */
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -30,13 +43,17 @@ import {
   PLUGIN_VERSION_PATTERN,
   comparePluginVersions,
   groupPlugins,
+  isSafeIconSvg,
   libraryPlugin,
   librarySkill,
   loadLibraryPlugins,
   loadPluginGroups,
   libraryPluginPackage,
   loadPreinstalledPlugins,
+  parsePluginPackage,
   parseSkillFrontmatter,
+  readLibraryPackage,
+  readPluginIcon,
   useInstalledPluginPrefix,
   usePushedPluginLibrary,
   workspacePluginRoot,
@@ -82,6 +99,36 @@ describe("loadLibraryPlugins", () => {
     }
   });
 
+  it("every shipped package.json reads clean: described for the card in both languages, a known category, a safe icon, and no plugin.json anywhere", async () => {
+    const dirs = (await fs.readdir(pluginsRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    // The four sandbox backends are packages of server modules: their cards read the same block.
+    expect(dirs.length).toBeGreaterThan(0);
+    for (const dir of dirs) {
+      const file = path.join(pluginsRoot, dir, "package.json");
+      const text = await fs.readFile(file, "utf8");
+      // Chinese in a manifest is written as real characters, not \uXXXX escapes.
+      expect(text, `${dir} package.json escapes`).not.toMatch(/\\u[0-9a-fA-F]{4}/);
+      const raw = JSON.parse(text) as { files?: string[] };
+      const { manifest, warnings } = parsePluginPackage(raw, file);
+      expect(warnings, dir).toEqual([]);
+      expect(manifest.pluginName, dir).toBe(dir);
+      expect(manifest.description, dir).not.toBe("");
+      expect(manifest.penguin.shortDescription, dir).toBeDefined();
+      expect(manifest.penguin.shortDescriptionZh, dir).toBeDefined();
+      expect(
+        PLUGIN_CATEGORIES.map((c) => c.id),
+        dir,
+      ).toContain(manifest.penguin.category);
+      const icon = readPluginIcon(path.join(pluginsRoot, dir), manifest.penguin.icon);
+      expect(icon.warnings, dir).toEqual([]);
+      expect(icon.icon, `${dir} icon`).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
+      expect(raw.files ?? [], dir).not.toContain("plugin.json");
+      expect(existsSync(path.join(pluginsRoot, dir, "plugin.json")), dir).toBe(false);
+    }
+  });
+
   it("every library plugin declares a quick start: a demo prompt in both languages, naming only its own skills", () => {
     for (const plugin of loadLibraryPlugins()) {
       const quickStart = plugin.quickStart;
@@ -101,21 +148,13 @@ describe("loadLibraryPlugins", () => {
 
   it("stamps the plugin's metadata into each skill: its own version in the file, full installable frontmatter", async () => {
     for (const plugin of loadLibraryPlugins()) {
-      // Chinese in a manifest is written as real characters, not \uXXXX escapes.
-      const rawManifest = await fs.readFile(
-        path.join(pluginsRoot, plugin.name, "plugin.json"),
-        "utf8",
-      );
-      expect(rawManifest, `${plugin.name} plugin.json escapes`).not.toMatch(/\\u[0-9a-fA-F]{4}/);
-      // Every built-in plugin ships an icon.svg beside plugin.json.
-      expect(plugin.icon, `${plugin.name} icon.svg`).toBeDefined();
-      expect(plugin.icon).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
-      expect(plugin.icon).not.toMatch(/<script/i);
+      // Every built-in plugin ships an icon.
+      expect(plugin.icon, `${plugin.name} icon`).toBeDefined();
       for (const skill of plugin.skills) {
         const dir = path.join(pluginsRoot, plugin.name, "skills", skill.name);
         const file = await fs.readFile(path.join(dir, "SKILL.md"), "utf8");
         // The library file carries name, description and the skill's own dated version; the
-        // short descriptions are plugin.json's, stamped in by the loader.
+        // short descriptions are the package's, stamped in by the loader.
         const fileFront = /^---\n([\s\S]*?)\n---/.exec(file)![1]!;
         expect(fileFront, `${plugin.name}/${skill.name} file frontmatter`).not.toMatch(
           /^(short_description|short_description_zh):/m,
@@ -155,12 +194,12 @@ describe("loadLibraryPlugins", () => {
 
   it("a hook plugin carries a manifest naming its scripts and the hooks/ files to install; goal's start runs only when the host starts a goal", async () => {
     const goal = libraryPlugin("goal");
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(pluginsRoot, "goal", "plugin.json"), "utf8"),
-    ) as { hooks: { version: string } };
+    const pkg = JSON.parse(
+      await fs.readFile(path.join(pluginsRoot, "goal", "package.json"), "utf8"),
+    ) as { penguin: { hooks: { version: string } } };
     expect(goal?.hooks?.manifest).toMatchObject({
       name: "goal",
-      version: manifest.hooks.version,
+      version: pkg.penguin.hooks.version,
       stop: [{ command: "stop.mjs", timeout: 60 }],
       pre_tool_use: [],
       user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
@@ -181,6 +220,7 @@ describe("loadLibraryPlugins", () => {
     expect(librarySkill("web-design")?.plugin.name).toBe("software-development");
     expect(librarySkill("unified-llm-api")?.plugin.name).toBe("agent-development");
     expect(librarySkill("penguin-config")?.plugin.name).toBe("agent-development");
+    expect(librarySkill("plugin-porting")?.plugin.name).toBe("skill-porting");
   });
 });
 
@@ -269,6 +309,14 @@ describe("lookups", () => {
   });
 });
 
+/** Writes `files` under `dir` (paths relative to it; a Uint8Array is written as bytes). */
+async function write(dir: string, files: Record<string, string | Uint8Array>): Promise<void> {
+  for (const [rel, data] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+    await fs.writeFile(path.join(dir, rel), data);
+  }
+}
+
 describe("plugin versions, on a fixture library", () => {
   let root: string | null = null;
 
@@ -285,40 +333,30 @@ describe("plugin versions, on a fixture library", () => {
       path.join(root, "package.json"),
       JSON.stringify({ name: "fixture-host", dependencies: { "@penguinharness/sample": "*" } }),
     );
-    const dir = path.join(root, "node_modules", "@penguinharness", "sample");
-    for (const [rel, text] of Object.entries(files)) {
-      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
-      await fs.writeFile(path.join(dir, rel), text);
-    }
+    await write(path.join(root, "node_modules", "@penguinharness", "sample"), files);
     usePushedPluginLibrary(root);
   }
 
   const skillFile = (name: string, version?: string) =>
     `---\nname: ${name}\ndescription: Do ${name}.\n${version === undefined ? "" : `version: ${version}\n`}---\n\n## Before you start\n`;
-  const PACKAGE = JSON.stringify({ name: "@penguinharness/sample", version: "3.1.4" });
-
-  it("takes a plugin's version from the npm package beside plugin.json, ignoring a version left in plugin.json", async () => {
-    await library({
-      "package.json": PACKAGE,
-      "plugin.json": JSON.stringify({ description: "Sample.", version: "2026.01.01.1" }),
-      "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
+  /** The sample package's package.json: its npm fields and a `penguin` block. */
+  const pkg = (penguin: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      name: "@penguinharness/sample",
+      version: "3.1.4",
+      description: "Sample.",
+      penguin: { short_description: "Short.", short_description_zh: "短。", ...penguin },
     });
-    expect(libraryPlugin("sample")?.version).toBe("3.1.4");
-  });
 
-  it("keeps each skill's own dated version through the stamp, and gives the hook package hooks.version", async () => {
+  it("keeps each skill's own dated version through the stamp, gives the hook package penguin.hooks.version, and the plugin its npm version", async () => {
     await library({
-      "package.json": PACKAGE,
-      "plugin.json": JSON.stringify({
-        description: "Sample.",
-        short_description: "Short.",
-        hooks: { version: "2026.09.02.3", stop: [{ command: "stop.mjs" }] },
-      }),
+      "package.json": pkg({ hooks: { version: "2026.09.02.3", stop: [{ command: "stop.mjs" }] } }),
       "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
       "skills/two/SKILL.md": skillFile("two", "2026.08.15.1"),
       "hooks/stop.mjs": "export {};\n",
     });
     const plugin = libraryPlugin("sample")!;
+    expect(plugin.version).toBe("3.1.4");
     expect(plugin.skills.map((s) => [s.name, s.version])).toEqual([
       ["one", "2026.09.01.2"],
       ["two", "2026.08.15.1"],
@@ -333,21 +371,27 @@ describe("plugin versions, on a fixture library", () => {
     expect(plugin.hooks?.manifest.version).toBe("2026.09.02.3");
   });
 
-  it("refuses a skill without a dated version, and a hook package without hooks.version, naming the file", async () => {
+  it("refuses a shipped skill without a dated version, and shipped hooks/ without penguin.hooks.version, naming the file", async () => {
     await library({
-      "package.json": PACKAGE,
-      "plugin.json": JSON.stringify({ description: "Sample." }),
+      "package.json": pkg(),
       "skills/one/SKILL.md": skillFile("one"),
     });
     expect(() => libraryPlugin("sample")).toThrow(/skills[/\\]one[/\\]SKILL\.md: version/);
     await fs.rm(root!, { recursive: true, force: true });
 
     await library({
-      "package.json": PACKAGE,
-      "plugin.json": JSON.stringify({ description: "Sample.", hooks: { stop: [] } }),
+      "package.json": pkg({ hooks: { stop: [] } }),
       "hooks/stop.mjs": "export {};\n",
     });
-    expect(() => libraryPlugin("sample")).toThrow(/plugin\.json: hooks\.version/);
+    expect(() => libraryPlugin("sample")).toThrow(/package\.json: .*penguin\.hooks\.version/);
+  });
+
+  it("fails the library for a shipped package with any warning-level fault, naming the key", async () => {
+    await library({
+      "package.json": pkg({ category: 7 }),
+      "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
+    });
+    expect(() => loadLibraryPlugins()).toThrow(/package\.json: penguin\.category must be a string/);
   });
 });
 
@@ -365,21 +409,13 @@ describe("packages the operator installed on the server", () => {
   const skillFile = (name: string, version?: string) =>
     `---\nname: ${name}\ndescription: Do ${name}.\n${version === undefined ? "" : `version: ${version}\n`}---\n\nBody.\n`;
 
-  /** Writes `files` under `dir` (paths relative to it). */
-  async function write(dir: string, files: Record<string, string>): Promise<void> {
-    for (const [rel, text] of Object.entries(files)) {
-      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
-      await fs.writeFile(path.join(dir, rel), text);
-    }
-  }
-
   /**
    * A shipped library of one plugin (`@penguinharness/sample`) and a server prefix whose
    * package.json depends on `installed`; every package is written under node_modules.
    */
   async function setUp(
     installed: string[],
-    packages: Record<string, Record<string, string>>,
+    packages: Record<string, Record<string, string | Uint8Array>>,
   ): Promise<void> {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-installed-plugins-"));
     const host = path.join(root, "host");
@@ -391,8 +427,8 @@ describe("packages the operator installed on the server", () => {
       "node_modules/@penguinharness/sample/package.json": JSON.stringify({
         name: "@penguinharness/sample",
         version: "1.0.0",
+        description: "Sample.",
       }),
-      "node_modules/@penguinharness/sample/plugin.json": JSON.stringify({ description: "Sample." }),
       "node_modules/@penguinharness/sample/skills/sample/SKILL.md": skillFile(
         "sample",
         "2026.09.01.1",
@@ -413,11 +449,19 @@ describe("packages the operator installed on the server", () => {
     useInstalledPluginPrefix(prefix);
   }
 
-  const notes = (name: string) => ({
-    "package.json": JSON.stringify({ name, version: "2.0.0" }),
-    "plugin.json": JSON.stringify({ description: "Notes.", preinstall: true }),
+  const notes = (name: string, penguin: Record<string, unknown> = {}) => ({
+    "package.json": JSON.stringify({
+      name,
+      version: "2.0.0",
+      description: "Notes.",
+      penguin: { preinstall: true, ...penguin },
+    }),
     "skills/notes/SKILL.md": skillFile("notes", "2026.10.01.1"),
   });
+
+  /** The warnings the loader logged, as one string. */
+  const logged = (warn: { mock: { calls: unknown[][] } }) =>
+    warn.mock.calls.map((call) => String(call[0])).join("\n");
 
   it("lists a package of Skills the operator installed, as installed and never preinstalled", async () => {
     await setUp(["@acme/notes"], { "@acme/notes": notes("@acme/notes") });
@@ -435,10 +479,14 @@ describe("packages the operator installed on the server", () => {
 
   it("leaves out a package of server modules alone, a name the build ships, and npm's own dependencies", async () => {
     await setUp(["@acme/sandbox-x", "@other/sample"], {
-      // A server module's card: a plugin.json with nothing to install into an Agent.
+      // A server module's card: a penguin block, with nothing to install into an Agent.
       "@acme/sandbox-x": {
-        "package.json": JSON.stringify({ name: "@acme/sandbox-x", version: "1.0.0" }),
-        "plugin.json": JSON.stringify({ description: "A sandbox backend." }),
+        "package.json": JSON.stringify({
+          name: "@acme/sandbox-x",
+          version: "1.0.0",
+          penguin: { category: "sandbox" },
+        }),
+        "ifaces.json": "{}",
       },
       "@other/sample": notes("@other/sample"),
       // Installed by npm beside the packages the prefix asked for, not by the operator.
@@ -452,16 +500,167 @@ describe("packages the operator installed on the server", () => {
   it("leaves an installed package that will not read out, with a warning, and still loads the library", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await setUp(["@acme/broken", "@acme/notes"], {
+      // No release version: nothing can say which version of it is installed.
       "@acme/broken": {
-        "package.json": JSON.stringify({ name: "@acme/broken", version: "1.0.0" }),
-        "plugin.json": JSON.stringify({ description: "Broken." }),
-        "skills/broken/SKILL.md": skillFile("broken"),
+        "package.json": JSON.stringify({ name: "@acme/broken", description: "Broken." }),
+        "skills/broken/SKILL.md": skillFile("broken", "2026.10.01.1"),
       },
       "@acme/notes": notes("@acme/notes"),
     });
     expect(loadLibraryPlugins().map((p) => p.name)).toEqual(["notes", "sample"]);
     expect(libraryPlugin("broken")).toBeUndefined();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("@acme/broken"));
+    expect(logged(warn)).toContain("@acme/broken is installed but not listed");
+  });
+
+  it("reads a package whose package.json carries only a name and a version: its skills, and nothing invented", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await setUp(["bare"], {
+      bare: {
+        "package.json": JSON.stringify({ name: "bare", version: "0.1.0" }),
+        "skills/bare/SKILL.md": skillFile("bare", "2026.10.01.1"),
+      },
+    });
+    const bare = libraryPlugin("bare")!;
+    expect(bare).toMatchObject({ name: "bare", version: "0.1.0", description: "" });
+    for (const key of ["title", "shortDescription", "category", "icon", "quickStart", "hooks"]) {
+      expect(bare, key).not.toHaveProperty(key);
+    }
+    expect(bare.skills.map((s) => s.name)).toEqual(["bare"]);
+    expect(loadPluginGroups().find((g) => g.id === "other")?.plugins.map((p) => p.name)).toContain(
+      "bare",
+    );
+    // Absent is not a fault: nothing to warn about.
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("lists through what a shipped package fails on, with the field missing and a warning", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await setUp(["@acme/notes"], {
+      "@acme/notes": notes("@acme/notes", {
+        category: ["office-productivity"],
+        title: "Notes",
+        quick_start: { prompt: "Take a note.", skills: ["notes", "elsewhere"] },
+      }),
+    });
+    const plugin = libraryPlugin("notes")!;
+    expect(plugin.title).toBe("Notes");
+    expect(plugin).not.toHaveProperty("category");
+    expect(plugin.quickStart).toEqual({ prompt: "Take a note.", skills: ["notes"] });
+    expect(logged(warn)).toContain("penguin.category must be a string; ignored");
+    expect(logged(warn)).toContain("names skills the package does not ship (elsewhere)");
+  });
+
+  it("lists the skills of a package whose hooks/ has no penguin.hooks.version, and no hook package", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await setUp(["@acme/notes"], {
+      "@acme/notes": { ...notes("@acme/notes"), "hooks/stop.mjs": "export {};\n" },
+    });
+    const plugin = libraryPlugin("notes")!;
+    expect(plugin.skills.map((s) => s.name)).toEqual(["notes"]);
+    expect(plugin.hooks).toBeUndefined();
+    expect(logged(warn)).toContain("hooks/ is present but package.json declares no penguin.hooks");
+  });
+
+  it("reads a skill without a version as unversioned, which its installed copy is never behind", async () => {
+    await setUp(["@acme/notes"], {
+      "@acme/notes": {
+        ...notes("@acme/notes"),
+        "skills/notes/SKILL.md": skillFile("notes"),
+      },
+    });
+    const [skill] = libraryPlugin("notes")!.skills;
+    expect(skill!.version).toBe("");
+    // What an install writes carries no version either, and compares equal to the library's.
+    const installed = parseSkillFrontmatter(skill!.content)!;
+    expect(skill!.content).not.toMatch(/^version:/m);
+    expect(comparePluginVersions(installed.version, skill!.version)).toBe(0);
+  });
+
+  it("drops an icon with a script, an event handler or over 64 KiB, and keeps a plain one", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const plain = `<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2h20v20H2z"/></svg>\n`;
+    const unsafe = {
+      script: `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
+      handler: `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><path d="M0 0"/></svg>`,
+      large: `<svg xmlns="http://www.w3.org/2000/svg"><path d="${"M0 0 ".repeat(14_000)}"/></svg>`,
+      link: `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.invalid/t.png"/></svg>`,
+    };
+    await setUp(
+      ["@acme/plain", ...Object.keys(unsafe).map((k) => `@acme/${k}`)],
+      Object.fromEntries([
+        ["@acme/plain", { ...notes("@acme/plain"), "icon.svg": plain }],
+        ...Object.entries(unsafe).map(([k, svg]) => [
+          `@acme/${k}`,
+          { ...notes(`@acme/${k}`, { icon: "art/logo.svg" }), "art/logo.svg": svg },
+        ]),
+      ]),
+    );
+    const icons = Object.fromEntries(loadLibraryPlugins().map((p) => [p.name, p.icon]));
+    expect(icons.plain).toBe(plain);
+    for (const name of Object.keys(unsafe)) expect(icons[name], name).toBeUndefined();
+    // A skill of a package without an icon installs without one (the book glyph).
+    expect(libraryPlugin("script")!.skills[0]).not.toHaveProperty("icon");
+    expect(logged(warn)).toContain("is larger than 64 KiB");
+    expect(isSafeIconSvg(unsafe.script)).toBe(false);
+  });
+
+  it("leaves a binary file out of a skill, and installs the text files beside it", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe]);
+    await setUp(["@acme/notes"], {
+      "@acme/notes": {
+        ...notes("@acme/notes"),
+        "skills/notes/assets/logo.png": png,
+        "skills/notes/references/api.md": "# API\n",
+      },
+    });
+    const [skill] = libraryPlugin("notes")!.skills;
+    expect(Object.keys(skill!.files ?? {})).toEqual(["references/api.md"]);
+    expect(logged(warn)).toContain("skills/notes/assets/logo.png is not a text file");
+  });
+
+  it("lists an old package that still carries a plugin.json by its directories, reading nothing from it", async () => {
+    await setUp(["@penguinharness/old"], {
+      "@penguinharness/old": {
+        "package.json": JSON.stringify({
+          name: "@penguinharness/old",
+          version: "0.2.13",
+          description: "Old.",
+        }),
+        "plugin.json": JSON.stringify({
+          description: "Old, described by plugin.json.",
+          description_zh: "旧插件。",
+          category: "office-productivity",
+          hooks: { version: "2026.10.04.1", stop: [{ command: "stop.mjs" }] },
+        }),
+        "icon.svg": `<svg xmlns="http://www.w3.org/2000/svg"></svg>\n`,
+        "skills/old/SKILL.md": skillFile("old", "2026.10.01.1"),
+        "hooks/stop.mjs": "export {};\n",
+      },
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const old = libraryPlugin("old")!;
+    expect(old).toMatchObject({ description: "Old.", version: "0.2.13" });
+    expect(old.icon).toBeDefined();
+    expect(old.skills.map((s) => s.name)).toEqual(["old"]);
+    for (const key of ["descriptionZh", "category", "hooks"]) expect(old, key).not.toHaveProperty(key);
+  });
+
+  it("reads a local package directory the way the library will (readLibraryPackage), refusing one without a release version", async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-library-package-"));
+    await write(path.join(root, "ok"), notes("@acme/notes"));
+    await write(path.join(root, "bad"), {
+      "package.json": JSON.stringify({ name: "@acme/bad", version: "next" }),
+      "skills/bad/SKILL.md": skillFile("bad", "2026.10.01.1"),
+    });
+    expect(readLibraryPackage(path.join(root, "ok"))).toMatchObject({
+      name: "notes",
+      packageName: "@acme/notes",
+      source: "installed",
+    });
+    expect(() => readLibraryPackage(path.join(root!, "bad"))).toThrow(
+      /package\.json: the package carries no release version/,
+    );
   });
 });
 
@@ -611,7 +810,7 @@ describe("workspacePluginRoot (a checkout reads plugins from the repo's plugins/
   it("the live loader reads this checkout's plugins/ directories, not copies under node_modules", () => {
     // The whole point, on the real tree: every library plugin's files come from the repo.
     for (const plugin of loadLibraryPlugins()) {
-      expect(existsSync(path.join(pluginsRoot, plugin.name, "plugin.json"))).toBe(true);
+      expect(libraryPluginPackage(plugin.name)?.dir).toBe(path.join(pluginsRoot, plugin.name));
     }
   });
 });
