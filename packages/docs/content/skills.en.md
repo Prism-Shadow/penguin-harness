@@ -17,8 +17,8 @@ A **Skill** is a set of reusable instructions that an agent reads when a task ca
 
 1. In the sidebar, select **Plugins**.
 2. Browse the cards. Every plugin has one, a plugin of Skills and hooks and a [server plugin](#server-plugins) alike, and they are grouped by category: Office Productivity, Software Development, AI App Development, Agent Company, **Agent Sandbox** for the sandbox backends, and Other. Select a category's header to fold or unfold it; the page remembers which ones are folded.
-3. To group the cards another way, use the first select under the title: **Group: category** (the default), **Group: status**, **Group: contents** or **No grouping**. The page remembers your choice.
-4. To narrow the cards, type in the search box, or pick a value in the **Category**, **Contents** and **Status** selects. Every section opens while a search or filter is active.
+3. To group the cards another way, use the first select under the title: **Group by category** (the default), **Group by status**, **Group by content** or **No grouping**. The page remembers your choice.
+4. To narrow the cards, type in the search box, or pick a category, a kind of content or a status in the three selects beside the grouping one; unfiltered, they read **All categories**, **Any content** and **All statuses**. Every section opens while a search or filter is active.
 5. Select a card to open its details.
 
 Each card shows the plugin's icon, name and short description, a line in the form `v<version> · <status> · used by N agents`, and tags such as **built in**, or **installed on server** for a plugin an admin installed, plus the category when the cards are grouped another way. The version is the plugin's npm version. The agent count, shown for a plugin with Skills or hooks, covers the agents in the current Project that have the whole plugin installed, or a copy the update check lists as behind. The status is an icon and a word; point at it for what it means for that plugin:
