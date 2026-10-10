@@ -1,23 +1,30 @@
 /**
- * Proxy options (admin only, server-global). A form, not a live surface: two switches —
- * "Application uses the proxy" (the server's own outbound dispatcher) and "Agent environment
- * uses the proxy" (command subprocess environments) — share one proxy address, and nothing is
- * written until Save, which applies everything atomically via a single PUT. The server
- * validates and normalizes the address (bare "host:port" is stored as "http://host:port"); a
- * rejected address renders inline under the input and the atomic PUT writes nothing. Save with
- * no modifications sends no request and toasts "no changes"; a successful save takes effect
- * without a restart.
+ * Proxy options (admin only, server-global): two switches — "Application uses the proxy" (the
+ * server's own outbound dispatcher) and "Agent environment uses the proxy" (command subprocess
+ * environments) — sharing one proxy address.
+ *
+ * The page follows the settings commit model. Each switch writes the moment it is flipped, with
+ * only its own value in the PUT, shows the new position at once and settles on the server's
+ * answer; a refused write puts it back and says why in a toast. The address is a typed form: it
+ * is written only by Save, which is live only while the address differs from the stored one,
+ * and Reset puts the stored address back. Both switches act on the SAVED address, so while the
+ * address has unsaved edits they are disabled with a hint to save it first — a flip must never
+ * leave the user unsure which address it applied to. The server validates and normalizes the
+ * address (bare "host:port" is stored as "http://host:port"); a rejected address renders inline
+ * under the input, writes nothing, and the edit stays. Every write takes effect without a
+ * restart.
  *
  * Settings hydrate when the section mounts — which is every time it is navigated to — and the
- * controls and Save stay disabled until they arrive. The saved response is adopted as the new
+ * controls and Save stay disabled until they arrive. A saved response is adopted as the new
  * baseline, including the address in the exact form the server stored, so the page reflects
- * what is on the server rather than what was typed at it.
+ * what is on the server rather than what was typed at it. Leaving the page, or the dialog, with
+ * an unsaved address asks first (settings-dialog.tsx).
  *
  * The reachability test sits BELOW the save row, in its own block, because it measures the
  * SAVED configuration: only a PUT moves the server's outbound dispatcher, so a typed-but-unsaved
  * address is not in the path the probes travel. Reading top to bottom — edit, save, then
- * measure — is what makes that honest without a warning banner. A save clears results that now
- * describe a superseded configuration.
+ * measure — is what makes that honest without a warning banner. Any write — a save or a flipped
+ * switch — clears results that now describe a superseded configuration.
  *
  * One request per target, fired together and rendered as each lands. A single response carrying
  * all of them would hold every row blank until the slowest answered, which for a host that
@@ -46,14 +53,16 @@ import {
   SettingsSection,
   ToggleRow,
   toastError,
-  toastInfo,
   toastSuccess,
+  useFormDraft,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { useInstantSetting } from "../../lib/instant-setting";
 import { toneInk } from "../../lib/tone";
+import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 
 /** Brand names: identical in every locale, so they are keyed off the server's provider id rather than doubled into both dictionaries. */
 const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {
@@ -68,12 +77,13 @@ const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {
 };
 
 export function ProxySection() {
-  /** Stored settings as hydrated on mount (null until then) — the no-change baseline. */
+  /** Stored settings as hydrated on mount (null until then): what the switches show, the address's baseline. */
   const [settings, setSettings] = useState<ServerSettings | null>(null);
-  // Form drafts; the pre-hydration values mirror the server defaults (on, on, empty).
-  const [proxyForApp, setProxyForApp] = useState(true);
-  const [proxyForAgent, setProxyForAgent] = useState(true);
-  const [proxyUrl, setProxyUrl] = useState("");
+  /** The address form. Trimmed before comparing: Save sends it trimmed. */
+  const address = useFormDraft(settings?.proxyUrl ?? "", {
+    scope: SETTINGS_SCOPE,
+    normalize: (value) => value.trim(),
+  });
   /** Inline error under the address input (the server's invalid_proxy_url rejection). */
   const [addressError, setAddressError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -89,18 +99,26 @@ export function ProxySection() {
    */
   const runSeq = useRef(0);
 
-  /** Adopt server-side truth: the baseline and the drafts move together. */
+  /**
+   * Adopt server-side truth. The address draft follows it only while it holds no edits of its
+   * own (useFormDraft), so a switch flipped beside a half-typed address keeps the typing.
+   */
   const adopt = (next: ServerSettings) => {
     setSettings(next);
-    setProxyForApp(next.proxyForApp);
-    setProxyForAgent(next.proxyForAgent);
-    setProxyUrl(next.proxyUrl ?? "");
-    // Results describe the path they travelled; a save may have replaced it. Bumping the run
+    // Results describe the path they travelled; a write may have replaced it. Bumping the run
     // counter also discards whatever is still in flight against the old one.
     runSeq.current += 1;
     setResults(null);
     setProbing(false);
   };
+
+  /** One switch, written alone: the PUT carries only its own field. */
+  const forApp = useInstantSetting(settings?.proxyForApp ?? true, async (next) => {
+    adopt((await api.adminPutSettings({ proxyForApp: next })).settings);
+  });
+  const forAgent = useInstantSetting(settings?.proxyForAgent ?? true, async (next) => {
+    adopt((await api.adminPutSettings({ proxyForAgent: next })).settings);
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -126,25 +144,19 @@ export function ProxySection() {
     };
   }, []);
 
+  /** Writes the address alone; the stored (normalized) form comes back as the new baseline. */
   const save = async () => {
-    if (settings === null || busy) return;
-    const unchanged =
-      proxyForApp === settings.proxyForApp &&
-      proxyForAgent === settings.proxyForAgent &&
-      proxyUrl.trim() === (settings.proxyUrl ?? "");
-    if (unchanged) {
-      toastInfo(S.common.noChangesToSave);
-      return;
-    }
+    if (settings === null || busy || !address.dirty) return;
     setBusy(true);
     setAddressError(null);
     try {
-      const res = await api.adminPutSettings({ proxyForApp, proxyForAgent, proxyUrl });
+      const res = await api.adminPutSettings({ proxyUrl: address.draft });
       adopt(res.settings);
+      address.adopt(res.settings.proxyUrl ?? "");
       toastSuccess(S.common.saved);
     } catch (e) {
       // The address is the only validated field: its rejection renders inline;
-      // anything else (auth, network) is a generic failure toast.
+      // anything else (auth, network) is a generic failure toast. Either way the edit stays.
       if (e instanceof ApiError && e.code === "invalid_proxy_url") {
         setAddressError(apiErrorText(e));
       } else {
@@ -188,33 +200,50 @@ export function ProxySection() {
   };
 
   const hydrated = settings !== null;
+  // The switches act on the saved address: with edits pending they wait for Save.
+  const switchesHeld = !hydrated || address.dirty || forApp.busy || forAgent.busy;
+  const heldHint = address.dirty ? { hint: S.settings.saveProxyAddressFirst } : {};
 
   return (
     <>
       <SettingsSection
         actions={
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={!hydrated || busy}
-            onClick={() => void save()}
-          >
-            {S.common.save}
-          </Button>
+          <>
+            <Button
+              size="sm"
+              disabled={!address.dirty || busy}
+              onClick={() => {
+                address.reset();
+                setAddressError(null);
+              }}
+            >
+              {S.common.reset}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!hydrated || !address.dirty || busy}
+              onClick={() => void save()}
+            >
+              {S.common.save}
+            </Button>
+          </>
         }
       >
         <SettingsGroup>
           <ToggleRow
             label={S.settings.proxyForApp}
-            checked={proxyForApp}
-            onChange={setProxyForApp}
-            disabled={!hydrated}
+            {...heldHint}
+            checked={forApp.value}
+            onChange={(next) => void forApp.set(next)}
+            disabled={switchesHeld}
           />
           <ToggleRow
             label={S.settings.proxyForAgent}
-            checked={proxyForAgent}
-            onChange={setProxyForAgent}
-            disabled={!hydrated}
+            {...heldHint}
+            checked={forAgent.value}
+            onChange={(next) => void forAgent.set(next)}
+            disabled={switchesHeld}
           />
           {/* The error stands under the box, inside the control's column; the row keeps its
               title on the first line. */}
@@ -223,12 +252,12 @@ export function ProxySection() {
               <Input
                 aria-label={S.settings.proxyAddress}
                 size="sm"
-                value={proxyUrl}
+                value={address.draft}
                 placeholder={S.settings.proxyAddressPlaceholder}
                 disabled={!hydrated}
                 {...(addressError !== null ? { error: addressError } : {})}
                 onChange={(e) => {
-                  setProxyUrl(e.target.value);
+                  address.setDraft(e.target.value);
                   if (addressError !== null) setAddressError(null);
                 }}
               />

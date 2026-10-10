@@ -91,6 +91,15 @@ export async function run(work: () => unknown): Promise<void> {
   await settle();
 }
 
+/** Settles until `ready` holds (a request chain answering), failing after a bounded number of rounds. */
+export async function waitFor(ready: () => boolean, rounds = 20): Promise<void> {
+  for (let i = 0; i < rounds; i++) {
+    if (ready()) return;
+    await settle();
+  }
+  if (!ready()) throw new Error("the page never reached the awaited state");
+}
+
 /** A click, as the pointer delivers it. */
 export async function click(element: Element): Promise<void> {
   const init = { bubbles: true, cancelable: true, button: 0 };

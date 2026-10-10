@@ -6,7 +6,7 @@
  * machines go, stops a running process, restores a workflow revision, runs a plugin's action,
  * clears an organization draft, syncs the model presets, revokes a paired Chrome, turns Chrome
  * extension connections off server-wide, turns an Agent's API off, opens it to keyless callers, deletes one of its keys, turns
- * the Agent API off server-wide. Every reference to that function must
+ * the Agent API off server-wide, turns company mode off server-wide. Every reference to that function must
  * sit inside a `ConfirmModal`'s `onConfirm`: directly, or in the body of a function that
  * `onConfirm` names. A button wired straight back to the action is one short line in a long
  * element and reads fine in review, so the JSX is parsed rather than remembered.
@@ -34,6 +34,7 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/agents/api-tab.tsx", "deleteKey"],
   ["features/agents/api-tab.tsx", "switchOnKeyless"],
   ["features/settings/agent-api-section.tsx", "switchOffAgentApiServer"],
+  ["features/settings/company-section.tsx", "switchOffCompanyMode"],
 ];
 
 const isOnConfirm = (node: ts.Node): node is ts.JsxAttribute =>
