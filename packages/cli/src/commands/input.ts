@@ -1,13 +1,13 @@
 /**
- * `penguin input` — send a message into an existing session, or poll its last answer.
+ * `penguin session input` — send a message into an existing session, or poll its last answer.
  *
- *   penguin input [session_id] [-m <text>] [--timeout <duration>]
- *                 [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
+ *   penguin session input [session_id] [-m <text>] [--timeout <duration>]
+ *                         [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
  *
  * `[session_id]` accepts a full id or a unique fragment (e.g. the 8-hex tail `penguin
- * ls` prints); omitted, it is the agent's most recent session (announced as a dim
+ * session ls` prints); omitted, it is the agent's most recent session (announced as a dim
  * `[latest]` line on stderr — see resolveSessionTarget), which makes bare `penguin
- * input` the answer to "what did my agent last say".
+ * session input` the answer to "what did my agent last say".
  *
  * With `-m`: a running session gets the text as steering (POST /steer, delivered between
  * turns); an idle one gets a new task (POST /tasks). The default waits and renders the
@@ -25,7 +25,7 @@
  *
  * The fragment search scopes to the project (PENGUIN_PROJECT_ID / default_project);
  * a full session id needs no scope.
- * Docs: /docs/cli § "penguin input".
+ * Docs: /docs/cli § "penguin session input".
  */
 import type { Command } from "commander";
 import { isModelMessage, type OmniMessage } from "@prismshadow/penguin-core";
@@ -55,8 +55,9 @@ export function latestAssistantText(messages: OmniMessage[]): string | null {
   return null;
 }
 
-export function registerInputCommand(program: Command, t: Messages): void {
-  program
+/** Registers `input` under the `penguin session` group (see session.ts). */
+export function registerInputCommand(session: Command, t: Messages): void {
+  session
     .command("input [sessionId]")
     .description(t.input.desc)
     .option("-m, --message <text>", t.input.message)

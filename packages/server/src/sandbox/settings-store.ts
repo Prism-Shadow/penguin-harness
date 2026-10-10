@@ -109,14 +109,14 @@ export const SANDBOX_GROUP = "sandbox";
                 title: "Files",
                 titleZh: "文件",
                 description:
-                  "What a confined command may write. Off: anywhere. Workspace: the session's workspace, its scratchpad and the temp directory. Read-only: the temp directory only. Needs a sandbox backend unless Off.",
+                  "What a confined command may write. Full access: anywhere. Workspace: the session's workspace, its scratchpad and the temp directory. Read-only: the temp directory only. Needs a sandbox backend unless Full access.",
                 descriptionZh:
-                  "被封禁的命令能写哪里。关闭：任何位置。仅工作区：会话的工作区、scratchpad 与临时目录。只读：只有临时目录。除「关闭」外都需要沙盒后端。",
+                  "被封禁的命令能写哪里。完全访问：任何位置。仅工作区：会话的工作区、scratchpad 与临时目录。只读：只有临时目录。除「完全访问」外都需要沙盒后端。",
                 options: [
                   {
                     value: "danger-full-access",
-                    title: "Off (full access)",
-                    titleZh: "关闭（完全访问）",
+                    title: "Full access",
+                    titleZh: "完全访问",
                     description: "Commands and file tools may write anywhere.",
                     descriptionZh: "命令与文件工具可以写任何位置。",
                   },

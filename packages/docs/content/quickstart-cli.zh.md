@@ -96,7 +96,7 @@ penguin chat
 
 `run`、`chat` 以及其他会话命令都是服务端的瘦客户端：本机已有服务端在运行时直接连上它，没有时静默启动一个。连接本机的服务端无需登录，连接规则见 [CLI 参考](/cli)。
 
-这些命令创建的内容同样会出现在 Web App 里；在终端里也可以用 `penguin ls`、`penguin logs`、`penguin input` 继续操作这些会话。全部命令与选项见 [CLI 参考](/cli)。
+这些命令创建的内容同样会出现在 Web App 里；在终端里也可以用 `penguin session` 的各条命令（`ls`、`log`、`input`、`rename`）继续操作这些会话。全部命令与选项见 [CLI 参考](/cli)。
 
 ## 安装参考
 

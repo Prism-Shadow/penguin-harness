@@ -38,6 +38,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import type { Options } from "react-markdown";
 import { remarkAutolinkBoundary } from "./remark-autolink-boundary";
+import { remarkLiteralTildes } from "./remark-literal-tildes";
 import { remarkMathBrackets } from "./remark-math-brackets";
 import { remarkMathDollars } from "./remark-math-dollars";
 
@@ -79,6 +80,8 @@ const KATEX_OPTIONS = {
 /** The remark (Markdown -> mdast) stage. */
 export const REMARK_PLUGINS: PluginList = [
   remarkGfm,
+  // Strikethrough is shown as the tildes the model typed (see remark-literal-tildes.ts).
+  remarkLiteralTildes,
   remarkAutolinkBoundary,
   [remarkMath, { singleDollarTextMath: false }],
   remarkMathBrackets,

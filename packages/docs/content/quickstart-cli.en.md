@@ -96,7 +96,7 @@ When you quit, the chat prints a `penguin chat --resume <sessionId>` command tha
 
 `run`, `chat` and the other Session commands are thin clients of the server. They attach to the local server when one is running, and quietly start one when none is. On the local machine they need no login; the [CLI Reference](/cli) describes the connection rules.
 
-Everything these commands create also shows up in the Web App, and `penguin ls`, `penguin logs` and `penguin input` work with those Sessions from the terminal. The [CLI Reference](/cli) lists every command and option.
+Everything these commands create also shows up in the Web App, and the `penguin session` commands (`ls`, `log`, `input` and `rename`) work with those Sessions from the terminal. The [CLI Reference](/cli) lists every command and option.
 
 ## Installation reference
 

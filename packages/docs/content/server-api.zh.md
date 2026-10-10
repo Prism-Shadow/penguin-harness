@@ -751,6 +751,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 - `GET /` 返回 Session 的信息。与列表行不同，单个 Session 的响应还带 `tracePath`，即最新 Trace 文件的绝对路径。`orgId` 标记公司模式缓存持有的会话（工位会话，或这个组织某个工单的贡献会话）；普通 Session 一律不带这个字段，列表路由同样会设置它。
 - `PATCH /` 先校验全部字段再写入任何一个，`sandbox` 选择（`{mode?, network?}`）也在其中：非管理员选的档位比服务端的沙盒设置更宽时为 `403` `sandbox_forbidden`，本机没有后端能实施的档位为 `400` `sandbox_unsupported`；被拒的请求什么都不落盘，`approvalMode` 与 `title` 也不例外。Session 的 `sandbox` 视图里，`presets` 中比服务端设置更宽的行带 `aboveCeiling: true`（只出现在响应里），与这条拒绝用同一次比较：非管理员选这样的行会被拒绝。
+- `PATCH /` 带 `title` 设置手动标题，自动生成的标题不会取代它。连续空白（含换行与制表符）存为一个空格，结果须为 1–120 个字符；含控制字符，或双向嵌入、覆盖、隔离字符（U+202A–U+202E、U+2066–U+2069）时为 `400` `invalid_title`。
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
@@ -1179,7 +1180,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
-| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_state`、`session_background`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
+| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
 
 ### 传输格式
 
@@ -1200,6 +1201,7 @@ export type ServerEvent =
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "session_state"; sessionId: string; projectId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
+  | { type: "session_approvals"; sessionId: string; count: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
@@ -1223,6 +1225,7 @@ export type ServerEvent =
 | `session_title` | 第一轮对话后，模型生成的标题已保存 |
 | `session_state` | Session 的运行状态变化；`task_state` 在用户通道上的对应事件 |
 | `session_background` | Session 的后台任务计数变化 |
+| `session_approvals` | Session 中等待审批的工具调用数变化 |
 | `resync_required` | `Last-Event-ID` 已被挤出缓冲区；客户端必须重新拉取历史 |
 | `credentials_updated` | Project 的模型凭据发生变化 |
 | `hello` | 用户通道上的握手 |
@@ -1243,6 +1246,7 @@ export type ServerEvent =
 - `session_title` 发送到 Session 的通道，以及 Project 所有者和成员的用户通道。
 - `session_state` 用 `sessionId` 指明是哪个 Session、用 `projectId` 指明所属 Project，因此 Session 列表的每一行都能保持实时，而不只是客户端当前打开的那个会话；列表还能据此认出本 Project 中自己尚未持有的 Session，再按 id 单独拉取。事件携带重绘这一行所需的字段，无需重新拉取：刚写入的 `lastActiveAt`，以及 `hasTrace`。状态为 `running` 或 `compacting` 时 `hasTrace` 必为 true，因为正在运行的 Session 必然已经启动过 Task。它发送到 Project 所有者和成员的用户通道。
 - 以下情况会触发 `session_background`：命令超过让出窗口转入后台，或以 `run_in_background` 启动；进程退出或停止；后台子 Agent 开始一轮、结束一轮或释放。事件携带 `SessionInfo.backgroundTasks` 的当前值（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转入后台、正处于一轮中的子 Agent Session 数），归零时同样发送，列表无需重新拉取就能撤下标记。两个计数都为零时，列表行和单个 Session 的 GET 会省略这个字段。受众与 `session_state` 相同。
+- 以下情况会触发 `session_approvals`：工具调用升级给人审批（`always-ask` 下的每个调用，`read-only` 下读写或权限未知的调用）；某个审批得到回答；中断拒绝了所有等待中的审批（只发一个事件）。`count` 是 Session 当前的 `pendingApprovalCount`，归零时同样发送。调用本身以 `approval_request` 出现在该 Session 自己的流上，订阅时会重放。受众与 `session_state` 相同。
 - `credentials_updated` 在 `PUT /models` 或签发 API key 的流程完成之后发送。缓存的运行时已失效，客户端应清除因认证失败而禁用的输入框状态。
 - `web_updated` 以 `rev` 携带新的 web 修订号，发送到每个用户通道。
 - `session_created` 在每次创建时发送到 Project 所有者和成员的用户通道；子 Agent Session 还会同时发送到父 Session 的通道。`source` 是新 Session 的 `session_meta` 所记录的来源。通过 `PATCH /api/sessions/:id` 设置的标题以同样方式作为 `session_title` 宣告。

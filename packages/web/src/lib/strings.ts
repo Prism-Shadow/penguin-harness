@@ -12,6 +12,7 @@
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
 import type { PeakWindows } from "../features/models/model-grouping";
+import type { ModelGroupSort } from "../features/models/model-sort";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -178,6 +179,8 @@ export const zh = {
       "palette.toggle": "命令面板",
       "sessions.search": "搜索会话",
       "chat.new": "新建对话",
+      "find.open": "页内查找",
+      "find.all": "在所有区域查找",
       "sidebar.toggle": "显示或隐藏侧栏",
       "dock.toggleRight": "显示或隐藏右侧栏",
       "dock.toggleBottom": "显示或隐藏下侧栏",
@@ -1019,6 +1022,36 @@ export const zh = {
     taskCompleteBody: (session: string): string => `「${session}」已完成，点击查看`,
   },
 
+  /**
+   * The find bar (components/find/find-bar.tsx) and the searchable regions it queries
+   * (lib/find-dom.ts). A region's name is both a result row's tag and the subject of the scope
+   * button (`scopeThisRegion`).
+   */
+  find: {
+    placeholder: "在当前区域查找…",
+    next: "下一个",
+    prev: "上一个",
+    close: "关闭",
+    caseSensitive: "区分大小写",
+    /** Counter line when the query matches nothing. */
+    noResults: "无结果",
+    regionConversation: "对话",
+    regionSubagent: "子会话",
+    regionSessions: "会话列表",
+    regionFiles: "文件",
+    /** Scope button while the search is limited to one region: widen it to everything on screen. */
+    scopeAll: "所有区域",
+    /** Scope button while searching everything: narrow it back to `region`. */
+    scopeThisRegion: (region: string): string => `仅在${region}中`,
+    /** The region's own notice that it holds content this search could not reach. */
+    loadMore: "更早的内容尚未加载",
+    loadMoreAction: "加载并继续搜索",
+    /** `count` hits past the rows the result list shows. */
+    moreRows: (count: number): string => `另有 ${count} 条未显示`,
+    /** Name of the aggregated result list (read out when it is announced). */
+    resultsLabel: "查找结果",
+  },
+
   common: {
     save: "保存",
     cancel: "取消",
@@ -1794,6 +1827,8 @@ export const zh = {
       "openai-responses": "OpenAI Responses",
       "ant-messages": "Anthropic Messages",
       "openai-chat": "OpenAI Chat Completions",
+      "google-genai": "Google GenAI (generateContent)",
+      mmsp: "MMSP",
     } as Record<string, string | undefined>,
     /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
     protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
@@ -1815,7 +1850,7 @@ export const zh = {
     detectFellBack: "未检测到协议，已按 OpenAI Chat Completions 保存",
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
     addProtocolHintDetect:
-      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可点“检测协议”探测端点；未选协议时保存会先自动检测",
+      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions / Google GenAI / MMSP），也可点“检测协议”探测端点是否为前三种之一；未选协议时保存会先自动检测",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
     /** Detect action beside the vision switch. */
@@ -1913,9 +1948,21 @@ export const zh = {
     getModelIds: "获取模型 id",
     /** The group settings' link to the vendor's model list (the catalog's modelsUrl). */
     modelList: "前往模型列表",
-    // —— Group settings (the gear at the end of every group header) ——
-    /** The header action and its accessible name. */
+    // —— The gear at the end of every group header: the group's sort, then its settings ——
+    /** The gear's accessible name (followed by the group's name). */
     groupSettings: "设置",
+    /** The gear's hover hint, naming how the group's models are ordered now. */
+    groupMenuTitle: (sort: string): string => `设置 · 排序：${sort}`,
+    /** The gear menu's first section: how the group's models are ordered (radio rows). */
+    sortHeading: "排序",
+    /** The three orders; price is the blended rate billed right now. */
+    sortModes: {
+      "price-asc": "价格（从低到高）",
+      "price-desc": "价格（从高到低）",
+      name: "名称（A→Z）",
+    } satisfies Record<ModelGroupSort, string>,
+    /** The gear menu's last row, under the sort (owner only): opens the group settings dialog. */
+    groupSettingsEntry: "分组设置…",
     groupSettingsTitle: (label: string): string => `${label} 分组设置`,
     /** The clear box under a stored group key. */
     clearGroupKey: "清除分组密钥",
@@ -2654,8 +2701,6 @@ export const zh = {
   },
 
   chat: {
-    /** Footnote of the session picker's menu — the pre-pick reminder: a change applies right away but costs the model's cached context, so compacting first is recommended. */
-    thinkingLevelChangeNote: "立即生效。更换思考等级会使模型缓存失效，建议先压缩上下文。",
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",

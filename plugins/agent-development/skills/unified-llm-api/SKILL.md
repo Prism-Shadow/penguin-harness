@@ -1,7 +1,7 @@
 ---
 name: unified-llm-api
 description: Call model APIs through @prismshadow/mmsp (MMSP) — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.
-version: 2026.10.09.1
+version: 2026.10.10.1
 ---
 
 # Unified LLM API (MMSP)
@@ -51,7 +51,7 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 | Gemini image           | `gemini-3.1-flash-image`, `gemini-3.1-flash-lite-image`, `gemini-3-pro-image`         | —                                                                                                                                               |
 | Gemini TTS             | `gemini-3.8-flash-tts`, `gemini-3.8-flash-lite-tts`, `gemini-3.1-flash-tts-preview`   | —                                                                                                                                               |
 | Gemini embedding       | `gemini-embedding-2`                                                                  | —                                                                                                                                               |
-| Claude 5.5 / Fable 5.1 | `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-fable-5-1`                            | OpenRouter `anthropic/claude-opus-5.5`, `anthropic/claude-sonnet-5.5`, `anthropic/claude-fable-5.1`                                             |
+| Claude 5.5 / Fable 5.1 | `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`        | OpenRouter `anthropic/claude-opus-5.5`, `anthropic/claude-sonnet-5.5`, `anthropic/claude-haiku-5.5`, `anthropic/claude-fable-5.1`               |
 | Claude 5               | `claude-fable-5`, `claude-opus-5`, `claude-sonnet-5`                                  | OpenRouter `anthropic/claude-fable-5`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`                                                   |
 | Claude 4               | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-opus-4-8`                             | OpenRouter `anthropic/claude-opus-4.8`, `anthropic/claude-opus-4.7`                                                                             |
 | GPT-6                  | `gpt-6.1-sol`, `gpt-6-astra`                                                          | OpenRouter `openai/gpt-6.1-sol`, `openai/gpt-6-astra`                                                                                           |
@@ -101,18 +101,18 @@ The registry is the curated current line-up, not the routing table: any id of a 
 
 **Client types.** `clientType` names one client:
 
-- **Official** clients speak their vendor's own API: `openai-official` (Responses API; `text-embedding-*` ids go to the Embeddings API), `anthropic-official` (Messages; a `bedrock://<region>` base URL reaches Bedrock), `gemini-official` (Interactions API only; a Vertex AI service-account JSON key is refused with an error naming `google-genai`), `zai-official` and `moonshot-official` (Chat Completions), `deepseek-official` and `minimax-official` (Responses API).
-- **Compatible** clients speak one wire protocol for any endpoint that serves it: `openai-responses`, `openai-chat` (the bare `openai` is an alias), `openai-chat-vllm-adapter` (Chat Completions plus the served model's thinking switch), `openai-embedding`, `ant-messages` (Anthropic Messages), `google-genai` (Google's generateContent as the Google GenAI SDK speaks it — Vertex AI with a service-account JSON key as `apiKey`, the Gemini API, or a relay; `gemini-generate-content` is its 0.5.0 name, kept as an alias).
+- **Official** clients speak their vendor's own API: `openai-official` (Responses API; `text-embedding-*` ids go to the Embeddings API), `anthropic-official` (Messages; a `bedrock://<region>` base URL reaches Bedrock), `google-official` (Interactions API only; a Vertex AI service-account JSON key is refused with an error naming `google-genai`; `gemini-official`, its name before 0.5.2, is kept as an alias), `zai-official` and `moonshot-official` (Chat Completions), `deepseek-official` and `minimax-official` (Responses API).
+- **Compatible** clients speak one wire protocol for any endpoint that serves it: `openai-responses`, `openai-chat` (the bare `openai` is an alias), `openai-chat-vllm-adapter` (Chat Completions plus the served model's thinking switch), `openai-embedding`, `ant-messages` (Anthropic Messages), `google-genai` (Google's generateContent as the Google GenAI SDK speaks it — Vertex AI with a service-account JSON key as `apiKey`, the Gemini API, or a relay; `gemini-generate-content` is its 0.5.0 name, kept as an alias), `mmsp` (an MMSP server, which serves the models of its table and keeps the upstream keys; base URL `http://127.0.0.1:25752/v1` by default).
 
-**Routing by prefix.** Without `clientType` (or the `CLIENT_TYPE` environment variable), the family the lowercased model id begins with names its official client: `gpt-` and `text-embedding-` → `openai-official`, `claude-` → `anthropic-official`, `gemini-` → `gemini-official`, `glm-` → `zai-official`, `kimi-` → `moonshot-official`, `deepseek-` → `deepseek-official`, `minimax-` → `minimax-official`. Any other id throws at construction: `No client for model "<id>": its family is not known. Pass clientType, one of the official clients: …; compatible clients: …`. An unknown client type throws `Unknown client type "<type>". Pass one of the …`. Routing never looks at `baseUrl`.
+**Routing by prefix.** Without `clientType` (or the `CLIENT_TYPE` environment variable), the family the lowercased model id begins with names its official client: `gpt-` and `text-embedding-` → `openai-official`, `claude-` → `anthropic-official`, `gemini-` → `google-official`, `glm-` → `zai-official`, `kimi-` → `moonshot-official`, `deepseek-` → `deepseek-official`, `minimax-` → `minimax-official`. Any other id throws at construction: `No client for model "<id>": its family is not known. Pass clientType, one of the official clients: …; compatible clients: …`. An unknown client type throws `Unknown client type "<type>". Pass one of the …`. Routing never looks at `baseUrl`.
 
-**Renamed in 0.5.0.** The 0.4.x vendor client types no longer exist, and a model id passed as `clientType` no longer works; the compatible client types are unchanged.
+**Renamed in 0.5.0.** The 0.4.x vendor client types no longer exist, and a model id passed as `clientType` no longer works; the compatible client types are unchanged. The table gives the 0.5.2 names; 0.5.0 and 0.5.1 called the Gemini client `gemini-official`.
 
 | 0.4.x `clientType`                                                                                | 0.5.0                |
 | ------------------------------------------------------------------------------------------------- | -------------------- |
 | `gpt-6`, `gpt-5.6`, `gpt-5.5`, `gpt-5.4`                                                          | `openai-official`    |
 | `claude-5`, `claude-4-8`, `claude-4-7`, `claude-4-6`                                              | `anthropic-official` |
-| `gemini-3.8`, `gemini-3.7`, `gemini-3.6`, `gemini-3`, `gemini-embedding`, `gemini-interactions`   | `gemini-official`    |
+| `gemini-3.8`, `gemini-3.7`, `gemini-3.6`, `gemini-3`, `gemini-embedding`, `gemini-interactions`   | `google-official`    |
 | `glm-5.3`, `glm-5.2`, `glm-5.1`                                                                   | `zai-official`       |
 | `kimi-k3`, `kimi-k2.6`, `kimi-k2.5`                                                               | `moonshot-official`  |
 | `deepseek-v4`                                                                                     | `deepseek-official`  |
@@ -124,7 +124,7 @@ The registry is the curated current line-up, not the routing table: any id of a 
 - `openai-chat` on Chat Completions endpoints: SiliconFlow, Fireworks AI, DashScope `https://dashscope.aliyuncs.com/compatible-mode/v1`, a self-hosted server (`openai-chat-vllm-adapter` for vLLM, to switch the served model's thinking). A self-hosted `deepseek-*` id needs it too, because `deepseek-official` posts to `{baseUrl}/responses`.
 - `ant-messages` on Anthropic Messages endpoints (Anthropic, OpenRouter `https://openrouter.ai/api`, DeepSeek `https://api.deepseek.com/anthropic`, Z.AI, MiniMax); `google-genai` on Vertex AI or a relay that proxies Gemini's generateContent.
 
-**Credentials.** The constructor's `apiKey` comes first, then the environment: an official client reads its vendor's pair (`DEEPSEEK_`, `OPENAI_`, `ANTHROPIC_`, `GEMINI_`, `ZAI_`, `MOONSHOT_`, `MINIMAX_` + `API_KEY` / `BASE_URL`), a compatible client the pair of its protocol (`OPENAI_*`; `ANTHROPIC_*` for `ant-messages`, `GEMINI_*` for `google-genai`). The OpenAI-, Anthropic- and generateContent-protocol clients send an environment key only to the environment's endpoint: a `baseUrl` without an `apiKey` throws `apiKey is required for <Client> with a baseUrl: OPENAI_API_KEY is not sent to another endpoint.` The other clients read their own variable whatever endpoint they are given, so pass a gateway's key as `apiKey` every time.
+**Credentials.** The constructor's `apiKey` comes first, then the environment: an official client reads its vendor's pair (`DEEPSEEK_`, `OPENAI_`, `ANTHROPIC_`, `GEMINI_`, `ZAI_`, `MOONSHOT_`, `MINIMAX_` + `API_KEY` / `BASE_URL`), a compatible client the pair of its protocol (`OPENAI_*`; `ANTHROPIC_*` for `ant-messages`, `GEMINI_*` for `google-genai`, `MMSP_*` for `mmsp`). The OpenAI-, Anthropic- and generateContent-protocol clients send an environment key only to the environment's endpoint: a `baseUrl` without an `apiKey` throws `apiKey is required for <Client> with a baseUrl: OPENAI_API_KEY is not sent to another endpoint.` `mmsp` sends `MMSP_API_KEY` only to `MMSP_BASE_URL`, and a `baseUrl` without an `apiKey` is sent no key, which is what an open MMSP server takes. The other clients read their own variable whatever endpoint they are given, so pass a gateway's key as `apiKey` every time.
 
 ## Streaming
 
@@ -176,6 +176,7 @@ MMSP's error classes extend `MMSPError`; a construction problem and a stream cut
 - `ToolCallArgumentParseError` (`toolName`, `toolCallId`, `rawArgumentsLength`, `rawArgumentsPreview`): thrown in place of a `tool_call.done` whose arguments are malformed or not a JSON object. Never run the tool from partial arguments; retry or re-prompt.
 - `EmptyResponseError` (`finishReason`, `usageMetadata`): thrown in place of the `stop` event when the response held thinking only; the stateful history is left unchanged, and `usageMetadata` still reports the tokens.
 - `StreamProtocolError`: a client broke the streaming grammar — a bug in MMSP, not in the model output.
+- `UpstreamError` (`client`, `status`, `errorType`, `message`, `error`): the one error `mmsp` raises for anything its server reports — a refusal (wrong key, a model not in its table) or an error the server's client raised; `errorType` names the server-side class and `error` holds its fields.
 - A stream that ends without usage or a finish reason throws `Error("Streaming response ended without usage_metadata")` (or `finish_reason`).
 
 `MMSP_DEBUG=1` makes clients fail loudly on provider output they do not recognize; `MMSP_CACHE_DIR` moves the tracer's cache directory (default `cache/`).
@@ -194,14 +195,15 @@ try {
 }
 ```
 
-- `thinking_level` never throws: every client maps each level onto the closest one the model supports. `MAX` falls back silently where the vendor has no such tier, and a model that always reasons (Kimi K3, GLM-5.3, Claude Opus 5.5 / Fable 5.1) turns `NONE` into its lowest effort.
+- `thinking_level` never throws: every client maps each level onto the closest one the model supports. `MAX` falls back silently where the vendor has no such tier, and a model that always reasons (Kimi K3, GLM-5.3, Claude Opus 5.5 / Fable 5.1) turns `NONE` into its lowest effort, and so does Claude Haiku 5.5.
 - `temperature`: both Gemini clients reject any value; `openai-official`, `anthropic-official`, `moonshot-official` and `deepseek-official` accept only `1.0`; `minimax-official` accepts 0 to 1; `zai-official` and the compatible clients pass it through.
-- `tool_choice`: `"auto"` works everywhere. `zai-official` accepts nothing else; `deepseek-official` and `minimax-official` add `"none"`; `moonshot-official` adds `"required"` for Kimi K3 but never a named tool; `anthropic-official` takes `"required"` or one tool name, except on Claude Opus 5.5, Sonnet 5.5 and Fable 5.1, which cannot be forced.
+- `tool_choice`: `"auto"` works everywhere. `zai-official` accepts nothing else; `deepseek-official` and `minimax-official` add `"none"`; `moonshot-official` adds `"required"` for Kimi K3 but never a named tool; `anthropic-official` takes `"required"` or one tool name, except on Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1, which cannot be forced.
 - `prompt_caching`: `ENABLE` (the default) works everywhere; only `anthropic-official` also takes `DISABLE` and `ENHANCE` (a one-hour cache).
 - `fast_mode`: fast processing at premium pricing, decided by the client the model routes to:
-  - sent as `service_tier: "priority"` by `openai-official`, `openai-responses`, `openai-chat`, `openai-chat-vllm-adapter`, `gemini-official` and `minimax-official`;
-  - sent as `speed: "fast"` with the fast-mode beta header by `ant-messages` and `anthropic-official` — except on Bedrock and on Claude 4.6, Sonnet 5.5 and Fable 5.1, which reject it. Anthropic's fast mode is a research preview: organizations without access get a 429;
-  - rejected by `zai-official`, `moonshot-official`, `deepseek-official`, `google-genai` and `openai-embedding` (which also serves `openai-official`'s `text-embedding-*` ids).
+  - sent as `service_tier: "priority"` by `openai-official`, `openai-responses`, `openai-chat`, `openai-chat-vllm-adapter`, `google-official` and `minimax-official`;
+  - sent as `speed: "fast"` with the fast-mode beta header by `ant-messages` and `anthropic-official` — except on Bedrock and on Claude 4.6, Sonnet 5.5, Haiku 5.5 and Fable 5.1, which reject it. Anthropic's fast mode is a research preview: organizations without access get a 429;
+  - rejected by `zai-official`, `moonshot-official`, `deepseek-official`, `google-genai` and `openai-embedding` (which also serves `openai-official`'s `text-embedding-*` ids);
+  - forwarded by `mmsp` to its server, whose client for the model decides.
 
   A third-party OpenAI-compatible endpoint may accept `service_tier` and still serve the standard tier.
 
@@ -238,7 +240,7 @@ config: { tts_config: [{ voice: "Kore" }] }
 
 ## Embeddings
 
-- `gemini-embedding-2` and `text-embedding-3-small` / `text-embedding-3-large` route on their own (`gemini-official`, and `openai-official` through the Embeddings API).
+- `gemini-embedding-2` and `text-embedding-3-small` / `text-embedding-3-large` route on their own (`google-official`, and `openai-official` through the Embeddings API).
 - Any other OpenAI-compatible embeddings endpoint: pass `clientType: "openai-embedding"` with its `baseUrl` and `apiKey`.
 
 Call `streamingResponse({ messages, config })`: each message yields one vector, as an `embedding.done` item (`embedding` is a number array), and the items within one message are embedded together. Set the size with `config.embedding_config`:

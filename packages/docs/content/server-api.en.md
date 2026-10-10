@@ -751,6 +751,7 @@ Two conventions apply to every route here. A Session the caller cannot access al
 
 - `GET /` returns the Session's info. Unlike the list rows, the single-Session response also carries `tracePath`, the absolute path of the latest Trace file. `orgId` marks a Session that company mode's caches own (a desk session, or a session contributing to one of that organization's tickets); it is absent on every ordinary Session, and the list route sets it too.
 - `PATCH /` checks every field before it writes any, the `sandbox` pick (`{mode?, network?}`) included: a non-admin's pick wider than the server's sandbox settings is `403` `sandbox_forbidden`, a level no backend here can enforce `400` `sandbox_unsupported`, and a refused request stores nothing — not its `approvalMode` or `title` either. The Session's `sandbox` view marks each row of its `presets` that is wider than the server's settings with `aboveCeiling: true` (response-only), by the same comparison: a non-admin's pick of such a row is refused.
+- `PATCH /` with `title` sets a manual title, which the auto-generated title never replaces. Runs of whitespace, newlines and tabs included, are stored as one space, and the result must be 1–120 characters. A control character or a bidirectional embedding, override or isolate (U+202A–U+202E, U+2066–U+2069) in it is `400` `invalid_title`.
 - `PATCH /` with `thinkingLevel` pins the level on this Session durably, from its very next LLM request. The thinking level is soft-limited: it can change mid-context, at the cost of the provider's cached context, which is why the level picker advises compacting first. The pinned level comes back as `SessionInfo.thinkingLevel`; when that is absent, no level was ever pinned and the agent config applies.
 - `GET /messages` without parameters returns the full OmniMessage history. `tailLimit=n` reads the newest n Task-aligned units instead, and `before=<cursor>&limit=n` reads the n units before a cursor. The two forms are exclusive, `n` is between 1 and 1000, and `limit` defaults to 200. A window also stays within 4 MiB of serialized messages: it stops before the unit that would pass that, but always holds at least one, so it can hold fewer units than asked for and still carry a `before` cursor. The bundled Web App opens a conversation on its latest 20 turns and loads 20 more each time you scroll to the top. A windowed response carries `page`, with the cursor for the next page (`before`), the number of turns before the window (`earlierTurns`), the cumulative stats before it (`prior`), and the model of the context the window starts in (`contextModel`): a Session can switch models between contexts, and a window that starts partway into one does not hold the `session_meta` that names its model. While a Task runs, the response also carries `live`; see [The live field on GET /messages](#the-live-field-on-get-messages).
 - A windowed page serves images by reference. In each record that carries a `tracePosition`, a PNG, JPEG, GIF or WebP `data:` URL, whether a user's `image_url` or an entry of a tool output's `images`, is replaced by `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`, with `&i=<k>` for the k-th entry of `images`. That route answers the decoded image with its own type, `Cache-Control: private, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`. It returns 404 `trace_image_not_found` when the record holds no such image, and 400 for a missing or malformed parameter. Subagent messages, other image types and the full read keep their `data:` URLs.
@@ -1179,7 +1180,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | `GET /api/sessions/:sessionId/stream` | The Session's message stream and run events, including `session_created` for its subagent Sessions and the goal-mode events |
-| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_state`, `session_background`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated` and company mode's `org_*` events |
+| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_state`, `session_background`, `session_approvals`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated` and company mode's `org_*` events |
 
 ### Wire Format
 
@@ -1200,6 +1201,7 @@ export type ServerEvent =
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "session_state"; sessionId: string; projectId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
+  | { type: "session_approvals"; sessionId: string; count: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
@@ -1223,6 +1225,7 @@ export type ServerEvent =
 | `session_title` | The model-generated title is saved after the first turn |
 | `session_state` | A Session's run state changes; the user-channel counterpart of `task_state` |
 | `session_background` | A Session's background-task counts change |
+| `session_approvals` | A Session's count of tool calls waiting for approval changes |
 | `resync_required` | The `Last-Event-ID` was evicted from the buffer; the client must refetch history |
 | `credentials_updated` | The Project's model credentials changed |
 | `hello` | Handshake on the user channel |
@@ -1243,6 +1246,7 @@ export type ServerEvent =
 - `session_title` is sent on the Session's channel and on the user channels of the Project's owner and members.
 - `session_state` names the Session by `sessionId` and its Project by `projectId`, so every row of a Session list stays live, not only the conversation a client has open, and a list can tell a Session of its own Project that it holds no row for, which it can then fetch by id. It carries the row fields needed to redraw the row without refetching: `lastActiveAt` as just stamped, and `hasTrace`, which is true whenever the state is `running` or `compacting`, because a running Session has by definition started a Task. It is sent to the user channels of the Project's owner and members.
 - `session_background` fires when a command moves to the background past its yield window or starts with `run_in_background`, when a process exits or is stopped, and when a background subagent starts, settles or is released. It carries `SessionInfo.backgroundTasks` as it now stands (`processes` = background command sessions still running, `subagents` = subagent Sessions moved to the background and mid-round), zeros included, so a list can clear its mark without refetching. The list rows and the single-Session GET omit the field when both counts are zero. Its audience is the same as for `session_state`.
+- `session_approvals` fires when a tool call is escalated to a person (every call under `always-ask`, read-write or unknown-permission calls under `read-only`), when one is answered, and when an interrupt denies the waiting ones (one event for all of them). `count` is the Session's `pendingApprovalCount` as it now stands, zeros included. The calls themselves arrive on the Session's own stream as `approval_request` and are replayed on subscribe. Its audience is the same as for `session_state`.
 - `credentials_updated` follows `PUT /models` or a completed key-minting flow. Cached runtimes were invalidated, so the client clears any composer state disabled by an auth failure.
 - `web_updated` carries the new web revision as `rev` and is sent to every user channel.
 - `session_created` is sent for every creation to the user channels of the Project's owner and members, and for a subagent also on the parent Session's channel. `source` is what the new Session's `session_meta` records. A title set through `PATCH /api/sessions/:id` is announced as `session_title` the same way.

@@ -80,6 +80,19 @@ interface RlInternals {
 const MAIN_PROMPT = "> ";
 const CONT_PROMPT = "… ";
 
+/**
+ * Semantic prompt marks (OSC 133, the FinalTerm sequences shells emit for shell integration):
+ * `A` where the main prompt starts, `B` where input starts after it, `C` when a submitted
+ * prompt's turn starts, `D;<0|1>` when it ends (1 = it ended in an error). Terminals that know
+ * them can jump between prompts and select a turn's output; a host embedding the chat can tell
+ * that it is back at its prompt and takes input. Zero-width and ignored by terminals that do
+ * not know them; written only when stdin and stdout are both a terminal and `TERM` is not
+ * `dumb`. Advisory: model output reaches the terminal unfiltered and can carry them too.
+ */
+function promptMark(kind: "A" | "B" | "C" | "D", exitCode?: number): string {
+  return `\x1b]133;${kind}${exitCode === undefined ? "" : `;${exitCode}`}\x07`;
+}
+
 export function registerChatCommand(program: Command, t: Messages): void {
   program
     .command("chat")
@@ -226,7 +239,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
       // scribble over it — the renderer holds output while the input buffer is non-empty
       // and flushes once the line is submitted or cleared. TTY only.
       const syncInputHold = (): void => {
-        renderer.setInputHold(state === "running" && rli.line.length > 0);
+        renderer.setInputHold(
+          state === "running" && (rli.line.length > 0 || composer.hasPending()),
+        );
       };
       if (isTTY) {
         inputStream.on("data", () => setImmediate(syncInputHold));
@@ -234,6 +249,12 @@ export function registerChatCommand(program: Command, t: Messages): void {
 
       let state: ChatState = "idle";
       let closed = false;
+      // The marks are output: a TTY stdin is not enough when stdout is redirected to a file or
+      // a pipe, or the terminal is a dumb one.
+      const marksOn = isTTY && out.isTTY === true && process.env.TERM !== "dumb";
+      const mark = (kind: "A" | "B" | "C" | "D", exitCode?: number): void => {
+        if (marksOn) out.write(promptMark(kind, exitCode));
+      };
       /** Set while a turn runs; SIGINT posts /abort through it exactly once per turn. */
       let abortTurn: (() => void) | null = null;
       let pendingLine: ((line: string | null) => void) | null = null;
@@ -267,11 +288,21 @@ export function registerChatCommand(program: Command, t: Messages): void {
       process.once("exit", cleanup);
 
       if (pasteFilter) {
+        // A paste is message text whether or not a Task runs: it waits in the composer for
+        // Enter, which sends it as the next prompt or, mid-run, as steering, the same as a
+        // typed line. Only the y/N answers (approval, exit confirmation) take no paste.
         pasteFilter.on("paste", (text: string) => {
-          if (state !== "idle") return; // ignore paste while running
+          if (state !== "idle" && state !== "running") return;
           const { lineCount, normalized } = composer.pushPaste(text);
           if (lineCount === 0) return;
-          out.write(`${normalized}\n`);
+          if (state === "running") {
+            // Through the renderer, which finishes an open streamed line first; the hold then
+            // keeps further output off the pasted text until it is sent.
+            renderer.printLine(normalized);
+            syncInputHold();
+          } else {
+            out.write(`${normalized}\n`);
+          }
           rl.setPrompt(CONT_PROMPT);
           rl.prompt();
         });
@@ -330,9 +361,16 @@ export function registerChatCommand(program: Command, t: Messages): void {
           resolve(parseApprovalAnswer(line, "allow"));
           return;
         }
-        // running: a non-empty line becomes a steering message for the running Task.
+        // running: a non-empty message becomes a steering message for the running Task, a
+        // paste waiting in the composer included (this Enter sends it whole).
         if (state === "running") {
-          const text = line.trim();
+          const { message } = composer.pushTypedLine(line);
+          if (message === undefined) {
+            rl.setPrompt(CONT_PROMPT);
+            rl.prompt();
+            return;
+          }
+          const text = message.trim();
           if (text.length === 0) return;
           steer(text);
         }
@@ -397,12 +435,22 @@ export function registerChatCommand(program: Command, t: Messages): void {
           }
           state = "idle";
           pendingLine = resolve;
+          // A paste made while the Task ran and not sent yet stays, under the continuation
+          // prompt: the next Enter sends it as this prompt.
+          if (composer.hasPending()) {
+            out.write("\n");
+            rl.setPrompt(CONT_PROMPT);
+            rl.prompt();
+            return;
+          }
           composer.reset();
           rli.line = "";
           rli.cursor = 0;
           out.write("\n");
+          mark("A");
           rl.setPrompt(MAIN_PROMPT);
           rl.prompt();
+          mark("B");
         });
 
       // Interactive approval prompt: reuses the persistent readline; the tool call is
@@ -412,6 +460,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
           state = "approving";
           pendingApproval = (decision) => {
             state = "running";
+            // A paste still waiting for Enter holds output again before the screen unlocks
+            // and drains what queued during the question.
+            syncInputHold();
             resolve(decision);
           };
           rl.setPrompt(t.approvePrompt());
@@ -566,6 +617,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
           }
 
           state = "running";
+          mark("C");
+          let failed = false;
           try {
             if (text === "/compact") {
               // Proactive context compaction: POST /compact and render its paired events
@@ -638,9 +691,11 @@ export function registerChatCommand(program: Command, t: Messages): void {
               );
             }
           } catch (err) {
+            failed = true;
             out.write(`\n${t.error(err instanceof Error ? err.message : String(err))}\n`);
           } finally {
             state = "idle";
+            mark("D", failed ? 1 : 0);
           }
         }
       } finally {

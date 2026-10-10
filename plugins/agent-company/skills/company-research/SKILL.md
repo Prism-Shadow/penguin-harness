@@ -1,7 +1,7 @@
 ---
 name: company-research
 description: Run experiments and papers in a PenguinHarness research organization — fix the harness and the metric first, run an autoresearch-style loop (one editable surface, the same time budget per experiment, a results log, keep only improvements) inside a resource envelope the board approved in the all-hands channel, and put every claim through adversarial review by a reviewer who is not its author.
-version: 2026.10.04.1
+version: 2026.10.10.1
 ---
 
 # Company Research
