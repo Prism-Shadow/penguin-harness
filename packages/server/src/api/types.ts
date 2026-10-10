@@ -33,10 +33,18 @@ import type { WorkflowInfo } from "../mechanisms/workflows.js";
 // General
 // ---------------------------------------------------------------------------
 
-/** Unified error response body; `code` is a machine-readable error code, `message` is a Chinese user-facing message. */
+/**
+ * Unified error response body: `code` is a machine-readable error code, `message` an English
+ * user-facing message, and `details`, on the errors that have them, the facts a client acts on
+ * beside the code (the Benchmark id a 409 `benchmark_exists` is about, say) — read from there,
+ * never parsed out of the message.
+ */
 export interface ErrorBody {
-  error: { code: string; message: string };
+  error: { code: string; message: string; details?: ErrorDetails };
 }
+
+/** An error's structured facts, by name; each code that carries them documents its own. */
+export type ErrorDetails = Readonly<Record<string, string>>;
 
 /** Session approval mode (reuses the CLI enum). */
 export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask";
@@ -1263,6 +1271,24 @@ export interface AgentSummary {
   memoryCount: number;
   /** Whether the Agent's API tab switch is on (this server's web.db, see AgentApiSettings.enabled): the list card's API mark. */
   apiEnabled: boolean;
+  /**
+   * The organizations of this Project that employ the Agent, one entry per organization:
+   * every organization directory the Project holds, paused ones included, plus the CEO id of
+   * an organization whose chart does not parse. Absent or empty = not an employee. An
+   * employed Agent cannot be deleted (`DELETE` answers 409 `agent_employed`) until it leaves
+   * every one of them; development mode lists employees in a section of their own.
+   */
+  employments?: Employment[];
+}
+
+/** One organization employing an Agent, as the Agent list carries it (see {@link AgentSummary.employments}). */
+export interface Employment {
+  orgId: string;
+  /** The organization's display name (`org_config.toml`), the id when the config does not parse. */
+  orgName: string;
+  /** The Agent's title in that organization's chart; "CEO" for the CEO of a chart that does not parse. */
+  title: string;
+  status: OrgStatus;
 }
 
 export interface AgentsResponse {
@@ -3995,13 +4021,44 @@ export interface BenchmarkEvaluation {
  */
 export type BenchmarkStatus = "draft" | "published" | "failed";
 
+/**
+ * Where a Benchmark's copy came from: `builtin` (seeded when the Project was created), `manual`
+ * (the create form), `agent` (the benchmark-design Skill wrote it), `git` (an Agent imported a
+ * repository folder), `zip` (an uploaded package).
+ */
+export type BenchmarkOriginKind = "builtin" | "manual" | "agent" | "git" | "zip";
+
+/**
+ * Why a Benchmark's manifest cannot be read: the code of core's `BenchmarkManifestError`
+ * (`benchmark_id_mismatch` for an `id` that is not the directory's, `benchmark_manifest_invalid`
+ * for a file that is not TOML or a `version` or `[origin]` out of shape) and its message, which
+ * names the key or the file.
+ */
+export interface BenchmarkManifestProblem {
+  code: string;
+  message: string;
+}
+
+/** The `[origin]` table of a Benchmark's benchmark_config.toml. */
+export interface BenchmarkOrigin {
+  kind: BenchmarkOriginKind;
+  /** git: the folder link as the user gave it (a GitHub tree URL). Always an http(s) URL. */
+  url?: string;
+  /** git: the 40-hex commit the import resolved the link to. */
+  ref?: string;
+  /** git: the folder inside the repository. */
+  path?: string;
+  /** git / zip: when this copy was written (ISO 8601; `imported_at` in the file). */
+  importedAt?: string;
+}
+
 export interface BenchmarkSummary {
   /** Directory name is the identifier (semantic naming, e.g. swe-bench-v1). */
   id: string;
-  /** Title from benchmark_config.toml; falls back to the directory name if unset. */
+  /** Title from benchmark_config.toml; the directory name when it gives none or the manifest cannot be read. */
   title: string;
   description?: string;
-  /** Number of runs per case (the `runs` field in benchmark_config.toml, ≥1; defaults to 1). */
+  /** Number of runs per case (the `runs` key in benchmark_config.toml, an integer ≥ 1); absent when it gives none or the manifest cannot be read, which reads as 1. */
   runs?: number;
   /**
    * `draft` while the Skill that builds the Benchmark is still writing its cases and
@@ -4009,10 +4066,29 @@ export interface BenchmarkSummary {
    * Benchmark is frozen and its Formal Baseline recorded; `failed` when calibration ended
    * without a Pilot result that could be frozen, which leaves the Benchmark unusable — the Web
    * App masks it too and says it has to be deleted and created again. benchmark_config.toml is
-   * read literally: only `draft` is a draft and only `failed` is a failure, so a missing field,
-   * or any other value, reads as published.
+   * read literally: only `draft` is a draft and only `failed` is a failure, so a missing key, or
+   * any other value, reads as published. A Benchmark whose manifest cannot be read lists as
+   * failed, with `manifestError`.
    */
   status: BenchmarkStatus;
+  /**
+   * The manifest's date version, `YYYY.MM.DD.N`: the revision of the Benchmark's content. Absent
+   * when the manifest has none (one written before versions is unversioned), when it cannot be
+   * read, and from a machine whose server predates versions.
+   */
+  version?: string;
+  /**
+   * Where this copy came from, the manifest's `[origin]`. Absent when the manifest has none (where
+   * a copy written before origins came from is unknown), when it cannot be read, and from a
+   * machine whose server predates origins.
+   */
+  origin?: BenchmarkOrigin;
+  /**
+   * Set when the manifest cannot be read. Such a Benchmark lists under its directory name, as
+   * `failed`, with no version or origin, and nothing may use or export it until the file is
+   * fixed; the Web App masks it with this reason.
+   */
+  manifestError?: BenchmarkManifestProblem;
   /** Case count (number of case subfolders). */
   caseCount: number;
   /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */
@@ -4044,10 +4120,11 @@ export interface BenchmarkCasesResponse {
 
 /**
  * POST /api/projects/:p/benchmarks (owner only): create a Benchmark by hand. The
- * server writes the on-disk layout the evaluation Skills read — `benchmark_config.toml`, a
- * `scoreboard.yaml` holding `evaluations: []`, and one `<case id>/` per case with
- * `statement/README.md` and `rubric/README.md`. 409 `benchmark_exists` when the directory is
- * already there; nothing is merged into an existing Benchmark.
+ * server writes the on-disk layout the evaluation Skills read — `benchmark_config.toml`
+ * (published, the day's first version, origin `manual`), a `scoreboard.yaml` holding
+ * `evaluations: []`, and one `<case id>/` per case with `statement/README.md` and
+ * `rubric/README.md`. 409 `benchmark_exists` when the directory is already there; nothing is
+ * merged into an existing Benchmark.
  */
 export interface BenchmarkCreateRequest {
   /** Directory name, which is the identifier: letters, digits, `_` and `-` only. */
@@ -4072,6 +4149,52 @@ export interface BenchmarkCreateCase {
 }
 
 export interface BenchmarkCreateResponse {
+  benchmark: BenchmarkSummary;
+}
+
+/**
+ * POST /api/projects/:p/benchmarks/archive (any Project member): import a Benchmark package from
+ * a zip. The zip holds `benchmark_config.toml` and the `CASE-*` directories, at its root (where the
+ * manifest must name its `id`) or inside exactly one top-level directory named by the Benchmark's
+ * id — the shape `GET …/benchmarks/:benchmarkId/archive` exports. A zip carrying
+ * `scoreboard.yaml`, `.jobs/` or anything else at its top level, a link, a manifest past the
+ * create form's limits, a package that is not `published` or a case without both READMEs is
+ * refused (400); so is a zip past the caps (413 `benchmark_too_large`: 14MB
+ * zipped, 1000 files, 5MB a file, 20MB inflated). The copy is written with origin `zip` and an
+ * empty scoreboard — or origin `git`, when the request says the package is a repository folder
+ * fetched at a commit. An id already taken is 409 `benchmark_exists` (`details.benchmarkId` names
+ * it) unless `overwrite`.
+ */
+export interface BenchmarkArchiveImportRequest {
+  /** The zip, base64-encoded. */
+  dataBase64: string;
+  /**
+   * Replace the Benchmark of the same id whole — its evaluation records and `.jobs/` included.
+   * Refused with 409 `benchmark_busy` while an evaluation of it is still running a trial there.
+   */
+  overwrite?: boolean;
+  /**
+   * The repository folder the package was fetched from, at one commit: what
+   * `penguin benchmark import --origin-url … --origin-ref … --origin-path …` sends for an Agent's
+   * import of a folder link. The copy's origin is then `git` with these fields and the time of the
+   * import, instead of `zip`.
+   */
+  origin?: BenchmarkArchiveGitOrigin;
+}
+
+/** Where a package fetched from a git repository came from. */
+export interface BenchmarkArchiveGitOrigin {
+  kind: "git";
+  /** The folder link as the user gave it: an http(s) URL, at most 2048 characters. */
+  url: string;
+  /** The 40-character commit the link was resolved to. */
+  ref: string;
+  /** The folder inside the repository, at most 1024 characters. */
+  path: string;
+}
+
+export interface BenchmarkArchiveImportResponse {
+  /** The imported Benchmark, as the list now reads it. */
   benchmark: BenchmarkSummary;
 }
 
@@ -4922,11 +5045,22 @@ export interface OrgEmployeeItem {
   budget?: number;
   model?: { provider: string; modelId: string };
   state: OrgEmployeeState;
+  /**
+   * The employee's current desk. Absent while the ledger names none, and while the Session
+   * it names no longer exists (deleted by hand, or with its Agent): a desk is listed only
+   * once it can be opened, and the reconcile pass re-opens a missing one when it can.
+   */
   desk?: { sessionId: string; workspace: string; openedAt: string };
   /** Period spend: own sessions, and cumulative (own + every subordinate). */
   spend: { own: number; cumulative: number; ratio?: number };
   /** Why the entry cannot be triggered (missing Agent, missing workspace directory). */
   invalid?: string;
+  /**
+   * The entry's Agent no longer exists (`invalid` carries the sentence). Its desk cannot be
+   * opened; the entry stays until a person makes the employee leave, or until an Agent with
+   * the same id is created again (which is how a deleted CEO is restored).
+   */
+  agentMissing?: true;
 }
 
 export interface OrgChartResponse {
@@ -5232,6 +5366,7 @@ export interface OrgDeskItem {
 }
 
 export interface OrgSessionsResponse {
+  /** One per employee whose current desk Session exists; a desk the ledger names but the server no longer has is left out. */
   desks: OrgDeskItem[];
   tickets: Array<{
     ticketId: string;

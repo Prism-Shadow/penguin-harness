@@ -2044,12 +2044,17 @@ router
     if (store.f.benchmarks.some((b) => b.id === benchmarkId))
       fail(409, "benchmark_exists", "That id is taken.");
     const list = Array.isArray(cases) ? (cases as Array<Record<string, unknown>>) : [];
+    // The server writes the day's first version, on the local calendar.
+    const day = new Date();
+    const two = (n: number) => String(n).padStart(2, "0");
     const benchmark: BenchmarksResponse["benchmarks"][number] = {
       id: benchmarkId,
       title: str(title, benchmarkId),
       ...(typeof description === "string" ? { description } : {}),
       runs: typeof runs === "number" ? runs : 1,
       status: "published",
+      version: `${day.getFullYear()}.${two(day.getMonth() + 1)}.${two(day.getDate())}.1`,
+      origin: { kind: "manual" },
       caseCount: list.length,
       evaluations: [],
       agentIds: [],
@@ -2071,6 +2076,14 @@ router
     const benchmark = benchmarkOf(ctx);
     ctx.store.f.benchmarks = ctx.store.f.benchmarks.filter((b) => b.id !== benchmark.id);
     return empty();
+  })
+  .post("/api/projects/:projectId/benchmarks/archive", () => readOnly("import a Benchmark package"))
+  .get("/api/projects/:projectId/benchmarks/:benchmarkId/archive", (ctx) => {
+    const benchmark = benchmarkOf(ctx);
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${benchmark.id}-v${benchmark.version ?? "0"}.zip"`,
+    });
   })
   .get("/api/projects/:projectId/benchmarks/:benchmarkId/cases/:caseId/files", (ctx) =>
     listCaseFiles(ctx, "statement"),

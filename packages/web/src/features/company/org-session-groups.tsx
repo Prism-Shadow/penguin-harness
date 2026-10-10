@@ -13,6 +13,10 @@
  * desks, newest first, until the reader removes one with its ✕ or all of them with the header's
  * "Close all"; the group shows only while it lists something (temp-session.ts).
  *
+ * An employee whose Agent was deleted keeps its row, dimmed and inert, its tooltip saying why:
+ * the employee is still in the chart until a person makes it leave, and there is no desk to
+ * open — a click must never land in somebody else's conversation instead.
+ *
  * A row that names a desk session carries the development list's row menu (right-click, and
  * the hover ellipsis), pared down to the two actions an organization leaves to the reader:
  * copy the Session id, and bind the desk to a messaging bot. A desk's title and its lifecycle are
@@ -67,6 +71,7 @@ import type { SessionRowAction, SessionRowState } from "../../components/ui/sess
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
 import { orgKey } from "./company-nav";
+import { INVALID_ICON } from "./shared";
 import { deskRows, orgRowActivity, ticketSessionTitles } from "./org-sessions";
 import type { OrgDeskRow } from "./org-sessions";
 import {
@@ -82,9 +87,9 @@ import type { TempSessionRow } from "./temp-session";
  * so the row's menu affordances sit inside the same lit box the reader is pointing at, and
  * `group` reaches them.
  */
-const rowSurface = (active: boolean) =>
+const rowSurface = (active: boolean, inert = false) =>
   `group flex select-none items-center rounded-md pr-1 transition-colors duration-150 ${
-    active ? NAV_FILL.selected : NAV_FILL.hover
+    active ? NAV_FILL.selected : inert ? "" : NAV_FILL.hover
   }`;
 
 /** The row's own button, at the channel rows' density so the whole sidebar reads as one list. */
@@ -165,8 +170,12 @@ function DeskRow({
   const messagingChannel = row.messagingChannel;
   const activity = orgRowActivity(row.status);
   const deskName = S.company.sessionList.deskOf(row.name);
-  const label =
-    activity === "running" ? `${deskName} · ${S.company.sessionList.running}` : deskName;
+  const missing = row.agentMissing === true;
+  const label = missing
+    ? `${deskName} · ${S.company.sessionList.agentMissing}`
+    : activity === "running"
+      ? `${deskName} · ${S.company.sessionList.running}`
+      : deskName;
 
   /** Run one action on this desk's Session, closing the menu first if it was open. */
   const run = (action: SessionRowAction) => {
@@ -199,21 +208,24 @@ function DeskRow({
         // Right-click / Shift+F10 / press-and-hold open the row's menu; the native menu is
         // suppressed inside that handler only, so the rest of the app keeps the browser's own.
         {...(sessionId === null ? {} : ctx.rowProps)}
-        className={rowSurface(active)}
+        className={rowSurface(active, missing)}
       >
         <button
           type="button"
           aria-current={active ? "true" : undefined}
           disabled={opening}
+          // Inert rather than disabled: the row stays in the tab order, and its name says why.
+          {...(missing ? { "aria-disabled": true } : {})}
           data-tooltip={row.jobTitle !== "" ? `${row.name} · ${row.jobTitle}` : row.name}
           aria-label={label}
           // A press-and-hold that opened the menu must not also open the desk: touch screens
           // replay the held press as a click once the finger lifts.
           onClick={() => {
             if (ctx.consumeLongPressClick()) return;
+            if (missing) return;
             onOpen();
           }}
-          className={rowButton(active)}
+          className={`${rowButton(active)}${missing ? " cursor-default opacity-60" : ""}`}
         >
           <AgentAvatar
             id={row.agentId}
@@ -243,6 +255,17 @@ function DeskRow({
             none that is both safe and one click, so it holds the ellipsis alone, which is also
             the pointer's way into a menu right-click leaves undiscoverable. */}
         <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+          {/* A deleted Agent's row has no menu: the slot carries the mark saying why it does
+              not open — a wordless glyph, so its tooltip shows wherever the name fits. */}
+          {missing && (
+            <span
+              data-tooltip={S.company.sessionList.agentMissing}
+              className={`shrink-0 ${toneInk.danger}`}
+            >
+              <Icon d={INVALID_ICON} size={ICON_SIZE.rowMark} />
+              <span className="sr-only">{S.company.sessionList.agentMissing}</span>
+            </span>
+          )}
           {sessionId !== null && (
             <SessionRowHoverActions
               actions={[]}
@@ -534,10 +557,13 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
   return (
     <>
       {desks.map((d) => {
+        const missing = d.agentMissing === true;
         const running = orgRowActivity(d.status) !== null;
-        const name = running
-          ? `${S.company.sessionList.deskOf(d.name)} · ${S.company.sessionList.running}`
-          : S.company.sessionList.deskOf(d.name);
+        const name = missing
+          ? `${S.company.sessionList.deskOf(d.name)} · ${S.company.sessionList.agentMissing}`
+          : running
+            ? `${S.company.sessionList.deskOf(d.name)} · ${S.company.sessionList.running}`
+            : S.company.sessionList.deskOf(d.name);
         return (
           <button
             key={d.agentId}
@@ -545,8 +571,11 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
             data-tooltip={name}
             aria-label={name}
             disabled={opening === d.agentId}
-            onClick={() => void openDesk(d.agentId, d.sessionId)}
-            className={`${railItemClass()} disabled:opacity-60`}
+            {...(missing ? { "aria-disabled": true } : {})}
+            onClick={() => {
+              if (!missing) void openDesk(d.agentId, d.sessionId);
+            }}
+            className={`${railItemClass()} disabled:opacity-60${missing ? " opacity-60" : ""}`}
           >
             <AgentAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
             {running && (

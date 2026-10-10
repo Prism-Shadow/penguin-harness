@@ -1054,6 +1054,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       ),
       runs: 1,
       status: "published",
+      version: "2026.10.08.2",
+      origin: { kind: "agent" },
       caseCount: 4,
       evaluations: [
         evaluation(12, 62, 11, IDS.agents.docs, "deepseek-flash"),
@@ -1067,6 +1069,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       id: IDS.benchmarks.draft,
       title: L("发布说明草稿", "Release notes draft"),
       status: "draft",
+      version: "2026.10.09.1",
+      origin: { kind: "agent" },
       caseCount: 2,
       evaluations: [],
       agentIds: [],
@@ -1080,6 +1084,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "Sec E is Terminal-Bench 4.0: hard, realistic tasks done in a terminal, across software, security, science, machine learning, operations, hardware and media. Chosen to run on CPU-only Docker. A built-in benchmark: each task runs in Docker through the Harbor framework and is scored by its own verifier; the task files are in the public repository Prism-Shadow/penguin-harness-benchmark. It is written when the Project is created; a deleted one stays deleted.",
       runs: 1,
       status: "published",
+      version: "2026.10.09.1",
+      origin: { kind: "builtin" },
       caseCount: harborCases.length,
       evaluations: [
         {

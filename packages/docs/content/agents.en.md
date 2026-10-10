@@ -78,7 +78,7 @@ A snapshot package is an exported Agent State. You can create an agent from one,
 
 ## Delete an agent
 
-Only the Project owner can delete an agent. The built-in `default_agent` cannot be deleted.
+Only the Project owner can delete an agent. The built-in `default_agent` cannot be deleted, and neither can an employee of an organization: the **Company employees** section lists those, and an employee can be deleted once it leaves its organization in company mode (see [Employees are agents](/company-mode#employees-are-agents)).
 
 1. On the agent's card, select the delete button (**Delete agent**).
 2. Confirm.

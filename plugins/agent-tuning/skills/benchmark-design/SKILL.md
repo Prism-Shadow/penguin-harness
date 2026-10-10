@@ -1,7 +1,7 @@
 ---
 name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline.
-version: 2026.10.09.2
+version: 2026.10.09.5
 ---
 
 # Benchmark Design
@@ -11,6 +11,8 @@ Build a multi-Case Benchmark for one Test Agent, calibrate its difficulty with o
 This Skill changes the Benchmark, never the Test Agent. It does not run or score the Test Agent. Delegate every evaluation with `run_subagent`, and tell each worker to use `agent-evaluation`. Stop after the Baseline; do not begin optimization.
 
 A Benchmark whose Cases are run through Harbor (their statements say so; the built-in PenguinHarness Benchmarks) is a frozen upstream task set that ships with PenguinHarness: never create, refine, recalibrate or re-baseline one.
+
+Importing an existing Benchmark package (a repository folder link or a local folder) is not design: follow `reference/package.md`, which also defines what a package holds.
 
 ## Before you start
 
@@ -73,7 +75,7 @@ Each Case contains:
 
 Both directories require a `README.md` and may contain supporting files. Do not put Gold answers for evaluated instances, hidden mappings, or private scoring conditions in `statement/`.
 
-Create `benchmark_config.toml` with `title`, `description`, `runs = 1`, and `status = "draft"`. Benchmark design always uses one Run per Case; do not ask for or accept another Run count. `status = "draft"` tells the Web App that the Benchmark is still being built — it shows the Benchmark masked, and nobody can use or open it until the status is `published`. A draft ends in one of two states: `published` once a Formal Baseline scoring below 85 is recorded, or `failed` when calibration produces no valid Pilot result to freeze or when the lowest-scoring valid revision still scores 85 or above at the iteration limit. Initialize `scoreboard.yaml` with `evaluations: []`.
+Create `benchmark_config.toml` with `id` (the directory name), `title`, `description`, `version` (today's date version from the Environment's date, quoted: `version = "YYYY.MM.DD.1"`), `runs = 1`, `status = "draft"`, and an `[origin]` table with `kind = "agent"`, written last: in TOML every key below a table header belongs to that table. Whenever you change a Case or the status, bump `version`: the next `N` when it already carries today's date, otherwise today's `.1` (also when the file has no `version` yet). Benchmark design always uses one Run per Case; do not ask for or accept another Run count. `status = "draft"` tells the Web App that the Benchmark is still being built — it shows the Benchmark masked, and nobody can use or open it until the status is `published`. A draft ends in one of two states: `published` once a Formal Baseline scoring below 85 is recorded, or `failed` when calibration produces no valid Pilot result to freeze or when the lowest-scoring valid revision still scores 85 or above at the iteration limit. Initialize `scoreboard.yaml` with `evaluations: []`.
 
 Pass the resolved `(provider, model_id)` explicitly in every Pilot Evaluator request, starting with the first cell. Freeze that pair and the Test Agent's configured `thinking_level` for the complete Benchmark workflow. Every scored Evaluator result must report the requested pair and the same configured thinking level. A mismatch invalidates the matrix.
 
@@ -198,7 +200,7 @@ evaluations:
 
 After writing, parse the complete `scoreboard.yaml` and verify the appended Evaluation, including its `agent_id`, before reporting success or continuing.
 
-Once the Formal Baseline is verified, set `status = "published"` in `benchmark_config.toml`. Change only that line, keep `title`, `description` and `runs` as they are, and parse the file again to confirm it is valid TOML. When the run ends in `calibration_failed`, set `status = "failed"` the same way — change only that line, keep the other fields, and parse the file again — so the Web App tells the user that this Benchmark failed to calibrate and has to be deleted and created again. Never leave a failed Benchmark on `draft`, and never write `failed` because the desired baseline score was missed: a Formal Baseline below 85 is published.
+Once the Formal Baseline is verified, set `status = "published"` in `benchmark_config.toml` and bump its `version`. Change only those two keys, keep the others as they are, and parse the file again to confirm it is valid TOML. When the run ends in `calibration_failed`, set `status = "failed"` the same way — bump `version`, keep the other keys, and parse the file again — so the Web App tells the user that this Benchmark failed to calibrate and has to be deleted and created again. Never leave a failed Benchmark on `draft`, and never write `failed` because the desired baseline score was missed: a Formal Baseline below 85 is published.
 
 Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`.
 

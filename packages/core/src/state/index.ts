@@ -16,6 +16,10 @@ export * from "./project-config.js";
 export * from "./agent-state.js";
 export * from "./agent-vault.js";
 export * from "./memory.js";
+export * from "./benchmark-manifest.js";
 export * from "./example-benchmark.js";
 export * from "./builtin-benchmarks.js";
-export { provisionProjectBenchmarks } from "./project-benchmarks.js";
+// The built-in Benchmarks' data: what scripts/benchmark-packages.mjs writes as packages.
+export { BUILTIN_BENCHMARKS } from "./builtin-benchmarks-data.js";
+export { placeBenchmark, provisionProjectBenchmarks } from "./project-benchmarks.js";
+export type { PlaceBenchmarkOptions } from "./project-benchmarks.js";

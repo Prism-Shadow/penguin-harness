@@ -17,6 +17,8 @@ PenguinHarness 服务器提供一组同源 HTTP API，内置 Web App 和其他�
 { "error": { "code": "<machine-readable code>", "message": "<user-facing text>" } }
 ```
 
+错误若指明了客户端要据以行动的对象，会在 `code` 与 `message` 旁另带 `details`，一个值为字符串的对象：409 `benchmark_exists` 用 `details.benchmarkId` 给出那个 id。这类信息从 `details` 读取，不要从 message 里解析——message 是给人看的文字。
+
 ## 源码结构
 
 ```text
@@ -545,15 +547,19 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | --- | --- | --- |
 | GET | `/benchmarks` | Benchmark 的分数数据 |
 | POST | `/benchmarks` | 手动创建 Benchmark（仅所有者） |
-| DELETE | `/benchmarks/:benchmarkId` | 删除 Benchmark 目录，包括其中的题目、配置和计分板（仅所有者；返回 204，不存在时返回 404） |
+| DELETE | `/benchmarks/:benchmarkId` | 删除 Benchmark 目录，包括其中的题目、清单和计分板（仅所有者；返回 204，不存在时返回 404） |
+| POST | `/benchmarks/archive` | 从 zip 导入一个 Benchmark 包：`{dataBase64, overwrite?, origin?}` → 201 `{benchmark}`（任意成员） |
+| GET | `/benchmarks/:benchmarkId/archive` | 把已发布 Benchmark 的包导出为 zip（任意成员） |
 | GET | `/benchmarks/:benchmarkId/cases` | Benchmark 的题目：每道题的 id 和题干 README 的标题。评分标准永远不会返回 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files` | 浏览一道题的 `statement/` 目录 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files/content` | 读取题干中的一个文件（`?path=`、`?preview=1`、`?download=1`） |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files` | 浏览一道题的 `rubric/` 目录 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content` | 读取评分标准中的一个文件，参数与上一条相同 |
 
-- `GET /benchmarks` 只列出含有 `benchmark_config.toml` 的目录；评估过程中删除 Benchmark 留下的目录没有这个文件，因此不会出现在列表里。每个条目都带 `status`：Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`。
-- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark_config.toml`（其中 `status = "published"`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
+- `GET /benchmarks` 只列出含有 `benchmark_config.toml` 的目录；评估过程中删除 Benchmark 留下的目录没有这个文件，因此不会出现在列表里。每个条目都带 `status`（Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`），清单里有的话还带日期版本 `version` 与来源 `origin`（`{kind, url?, ref?, path?, importedAt?}`，`kind` 取 `builtin`、`manual`、`agent`、`git`、`zip` 之一）；早先版本写下的清单两者都没有。清单不可用的 Benchmark 以目录名列出，按 `failed` 处理，带 `manifestError`（`{code, message}`，`code` 为 `benchmark_manifest_invalid` 或 `benchmark_id_mismatch`），不带 `version` 与 `origin`。文件系统层面读不了清单时，请求失败。
+- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark_config.toml`（含 `id`、`status = "published"`、当天的第一个版本与来源 `manual`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
+- `POST /benchmarks/archive` 接受不超过 14MB 的 zip，`benchmark_config.toml` 与各个 `CASE-*` 目录放在 zip 根目录，或放在唯一一个以清单 `id` 命名的顶层目录里；清单放在根目录时没有目录替它命名，必须写明 `id`。顶层另有别的东西（包括 `scoreboard.yaml` 与 `.jobs/`）、顶层有以 `.` 开头的条目、含符号链接、条目名含控制字符或与另一条目只差大小写、某道题缺少 `statement/README.md` 或 `rubric/README.md`、清单会被列表判为不可用，或超出服务端写入时的上限（标题 1 到 200 个字符、描述不超过 2,000 个字符、每题运行次数不超过 1,000）时，返回 400（`benchmark_archive_invalid`、`benchmark_case_invalid` 或清单自己的错误码）；`status` 不是 `published` 时返回 400 `benchmark_not_published`。超过 14MB、1000 个文件、单个文件 5MB 或合计 20MB 时返回 413 `benchmark_too_large`。服务器原样写入各题，清单写明 `id`、来源改写为 `{kind: "zip", imported_at}`、版本保持包里的值（包里没有就不带版本），并写入一份 `evaluations: []` 的 `scoreboard.yaml`。请求若用 `origin: {kind: "git", url, ref, path}` 指明包所取自的仓库文件夹（http(s) 链接、它解析到的 40 位提交号与文件夹路径，[`penguin benchmark import`](/cli#penguin-benchmark) 就这样发送），来源改记为带这些字段与 `imported_at` 的 `git`；其他形式的 `origin` 返回 400。id 已被占用时返回 409 `benchmark_exists`（`details.benchmarkId` 给出该 id），除非 `overwrite` 为 true——覆盖会替换整个目录，连同记分板与 `.jobs/`。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，评估仍在往那里写，覆盖改为返回 409 `benchmark_busy`。
+- `GET /benchmarks/:benchmarkId/archive` 的文件名为 `<id>-v<version>.zip`（没有版本的 Benchmark 为 `<id>.zip`），内容是磁盘上原样的 `<id>/benchmark_config.toml` 与全部 `CASE-*` 子树，不含记分板、`.jobs/`、其他以 `.` 开头的条目与符号链接；这个 zip 可以原样经 `POST /benchmarks/archive` 导回。每个条目都带同一个固定时间，未改动的 Benchmark 再次导出得到的字节完全相同。`draft` 或 `failed` 的 Benchmark 返回 409 `benchmark_not_published`；清单不可用或超出导入所守上限的返回 409 与清单自己的错误码；不存在的返回 404，超出导入大小上限的返回 413 `benchmark_too_large`。
 - 这些读取文件内容的路由采用与 Workspace 文件相同的内联加固；参见 [Workspace 文件响应](#workspace-文件响应)。
 
 ## 组织（公司模式）
@@ -1184,7 +1190,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 
 ### 传输格式
 
-默认（未命名）的 SSE 事件以单行 JSON 携带原始 OmniMessage 信封：SDK 产出、Trace 存储的就是这个协议（见 [OmniMessage 协议](/omni-message)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
+默认（未命名）的 SSE 事件以单行 JSON 携带原始 OmniMessage 信封：SDK 产出、Trace 存储的就是这个协议（见 [OmniMessage 协议](/omni-message)）。名为 `ping` 的事件是心跳（见[投递保证](#投递保证)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
 
 ```ts
 export type ServerEvent =
@@ -1258,9 +1264,10 @@ export type ServerEvent =
 
 - 事件 id 在每个通道内单调递增，格式为 `<epoch>-<seq>`。
 - 每个通道保留一个有界的重放缓冲区：最近 10,000 个事件或 8MB。
-- 携带 `Last-Event-ID` 重连时，如果 id 仍在缓冲区内，服务器会重放缺失的事件；否则先发送 `resync_required`，客户端重新拉取 `/messages` 后再继续。
-- 每 20 秒写入一行心跳注释。同一次心跳会复查连接背后的会话，会话已删除或已过期时结束该流，因此登录被吊销的客户端会立即停止接收，而不必等到下一次请求失败才发现。直接吊销会话的操作——管理员重置密码或删除账号——会当场结束该用户所有打开中的流，心跳是兜底。以本地 API token 鉴权的流没有对应的会话记录，不受影响。
-- 事件顺序：携带 `Last-Event-ID` 重连时，先到达重放的缺失部分（或 `resync_required`），然后是初始事件（权威的 `task_state` 快照和所有仍待处理的 `approval_request`），最后是实时流。不带 `Last-Event-ID` 的新连接跳过重放，第一个事件就是 `task_state` 快照。
+- 携带 `Last-Event-ID` 重连时，如果 id 仍在缓冲区内，服务器会重放缺失的事件；否则先发送 `resync_required`，客户端重新拉取 `/messages` 后再继续。客户端自己新建连接时，也可以改用查询参数 `lastEventId` 传递这个 id，因为 `EventSource` 无法设置请求头。两者同时出现时以请求头为准。
+- 初始事件之后立即发送一个 `ping` 事件（`data: {}`，没有 `id:` 行），之后每 20 秒一次。与注释行不同，浏览器会把它交给页面，所以收到过它的客户端可以把长时间的静默判定为连接已死。它不带 id，既不改变客户端的 `Last-Event-ID`，也不改变重放位置。同一次心跳会复查连接背后的会话，会话已删除或已过期时结束该流，因此登录被吊销的客户端会立即停止接收，而不必等到下一次请求失败才发现。直接吊销会话的操作——管理员重置密码或删除账号——会当场结束该用户所有打开中的流，心跳是兜底。以本地 API token 鉴权的流没有对应的会话记录，不受影响。
+- socket 连续 40 秒没有发出任何数据的流会被关闭（有写入挂起时最长 80 秒）。`ping` 每 20 秒一次，只有对端已不再读取时（半开的连接、卡住的代理），流才会安静这么久。仍然在线的客户端会发现流已结束，随即重连，并从最后一个事件 id 续传。
+- 事件顺序：携带 `Last-Event-ID`（或 `lastEventId`）重连时，先到达重放的缺失部分（或 `resync_required`），然后是初始事件（权威的 `task_state` 快照和所有仍待处理的 `approval_request`），再是一个 `ping`，最后是实时流。两者都不带的新连接跳过重放，第一个事件就是 `task_state` 快照。
 
 ### 推荐的客户端模式
 
@@ -1271,6 +1278,7 @@ export type ServerEvent =
 3. 如果响应带有 `live`（有 Task 正在运行），丢弃缓存中游标已覆盖的 partial 事件，把 `live.fragments` 应用在历史之上。进行中的消息会重新出现，已流式输出的前缀原样保留。
 4. 重放缓存的事件，去掉重叠部分。
 5. 之后继续处理实时流。
+6. 流发送过 `ping` 之后，50 秒内没有收到任何事件即判定连接已死：关闭它，并以查询参数 `?lastEventId=` 带上最后收到的 id 重新连接。页面重新可见时立即检查一次，因为后台的定时器会延迟执行。从不发送 `ping` 的流来自早于心跳事件的服务器，交给浏览器自带的重连处理。
 
 ## 类型导入
 
