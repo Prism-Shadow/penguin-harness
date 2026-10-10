@@ -425,11 +425,13 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | POST | `/agents/:agentId/skills/archive` | 从 zip 安装 Skill：`{dataBase64, overwrite?}` → 返回 201 和 Skill 列表 |
 | GET | `/agents/:agentId/skills/:name/archive` | 将已安装的 Skill 导出为 zip |
 | DELETE | `/agents/:agentId/skills/:name` | 卸载一个 Skill |
-| POST | `/agents/:agentId/plugins` | 按名称从插件库安装插件：`{names}` → 201 `{skills, hooks}` |
+| POST | `/agents/:agentId/plugins` | 按名称从插件库安装插件：`{names}` → 201 `{skills, hooks, mcpServers}` |
 | GET | `/agents/:agentId/hooks` | 已安装的钩子包 |
 | POST | `/agents/:agentId/hooks/archive` | 从 zip 安装钩子包：`{dataBase64, overwrite?}` |
 | GET | `/agents/:agentId/hooks/:name/archive` | 将已安装的钩子包导出为 zip |
 | DELETE | `/agents/:agentId/hooks/:name` | 卸载一个钩子包 |
+| GET | `/agents/:agentId/mcp-servers` | Agent 的 MCP 服务器条目，连同来源插件和尚缺的设置：`{servers}` |
+| DELETE | `/agents/:agentId/mcp-servers/:name` | 移除一条 MCP 服务器条目 |
 | GET / PUT | `/agents/:agentId/api` | Agent 的 API 设置：开关、无密钥访问、审批模式和密钥（PUT 仅限所有者） |
 | POST | `/agents/:agentId/api/keys` | 新建 API 密钥：`{name}` → 201 `{key, secret}`（仅所有者） |
 | DELETE | `/agents/:agentId/api/keys/:keyId` | 删除 API 密钥（仅所有者） |
@@ -441,7 +443,7 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 ### Agent 路由
 
 - `POST /agents` 接受 `{agentId, name?, description?, plugins?, skillsDirectory?, directorySkills?, dataBase64?}`，返回 201 和 `{agent}`。`plugins` 指定要预装的插件库插件；遇到未知名称会拒绝请求，且不会创建 Agent 目录。`skillsDirectory` 和 `directorySkills` 从用户选择的目录导入 Skill（参见 [Session 创建与目录浏览](#session-创建与目录浏览)中的 `GET /dir-skills`），两者必须一起发送。`dataBase64` 让 Agent 从导出的快照启动，而不是使用默认模板。
-- `POST …/config/mcp-test` 从本机连接一条 MCP 服务器配置，列出它的工具后断开，不写入任何 Agent State。配置条目格式有误时返回 400。服务器连不上不算 HTTP 错误，照常返回 `{ok: false, error}`。
+- `POST …/config/mcp-test` 从本机连接一条 MCP 服务器配置，列出它的工具后断开，不写入任何 Agent State。配置条目格式有误时返回 400。服务器连不上不算 HTTP 错误，照常返回 `{ok: false, error}`。与对话连接时一样，条目中的 `${KEY}` 引用先从 Agent 的 Vault 填入；Vault 缺键时返回 `{ok: false, error}`，`error` 以 `needs setup:` 开头并列出键名，不会连接任何服务器。响应从不回显条目内容。
 - `POST …/config/kernel-update` 是 `reset` 的无损版本。它把缺失或仍保持旧默认值的设置标签页升级到当前默认值（记入 `advanced`），完整保留已自定义的标签页（记入 `kept`），并写入新的默认值版本（`kernelVersion`）。
 - `template-placeholder` 路由都是幂等的。Vault 和 Skills 两个路由会在 Prompt 模板中插入 `{{VAULT}}` 或 `{{SKILLS}}`；如果模板里是旧版硬编码的 `# Vault` 或 `# Skills` 小节，则替换成对应的占位符。记忆路由插入 `{{MEMORY}}`，在记忆功能推出之前创建的 Agent 就是通过它接入记忆的。
 - `POST …/skills/archive` 接受最大 14MB 的 zip。不带 `overwrite` 时，同名 Skill 已安装会返回 409 `skill_exists`。`GET …/skills/:name/archive` 导出的文件名为 `<name>.zip`；如果 Skill 的 `SKILL.md` 声明了版本，则为 `<name>-v<version>.zip`。Skill 未安装时，导出和卸载路由都返回 404 `not_found`。
@@ -457,10 +459,12 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 ### 插件与钩子
 
-- `POST …/plugins` 会安装每个指定插件的 Skill 和钩子包；再次安装即更新。名称不存在时返回 404 `unknown_plugin`，且不做任何写入。
+- `POST …/plugins` 会安装每个指定插件的 Skill、钩子包和 MCP 服务器；再次安装即更新。名称不存在时返回 404 `unknown_plugin`，且不做任何写入。MCP 服务器追加到 Agent 的 `tools.mcpServers`，每个条目的 `plugin` 设为插件名；再次安装只替换带这个名字的条目。Agent 上已有同名、且不属于这个插件的服务器时，路由返回 409 `mcp_server_name_taken`，说明是哪个服务器、占用它的是另一个插件还是手写的条目，且不做任何写入。201 响应为 `{skills, hooks, mcpServers}`，`mcpServers` 的形态与 `GET …/mcp-servers` 列出的相同。
+- `GET …/mcp-servers` 返回 `{servers}`，`tools.mcpServers` 的每个条目一项：`{name, transport, target, plugin?, missingKeys, signIn}`。`target` 是 URL，或 stdio 服务器的命令行，其中的 `${KEY}` 引用保持原样；`plugin` 是安装该条目的插件，用户自己添加的条目没有这个字段；`missingKeys` 列出条目引用了、而 Agent 的 Vault 中没有的键，只给键名；`signIn` 标记需要 OAuth 登录的条目，本版本还不能登录。任何请求头、`env` 或 `oauth` 的值都不会返回。
+- `DELETE …/mcp-servers/:name` 移除指定的条目，无论它是怎么装上的，返回 204；Agent 没有这个名称时返回 404 `unknown_mcp_server`。任何成员都可以调用，就像任何成员都能通过 `PUT …/config` 改写整个列表一样。
 - `GET …/hooks` 返回每个已安装钩子包的名称、描述、版本、钩子点和插件图标。
 - `POST …/hooks/archive` 要求 `hooks.json` 及其脚本位于 zip 根目录或同一个顶层目录内，且列出的每条命令都必须指向包内的文件。不带 `overwrite` 时，同名钩子包已安装会返回 409 `hook_exists`。`GET …/hooks/:name/archive` 导出的 zip 可以再通过这个路由安装。
-- `GET /api/plugins` 按分类返回插件库的全部插件：插件的 npm `version`、npm 包名 `package` 与 `source`（随构建发布的为 `builtin`，管理员安装到服务端的为 `installed`）、各 Skill 的元数据（每个 Skill 带自己的日期 `version`）、钩子点，以及钩子包的 `hookVersion`。插件库会列出服务端插件前缀中所有在 `plugin.json` 旁带 `skills/` 或 `hooks/` 的包；与构建自带插件同名时以构建自带的为准。
+- `GET /api/plugins` 按分类返回插件库的全部插件：插件的 npm `version`、npm 包名 `package` 与 `source`（随构建发布的为 `builtin`，管理员安装到服务端的为 `installed`）、各 Skill 的元数据（每个 Skill 带自己的日期 `version`）、钩子点，以及钩子包的 `hookVersion`。插件库会列出服务端插件前缀中所有在 `package.json` 旁带 `skills/` 或 `hooks/`、或在 `penguin.mcp_servers` 中声明了 MCP 服务器的包；与构建自带插件同名时以构建自带的为准。插件还带上包里声明的展示字段——`title`、`titleZh`、`author`、`license`、`homepage`、`repository`——包里有才带，`description` 可以为空。`mcpServers` 列出插件声明的 MCP 服务器，没有时为 `[]`：`{name, transport, target, setup, oauth, signIn}`，其中 `setup` 是服务器需要的 Vault 键（`{key, label?, labelZh?, help?}`），`oauth` 表示它是否用 OAuth 登录，`signIn` 表示它因没有自己的 `Authorization` 请求头而需要登录；不包含任何请求头或 `env` 的值。
 - `GET /api/plugins/:plugin/files` 返回单个插件库插件自带的全部文件，以路径为键返回文本：`skills/<name>/` 下是每个 Skill 可安装的 `SKILL.md` 和参考文件，`hooks/` 下是钩子脚本。插件详情弹窗的文件浏览器用的就是这个路由。
 - `GET /api/plugins/:plugin/readme` 返回插件库插件包根目录的 `README.md`，供详情弹窗使用。插件不带 README 时返回 404 `readme_not_found`，插件库里没有的名字返回 404 `unknown_plugin`。
 - `GET /api/plugins/:plugin/archive` 把插件库插件的包目录打成 zip 下载：不含 `node_modules/`，放在顶层目录 `<name>/` 下，文件名为 `<name>-v<version>.zip`，另一台服务端可以原样导入。超出导入上限的包返回 413 `plugin_too_large`，插件库里没有的名字返回 404 `unknown_plugin`。
@@ -499,7 +503,7 @@ interface AgentApiKeyInfo {
 
 ## 插件注册表与 Project 插件
 
-本节的插件是安装在服务端的包：由服务器加载进自身模块树的模块（例如沙箱后端），以及管理员安装的 Skill 或钩子包——后者进入插件库（见[插件与钩子](#插件与钩子)）。注册表路由是全局的，任何已登录用户都可以访问；已安装插件路由属于单个 Project，只有管理员可以写入。
+本节的插件是安装在服务端的包：由服务器加载进自身模块树的模块（例如沙箱后端），以及管理员安装的 Skill、钩子包或 MCP 服务器——后者进入插件库（见[插件与钩子](#插件与钩子)）。注册表路由是全局的，任何已登录用户都可以访问；已安装插件路由属于单个 Project，只有管理员可以写入。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -512,12 +516,12 @@ interface AgentApiKeyInfo {
 | PUT | `/api/projects/:projectId/plugins/installed` | 仅管理员。替换整个列表：`{plugins}` |
 | DELETE | `/api/projects/:projectId/plugins/installed?specifier=…` | 仅管理员。从列表中移除一个插件 |
 
-- 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`，以及卡片字段 `descriptionZh`、`shortDescription`、`shortDescriptionZh` 和 `icon`（SVG 原文），均可选。包在本机上时，列表改用包自带的 `plugin.json` 与 `icon.svg` 中的这几项。已发布的索引不提供 `icon`：Web App 会把 SVG 内联进页面，因此服务端丢弃每个远程条目的 `icon`。条目的 `name` 就是 Project 列表里使用的包名。索引合并两个来源：内嵌在 server 包中的那份，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让那份索引整体失败。`PENGUIN_PLUGIN_INDEX=off` 关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。注册表只用于发现，从不导入插件代码。
-- 除索引条目外，列表还为管理员从链接或 zip 安装的每个服务端模块包列出一行，描述取自包自己的 `package.json` 与 `plugin.json`。
+- 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`，以及卡片字段 `descriptionZh`、`shortDescription`、`shortDescriptionZh` 和 `icon`（SVG 原文），均可选。包在本机上时，列表改用包自带 `package.json` 的 `penguin` 块与图标中的这几项，且不发送不是纯 SVG 的图标。已发布的索引不提供 `icon`：Web App 会把 SVG 内联进页面，因此服务端丢弃每个远程条目的 `icon`。条目的 `name` 就是 Project 列表里使用的包名。索引合并两个来源：内嵌在 server 包中的那份，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让那份索引整体失败。`PENGUIN_PLUGIN_INDEX=off` 关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。注册表只用于发现，从不导入插件代码。
+- 除索引条目外，列表还为管理员从链接或 zip 安装的每个服务端模块包列出一行，描述取自包自己的 `package.json`。
 - `GET …/readme` 返回包自带的 `README.md`，从本机上的副本读取；没有时 `readme` 为 `null`。列表中没有的名称返回 `404` `not_found`，缺少 `name` 的请求返回 `400` `bad_request`。`GET …/archive` 与插件库的导出路由一样，把本机上一个已列出的包打成 zip 下载；包不在本机上时返回 `404` `plugin_not_here`。
 - `GET …/installed` 对该 Project 的任何成员开放。`plugins` 的每个元素是 `{specifier, active, builtin, modules, replaces, error?}`：`active` 表示进程已加载这个包，`builtin` 表示它随本次构建发布，`modules` 和 `replaces` 是其生成的 `ifaces.json` 声明的节点，`error` 说明它为什么没有运行，例如本机上没有这个包，或加载失败。`shipped` 列出构建发布的全部插件包，无论是否被要求。`file` 是保存列表的文件名。已列出的插件既没有运行、也没有加载失败时，`restartPending` 为 true，重启服务器即可解决。Project 的 `.project_config.toml` 无法读取时返回 `400` `invalid_plugins_file`。
-- 写操作返回与 GET 相同的响应体；安装还会附带 `installed: {name, version, library, modules, unchanged?}`，说明装到服务端的是什么。`POST` 接受 npm 包名，可带版本、范围或标签（`@scope/name@^1.2`），或 npm 能直接获取的 https 链接：git 仓库（`https://github.com/o/r`、`git+https://…`、`github:o/r#tag`）或 tarball。路径、`file:`、`http:` 和 ssh 链接、链接中带凭据，以及包名后的 `npm:` 或 `file:` 别名，都会在运行 npm 之前以 `400` `bad_request` 拒绝。从链接安装会获取管理员给出的任意 https 地址，包括内网地址：npm 在服务端、在它所在的网络里运行。安装后，与构建自带的服务端模块同名的包会被重新卸载，并以 `409` `plugin_shipped` 拒绝（它会替换掉所有 Project 的这个模块）；不是插件的包以 `400` `not_a_plugin` 拒绝。此时它的安装脚本已经运行过，错误信息会说明这一点。构建自带的插件直接加入列表，不下载；其余的先用 `npm install` 装进数据根目录的 `plugins/` 前缀，npm 拒绝时返回 `400` `plugin_install_failed`。装上的内容决定列表怎么写：服务端模块包会加入列表——从链接安装的只加入本机自己的 `[plugins.<machineId>]` 表，因为另一台机器拿到它的包名后，会从 npm 仓库取回同名的任意一个包——只含 Skill 或钩子的包进入插件库，不加入列表。`PUT` 只发送名称，留在列表中的名称保留文件为它记录的要求。`DELETE` 从列表中移除该名称；没有任何 Project 再为本机要求它时，从前缀中卸载这个包。
-- `POST …/installed/archive` 安装上传 zip 中的包目录：`package.json` 位于 zip 根目录或唯一的顶层目录内，带合法的 npm 包名（去掉 scope 后须是插件名）和发行版本号，不含 `node_modules/`，内容须是插件——`plugin.json` 旁带 `skills/` 或 `hooks/`、且插件库能原样读取，或带服务端模块的 `ifaces.json`。上限为 zip 14 MB、2,000 个文件、单个文件 5 MB、合计 50 MB，在解压任何内容之前检查（`413` `plugin_too_large`）；其他问题返回 `400` `plugin_archive_invalid`。服务端用 `npm pack --ignore-scripts` 打包这些文件，再安装生成的 tarball，并把它保存在前缀的 `archives/` 中。zip 中不能带 `.npmrc`（打包时它会配置 npm）；与构建自带的服务端模块同名的包会在安装任何内容之前以 `409` `plugin_shipped` 拒绝。已安装同一版本时返回 `200` 并带 `unchanged`；已安装其他版本时，不带 `overwrite: true` 会返回 `409` `plugin_exists`。从 zip 安装的服务端模块包只加入本机的表。
+- 写操作返回与 GET 相同的响应体；安装还会附带 `installed: {name, version, library, modules, unchanged?}`，说明装到服务端的是什么。`POST` 接受 npm 包名，可带版本、范围或标签（`@scope/name@^1.2`），或 npm 能直接获取的 https 链接：git 仓库（`https://github.com/o/r`、`git+https://…`、`github:o/r#tag`）或 tarball。路径、`file:`、`http:` 和 ssh 链接、链接中带凭据、包名后的 `npm:` 或 `file:` 别名，以及指向 GitHub 仓库中某个文件夹或文件的链接（`…/tree/…`、`…/blob/…`），都会在运行 npm 之前以 `400` `bad_request` 拒绝。从链接安装会获取管理员给出的任意 https 地址，包括内网地址：npm 在服务端、在它所在的网络里运行。安装后，与构建自带的服务端模块同名的包会被重新卸载，并以 `409` `plugin_shipped` 拒绝（它会替换掉所有 Project 的这个模块）；不是插件的包以 `400` `not_a_plugin` 拒绝。此时它的安装脚本已经运行过，错误信息会说明这一点。构建自带的插件直接加入列表，不下载；其余的先用 `npm install` 装进数据根目录的 `plugins/` 前缀，npm 拒绝时返回 `400` `plugin_install_failed`。装上的内容决定列表怎么写：服务端模块包会加入列表——从链接安装的只加入本机自己的 `[plugins.<machineId>]` 表，因为另一台机器拿到它的包名后，会从 npm 仓库取回同名的任意一个包——只含 Skill、钩子或 MCP 服务器的包进入插件库，不加入列表。`PUT` 只发送名称，留在列表中的名称保留文件为它记录的要求。`DELETE` 从列表中移除该名称；没有任何 Project 再为本机要求它时，从前缀中卸载这个包。
+- `POST …/installed/archive` 安装上传 zip 中的包目录：`package.json` 位于 zip 根目录或唯一的顶层目录内，带合法的 npm 包名（去掉 scope 后须是插件名）和发行版本号，不含 `node_modules/`，内容须是插件——带 `skills/`、`hooks/` 或 `penguin.mcp_servers` 中的 MCP 服务器且插件库能原样读取，或带服务端模块的 `ifaces.json`。上限为 zip 14 MB、2,000 个文件、单个文件 5 MB、合计 50 MB，在解压任何内容之前检查（`413` `plugin_too_large`）；其他问题返回 `400` `plugin_archive_invalid`。服务端用 `npm pack --ignore-scripts` 打包这些文件，再安装生成的 tarball，并把它保存在前缀的 `archives/` 中。zip 中不能带 `.npmrc`（打包时它会配置 npm）；与构建自带的服务端模块同名的包会在安装任何内容之前以 `409` `plugin_shipped` 拒绝。已安装同一版本时返回 `200` 并带 `unchanged`；已安装其他版本时，不带 `overwrite: true` 会返回 `409` `plugin_exists`。从 zip 安装的服务端模块包只加入本机的表。
 - 写操作无需重启即可生效：App 围绕新列表[自行重组](/server-boot#重组)，效果与热替换相同。所有 Project 中正在进行的 Agent 运行都会被中止，因为所有 Project 共用同一棵模块树。新 App 启动失败时，改动会被撤销，之前的 App 随之恢复。
 - 列表就是 Project 的 `.project_config.toml` 中的 `[plugins]` 表（见 [Project 配置](/configuration#project-配置)）。进程加载所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
 

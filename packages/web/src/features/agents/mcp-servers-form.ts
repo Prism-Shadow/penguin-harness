@@ -3,8 +3,10 @@
  * stored `tools.mcpServers` entries (`{ name, config }`).
  *
  * The form covers the known transport fields; unknown `config` keys an entry may carry
- * (hand-written YAML, future fields) ride along in `extras` and are merged back on save,
- * so the form never destroys what it does not understand. Validation errors come back as
+ * (hand-written YAML, future fields, a plugin's `oauth`) ride along in `extras` and are merged
+ * back on save, so the form never destroys what it does not understand — nor the entry's
+ * `plugin` provenance, which an edit keeps so the plugin's reinstall or uninstall still finds
+ * it. Validation errors come back as
  * codes (plus a line number for the multiline fields); the component maps them to
  * localized messages.
  */
@@ -40,6 +42,8 @@ export interface McpServerFormState {
   permission: McpPermissionMode;
   /** Unrecognized config keys of the entry being edited; merged back verbatim on save. */
   extras: Record<string, unknown>;
+  /** The plugin that installed the entry being edited (absent for the user's own); written back on save. */
+  plugin?: string;
 }
 
 export type McpFormField =
@@ -180,6 +184,7 @@ export function serverToForm(entry: MCPServerConfig): McpServerFormState {
     ),
     permission: permissionOf(entry),
     extras,
+    ...(entry.plugin !== undefined ? { plugin: entry.plugin } : {}),
   };
 }
 
@@ -268,5 +273,8 @@ export function formToServer(form: McpServerFormState): McpFormResult {
   if (form.permission !== MCP_PERMISSION_DEFAULT) config["permission"] = form.permission;
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return { ok: true, server: { name, config } };
+  return {
+    ok: true,
+    server: { name, ...(form.plugin !== undefined ? { plugin: form.plugin } : {}), config },
+  };
 }

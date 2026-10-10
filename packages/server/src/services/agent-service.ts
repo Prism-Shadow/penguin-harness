@@ -21,6 +21,7 @@ import {
   createAgent as coreCreateAgent,
   installPlugin,
   installSkill,
+  McpServerNameTakenError,
   listInstalledHooks,
   isValidId,
   loadAgentVault,
@@ -506,6 +507,11 @@ export class AgentService implements AgentLifecycle {
       await fs
         .rm(agentDir(this.root, projectId, agentId), { recursive: true, force: true })
         .catch(() => {});
+      // Two picked plugins carrying an MCP server of the same name: the creator's choice to
+      // change, answered as the plugin routes answer it — not an internal error.
+      if (err instanceof McpServerNameTakenError) {
+        throw new HttpError(409, "mcp_server_name_taken", err.message);
+      }
       throw err;
     }
     const createdAt = new Date().toISOString();

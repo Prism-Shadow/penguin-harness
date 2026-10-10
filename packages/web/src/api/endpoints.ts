@@ -18,6 +18,7 @@ import type {
   AgentCreateRequest,
   AgentCreateResponse,
   AgentHooksResponse,
+  AgentMcpServersResponse,
   AgentImportRequest,
   AgentImportResponse,
   AgentKernelUpdateResponse,
@@ -1681,6 +1682,20 @@ export const getAgentSkills = (projectId: string, agentId: string) =>
 export const getAgentHooks = (projectId: string, agentId: string) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/hooks`,
+  );
+
+/** The Agent's MCP servers in config order: target, the plugin that installed each, the vault keys still missing and whether a sign-in is needed (never a value). */
+export const getAgentMcpServers = (projectId: string, agentId: string) =>
+  apiFetch<AgentMcpServersResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/mcp-servers`,
+  );
+
+/** Removes one MCP server entry from the Agent, whoever added it; 204, 404 unknown_mcp_server when it is not there. */
+export const uninstallAgentMcpServer = (projectId: string, agentId: string, name: string) =>
+  apiFetch<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/mcp-servers/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
   );
 
 /** Uninstalls one hook package (deletes agent_state/hooks/<name>/ whole); 204, 404 not_found when it is not installed. */

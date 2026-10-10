@@ -1295,8 +1295,11 @@ export const zh = {
     createPlugins: "插件",
     createPluginsPlaceholder: "未选择插件",
     createPluginsPicked: (n: number): string => `已选 ${n} 个插件`,
-    createPluginsHint: "创建时安装到该 Agent（技能与钩子包），之后可在其「技能」「钩子」标签页增删",
+    createPluginsHint:
+      "创建时安装到该 Agent（技能、钩子包与 MCP 服务器），之后可在其「技能」「钩子」「工具」标签页增删",
     createPluginsEmpty: "插件库暂无可安装的插件",
+    /** The confirmation a picked plugin's stdio MCP server asks for before the Agent is created: the question; the commands follow it. */
+    createStdioQuestion: (agent: string): string => `创建 ${agent}？`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
     createSkillsPlaceholder: "未选择技能",
     createSkillsPicked: (n: number): string => `已选 ${n} 个技能`,
@@ -1480,12 +1483,14 @@ export const zh = {
     mcpArgs: "args",
     mcpArgsHint: "每行一个参数",
     mcpEnv: "env",
-    mcpEnvHint: "每行一条 KEY=value；Agent vault 不注入 MCP Server 进程",
+    mcpEnvHint:
+      "每行一条 KEY=value；值中的 ${KEY} 在连接时取自该 Agent 的密钥保险柜，保险柜的其余内容不注入 MCP Server 进程",
     mcpCwd: "cwd",
     mcpCwdHint: "留空则使用本次 Session 的 Workspace",
     mcpUrl: "url",
     mcpHeaders: "headers",
-    mcpHeadersHint: "每行一条 Header-Name: value（如 Authorization 等认证头）",
+    mcpHeadersHint:
+      "每行一条 Header-Name: value（如 Authorization 等认证头）；值中的 ${KEY} 在连接时取自该 Agent 的密钥保险柜",
     mcpPermission: "permission",
     mcpPermissionAuto: "auto",
     mcpPermissionAutoLabel: "Auto（readOnlyHint）",
@@ -1506,6 +1511,8 @@ export const zh = {
     mcpNumberInvalid: "必须是 > 0 的整数",
     mcpDuplicateName: "同名 Server 已存在",
     mcpTest: "测试连接",
+    /** The MCP table header's button: tests every server in turn (a single one is tested from its edit dialog). */
+    mcpTestAll: "全部测试",
     mcpTesting: "测试中…",
     mcpTestOk: (toolCount: number, latencyMs?: number): string => {
       const timing = latencyMs !== undefined ? `（${(latencyMs / 1000).toFixed(1)}s）` : "";
@@ -1524,6 +1531,11 @@ export const zh = {
     mcpDeleteTitle: "删除 MCP Server",
     mcpDeleteConfirm: (name: string): string =>
       `确认删除 MCP Server「${name}」？其工具自下次 Session 起不再可用。`,
+    /** A server a plugin installed: its row's mark, the edit dialog's line, and its removal's reminder. */
+    mcpInstalledBy: (plugin: string): string => `由插件 ${plugin} 安装`,
+    mcpFromPlugin: (plugin: string): string => `来自插件 ${plugin}：重新安装该插件会覆盖此条目。`,
+    mcpRemoveFromPlugin: (plugin: string): string =>
+      `它由插件 ${plugin} 安装，可在插件页的「管理安装」中重新装回。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
     /** An Agent whose state directory is on a machine: what this server cannot act on, and where it can be. */
@@ -2442,7 +2454,7 @@ export const zh = {
       none: "不分组",
     },
     /** What a plugin carries: the section titles of the grouping by content. */
-    kindLabel: { skills: "技能", hooks: "钩子", modules: "服务端模块" },
+    kindLabel: { skills: "技能", hooks: "钩子", mcp: "MCP 服务器", modules: "服务端模块" },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent 运行沙箱",
     otherCategory: "其他",
@@ -2470,6 +2482,8 @@ export const zh = {
     noMatch: "没有匹配的插件。",
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
+    /** In place of the description of a package that carries none. */
+    noDescription: "暂无描述",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
     libraryBuiltinHint: "随本次构建自带；安装到 Agent 即可在那里使用。",
     /** Plugin count in the group header (small text to the right of the category name). */
@@ -2481,6 +2495,11 @@ export const zh = {
     detailFiles: "文件",
     detailSkills: "技能",
     detailHooks: "钩子",
+    /** The detail dialog's section of the MCP servers a plugin installs into an Agent's tools. */
+    detailMcpServers: "MCP 服务器",
+    /** The detail dialog's links to the package's homepage and repository: their names and hover hints. */
+    detailHomepage: "主页",
+    detailRepository: "代码仓库",
     /** In place of the README of a package that is not on this server. */
     readmeAfterInstall: "安装后可查看 README",
     /** The tag of a plugin an admin installed on this server (not shipped with the build). */
@@ -2514,14 +2533,18 @@ export const zh = {
     importLinkLabel: "链接",
     importLinkPlaceholder: "https://github.com/… 或 github:owner/repo",
     importLinkInvalid: "不是 https 链接；包名请在「从 npm 安装」中填写，其他来源请让 Agent 安装。",
+    /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
+    importLinkSubpath: "这是仓库中的文件夹或文件，npm 无法直接安装：请让 Agent 把它转成插件包。",
+    importLinkAskAgent: "改为让 Agent 安装",
     importCost:
       "插件带有服务端模块时，安装会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
     importScriptsRun: "这个包的安装脚本会以服务端用户的身份在服务器上运行。",
     importAgentWhy:
-      "适合网页、仓库或一段描述：Agent 先找到并审阅插件包，再用 penguin plugin install 安装。",
+      "适合网页、仓库、仓库中的文件夹，或 Codex / Claude Code 插件（连同其 Skill 与 MCP 服务器）：Agent 先审阅它——不是 PenguinHarness 插件包时先转成插件包——再用 penguin plugin install 安装。",
     importSourceLabel: "插件来源",
-    importSourcePlaceholder: "链接、本地路径或一段描述",
+    importSourcePlaceholder:
+      "链接（如 https://github.com/owner/repo/tree/main/plugins/name）、本地路径或一段描述",
     importSourceToken: "<插件来源>",
     importPromptLabel: "发送给 Agent 的 Prompt",
     /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
@@ -2533,7 +2556,7 @@ export const zh = {
         `找到下面描述的 PenguinHarness 插件并安装到本服务端：${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `插件是在服务端运行的 npm 包：安装前先读完它的 package.json、plugin.json 和随附的全部脚本，说明它做什么、会运行什么；它不是 PenguinHarness 插件（plugin.json 旁有 skills/ 或 hooks/，或带服务端模块的 ifaces.json），或其中有任何可疑之处时，停下来告诉我。确认无误后运行 \`penguin plugin install <npm 包名或 https 链接> --project-id ${projectId}\` 安装，并报告装上的包名和版本。来源是本地文件夹时不要安装：把它打成 zip（不含 node_modules），告诉我 zip 的位置，由我在「上传 zip 包」中上传。`,
+      `PenguinHarness 插件是一个 npm 包：package.json（name、version、description，以及插件卡片读取的 \`penguin\` 块，其中 \`penguin.mcp_servers\` 声明插件的 MCP 服务器）旁边是 \`skills/<name>/SKILL.md\` 和／或 \`hooks/\`。无论来源是什么，安装前先读完它的 package.json 和随附的全部脚本，说明它做什么、会运行什么；有任何可疑之处就停下来告诉我。来源本身已是这样的包时——在 npm 上、在指向 git 仓库或 tarball 的 https 链接处，或在本地文件夹中——用 \`penguin plugin install <npm 包名、https 链接或文件夹> --project-id ${projectId}\` 安装。来源是其他形态时——GitHub 仓库中的文件夹或文件、Codex（\`.codex-plugin\`）或 Claude Code（\`.claude-plugin\`）插件、Skill 仓库——先读 \`plugin-porting\` Skill 并照做：在固定的 commit 上获取来源，在临时文件夹中构建插件包并审阅，再以同样的方式安装该文件夹。插件的 MCP 服务器（\`.mcp.json\` 或 \`mcpServers\` 映射）是插件的一部分：把它们转成 \`penguin.mcp_servers\` 带入，包内绝不写入任何密钥值。最后报告装上的包名和版本、包含的 Skill 与 MCP 服务器、我需要为这些服务器在密钥保险柜中设置的键，以及你舍弃了哪些内容。`,
     importUploadDesc:
       "插件包目录的 zip：package.json 在根目录或唯一的顶层目录内，不含 node_modules，例如另一台服务端「导出」的文件。只上传你信任的来源。",
     importUploadAction: "选择 zip 文件",
@@ -2564,8 +2587,33 @@ export const zh = {
       `已将 ${plugin} 更新到最新版（${n} 个 Agent）`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
-    uninstallConfirmBody: (plugin: string, agent: string): string =>
-      `确定从 ${agent} 卸载 ${plugin} 吗？其已安装的技能与钩子文件（含本地改动）将被删除。`,
+    uninstallConfirmBody: (plugin: string, agent: string, withMcp: boolean): string =>
+      `确定从 ${agent} 卸载 ${plugin} 吗？其已安装的技能与钩子文件（含本地改动）${withMcp ? "以及它的 MCP 服务器" : ""}将被删除。`,
+    /** An MCP server's marks (the detail dialog, Manage installs): icons whose hover sentence says what stands between the server and its tools. */
+    mcpNeedsSetup: (keys: string[]): string => `待设置：${keys.join("、")}`,
+    /** Appended to the needs-setup sentence: where the values go, and who may write them. */
+    mcpSetUpWhere: "在「密钥保险柜」中填写",
+    mcpSetUpByOwner: "由 Project owner 填写",
+    mcpSignIn: "需要 OAuth 登录——当前版本尚不支持",
+    mcpRunsCommand: (command: string): string => `Agent 会话开始时在本服务器上运行 ${command}`,
+    /** The confirm before installing a plugin with a stdio server (any member): the command the server will run. */
+    installStdioTitle: (plugin: string, agent: string): string => `将 ${plugin} 安装到 ${agent}？`,
+    installStdioBody: (server: string, command: string): string =>
+      `它的 MCP 服务器 ${server} 会在该 Agent 每次开始会话时，在本服务器上运行 ${command}。`,
+    /** The Set up form (Project owner): the vault values a plugin's MCP servers wait for. */
+    setUp: "设置",
+    setUpTitle: (plugin: string, agent: string): string => `为 ${agent} 设置 ${plugin}`,
+    setUpDesc: "填写的值存入该 Agent 的密钥保险柜，MCP 服务器连接时读取。",
+    /** A key the vault already holds: the server receives that value, so it is named, not asked for. */
+    setUpKeySet: "已设置",
+    setUpKeySetHint: "密钥保险柜中已有这个值，MCP 服务器会收到它",
+    setUpHelpLink: "去哪里获取",
+    /** An update's parts: an MCP server entry is rewritten whole (it carries no version). */
+    updatePartMcp: "MCP 服务器",
+    updatePartReplaced: "替换",
+    /** The import dialog: what a plugin's MCP server is, said once under every tab. */
+    importMcpNote:
+      "插件可能带有 MCP 服务器：stdio 服务器是 Agent 会话开始时在本服务器上运行的命令，远程服务器是本服务器会去连接的地址。",
   },
 
   /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
@@ -3495,16 +3543,22 @@ Benchmark：
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
     mcpConnectTitle: "MCP 连接",
     mcpServerList: (servers: string[]): string => servers.join("、"),
-    /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
-    mcpConnectResult: (toolCount: number, failed: string[]): string => {
+    /** One-line result detail: tool count, plus the NAMES of failed servers and of servers waiting on the user for a vault value or a sign-in (reasons live in the expanded server groups). */
+    mcpConnectResult: (toolCount: number, failed: string[], waiting: string[]): string => {
       const parts: string[] = [];
-      if (toolCount > 0 || failed.length === 0) parts.push(`发现 ${toolCount} 个工具`);
+      if (toolCount > 0 || (failed.length === 0 && waiting.length === 0)) {
+        parts.push(`发现 ${toolCount} 个工具`);
+      }
       if (failed.length > 0) parts.push(`不可用：${failed.join("、")}`);
+      if (waiting.length > 0) parts.push(`待设置：${waiting.join("、")}`);
       return parts.join("；");
     },
     /** Per-server group row meta inside the expanded connect row. */
     mcpToolsCount: (n: number): string => `${n} 个工具`,
     mcpServerFailed: "连接失败",
+    /** A server that was not contacted: the vault lacks a key it needs, or it needs an OAuth sign-in. */
+    mcpServerNeedsSetup: "待设置",
+    mcpServerSignIn: "需要登录",
     mcpConnectAborted: "已中断，下次发送时重新连接",
     /** The bare mode word — the Trace view's round badge, the failed row's title, and the stem of the two state titles below — so a `discard` is never announced as compaction: it clears the context rather than compacting it. */
     compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),

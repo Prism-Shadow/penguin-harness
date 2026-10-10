@@ -4,31 +4,36 @@
  *
  * A plugin is its own npm package (`@penguinharness/<name>`, `plugins/<name>/` in the repo;
  * resolved through Node from the host package's dependency list — see pluginRoots): a
- * directory carrying a `plugin.json` manifest, an `icon.svg` beside it (every built-in plugin
- * ships one; it is the icon of everything the plugin ships), and any of two kinds of content:
- * skills (`skills/<name>/SKILL.md`, installed into an Agent's `agent_state/skills/`) and a
- * hook package (`hooks/*.mjs`, installed into `agent_state/hooks/<plugin>/` together with a
- * generated `hooks.json`). The files are the runtime source of truth — read and parsed on
- * every call, no caching (files are small, calls are infrequent) — so editing a file takes
- * effect immediately. They are committed content reached through declared dependencies, so
- * anything that fails to load is a broken install or a broken plugin and throws with the
- * path — never a silently smaller library. Only the category manifest (id and titles) is
+ * directory whose `package.json` is its manifest (npm's own fields plus a `penguin` block — see
+ * manifest.ts), an icon (`icon.svg` at the package root unless `penguin.icon` names another;
+ * every built-in plugin ships one, and it is the icon of everything the plugin ships), and any
+ * of three kinds of content: skills (`skills/<name>/SKILL.md`, installed into an Agent's
+ * `agent_state/skills/`), a hook package (`hooks/*.mjs`, installed into
+ * `agent_state/hooks/<plugin>/` together with a generated `hooks.json`) and MCP servers
+ * (`penguin.mcp_servers`, merged into the Agent's `tools.mcpServers`). The files are the
+ * runtime source of truth — read and parsed on every call, no caching (files are small, calls
+ * are infrequent) — so editing a file takes effect immediately. The shipped plugins are
+ * committed content reached through declared dependencies, so one that fails to load — or
+ * whose manifest reads with a warning — is a broken install or a broken plugin and throws with
+ * the path, never a silently smaller library. Only the category manifest (id and titles) is
  * code; install / uninstall / scan live in core's state layer.
  *
- * A plugin's version is its npm version: the `version` of the `package.json` beside
- * `plugin.json`, which follows the release. Dated versions, `YYYY.MM.DD.N` (see
- * PLUGIN_VERSION_PATTERN, parsePluginVersion and comparePluginVersions), belong to what an Agent
- * may edit locally once installed: each skill carries its own in its SKILL.md frontmatter, and a
- * hook package carries `plugin.json`'s `hooks.version`, which the installer writes into
- * hooks.json. A `version` left in plugin.json is ignored. plugin.json holds the rest of the
- * metadata: a library SKILL.md's frontmatter carries `name`, `description` and `version`, and the
- * loader stamps the plugin's UI short descriptions into each skill's metadata and installable
- * content (the installed copy carries the full frontmatter, generated — the way hooks.json is).
+ * A plugin's version is its npm version, the `version` of its package.json, which follows the
+ * release. Dated versions, `YYYY.MM.DD.N` (see PLUGIN_VERSION_PATTERN, parsePluginVersion and
+ * comparePluginVersions), belong to what an Agent may edit locally once installed: each skill
+ * carries its own in its SKILL.md frontmatter, and a hook package carries
+ * `penguin.hooks.version`, which the installer writes into hooks.json. The `penguin` block holds
+ * the rest of the metadata: a library SKILL.md's frontmatter carries `name`, `description` and
+ * `version`, and the loader stamps the plugin's UI short descriptions into each skill's metadata
+ * and installable content (the installed copy carries the full frontmatter, generated — the way
+ * hooks.json is).
  *
  * Besides the packages this build ships, the library lists what the operator installed on the
  * server: the packages of the data root's plugin prefix (see useInstalledPluginPrefix) that carry
- * a plugin.json beside skills or a hook package. Those are the operator's, not the build's, so
- * one that will not read is left out with a warning instead of failing the library.
+ * skills, a hook package or MCP servers beside their package.json. Those are the operator's, not the
+ * build's, so they are read leniently: one that will not read is left out with a warning
+ * instead of failing the library, a field that will not read is missing with a warning, and a
+ * skill without a dated version reads as unversioned.
  *
  * Docs: packages/docs/content/skills.{zh,en}.md (site path /docs/skills) documents the plugin
  * format, the versions and the built-in library.
@@ -37,8 +42,19 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import {
+  PLUGIN_NAME_PATTERN,
+  PLUGIN_VERSION_PATTERN,
+  readPluginIcon,
+  readPluginPackage,
+  unscopedPackageName,
+} from "./manifest.js";
+import type { HookCommand, PluginMcpServer, QuickStart, UserPromptTrigger } from "./manifest.js";
+import { collectVaultRefs, resolveMCPServer } from "../environment/mcp/config.js";
 
-/** A skill's metadata. A library SKILL.md's frontmatter carries `name`, `description` and the skill's own `version`; the short descriptions are stamped from plugin.json by the loader (installed copies then carry the full generated frontmatter, which is what the installed-side readers parse). */
+export * from "./manifest.js";
+
+/** A skill's metadata. A library SKILL.md's frontmatter carries `name`, `description` and the skill's own `version`; the short descriptions are stamped from the package's `penguin` block by the loader (installed copies then carry the full generated frontmatter, which is what the installed-side readers parse). */
 export interface SkillMetadata {
   /** Skill name (matches its containing directory name). */
   name: string;
@@ -62,39 +78,25 @@ export interface LibrarySkill extends SkillMetadata {
    * POSIX-relative path within the skill directory; every entry except the top-level SKILL.md
    * (its own field) and a top-level icon.svg (reserved: the plugin's icon is what installs
    * there). Written alongside SKILL.md on install (subdirectories preserved). Read as UTF-8
-   * text — library content is committed text; the field is omitted when a skill has no extra
-   * files.
+   * text: a file that is not valid UTF-8 (an image) is left out, never installed garbled. The
+   * field is omitted when a skill has no extra files.
    */
   files?: Record<string, string>;
 }
 
 /**
- * When a `user_prompt` command runs: `prompt` on every Prompt the user submits, `host` only
- * when the host starts the package's flow by name (`Session.runUserPromptHook` — goal mode's
- * start). Meaningless at the other hook points.
- */
-export type UserPromptTrigger = "prompt" | "host";
-
-/** One hook script entry: `command` is a path relative to the plugin's `hooks/` directory, run with Node; `timeout` in seconds (core's default applies when absent); `trigger` says when a `user_prompt` command runs (see {@link userPromptTrigger} for the default). */
-export interface HookCommand {
-  command: string;
-  timeout?: number;
-  trigger?: UserPromptTrigger;
-}
-
-/**
  * The manifest an installed hook package carries (`agent_state/hooks/<plugin>/hooks.json`),
- * generated by the installer from plugin.json: identity and display fields plus one script
- * list per hook point (`stop`, `pre_tool_use`, `user_prompt`). Whether a Session runs hooks
- * at all is an Agent-level decision (`hooks.enabled` in system_config.yaml), not a per-package
- * one. The plugin's icon is not part of it: the installer writes `icon.svg` beside the
- * manifest instead. Unknown keys are ignored rather than rejected.
+ * generated by the installer from package.json's `penguin.hooks`: identity and display fields
+ * plus one script list per hook point (`stop`, `pre_tool_use`, `user_prompt`). Whether a
+ * Session runs hooks at all is an Agent-level decision (`hooks.enabled` in system_config.yaml),
+ * not a per-package one. The plugin's icon is not part of it: the installer writes `icon.svg`
+ * beside the manifest instead. Unknown keys are ignored rather than rejected.
  */
 export interface HookManifest {
   name: string;
   description: string;
   description_zh?: string;
-  /** The package's own version, `YYYY.MM.DD.N` — a library plugin's `hooks.version` (an installed copy may carry the legacy `YYYY-MM-DD.N`, a hand-written one anything). */
+  /** The package's own version, `YYYY.MM.DD.N` — a library plugin's `penguin.hooks.version` (an installed copy may carry the legacy `YYYY-MM-DD.N`, a hand-written one anything). */
   version: string;
   /** Stop commands, consulted after every Task of a run. */
   stop: HookCommand[];
@@ -110,19 +112,6 @@ export interface LibraryHooks {
   files: Record<string, string>;
 }
 
-/**
- * A plugin's quick start (plugin.json `quick_start`): the demo a person runs to see what the
- * plugin does — a prompt the Plugins page pre-fills into a new-chat draft, never sends.
- */
-export interface QuickStart {
-  prompt: string;
-  promptZh?: string;
-  /** Skills of this plugin to pre-select in the draft. */
-  skills?: string[];
-  /** Open the draft in goal mode (the prompt is the objective). */
-  goal?: boolean;
-}
-
 /** A plugin in the library: the manifest fields plus the content it ships. */
 export interface LibraryPlugin {
   /** Plugin name: its package name without the scope (`a2ui` for `@penguinharness/a2ui`). */
@@ -131,28 +120,38 @@ export interface LibraryPlugin {
   packageName: string;
   /** `installed` for a package the operator installed on the server (see useInstalledPluginPrefix); absent for one this build ships. */
   source?: "installed";
-  /** English one-line description (plugin.json `description`). */
+  /** Display name (`penguin.title`, optional); the UI shows the plugin name without it. */
+  title?: string;
+  titleZh?: string;
+  /** English one-line description (package.json `description`); "" when the package carries none — every shipped plugin does. */
   description: string;
-  /** Chinese description (plugin.json `description_zh`, optional). */
+  /** Chinese description (`penguin.description_zh`, optional). */
   descriptionZh?: string;
-  /** UI short descriptions (plugin.json `short_description(_zh)`, optional). */
+  /** UI short descriptions (`penguin.short_description(_zh)`, optional). */
   shortDescription?: string;
   shortDescriptionZh?: string;
   /**
-   * The plugin's npm version: `package.json`'s `version`, beside plugin.json (it follows the
-   * release). What an installed copy is compared against is not this but the dated version of
-   * each part — every skill's, and the hook package's (see pluginContentVersion).
+   * The plugin's npm version: `package.json`'s `version` (it follows the release). What an
+   * installed copy is compared against is not this but the dated version of each part — every
+   * skill's, and the hook package's (see pluginContentVersion).
    */
   version: string;
-  /** Category id (see PLUGIN_CATEGORIES); absent or unknown → the "other" group. */
+  /** Category id (`penguin.category`, see PLUGIN_CATEGORIES); absent or unknown → the "other" group. */
   category?: string;
-  /** Whether default_agent gets this plugin at creation (plugin.json `preinstall`, default true; always false for an installed package — the operator chose it for the server, not for every new Project). */
+  /** Whether default_agent gets this plugin at creation (`penguin.preinstall`, default true; always false for an installed package — the operator chose it for the server, not for every new Project). */
   preinstall: boolean;
-  /** Raw `icon.svg` beside plugin.json — every built-in plugin ships one. It is the icon of everything the plugin ships: stamped onto each skill and written beside an installed hook package. */
+  /** The package's npm `author`, `homepage`, `repository` URL and `license`, for the detail dialog (each optional). */
+  author?: string;
+  homepage?: string;
+  repository?: string;
+  license?: string;
+  /** Raw SVG of the plugin's icon (see readPluginIcon) — every built-in plugin ships one. It is the icon of everything the plugin ships: stamped onto each skill and written beside an installed hook package. */
   icon?: string;
   skills: LibrarySkill[];
   hooks?: LibraryHooks;
-  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`, optional). */
+  /** The MCP servers the plugin contributes (`penguin.mcp_servers`), each with its full list of setup keys; [] when none. */
+  mcpServers: PluginMcpServer[];
+  /** The demo the Plugins page's quick start pre-fills (`penguin.quick_start`, optional). */
   quickStart?: QuickStart;
 }
 
@@ -167,12 +166,6 @@ export interface PluginCategory {
 export interface ResolvedPluginGroup extends PluginCategory {
   plugins: LibraryPlugin[];
 }
-
-/** Character rule for plugin, skill and hook names (directory names): prevents path traversal (exported for the server's archive-install validation). */
-export const PLUGIN_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
-
-/** Dated version format: a dotted date and a sequence number, e.g. `2026.08.29.1`. What every library skill and hook package must carry. */
-export const PLUGIN_VERSION_PATTERN = /^\d{4}\.\d{2}\.\d{2}\.\d+$/;
 
 /** The spelling used before this format, `2026-08-29.1`: still read wherever an installed copy carries it (see parsePluginVersion). */
 const LEGACY_PLUGIN_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
@@ -515,21 +508,55 @@ export function useInstalledPluginPrefix(dir: string | null): void {
   installedPrefix = dir;
 }
 
-/**
- * Whether a package directory is a library plugin: a plugin.json beside skills or a hook
- * package. A package of server modules carries a plugin.json too, for its card, and is not one —
- * it has nothing to install into an Agent.
- */
-export function isLibraryPackage(dir: string): boolean {
-  return (
-    fs.existsSync(path.join(dir, "plugin.json")) &&
-    (fs.existsSync(path.join(dir, "skills")) || fs.existsSync(path.join(dir, "hooks")))
-  );
+/** What a package carries that installs into an Agent: skills, a hook package, MCP servers. */
+export interface LibraryParts {
+  skills: boolean;
+  hooks: boolean;
+  mcp: boolean;
 }
 
-/** The plugin name a package is listed under: its name without the scope. */
-function unscoped(packageName: string): string {
-  return packageName.slice(packageName.lastIndexOf("/") + 1);
+/** Whether a parsed package.json declares MCP servers: a non-empty `penguin.mcp_servers` list. */
+export function declaresMcpServers(manifest: unknown): boolean {
+  const block =
+    manifest !== null && typeof manifest === "object"
+      ? (manifest as { penguin?: unknown }).penguin
+      : undefined;
+  const servers =
+    block !== null && typeof block === "object"
+      ? (block as { mcp_servers?: unknown }).mcp_servers
+      : undefined;
+  return Array.isArray(servers) && servers.length > 0;
+}
+
+/**
+ * What a package directory carries for an Agent — `skills/`, `hooks/`, MCP servers its
+ * package.json declares (read once; a package.json that will not read declares none). The one
+ * rule every surface decides "is this a library plugin" by: the loader, the server's upload and
+ * install checks, the CLI.
+ */
+export function libraryParts(dir: string): LibraryParts {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+  } catch {
+    manifest = undefined;
+  }
+  return {
+    skills: fs.existsSync(path.join(dir, "skills")),
+    hooks: fs.existsSync(path.join(dir, "hooks")),
+    mcp: declaresMcpServers(manifest),
+  };
+}
+
+/**
+ * Whether a package directory is a library plugin: skills, a hook package or MCP servers beside
+ * its package.json. A package of server modules alone is not one — it has nothing to install
+ * into an Agent.
+ */
+export function isLibraryPackage(dir: string): boolean {
+  if (!fs.existsSync(path.join(dir, "package.json"))) return false;
+  const parts = libraryParts(dir);
+  return parts.skills || parts.hooks || parts.mcp;
 }
 
 /**
@@ -550,7 +577,7 @@ function installedPluginRoots(shipped: ReadonlyMap<string, LibraryRoot>): Map<st
     return roots;
   }
   for (const packageName of Object.keys(deps).sort()) {
-    const name = unscoped(packageName);
+    const name = unscopedPackageName(packageName);
     if (!PLUGIN_NAME_PATTERN.test(name) || shipped.has(name) || roots.has(name)) continue;
     const dir = path.join(installedPrefix, "node_modules", ...packageName.split("/"));
     if (!isLibraryPackage(dir)) continue;
@@ -565,13 +592,26 @@ function libraryRoots(): Map<string, LibraryRoot> {
   return new Map([...shipped, ...installedPluginRoots(shipped)]);
 }
 
+/**
+ * What has been said about installed packages, so a listing — read on every request — says each
+ * thing once per process rather than on every page load.
+ */
+const warned = new Set<string>();
+
+/** console.warn, once per distinct message. */
+function warnOnce(message: string): void {
+  if (warned.has(message)) return;
+  warned.add(message);
+  console.warn(message);
+}
+
 /** Reads one root: a shipped plugin that will not read throws; an installed one is left out (null) with a warning. */
 function readRoot(name: string, root: LibraryRoot): LibraryPlugin | null {
   if (!root.installed) return readPluginDir(name, root);
   try {
     return readPluginDir(name, root);
   } catch (err) {
-    console.warn(
+    warnOnce(
       `[plugins] ${root.packageName} is installed but not listed: ${err instanceof Error ? err.message : String(err)}`,
     );
     return null;
@@ -579,11 +619,30 @@ function readRoot(name: string, root: LibraryRoot): LibraryPlugin | null {
 }
 
 /**
+ * Decodes bytes as UTF-8, or null when they are not valid UTF-8 (an image, an archive). A
+ * byte-order mark stays in the text (`ignoreBOM`), so a text file installs byte for byte.
+ */
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+function utf8Text(bytes: Uint8Array): string | null {
+  try {
+    return strictUtf8.decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Recursively collects a directory's files as text keyed by POSIX-relative path, skipping the
- * names in `except` at the top level. Symlinks and other non-regular entries are skipped.
+ * names in `except` at the top level. Symlinks and other non-regular entries are skipped, and so
+ * is a file that is not valid UTF-8 — what installs is text, and a binary file read as text
+ * would install garbled; each one left out is pushed to `skipped` (the path under `dir`).
  * Returns undefined when the directory has no such files.
  */
-function readDirFiles(dir: string, except: readonly string[]): Record<string, string> | undefined {
+function readDirFiles(
+  dir: string,
+  except: readonly string[],
+  skipped: string[],
+): Record<string, string> | undefined {
   const files: Record<string, string> = {};
   const walk = (abs: string, rel: string): void => {
     for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
@@ -592,7 +651,9 @@ function readDirFiles(dir: string, except: readonly string[]): Record<string, st
         walk(path.join(abs, entry.name), childRel);
       } else if (entry.isFile()) {
         if (rel === "" && except.includes(entry.name)) continue;
-        files[childRel] = fs.readFileSync(path.join(abs, entry.name), "utf8");
+        const text = utf8Text(fs.readFileSync(path.join(abs, entry.name)));
+        if (text === null) skipped.push(childRel);
+        else files[childRel] = text;
       }
     }
   };
@@ -603,27 +664,32 @@ function readDirFiles(dir: string, except: readonly string[]): Record<string, st
 /**
  * Reads one skill directory: name from the directory (overriding frontmatter), SKILL.md verbatim,
  * and every other file as auxiliary content. The icon is not read here: a skill has none of
- * its own, and stampSkill gives it the plugin's. A library skill must carry its own dated
- * `version` in the current spelling — it is what an installed copy is compared against.
+ * its own, and stampSkill gives it the plugin's. A shipped skill must carry its own dated
+ * `version` in the current spelling — it is what an installed copy is compared against; an
+ * installed package's skill without one reads as unversioned (""), older than any real version
+ * and never flagged behind.
  */
-function readSkillDir(dir: string, name: string): LibrarySkill {
+function readSkillDir(dir: string, name: string, strict: boolean, skipped: string[]): LibrarySkill {
   const file = path.join(dir, "SKILL.md");
   const content = fs.readFileSync(file, "utf8");
   const meta = parseSkillFrontmatter(content);
   if (!meta) throw new Error(`Library skill ${file} has no frontmatter with a name`);
-  if (!PLUGIN_VERSION_PATTERN.test(meta.version)) {
+  if (strict && !PLUGIN_VERSION_PATTERN.test(meta.version)) {
     throw new Error(`Library skill ${file}: version must be YYYY.MM.DD.N`);
   }
-  const files = readDirFiles(dir, ["SKILL.md", "icon.svg"]);
+  const auxiliary: string[] = [];
+  const files = readDirFiles(dir, ["SKILL.md", "icon.svg"], auxiliary);
+  skipped.push(...auxiliary.map((rel) => `skills/${name}/${rel}`));
   return { ...meta, name, content, ...(files !== undefined ? { files } : {}) };
 }
 
 /**
  * Resolves a library skill against its plugin: the plugin's UI short descriptions are the
  * skill's, its icon becomes the skill's, and the installable `content` gets the full frontmatter
- * regenerated in canonical field order, carrying the skill's own `version` — the installed copy
- * is self-describing (update checks read its `version`, the UI its short descriptions and icon)
- * the same way an installed hook package's hooks.json is generated.
+ * regenerated in canonical field order, carrying the skill's own `version` (none for an
+ * unversioned one) — the installed copy is self-describing (update checks read its `version`,
+ * the UI its short descriptions and icon) the same way an installed hook package's hooks.json is
+ * generated.
  */
 function stampSkill(
   skill: LibrarySkill,
@@ -640,10 +706,10 @@ function stampSkill(
     `description: ${skill.description}`,
     ...(shortDescription !== undefined ? [`short_description: ${shortDescription}`] : []),
     ...(shortDescriptionZh !== undefined ? [`short_description_zh: ${shortDescriptionZh}`] : []),
-    `version: ${skill.version}`,
+    ...(skill.version !== "" ? [`version: ${skill.version}`] : []),
     "---",
   ].join("\n");
-  const body = skill.content.replace(/^\ufeff?---\r?\n[\s\S]*?\r?\n---/, "");
+  const body = skill.content.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---/, "");
   return {
     ...skill,
     ...(shortDescription !== undefined ? { shortDescription } : {}),
@@ -654,102 +720,103 @@ function stampSkill(
 }
 
 /**
- * The plugin.json shape: the plugin's metadata besides its version (see the module header). A
- * top-level `version`, which manifests carried before the npm version became the plugin's, is
- * ignored rather than refused, so a plugin written for an older harness still loads.
+ * Reads one plugin directory: its package.json (parsePluginPackage), its skills, its icon and
+ * its hook package. What the manifest reader warns about, the loader adds to: `hooks/` without a
+ * dated `penguin.hooks.version` (no hook package is listed), `penguin.hooks` without `hooks/`, a
+ * quick start naming skills the package does not ship (those names are dropped), an icon that
+ * will not do, a skill directory whose name is not a skill name (left out), a file left out of a
+ * skill for not being text, an MCP server whose config the server resolver refuses (left out;
+ * its references are checked as written, so one in the server's address is a fault), a setup key
+ * its server's config never references (dropped). A shipped plugin must read clean,
+ * so for one of those any warning throws; an installed package lists with the field missing,
+ * and the warning goes to the log.
  */
-interface PluginManifestFile {
-  description: string;
-  description_zh?: string;
-  short_description?: string;
-  short_description_zh?: string;
-  category?: string;
-  /** Default true. */
-  preinstall?: boolean;
-  quick_start?: { prompt?: unknown; prompt_zh?: unknown; skills?: unknown; goal?: unknown };
-  /** The hook package: its dated version and one command list per hook point it answers at. */
-  hooks?: {
-    /** `YYYY.MM.DD.N`, required when the plugin ships `hooks/`; the installer writes it into hooks.json. */
-    version?: string;
-    stop?: HookCommand[];
-    pre_tool_use?: HookCommand[];
-    user_prompt?: HookCommand[];
-  };
-}
-
-/** The `version` of the plugin's own npm manifest, the `package.json` beside plugin.json. */
-function readPackageVersion(dir: string): string {
-  const file = path.join(dir, "package.json");
-  const version = (JSON.parse(fs.readFileSync(file, "utf8")) as { version?: unknown }).version;
-  if (typeof version !== "string" || version === "") {
-    throw new Error(`${file}: the plugin's package carries no version`);
-  }
-  return version;
-}
-
-/** Reads one plugin directory. */
 function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
   const { dir } = root;
-  const manifestFile = path.join(dir, "plugin.json");
-  const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")) as PluginManifestFile;
-  const {
-    description,
-    description_zh: descriptionZh,
-    short_description: shortDescription,
-    short_description_zh: shortDescriptionZh,
-  } = manifest;
-  const version = readPackageVersion(dir);
+  const strict = !root.installed;
+  const { manifest, warnings } = readPluginPackage(dir);
+  const { penguin } = manifest;
+  const skipped: string[] = [];
   const skills: LibrarySkill[] = [];
   const skillsDir = path.join(dir, "skills");
   if (fs.existsSync(skillsDir)) {
     for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
-      if (entry.isDirectory())
-        skills.push(readSkillDir(path.join(skillsDir, entry.name), entry.name));
+      if (!entry.isDirectory()) continue;
+      // An Agent's skill directories follow the plugin name rule: a skill under any other name
+      // could not be installed, and would stop an install of the plugin partway.
+      if (!PLUGIN_NAME_PATTERN.test(entry.name)) {
+        warnings.push(
+          `skills/${entry.name} is not a skill name (letters, digits, "_" and "-"); it is not listed`,
+        );
+        continue;
+      }
+      skills.push(readSkillDir(path.join(skillsDir, entry.name), entry.name, strict, skipped));
     }
     skills.sort((a, b) => a.name.localeCompare(b.name));
   }
-  let icon: string | undefined;
-  try {
-    icon = fs.readFileSync(path.join(dir, "icon.svg"), "utf8");
-  } catch {
-    // Built-in plugins all ship one; a plugin without it falls back to the kind's glyph in the UI.
-  }
+  const { icon, warnings: iconWarnings } = readPluginIcon(dir, penguin.icon);
+  warnings.push(...iconWarnings);
   const hooksDir = path.join(dir, "hooks");
-  const hookFiles = fs.existsSync(hooksDir) ? readDirFiles(hooksDir, []) : undefined;
+  const hookFiles = fs.existsSync(hooksDir) ? readDirFiles(hooksDir, [], skipped) : undefined;
   let hooks: LibraryHooks | undefined;
-  if (hookFiles !== undefined) {
-    // The package's own dated version: what an installed hooks.json is compared against.
-    const hooksVersion = manifest.hooks?.version;
-    if (typeof hooksVersion !== "string" || !PLUGIN_VERSION_PATTERN.test(hooksVersion)) {
-      throw new Error(`${manifestFile}: hooks.version must be YYYY.MM.DD.N, got ${hooksVersion}`);
-    }
+  if (hookFiles !== undefined && penguin.hooks !== undefined) {
     hooks = {
       manifest: {
         name,
-        description,
-        ...(descriptionZh !== undefined ? { description_zh: descriptionZh } : {}),
-        version: hooksVersion,
-        stop: manifest.hooks?.stop ?? [],
-        pre_tool_use: manifest.hooks?.pre_tool_use ?? [],
-        user_prompt: manifest.hooks?.user_prompt ?? [],
+        description: manifest.description,
+        ...(penguin.descriptionZh !== undefined ? { description_zh: penguin.descriptionZh } : {}),
+        // The package's own dated version: what an installed hooks.json is compared against.
+        version: penguin.hooks.version,
+        stop: penguin.hooks.stop,
+        pre_tool_use: penguin.hooks.pre_tool_use,
+        user_prompt: penguin.hooks.user_prompt,
       },
       files: hookFiles,
     };
+  } else if (hookFiles !== undefined) {
+    warnings.push(
+      "hooks/ is present but package.json declares no penguin.hooks.version; the hook package is not listed",
+    );
+  } else if (penguin.hooks !== undefined) {
+    warnings.push("penguin.hooks is declared but the package carries no hooks/; ignored");
   }
-  if (typeof description !== "string" || description.trim() === "") {
-    throw new Error(`${manifestFile}: description must be a non-empty string`);
+  for (const rel of skipped) warnings.push(`${rel} is not a text file; it is not installed`);
+  const mcpServers = readMcpServerEntries(penguin.mcpServers ?? [], warnings);
+  let quickStart = penguin.quickStart;
+  if (quickStart?.skills !== undefined) {
+    const unknown = quickStart.skills.filter((n) => !skills.some((s) => s.name === n));
+    if (unknown.length > 0) {
+      warnings.push(
+        `penguin.quick_start.skills names skills the package does not ship (${unknown.join(", ")}); ignored`,
+      );
+      const { skills: _named, ...rest } = quickStart;
+      const known = quickStart.skills.filter((n) => !unknown.includes(n));
+      quickStart = known.length > 0 ? { ...rest, skills: known } : rest;
+    }
   }
+  if (warnings.length > 0) {
+    const file = path.join(dir, "package.json");
+    if (strict) throw new Error(`${file}: ${warnings.join("; ")}`);
+    for (const warning of warnings) warnOnce(`[plugins] ${root.packageName}: ${warning}`);
+  }
+  const { shortDescription, shortDescriptionZh, descriptionZh } = penguin;
   return {
     name,
     packageName: root.packageName,
     ...(root.installed ? { source: "installed" as const } : {}),
-    description,
+    ...(penguin.title !== undefined ? { title: penguin.title } : {}),
+    ...(penguin.titleZh !== undefined ? { titleZh: penguin.titleZh } : {}),
+    description: manifest.description,
     ...(descriptionZh !== undefined ? { descriptionZh } : {}),
     ...(shortDescription !== undefined ? { shortDescription } : {}),
     ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
-    version,
-    ...(manifest.category !== undefined ? { category: manifest.category } : {}),
-    preinstall: !root.installed && manifest.preinstall !== false,
+    version: manifest.version,
+    ...(penguin.category !== undefined ? { category: penguin.category } : {}),
+    preinstall: !root.installed && penguin.preinstall !== false,
+    ...(manifest.author !== undefined ? { author: manifest.author } : {}),
+    ...(manifest.homepage !== undefined ? { homepage: manifest.homepage } : {}),
+    ...(manifest.repository !== undefined ? { repository: manifest.repository } : {}),
+    ...(manifest.license !== undefined ? { license: manifest.license } : {}),
     ...(icon !== undefined ? { icon } : {}),
     skills: skills.map((skill) =>
       stampSkill(skill, {
@@ -759,50 +826,39 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
       }),
     ),
     ...(hooks !== undefined ? { hooks } : {}),
-    ...(manifest.quick_start !== undefined
-      ? { quickStart: parseQuickStart(manifest.quick_start, skills, manifestFile) }
-      : {}),
+    mcpServers,
+    ...(quickStart !== undefined ? { quickStart } : {}),
   };
 }
 
 /**
- * plugin.json `quick_start`, checked: a prompt is required, and the skills it pre-selects
- * must be this plugin's own — a demo naming a skill the plugin does not ship would open a draft
- * with nothing selected.
+ * A package's MCP servers as the library lists them: each one the server resolver accepts with
+ * its references as written, its setup keys completed with every `${KEY}` its config references
+ * (declared ones first, in their order), a declared key nothing references dropped.
  */
-function parseQuickStart(
-  raw: NonNullable<PluginManifestFile["quick_start"]>,
-  skills: readonly LibrarySkill[],
-  where: string,
-): QuickStart {
-  if (typeof raw.prompt !== "string" || raw.prompt.trim() === "") {
-    throw new Error(`${where}: quick_start.prompt must be a non-empty string`);
-  }
-  if (raw.prompt_zh !== undefined && typeof raw.prompt_zh !== "string") {
-    throw new Error(`${where}: quick_start.prompt_zh must be a string`);
-  }
-  let picked: string[] | undefined;
-  if (raw.skills !== undefined) {
-    if (!Array.isArray(raw.skills) || raw.skills.some((s) => typeof s !== "string")) {
-      throw new Error(`${where}: quick_start.skills must be a list of skill names`);
-    }
-    const unknown = (raw.skills as string[]).filter((n) => !skills.some((s) => s.name === n));
-    if (unknown.length > 0) {
-      throw new Error(
-        `${where}: quick_start.skills names skills the plugin does not ship: ${unknown.join(", ")}`,
+function readMcpServerEntries(declared: PluginMcpServer[], warnings: string[]): PluginMcpServer[] {
+  const servers: PluginMcpServer[] = [];
+  for (const server of declared) {
+    try {
+      resolveMCPServer({ name: server.name, config: server.config });
+    } catch (err) {
+      warnings.push(
+        `penguin.mcp_servers: server "${server.name}": ${err instanceof Error ? err.message : String(err)}; it is not listed`,
       );
+      continue;
     }
-    picked = raw.skills as string[];
+    const refs = collectVaultRefs(server.config);
+    const setup = server.setup.filter((item) => {
+      if (refs.includes(item.key)) return true;
+      warnings.push(
+        `penguin.mcp_servers: server "${server.name}" lists setup key ${item.key}, which its config never references; ignored`,
+      );
+      return false;
+    });
+    for (const key of refs) if (!setup.some((item) => item.key === key)) setup.push({ key });
+    servers.push({ ...server, setup });
   }
-  if (raw.goal !== undefined && typeof raw.goal !== "boolean") {
-    throw new Error(`${where}: quick_start.goal must be a boolean`);
-  }
-  return {
-    prompt: raw.prompt,
-    ...(typeof raw.prompt_zh === "string" ? { promptZh: raw.prompt_zh } : {}),
-    ...(picked !== undefined ? { skills: picked } : {}),
-    ...(raw.goal === true ? { goal: true } : {}),
-  };
+  return servers;
 }
 
 /** Reads every plugin in the library (one per plugin package: the shipped ones, see pluginRoots, and the installed ones, see useInstalledPluginPrefix), sorted by name. */
@@ -833,28 +889,25 @@ export function libraryPluginPackage(
 ): { dir: string; packageName: string; version: string } | undefined {
   const root = libraryRoots().get(name);
   if (root === undefined) return undefined;
-  return { dir: root.dir, packageName: root.packageName, version: readPackageVersion(root.dir) };
+  const { version } = readPluginPackage(root.dir).manifest;
+  return { dir: root.dir, packageName: root.packageName, version };
 }
 
 /**
  * Reads a package directory as the library would read it once installed — the check an
- * uploaded plugin passes before anything is installed. Throws, naming the file, on what the
- * library would refuse: no package.json name, a name that is not a plugin name, a malformed
- * plugin.json, a skill without its dated version, a hook package without `hooks.version`.
+ * uploaded or a local package passes before anything is installed. Throws, naming the file, on
+ * what the library would refuse: a package.json without a valid npm name or a release version
+ * (PluginManifestError), a name whose unscoped part is not a plugin name, a skill without a
+ * SKILL.md frontmatter naming it. Whatever reads with a warning instead (see readPluginDir) is
+ * logged, and the package reads with that field missing.
  */
 export function readLibraryPackage(dir: string): LibraryPlugin {
-  const file = path.join(dir, "package.json");
-  const packageName = (JSON.parse(fs.readFileSync(file, "utf8")) as { name?: unknown }).name;
-  if (typeof packageName !== "string" || packageName === "") {
-    throw new Error(`${file}: the package carries no name`);
-  }
-  const name = unscoped(packageName);
-  if (!PLUGIN_NAME_PATTERN.test(name)) {
-    throw new Error(
-      `${file}: ${JSON.stringify(name)} is not a plugin name (letters, digits, "_" and "-")`,
-    );
-  }
-  return readPluginDir(name, { dir, packageName, installed: true });
+  const { manifest } = readPluginPackage(dir);
+  return readPluginDir(manifest.pluginName, {
+    dir,
+    packageName: manifest.name,
+    installed: true,
+  });
 }
 
 /**

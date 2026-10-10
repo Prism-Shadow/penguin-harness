@@ -1,7 +1,12 @@
 {
   "name": "@penguinharness/use-bento-slides",
   "version": "0.2.13",
-  "description": "Create and edit Bento presentations \u2014 self-contained .bento.html decks whose document is JSON. Use whenever the user wants a slide deck or presentation: from scratch, from source material, or by improving an existing file.",
+  "description": "Create and edit Bento presentations — self-contained .bento.html decks whose document is JSON. Use whenever the user wants a slide deck or presentation: from scratch, from source material, or by improving an existing file.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -9,7 +14,6 @@
     "directory": "plugins/use-bento-slides"
   },
   "files": [
-    "plugin.json",
     "icon.svg",
     "skills",
     "hooks",
@@ -17,5 +21,18 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "penguin": {
+    "short_description": "Author Bento slide decks.",
+    "short_description_zh": "制作 Bento 幻灯片。",
+    "category": "office-productivity",
+    "icon": "icon.svg",
+    "quick_start": {
+      "prompt": "Make a three-slide Bento deck in this Workspace introducing PenguinHarness: a title slide, what it does, and how to get started.",
+      "prompt_zh": "在当前工作区做一份三页的 Bento 幻灯片介绍 PenguinHarness：标题页、它能做什么、如何上手。",
+      "skills": [
+        "bento-slides"
+      ]
+    }
   }
 }

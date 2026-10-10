@@ -306,13 +306,16 @@ export class FakeServer {
   /**
    * The plugins of the server: the server modules the Project lists (GET …/plugins/installed's
    * rows), the library's packages of Skills or hooks installed on the server (GET /api/plugins),
-   * and what POST …/plugins/installed answers for a specifier — npm's refusal unless a test says
-   * otherwise. DELETE drops the name from both lists.
+   * what POST …/plugins/installed answers for a specifier — npm's refusal unless a test says
+   * otherwise — and what POST …/plugins/installed/archive answers for an uploaded zip (its body:
+   * `dataBase64`, `overwrite`) — an install of a library package unless a test says otherwise.
+   * DELETE drops the name from both lists.
    */
   plugins: {
     listed: Json[];
     library: Json[];
     install: (specifier: string) => { status?: number; body: unknown };
+    archive: (body: Json) => { status?: number; body: unknown };
   } = {
     listed: [],
     library: [],
@@ -321,6 +324,10 @@ export class FakeServer {
       body: {
         error: { code: "plugin_install_failed", message: `npm: 404 Not Found - ${specifier}` },
       },
+    }),
+    archive: () => ({
+      status: 201,
+      body: { installed: { name: "@acme/notes", version: "1.0.0", library: true, modules: false } },
     }),
   };
 
@@ -1787,7 +1794,7 @@ export class FakeServer {
         groups: [{ id: "other", title: "Other", plugins: this.plugins.library }],
       });
     }
-    const pluginsMatch = /^\/api\/projects\/([^/]+)\/plugins\/installed$/.exec(apiPath);
+    const pluginsMatch = /^\/api\/projects\/([^/]+)\/plugins\/installed(\/archive)?$/.exec(apiPath);
     if (pluginsMatch) {
       const view = () => ({
         plugins: this.plugins.listed,
@@ -1796,6 +1803,14 @@ export class FakeServer {
         machineId: "Self000000000000",
         restartPending: false,
       });
+      if (pluginsMatch[2] !== undefined) {
+        const answer = this.plugins.archive(body ?? {});
+        const status = answer.status ?? 201;
+        return this.json(
+          status < 300 ? { ...view(), ...(answer.body as Json) } : answer.body,
+          status,
+        );
+      }
       if (method === "POST") {
         const answer = this.plugins.install(String(body?.specifier ?? ""));
         const status = answer.status ?? 200;

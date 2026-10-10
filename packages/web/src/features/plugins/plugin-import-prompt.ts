@@ -2,8 +2,12 @@
  * The Plugins page's import dialog, its pure half (unit tested): which pasted sources the server
  * installs as they are — an npm package name on the npm tab, an https link to a git repository
  * or a tarball on the link tab: the server's two kinds of source (its plugin/source.ts; the
- * server stays the authority) — and the prompt that hands anything else to an Agent, which finds
- * and reviews the package and then installs it with `penguin plugin install`.
+ * server stays the authority) — and the prompt that hands anything else to an Agent. A link to a
+ * folder or a file inside a GitHub repository is not a source the server installs (npm installs
+ * a whole repository or nothing), so it goes to the Agent too. The Agent reviews the source and
+ * installs it with `penguin plugin install`; what is not a PenguinHarness package yet (a
+ * repository folder, a Codex or Claude Code plugin) it first ports into one with the
+ * `plugin-porting` skill.
  */
 import { S } from "../../lib/strings";
 
@@ -28,17 +32,45 @@ export function isNpmPluginName(input: string): boolean {
   return s !== null && NPM_NAME.test(s);
 }
 
-/** Whether the server fetches `input` itself: an https link without credentials, or `github:<owner>/<repo>`. */
+/** `input` as an https link without credentials (a `git+` prefix dropped), else null. */
+function httpsLink(input: string): URL | null {
+  const s = oneToken(input);
+  if (s === null) return null;
+  try {
+    const url = new URL(s.startsWith("git+") ? s.slice("git+".length) : s);
+    return url.protocol === "https:" && url.username === "" && url.password === "" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether `url` points into a GitHub repository at a folder or a file: `/<owner>/<repo>/(tree|blob)/…`. */
+function isRepoSubpath(url: URL): boolean {
+  return (
+    (url.hostname === "github.com" || url.hostname === "www.github.com") &&
+    /^\/[^/]+\/[^/]+\/(?:tree|blob)\//.test(url.pathname)
+  );
+}
+
+/**
+ * Whether `input` is an https link to a folder or a file inside a GitHub repository
+ * (`https://github.com/<owner>/<repo>/tree/…` or `/blob/…`), which npm cannot install.
+ */
+export function isRepoSubpathLink(input: string): boolean {
+  const url = httpsLink(input);
+  return url !== null && isRepoSubpath(url);
+}
+
+/**
+ * Whether the server fetches `input` itself: an https link without credentials that is not a
+ * folder or a file inside a GitHub repository, or `github:<owner>/<repo>`.
+ */
 export function isPluginLink(input: string): boolean {
   const s = oneToken(input);
   if (s === null) return false;
   if (GITHUB_SHORTHAND.test(s)) return true;
-  try {
-    const url = new URL(s.startsWith("git+") ? s.slice("git+".length) : s);
-    return url.protocol === "https:" && url.username === "" && url.password === "";
-  } catch {
-    return false;
-  }
+  const url = httpsLink(s);
+  return url !== null && !isRepoSubpath(url);
 }
 
 /** How the Agent is asked to approach a pasted source: a link, a folder on the server's disk, or a description. */
@@ -53,9 +85,10 @@ export function classifyPluginSource(input: string): PluginSourceKind {
 }
 
 /**
- * The prompt for one source: its kind's first sentence, then the fixed tail — review before
- * installing, the command to install with in this Project, and a local folder routed to the
- * zip upload. Reads S at call time, so it follows a language switch.
+ * The prompt for one source: its kind's first sentence, then the fixed tail — what a plugin
+ * package is, a review before installing anything, the command that installs a package (from
+ * npm, a link or a local folder) in this Project, and the `plugin-porting` skill for anything
+ * that is not a package yet. Reads S at call time, so it follows a language switch.
  */
 export function buildPluginImportPrompt(input: string, projectId: string): string {
   const lead = S.plugins.importPromptLead[classifyPluginSource(input)](input);

@@ -218,7 +218,7 @@ export class Environment implements EnvironmentInterface {
       backgroundForward: (msg: OmniMessage) => this.emitBackgroundForward(msg),
     };
     this.equip(config.toolConfig);
-    this.mcp = this.newMcpProvider(config.toolConfig.mcpServers);
+    this.mcp = this.newMcpProvider(config.toolConfig.mcpServers, config.vault ?? {});
   }
 
   /**
@@ -239,13 +239,18 @@ export class Environment implements EnvironmentInterface {
   /**
    * The MCP bridge for a server list (null without servers). MCP Servers bridge in lazily —
    * construction only records the config; connecting and tool discovery happen on the first
-   * listTools()/executeTool() (see McpToolProvider). The vault is deliberately not handed to
-   * it: server processes see only the SDK's safe env defaults plus the entry's own env.
+   * listTools()/executeTool() (see McpToolProvider). The vault is handed over only to fill the
+   * entries' explicit `${KEY}` references: server processes still see only the SDK's safe env
+   * defaults plus the entry's own env, never the vault as a whole.
    */
-  private newMcpProvider(servers: ToolConfig["mcpServers"]): McpToolProvider | null {
+  private newMcpProvider(
+    servers: ToolConfig["mcpServers"],
+    vault: Readonly<Record<string, string>>,
+  ): McpToolProvider | null {
     return servers.length > 0
       ? new McpToolProvider(servers, {
           workspaceDir: this.workspaceDir,
+          vault,
           // A stdio server is started under the Session's sandbox like a command, with the
           // same confiner and scope (see McpToolProviderOptions.confineSpawn).
           ...(this.confineSpawn !== undefined ? { confineSpawn: this.confineSpawn } : {}),
@@ -289,7 +294,8 @@ export class Environment implements EnvironmentInterface {
    * or changed one is closed, and a new or changed one connects lazily on the next
    * listTools() — `pendingMcpServerNames()` names those. The vault reaches every command
    * spawned from now on, while processes already running keep the environment they were
-   * started with. The Session-lifetime parts — background command processes, subagent child
+   * started with, and fills the MCP entries' `${KEY}` references (a changed value reconnects
+   * that server). The Session-lifetime parts — background command processes, subagent child
    * sessions, the listeners, the Workspace and the scratchpad — are untouched. Concrete-class
    * surface, not part of EnvironmentInterface.
    *
@@ -306,10 +312,10 @@ export class Environment implements EnvironmentInterface {
   }): void {
     const servers = config.toolConfig.mcpServers;
     if (this.mcp && servers.length > 0) {
-      this.mcp.reconfigure(servers);
+      this.mcp.reconfigure(servers, config.vault);
     } else {
       this.mcp?.closeQuietly();
-      this.mcp = this.newMcpProvider(servers);
+      this.mcp = this.newMcpProvider(servers, config.vault);
     }
     if (config.visionDescriber !== undefined) {
       if (config.visionDescriber === null) delete this.services.visionDescriber;

@@ -325,7 +325,7 @@ enabled = false
 | `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 块，讲解基于文件的任务管理；包含 `{{SCHEDULE_LIST}}` |
 | `hooks.enabled` | `true` | 是否在循环的钩子点运行已安装的钩子包 |
 | `tools.builtin` | 省略时为完整默认工具集 | 工具条目；一旦写入，就整体替换默认列表 |
-| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`） |
+| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`，插件安装的条目另带 `plugin`） |
 
 ### 字段说明
 
@@ -342,7 +342,7 @@ enabled = false
 - `schedules.enabled`：关闭时，服务端仍会触发任务，只是模型不再了解任务系统。
 - `hooks.enabled`：唯一没有提示词的小节，因为钩子包是脚本，不是上下文文本。关闭时，钩子包仍保持安装，只是不再有任何环节调用它们。
 - `tools.builtin`：每个条目包含 `name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`。`call_description` 是按工具控制调用参数 `description` 的开关；开启时调用必须带上这个参数；字段缺失则视为保留。
-- `tools.mcpServers`：传输方式为 `stdio`、`http` 或 `sse`，发现的工具以 `mcp__<server>__<tool>` 的形式加入工具集。`config.permission`（`auto` / `r` / `rw`，默认 `auto`）为对应 Server 的所有工具固定审批等级，不再采信它们的 `readOnlyHint`。见 [MCP Server](/tools#mcp-server)。
+- `tools.mcpServers`：传输方式为 `stdio`、`http` 或 `sse`，发现的工具以 `mcp__<server>__<tool>` 的形式加入工具集。`config.permission`（`auto` / `r` / `rw`，默认 `auto`）为对应 Server 的所有工具固定审批等级，不再采信它们的 `readOnlyHint`。`config` 中的字符串值可以写指向 Vault 键的 `${KEY}` 引用，在 Server 连接时填入，见 [Vault 引用](/tools#vault-引用)。`plugin` 是写入该条目的那次安装所属的插件：重新安装或卸载这个插件，只动带它名字的条目；不带这个字段的条目归你自己。删掉这个字段，条目就归你所有，此后该插件读作未安装，而且名称被占用期间无法再安装它。见 [MCP Server](/tools#mcp-server)。
 
 四个 `compaction.*` 字段是本文件中唯一即时生效的部分，运行中的对话无需等待。引擎会在每个压缩检查点重新读取这一节（每次请求上报 Token 用量之后，以及手动执行 `/compact` 时），因此保存的修改对已在运行的 Session 同样生效。其余内容都在模型上下文开启时读取，修改要到下一次压缩才生效。在 Web App 里，你还可以在上下文面板中拖动条上的虚线切刀来[修改阈值](/chat#修改压缩阈值)。
 
@@ -389,7 +389,7 @@ compaction:
 - 最后，配置会打上当前 `kernel_version` 的标记。
 - 匹配是**保守**的：只有哈希与某一已记录代一致的标签页才算旧默认值。代太老、不在记录之内的标签页，会当作自定义内容保留。
 
-**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
+**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server，插件安装的也不例外（在**插件市场**页面用**管理安装**可以把它们装回来）。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
 
 面向开发者的说明：
 
@@ -528,7 +528,7 @@ frontmatter 就只有这三个字段。记忆属于哪个作用域由所在目�
 `agent_state/.vault.toml` 是 Agent 级的环境变量密钥保险柜：一个隐藏文件，以 0600 权限写入。
 
 - 键名必须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`（即 shell 环境变量的命名规则）。值的长度上限为 8,192 个字符。
-- 值只注入工具子进程的环境。这些值绝不会进入模型上下文，也不会出现在 Trace 里。
+- 值只注入工具子进程的环境，以及 MCP Server 条目中以 `${KEY}` 引用该键的地方（见 [Vault 引用](/tools#vault-引用)）。这些值绝不会进入模型上下文，也不会出现在 Trace 里。
 - 系统提示词里只显示键名。模板中的 `{{VAULT}}` 占位符展开为 `vault.prompt`，其中带有 `{{VAULT_KEYS}}` 键名列表，可在 **密钥保险柜** 标签页编辑。`vault.enabled` 关闭时这一块为空：值仍会注入子进程，只是模型看不到键名。旧版模板里内联的 `{{VAULT_KEYS}}` 在同一个开关控制下仍会照常替换，标签页还提供一键迁移（参见[系统提示词占位符](#系统提示词占位符)）。
 - 保存后的更改立即对新 Session 生效；正在运行的 Session 则在下一次压缩时生效，与其他 Agent State 的更改一样。无论在 Web App 里保存、通过 API 保存还是用 CLI 保存，行为都相同。
 - 用 `penguin config vault set/list/remove` 管理，或在 **密钥保险柜** 标签页操作。

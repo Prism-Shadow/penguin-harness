@@ -5,13 +5,11 @@
  *
  * - A skill whose files changed without a new version fails, naming the skill; raising its
  *   version passes.
- * - A changed hook script, or a changed hook command in plugin.json, fails until
- *   `hooks.version` is raised.
- * - package.json, README.md, icon.svg and plugin.json's other fields reach no installed copy
- *   and need nothing.
- * - The move to per-part versions: SKILL.md files gaining only their version line, at the
- *   version the plugin carried, pass; a part started below that version fails, and so does a
- *   plugin.json that keeps its top-level version.
+ * - A changed hook script, or a changed hook command in package.json's `penguin.hooks`, fails
+ *   until `penguin.hooks.version` is raised.
+ * - The rest of package.json, README.md and icon.svg reach no installed copy and need nothing.
+ * - Hook commands moved unchanged from a base's plugin.json into package.json need no bump; moved
+ *   and changed at once, they need one, measured against the version the base's plugin.json had.
  * - Only plugin directories count: the library's own README is no plugin, and a plugin new since
  *   the base reads as new, with nothing printed but the summary.
  */
@@ -26,13 +24,21 @@ const GUARD = path.resolve(import.meta.dirname, "../../../scripts/check-plugin-v
 const skillMd = (version: string | null, body = "Do the thing.") =>
   `---\nname: one\ndescription: One skill.\n${version === null ? "" : `version: ${version}\n`}---\n\n${body}\n`;
 
-/** The repo's layout after the move: dated versions on the skill and on the hook package. */
-const PER_PART: Record<string, string> = {
-  "plugins/demo/package.json": JSON.stringify({ name: "@penguinharness/demo", version: "0.2.13" }),
-  "plugins/demo/plugin.json": JSON.stringify({
+const HOOKS = { version: "2026.10.04.1", stop: [{ command: "stop.mjs", timeout: 60 }] };
+
+/** The demo plugin's package.json, its `penguin` block carrying `hooks`. */
+const packageJson = (hooks: unknown = HOOKS, extra: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    name: "@penguinharness/demo",
+    version: "0.2.13",
     description: "Demo.",
-    hooks: { version: "2026.10.04.1", stop: [{ command: "stop.mjs", timeout: 60 }] },
-  }),
+    ...extra,
+    penguin: { short_description: "Demo.", hooks },
+  });
+
+/** The repo's layout: dated versions on the skill and on the hook package. */
+const PER_PART: Record<string, string> = {
+  "plugins/demo/package.json": packageJson(),
   "plugins/demo/README.md": "# Demo\n",
   "plugins/demo/icon.svg": "<svg/>\n",
   "plugins/demo/skills/one/SKILL.md": skillMd("2026.10.04.1"),
@@ -109,41 +115,57 @@ describe("the plugin version guard", () => {
     expect(raised.ok).toBe(true);
   });
 
-  it("fails a changed hook script or hook command until hooks.version is raised", async () => {
+  it("fails a changed hook script or hook command until penguin.hooks.version is raised", async () => {
     const base = await checkout(PER_PART);
     expect((await guard(base, { "plugins/demo/hooks/stop.mjs": "export const x = 1;\n" })).ok).toBe(
       false,
     );
     await guard(base, { "plugins/demo/hooks/stop.mjs": PER_PART["plugins/demo/hooks/stop.mjs"]! });
-    const longer = JSON.stringify({
-      description: "Demo.",
-      hooks: { version: "2026.10.04.1", stop: [{ command: "stop.mjs", timeout: 90 }] },
-    });
-    const command = await guard(base, { "plugins/demo/plugin.json": longer });
+    const longer = { ...HOOKS, stop: [{ command: "stop.mjs", timeout: 90 }] };
+    const command = await guard(base, { "plugins/demo/package.json": packageJson(longer) });
     expect(command.ok).toBe(false);
-    expect(command.out).toContain("plugins/demo/hooks changed but hooks.version is still");
+    expect(command.out).toContain("plugins/demo/hooks changed but penguin.hooks.version is still");
 
     const raised = await guard(base, {
-      "plugins/demo/plugin.json": longer.replace("2026.10.04.1", "2026.10.09.2"),
+      "plugins/demo/package.json": packageJson({ ...longer, version: "2026.10.09.2" }),
     });
     expect(raised.ok).toBe(true);
   });
 
-  it("asks nothing of package.json, README.md, icon.svg or plugin.json's other fields", async () => {
+  it("asks nothing of the rest of package.json, of README.md or of icon.svg", async () => {
     const base = await checkout(PER_PART);
     const run = await guard(base, {
-      "plugins/demo/package.json": JSON.stringify({
-        name: "@penguinharness/demo",
-        version: "0.2.14",
-      }),
+      "plugins/demo/package.json": packageJson(
+        { stop: [{ timeout: 60, command: "stop.mjs" }], version: "2026.10.04.1" },
+        { version: "0.2.14", description: "Demo, described better." },
+      ),
       "plugins/demo/README.md": "# Demo, described better\n",
       "plugins/demo/icon.svg": "<svg viewBox='0 0 24 24'/>\n",
-      "plugins/demo/plugin.json": JSON.stringify({
-        description: "Demo, described better.",
-        hooks: { stop: [{ timeout: 60, command: "stop.mjs" }], version: "2026.10.04.1" },
-      }),
     });
     expect(run).toMatchObject({ ok: true });
+  });
+
+  it("lets hook commands moved unchanged from the base's plugin.json through, and holds a moved command that changed", async () => {
+    // The base before the move: the hook declaration in plugin.json, no penguin block.
+    const base = await checkout({
+      ...PER_PART,
+      "plugins/demo/package.json": JSON.stringify({
+        name: "@penguinharness/demo",
+        version: "0.2.13",
+      }),
+      "plugins/demo/plugin.json": JSON.stringify({ description: "Demo.", hooks: HOOKS }),
+    });
+    const moved = await guard(base, {
+      "plugins/demo/plugin.json": null,
+      "plugins/demo/package.json": packageJson(),
+    });
+    expect(moved.ok).toBe(true);
+
+    const changed = await guard(base, {
+      "plugins/demo/package.json": packageJson({ ...HOOKS, stop: [{ command: "stop.mjs" }] }),
+    });
+    expect(changed.ok).toBe(false);
+    expect(changed.out).toContain("penguin.hooks.version is still 2026.10.04.1");
   });
 
   it("counts plugin directories only, and reads a plugin new since the base without noise", async () => {
@@ -153,8 +175,8 @@ describe("the plugin version guard", () => {
       "plugins/fresh/package.json": JSON.stringify({
         name: "@penguinharness/fresh",
         version: "0.2.13",
+        penguin: { category: "office-productivity" },
       }),
-      "plugins/fresh/plugin.json": JSON.stringify({ description: "Fresh." }),
       "plugins/fresh/skills/one/SKILL.md": skillMd("2026.10.09.1"),
     });
     expect(run.ok).toBe(true);
@@ -163,40 +185,5 @@ describe("the plugin version guard", () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("fresh/one");
     expect(lines[0]).not.toContain("README.md");
-  });
-
-  it("lets the move to per-part versions through at the plugin's own version, and nothing below it", async () => {
-    // The base the move starts from: one dated version on plugin.json, none on the skill.
-    const base = await checkout({
-      ...PER_PART,
-      "plugins/demo/plugin.json": JSON.stringify({
-        description: "Demo.",
-        version: "2026.10.04.1",
-        hooks: { stop: [{ command: "stop.mjs", timeout: 60 }] },
-      }),
-      "plugins/demo/skills/one/SKILL.md": skillMd(null),
-    });
-    const moved = await guard(base, {
-      "plugins/demo/plugin.json": PER_PART["plugins/demo/plugin.json"]!,
-      "plugins/demo/skills/one/SKILL.md": skillMd("2026.10.04.1"),
-    });
-    expect(moved.ok).toBe(true);
-
-    const below = await guard(base, {
-      "plugins/demo/skills/one/SKILL.md": skillMd("2026.10.01.1"),
-    });
-    expect(below.ok).toBe(false);
-    expect(below.out).toContain("is older than 2026.10.04.1");
-
-    const kept = await guard(base, {
-      "plugins/demo/skills/one/SKILL.md": skillMd("2026.10.04.1"),
-      "plugins/demo/plugin.json": JSON.stringify({
-        description: "Demo.",
-        version: "2026.10.04.1",
-        hooks: { version: "2026.10.04.1", stop: [{ command: "stop.mjs", timeout: 60 }] },
-      }),
-    });
-    expect(kept.ok).toBe(false);
-    expect(kept.out).toContain("plugins/demo/plugin.json carries a top-level version");
   });
 });

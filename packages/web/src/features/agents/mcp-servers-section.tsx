@@ -15,12 +15,22 @@
  * The permission control mirrors the builtin tool table's, with a third `auto` state: it
  * decides which of the server's tool calls stop for approval, and nothing about what the
  * remote server is able to do.
+ *
+ * A server a plugin installed carries the plugin's name: a puzzle mark after its name says
+ * which plugin (by its title, read from the library once), the edit dialog says reinstalling
+ * the plugin replaces the entry, and the removal says Manage installs can put it back. What
+ * keeps a server from connecting — vault keys its `${KEY}` references name and the vault
+ * lacks, an OAuth sign-in this version cannot do — is read from the server (GET …/mcp-servers)
+ * and shown as marks in a status column, whoever added the server.
  */
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import {
   Button,
   ConfirmModal,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
   InfoPopover,
   Input,
   Modal,
@@ -39,10 +49,13 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import type { McpServerTestResponse } from "@prismshadow/penguin-server/api";
+import type { AgentMcpServerItem, McpServerTestResponse } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
+import { localizedText } from "../chat/skill-use";
+import { McpServerMarks } from "../plugins/plugin-mcp";
 import {
   emptyMcpForm,
   formToServer,
@@ -121,9 +134,15 @@ export function McpServersSection({
   initial: MCPServerConfig[];
 }) {
   const { currentProject } = useProject();
+  const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
+  const isOwner = currentProject?.role === "owner";
 
   const [servers, setServers] = useState<MCPServerConfig[]>(initial);
+  /** What keeps each server from connecting, by name, as the server reads it. */
+  const [status, setStatus] = useState<ReadonlyMap<string, AgentMcpServerItem>>(new Map());
+  /** Plugin name → its title in the UI language, for the provenance marks; a plugin not in the library shows its name. */
+  const [pluginTitles, setPluginTitles] = useState<ReadonlyMap<string, string>>(new Map());
   const [busy, setBusy] = useState(false);
   // Modal state: editIndex null = adding, a number = editing that row; closed when form is null.
   const [form, setForm] = useState<McpServerFormState | null>(null);
@@ -173,6 +192,41 @@ export function McpServersSection({
     },
   ];
 
+  /** Reads the servers' state again: what each waits for moved with the list (or the vault). */
+  const reloadStatus = useCallback(() => {
+    if (!projectId || !agentId) return;
+    api.getAgentMcpServers(projectId, agentId).then(
+      (res) => setStatus(new Map(res.servers.map((server) => [server.name, server]))),
+      () => setStatus(new Map()),
+    );
+  }, [projectId, agentId]);
+  useEffect(reloadStatus, [reloadStatus]);
+
+  // The library, once, for the titles of the plugins that installed servers here.
+  const hasPluginEntries = servers.some((entry) => entry.plugin !== undefined);
+  useEffect(() => {
+    if (!hasPluginEntries) return;
+    let cancelled = false;
+    api.getPluginLibrary().then(
+      (res) => {
+        if (cancelled) return;
+        const titles = new Map<string, string>();
+        for (const plugin of res.groups.flatMap((group) => group.plugins)) {
+          titles.set(
+            plugin.name,
+            localizedText(locale, plugin.title || plugin.name, plugin.titleZh),
+          );
+        }
+        setPluginTitles(titles);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPluginEntries, locale]);
+  const pluginTitle = (name: string) => pluginTitles.get(name) ?? name;
+
   /** Persist the full list (immediate, vault-style); returns null on success or an error message. */
   const persist = async (next: MCPServerConfig[]): Promise<string | null> => {
     if (!projectId || !agentId) return S.common.unknownError;
@@ -182,6 +236,7 @@ export function McpServersSection({
         config: { mcpServers: next },
       });
       setServers(res.config.mcpServers);
+      reloadStatus();
       toastSuccess(S.agent.savedTakesEffect);
       return null;
     } catch (e) {
@@ -303,6 +358,11 @@ export function McpServersSection({
     form !== null &&
     (form.transport === "stdio" ? form.command.trim() !== "" : form.url.trim() !== "");
   const showBadges = rowResults.size > 0;
+  const waiting = (name: string) => {
+    const state = status.get(name);
+    return state !== undefined && (state.missingKeys.length > 0 || state.signIn);
+  };
+  const showStatus = servers.some((entry) => waiting(entry.name));
 
   return (
     <div className="space-y-4">
@@ -320,10 +380,15 @@ export function McpServersSection({
             <TableHeaderCell>{S.agent.mcpTransport}</TableHeaderCell>
             <TableHeaderCell>{S.agent.mcpPermission}</TableHeaderCell>
             <TableHeaderCell>{S.agent.mcpTarget}</TableHeaderCell>
+            {/* What a server waits for (vault keys, a sign-in): a column only while one does (no headline). */}
+            {showStatus && <TableHeaderCell />}
             {/* Bulk-test badge column appears only once results exist (no headline). */}
             {showBadges && <TableHeaderCell />}
             {/* Bulk test lives in the table's own header bar, over the actions column: a
-                tighter cell than a column name's, so the button does not heighten the bar. */}
+                tighter cell than a column name's, so the button does not heighten the bar. It
+                tests every row, so it says so — with the plug glyph and "Test all" — rather than
+                reading as the title of a column whose rows carry no test of their own (a single
+                server is tested from its edit dialog). */}
             <th scope="col" className="px-3 py-1 text-right font-normal whitespace-nowrap">
               <Button
                 size="sm"
@@ -331,23 +396,60 @@ export function McpServersSection({
                 disabled={busy || testAllRunning}
                 onClick={() => setTestAllOpen(true)}
               >
-                {testAllRunning ? S.agent.mcpTestPending : S.agent.mcpTest}
+                <GlyphIcon d={ICONS.plug} size={ICON_SIZE.iconButton} />
+                {testAllRunning ? S.agent.mcpTestPending : S.agent.mcpTestAll}
               </Button>
             </th>
           </TableHead>
           <TableBody>
             {servers.map((entry, index) => (
               <TableRow key={entry.name}>
-                <TableCell className="font-mono text-xs">{entry.name}</TableCell>
+                <TableCell nowrap className="font-mono text-xs">
+                  <span className="inline-flex items-center gap-1.5">
+                    {entry.name}
+                    {entry.plugin !== undefined && (
+                      <span
+                        role="img"
+                        aria-label={S.agent.mcpInstalledBy(pluginTitle(entry.plugin))}
+                        data-tooltip={S.agent.mcpInstalledBy(pluginTitle(entry.plugin))}
+                        data-tooltip-content="text"
+                        className="inline-flex text-fg-subtle"
+                      >
+                        <GlyphIcon d={ICONS.puzzle} size={ICON_SIZE.inlineGlyph} />
+                      </span>
+                    )}
+                  </span>
+                </TableCell>
                 <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">
                   {transportOf(entry)}
                 </TableCell>
                 <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">
                   {permissionOf(entry)}
                 </TableCell>
-                <TableCell className="max-w-[360px] truncate font-mono text-xs text-gray-500 dark:text-gray-400">
-                  {targetOf(entry)}
+                {/* The target takes the width the other columns leave and truncates in it: a
+                    max-width of 0 keeps the URL's own length out of the column sizing, and the
+                    100% width hands this column the remainder, so a long URL never pushes the
+                    status marks or the actions out of view. */}
+                <TableCell className="w-full max-w-0 font-mono text-xs text-gray-500 dark:text-gray-400">
+                  <span
+                    className="block truncate"
+                    data-tooltip={targetOf(entry)}
+                    data-tooltip-content="code"
+                  >
+                    {targetOf(entry)}
+                  </span>
                 </TableCell>
+                {showStatus && (
+                  <TableCell align="right">
+                    {waiting(entry.name) && (
+                      <McpServerMarks
+                        keys={status.get(entry.name)?.missingKeys ?? []}
+                        where={isOwner ? S.plugins.mcpSetUpWhere : S.plugins.mcpSetUpByOwner}
+                        signIn={status.get(entry.name)?.signIn ?? false}
+                      />
+                    )}
+                  </TableCell>
+                )}
                 {showBadges && (
                   <TableCell align="right">
                     <TestBadge result={rowResults.get(entry.name)} />
@@ -393,6 +495,11 @@ export function McpServersSection({
       >
         {form && (
           <div className="space-y-3">
+            {form.plugin !== undefined && (
+              <p className="text-xs text-fg-muted">
+                {S.agent.mcpFromPlugin(pluginTitle(form.plugin))}
+              </p>
+            )}
             {/* Transport first, as tab-style switches — the choice decides every field below. */}
             <div className="space-y-1">
               <Segmented
@@ -590,6 +697,11 @@ export function McpServersSection({
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting !== null ? S.agent.mcpDeleteConfirm(servers[deleting]?.name ?? "") : ""}
         </p>
+        {deleting !== null && servers[deleting]?.plugin !== undefined && (
+          <p className="mt-2 text-xs text-fg-muted">
+            {S.agent.mcpRemoveFromPlugin(pluginTitle(servers[deleting]!.plugin!))}
+          </p>
+        )}
       </ConfirmModal>
     </div>
   );

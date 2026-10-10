@@ -4,27 +4,21 @@
  * dated version. A plugin's own version is its npm version (package.json, bumped by the release);
  * the dated versions — `YYYY.MM.DD.N` — sit on the parts an install writes into an Agent and the
  * Agent may then edit: each skill's `SKILL.md` frontmatter `version`, and the hook package's
- * `hooks.version` in `plugin.json`. That version is what tells an installed copy it is behind the
- * library (the Agents page's update flag and the Plugins page read it), so a content change
- * shipped under the old version is invisible to every user until the next unrelated bump.
+ * `penguin.hooks.version` in `package.json`. That version is what tells an installed copy it is
+ * behind the library (the Agents page's update flag and the Plugins page read it), so a content
+ * change shipped under the old version is invisible to every user until the next unrelated bump.
  *
  *   - a change under `plugins/<p>/skills/<s>/` needs that skill's `version` changed;
- *   - a change under `plugins/<p>/hooks/`, or to the commands of `plugin.json`'s `hooks`, needs
- *     `hooks.version` changed;
- *   - `package.json`, `README.md`, `icon.svg` and the rest of `plugin.json` reach no installed
- *     copy and need nothing; neither does a change to a SKILL.md's `version` line alone.
- *
- * Two more rules hold the move from one dated version per plugin to one per part. `plugin.json`
- * carries no top-level `version` (the loader ignores one, so a bump there would reach nobody).
- * And where the base still had one, every part starts at or after it: installed copies carry
- * that version on every part, so a part initialised below it would read as older than what
- * Agents have, and its next bump could stay below it and never be offered.
+ *   - a change under `plugins/<p>/hooks/`, or to the commands of package.json's
+ *     `penguin.hooks`, needs `penguin.hooks.version` changed;
+ *   - the rest of `package.json`, `README.md` and `icon.svg` reach no installed copy and need
+ *     nothing; neither does a change to a SKILL.md's `version` line alone.
  *
  * Usage: node scripts/check-plugin-versions.mjs <base-commit>
  * An empty or missing base (a push event, a local run with nothing to compare) passes.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const base = process.argv[2] ?? "";
 if (base.trim() === "") {
@@ -78,17 +72,10 @@ const withoutVersion = (text) => {
   const kept = front[1].split(/\r?\n/).filter((l) => !VERSION_LINE.test(l));
   return `---\n${kept.join("\n")}\n---${text.slice(front[0].length)}`;
 };
-/** plugin.json's hook commands without the version: what changes an installed hooks.json. */
-const hookCommands = (manifest) => {
-  const { version: _version, ...commands } = manifest?.hooks ?? {};
+/** A hook declaration's commands without the version: what changes an installed hooks.json. */
+const hookCommands = (hooks) => {
+  const { version: _version, ...commands } = hooks ?? {};
   return canonical(commands);
-};
-/** Whether dated version `a` is older than `b`: by date, then by sequence number, numerically. */
-const older = (a, b) => {
-  const split = (v) => [v.slice(0, v.lastIndexOf(".")), Number(v.slice(v.lastIndexOf(".") + 1))];
-  const [da, sa] = split(a);
-  const [db, sb] = split(b);
-  return da === db ? sa < sb : da < db;
 };
 
 const changed = git("diff", "--name-only", `${base}...HEAD`, "--", "plugins/")
@@ -113,17 +100,16 @@ const problems = [];
 const bumped = [];
 for (const name of plugins) {
   const dir = `plugins/${name}`;
-  const manifestFile = `${dir}/plugin.json`;
+  const manifestFile = `${dir}/package.json`;
   const head = json(atHead(manifestFile));
-  const before = json(atBase(manifestFile));
-  if (head !== null && head.version !== undefined) {
-    problems.push(
-      `${manifestFile} carries a top-level version, which nothing reads: a plugin's version is its npm version — raise the version of the skill or the hook package that changed instead`,
-    );
-  }
-  /** The one dated version every part of an install carried, where the base still had it. */
-  const formerVersion =
-    typeof before?.version === "string" && DATED.test(before.version) ? before.version : null;
+  const baseManifest = json(atBase(manifestFile));
+  /** The hook declaration at the base. */
+  const before =
+    baseManifest?.penguin !== undefined
+      ? (baseManifest.penguin.hooks ?? null)
+      : // The base may predate the move to package.json; drop once main carries no plugin.json.
+        (json(atBase(`${dir}/plugin.json`))?.hooks ?? null);
+  const after = head?.penguin?.hooks ?? null;
 
   // Skills: every skill directory with a changed file.
   const skills = [
@@ -152,7 +138,7 @@ for (const name of plugins) {
     const onlyTheVersionLine =
       files.length === 1 && files[0] === skillFile && withoutVersion(now) === withoutVersion(then);
     if (onlyTheVersionLine) continue;
-    const previous = skillVersion(then) ?? formerVersion;
+    const previous = skillVersion(then);
     if (previous !== null && previous === version) {
       problems.push(`${dir}/skills/${skill} changed but its version is still ${version}`);
     } else {
@@ -160,42 +146,18 @@ for (const name of plugins) {
     }
   }
 
-  // The hook package: its scripts, or the commands plugin.json lists for it.
+  // The hook package: its scripts, or the commands package.json declares for it.
   const hooksChanged =
     changed.some((file) => file.startsWith(`${dir}/hooks/`)) ||
-    (before !== null && head !== null && hookCommands(before) !== hookCommands(head));
+    (before !== null && head !== null && hookCommands(before) !== hookCommands(after));
   if (hooksChanged && head !== null && existsSync(`${dir}/hooks`)) {
-    const version = head.hooks?.version;
+    const version = after?.version;
     if (typeof version !== "string" || !DATED.test(version)) {
-      problems.push(`${manifestFile}: hooks.version must be YYYY.MM.DD.N, got ${version}`);
+      problems.push(`${manifestFile}: penguin.hooks.version must be YYYY.MM.DD.N, got ${version}`);
+    } else if (typeof before?.version === "string" && before.version === version) {
+      problems.push(`${dir}/hooks changed but penguin.hooks.version is still ${version}`);
     } else {
-      const previous =
-        typeof before?.hooks?.version === "string" ? before.hooks.version : formerVersion;
-      if (previous !== null && previous === version) {
-        problems.push(`${dir}/hooks changed but hooks.version is still ${version}`);
-      } else {
-        bumped.push(`${name} hooks`);
-      }
-    }
-  }
-
-  // Every part starts at or after the version the base carried for the whole plugin.
-  if (formerVersion !== null && head !== null) {
-    const parts = [];
-    if (existsSync(`${dir}/skills`)) {
-      for (const entry of readdirSync(`${dir}/skills`, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const skillFile = `${dir}/skills/${entry.name}/SKILL.md`;
-        parts.push([skillFile, skillVersion(atHead(skillFile))]);
-      }
-    }
-    if (existsSync(`${dir}/hooks`)) parts.push([`${manifestFile} hooks`, head.hooks?.version]);
-    for (const [where, version] of parts) {
-      if (typeof version === "string" && DATED.test(version) && older(version, formerVersion)) {
-        problems.push(
-          `${where}: version ${version} is older than ${formerVersion}, which every installed copy of ${name} carries`,
-        );
-      }
+      bumped.push(`${name} hooks`);
     }
   }
 }

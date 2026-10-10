@@ -6,15 +6,20 @@
  *
  * On the way in nothing is trusted that has not been checked: the caps are read from the
  * central directory before a byte inflates (as the Skill archive's are), every path is
- * zip-slip-checked, and the package must be a plugin — a plugin.json beside skills or a hook
- * package that the library would read as it is (checked with the library's own reader), or the
- * `ifaces.json` of server modules. Installing it is then npm's (plugin/install.ts).
+ * zip-slip-checked, and the package must be a plugin — skills, a hook package or MCP servers
+ * (`penguin.mcp_servers`) beside its package.json that the library would read as it is (checked
+ * with the library's own reader), or the `ifaces.json` of server modules. Installing it is then
+ * npm's (plugin/install.ts).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { strFromU8, unzipSync, zipSync } from "fflate";
-import { PLUGIN_NAME_PATTERN, readLibraryPackage } from "@prismshadow/penguin-core";
+import {
+  PLUGIN_NAME_PATTERN,
+  declaresMcpServers,
+  readLibraryPackage,
+} from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { assertSafeEntryPath } from "../http/routes/skills.js";
 import { PACKAGE_NAME } from "../plugin/loader.js";
@@ -49,7 +54,7 @@ export interface PluginArchive {
   name: string;
   version: string;
   files: Map<string, Uint8Array>;
-  /** It carries skills or a hook package (the library lists it). */
+  /** It carries skills, a hook package or MCP servers (the library lists it). */
   library: boolean;
   /** It carries server modules (a Project's plugin list loads it). */
   modules: boolean;
@@ -134,7 +139,7 @@ export async function parsePluginArchive(archive: Uint8Array): Promise<PluginArc
     rel.set(at, data);
   }
 
-  let manifest: { name?: unknown; version?: unknown };
+  let manifest: { name?: unknown; version?: unknown; penguin?: unknown };
   try {
     manifest = JSON.parse(strFromU8(rel.get("package.json")!)) as typeof manifest;
   } catch {
@@ -156,32 +161,23 @@ export async function parsePluginArchive(archive: Uint8Array): Promise<PluginArc
   }
 
   const has = (dir: string) => [...rel.keys()].some((file) => file.startsWith(`${dir}/`));
-  const library = rel.has("plugin.json") && (has("skills") || has("hooks"));
+  const library = has("skills") || has("hooks") || declaresMcpServers(manifest);
   const modules = rel.has("ifaces.json");
   if (!library && !modules) {
     throw invalid(
-      "Not a PenguinHarness plugin: the package carries neither a plugin.json beside skills or a hook package, nor the ifaces.json of server modules.",
+      "Not a PenguinHarness plugin: the package carries neither skills/ nor hooks/ nor MCP servers (`penguin.mcp_servers`) nor the ifaces.json of server modules.",
     );
   }
-  if (rel.has("plugin.json")) await checkWithLibrary(rel, library);
+  if (library) await checkWithLibrary(rel);
   return { name, version: manifest.version, files: rel, library, modules };
 }
 
 /**
- * Reads the package the way the library will once it is installed (a temp copy, removed after):
- * a library plugin through the library's own reader, a server module's card plugin.json as JSON.
- * What the reader refuses is refused here, naming the file inside the package.
+ * Reads a library plugin the way the library will once it is installed (a temp copy, removed
+ * after), with the library's own reader. What the reader refuses is refused here, naming the file
+ * inside the package; what it reads with a warning, it lists with that field missing.
  */
-async function checkWithLibrary(files: ReadonlyMap<string, Uint8Array>, library: boolean) {
-  if (!library) {
-    try {
-      const card = JSON.parse(strFromU8(files.get("plugin.json")!)) as unknown;
-      if (typeof card !== "object" || card === null || Array.isArray(card)) throw new Error();
-    } catch {
-      throw invalid("plugin.json is not a JSON object.");
-    }
-    return;
-  }
+async function checkWithLibrary(files: ReadonlyMap<string, Uint8Array>) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-check-"));
   try {
     for (const [rel, bytes] of files) {

@@ -13,10 +13,11 @@
  * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
  * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
  * (tooltip shows the full name); "Create Agent" fills in name + description and picks what the
- * new Agent starts with — plugins from the library (each one's skills and hook package), and
- * Skills from a project directory's .agents/skills or .claude/skills — through form-variant
- * dropdowns over the shared multi-select panel, with select all / select none. A plain new Agent
- * otherwise starts with none.
+ * new Agent starts with — plugins from the library (each one's skills, hook package and MCP
+ * servers), and Skills from a project directory's .agents/skills or .claude/skills — through
+ * form-variant dropdowns over the shared multi-select panel, with select all / select none. A
+ * plain new Agent otherwise starts with none. A picked plugin with a stdio MCP server asks before
+ * the Agent is created, showing the command it runs on this server.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
@@ -80,6 +81,8 @@ import {
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
+import { StdioDisclosure } from "../plugins/plugin-mcp";
+import { stdioServers } from "../plugins/plugin-status";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
@@ -133,12 +136,15 @@ export function AgentApiMark({ enabled }: { enabled: boolean }) {
   );
 }
 
+/** A library plugin as a picker row, keeping what the create confirmation reads: its title and its MCP servers. */
+type PluginPickItem = PickableItem & Pick<PluginItem, "title" | "titleZh" | "mcpServers">;
+
 /**
  * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
  * already carries (name, descriptions, icon, version); a plugin without an icon.svg draws the
  * puzzle piece rather than the book.
  */
-function pluginPickItems(plugins: readonly PluginItem[]): PickableItem[] {
+function pluginPickItems(plugins: readonly PluginItem[]): PluginPickItem[] {
   return plugins.map((plugin) => ({ ...plugin, fallbackIcon: ICONS.puzzle }));
 }
 
@@ -177,13 +183,15 @@ export function AgentsPage() {
    * flat searchable list (the same panel the composer uses), so the grouping the library page
    * renders carries no meaning here. `null` until a fetch succeeds.
    */
-  const [library, setLibrary] = useState<PickableItem[] | null>(null);
+  const [library, setLibrary] = useState<PluginPickItem[] | null>(null);
   const [libraryError, setLibraryError] = useState<string | null>(null);
   /** In-flight guard for that fetch (StrictMode runs the effect twice), released on failure so reopening retries. */
   const libraryPending = useRef(false);
-  /** Library plugins to install into the new Agent (each one's skills and hook package), in pick order. */
+  /** Library plugins to install into the new Agent (each one's skills, hook package and MCP servers), in pick order. */
   const [createPlugins, setCreatePlugins] = useState<string[]>([]);
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  /** Creating waits on the confirmation a picked plugin's stdio MCP server asks for: the command it runs on this server. */
+  const [stdioConfirmOpen, setStdioConfirmOpen] = useState(false);
   /**
    * Skills imported from a directory instead of the library, kept as its own field rather than
    * merged into the list above: the server lets a directory Skill and a library plugin's Skill
@@ -313,7 +321,16 @@ export function AgentsPage() {
     });
   }, [dirSkills]);
 
-  const create = async () => {
+  /** The picked seed plugins that carry a stdio MCP server: creating the Agent runs their commands on this server. */
+  const stdioSeeds =
+    snapshotFile === null
+      ? (library ?? []).filter(
+          (plugin) => createPlugins.includes(plugin.name) && stdioServers(plugin).length > 0,
+        )
+      : [];
+
+  /** `confirmed`: the stdio confirmation was answered, or nothing picked asks for one. */
+  const create = async (confirmed = false) => {
     if (!projectId) return;
     const id = agentId.trim();
     if (!id) {
@@ -322,6 +339,13 @@ export function AgentsPage() {
     }
     if (!SEMANTIC_ID_PATTERN.test(id)) {
       setIdError(S.agent.idHint);
+      return;
+    }
+    // A seed plugin with a stdio server runs a command on this server whenever a session of the
+    // new Agent starts — said, and confirmed, before anything is created, as installing it later
+    // from the Plugins page would ask.
+    if (!confirmed && stdioSeeds.length > 0) {
+      setStdioConfirmOpen(true);
       return;
     }
     setBusy(true);
@@ -998,6 +1022,31 @@ export function AgentsPage() {
           )}
         </div>
       </Modal>
+
+      {/* A picked plugin with a stdio MCP server: the command it runs on this server, before the
+          Agent exists. The compact card has no title bar, so the body asks. */}
+      {stdioConfirmOpen && (
+        <ConfirmModal
+          open
+          title={S.agent.createStdioQuestion(name.trim() || agentId.trim())}
+          tone="primary"
+          glyph={ICONS.terminalPrompt}
+          confirmLabel={S.common.create}
+          cancelLabel={S.common.cancel}
+          onClose={() => setStdioConfirmOpen(false)}
+          onConfirm={() => {
+            setStdioConfirmOpen(false);
+            void create(true);
+          }}
+        >
+          <div className="space-y-3">
+            <p className="text-sm font-medium">
+              {S.agent.createStdioQuestion(name.trim() || agentId.trim())}
+            </p>
+            <StdioDisclosure plugins={stdioSeeds} />
+          </div>
+        </ConfirmModal>
+      )}
 
       {/* The AI path, its own dialog rather than a mode of the form above: the draft plus the
           fixed tail lands in a new conversation with the Project's default agent, which runs the

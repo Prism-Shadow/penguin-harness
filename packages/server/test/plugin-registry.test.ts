@@ -6,11 +6,12 @@
  *   (unlike a plugin list's per-entry tolerance).
  * - The builtin catalogue lists the sandbox backends that live in plugins/, each named,
  *   versioned, described and licensed as the package names itself, described in both languages
- *   and drawn with the icon of its own plugin.json and icon.svg (which it publishes), and serves
- *   each one's own shipped README.md; a listed package not on this machine, a name it does not
- *   list and a remote registry have no readme.
- * - A package on this machine describes itself in the listing over what its row says; a row
- *   whose package is not here stays as the index wrote it.
+ *   and drawn with the icon of its own package.json `penguin` block and icon.svg (which it
+ *   publishes), and serves each one's own shipped README.md; a listed package not on this
+ *   machine, a name it does not list and a remote registry have no readme.
+ * - A package on this machine describes itself in the listing over what its row says; one
+ *   without a penguin block or an icon, and a row whose package is not here, stay as the index
+ *   wrote them; an icon that is not a plain SVG is never sent.
  * - The HTTP registry fetches its index URL and runs the document through the same validator;
  *   an HTTP error, non-JSON and a malformed document fail it; a failed connection is tried
  *   again, an answer is not. No network: fetch is the suite's fetch fake.
@@ -163,6 +164,13 @@ interface PackageManifest {
   description?: string;
   license?: string;
   files?: string[];
+  /** The product's own fields: what the package says of itself for its card. */
+  penguin?: {
+    description_zh?: string;
+    short_description?: string;
+    short_description_zh?: string;
+    category?: string;
+  };
 }
 
 const packages = new Map<string, { dir: string; manifest: PackageManifest }>();
@@ -269,30 +277,21 @@ describe("the builtin catalogue and the packages it lists", () => {
 
   /**
    * The row is the card on a server the package is not installed on, so it repeats what the
-   * package says of itself — its plugin.json's descriptions and its icon.svg — and the package
-   * publishes both, for the card of a server it is installed on.
+   * package says of itself — its package.json's `penguin` block and its icon.svg — and the
+   * package publishes both, for the card of a server it is installed on.
    */
-  it("describes each backend in both languages with the package's own plugin.json and icon.svg", async () => {
+  it("describes each backend in both languages with the package's own penguin block and icon.svg", async () => {
     for (const entry of await builtinPluginRegistry().index()) {
-      const pkg = packages.get(entry.name)!;
-      const own = JSON.parse(readFileSync(`${PLUGINS_DIR}${pkg.dir}/plugin.json`, "utf8")) as {
-        description: string;
-        description_zh: string;
-        short_description: string;
-        short_description_zh: string;
-        category: string;
-      };
+      const { dir, manifest } = packages.get(entry.name)!;
       expect(entry, entry.name).toMatchObject({
-        description: own.description,
-        descriptionZh: own.description_zh,
-        shortDescription: own.short_description,
-        shortDescriptionZh: own.short_description_zh,
-        icon: readFileSync(`${PLUGINS_DIR}${pkg.dir}/icon.svg`, "utf8"),
-        categories: [own.category],
+        description: manifest.description,
+        descriptionZh: manifest.penguin?.description_zh,
+        shortDescription: manifest.penguin?.short_description,
+        shortDescriptionZh: manifest.penguin?.short_description_zh,
+        icon: readFileSync(`${PLUGINS_DIR}${dir}/icon.svg`, "utf8"),
+        categories: [manifest.penguin?.category],
       });
-      expect(pkg.manifest.files, entry.name).toEqual(
-        expect.arrayContaining(["plugin.json", "icon.svg"]),
-      );
+      expect(manifest.files, entry.name).toContain("icon.svg");
     }
   });
 
@@ -533,30 +532,41 @@ describe("the route's own merge", () => {
 
   it("lets a package on this machine describe itself over its row, and leaves a row whose package is not here as it is", async () => {
     // A published row that carries only English and no icon, for a package an admin installed
-    // into the data root's prefix with its own plugin.json and icon.svg.
+    // into the data root's prefix with its own penguin block and icon.svg; and one installed
+    // with neither, which keeps its row's text and the puzzle piece.
     const installedHere: PluginIndexEntry = {
       ...VALID_ENTRY,
       name: "@example/penguin-plugin-here",
     };
+    const bare: PluginIndexEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-bare" };
     const elsewhere: PluginIndexEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-away" };
     const prefix = await mkdtemp(path.join(tmpdir(), "penguin-prefix-"));
     try {
       await writeFile(path.join(prefix, "package.json"), '{"name":"prefix","private":true}');
       const dir = path.join(prefix, "node_modules", "@example", "penguin-plugin-here");
       await mkdir(dir, { recursive: true });
-      await writeFile(path.join(dir, "package.json"), JSON.stringify({ name: installedHere.name }));
       await writeFile(
-        path.join(dir, "plugin.json"),
+        path.join(dir, "package.json"),
         JSON.stringify({
+          name: installedHere.name,
+          version: "1.0.0",
           description: "A demo plugin.",
-          description_zh: "一个示例插件。",
-          short_description: "Demo.",
-          short_description_zh: "示例。",
+          penguin: {
+            description_zh: "一个示例插件。",
+            short_description: "Demo.",
+            short_description_zh: "示例。",
+          },
         }),
       );
       await writeFile(path.join(dir, "icon.svg"), '<svg viewBox="0 0 24 24"></svg>\n');
+      const bareDir = path.join(prefix, "node_modules", "@example", "penguin-plugin-bare");
+      await mkdir(bareDir, { recursive: true });
+      await writeFile(
+        path.join(bareDir, "package.json"),
+        JSON.stringify({ name: bare.name, version: "1.0.0" }),
+      );
       const routes = pluginRegistryRoutes({
-        registries: [stubRegistry("published", [installedHere, elsewhere]).registry],
+        registries: [stubRegistry("published", [installedHere, bare, elsewhere]).registry],
         bases: () => [{ file: path.join(prefix, "package.json"), builtin: false }],
       });
       const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
@@ -568,8 +578,39 @@ describe("the route's own merge", () => {
           shortDescriptionZh: "示例。",
           icon: '<svg viewBox="0 0 24 24"></svg>\n',
         },
+        bare,
         elsewhere,
       ]);
+    } finally {
+      await rm(prefix, { recursive: true, force: true });
+    }
+  });
+
+  it("never sends the icon of a package on this machine that is not a plain SVG", async () => {
+    const entry: PluginIndexEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-risky" };
+    const prefix = await mkdtemp(path.join(tmpdir(), "penguin-prefix-"));
+    try {
+      await writeFile(path.join(prefix, "package.json"), '{"name":"prefix","private":true}');
+      const dir = path.join(prefix, "node_modules", "@example", "penguin-plugin-risky");
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        path.join(dir, "package.json"),
+        JSON.stringify({
+          name: entry.name,
+          version: "1.0.0",
+          penguin: { short_description: "Risky." },
+        }),
+      );
+      await writeFile(
+        path.join(dir, "icon.svg"),
+        '<svg viewBox="0 0 24 24"><script>fetch("https://example.invalid")</script></svg>\n',
+      );
+      const routes = pluginRegistryRoutes({
+        registries: [stubRegistry("published", [entry]).registry],
+        bases: () => [{ file: path.join(prefix, "package.json"), builtin: false }],
+      });
+      const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
+      expect(body.plugins).toEqual([{ ...entry, shortDescription: "Risky." }]);
     } finally {
       await rm(prefix, { recursive: true, force: true });
     }

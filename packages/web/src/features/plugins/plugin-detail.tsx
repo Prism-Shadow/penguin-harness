@@ -1,17 +1,23 @@
 /**
  * A plugin's detail dialog — every plugin's, opened by clicking its card (the model library's
- * card-detail pattern); there is no detail page. The header names what the card names (icon,
- * version, category, status, "built in", the package specifier of a server module). Below it,
- * in ruled sections:
+ * card-detail pattern); there is no detail page. Its title is the card's (the package's display
+ * name, else the plugin's name), and a display name has the package name beneath it. The header
+ * names what the card names (icon, version, category, status, "built in", the package specifier
+ * of a server module), then what the package says of itself — author · license and links to its
+ * homepage and repository — where it says any of it. Below it, in ruled sections:
  *
- * - **About**: the full description, and the package's own README.md where it ships one (every
- *   server module does). The README is read from the package on this server, never fetched from
- *   npm: a package this server does not have says so instead.
+ * - **About**: the full description (the "no description" placeholder in muted ink when the
+ *   package carries none), and the package's own README.md where it ships one (every server
+ *   module does). The README is read from the package on this server, never fetched from npm: a
+ *   package this server does not have says so instead.
+ * - **MCP servers**, for a plugin that carries any (plugin-mcp.tsx): one row per server — its
+ *   name, transport and target, and marks for the vault keys it needs, the sign-in it needs and,
+ *   for a stdio server, the command it runs on this server.
  * - **Files**, for a plugin of Skills and/or a hook package: the shared read-only file browser
  *   over everything an install writes — one directory per skill and one for the hook package,
  *   any number open at once, a preview on the right (the first SKILL.md opens on arrival). The
  *   files arrive in one request (GET /api/plugins/:plugin/files), so nothing is fetched per
- *   directory.
+ *   directory. A plugin of MCP servers alone has no files to browse, and no such section.
  *
  * A plugin that is both shows About, then Files. The footer holds the card's own actions.
  */
@@ -22,7 +28,9 @@ import {
   Badge,
   CopyButton,
   FileBrowser,
+  GlyphIcon,
   ICONS,
+  ICON_SIZE,
   Modal,
   REHYPE_PLUGINS,
   REMARK_PLUGINS,
@@ -38,16 +46,21 @@ import { getLibraryPluginReadme, getPluginFiles, getPluginReadme } from "../../a
 import { ApiError } from "../../api/client";
 import { SkillTile } from "../skills/skill-icon-view";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
+import { PluginMcpSection } from "./plugin-mcp";
 import type { ModulePart, PluginRow } from "./plugin-groups";
 import type { PluginStatus } from "./plugin-status";
 import {
   PluginTag,
   StatusMark,
   rowBuiltin,
+  rowDetails,
   rowInstalledOnServer,
   rowDescription,
+  rowHasDescription,
   rowIcon,
+  rowTitle,
   rowVersion,
+  type PluginDetails,
 } from "./plugin-marks";
 
 /** One collapsible group of the tree: a skill's directory, or the hook package's scripts. */
@@ -221,6 +234,12 @@ export function PluginDetailSections({
   locale: "zh" | "en";
 }) {
   const version = rowVersion(row);
+  // Under a display name, the package it names: a server module's specifier line below says
+  // the same, so it stands in for this one.
+  const packageName =
+    row.module === undefined && rowTitle(row, locale) !== row.name
+      ? row.library?.package
+      : undefined;
   return (
     <>
       <div className="flex items-start gap-3">
@@ -232,6 +251,9 @@ export function PluginDetailSections({
           glyph={22}
         />
         <div className="min-w-0 flex-1">
+          {packageName !== undefined && (
+            <p className="mb-1 truncate font-mono text-xs text-fg-muted">{packageName}</p>
+          )}
           <MetaLine>
             {version !== undefined && <span className="shrink-0 font-mono">v{version}</span>}
             <StatusMark status={head.status} hint={head.statusHint} />
@@ -278,11 +300,16 @@ export function PluginDetailSections({
               />
             </div>
           )}
+          <PackageDetailsLine details={rowDetails(row)} />
         </div>
       </div>
 
       <RuledSection title={S.plugins.detailDescription} level={3} className="mt-5">
-        <p className="text-sm leading-relaxed">{rowDescription(row, locale)}</p>
+        <p
+          className={`text-sm leading-relaxed ${rowHasDescription(row, locale) ? "" : "text-fg-muted"}`}
+        >
+          {rowDescription(row, locale)}
+        </p>
         {readme.kind === "loading" && <Skeleton className="mt-4 h-24 w-full" />}
         {readme.kind === "text" && (
           <div className="md-body mt-4 text-sm">
@@ -295,6 +322,10 @@ export function PluginDetailSections({
           <p className="mt-2 text-xs text-fg-muted">{S.plugins.readmeAfterInstall}</p>
         )}
       </RuledSection>
+
+      {row.library !== undefined && row.library.mcpServers.length > 0 && (
+        <PluginMcpSection servers={row.library.mcpServers} />
+      )}
 
       {files !== null && (
         <RuledSection title={S.plugins.detailFiles} level={3} className="mt-6">
@@ -326,6 +357,60 @@ export function MetaLine({ children }: { children: ReactNode }) {
           {item}
         </Fragment>
       ))}
+    </div>
+  );
+}
+
+/** A details-line link: the glyph alone, flat — no box at rest or on hover, the ink deepens instead. */
+const DETAIL_LINK_CLASS =
+  "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:text-fg";
+
+/** One of the package's links, opened in a new tab that keeps no handle on this one. */
+function DetailLink({ href, glyph, label }: { href: string; glyph: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={label}
+      data-tooltip={label}
+      data-tooltip-content="text"
+      className={DETAIL_LINK_CLASS}
+    >
+      <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
+    </a>
+  );
+}
+
+/**
+ * What the package says of itself, under the header's tags: author · license, then a link each
+ * to its homepage and its repository; nothing at all when it carries none of them. The links sit
+ * beside the meta line rather than in it, whose overflow clip would cut their focus ring.
+ */
+function PackageDetailsLine({ details }: { details: PluginDetails }) {
+  const { author, license, homepage, repository } = details;
+  const words = author !== undefined || license !== undefined;
+  const links = homepage !== undefined || repository !== undefined;
+  if (!words && !links) return null;
+  return (
+    <div className="mt-2 flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
+      {words && (
+        <MetaLine>
+          {author !== undefined && <span className="min-w-0 truncate">{author}</span>}
+          {license !== undefined && <span className="shrink-0">{license}</span>}
+        </MetaLine>
+      )}
+      {words && links && (
+        <span aria-hidden className="shrink-0">
+          ·
+        </span>
+      )}
+      {homepage !== undefined && (
+        <DetailLink href={homepage} glyph={ICONS.globe} label={S.plugins.detailHomepage} />
+      )}
+      {repository !== undefined && (
+        <DetailLink href={repository} glyph={ICONS.gitBranch} label={S.plugins.detailRepository} />
+      )}
     </div>
   );
 }
@@ -397,7 +482,7 @@ export function PluginDetailModal({
   return (
     <Modal
       open
-      title={row.name}
+      title={rowTitle(row, locale)}
       onClose={onClose}
       widthClass="sm:max-w-4xl"
       {...(footer !== null ? { footer } : {})}

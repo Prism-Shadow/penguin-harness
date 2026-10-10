@@ -2,6 +2,11 @@
   "name": "@penguinharness/goal",
   "version": "0.2.13",
   "description": "Goal mode: a stop hook that keeps the session working toward an objective — re-injecting it every round and checking the goal file — until the goal is complete, blocked, or out of token budget.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "hooks"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -9,7 +14,6 @@
     "directory": "plugins/goal"
   },
   "files": [
-    "plugin.json",
     "icon.svg",
     "skills",
     "hooks",
@@ -17,5 +21,33 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "penguin": {
+    "description_zh": "目标模式：一个 stop hook，让会话持续朝目标工作——每轮重新注入目标并检查目标文件——直到目标完成、受阻或 token 预算耗尽。",
+    "short_description": "Loop the session on an objective until it is done.",
+    "short_description_zh": "让会话循环推进一个目标直到完成。",
+    "category": "office-productivity",
+    "icon": "icon.svg",
+    "quick_start": {
+      "prompt": "Write fizzbuzz.py in this Workspace that prints FizzBuzz for 1 to 30, run it, and check that every line of the output is right.",
+      "prompt_zh": "在当前工作区写一个 fizzbuzz.py，打印 1 到 30 的 FizzBuzz，运行它，并逐行确认输出正确。",
+      "goal": true
+    },
+    "hooks": {
+      "version": "2026.10.04.1",
+      "user_prompt": [
+        {
+          "command": "start.mjs",
+          "timeout": 60,
+          "trigger": "host"
+        }
+      ],
+      "stop": [
+        {
+          "command": "stop.mjs",
+          "timeout": 60
+        }
+      ]
+    }
   }
 }

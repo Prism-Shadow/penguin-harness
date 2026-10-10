@@ -19,6 +19,27 @@
  * - The detail dialog: a plugin of Skills shows its description and its files; a server module
  *   its description and README, and no files; one not on this server says the README comes
  *   with the install; a plugin that is both shows About, then Files.
+ * - A plugin whose package carries no description shows the placeholder on its card and in its
+ *   dialog, and the card still opens the dialog, files and all. A shipped package no index
+ *   knows still says it ships with the build instead.
+ * - A plugin whose package gives a display name shows it on the card and as the dialog's title
+ *   (in the UI language), and the dialog names the package beneath it; without one, the name
+ *   stands and no package line is added.
+ * - The dialog lists the package's author and license — a server module's from its index entry —
+ *   and links only to what a browser can safely open, in a new tab: an https homepage and a
+ *   `git+https://….git` repository link to their pages, a `javascript:` repository is no link,
+ *   and a package carrying none of these links nowhere.
+ * - A package's URL as package.json writes it (`git+https://….git`, `github:o/r`) becomes the
+ *   page it names; anything not http(s) becomes no link.
+ * - A plugin's MCP servers: the dialog lists each with its transport and target, a mark naming
+ *   the values it needs (by their labels) and one saying it needs a sign-in; a stdio server's
+ *   mark names the command it runs on this server.
+ * - Installing a plugin with a stdio server asks first, and the question shows the command; an
+ *   install of several plugins at once (a bulk update, a new Agent's plugins) names each plugin
+ *   that runs one, with its commands.
+ * - In Manage installs, an Agent whose copy waits for vault values says which; its owner gets
+ *   Set up, a member is told the owner sets them. Saving writes the vault with every existing
+ *   key kept, the new values added, an empty field left out.
  *
  * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
  * its cards. Static markup has no layout, so how the header row wraps on a phone is not here.
@@ -34,11 +55,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { PluginIndexEntry, PluginItem } from "@prismshadow/penguin-server/api";
 import {
+  InstallRow,
   ModuleApplyBody,
   PluginCard,
   pluginArchiveUrl,
   type PluginCardProps,
 } from "../src/features/plugins/plugin-card";
+import {
+  StdioDisclosure,
+  StdioInstallBody,
+  setUpVaultEntries,
+} from "../src/features/plugins/plugin-mcp";
 import {
   PluginDetailSections,
   type PluginDetailHead,
@@ -49,6 +76,7 @@ import {
   type PluginGroupBy,
   type PluginRow,
 } from "../src/features/plugins/plugin-groups";
+import { rowTitle, webLink } from "../src/features/plugins/plugin-marks";
 import type { PluginStatus } from "../src/features/plugins/plugin-status";
 import { PluginsHeaderActions } from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
@@ -152,6 +180,7 @@ const LIBRARY: PluginItem = {
   source: "builtin",
   skills: [{ name: "data-analysis", description: "", version: "2026.10.04.1" }],
   hooks: [],
+  mcpServers: [],
 };
 const libraryRow: PluginRow = {
   key: "library:data-analysis",
@@ -178,6 +207,9 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
     onToggleInstall: () => Promise.resolve(true),
     onUpdateOutdated: () => Promise.resolve(),
     onModuleApply: () => undefined,
+    isOwner: false,
+    projectId: null,
+    onMcpChanged: () => undefined,
     ...overrides,
   });
 
@@ -369,5 +401,245 @@ describe("the detail dialog", () => {
     expect(about).toBeGreaterThanOrEqual(0);
     expect(html.indexOf("Usage")).toBeGreaterThan(about);
     expect(html.indexOf(en.plugins.detailFiles)).toBeGreaterThan(html.indexOf("Usage"));
+  });
+});
+
+describe("a plugin with no description", () => {
+  const bare: PluginRow = { ...libraryRow, library: { ...LIBRARY, description: "" } };
+
+  it("shows the placeholder on its card, which still opens its dialog, and in the dialog", () => {
+    const html = card(bare, false);
+    // The placeholder sits in the card's body, the button that opens the dialog.
+    expect(buttonWords(html).some((w) => w.includes(en.plugins.noDescription))).toBe(true);
+    const dialog = sections(bare, { kind: "none" });
+    expect(dialog).toContain(en.plugins.noDescription);
+    expect(dialog).toContain("FILE-BROWSER");
+  });
+
+  it("leaves a shipped package no index knows saying it ships with the build, not the placeholder", () => {
+    const unknown: PluginRow = {
+      key: "module:@penguinharness/sandbox-dsh",
+      name: "sandbox-dsh",
+      category: "sandbox",
+      module: {
+        specifier: "@penguinharness/sandbox-dsh",
+        entry: undefined,
+        state: "none",
+        shipped: true,
+      },
+    };
+    for (const html of [text(card(unknown, false)), sections(unknown, { kind: "none" })]) {
+      expect(html).toContain(en.plugins.shippedNoEntry);
+      expect(html).not.toContain(en.plugins.noDescription);
+    }
+  });
+});
+
+describe("a plugin's display name", () => {
+  const titled: PluginRow = {
+    key: "library:notes",
+    name: "notes",
+    category: "other",
+    library: {
+      ...LIBRARY,
+      name: "notes",
+      title: "Notes Pro",
+      titleZh: "笔记专业版",
+      package: "@acme/notes",
+      source: "installed",
+    },
+  };
+
+  it("shows on the card and as the dialog's title, with the package name beneath it", () => {
+    const onCard = text(card(titled, false));
+    expect(onCard).toContain("Notes Pro");
+    expect(onCard).not.toMatch(/\bnotes\b/);
+    expect(rowTitle(titled, "en")).toBe("Notes Pro");
+    expect(rowTitle(titled, "zh")).toBe("笔记专业版");
+    expect(sections(titled, { kind: "none" })).toContain("@acme/notes");
+    // Without a display name the plugin's name stands, and no package line joins it.
+    expect(rowTitle(libraryRow, "en")).toBe("data-analysis");
+    expect(sections(libraryRow, { kind: "none" })).not.toContain(LIBRARY.package);
+  });
+});
+
+describe("the package's own details in the dialog", () => {
+  /** Every link in the markup: where it goes, its name, and whether it opens apart from this page. */
+  const links = (html: string) =>
+    [...html.matchAll(/<a\s([^>]*)>/g)].map((m) => ({
+      href: /href="([^"]*)"/.exec(m[1]!)?.[1],
+      name: /aria-label="([^"]*)"/.exec(m[1]!)?.[1],
+      apart: m[1]!.includes('target="_blank"') && m[1]!.includes('rel="noopener noreferrer"'),
+    }));
+  const details = (row: PluginRow) =>
+    inLocale(PluginDetailSections, {
+      row,
+      head: HEAD,
+      readme: { kind: "none" },
+      files: null,
+      locale: "en",
+    });
+
+  it("shows the author and license, and links only what a browser can safely open, in a new tab", () => {
+    const html = details({
+      ...libraryRow,
+      library: {
+        ...LIBRARY,
+        author: "Acme Labs",
+        license: "MIT",
+        homepage: "https://acme.example/notes",
+        repository: "javascript:alert(1)",
+      },
+    });
+    expect(text(html)).toContain("Acme Labs · MIT");
+    expect(links(html)).toEqual([
+      { href: "https://acme.example/notes", name: en.plugins.detailHomepage, apart: true },
+    ]);
+    expect(html).not.toContain("javascript:");
+    // A repository as npm writes it links to its page.
+    const repositoryOnly = details({
+      ...libraryRow,
+      library: { ...LIBRARY, repository: "git+https://github.com/acme/notes.git" },
+    });
+    expect(links(repositoryOnly)).toEqual([
+      { href: "https://github.com/acme/notes", name: en.plugins.detailRepository, apart: true },
+    ]);
+    // A server module's come from its index entry; a package with none of them links nowhere.
+    expect(text(details(moduleRow("none", false)))).toContain("Prism Shadow · Apache-2.0");
+    expect(links(details(libraryRow))).toEqual([]);
+  });
+
+  it("turns a URL as package.json writes it into the page it names, and anything else into no link", () => {
+    expect(webLink("git+https://github.com/acme/notes.git")).toBe("https://github.com/acme/notes");
+    expect(webLink("github:acme/notes")).toBe("https://github.com/acme/notes");
+    expect(webLink("http://acme.example/notes")).toBe("http://acme.example/notes");
+    for (const unsafe of [
+      "javascript:alert(1)",
+      "git+ssh://git@github.com/acme/notes.git",
+      "file:///srv/notes",
+      "acme/notes",
+      undefined,
+    ]) {
+      expect(webLink(unsafe), String(unsafe)).toBeNull();
+    }
+  });
+});
+
+describe("a plugin's MCP servers", () => {
+  const MAIL: PluginItem = {
+    ...LIBRARY,
+    name: "mail",
+    package: "@acme/mail",
+    source: "installed",
+    skills: [],
+    mcpServers: [
+      {
+        name: "mail",
+        transport: "http",
+        target: "https://mail.example.com/mcp",
+        setup: [{ key: "MAIL_CLIENT_ID", label: "OAuth client ID" }, { key: "MAIL_CLIENT_SECRET" }],
+        oauth: true,
+        signIn: true,
+      },
+      {
+        name: "mail-local",
+        transport: "stdio",
+        target: "node ${PLUGIN_ROOT}/server.mjs",
+        setup: [],
+        oauth: false,
+        signIn: false,
+      },
+    ],
+  };
+  const mailRow: PluginRow = {
+    key: "library:mail",
+    name: "mail",
+    category: "other",
+    library: MAIL,
+  };
+
+  it("lists each in the dialog with its target and marks for the values and the sign-in it needs", () => {
+    const html = inLocale(PluginDetailSections, {
+      row: mailRow,
+      head: HEAD,
+      readme: { kind: "none" },
+      files: null,
+      locale: "en",
+    });
+    expect(text(html)).toContain(en.plugins.detailMcpServers);
+    expect(text(html)).toContain("https://mail.example.com/mcp");
+    expect(html).toContain(
+      `aria-label="${en.plugins.mcpNeedsSetup(["OAuth client ID", "MAIL_CLIENT_SECRET"])}"`,
+    );
+    expect(html).toContain(`aria-label="${en.plugins.mcpSignIn}"`);
+    expect(html).toContain(
+      `aria-label="${en.plugins.mcpRunsCommand("node ${PLUGIN_ROOT}/server.mjs")}"`,
+    );
+    expect(text(html)).not.toContain(en.plugins.detailFiles);
+  });
+
+  it("asks before a stdio server is installed, showing the command it runs here", () => {
+    const html = text(
+      inLocale(StdioInstallBody, {
+        plugin: MAIL,
+        lead: en.plugins.installStdioTitle("mail", "General Agent"),
+      }),
+    );
+    expect(html).toContain("Install mail on General Agent?");
+    expect(html).toContain(
+      en.plugins.installStdioBody("mail-local", "node ${PLUGIN_ROOT}/server.mjs"),
+    );
+    expect(html).not.toContain("https://mail.example.com/mcp");
+  });
+
+  it("names the commands an install of several plugins runs here under each plugin's title, and nothing for plugins without one", () => {
+    const html = text(
+      inLocale(StdioDisclosure, { plugins: [LIBRARY, { ...MAIL, title: "Mail tools" }] }),
+    );
+    expect(html).toContain("Mail tools");
+    expect(html).toContain(
+      en.plugins.installStdioBody("mail-local", "node ${PLUGIN_ROOT}/server.mjs"),
+    );
+    expect(html).not.toContain("data-analysis");
+    expect(inLocale(StdioDisclosure, { plugins: [LIBRARY] })).toBe("");
+  });
+
+  it("names the values an Agent's copy waits for, and offers its owner Set up", () => {
+    const row = (isOwner: boolean) =>
+      inLocale(InstallRow, {
+        agentId: "default_agent",
+        name: "General Agent",
+        installed: true,
+        outdated: false,
+        mcp: { missingKeys: ["MAIL_CLIENT_SECRET"], signIn: true },
+        isOwner,
+        onToggle: () => undefined,
+        onUpdate: () => undefined,
+        onSetUp: () => undefined,
+      });
+    const owner = row(true);
+    expect(buttonText(owner, `${en.plugins.setUp} default_agent`)).toBe(en.plugins.setUp);
+    expect(owner).toContain(
+      `${en.plugins.mcpNeedsSetup(["MAIL_CLIENT_SECRET"])} · ${en.plugins.mcpSetUpWhere}`,
+    );
+    const member = row(false);
+    expect(buttonText(member, `${en.plugins.setUp} default_agent`)).toBeUndefined();
+    expect(member).toContain(
+      `${en.plugins.mcpNeedsSetup(["MAIL_CLIENT_SECRET"])} · ${en.plugins.mcpSetUpByOwner}`,
+    );
+  });
+
+  it("saves Set up as the whole vault: every existing key kept, new values added, empty fields left out", () => {
+    expect(
+      setUpVaultEntries(["OPENAI_API_KEY", "MAIL_CLIENT_ID"], {
+        MAIL_CLIENT_ID: "replaced-id",
+        MAIL_CLIENT_SECRET: "new-secret",
+        MAIL_TEAM: "",
+      }),
+    ).toEqual([
+      { key: "OPENAI_API_KEY" },
+      { key: "MAIL_CLIENT_ID", value: "replaced-id" },
+      { key: "MAIL_CLIENT_SECRET", value: "new-secret" },
+    ]);
   });
 });

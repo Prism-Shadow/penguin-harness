@@ -1,7 +1,8 @@
 /**
  * The org chart's personnel dialogs. Hire a subordinate — in two sections: the Agent (an
  * existing one of the Project, or a new one: id, name, description, plugins defaulting to
- * agent-company and agent-development) and the position (title, duties, workspace, budget)
+ * agent-company and agent-development, where the confirmation shows the command a picked plugin's
+ * stdio MCP server runs on this server) and the position (title, duties, workspace, budget)
  * — the single-field edits, each showing the current value first: budget (a monthly cap,
  * typed in the reader's own currency and stored in USD, or unbounded) and reporting line
  * (anyone outside the employee's own subtree); and the desk renewal, which writes the
@@ -10,7 +11,7 @@
  * calls the API; the renewal is its own confirmation and needs no second one.
  */
 import { useEffect, useState } from "react";
-import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
+import type { OrgEmployeeItem, OrgHireRequest, PluginItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
   ConfirmModal,
@@ -39,6 +40,7 @@ import { useTheme } from "../../state/theme";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
+import { StdioDisclosure } from "../plugins/plugin-mcp";
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
@@ -84,7 +86,9 @@ export function HireDialog({
   const [newDescription, setNewDescription] = useState("");
   const [plugins, setPlugins] = useState<string[]>(DEFAULT_EMPLOYEE_PLUGINS);
   const [pluginsOpen, setPluginsOpen] = useState(false);
-  const [library, setLibrary] = useState<PickableItem[] | null>(null);
+  const [library, setLibrary] = useState<Array<
+    PickableItem & Pick<PluginItem, "title" | "titleZh" | "mcpServers">
+  > | null>(null);
   const [title, setTitle] = useState("");
   const [duties, setDuties] = useState("");
   const [workspace, setWorkspace] = useState("");
@@ -392,6 +396,14 @@ export function HireDialog({
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {S.company.chart.hireConfirm(hireName, manager.name)}
         </p>
+        {/* A new employee's plugin with a stdio MCP server runs a command on this server whenever
+            a session of the Agent starts: said here, before the Agent is created. */}
+        {source === "new" && (
+          <StdioDisclosure
+            className="mt-3"
+            plugins={(library ?? []).filter((plugin) => plugins.includes(plugin.name))}
+          />
+        )}
       </ConfirmModal>
     </>
   );

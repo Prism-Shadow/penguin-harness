@@ -1237,8 +1237,9 @@ export const en: Strings = {
     createPluginsPlaceholder: "No plugins selected",
     createPluginsPicked: (n: number): string => `${n} plugin${n === 1 ? "" : "s"} selected`,
     createPluginsHint:
-      "Installed into the agent at creation (skills and hook packages); add or remove them later in its Skills and Hooks tabs.",
+      "Installed into the agent at creation (skills, hook packages and MCP servers); add or remove them later in its Skills, Hooks and Tools tabs.",
     createPluginsEmpty: "The plugin library has nothing to install.",
+    createStdioQuestion: (agent: string): string => `Create ${agent}?`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
     createSkillsPlaceholder: "No skills selected",
     createSkillsPicked: (n: number): string => `${n} skill${n === 1 ? "" : "s"} selected`,
@@ -1441,12 +1442,14 @@ export const en: Strings = {
     mcpArgs: "args",
     mcpArgsHint: "One argument per line",
     mcpEnv: "env",
-    mcpEnvHint: "One KEY=value per line; the Agent vault is not injected into MCP Server processes",
+    mcpEnvHint:
+      "One KEY=value per line; a ${KEY} in a value is read from the agent's vault when the server connects, and nothing else from the vault reaches the process",
     mcpCwd: "cwd",
     mcpCwdHint: "Leave empty to use the Session's Workspace",
     mcpUrl: "url",
     mcpHeaders: "headers",
-    mcpHeadersHint: "One Header-Name: value per line (auth headers such as Authorization)",
+    mcpHeadersHint:
+      "One Header-Name: value per line (auth headers such as Authorization); a ${KEY} in a value is read from the agent's vault when the server connects",
     mcpPermission: "permission",
     mcpPermissionAuto: "auto",
     mcpPermissionAutoLabel: "Auto (readOnlyHint)",
@@ -1467,6 +1470,7 @@ export const en: Strings = {
     mcpNumberInvalid: "Must be an integer > 0",
     mcpDuplicateName: "A server with this name already exists",
     mcpTest: "Test connection",
+    mcpTestAll: "Test all",
     mcpTesting: "Testing…",
     mcpTestOk: (toolCount: number, latencyMs?: number): string => {
       const timing = latencyMs !== undefined ? ` (${(latencyMs / 1000).toFixed(1)}s)` : "";
@@ -1485,6 +1489,11 @@ export const en: Strings = {
     mcpDeleteTitle: "Delete MCP Server",
     mcpDeleteConfirm: (name: string): string =>
       `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,
+    mcpInstalledBy: (plugin: string): string => `Installed by plugin ${plugin}`,
+    mcpFromPlugin: (plugin: string): string =>
+      `From plugin ${plugin}: reinstalling the plugin replaces this entry.`,
+    mcpRemoveFromPlugin: (plugin: string): string =>
+      `It was installed by plugin ${plugin}; Manage installs on the Plugins page can put it back.`,
     defaultValue: "(default)",
     livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
     deleteAgent: "Delete agent",
@@ -2355,7 +2364,7 @@ export const en: Strings = {
       none: "No grouping",
     },
     /** What a plugin carries: the section titles of the grouping by content. */
-    kindLabel: { skills: "Skills", hooks: "Hooks", modules: "Server modules" },
+    kindLabel: { skills: "Skills", hooks: "Hooks", mcp: "MCP servers", modules: "Server modules" },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent Sandbox",
     otherCategory: "Other",
@@ -2386,6 +2395,8 @@ export const en: Strings = {
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "Ships with this build; the registry has no entry for it yet.",
+    /** In place of the description of a package that carries none. */
+    noDescription: "No description",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
     libraryBuiltinHint: "Ships with this build; install it to an agent to use it there.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
@@ -2395,6 +2406,10 @@ export const en: Strings = {
     detailFiles: "Files",
     detailSkills: "Skills",
     detailHooks: "Hooks",
+    detailMcpServers: "MCP servers",
+    /** The detail dialog's links to the package's homepage and repository: their names and hover hints. */
+    detailHomepage: "Homepage",
+    detailRepository: "Repository",
     /** In place of the README of a package that is not on this server. */
     readmeAfterInstall: "The README shows once the plugin is installed",
     /** The tag of a plugin an admin installed on this server (not shipped with the build). */
@@ -2432,14 +2447,19 @@ export const en: Strings = {
     importLinkPlaceholder: "https://github.com/… or github:owner/repo",
     importLinkInvalid:
       "Not an https link; give a package name under From npm, and let an agent install anything else.",
+    /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
+    importLinkSubpath:
+      "A folder or a file inside a repository, which npm cannot install: let an agent port it.",
+    importLinkAskAgent: "Ask an agent",
     importCost:
       "When the plugin carries server modules, installing reloads the server's plugins, which stops the agent runs in progress in every Project.",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
     importScriptsRun: "The package's install scripts run on the server as the server's user.",
     importAgentWhy:
-      "For a page, a repository or a description: the agent finds and reviews the package first, then installs it with penguin plugin install.",
+      "For a page, a repository, a folder in a repository, or a Codex or Claude Code plugin with its skills and MCP servers: the agent reviews it — porting it into a PenguinHarness package first when it is not one — then installs it with penguin plugin install.",
     importSourceLabel: "Plugin source",
-    importSourcePlaceholder: "A link, a local path or a description",
+    importSourcePlaceholder:
+      "A link such as https://github.com/owner/repo/tree/main/plugins/name, a local path or a description",
     importSourceToken: "<plugin source>",
     importPromptLabel: "Prompt for the agent",
     /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
@@ -2451,7 +2471,7 @@ export const en: Strings = {
         `Find the PenguinHarness plugin described here and install it on this server: ${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `A plugin is an npm package that runs on the server: before installing anything, read its package.json, plugin.json and every script it ships, and say what it does and what it would run. If it is not a PenguinHarness plugin (a plugin.json beside skills/ or hooks/, or the ifaces.json of server modules), or anything in it looks unsafe, stop and tell me. Then install it with \`penguin plugin install <npm name or https link> --project-id ${projectId}\` and report the installed name and version. Do not install a local folder: zip it without node_modules and tell me where the zip is, and I will upload it under "Upload a zip".`,
+      `A PenguinHarness plugin is an npm package: its package.json (name, version, description, and a \`penguin\` block the plugin card reads, where \`penguin.mcp_servers\` declares its MCP servers) beside \`skills/<name>/SKILL.md\` and/or \`hooks/\`. Whatever the source, before installing anything, read its package.json and every script it ships, and say what it does and what it would run; if anything looks unsafe, stop and tell me. If the source already is such a package — on npm, at an https link to a git repository or a tarball, or in a local folder — install it with \`penguin plugin install <npm name, https link or folder> --project-id ${projectId}\`. If it is anything else — a folder or a file inside a GitHub repository, a Codex (\`.codex-plugin\`) or Claude Code (\`.claude-plugin\`) plugin, a skills repository — read the \`plugin-porting\` skill and follow it: fetch the source at a pinned commit, build the package in a scratch folder, review it, then install that folder the same way. The plugin's MCP servers (a \`.mcp.json\` or an \`mcpServers\` map) are part of it: carry them as \`penguin.mcp_servers\`, never with a secret value in the package. Report the installed name and version, the skills and MCP servers it carries, the vault keys I must set for those servers, and what you left out.`,
     importUploadDesc:
       "A zip of the plugin's package directory: package.json at its root or in its one top-level directory, no node_modules — such as another server's Export. Upload only what you trust.",
     importUploadAction: "Choose a zip file",
@@ -2483,8 +2503,27 @@ export const en: Strings = {
       `Updated ${plugin} to the latest version (${n} agent(s))`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
-    uninstallConfirmBody: (plugin: string, agent: string): string =>
-      `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
+    uninstallConfirmBody: (plugin: string, agent: string, withMcp: boolean): string =>
+      `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included)${withMcp ? " and its MCP servers" : ""} will be deleted.`,
+    mcpNeedsSetup: (keys: string[]): string => `Needs setup: ${keys.join(", ")}`,
+    mcpSetUpWhere: "set it in the Vault tab",
+    mcpSetUpByOwner: "the Project owner sets it",
+    mcpSignIn: "Sign-in (OAuth) required — not available in this version",
+    mcpRunsCommand: (command: string): string =>
+      `Runs ${command} on this server when an agent session starts`,
+    installStdioTitle: (plugin: string, agent: string): string => `Install ${plugin} on ${agent}?`,
+    installStdioBody: (server: string, command: string): string =>
+      `Its MCP server ${server} runs ${command} on this server whenever a session of the agent starts.`,
+    setUp: "Set up",
+    setUpTitle: (plugin: string, agent: string): string => `Set up ${plugin} on ${agent}`,
+    setUpDesc: "The values go into the agent's vault; its MCP servers read them when they connect.",
+    setUpKeySet: "set",
+    setUpKeySetHint: "Already in the vault: the MCP server receives this value",
+    setUpHelpLink: "Where to get it",
+    updatePartMcp: "MCP server",
+    updatePartReplaced: "replaced",
+    importMcpNote:
+      "A plugin may carry MCP servers: a stdio server is a command that runs on this server when an agent session starts, and a remote one is an address this server connects to.",
   },
 
   /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
@@ -3404,17 +3443,20 @@ Scenarios:
     mcpConnectTitle: "MCP connect",
     mcpServerList: (servers: string[]): string => servers.join(", "),
     /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
-    mcpConnectResult: (toolCount: number, failed: string[]): string => {
+    mcpConnectResult: (toolCount: number, failed: string[], waiting: string[]): string => {
       const parts: string[] = [];
-      if (toolCount > 0 || failed.length === 0) {
+      if (toolCount > 0 || (failed.length === 0 && waiting.length === 0)) {
         parts.push(`${toolCount} tool${toolCount === 1 ? "" : "s"} discovered`);
       }
       if (failed.length > 0) parts.push(`unavailable: ${failed.join(", ")}`);
+      if (waiting.length > 0) parts.push(`waiting for setup: ${waiting.join(", ")}`);
       return parts.join("; ");
     },
     /** Per-server group row meta inside the expanded connect row. */
     mcpToolsCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     mcpServerFailed: "connection failed",
+    mcpServerNeedsSetup: "needs setup",
+    mcpServerSignIn: "sign-in required",
     mcpConnectAborted: "interrupted — reconnects on the next send",
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),

@@ -100,6 +100,29 @@ describe("formToServer", () => {
     });
   });
 
+  it("keeps an entry a plugin installed as the plugin's through an edit, its OAuth block and vault references included", () => {
+    const entry = {
+      name: "gmail",
+      plugin: "gmail",
+      config: {
+        transport: "http",
+        url: "https://gmailmcp.googleapis.com/mcp/v1",
+        headers: { "X-Client": "${GMAIL_CLIENT_ID}" },
+        oauth: { client_id: "${GMAIL_CLIENT_ID}", client_secret: "${GMAIL_CLIENT_SECRET}" },
+      },
+    };
+    const form = serverToForm(entry);
+    expect(form.headersText).toBe("X-Client: ${GMAIL_CLIENT_ID}");
+    const saved = formToServer({ ...form, permission: "r" });
+    expect(saved.ok && saved.server).toEqual({
+      ...entry,
+      config: { ...entry.config, permission: "r" },
+    });
+    // The user's own entry stays the user's.
+    const own = formToServer(serverToForm({ name: "mine", config: { url: "https://x.example" } }));
+    expect(own.ok && own.server).not.toHaveProperty("plugin");
+  });
+
   it("merges extras back and lets known fields win", () => {
     const form = {
       ...emptyMcpForm(),

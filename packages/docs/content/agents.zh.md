@@ -161,7 +161,7 @@ Agent 的内核版本记录它的配置基于哪一代内置默认设置。已�
 > [!WARNING]
 > 还原为默认配置的操作无法撤销。
 
-还原时用当前默认值覆盖 Agent 的配置：自定义系统提示词、工具列表、模型和压缩设置、MCP Server 全部替换，只保留名称、描述和 Agent State 版本。
+还原时用当前默认值覆盖 Agent 的配置：自定义系统提示词、工具列表、模型和压缩设置、MCP Server 全部替换，只保留名称、描述和 Agent State 版本。插件安装的 MCP Server 也会被移除；在**插件市场**页面用**管理安装**即可装回。
 
 ## 系统提示词标签页
 
@@ -231,8 +231,8 @@ MCP Server 给 Agent 增加外部工具，工具名形如 `mcp__<name>__<tool>`�
    - `sse`：旧的 HTTP+SSE 传输方式，供尚未迁移的 Server 使用。
 3. 在 **name** 中输入工具名前缀，可以用字母、数字、`_` 和 `-`，以字母或数字开头。
 4. 填写连接字段：
-   - `stdio`：**command**；**args**，每行一个参数；**env**，每行一个 `KEY=value`；**cwd**，默认是 Session 的 Workspace。Agent 的密钥保险柜变量不会传给 MCP Server 进程。
-   - `http` 和 `sse`：**url**；**headers**，每行一个 `Header-Name: value`，例如 `Authorization` 请求头。
+   - `stdio`：**command**；**args**，每行一个参数；**env**，每行一个 `KEY=value`；**cwd**，默认是 Session 的 Workspace。Agent 的密钥保险柜不会整个传给 MCP Server 进程；要给 Server 机密，写成下文介绍的 `${KEY}` 引用。
+   - `http` 和 `sse`：**url**；**headers**，每行一个 `Header-Name: value`，例如 `Authorization: Bearer ${LINEAR_API_KEY}`。
 5. 选择 **permission**：
    - **Auto（readOnlyHint）**：工具声明了 `readOnlyHint` 注解就按只读处理，否则按 Read & write 处理。
    - **Read-only**：Server 的所有工具都按只读处理。
@@ -244,14 +244,23 @@ MCP Server 给 Agent 增加外部工具，工具名形如 `mcp__<name>__<tool>`�
 > [!NOTE]
 > permission 级别只在「放行只读」审批模式下起作用，其他审批模式都会忽略它。它也不限制 Server 能做什么：把 Server 标为只读，只是让这个审批模式跳过本该弹出的确认。
 
+写成 `${KEY}` 的值（`KEY` 是 Agent [密钥保险柜标签页](#密钥保险柜标签页)上的变量名）会在 Server 连接时从密钥保险柜填入。配置里只保留引用，机密因此不会出现在 `system_config.yaml` 中。除 URL 的主机部分外，任何字段都可以使用引用，见 [Vault 引用](/tools#vault-引用)。
+
 要修改某个 Server，在它的行上选择**编辑**。要移除，选择**删除**并确认；从下一个 Session 开始，它的工具不再可用。更多关于 MCP Server 的内容见 [MCP Server](/tools#mcp-server)。
+
+安装带 MCP Server 的插件，也会把这些 Server 加进这个列表，见[在 Agent 上安装插件](/skills#在-agent-上安装插件)。这样的行在名称后显示拼图图标，指向它可以看到是哪个插件安装了这个 Server。**编辑**会保留条目与插件的关联，并注明重新安装插件会替换它。**删除**前会先确认，并说明可以在**插件市场**页面用**管理安装**把它装回来。
+
+暂时连不上的 Server，行上还会显示一个图标。对话会跳过这个 Server，并在 MCP 连接那一行说明原因：
+
+- 钥匙图标：Server 待设置，因为密钥保险柜里缺少它的条目引用的键。指向图标可以看到键名。Project owner 在**密钥保险柜**标签页添加这些键，或在插件的**管理安装**对话框中点击**设置**。
+- 登录图标：Server 用 OAuth 登录，本版本尚不支持。
 
 ### 测试 MCP Server
 
-1. 在 **MCP Server** 区块选择**测试连接**。
+1. 在 **MCP Server** 区块选择表头的**全部测试**。
 2. 选择**开始测试**。
 
-PenguinHarness 依次连接每个 Server 并发现它的工具，不会保存任何内容。每行显示工具数量和耗时；失败则显示**连接失败**和原因。
+PenguinHarness 依次连接每个 Server 并发现它的工具，不会保存任何内容。每行显示工具数量和耗时；失败则显示**连接失败**和原因。测试前会先填入对密钥保险柜的引用；密钥保险柜缺键的 Server 直接以缺少的键名报失败，不会尝试连接。
 
 ## 技能标签页
 
@@ -314,7 +323,7 @@ PenguinHarness 依次连接每个 Server 并发现它的工具，不会保存任
 
 ## 密钥保险柜标签页
 
-密钥保险柜存放 Agent 用的环境变量，比如 API key。PenguinHarness 把它们传给 Agent 的 shell 命令。模型只能看到变量名，永远看不到值。子 Agent 用各自的密钥保险柜，不继承这里的变量。修改从下一个 Task 起生效；正在运行的 Task 不受影响。
+密钥保险柜存放 Agent 用的环境变量，比如 API key。PenguinHarness 把它们传给 Agent 的 shell 命令；MCP Server 只拿到它的条目以 `${KEY}` 引用的那几个。模型只能看到变量名，永远看不到值。子 Agent 用各自的密钥保险柜，不继承这里的变量。修改从下一个 Task 起生效；正在运行的 Task 不受影响。
 
 只有 Project owner 能修改密钥保险柜。成员能看到变量名，值以掩码显示。
 

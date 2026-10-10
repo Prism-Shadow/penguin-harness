@@ -5,9 +5,14 @@
  *   and neither takes the other's: the server reads the two apart the same way. A plain http,
  *   file or ssh link, a path, a link with credentials, an alias behind a name and a description
  *   go to neither; they are for an Agent instead.
+ * - A link to a folder or a file inside a GitHub repository (`…/tree/…`, `…/blob/…`) is not a
+ *   link the server installs, since npm installs a whole repository or nothing; a repository
+ *   itself, or a tarball GitHub serves, still is.
  * - The Agent's prompt names the source, asks for a review before anything is installed, and
- *   installs with `penguin plugin install` in this Project; a local folder is routed to the zip
- *   upload.
+ *   installs with `penguin plugin install` in this Project — a package from npm, a link or a
+ *   local folder; a GitHub folder is ported into a package first with the `plugin-porting`
+ *   skill, then installed as a folder, in either language — its MCP servers carried as
+ *   `penguin.mcp_servers`.
  * - The server's 409 is read as the question the replace confirm asks; any other message is
  *   not one.
  */
@@ -17,9 +22,10 @@ import {
   classifyPluginSource,
   isNpmPluginName,
   isPluginLink,
+  isRepoSubpathLink,
   readReplaceQuestion,
 } from "../src/features/plugins/plugin-import-prompt";
-import { setActiveStrings } from "../src/lib/strings";
+import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 beforeEach(() => {
@@ -55,6 +61,34 @@ describe("what the server installs as it is", () => {
     for (const link of links) expect(isPluginLink(` ${link} `), link).toBe(true);
     for (const other of [...names, ...neither]) expect(isPluginLink(other), other).toBe(false);
   });
+
+  it("is not a GitHub tree or blob link, while a repository or a tarball GitHub serves still is", () => {
+    const insideRepository = [
+      "https://github.com/acme/plugins/tree/main/plugins/notes",
+      "https://github.com/acme/plugins/blob/main/plugins/notes/README.md",
+      "https://www.github.com/acme/plugins/tree/v1.0.0",
+      "git+https://github.com/acme/plugins/tree/main/plugins/notes",
+    ];
+    for (const link of insideRepository) {
+      expect(isPluginLink(link), link).toBe(false);
+      expect(isRepoSubpathLink(` ${link} `), link).toBe(true);
+    }
+    const whole = [
+      "https://github.com/acme/plugins",
+      // A repository that happens to be called "tree".
+      "https://github.com/acme/tree",
+      "https://github.com/acme/notes/archive/refs/tags/v1.0.0.tar.gz",
+    ];
+    for (const link of whole) {
+      expect(isPluginLink(link), link).toBe(true);
+      expect(isRepoSubpathLink(link), link).toBe(false);
+    }
+    // What neither tab takes is refused for what it is, as the server refuses it — a plain http
+    // link for being http — not as a folder.
+    for (const other of [...neither, "http://github.com/acme/plugins/tree/main/notes"]) {
+      expect(isRepoSubpathLink(other), other).toBe(false);
+    }
+  });
 });
 
 describe("the prompt for an agent", () => {
@@ -64,6 +98,20 @@ describe("the prompt for an agent", () => {
     expect(prompt).toContain("before installing anything");
     expect(prompt).toContain("penguin plugin install");
     expect(prompt).toContain("--project-id proj-1");
+  });
+
+  it("sends a GitHub folder through the plugin-porting skill and installs the folder it builds, in either language", () => {
+    const folder = "https://github.com/acme/plugins/tree/main/plugins/notes";
+    for (const strings of [en, zh]) {
+      setActiveStrings(strings);
+      const prompt = buildPluginImportPrompt(folder, "proj-1");
+      expect(prompt).toContain(folder);
+      expect(prompt).toContain("`plugin-porting`");
+      expect(prompt).toMatch(
+        /`penguin plugin install <[^>`]*(folder|文件夹)> --project-id proj-1`/,
+      );
+      expect(prompt).toContain("`penguin.mcp_servers`");
+    }
   });
 
   it("reads a link, a local folder and a description each in its own way", () => {

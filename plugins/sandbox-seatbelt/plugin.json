@@ -1,8 +1,0 @@
-{
-  "description": "macOS Seatbelt sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
-  "description_zh": "PenguinHarness 的 macOS Seatbelt 沙箱后端：限制文件写入，并提供网络隔离与路径屏蔽。",
-  "short_description": "macOS: confine file writes, cut the network, mask paths.",
-  "short_description_zh": "macOS：限制文件写入、断开网络、屏蔽路径。",
-  "category": "sandbox",
-  "preinstall": false
-}

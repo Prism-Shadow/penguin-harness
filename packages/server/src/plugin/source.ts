@@ -6,7 +6,9 @@
  * is not a plugin source), no plain `http:`, `git:` or ssh (a fetch nobody can verify, or
  * credentials the server would need), no credentials inside a link (npm would write them into
  * the prefix's package.json), and no `npm:` / `file:` aliases behind a name. The string reaches
- * npm as one argument after `--`, never through a shell.
+ * npm as one argument after `--`, never through a shell. A link to a folder or a file inside a
+ * GitHub repository (`…/tree/…`, `…/blob/…`) is refused before npm runs: npm installs a whole
+ * repository or nothing, and such a folder is ported into a package by an Agent instead.
  */
 
 /** A registry package by name, optionally `@<version, range or tag>`. */
@@ -39,7 +41,18 @@ function linkFault(value: string): string | null {
   if (url.username !== "" || url.password !== "") {
     return "a link with credentials in it — npm would record them in the server's files";
   }
+  if (isRepoSubpath(url)) {
+    return "a folder or a file inside a repository, which npm cannot install";
+  }
   return null;
+}
+
+/** Whether `url` is a folder or a file inside a GitHub repository: `/<owner>/<repo>/(tree|blob)/…`. */
+function isRepoSubpath(url: URL): boolean {
+  return (
+    (url.hostname === "github.com" || url.hostname === "www.github.com") &&
+    /^\/[^/]+\/[^/]+\/(?:tree|blob)\//.test(url.pathname)
+  );
 }
 
 /**
