@@ -2602,8 +2602,6 @@ export const en: Strings = {
   },
 
   chat: {
-    thinkingLevelChangeNote:
-      "Applies right away. Changing it invalidates the model's cached context — compacting first is recommended.",
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",
