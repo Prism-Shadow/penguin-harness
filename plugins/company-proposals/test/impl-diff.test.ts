@@ -25,6 +25,9 @@ import { gitHeader, gitQuote, parseHunks } from "../src/unified-patch.js";
 const HEAD: ProposalResolvedBranch = { remote: "origin", repo: "acme/site", branch: "feat" };
 const BASE: ProposalResolvedBranch = { remote: "origin", repo: "acme/site", branch: "main" };
 const TAB_NAME = "tab\tname.txt";
+// A Windows file name cannot hold the tab, so the quoted-path fixture is written only where the
+// file can exist; `gitQuote` below covers the quoted form as text on every platform.
+const TAB = process.platform === "win32" ? null : TAB_NAME;
 
 describe("implChanges", () => {
   let dir: string;
@@ -68,7 +71,7 @@ describe("implChanges", () => {
     await write("old-name.txt", lines(30, "moved"));
     await write("ws.txt", "a\n  b\nc\n");
     await write("with space.txt", "one\n");
-    await write(TAB_NAME, "tab one\n");
+    if (TAB !== null) await write(TAB_NAME, "tab one\n");
     commit("base");
 
     git(origin, "checkout", "-q", "-b", "feat");
@@ -80,7 +83,7 @@ describe("implChanges", () => {
     await write("image.bin", Buffer.from([0, 1, 2, 3, 0, 255, 0, 10]));
     await write("ws.txt", "a\n    b\nc\n");
     await write("with space.txt", "two\n");
-    await write(TAB_NAME, "tab two\n");
+    if (TAB !== null) await write(TAB_NAME, "tab two\n");
     await write("big.txt", lines(40_000, "big"));
     commit("feat");
 
@@ -202,7 +205,7 @@ describe("implChanges", () => {
       "image.bin",
       "keep.txt",
       "new-name.txt",
-      TAB_NAME,
+      ...(TAB !== null ? [TAB_NAME] : []),
       "with space.txt",
       "ws.txt",
     ]);
@@ -254,7 +257,9 @@ describe("implChanges", () => {
     expect(keep.hunks[0]!.lines).toContainEqual({ kind: "context", text: "keep line 1" });
     expect(keep.hunks[1]!.lines.at(-1)).toEqual({ kind: "add", text: "appended" });
     // Paths git quotes or that hold a space still find their hunks.
-    expect(f.get(TAB_NAME)!.hunks[0]!.lines).toContainEqual({ kind: "add", text: "tab two" });
+    if (TAB !== null) {
+      expect(f.get(TAB_NAME)!.hunks[0]!.lines).toContainEqual({ kind: "add", text: "tab two" });
+    }
     expect(f.get("with space.txt")!.hunks[0]!.lines).toContainEqual({ kind: "add", text: "two" });
     // Over the per-file cap: counts, no hunks.
     expect(f.get("big.txt")).toMatchObject({
