@@ -43,6 +43,12 @@ const CASE_DIR = /^CASE-[A-Za-z0-9_-]+$/;
 /** The two READMEs that make a case: its statement and its rubric. */
 const CASE_READMES = ["statement/README.md", "rubric/README.md"] as const;
 
+/**
+ * A control character, NUL above all: no disk takes NUL in a name, and a name holding any other
+ * one never lists as it is (a newline splits it, an escape sequence redraws the terminal).
+ */
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
+
 /** Code-unit order: the same on every machine, whatever its locale. */
 function byName(a: { name: string }, b: { name: string }): number {
   return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
@@ -118,9 +124,10 @@ function specialEntries(zip: Uint8Array): string[] {
 /**
  * Reads an uploaded zip as a Benchmark package, or refuses it. In order: the zipped size (413
  * `benchmark_too_large` over 14MB; an empty upload is 400 `benchmark_archive_invalid`), the caps
- * read off the central directory before inflating (413), every entry's path (zip-slip) and type
- * (no links), the layout (`benchmark.json` at the root, or exactly one top-level directory holding
- * it, whose name must then be the manifest's id), what the package may hold (above), the manifest
+ * read off the central directory before inflating (413), every entry's path (zip-slip, control
+ * characters) and type (no links), the layout (`benchmark.json` at the root, or exactly one
+ * top-level directory holding it, whose name must then be the manifest's id), what the package
+ * may hold (above), names a disk that ignores letter case would take for one, the manifest
  * (core's parser; its error code and message, 400), its status (400 `benchmark_not_published`
  * unless `published`: a draft or a failed calibration is not a package anyone can use) and the
  * cases (400 `benchmark_case_invalid`: at least one, each with both READMEs).
@@ -145,6 +152,9 @@ export function readBenchmarkArchive(archive: Uint8Array): BenchmarkPackage {
       assertSafeEntryPath(name);
     } catch (error) {
       throw archiveInvalid((error as Error).message);
+    }
+    if (CONTROL_CHARACTER.test(name)) {
+      throw archiveInvalid(`Invalid zip entry path (control character): ${JSON.stringify(name)}`);
     }
   }
   const special = specialEntries(archive);
@@ -195,17 +205,29 @@ export function readBenchmarkArchive(archive: Uint8Array): BenchmarkPackage {
     if (segments.some((segment) => segment.startsWith("."))) continue;
     caseFiles.set(rel, data);
   }
-  // A file where another entry needs a directory would fail the write half-way instead.
+  // Every path the copy will hold, as a disk that ignores letter case (macOS, Windows) sees it:
+  // two entries it takes for one would land one over the other, and a file where another entry
+  // needs a directory would fail the write half-way.
+  const claimed = new Map<string, { path: string; directory: boolean }>();
+  const claim = (p: string, directory: boolean): void => {
+    const key = p.normalize("NFC").toLowerCase();
+    const prior = claimed.get(key);
+    if (prior === undefined) {
+      claimed.set(key, { path: p, directory });
+    } else if (prior.directory !== directory) {
+      throw archiveInvalid(
+        `Invalid zip entry path (a file where a directory must be): ${directory ? prior.path : p}`,
+      );
+    } else if (prior.path !== p) {
+      throw archiveInvalid(
+        `Invalid zip entry path (the same name as ${prior.path} where letter case is ignored): ${p}`,
+      );
+    }
+  };
   for (const rel of caseFiles.keys()) {
     const segments = rel.split("/");
-    for (let i = 1; i < segments.length; i++) {
-      const parent = segments.slice(0, i).join("/");
-      if (caseFiles.has(parent)) {
-        throw archiveInvalid(
-          `Invalid zip entry path (a file where a directory must be): ${parent}`,
-        );
-      }
-    }
+    for (let i = 1; i < segments.length; i++) claim(segments.slice(0, i).join("/"), true);
+    claim(rel, false);
   }
 
   let manifest: BenchmarkManifest;

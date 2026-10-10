@@ -13,7 +13,8 @@
  *   own state (scoreboard, `.jobs/`, dot-entries, symlinks, stray files); it imports back as the
  *   same package with no scores.
  * - A zip that is not a package is refused before anything is written: entries that climb out
- *   (zip-slip), absolute or backslashed paths, a link, the copy's own state, anything else at
+ *   (zip-slip), absolute or backslashed paths, names holding a control character, names a disk
+ *   that ignores letter case would take for one, a link, the copy's own state, anything else at
  *   the top level, a draft, a case without both READMEs, a directory named other than its id, a
  *   manifest that is not JSON, two top-level directories, bytes that are not a zip, an empty
  *   upload. So is one past the caps — over 14MB zipped, more than 1000 files, an entry declaring
@@ -303,6 +304,57 @@ describe("benchmark packages", () => {
           zipB64({
             ...packageFiles("report-writing-v1"),
             "report-writing-v1\\escape.md": strToU8("x"),
+          }),
+        400,
+        "benchmark_archive_invalid",
+      ],
+      [
+        "an entry whose name holds a NUL",
+        () =>
+          zipB64({
+            ...packageFiles("report-writing-v1"),
+            "report-writing-v1/CASE-001-contradictions/statement/notes\u0000.md": strToU8("x"),
+          }),
+        400,
+        "benchmark_archive_invalid",
+      ],
+      [
+        "an entry whose name holds a control character",
+        () =>
+          zipB64({
+            ...packageFiles("report-writing-v1"),
+            "report-writing-v1/CASE-001-contradictions/statement/\u001b[2Jnotes.md": strToU8("x"),
+          }),
+        400,
+        "benchmark_archive_invalid",
+      ],
+      [
+        "two files whose names differ only in letter case",
+        () =>
+          zipB64({
+            ...packageFiles("report-writing-v1"),
+            "report-writing-v1/CASE-001-contradictions/statement/readme.md": strToU8("x"),
+          }),
+        400,
+        "benchmark_archive_invalid",
+      ],
+      [
+        "two cases whose names differ only in letter case",
+        () =>
+          zipB64({
+            ...packageFiles("report-writing-v1"),
+            "report-writing-v1/CASE-002-FORMAT/statement/README.md": strToU8("# Again\n"),
+            "report-writing-v1/CASE-002-FORMAT/rubric/README.md": strToU8("- 100 pts\n"),
+          }),
+        400,
+        "benchmark_archive_invalid",
+      ],
+      [
+        "a file named, but for letter case, like a directory other entries need",
+        () =>
+          zipB64({
+            ...packageFiles("report-writing-v1"),
+            "report-writing-v1/CASE-002-format/STATEMENT": strToU8("x"),
           }),
         400,
         "benchmark_archive_invalid",

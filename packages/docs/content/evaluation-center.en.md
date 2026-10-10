@@ -113,7 +113,7 @@ The agent resolves the link to a fixed commit, fetches only that folder, reads e
 A package carries no scores: an imported Benchmark starts without evaluations, so [evaluate an agent](#evaluate-an-agent) on it first. An upload is refused, with the reason, when the zip is not a package:
 
 - it holds a `scoreboard.yaml`, a `.jobs` folder or another entry starting with `.`, or anything at the top level besides `benchmark.json` and the `CASE-*` folders;
-- it holds a symbolic link;
+- it holds a symbolic link, a name with a control character in it, or two names that differ only in letter case;
 - its `status` is not `published`, or a case lacks `statement/README.md` or `rubric/README.md`;
 - its top-level folder is named differently from the manifest's `id`;
 - it is larger than 14 MB, or unpacks to more than 1,000 files, 5 MB in one file or 20 MB in all.

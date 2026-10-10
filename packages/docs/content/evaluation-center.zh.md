@@ -113,7 +113,7 @@ Agent 会把链接解析到一个固定提交，只取回那一个文件夹，�
 包里不带分数：导入的 Benchmark 没有评估记录，先用它[评估 Agent](#评估-agent)。zip 不是包时，上传会被拒绝并说明原因：
 
 - 里面有 `scoreboard.yaml`、`.jobs` 文件夹或其他以 `.` 开头的条目，或者顶层除了 `benchmark.json` 和 `CASE-*` 文件夹还有别的东西；
-- 里面有符号链接；
+- 里面有符号链接、含控制字符的名字，或者只有大小写不同的两个名字；
 - `status` 不是 `published`，或者某道题缺少 `statement/README.md` 或 `rubric/README.md`；
 - 顶层文件夹的名字与清单的 `id` 不同；
 - zip 超过 14 MB，或者解开后超过 1,000 个文件、单个文件超过 5 MB 或合计超过 20 MB。
