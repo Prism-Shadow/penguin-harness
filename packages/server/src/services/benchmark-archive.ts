@@ -49,6 +49,13 @@ const CASE_READMES = ["statement/README.md", "rubric/README.md"] as const;
  */
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
 
+/**
+ * The time every exported entry carries: fixed, so that exporting an unchanged Benchmark again
+ * gives the same bytes. Built from local fields because a zip stores local time — 1980-01-01, the
+ * format's first day, reads back as itself in every time zone.
+ */
+const PACKAGE_MTIME = new Date(1980, 0, 1);
+
 /** Code-unit order: the same on every machine, whatever its locale. */
 function byName(a: { name: string }, b: { name: string }): number {
   return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
@@ -315,7 +322,7 @@ export async function packBenchmark(
       await walk(path.join(benchDir, entry.name), entry.name);
     }
   }
-  const zip = zipSync(out);
+  const zip = zipSync(out, { mtime: PACKAGE_MTIME });
   if (zip.byteLength > MAX_ARCHIVE_BYTES) throw tooLarge();
   return zip;
 }

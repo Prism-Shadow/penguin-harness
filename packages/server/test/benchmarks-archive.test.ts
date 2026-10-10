@@ -13,7 +13,8 @@
  *   whole copy.
  * - An export carries `benchmark.json` as the file reads and the cases, and none of the copy's
  *   own state (scoreboard, `.jobs/`, dot-entries, symlinks, stray files); it imports back as the
- *   same package with no scores.
+ *   same package with no scores. Exporting an unchanged Benchmark again, later, gives the same
+ *   bytes.
  * - A zip that is not a package is refused before anything is written: entries that climb out
  *   (zip-slip), absolute or backslashed paths, names holding a control character, names a disk
  *   that ignores letter case would take for one, a link, the copy's own state, anything else at
@@ -33,7 +34,7 @@ import path from "node:path";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import type { Zippable } from "fflate";
 import { parse as parseYaml } from "yaml";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkArchiveImportResponse,
@@ -674,6 +675,27 @@ describe("benchmark packages", () => {
       await seedBenchmark();
 
       expect((await outsider.get(`${base}/report-writing-v1/archive`)).status).toBe(404);
+    });
+
+    it("exports an unchanged Benchmark as the same bytes, whenever it is exported", async () => {
+      await seedBenchmark();
+      const exportAt = async (when: number): Promise<Buffer> => {
+        vi.setSystemTime(when);
+        const res = await member.get(`${base}/report-writing-v1/archive`);
+        expect(res.status).toBe(200);
+        return Buffer.from(await res.arrayBuffer());
+      };
+
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const now = Date.now();
+        const first = await exportAt(now);
+        const anHourLater = await exportAt(now + 61 * 60 * 1000);
+
+        expect(anHourLater.equals(first)).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

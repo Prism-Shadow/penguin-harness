@@ -17,7 +17,7 @@
 
 ## 导出
 
-- `GET /api/projects/:p/benchmarks/:benchmarkId/archive` 任何成员都可调用，返回 `<id>-v<version>.zip`：磁盘上原样的 `benchmark.json` 与各题，不含记分板、`.jobs/`、点开头的条目与符号链接。`draft`、`failed` 与清单无法读取的 Benchmark 返回 409。
+- `GET /api/projects/:p/benchmarks/:benchmarkId/archive` 任何成员都可调用，返回 `<id>-v<version>.zip`：磁盘上原样的 `benchmark.json` 与各题，不含记分板、`.jobs/`、点开头的条目与符号链接。每个条目都带同一个固定时间，同一个 Benchmark 未改动时再次导出，得到的字节完全相同。`draft`、`failed` 与清单无法读取的 Benchmark 返回 409。
 - 已发布 Benchmark 的页面在复制路径按钮旁显示导出图标，从页面所描述那份副本所在的服务端或机器下载。
 
 ## 细节

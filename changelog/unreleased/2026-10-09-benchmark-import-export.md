@@ -17,7 +17,7 @@ The Evaluation Center gained **Import benchmark**, open to every member of the P
 
 ## Export
 
-- `GET /api/projects/:p/benchmarks/:benchmarkId/archive`, open to any member, returned `<id>-v<version>.zip`: `benchmark.json` as it read on disk and the cases, without the scoreboard, `.jobs/`, dot-entries or symlinks. A draft, a failed Benchmark and one whose manifest could not be read answered 409.
+- `GET /api/projects/:p/benchmarks/:benchmarkId/archive`, open to any member, returned `<id>-v<version>.zip`: `benchmark.json` as it read on disk and the cases, without the scoreboard, `.jobs/`, dot-entries or symlinks. Every entry carried one fixed time, so exporting an unchanged Benchmark again gave the same bytes. A draft, a failed Benchmark and one whose manifest could not be read answered 409.
 - A published Benchmark's page showed an Export icon beside the copy-path button. It downloaded from the server or machine holding the copy the page described.
 
 ## Details
