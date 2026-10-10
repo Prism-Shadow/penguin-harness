@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** fix
 - **Scope:** `core`, `web`, `cli`, `docs`
+- **PR:** [#1018](https://github.com/Prism-Shadow/penguin-harness/pull/1018)
 
 [English](2026-10-10-rejected-image-recovery.md)
 

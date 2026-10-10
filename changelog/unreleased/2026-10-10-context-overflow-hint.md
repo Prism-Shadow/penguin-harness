@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** fix
 - **Scope:** `core`, `web`, `cli`, `docs`
+- **PR:** [#1018](https://github.com/Prism-Shadow/penguin-harness/pull/1018)
 
 [中文版](2026-10-10-context-overflow-hint.zh.md)
 

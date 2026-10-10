@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `docs`
+- **PR:** [#1018](https://github.com/Prism-Shadow/penguin-harness/pull/1018)
 
 [中文版](2026-10-10-retry-failed-run.zh.md)
 
