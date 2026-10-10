@@ -87,6 +87,22 @@ export async function pinThinkingLevel(
   await client.request("PATCH", `/api/sessions/${enc(sessionId)}`, { thinkingLevel: level });
 }
 
+/**
+ * PATCHes the Session's title — the manual rename the Web App's "Rename chat" does, which
+ * the auto-title generator never overwrites. The PATCH response re-reads the row, so the
+ * returned SessionInfo already carries the new title (no follow-up GET).
+ */
+export async function renameSession(
+  client: ServerClient,
+  sessionId: string,
+  title: string,
+): Promise<SessionInfo> {
+  const res = await client.request<SessionResponse>("PATCH", `/api/sessions/${enc(sessionId)}`, {
+    title,
+  });
+  return res.session;
+}
+
 export async function getSessionInfo(
   client: ServerClient,
   sessionId: string,

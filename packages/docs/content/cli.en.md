@@ -54,6 +54,7 @@ penguin run -m <message> [options]
 | `--approve <mode>` | Approval mode; see [Approval modes (--approve)](#approval-modes---approve). With `--session`, it PATCHes the Session's sticky mode. | `allow-all` |
 | `--thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`) before the Task. It applies from the Session's next LLM request. | The Session's pinned level, else the agent config |
 | `--session <sessionId>` | Reuses an existing Session (full id or unique fragment) instead of creating one. Cannot be combined with `--workspace` or the model pair. | — |
+| `--title <title>` | Names the Session (a manual rename; the auto-generated title never overwrites it). With `--session` it renames the reused Session instead. 1–120 characters. | — |
 | `--background` | POSTs the Task and exits immediately, printing the session id (`{"sessionId"}` under `--json`). The Task keeps running on the server; follow it with `penguin logs -f`. | — |
 | `--timeout <duration>` | Soft-yield wait budget; see [Global conventions](#global-conventions). Cannot be combined with `--background`. | Wait indefinitely |
 | `--goal [budget]` | Goal mode: the message is the objective, and the server loops until the goal reaches a terminal state. The optional value is a token budget, such as `500k`. | — |
@@ -70,6 +71,29 @@ Ctrl-C at an approval prompt denies that tool call. At any other time it aborts 
 penguin run -m "Summarize the code structure of this directory"
 penguin run -m "keep going" --session 402a2e24        # reuse a session by fragment
 penguin run -m "long job" --background                # returns the session id immediately
+```
+
+## penguin session
+
+Session-level management. The current subcommand, `session rename`, performs the same rename the Web App's “Rename chat” and `PATCH /api/sessions/<id>` do, with the existing session-token access control; no new authorization is introduced. A title is 1–120 characters.
+
+```bash
+penguin session rename <title> [session_id] [options]
+```
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--project-id <id>` | Scope of the fragment search. A full session id needs none. | `PENGUIN_PROJECT_ID`, else `default_project` |
+| `--agent-id <id>` | The agent whose most recent Session an omitted session id means. | `PENGUIN_AGENT_ID`, else `default_agent` |
+| `--json` | Prints `{sessionId, title}` instead of the done line. | — |
+| `--server <url>` | See [Server connection](#server-connection). | — |
+
+The session id is optional and resolves in two steps, mirroring the caller-session default the `penguin org` commands carry: when you run it from inside a harness session, an omitted `session_id` targets the calling session (`PENGUIN_SESSION_ID`); only when `PENGUIN_SESSION_ID` is unset does it fall back to the agent's most recent Session (which may be a different, parallel session). An explicit `session_id` always wins over both. Inside a session, an agent performs the same rename with the in-session `rename_session` tool.
+
+```bash
+penguin session rename "Q3 release prep"              # inside a session: renames it
+penguin session rename "Q3 release prep" 402a2e24     # by fragment, from outside
+penguin session rename "Q3 release prep" --json
 ```
 
 ## penguin chat

@@ -124,6 +124,25 @@ export interface Messages {
     sourceIgnored(): string;
     /** --background never waits, so a wait budget cannot apply to it. */
     timeoutWithBackground(): string;
+    /** run's --title: name the Session being run (manual rename; the auto-title never overwrites it; with --session it renames the reused Session). */
+    title: string;
+    /** --title outside the 1–120-character range the server enforces. */
+    titleInvalid(length: number): string;
+  };
+  /** `penguin session`: session-level management commands. */
+  session: {
+    /** Group description. */
+    desc: string;
+    /** `penguin session rename`'s own description. */
+    renameDesc: string;
+    /** The title argument's help text. */
+    renameTitle: string;
+    /** The optional session_id argument's help text. */
+    renameSessionId: string;
+    /** A title that is empty or over 120 characters after trimming. */
+    titleInvalid(length: number): string;
+    /** The success line (short id form; the full id is what --json prints). */
+    renamed(sessionId: string, title: string): string;
   };
   chat: {
     desc: string;
@@ -1195,6 +1214,9 @@ const en: Messages = {
     goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
     session: "Reuse an existing Session (full id or a unique fragment, e.g. the 8-hex tail)",
     background: "Post the task and exit immediately, printing the session id",
+    title:
+      "Name the Session (manual rename; the auto-generated title never overwrites it; with --session, renames the reused Session)",
+    titleInvalid: (length) => `--title must be 1–120 characters (got ${length}).`,
     sessionNoOverride: () =>
       "--session reuses an existing Session: --workspace, --model-id and --provider cannot be combined with it (the Session keeps its own; /switch-model inside penguin chat --resume changes its model, compacting first).",
     sourceInvalid: (value) =>
@@ -1230,6 +1252,16 @@ const en: Messages = {
     desc: "Send a message into a session (steering while it runs, a new task when idle); without -m, print its most recent assistant reply. The session defaults to the agent's most recent one",
     message: "Message text (omit to poll the session's last assistant reply instead)",
     noReplyYet: () => "(no assistant reply yet)",
+  },
+  session: {
+    desc: "Session-level management (rename)",
+    renameDesc:
+      "Rename a session. Without session_id, the calling session (PENGUIN_SESSION_ID) when available, else the agent's most recent session",
+    renameTitle: "The new title (1–120 characters)",
+    renameSessionId:
+      "The session to rename (full id or a unique fragment, e.g. the 8-hex tail; default: PENGUIN_SESSION_ID, else the agent's most recent session)",
+    titleInvalid: (length) => `title must be 1–120 characters (got ${length}).`,
+    renamed: (sessionId, title) => `Renamed ${sessionId} to \u201c${title}\u201d`,
   },
   logs: {
     desc: "Render a session's history (defaults to the agent's most recent session)",
@@ -2252,6 +2284,9 @@ const zh: Messages = {
     goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
     session: "复用既有 Session（完整 id 或唯一片段，如末尾 8 位十六进制）",
     background: "提交任务后立即退出，打印 session id",
+    title:
+      "为 Session 命名（手动重命名；自动生成的标题不会覆盖它；配合 --session 时重命名被复用的 Session）",
+    titleInvalid: (length) => `--title 须为 1–120 个字符（实际 ${length} 个）。`,
     sessionNoOverride: () =>
       "--session 复用既有 Session：不能与 --workspace、--model-id、--provider 同时使用（均沿用该 Session；如需换模型，在 penguin chat --resume 内用 /switch-model，会先压缩上下文）。",
     sourceInvalid: (value) =>
@@ -2285,6 +2320,16 @@ const zh: Messages = {
     desc: "向会话发送消息（运行中即插话，空闲时发起新 Task）；不带 -m 时输出其最近一条助手回复。省略 session id 即取当前 Agent 最近一次会话",
     message: "消息文本（省略时改为轮询该会话的最近助手回复）",
     noReplyYet: () => "（还没有助手回复）",
+  },
+  session: {
+    desc: "会话级管理（重命名）",
+    renameDesc:
+      "重命名会话。未给 session_id 时：有 PENGUIN_SESSION_ID 则指当前会话，否则取当前 Agent 最近一次会话",
+    renameTitle: "新标题（1–120 个字符）",
+    renameSessionId:
+      "要重命名的会话，完整 id 或唯一片段（如末尾 8 位十六进制；缺省 PENGUIN_SESSION_ID，再缺省取当前 Agent 最近一次会话）",
+    titleInvalid: (length) => `标题须为 1–120 个字符（实际 ${length} 个）。`,
+    renamed: (sessionId, title) => `已将 ${sessionId} 重命名为「${title}」`,
   },
   logs: {
     desc: "渲染会话的历史消息（省略 session id 即取当前 Agent 最近一次会话）",

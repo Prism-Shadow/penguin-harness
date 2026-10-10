@@ -3,7 +3,7 @@
  *
  *   penguin run -m <msg> [--project-id <id>] [--agent-id <id>] [--workspace <path>]
  *               [--model-id <id> --provider <group>] [--approve <mode>]
- *               [--thinking <level>] [--session <session_id>]
+ *               [--thinking <level>] [--session <session_id>] [--title <title>]
  *               [--background] [--goal [budget]] [--json] [--server <url>]
  *
  * The CLI is a thin client: it creates a Session over the API (or reuses `--session`),
@@ -19,6 +19,9 @@
  *   Web App lists in the Background folder; `penguin chat` creates `user` Sessions instead.
  * - `--session` accepts a full id or a unique fragment; it excludes `--workspace` and the
  *   model pair (neither can change after creation); `--approve` PATCHes the mode.
+ * - `--title` names the Session (the manual rename the Web App's "Rename chat" does —
+ *   the auto-title generator never overwrites it); with `--session` it renames the
+ *   reused Session instead. Checked client-side (1–120 characters) before any request.
  * - `--background`: POST the task and exit immediately, printing the session id
  *   (`{"sessionId"}` under `--json`) — the task keeps running on the server.
  * - `--json` (non-background): suppress rendering; print `{sessionId, status, text}`
@@ -48,6 +51,7 @@ import {
   createServerSession,
   getSessionInfo,
   pinThinkingLevel,
+  renameSession,
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
@@ -66,6 +70,7 @@ export function registerRunCommand(program: Command, t: Messages): void {
     .option("--approve <mode>", t.common.approve)
     .option("--thinking <level>", t.common.thinking)
     .option("--session <sessionId>", t.run.session)
+    .option("--title <title>", t.run.title)
     // compat(0.3.0): the retired `--source benchmark`, kept out of the help (see the action).
     .addOption(new Option("--source <source>").hideHelp())
     .option("--background", t.run.background)
@@ -135,6 +140,14 @@ export function registerRunCommand(program: Command, t: Messages): void {
       const mode = resolveApprovalMode(opts.approve, t);
       const thinking = resolveThinkingLevel(opts.thinking, t);
       const json = opts.json === true;
+      // The title is checked BEFORE the Session is created, so a bad title fails fast
+      // without leaving an orphaned Session (the server enforces the same 1–120 rule).
+      const title = opts.title === undefined ? undefined : String(opts.title).trim();
+      if (title !== undefined && (title.length === 0 || title.length > 120)) {
+        process.stderr.write(`${t.error(t.run.titleInvalid(title.length))}\n`);
+        process.exitCode = 1;
+        return;
+      }
 
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
@@ -183,6 +196,10 @@ export function registerRunCommand(program: Command, t: Messages): void {
       // the Session's next LLM request (and every context opened from then on).
       const effectiveThinking = thinking ?? callerThinking;
       if (effectiveThinking) await pinThinkingLevel(client, session.sessionId, effectiveThinking);
+      // The rename is a PATCH like the thinking pin: on a new Session it names it at
+      // creation; with `--session` it renames the reused one (both branches converge
+      // here, before the --background early exit, so background runs are named too).
+      if (title !== undefined) await renameSession(client, session.sessionId, title);
       const taskBody = {
         input: [{ type: "text", text: String(opts.message) }],
         ...(goalBudget !== null ? { goal: { budget: goalBudget } } : {}),

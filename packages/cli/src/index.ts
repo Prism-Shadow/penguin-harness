@@ -15,6 +15,7 @@ import { registerChatCommand } from "./commands/chat.js";
 import { registerLsCommand } from "./commands/ls.js";
 import { registerInputCommand } from "./commands/input.js";
 import { registerLogsCommand } from "./commands/logs.js";
+import { registerSessionCommand } from "./commands/session.js";
 import { registerAgentCommand } from "./commands/agent.js";
 import { registerProjectCommand } from "./commands/project.js";
 import { registerCostCommand } from "./commands/cost.js";
@@ -56,6 +57,7 @@ export async function cli(argv: string[]): Promise<number> {
   registerLsCommand(program, t);
   registerInputCommand(program, t);
   registerLogsCommand(program, t);
+  registerSessionCommand(program, t);
   registerAgentCommand(program, t);
   registerProjectCommand(program, t);
   registerCostCommand(program, t);

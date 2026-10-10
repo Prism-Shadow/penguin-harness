@@ -24,6 +24,7 @@ import type {
   AgentAssembly,
   ControlEnvContext,
   ProxyEnvPolicy,
+  SessionControl,
   SpawnConfiner,
 } from "@prismshadow/penguin-core";
 import type {
@@ -219,6 +220,12 @@ export interface SessionServiceDeps {
    * agents can drive the harness back through the CLI/API.
    */
   controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+  /**
+   * The rename_session tool's host seam (the same per-Session getter the session loader
+   * passes): renaming defaults to the hosting Session and confines an explicit id to
+   * its own Project.
+   */
+  sessionControl?: (ctx: ControlEnvContext) => SessionControl;
   /**
    * PATH threading (same getter the session loader passes): the shim directory holding
    * this harness's own `penguin`, put in front of every command an Agent runs.
@@ -705,6 +712,7 @@ export class SessionService {
       agentId: args.agentId,
       ...(this.deps.proxyEnv ? { proxyEnv: this.deps.proxyEnv } : {}),
       ...(this.deps.controlEnv ? { controlEnv: this.deps.controlEnv } : {}),
+      ...(this.deps.sessionControl ? { sessionControl: this.deps.sessionControl } : {}),
       ...(this.deps.pathPrepend ? { pathPrepend: this.deps.pathPrepend } : {}),
       ...(this.deps.confineSpawn ? { confineSpawn: this.deps.confineSpawn } : {}),
       ...(this.deps.assembly ? { assembly: this.deps.assembly } : {}),

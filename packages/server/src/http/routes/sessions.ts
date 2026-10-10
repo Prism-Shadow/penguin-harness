@@ -142,6 +142,7 @@ import type {
 } from "../../mechanisms/projects.js";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
+import { SESSION_TITLE_MAX } from "../../mechanisms/sessions.js";
 import type {
   Schedules,
   SessionDrivers,
@@ -157,9 +158,6 @@ import type { Settings } from "../../mechanisms/settings.js";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { Auth } from "../../mechanisms/identity.js";
 import type { AgentApi } from "../../mechanisms/agent-api.js";
-
-/** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
-const SESSION_TITLE_MAX = 120;
 
 /** Max path count and per-path length for a single files/stat check (message file-card candidates never exceed this scale). */
 const STAT_MAX_PATHS = 100;

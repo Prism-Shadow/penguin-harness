@@ -3375,6 +3375,7 @@ Scenarios:
       input_command: "follow",
       run_subagent: "subagent",
       input_subagent: "communicate",
+      rename_session: "rename",
     } as Record<string, string>,
     workRunning: "Running",
     workDone: "Done",

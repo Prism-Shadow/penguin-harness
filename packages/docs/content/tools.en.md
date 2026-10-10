@@ -5,7 +5,7 @@ description: How the built-in tools run under one execution contract, how each c
 
 PenguinHarness ships a deliberately minimal built-in toolset. Dedicated file tools (`read_file` / `edit_file` / `write_file`) cover precise reading and editing, because line-numbered output and exact-string replacement beat quoting `sed` one-liners. The shell (`exec_command`) remains the general-purpose fallback for everything else: running programs, searching, installing dependencies. Every tool that remains earns the schema Tokens it costs.
 
-The Environment runs every tool call through one shared contract and handles the close-out centrally. This page covers that contract first, then the per-tool configuration, the 7 built-in tools and their background behavior, the per-call approval recorded in the Trace, and how to customize the toolset and add MCP servers.
+The Environment runs every tool call through one shared contract and handles the close-out centrally. This page covers that contract first, then the per-tool configuration, the 8 built-in tools and their background behavior, the per-call approval recorded in the Trace, and how to customize the toolset and add MCP servers.
 
 ## Execution contract
 
@@ -106,7 +106,7 @@ Each tool is described by one `ToolDefinitionConfig`:
 
 ## Built-in tools
 
-There are 7 built-in tools, assembled through `packages/core/src/environment/tools/registry.ts`:
+There are 8 built-in tools, assembled through `packages/core/src/environment/tools/registry.ts`:
 
 | Tool | Permission | Timeout (ms) | Purpose |
 | --- | --- | --- | --- |
@@ -117,6 +117,7 @@ There are 7 built-in tools, assembled through `packages/core/src/environment/too
 | `write_file` | rw | 30000 | Create or overwrite a whole file, creating parent directories as needed |
 | `run_subagent` | rw | 600000 | Delegate a self-contained subtask to a child agent in the same Workspace |
 | `input_subagent` | rw | 600000 | Poll a background subagent, steer it mid-run, stop its current run, or continue it with a follow-up prompt |
+| `rename_session` | rw | 30000 | Rename a Session's title (1–120 characters); with no `session_id` it renames the Session the tool runs in, with one it renames another Session in the same Project |
 
 An existing agent's stored `tools.builtin` list stays exactly as written; the settings UI edits rows but adds none. As a result:
 

@@ -105,6 +105,7 @@ import type {
   CommandPolicyConfig,
   GenerativeModelConfig,
   ProxyEnvPolicy,
+  SessionControl,
   SpawnConfiner,
   SubagentHandle,
   SubagentRunner,
@@ -171,6 +172,15 @@ export interface CreateAgentOptions {
    * hot push that changes the set reaches the next Session without a restart.
    */
   assembly?: AgentAssembly;
+  /**
+   * Session-title control for the rename_session tool: the hosting server passes a getter
+   * here, evaluated with each Session's coordinates, so the tool's default target is the
+   * Session it runs in and its reach (which other Sessions it may rename) is the host's
+   * policy. Like `controlEnv`, it is bound to the Session at creation and inherited by
+   * subagents' Agents. Absent = the tool reports itself unavailable (SDK/CLI standalone
+   * use).
+   */
+  sessionControl?: (ctx: ControlEnvContext) => SessionControl;
 }
 
 /**
@@ -454,6 +464,7 @@ export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent>
     opts.pathPrepend,
     opts.confineSpawn,
     opts.assembly,
+    opts.sessionControl,
   );
 }
 
@@ -472,6 +483,8 @@ export class Agent {
     private readonly confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null,
     /** See {@link CreateAgentOptions.assembly}; read at every Session creation. */
     private readonly assembly?: AgentAssembly,
+    /** See {@link CreateAgentOptions.sessionControl}; bound to each Session at creation. */
+    private readonly sessionControl?: (ctx: ControlEnvContext) => SessionControl,
   ) {}
 
   /**
@@ -1117,6 +1130,9 @@ export class Agent {
                 ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
                 ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
                 ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
+                ...(parentAgent.sessionControl
+                  ? { sessionControl: parentAgent.sessionControl }
+                  : {}),
               })
             : parentAgent;
         // The child Session follows the PARENT Session, never the Project default: with the
@@ -1168,6 +1184,9 @@ export class Agent {
                 ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
                 ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
                 ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
+                ...(parentAgent.sessionControl
+                  ? { sessionControl: parentAgent.sessionControl }
+                  : {}),
               });
         const childSession = await childAgent.resumeSession({ sessionId });
         return subagentHandleFor(childSession);
@@ -1309,7 +1328,21 @@ export class Agent {
         this.state.agentId,
         sessionId,
       ),
-      services: { subagentRunner, ...(visionDescriber ? { visionDescriber } : {}) },
+      services: {
+        subagentRunner,
+        ...(visionDescriber ? { visionDescriber } : {}),
+        // Bound to THIS Session like controlEnv, but resolved once at creation: the hosting
+        // Session is fixed for the tool's lifetime, and an omitted rename target means it.
+        ...(this.sessionControl
+          ? {
+              sessionControl: this.sessionControl!({
+                projectId: this.state.projectId,
+                agentId: this.state.agentId,
+                sessionId,
+              }),
+            }
+          : {}),
+      },
       ...(Object.keys(initial.vault).length > 0 ? { vault: initial.vault } : {}),
       ...(this.proxyEnv ? { proxyEnv: this.proxyEnv } : {}),
       // The control-env policy is bound to THIS Session's coordinates here (sessionId is

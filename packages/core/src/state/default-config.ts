@@ -894,6 +894,33 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       timeoutMs: 600000,
       maxOutputLength: 16000,
     },
+    {
+      name: "rename_session",
+      description:
+        "Rename a Session's title — the label its owner sets for finding and telling it apart. " +
+        "With no session_id it renames the Session you are running in; with one it renames " +
+        "another Session you are allowed to reach (an id outside your Project is refused as " +
+        "not found). Use it when the user asks to name the current or another session. The " +
+        "title is 1-120 characters.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description: "New title for the Session (1-120 characters).",
+          },
+          session_id: {
+            type: "string",
+            description: "The Session to rename; omit to rename the one this conversation runs in.",
+          },
+        },
+        required: ["title"],
+      },
+      permission: "rw",
+      // A quick metadata update on the host: one indexed write and a project notification.
+      timeoutMs: 30000,
+      maxOutputLength: 16000,
+    },
   ];
 }
 

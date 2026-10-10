@@ -54,6 +54,7 @@ penguin run -m <message> [options]
 | `--approve <mode>` | 审批模式；见[审批模式（--approve）](#审批模式--approve)。配合 `--session` 时，以 PATCH 请求更新 Session 固定的审批模式。 | `allow-all` |
 | `--thinking <level>` | 在 Task 开始前固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）。从 Session 的下一次 LLM 请求起生效。 | Session 已固定的等级，否则用 Agent 配置 |
 | `--session <sessionId>` | 复用已有的 Session（完整 id 或唯一片段），而不是新建。不能与 `--workspace` 或模型对同时使用。 | — |
+| `--title <title>` | 为 Session 命名（手动重命名；自动生成的标题不会覆盖它）。配合 `--session` 时重命名被复用的 Session。1–120 个字符。 | — |
 | `--background` | 以 POST 提交 Task 后立即退出，打印 session id（`--json` 下为 `{"sessionId"}`）。Task 在服务器上继续运行；可用 `penguin logs -f` 跟踪。 | — |
 | `--timeout <duration>` | 软让出的等待预算；见[全局约定](#全局约定)。不能与 `--background` 同时使用。 | 无限等待 |
 | `--goal [budget]` | 目标模式：消息就是目标，服务器循环执行，直到目标达到终态。可选值是 Token 预算，例如 `500k`。 | — |
@@ -70,6 +71,29 @@ penguin run -m <message> [options]
 penguin run -m "Summarize the code structure of this directory"
 penguin run -m "keep going" --session 402a2e24        # reuse a session by fragment
 penguin run -m "long job" --background                # returns the session id immediately
+```
+
+## penguin session
+
+会话级管理。目前的子命令 `session rename` 执行与 Web App 的「重命名会话」及 `PATCH /api/sessions/<id>` 相同的重命名，沿用既有的 session-token 访问控制，不引入新的鉴权。标题为 1–120 个字符。
+
+```bash
+penguin session rename <title> [session_id] [options]
+```
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--project-id <id>` | 片段搜索的范围。完整 session id 不需要。 | `PENGUIN_PROJECT_ID`，否则 `default_project` |
+| `--agent-id <id>` | 省略 session id 时，取哪个 Agent 的最近一次会话。 | `PENGUIN_AGENT_ID`，否则 `default_agent` |
+| `--json` | 打印 `{sessionId, title}`，取代完成提示行。 | — |
+| `--server <url>` | 见[服务器连接](#服务器连接)。 | — |
+
+session id 可省略，解析分两步，与 `penguin org` 命令携带的调用方会话默认一致：在 harness 会话内执行时，省略 `session_id` 即指当前会话（`PENGUIN_SESSION_ID`）；只有 `PENGUIN_SESSION_ID` 未设置时，才回退到该 Agent 最近一次会话（那可能是一个不同的并行会话）。显式给出的 `session_id` 永远优先于两者。在会话内，Agent 用会话内工具 `rename_session` 执行同一重命名。
+
+```bash
+penguin session rename "Q3 发布准备"              # 会话内：重命名当前会话
+penguin session rename "Q3 发布准备" 402a2e24     # 会话外：按片段重命名
+penguin session rename "Q3 发布准备" --json
 ```
 
 ## penguin chat

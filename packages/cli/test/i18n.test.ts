@@ -149,6 +149,12 @@ describe("getMessages", () => {
       const hint = m.usage.hint("penguin schedule add", "[options] <name>");
       expect(hint).toContain("penguin schedule add [options] <name>");
       expect(hint).toContain("penguin schedule add --help");
+      // The session-rename family: the caller-session default in the description, the done line.
+      expect(m.session.desc.length).toBeGreaterThan(0);
+      expect(m.session.renameDesc).toContain("PENGUIN_SESSION_ID");
+      expect(m.session.renamed("session-s", "a title")).toContain("session-s");
+      expect(m.session.renamed("session-s", "a title")).toContain("a title");
+      expect(m.session.titleInvalid(0)).toContain("120");
       // The company-mode family: descriptions, the control-environment default, confirmations.
       expect(m.org.lsDesc.length).toBeGreaterThan(0);
       expect(m.org.ticketCreateDesc.length).toBeGreaterThan(0);
@@ -189,6 +195,10 @@ describe("getMessages", () => {
     // The dictionaries are genuinely two languages, not one copied twice.
     expect(getMessages("zh").ls.desc).not.toBe(getMessages("en").ls.desc);
     expect(getMessages("zh").org.desc).not.toBe(getMessages("en").org.desc);
+    expect(getMessages("zh").session.desc).not.toBe(getMessages("en").session.desc);
+    expect(getMessages("zh").session.renamed("s", "t")).not.toBe(
+      getMessages("en").session.renamed("s", "t"),
+    );
     expect(getMessages("zh").client.noServer()).not.toBe(getMessages("en").client.noServer());
   });
 

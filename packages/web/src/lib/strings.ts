@@ -3471,6 +3471,7 @@ Benchmark：
       input_command: "跟进命令",
       run_subagent: "子智能体",
       input_subagent: "交流",
+      rename_session: "重命名",
     } as Record<string, string>,
     workRunning: "运行中",
     workDone: "运行完毕",

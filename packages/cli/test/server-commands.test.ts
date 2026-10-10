@@ -155,6 +155,38 @@ describe("penguin run", () => {
     expect(session.patches).toContainEqual({ thinkingLevel: "high" });
     expect("thinkingLevel" in (session.tasks[0] as object)).toBe(false);
   });
+
+  it("--title names the new Session with a PATCH (the manual rename; nothing else is affected)", async () => {
+    await cli(["run", "-m", "q", "--title", "Quarterly report"]);
+    const session = [...server.sessions.values()][0]!;
+    expect(session.patches).toContainEqual({ title: "Quarterly report" });
+    expect(session.title).toBe("Quarterly report");
+    // The title is not part of the creation body — the POST stays as before.
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect("title" in (create?.body ?? {})).toBe(false);
+  });
+
+  it("--title with --background renames before the early exit; --session renames the reused Session", async () => {
+    await cli(["run", "-m", "long job", "--background", "--title", "Batch 1"]);
+    const created = [...server.sessions.values()][0]!;
+    expect(created.patches).toContainEqual({ title: "Batch 1" });
+    expect(created.tasks).toHaveLength(1); // the task still posted
+
+    const existing = server.addSession({ sessionId: "session-2026-08-25-11-00-00-feed0002" });
+    expect(await cli(["run", "-m", "again", "--session", "feed0002", "--title", "Rework"])).toBe(0);
+    expect(existing.patches).toContainEqual({ title: "Rework" });
+    expect(server.sessions.size).toBe(2); // no new Session was created
+  });
+
+  it("--title is checked client-side before any Session is created", async () => {
+    for (const bad of ["  ", "x".repeat(121)]) {
+      const code = await cli(["run", "-m", "q", "--title", bad]);
+      expect(code).toBe(1);
+      expect(stderr.join("")).toContain(t.run.titleInvalid(bad.trim().length));
+    }
+    expect(server.sessions.size).toBe(0); // a bad title leaves no orphaned Session
+    expect(server.requests.some((r) => r.method === "PATCH")).toBe(false);
+  });
 });
 
 describe("penguin ls", () => {
