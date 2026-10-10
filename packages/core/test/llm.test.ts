@@ -1798,6 +1798,20 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       code: "image_rejected",
     },
     {
+      name: "OpenAI image past its patch limit",
+      status: 400,
+      message: "400 Bad Request",
+      body: {
+        message:
+          "The image you provided requires 53800 patches after processing, exceeding the " +
+          "limit of 30000. Please resize the image and try again.",
+        type: "invalid_request_error",
+        code: "invalid_value",
+      },
+      stopReason: "fatal",
+      code: "image_rejected",
+    },
+    {
       name: "a plain parameter 400",
       status: 400,
       message: "unknown parameter: max_output_tokens",

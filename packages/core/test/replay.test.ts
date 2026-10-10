@@ -17,12 +17,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  IMAGE_REMOVED_NOTE,
   assistantText,
   compactionBegin,
   compactionEnd,
   emptyTokenCounts,
   imageUrlMessage,
+  replaceInputImages,
   requestBegin,
   requestEnd,
   sessionMeta,
@@ -129,6 +129,12 @@ describe("resumeTrace", () => {
 
   it("an image-rejected round gives its input back with the images replaced, as the engine resent it", () => {
     const image = "data:image/png;base64,iVBORw0KGgo=";
+    const readImage = toolCallOutput({
+      output: "image/png, 8 B",
+      toolCallId: "tc1",
+      images: [image],
+    });
+    const errorMessage = "400 Could not process image";
     const upToRequest: OmniMessage[] = [
       meta(),
       userText("look at the screenshot"),
@@ -136,14 +142,14 @@ describe("resumeTrace", () => {
       toolCall({ name: "read_file", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: "image/png, 8 B", toolCallId: "tc1", images: [image] }),
+      readImage,
       requestBegin(),
     ];
     const retried = resumeTrace([
       ...upToRequest,
       requestEnd("retryable", {
         errorCode: "image_rejected",
-        errorMessage: "400 Could not process image",
+        errorMessage,
         attempt: 1,
         retryInMs: 0,
       }),
@@ -152,10 +158,14 @@ describe("resumeTrace", () => {
       requestEnd("completed", { attempt: 2 }),
       tokenUsage(usage(20), usage(20)),
     ]);
+    // The note is rebuilt from the image and the recorded error_message: the text the engine
+    // sent, quoting the provider.
+    const [resent] = textsOf(replaceInputImages([readImage], errorMessage));
+    expect(resent).toContain(`Provider error: ${errorMessage}`);
     expect(textsOf(retried.history)).toEqual([
       "look at the screenshot",
       "read_file",
-      `image/png, 8 B\n${IMAGE_REMOVED_NOTE}`,
+      resent,
       "I could not see it.",
     ]);
     expect((retried.history[2]!.payload as { images?: string[] }).images).toBeUndefined();

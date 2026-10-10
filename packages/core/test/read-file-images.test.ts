@@ -16,7 +16,13 @@ import { READ_FILE_NAME, createReadFileTool } from "../src/environment/tools/rea
 import { MAX_IMAGE_BYTES } from "../src/environment/tools/image-source.js";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import { Environment } from "../src/environment/environment.js";
-import { assistantText, partialText, toolCall } from "../src/omnimessage/index.js";
+import {
+  IMAGE_COPY_ADVICE,
+  IMAGE_REJECTION_CAUSES,
+  assistantText,
+  partialText,
+  toolCall,
+} from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 import type { ToolResult } from "../src/environment/tools/types.js";
 import type {
@@ -114,7 +120,7 @@ describe("read_file on an image — session model views images (no describer)", 
     const { result, text } = await run({ file_path: "img.png" }, tmp);
     expect(result?.stopReason).toBeUndefined(); // defaults to completed
     expect(result?.images).toEqual([PNG_DATA_URL]);
-    expect(text).toBe(`image/png, ${PNG_1X1.length} B`);
+    expect(text).toBe(`image/png, 1×1 px, ${PNG_1X1.length} B`);
   });
 
   it("recognizes an image by its magic number whatever the extension says", async () => {
@@ -232,7 +238,7 @@ describe("read_file on an image — text-only session model (describer injected)
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("vision request failure: fatal with the status and message", async () => {
+  it("vision request failure: fatal with the status and message, plus the copy advice for a refused image", async () => {
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
     const { llm } = fakeLLM("", { status: "fatal", errorMessage: "401 unauthorized" });
     const { result, text } = await run({ file_path: "a.png" }, tmp, {
@@ -241,6 +247,20 @@ describe("read_file on an image — text-only session model (describer injected)
     expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("fatal");
     expect(text).toContain("401 unauthorized");
+    expect(text).not.toContain(IMAGE_COPY_ADVICE);
+
+    // A refused image also gets the causes and the advice the session's own refusal note gives.
+    const refused = fakeLLM("", {
+      status: "fatal",
+      errorCode: "image_rejected",
+      errorMessage: "400 You have uploaded an unsupported image.",
+    });
+    const rejected = await run({ file_path: "a.png" }, tmp, {
+      visionDescriber: { modelId: "vis-1", createLLM: () => refused.llm },
+    });
+    expect(rejected.result?.stopReason).toBe("fatal");
+    expect(rejected.text).toContain("400 You have uploaded an unsupported image.");
+    expect(rejected.text).toContain(`\n${IMAGE_REJECTION_CAUSES} ${IMAGE_COPY_ADVICE}`);
   });
 
   it("an oversized image fails before any vision request", async () => {

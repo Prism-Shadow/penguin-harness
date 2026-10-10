@@ -659,6 +659,10 @@ const IMAGE_REJECTION_PATTERNS: readonly RegExp[] = [
   /image does not match the provided media type/i,
   // Anthropic "image exceeds 5 MB maximum", "image dimensions exceed max allowed size".
   /image.{0,40}(exceeds|too large|dimensions? (exceed|too))/i,
+  // OpenAI "The image you provided requires 53800 patches after processing, exceeding the
+  // limit of 30000. Please resize the image and try again."
+  /patches.{0,60}exceed/i,
+  /resize the image/i,
   // A text-only model: "This model does not support image input", "doesn't support vision".
   /(does not|doesn't) support (image|vision)/i,
   // llama.cpp without a multimodal projector: "image input is not supported".

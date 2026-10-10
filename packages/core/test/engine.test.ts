@@ -12,7 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  IMAGE_REMOVED_NOTE,
+  IMAGE_COPY_ADVICE,
+  IMAGE_REJECTION_CAUSES,
   assistantText,
   emptyTokenCounts,
   imageUrlMessage,
@@ -2023,7 +2024,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     // A read_file result carrying an image, handed in the way a carry-over hands it back.
     const readImage = toolCallOutput({
-      output: "image/png, 70 B",
+      output: "image/png, 1×1 px, 70 B",
       toolCallId: "call_img",
       images: [PNG_DATA_URL],
     });
@@ -2033,7 +2034,8 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(inputs).toHaveLength(2);
     expect((inputs[0]![0]!.payload as { images?: string[] }).images).toEqual([PNG_DATA_URL]);
     // The retry carries no image: the tool output keeps its text and pairing id, the note
-    // appended in place of the picture.
+    // appended in place of the picture — naming the image, quoting the provider, then the
+    // causes and the copy advice.
     expect(inputs[1]).toHaveLength(1);
     const retried = inputs[1]![0]!.payload as {
       output?: string;
@@ -2041,7 +2043,13 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       tool_call_id?: string;
     };
     expect(retried.images).toBeUndefined();
-    expect(retried.output).toBe(`image/png, 70 B\n${IMAGE_REMOVED_NOTE}`);
+    expect(retried.output).toBe(
+      "image/png, 1×1 px, 70 B\n" +
+        "[image not sent: the model provider rejected the image this tool returned " +
+        "(image/png, 1×1 px, 70 B), so the request was sent again without it. " +
+        "Provider error: 400 You have uploaded an unsupported image. " +
+        `${IMAGE_REJECTION_CAUSES} ${IMAGE_COPY_ADVICE}]`,
+    );
     expect(retried.tool_call_id).toBe("call_img");
     // The rejected attempt is recorded as retried, announcing an immediate retry.
     const ends = all

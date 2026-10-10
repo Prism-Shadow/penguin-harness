@@ -14,9 +14,10 @@
  * else is refused with a hint to convert it first. What happens next is decided by the
  * injected `services.visionDescriber`, present exactly when the session model does not
  * accept images:
- * - absent (the session model views images): yields a one-line `image/png, 123.4 kB` delta and
- *   returns the image via `ToolResult.images` for Environment to attach (a single streaming
- *   delta carries it whole before stop, and the complete `tool_call_output` carries it again);
+ * - absent (the session model views images): yields a one-line
+ *   `image/png, 1280×720 px, 123.4 kB` delta and returns the image via `ToolResult.images` for
+ *   Environment to attach (a single streaming delta carries it whole before stop, and the
+ *   complete `tool_call_output` carries it again);
  * - present: the image and the caller's `prompt` (default: a detailed description; only a
  *   text-only model is handed the argument, see selectBuiltinToolsForModel) go in one
  *   one-off request to the Project's `vision_model`, whose text deltas stream back as this
@@ -52,7 +53,14 @@ import path from "node:path";
 import { realpath } from "node:fs/promises";
 import { describeFsError, errorCode, localFsPort } from "./fs-port.js";
 import type { FsPort } from "./fs-port.js";
-import { imageUrlMessage, partialToolCallOutput, userText } from "../../omnimessage/index.js";
+import {
+  IMAGE_COPY_ADVICE,
+  IMAGE_REJECTION_CAUSES,
+  describeImageBytes,
+  imageUrlMessage,
+  partialToolCallOutput,
+  userText,
+} from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type {
   EnvironmentServices,
@@ -61,7 +69,7 @@ import type {
   ToolDefinitionConfig,
   VisionDescriberService,
 } from "../../interfaces/index.js";
-import { formatSize, isHttpUrl, loadImage, looksLikeImageFile } from "./image-source.js";
+import { isHttpUrl, loadImage, looksLikeImageFile } from "./image-source.js";
 import { missingPathHint } from "./path-hint.js";
 import { describeArgumentError } from "./tool-arguments.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
@@ -320,12 +328,15 @@ async function* readImageSource(
     return { stopReason: "fatal" };
   }
   const dataUrl = `data:${res.mime};base64,${res.bytes.toString("base64")}`;
+  // Format, pixel size and byte size: what the model needs to judge the image before a
+  // provider does (a full-page screenshot thousands of pixels tall is refused by many).
+  const facts = describeImageBytes(res.mime, res.bytes);
 
   if (proxy === null) {
     // The session model views images: a brief one-line description as the text delta (both
     // in the streaming and complete message), the image itself via the return value for
     // Environment to attach.
-    yield delta(`${res.mime}, ${formatSize(res.bytes.length)}`);
+    yield delta(facts);
     return { images: [dataUrl] };
   }
 
@@ -345,7 +356,7 @@ async function* readImageSource(
     newMessages: [userText(prompt), imageUrlMessage(dataUrl)],
     ...(signal ? { signal } : {}),
   });
-  yield delta(`${res.mime}, ${formatSize(res.bytes.length)} — described by ${proxy.modelId}:\n`);
+  yield delta(`${facts} — described by ${proxy.modelId}:\n`);
   let streamedAny = false;
   let outcome: LLMOutcome | undefined;
   for (;;) {
@@ -366,8 +377,14 @@ async function* readImageSource(
       outcome && "errorMessage" in outcome && outcome.errorMessage
         ? `: ${outcome.errorMessage}`
         : "";
+    // A refused image gets what the session's own refusal note says (see
+    // omnimessage/rejected-images.ts): the likely causes and how to make a copy that passes.
+    const advice =
+      outcome && "errorCode" in outcome && outcome.errorCode === "image_rejected"
+        ? `\n${IMAGE_REJECTION_CAUSES} ${IMAGE_COPY_ADVICE}`
+        : "";
     yield delta(
-      `${streamedAny ? "\n" : ""}Vision model (${proxy.modelId}) request ${outcome?.status ?? "failed"}${detail}`,
+      `${streamedAny ? "\n" : ""}Vision model (${proxy.modelId}) request ${outcome?.status ?? "failed"}${detail}${advice}`,
     );
     return { stopReason: "fatal" };
   }

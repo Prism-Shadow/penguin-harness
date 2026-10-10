@@ -16,6 +16,7 @@
 import path from "node:path";
 import { describeFsError, errorCode, localFsPort } from "./fs-port.js";
 import type { FsPort } from "./fs-port.js";
+import { formatSize } from "../../omnimessage/index.js";
 
 /**
  * Image size upper bound (bytes): errors out above this. Taken as the common denominator of
@@ -118,14 +119,6 @@ export async function looksLikeImageFile(
     return imageMimeFromExt(filePath) !== null;
   }
   return sniffImageMime(head) !== null || imageMimeFromExt(filePath) !== null;
-}
-
-/** Byte count -> human-readable size (B / kB / MB, one decimal place). */
-export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} kB`;
-  return `${(kb / 1024).toFixed(1)} MB`;
 }
 
 const OVERSIZE_MESSAGE = (size: number): string =>
