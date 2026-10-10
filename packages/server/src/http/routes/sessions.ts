@@ -164,9 +164,19 @@ import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { Auth } from "../../mechanisms/identity.js";
+import type { AgentApi } from "../../mechanisms/agent-api.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
+
+/**
+ * What a manual title may not contain once its whitespace is collapsed: C0/C1 controls (an
+ * ESC sequence would drive the terminal that `penguin session ls` prints it to) and the bidi
+ * embeddings, overrides and isolates (U+202A–U+202E, U+2066–U+2069) that make a row read as
+ * something else. Not all of `\p{Cf}`: U+200D (zero-width joiner) holds emoji sequences
+ * together.
+ */
+const SESSION_TITLE_FORBIDDEN = /[\p{Cc}\u202A-\u202E\u2066-\u2069]/u;
 
 /** Max path count and per-path length for a single files/stat check (message file-card candidates never exceed this scale). */
 const STAT_MAX_PATHS = 100;
@@ -297,13 +307,7 @@ async function sessionCompactionThreshold(
 }
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
-const SESSION_CATEGORIES: readonly SessionCategory[] = [
-  "active",
-  "subagent",
-  "schedule",
-  "benchmark",
-  "archived",
-];
+const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "background", "archived"];
 
 /** Accepted `order` query values of the list endpoint (SessionListOrder, spelled out for validation). */
 const SESSION_LIST_ORDERS: readonly SessionListOrder[] = ["created", "activity"];
@@ -659,7 +663,8 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 
   // Serves every row straight from the DB, whichever client created it (legacy CLI-direct
   // Traces were adopted by the boot sweep; see SessionService.listSessions) — unless the
-  // caller asks for the user's own rows only (`excludeOrg=1`, development mode's list).
+  // caller asks for the user's own rows only (`excludeOrg=1`, development mode's list) or for
+  // a category, a Workspace group or counts, none of which holds a company Session.
   app.get("/", async (c) => {
     // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
@@ -735,12 +740,18 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const sandbox = parseSandboxPick(body);
-    // Creating-client hint stored on the row ("cli" from the CLI; default "web").
-    // Informational provenance only — lists serve every row regardless.
+    // Creating-client hint stored on the row ("cli" from the CLI; default "web"). Provenance:
+    // only "org", which no request may send, is ever read back as a filter.
     const client = optionalEnum(body, "client", ["web", "cli"] as const);
-    // The only origin a client may set: `subagent` and `schedule` are written by the server
-    // itself, so anything but `benchmark` is a 400 rather than a silently ignored field.
-    const source = optionalEnum(body, "source", ["benchmark"] as const);
+    // The one source a client may name is `cli` (`penguin run`): every other one is the
+    // server's own to write, and absent means `user`, so anything else is a 400 rather than a
+    // silently ignored field. compat(0.3.0): the retired `benchmark` is accepted as `cli`, for
+    // an older CLI or Web App that still sends it.
+    const source = optionalEnum(
+      { source: body.source === "benchmark" ? "cli" : body.source },
+      "source",
+      ["cli"] as const,
+    );
     let workspace = optionalString(body, "workspace", { minLen: 1, label: "workspace" });
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
@@ -817,12 +828,21 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       if (typeof titleRaw !== "string") {
         throw new HttpError(400, "invalid_title", "title must be a string.");
       }
-      title = titleRaw.trim();
+      // Newlines and tabs become plain spaces here, so what is left to refuse is only
+      // what no title should carry.
+      title = titleRaw.replace(/\s+/g, " ").trim();
       if (!title || title.length > SESSION_TITLE_MAX) {
         throw new HttpError(
           400,
           "invalid_title",
           `title must be 1–${SESSION_TITLE_MAX} characters.`,
+        );
+      }
+      if (SESSION_TITLE_FORBIDDEN.test(title)) {
+        throw new HttpError(
+          400,
+          "invalid_title",
+          "title must not contain control or bidirectional-override characters.",
         );
       }
     }
@@ -939,7 +959,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     };
     try {
       const insertedForkRow = deps.sessionsRepo.insertFork(row.sessionId, forkRow);
-      deps.sessionSources.set(fork.sessionId, null);
+      // A fork is a person's conversation, as its Trace head records.
+      deps.sessionSources.set(fork.sessionId, "user");
       return c.json(
         {
           session: await deps.sessionService.toInfo(insertedForkRow, true),
@@ -1859,6 +1880,7 @@ export class SessionApiRoutes {
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
   @Use() private readonly drivers!: SessionDrivers;
+  @Use() private readonly agentApi!: AgentApi;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1940,6 +1962,7 @@ export class SessionApiRoutes {
     });
     this.commandPolicyRoutes = commandPolicyRoutes({ projectConfigService, access });
     this.agentsRoutes = agentsRoutes({
+      agentApi: this.agentApi,
       agentConfigService,
       agentService: this.agents,
       errorsRepo: this.errorsRepo,

@@ -37,6 +37,7 @@ const SERVED = {
     confinementSupported: false,
     noNetworkSupported: false,
     localNetworkSupported: false,
+    maskPathsSupported: false,
     unavailableBackends: [],
     // The Sandbox card's presets table rides beside it (session-sandbox.test.ts pins its rows).
     presets: expect.any(Array),

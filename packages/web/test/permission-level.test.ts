@@ -6,22 +6,30 @@
  *   sandbox limit makes it partial.
  * - It is read-only when commands cannot write, and off when every call is denied.
  * - Each level wears its own glyph, so the level never depends on colour alone.
+ * - Each row of the menu wears, ahead of its name, the level the button takes once that row is
+ *   picked — a preset by its own values, an approval mode (switch off) over the policy the
+ *   Session keeps — whatever level the Session is at when the menu opens.
  */
 import { describe, expect, it } from "vitest";
 import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
 import {
   BUILTIN_PRESETS,
   PERMISSION_LEVEL_GLYPH,
+  approvalModePick,
   firstUnavailableBackend,
   fsModeBlock,
   matchPreset,
   menuPresets,
+  menuRowLevel,
   networkBlock,
   permissionLevel,
+  permissionMenu,
   presetBlock,
   presetEffects,
+  presetPick,
   presetsOf,
 } from "../src/lib/permission-level";
+import type { PermissionMenuRow } from "../src/lib/permission-level";
 import { APPROVAL_MODES, approvalModeChoices } from "../src/features/chat/approval-mode";
 
 const FULL: SessionSandbox = { mode: "danger-full-access", network: "open" };
@@ -191,6 +199,25 @@ describe("the composer's presets", () => {
     expect(presetBlock(FULL, { mode: "read-only", network: "local" })).toBe("local-unsupported");
   });
 
+  // The DSH adaptor alone confines files but masks no paths: every command would be refused.
+  const fsOnly: SessionSandbox = {
+    ...FULL,
+    confinementSupported: true,
+    noNetworkSupported: false,
+    localNetworkSupported: false,
+    maskPathsSupported: false,
+    masksPaths: true,
+  };
+  it.each<[string | null, SessionSandbox]>([
+    ["mask-unsupported", fsOnly],
+    ["no-backend", { ...fsOnly, confinementSupported: false, unavailableBackends: [] }],
+    [null, { ...fsOnly, maskPathsSupported: true }],
+    [null, { ...fsOnly, masksPaths: undefined }],
+    [null, { ...FULL, masksPaths: true }],
+  ])("a policy masking paths blocks every preset with %s (%j)", (block, sandbox) => {
+    expect(new Set(BUILTIN_PRESETS.map((p) => presetBlock(sandbox, p)))).toEqual(new Set([block]));
+  });
+
   it("greys out a preset above the ceiling for a non-admin, never for an admin or the current one", () => {
     const presets = BUILTIN_PRESETS.map((p) =>
       p.mode === "danger-full-access" ? { ...p, aboveCeiling: true as const } : p,
@@ -238,5 +265,27 @@ describe("the composer's presets", () => {
   it("says denied-all blocks every call and a closed network blocks the network", () => {
     expect(presetEffects(byId("denied-all")).blocks).toEqual(["every-call"]);
     expect(presetEffects({ ...byId("full-access"), network: "none" }).blocks).toEqual(["network"]);
+  });
+});
+
+describe("the mark ahead of each menu row", () => {
+  /** The button's level once `row` is picked: its values laid over the Session's policy. */
+  const levelAfterPick = (row: PermissionMenuRow, session: SessionSandbox) => {
+    const pick = row.kind === "preset" ? presetPick(row.preset) : approvalModePick(row.mode);
+    return permissionLevel(pick.approvalMode, { ...session, ...pick.sandbox });
+  };
+
+  it.each<[string, SessionSandbox]>([
+    ["switch on, full access", { ...FULL, switchOn: true }],
+    ["switch on, a read-only Session", { mode: "read-only", network: "none", switchOn: true }],
+    ["switch off, unconfined", { ...FULL, switchOn: false }],
+    [
+      "switch off, a Session confined while it was on",
+      { mode: "read-only", network: "open", switchOn: false },
+    ],
+  ])("with the %s, every row wears the level the button takes once it is picked", (_, session) => {
+    const rows = permissionMenu(session, APPROVAL_MODES, null);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(menuRowLevel(row, session)).toBe(levelAfterPick(row, session));
   });
 });

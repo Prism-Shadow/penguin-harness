@@ -162,6 +162,7 @@ describe("penguin-bwrap provider", () => {
       "fs-write",
       "network",
       "mask-paths",
+      "closed-temp",
     ]);
   });
 
@@ -237,6 +238,22 @@ describe("bwrap on another platform", () => {
     const rejection = loadPenguinBwrapProvider({ platform: "linux", probe: () => false });
     await expect(rejection).rejects.toThrow(/kernel\.unprivileged_userns_clone/);
     await expect(rejection).rejects.toThrow(/kernel\.apparmor_restrict_unprivileged_userns/);
+    // The root step is optional: sandbox-dsh confines files without it.
+    await expect(rejection).rejects.toThrow(/sandbox-dsh confines file writes without them/);
+    await expect(rejection).rejects.toThrow(/Optional: a one-time root step lets bubblewrap run/);
+  });
+
+  it("carries what the runner said, and that it did not start at all", async () => {
+    await expect(
+      loadPenguinBwrapProvider({
+        platform: "linux",
+        settings: () => ({ runner: "/nonexistent/bwrap", probeTimeoutMs: 5000 }),
+      }),
+    ).rejects.toThrow(/'\/nonexistent\/bwrap' is missing or refuses the base profile \(.*ENOENT/);
+  });
+
+  it("names itself bubblewrap on the settings card", () => {
+    expect(createPenguinBwrapProvider({ probe: () => true }).mechanism).toBe("bubblewrap");
   });
 });
 

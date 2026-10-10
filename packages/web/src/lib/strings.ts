@@ -12,6 +12,7 @@
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
 import type { PeakWindows } from "../features/models/model-grouping";
+import type { ModelGroupSort } from "../features/models/model-sort";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -178,6 +179,8 @@ export const zh = {
       "palette.toggle": "命令面板",
       "sessions.search": "搜索会话",
       "chat.new": "新建对话",
+      "find.open": "页内查找",
+      "find.all": "在所有区域查找",
       "sidebar.toggle": "显示或隐藏侧栏",
       "dock.toggleRight": "显示或隐藏右侧栏",
       "dock.toggleBottom": "显示或隐藏下侧栏",
@@ -399,7 +402,11 @@ export const zh = {
     /** The pairing dialog, and the same three steps inline in the panel while no Chrome is paired. */
     pairTitle: "连接你的 Chrome",
     pairStepInstall:
-      "下载扩展并解压。在 Chrome 中打开 chrome://extensions，开启「开发者模式」，选择「加载已解压的扩展程序」并选中解压出的文件夹，再把扩展固定到工具栏。",
+      "安装扩展并把它固定到工具栏。推荐从 Chrome 应用商店安装，Chrome 会自动更新它。",
+    pairStore: "打开 Chrome 应用商店",
+    /** Under the store link: the zip, for a network that cannot reach the store. */
+    pairStepInstallZip:
+      "打不开商店时，也可以下载 zip 并解压，在 chrome://extensions 开启「开发者模式」，选择「加载已解压的扩展程序」并选中解压出的文件夹。",
     pairDownload: "下载扩展（zip）",
     pairStepOpen: "点工具栏上的 PenguinHarness Browser 图标，选择「设置」，打开扩展的配对页。",
     pairStepPaste: "把下面的服务器地址和配对码粘贴进去，选择「连接」。",
@@ -537,6 +544,14 @@ export const zh = {
     chromeExtensionTitle: "Chrome 扩展",
     chromeExtensionInfo:
       "开启时，这台服务器上的每个用户都可以配对自己的 Chrome，让 Agent 在其中操作；关闭时，所有扩展断开，已有的配对保留。",
+    /** Settings › Server › Agent API: the admin's switch over every Agent's public API, and the question before it goes off. */
+    agentApiTitle: "Agent API",
+    agentApiToggle: "允许 Agent API",
+    agentApiHint: "关闭后所有 Agent 的 API 请求均被拒绝；各 Agent 的开关、审批模式与密钥保留。",
+    agentApiOffTitle: "关闭 Agent API？",
+    agentApiOffConfirm:
+      "这台服务器上所有 Agent 的 API 会立即拒绝请求，调用它们的外部程序都会失败，直到重新开启。各 Agent 的开关、审批模式与密钥保留。",
+    agentApiOff: "关闭",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
@@ -595,6 +610,11 @@ export const zh = {
     pluginsTitle: "插件",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) => `${title}（不支持：${reason}）`,
+    /** A switch one of whose positions this machine cannot honour, under the switch. */
+    pluginPositionUnavailable: (position: string, reason: string) =>
+      `本机不支持${position}：${reason}`,
+    pluginPositionOn: "开启",
+    pluginPositionOff: "关闭",
     pluginsInfo:
       "各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
@@ -649,8 +669,9 @@ export const zh = {
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
       title: "安装沙盒后端",
-      body: (machine: string, pkg: string) =>
-        `${machine} 没有适用于其操作系统的沙盒后端，新会话暂时无法进入沙盒。是否安装 ${pkg}？`,
+      body: (machine: string, pkgs: readonly string[]) =>
+        `${machine} 没有适用于其操作系统的沙盒后端，新会话暂时无法进入沙盒。是否安装 ${pkgs.join(" 和 ")}？` +
+        (pkgs.length > 1 ? "两者都可用时，使用封禁范围更大的那个。" : ""),
       cost: "安装会重新装载服务器的插件，所有项目中正在进行的 Agent 运行都会停止。无论是否安装，开关都保持打开。",
       install: "安装",
       installing: "正在安装…",
@@ -999,6 +1020,36 @@ export const zh = {
     taskCompleteTitle: "任务完成",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `「${session}」已完成，点击查看`,
+  },
+
+  /**
+   * The find bar (components/find/find-bar.tsx) and the searchable regions it queries
+   * (lib/find-dom.ts). A region's name is both a result row's tag and the subject of the scope
+   * button (`scopeThisRegion`).
+   */
+  find: {
+    placeholder: "在当前区域查找…",
+    next: "下一个",
+    prev: "上一个",
+    close: "关闭",
+    caseSensitive: "区分大小写",
+    /** Counter line when the query matches nothing. */
+    noResults: "无结果",
+    regionConversation: "对话",
+    regionSubagent: "子会话",
+    regionSessions: "会话列表",
+    regionFiles: "文件",
+    /** Scope button while the search is limited to one region: widen it to everything on screen. */
+    scopeAll: "所有区域",
+    /** Scope button while searching everything: narrow it back to `region`. */
+    scopeThisRegion: (region: string): string => `仅在${region}中`,
+    /** The region's own notice that it holds content this search could not reach. */
+    loadMore: "更早的内容尚未加载",
+    loadMoreAction: "加载并继续搜索",
+    /** `count` hits past the rows the result list shows. */
+    moreRows: (count: number): string => `另有 ${count} 条未显示`,
+    /** Name of the aggregated result list (read out when it is announced). */
+    resultsLabel: "查找结果",
   },
 
   common: {
@@ -1372,6 +1423,7 @@ export const zh = {
     tabHooks: "钩子",
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
+    tabApi: "API",
     stateDir: "State 路径",
     copyStateDir: "复制 State 路径",
     agentsMd: "AGENTS.md",
@@ -1551,6 +1603,70 @@ export const zh = {
         : `内核已更新至 ${version}，设置页均已是当前默认或保持自定义`,
     kernelUpdateKeptIntro: "以下设置页因自定义被整体保留：",
     kernelListSeparator: "、",
+    /** The API tab: this server's switch for the Agent's public API, its approval mode, keys and examples. */
+    apiEnable: "开启 API 访问",
+    apiEnableHint:
+      "外部程序可通过 URL、密钥与 Agent ID 与此 Agent 对话；对话归入侧栏的「后台会话」。",
+    apiOwnerOnly: "只有 Project 所有者可以更改这些设置。",
+    apiAdminOff:
+      "管理员已在服务器设置中关闭 Agent API：所有 API 请求都会被拒绝，这里的设置与密钥保留。",
+    apiApprovalMode: "API 会话的审批模式",
+    apiApprovalModeHint:
+      "应用于之后新建的 API 会话；需要确认时，确认请求会发给调用方，也可在 Web App 中回答。",
+    apiConnection: "连接",
+    apiBaseUrl: "Base URL",
+    apiAgentId: "Agent ID",
+    /** A copy button beside a connection value, named for what it copies. */
+    apiCopy: (what: string): string => `复制 ${what}`,
+    apiKeys: "密钥",
+    apiKeysEmpty: "还没有密钥。",
+    apiNewKey: "新建密钥",
+    apiKeyName: "密钥名称",
+    apiKeyCreated: "创建",
+    apiKeyLastUsed: "最近使用",
+    apiKeyNever: "从未",
+    apiKeyShownOnce: "此密钥只显示一次，请立即复制。",
+    apiCopySecret: "复制密钥",
+    apiKeyDone: "完成",
+    apiDeleteKey: "删除密钥",
+    apiDeleteKeyBody: (name: string): string =>
+      `删除密钥「${name}」？使用它的程序会立即被拒绝，此操作不可撤销。`,
+    apiOpen: "允许无密钥访问",
+    apiOpenHint: "任何能访问此地址的程序都能与该 Agent 对话；仅建议本机使用。",
+    apiExamples: "示例",
+    /** Turning the Agent's API off asks first: every program using it is refused from then on. */
+    apiOpenTitle: "允许无密钥访问？",
+    apiOpenBody:
+      "开启后，任何能访问此服务器地址的程序都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据，工具按 API 会话的审批模式执行。仅建议在只监听本机的服务器上开启。",
+    apiOpenConfirm: "仍然开启",
+    apiOffTitle: "关闭 API 访问？",
+    apiOffBody: "外部程序会立即无法与此 Agent 对话。审批模式与密钥保留，重新开启后照常可用。",
+    apiOff: "关闭",
+    /** The Agents list's plug mark on an Agent whose API is on. */
+    apiOn: "已开启 API 访问",
+    /** The tab's Try it: one real API run on the owner's sign-in, shown as a program receives it. */
+    apiTry: "试一试",
+    apiTryHint:
+      "以你的登录身份走程序用的同一条运行路由，收到的就是程序会收到的事件流；开出的会话归入侧栏的「后台会话」。",
+    apiTryExample: "现在几点了？",
+    apiTryRun: "运行",
+    apiTryStop: "停止",
+    /** The input's placeholder once a run has named its Session: the next run continues it. */
+    apiTryFollowUp: "继续这个会话…",
+    apiTryNewSession: "新会话",
+    /** The output's two views: the stream with fragments merged, and its `data:` lines as received. */
+    apiTryRendered: "渲染",
+    apiTryRaw: "原始",
+    apiTryCopyRaw: "复制原始行",
+    /** The output before the first run. */
+    apiTryEmpty: "运行后，事件流显示在这里。",
+    apiTryStatus: "状态",
+    apiTryRequests: "Request",
+    apiTryTokens: "Token（输出 / 合计）",
+    apiTryCacheRead: "缓存读",
+    apiTryCacheWrite: "缓存写",
+    apiTryElapsed: "用时",
+    apiTryStreamBroken: "事件流在 run.done 之前结束。",
   },
 
   models: {
@@ -1711,6 +1827,8 @@ export const zh = {
       "openai-responses": "OpenAI Responses",
       "ant-messages": "Anthropic Messages",
       "openai-chat": "OpenAI Chat Completions",
+      "google-genai": "Google GenAI (generateContent)",
+      mmsp: "MMSP",
     } as Record<string, string | undefined>,
     /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
     protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
@@ -1732,7 +1850,7 @@ export const zh = {
     detectFellBack: "未检测到协议，已按 OpenAI Chat Completions 保存",
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
     addProtocolHintDetect:
-      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可点“检测协议”探测端点；未选协议时保存会先自动检测",
+      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions / Google GenAI / MMSP），也可点“检测协议”探测端点是否为前三种之一；未选协议时保存会先自动检测",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
     /** Detect action beside the vision switch. */
@@ -1830,9 +1948,21 @@ export const zh = {
     getModelIds: "获取模型 id",
     /** The group settings' link to the vendor's model list (the catalog's modelsUrl). */
     modelList: "前往模型列表",
-    // —— Group settings (the gear at the end of every group header) ——
-    /** The header action and its accessible name. */
+    // —— The gear at the end of every group header: the group's sort, then its settings ——
+    /** The gear's accessible name (followed by the group's name). */
     groupSettings: "设置",
+    /** The gear's hover hint, naming how the group's models are ordered now. */
+    groupMenuTitle: (sort: string): string => `设置 · 排序：${sort}`,
+    /** The gear menu's first section: how the group's models are ordered (radio rows). */
+    sortHeading: "排序",
+    /** The three orders; price is the blended rate billed right now. */
+    sortModes: {
+      "price-asc": "价格（从低到高）",
+      "price-desc": "价格（从高到低）",
+      name: "名称（A→Z）",
+    } satisfies Record<ModelGroupSort, string>,
+    /** The gear menu's last row, under the sort (owner only): opens the group settings dialog. */
+    groupSettingsEntry: "分组设置…",
     groupSettingsTitle: (label: string): string => `${label} 分组设置`,
     /** The clear box under a stored group key. */
     clearGroupKey: "清除分组密钥",
@@ -2389,8 +2519,11 @@ export const zh = {
     detailSkills: "技能",
     detailHooks: "钩子",
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
-    /** Title on a disabled quick-start button: it pre-selects one of the plugin's skills on the currently selected Agent, so the plugin has to be installed there first. */
-    quickInvokeNeedsInstall: "先在当前 Agent 安装该插件后才能快捷调用",
+    /** Quick start's tooltip: what pressing it does, and what it does not. */
+    quickStartHint: "快速开始：打开一份带该插件演示的草稿——点发送之前什么都不会运行",
+    quickStartInstallTitle: (plugin: string, agent: string) =>
+      `先把 ${plugin} 安装到 ${agent} 再快速开始？`,
+    quickStartAfterInstall: "随后打开一份带演示的草稿；点发送之前什么都不会运行。",
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
@@ -2485,7 +2618,7 @@ export const zh = {
   },
 
   skills: {
-    quickInvoke: "快捷调用",
+    quickInvoke: "快速开始",
     /** Pre-filled body for quick invoke (per UI language; English is `use the <name> skill`). */
     quickInvokeText: (name: string): string => `使用 ${name} 技能`,
     /** Bulk controls of the multi-select skill panel; both act on the rows the search box currently leaves visible. */
@@ -2565,8 +2698,6 @@ export const zh = {
   },
 
   chat: {
-    /** Footnote of the session picker's menu — the pre-pick reminder: a change applies right away but costs the model's cached context, so compacting first is recommended. */
-    thinkingLevelChangeNote: "立即生效。更换思考等级会使模型缓存失效，建议先压缩上下文。",
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
@@ -2972,7 +3103,10 @@ Benchmark：
       notInstalled: "未安装",
       noBackend:
         "本服务器没有安装沙盒后端，命令无法被封禁。管理员可在插件页启用适用于本平台的后端（更多…）。",
-      noNetworkUnsupported: "本机的沙盒后端不支持断开网络",
+      noNetworkUnsupported: (backends?: string) =>
+        `本机的沙盒只封禁文件${backends !== undefined ? `（${backends} 不隔离网络）` : ""}，无法断开网络`,
+      maskUnsupported: (backends?: string) =>
+        `本会话要对命令隐藏屏蔽路径，但本机没有能屏蔽路径的沙盒后端${backends !== undefined ? `（${backends} 不能屏蔽路径）` : ""}，每条命令都会被拒绝。管理员可在「更多…」里的沙盒卡片清空屏蔽路径。`,
       notAvailable: "不可用",
       adminOnly: "仅管理员",
       aboveCeiling: "超出了本服务器的沙盒上限：只有管理员可以给会话这么大的权限。",
@@ -3175,6 +3309,10 @@ Benchmark：
     replaceTypedTitle: "替换输入框内容",
     replaceTyped: "替换",
     replaceTypedBody: "用这条提示词替换输入框里已有的内容？你输入的文字会被清掉。",
+    /** A choice's "Other…" about to empty the composer of text the user typed. */
+    clearTypedTitle: "清空输入框内容",
+    clearTyped: "清空",
+    clearTypedBody: "清空输入框里已输入的文字，另写自己的回答？",
     statTokens: "Token 累计",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "总 Token",
@@ -3386,15 +3524,17 @@ Benchmark：
     copyCode: "复制代码",
     copyReply: "复制回复",
     /**
-     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram),
-     * handed to the UI package that draws them (lib/ui-strings.ts). Of the four tone names, a
-     * warning is about loss or harm and a caution about something recoverable breaking, so the
-     * two must not read as the same level.
+     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram, and
+     * the weather, clock, countdown and metrics widgets), handed to the UI package that draws
+     * them (lib/ui-strings.ts). Of the four tone names, a warning is about loss or harm and a
+     * caution about something recoverable breaking, so the two must not read as the same level.
      */
     a2ui: {
+      /** The language these words are in: widgets format numbers, dates and weekdays in it. */
+      lang: "zh" as "zh" | "en",
       /** The button that puts a multi-select pick, or a form's answers, in the composer. */
       fill: "填入输入框",
-      /** A choice's own-answer control: focuses the composer. */
+      /** A choice's own-answer control: empties the composer for the user's own answer. */
       other: "其他…",
       /** The mark on the option the model recommends. */
       recommended: "推荐",
@@ -3410,6 +3550,53 @@ Benchmark：
       diagram: "图表",
       /** The toggle that shows a diagram's source. */
       showSource: "查看源码",
+      /** A form's number stepper: add or subtract one step. */
+      stepUp: "增加",
+      stepDown: "减少",
+      /** The weather conditions, by the catalog's key (the same words as core's fallback). */
+      conditions: {
+        clear: "晴",
+        "partly-cloudy": "多云",
+        cloudy: "阴",
+        fog: "雾",
+        drizzle: "小雨",
+        rain: "雨",
+        "heavy-rain": "大雨",
+        thunder: "雷雨",
+        snow: "雪",
+        sleet: "雨夹雪",
+        wind: "大风",
+      },
+      /** A snapshot widget's head: when its data was read. */
+      asOf: (time: string) => `数据时间 ${time}`,
+      /** A weather widget's foot: where its data came from. */
+      source: (name: string) => `来源：${name}`,
+      feelsLike: "体感",
+      humidity: "湿度",
+      wind: "风",
+      precipitation: "降水",
+      high: "最高",
+      low: "最低",
+      hourly: "逐小时",
+      daily: "未来几天",
+      today: "今天",
+      /** The widgets' accessible names when the model gave no title. */
+      weather: "天气",
+      clock: "时钟",
+      countdown: "倒计时",
+      metrics: "指标",
+      localTime: "本地时间",
+      /** A countdown past its moment, unless the model named it. */
+      countdownDone: "时间到",
+      unitDays: "天",
+      unitHours: "时",
+      unitMinutes: "分",
+      unitSeconds: "秒",
+      /** A finished progress reading. */
+      done: "已完成",
+      /** Which way a reading moved, read out before its change. */
+      deltaUp: "上升",
+      deltaDown: "下降",
     },
     forkSession: "从这里分叉对话",
     forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",
@@ -3442,10 +3629,15 @@ Benchmark：
     loadMoreSessions: "加载更多会话",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
-      subagent: (n: number) => `子智能体（${n}）`,
-      schedule: (n: number) => `定时任务（${n}）`,
-      benchmark: (n: number) => `评估任务（${n}）`,
+      background: (n: number) => `后台会话（${n}）`,
       archived: (n: number) => `已归档（${n}）`,
+    },
+    /** A Background row's source mark: the program that opened the Session, as its tooltip and hidden text. */
+    sessionSource: {
+      api: "API",
+      schedule: "定时任务",
+      subagent: "子智能体",
+      cli: "CLI",
     },
     /**
      * Tooltip of a folder-only group's header — a group with no active conversation of its
@@ -4135,6 +4327,8 @@ Benchmark：
     colCase: "题目",
     colRun: "运行",
     colSession: "Session",
+    /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
+    copyTrialName: "复制 Harbor trial 名称",
     // The evaluation detail dialog, and the Ask AI dialog both detail dialogs open.
     askAi: "问 AI",
     evaluationDetailTitle: (time: string): string => `评估 · ${time}`,
@@ -4338,7 +4532,7 @@ Benchmark：
       "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
     evaluateSessionModel: "评估会话使用的模型",
     evaluateSessionModelHint:
-      "派发与汇总评测的模型，缺省为 Project 默认模型；被测智能体用的是它自己配置的模型，不在这里改",
+      "这个会话运行所用的模型，缺省为 Project 默认模型；被测智能体也在这个模型上评测，思考等级沿用它自己的配置",
     evaluateRunsHint: "每道题跑几次取平均；缺省为 Benchmark 配置的次数",
     evaluateNoteField: "说明",
     evaluateNotePlaceholder: "例如：这一轮用来确认上次优化的效果，重点看引用规范那两道题",
@@ -4348,8 +4542,10 @@ Benchmark：
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
       `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
       `- runs：\`${p.runs}\`\n\n` +
-      "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的子会话（省略 `agent_id`），并在每个子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
-      "评测 Runtime 取被测智能体当前配置的模型与思考等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
+      "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的子会话（省略 `agent_id`），并在每个子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能。" +
+      "被测模型就是本会话自己的模型：在第一次 `run_subagent` 之前从你的 Environment 读出 `Provider` 与 `Model ID`，作为每个请求的 `provider` 与 `model_id`。" +
+      "智能体不保存模型，不要到被测智能体的文件、Project 配置或服务端去找；Environment 缺其中任何一行，就停下来问我。" +
+      "思考等级取被测智能体配置的等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
       "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
       "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
       "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题分数与本条记录的标签。",

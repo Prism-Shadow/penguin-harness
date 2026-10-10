@@ -9,8 +9,8 @@
  * and after every save. The service stays on the capability-free floor (a bare kernel boots
  * it with no database), and its parked context still carries the settings across a hot swap:
  * on boot a saved document wins, and with none saved the service keeps what the swap carried.
- * The card's live status (whether the saved policy can be enforced, which backends are in use
- * and why each other one is not) is `SandboxSettingsStatus`, in settings-status.ts.
+ * The card's live status (what this machine enforces, which backends are not in use and why)
+ * is `SandboxSettingsStatus`, in settings-status.ts.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { PluginConfig } from "../plugin/config.js";
@@ -107,14 +107,14 @@ export const SANDBOX_GROUP = "sandbox";
                 title: "Files",
                 titleZh: "文件",
                 description:
-                  "What a confined command may write. Off: anywhere. Workspace: the session's workspace, its scratchpad and the temp directory. Read-only: the temp directory only. Needs a sandbox backend unless Off.",
+                  "What a confined command may write. Full access: anywhere. Workspace: the session's workspace, its scratchpad and the temp directory. Read-only: the temp directory only. Needs a sandbox backend unless Full access.",
                 descriptionZh:
-                  "被封禁的命令能写哪里。关闭：任何位置。仅工作区：会话的工作区、scratchpad 与临时目录。只读：只有临时目录。除「关闭」外都需要沙盒后端。",
+                  "被封禁的命令能写哪里。完全访问：任何位置。仅工作区：会话的工作区、scratchpad 与临时目录。只读：只有临时目录。除「完全访问」外都需要沙盒后端。",
                 options: [
                   {
                     value: "danger-full-access",
-                    title: "Off (full access)",
-                    titleZh: "关闭（完全访问）",
+                    title: "Full access",
+                    titleZh: "完全访问",
                     description: "Commands and file tools may write anywhere.",
                     descriptionZh: "命令与文件工具可以写任何位置。",
                   },
@@ -142,9 +142,9 @@ export const SANDBOX_GROUP = "sandbox";
                 title: "Network",
                 titleZh: "网络",
                 description:
-                  "What a confined command, hook script or read_file URL may reach. Localhost allows only this machine, and needs a backend that can enforce it.",
+                  "What a confined command, hook script or read_file URL may reach. Localhost allows only this machine. Each limit needs a backend that can enforce it — sandbox-dsh confines files only — and is greyed out where the backends in use cannot.",
                 descriptionZh:
-                  "被封禁的命令、钩子脚本与 read_file 的 URL 能访问的网络。仅本机只允许访问本机，需要能实施它的后端。",
+                  "被封禁的命令、钩子脚本与 read_file 的 URL 能访问的网络。仅本机只允许访问本机。每种限制都需要能实施它的后端（sandbox-dsh 只封禁文件），在用的后端不能实施时显示为灰色。",
                 options: [
                   {
                     value: "open",
@@ -337,9 +337,9 @@ export const SANDBOX_GROUP = "sandbox";
             title: "Temporary directory writable",
             titleZh: "临时目录可写",
             description:
-              "Confined commands, hook scripts and file tools may write the system temp directory, in either mode. Shells and most tools need one to start; off keeps it read-only too.",
+              "Confined commands, hook scripts and file tools may write the system temp directory, in either mode. Shells and most tools need one to start; off keeps it read-only too. Off needs a backend that can close it — sandbox-dsh cannot — and is greyed out where the backends in use cannot.",
             descriptionZh:
-              "被封禁的命令、钩子脚本与文件工具在两种模式下都可以写系统临时目录。Shell 与大多数工具需要它才能启动；关闭后临时目录同样只读。",
+              "被封禁的命令、钩子脚本与文件工具在两种模式下都可以写系统临时目录。Shell 与大多数工具需要它才能启动；关闭后临时目录同样只读。关闭需要能关闭它的后端（sandbox-dsh 不能），在用的后端不能关闭时显示为灰色。",
             default: true,
           },
           maskPaths: {
@@ -348,8 +348,9 @@ export const SANDBOX_GROUP = "sandbox";
             title: "Masked paths",
             titleZh: "屏蔽路径",
             description:
-              "Paths hidden from confined commands, hook scripts and file tools, reads included.",
-            descriptionZh: "对被封禁的命令、钩子脚本与文件工具隐藏的路径，读取也不例外。",
+              "Paths hidden from confined commands, hook scripts and file tools, reads included. Needs a backend that masks paths — sandbox-dsh does not: without one, every command is refused while any is listed.",
+            descriptionZh:
+              "对被封禁的命令、钩子脚本与文件工具隐藏的路径，读取也不例外。需要能屏蔽路径的后端（sandbox-dsh 不能）：没有这样的后端时，只要列了路径，每条命令都会被拒绝。",
             hint: "One absolute path per line, at most 64.",
             hintZh: "每行一个绝对路径，最多 64 条。",
             maxItems: 64,

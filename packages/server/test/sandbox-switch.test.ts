@@ -16,13 +16,13 @@ import type { SandboxService } from "../src/sandbox/service.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-/** What the server defaults to on the OS the suite runs on. */
+/** What the server defaults to on this OS; Linux offers sandbox-dsh (Landlock) beside bubblewrap. */
 const recommended = (
   {
-    linux: "@penguinharness/sandbox-bwrap",
-    darwin: "@penguinharness/sandbox-seatbelt",
-    win32: "@penguinharness/sandbox-wsl",
-  } as Partial<Record<NodeJS.Platform, string>>
+    linux: ["@penguinharness/sandbox-bwrap", "@penguinharness/sandbox-dsh"],
+    darwin: ["@penguinharness/sandbox-seatbelt"],
+    win32: ["@penguinharness/sandbox-wsl"],
+  } as Partial<Record<NodeJS.Platform, string[]>>
 )[process.platform];
 
 /** A backend plugin whose providers resolve as given: a provider, null (declined), or a failure. */
@@ -292,7 +292,7 @@ describe("the sandbox switch", () => {
     expect(((await picked.json()) as Created).session).toMatchObject(pick);
   });
 
-  it("reports no backend for this OS, the OS's default package, and names its switch", async () => {
+  it("reports no backend for this OS, the OS's default packages, and names its switch", async () => {
     const entry = await (await boot()).card();
     expect(entry.backend).toEqual({ installed: false, ...(recommended ? { recommended } : {}) });
     expect(

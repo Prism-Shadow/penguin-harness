@@ -43,6 +43,7 @@ import {
   isHookInput,
   isSessionMeta,
   ModelSwitchRefusedError,
+  normalizeSessionSource,
   parseUserSteeringText,
   tracesDir,
   userText,
@@ -84,7 +85,7 @@ import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import { LiveTailTracker } from "./live-tail.js";
-import { asSessionSource } from "./session-sources.js";
+import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
@@ -373,15 +374,18 @@ export function createCoreSessionLoader(
           `This Session's Workspace no longer exists: ${row.workspace}, so it cannot continue. Create a new Session.`,
         );
       }
-      const knownSource = sources?.get(row.sessionId);
+      // The source this process recorded at creation, else the one the row stands for: the
+      // organization runtime's are `company`, the Agent API's `api` (unrunSource), the list's
+      // reading of the same row.
+      const knownSource = sources?.get(row.sessionId) ?? unrunSource(row.client);
       try {
         return await agent.createSession({
           workspaceDir: row.workspace,
           modelId: row.modelId,
           provider: row.provider,
-          // The rebuilt Session re-records a known origin in its fresh session_meta, and
-          // starts its first context at the row's pinned level.
-          ...(knownSource != null ? { source: knownSource } : {}),
+          // The rebuilt Session records that source in its fresh session_meta (an unknown one
+          // is core's default, `user`), and starts its first context at the row's pinned level.
+          ...(knownSource !== undefined ? { source: knownSource } : {}),
           ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
         });
       } catch (err) {
@@ -888,7 +892,7 @@ export class SessionManager {
 
   /** Add a newly created Session to the active table (status idle), avoiding a redundant load on the next Task. */
   adopt(row: SessionRow, session: RuntimeSession): void {
-    this.entries.set(row.sessionId, {
+    const entry: RuntimeEntry = {
       sessionId: row.sessionId,
       projectId: row.projectId,
       agentId: row.agentId,
@@ -896,7 +900,7 @@ export class SessionManager {
       modelId: row.modelId,
       session,
       status: "idle",
-      approvals: new ApprovalRegistry(),
+      approvals: new ApprovalRegistry(() => this.publishApprovals(entry)),
       abort: null,
       running: null,
       generation: this.generationOf(row.projectId, row.agentId),
@@ -907,7 +911,8 @@ export class SessionManager {
       returnedSteering: [],
       lastActivityMs: Date.now(),
       backgroundTasks: backgroundTaskCounts(session),
-    });
+    };
+    this.entries.set(row.sessionId, entry);
     // Same wiring as ensureEntry: adopt IS the entry path for a session created in this
     // process (POST /sessions), and a listener registered only on the loader path left
     // freshly created sessions unable to deliver idle-arrival completion reports.
@@ -1986,7 +1991,7 @@ export class SessionManager {
       modelId: row.modelId,
       session,
       status: "idle",
-      approvals: new ApprovalRegistry(),
+      approvals: new ApprovalRegistry(() => this.publishApprovals(entry)),
       abort: null,
       running: null,
       generation,
@@ -2300,11 +2305,11 @@ export class SessionManager {
     const p = msg.payload as SessionMetaPayload;
     const agentId = path.basename(path.dirname(p.agent_state));
     if (!agentId || agentId === "." || agentId === "..") return null;
-    // The forwarded session_meta records the origin at the source (core's spawn site); fall
-    // back to inferring "subagent" from the registration path for older metas (narrowed —
-    // a junk value also falls back). It goes into the in-process registry only — the index
-    // row deliberately stores no source column.
-    const source = asSessionSource(p.source) ?? "subagent";
+    // The forwarded session_meta records the source where it is decided (core's spawn site
+    // writes `subagent`); it is narrowed like any meta read back, so the registry holds what
+    // the child's Trace head will answer after a restart. It goes into the in-process registry
+    // only — the index row deliberately stores no source column.
+    const source = normalizeSessionSource(p.source);
     this.deps.sources.set(childSid, source);
     const root = this.rootSessionOf(entry.sessionId);
     this.childRoots.set(childSid, root);
@@ -2459,6 +2464,29 @@ export class SessionManager {
       processes: counts.processes,
       subagents: counts.subagents,
     });
+  }
+
+  /**
+   * Publishes `session_approvals` on the user channel: how many tool calls of this Session wait
+   * for a person now. The Session's own stream carries the calls; this is what lets a list, or
+   * a host watching every Session of a Project, see which one waits without subscribing to each.
+   * Sent for an entry that is being disposed too, so a mark it had is cleared.
+   */
+  private publishApprovals(entry: RuntimeEntry): void {
+    try {
+      this.deps.notifyProjectUsers?.(entry.projectId, {
+        type: "session_approvals",
+        sessionId: entry.sessionId,
+        count: entry.approvals.size,
+      });
+    } catch (err) {
+      // The notifier reads the Project's audience from the database, which shutdown can close
+      // while a run outlives its drain window (the failure publishState guards too). A list
+      // mark is never worth throwing out of an approval's wait, answer or interrupt.
+      this.log(
+        `[session] approvals notice failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** Serialize (mutually exclude) execution by sessionId; cleans up the lock-table entry once its chain drains (avoids unbounded growth). */
@@ -2720,6 +2748,7 @@ export class SessionsModule {
       sandboxDefaults: () => sandbox.currentSettings(),
       sandboxDimensions: () => [...new Set(sandbox.backends().flatMap((b) => b.dimensions))],
       sandboxUnavailable: () => sandbox.failures(),
+      sandboxBackends: () => sandbox.backends().map((b) => b.name),
       // The Sandbox card's presets, read per view: a rename there reaches the next read.
       sandboxPresets: () =>
         sandboxPresetsOf(pluginConfig.schema(SANDBOX_GROUP), pluginConfig.get(SANDBOX_GROUP)),

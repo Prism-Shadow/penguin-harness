@@ -121,6 +121,14 @@ describe.skipIf(!usable)("DSH adaptor live enforcement (host-gated)", () => {
     expect(r.out).toContain("READ_OK");
   });
 
+  it("names the rung that serves for the settings card", () => {
+    expect(provider!.mechanism).toMatch(
+      /^(bubblewrap|Landlock|Seatbelt|the Windows ACL runner)( \(partial\))?$/,
+    );
+    // Read by a host check that wants to see which rung a CI runner reached.
+    console.log(`sandbox-dsh confines through ${provider!.mechanism}`);
+  });
+
   it("workspace-write: a write outside the workspace is denied by the kernel", async () => {
     mode = "workspace-write";
     const r = await run(probes.writeOutside);

@@ -3,18 +3,19 @@
  * backend that implements the dimensions it requires, and produces the SpawnConfiner
  * closure the runtime transports into core's command-session seam.
  *
- * Routing is by CAPABILITY, not by registration order alone: a policy requiring only
- * `fs-write` goes to the first backend that covers it (the DSH adaptor, which works on
- * Linux/macOS/Windows alike), while a policy also requiring `network` or `mask-paths`
- * goes to the first backend implementing those (penguin-bwrap). Registration order
- * only breaks ties between backends that both cover the request. A request nothing
- * covers fails closed — never a silent unconfined run, and never a silently dropped
- * dimension.
+ * Routing is by CAPABILITY, not by registration order: of the mounted backends covering
+ * every dimension a policy requires, the one implementing the most dimensions wins, so a
+ * native backend (penguin-bwrap) serves every policy it covers even when the portable DSH
+ * adaptor is mounted beside it, and the adaptor serves only where it is the one left — a
+ * Linux host refusing bubblewrap's user namespaces, where it confines files through
+ * Landlock. Registration order only breaks ties. A request nothing covers fails closed —
+ * never a silent unconfined run, and never a silently dropped dimension.
  */
 import fs from "node:fs";
 import type { SpawnConfiner } from "@prismshadow/penguin-core";
 import type {
   SandboxDimension,
+  SandboxLimit,
   SandboxPolicy,
   SandboxProvider,
   SandboxProviderSource,
@@ -187,11 +188,23 @@ export class SandboxService {
     return [...this.declinedNames];
   }
 
-  /** The mounted backends and what each implements (diagnostics / the config surface). */
-  backends(): Array<{ name: string; dimensions: readonly SandboxDimension[] }> {
-    return this.mounted.map(({ name, provider }) => ({
+  /**
+   * The mounted backends and what each implements, in routing preference: the one a policy
+   * goes to first (diagnostics / the config surface).
+   */
+  backends(): Array<{
+    name: string;
+    dimensions: readonly SandboxDimension[];
+    mechanism?: string;
+    limits?: readonly SandboxLimit[];
+  }> {
+    return byPreference(this.mounted).map(({ name, provider }) => ({
       name,
       dimensions: providerDimensions(provider),
+      ...(provider.mechanism !== undefined ? { mechanism: provider.mechanism } : {}),
+      ...(provider.limits !== undefined && provider.limits.length > 0
+        ? { limits: provider.limits }
+        : {}),
     }));
   }
 
@@ -243,17 +256,25 @@ export class SandboxService {
         ...(settings.writableTemp !== false ? { writableTemp: true } : {}),
       };
       // ConfinedArgv also carries enforcement / denialSignatures / runnerFailureRules;
-      // the classification consumer (denial vs runner failure) lands with escalation.
+      // the classification consumer (denial vs runner failure) lands with escalation. The
+      // rules' informational lines are what the runner reports on every run (the Landlock
+      // launcher on an older kernel): the spawn drops them from the command's stderr.
       const confined = provider.confine(argv, policy);
-      return confined.env === undefined
-        ? { argv: confined.argv }
-        : { argv: confined.argv, env: confined.env };
+      const runnerLines = confined.runnerFailureRules.flatMap((r) => r.informationalLines ?? []);
+      return {
+        argv: confined.argv,
+        ...(confined.env !== undefined ? { env: confined.env } : {}),
+        ...(runnerLines.length > 0 ? { runnerLines } : {}),
+      };
     };
   }
 
-  /** The first mounted backend implementing every required dimension, or a fail-closed throw. */
+  /**
+   * The preferred mounted backend implementing every required dimension (byPreference), or a
+   * fail-closed throw.
+   */
   private pick(required: readonly SandboxDimension[], mode: string): SandboxProvider {
-    const match = this.mounted.find(({ provider }) => {
+    const match = byPreference(this.mounted).find(({ provider }) => {
       const implemented = providerDimensions(provider);
       return required.every((dimension) => implemented.includes(dimension));
     });
@@ -276,6 +297,17 @@ export class SandboxService {
     }
     return parts.length === 0 ? "" : `; backends not in use: ${parts.join("; ")}`;
   }
+}
+
+/**
+ * Backends in routing preference: more implemented dimensions first, registration order among
+ * equals (the sort is stable). Bubblewrap and the DSH adaptor both cover a files-only policy;
+ * the one that could also have cut the network or masked a path is the one that serves it, on
+ * whatever order the Projects' plugin lists name them in.
+ */
+function byPreference(mounted: readonly MountedProvider[]): MountedProvider[] {
+  const size = (m: MountedProvider) => providerDimensions(m.provider).length;
+  return [...mounted].sort((a, b) => size(b) - size(a));
 }
 
 /**

@@ -195,7 +195,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
-| 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框和 Mermaid 图，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则和一个发送前校验、打分的检查脚本（预装） |
+| 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框、Mermaid 图，以及天气、时钟、倒计时和指标小组件，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则、把天气查询和系统快照直接生成组件块的脚本，以及一个发送前校验、打分的检查脚本（预装） |
 | | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
 | | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号 |
@@ -205,7 +205,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
-| AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含四个 Skill：`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
+| AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含四个 Skill：`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent |
 | | `agent-tuning` | 用四个 Skill 构成调优闭环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent） |
@@ -236,6 +236,7 @@ plugins/<plugin>/
 | `version` | `YYYY.MM.DD.N`：日期加当天的序号 |
 | `category` | `office-productivity`、`software-development`、`ai-app-development`、`agent-company` 之一；缺失或未知的分类归入「其他」 |
 | `preinstall` | 可选；设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
+| `quick_start` | 插件页「快速开始」预填进新对话草稿的演示：`{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各个[钩子点](/agent-loop#stop-hook)运行的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径以 `hooks/` 为起点，timeout 单位为秒。`user_prompt` 命令可以另加 `"trigger"`：`"prompt"`（缺省）表示用户每次提交 Prompt 时运行，`"host"` 表示只在宿主按包名启动该包的流程时运行 |
 
 ### 插件命名与版本

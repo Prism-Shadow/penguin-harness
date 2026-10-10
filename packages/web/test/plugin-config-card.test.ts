@@ -1,6 +1,7 @@
 /**
- * What the Sandbox card draws from its entry and draft: the switch alone while off, the table's
- * name boxes, "?"s, "(Default)" mark, row menus, pin toggles and locked cells.
+ * What the Sandbox card draws from its entry and draft: the switch alone while off, a notice's
+ * details folded under it, the table's name boxes, "?"s, "(Default)" mark, row menus, pin
+ * toggles and locked cells.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ReactElement } from "react";
@@ -36,7 +37,7 @@ const ENTRY: PluginConfigEntry = {
   actions: [{ id: "setup", title: "Set up" }],
 };
 
-const heading = (draft: Record<string, unknown>, entry = ENTRY) =>
+const heading = (draft: Record<string, unknown>, entry = ENTRY, locale: "en" | "zh" = "en") =>
   renderToStaticMarkup(
     createElement(ConfigHeading, {
       entry,
@@ -44,7 +45,7 @@ const heading = (draft: Record<string, unknown>, entry = ENTRY) =>
       nested: false,
       disabled: false,
       onAction: () => {},
-      locale: "en",
+      locale,
     }),
   );
 
@@ -62,6 +63,26 @@ describe("the settings card", () => {
       expect(heading({ enabled: true })).toContain(text);
     }
     expect(heading({ enabled: false })).toContain("Sandbox");
+  });
+
+  it("folds a notice's details under it, collapsed, in the page's language", () => {
+    const notice = { tone: "muted" as const, text: "Enforced here: file writes." };
+    const withDetails = (locale: "en" | "zh") =>
+      heading(
+        { enabled: true },
+        { ...ENTRY, notices: [{ ...notice, details: "bwrap refused", detailsZh: "bwrap 已拒绝" }] },
+        locale,
+      );
+    const html = withDetails("en");
+    // A collapsed button controlling the hidden panel that holds the details.
+    const control = /aria-expanded="false" aria-controls="([^"]+)"/.exec(html)?.[1];
+    expect(html.slice(html.indexOf(`id="${control}"`))).toMatch(
+      /^id="[^"]+" hidden=""[^]*bwrap refused/,
+    );
+    expect(withDetails("zh")).toContain("bwrap 已拒绝");
+    expect(heading({ enabled: true }, { ...ENTRY, notices: [notice] })).not.toContain(
+      "aria-expanded",
+    );
   });
 
   it("holds the effective name in the name box, the declared one when not renamed", () => {

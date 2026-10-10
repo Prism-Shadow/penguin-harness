@@ -2,7 +2,8 @@
  * Agent routes:
  * GET|POST /api/projects/:p/agents, DELETE /:agentId (owner only).
  * The list is the union of DB entries and directory scan results, including active
- * Session count, total Session count, and config last-modified time.
+ * Session count, total Session count, config last-modified time, and whether the Agent's API
+ * switch is on.
  */
 import { Hono } from "hono";
 import type { AgentCreateResponse, AgentsResponse, AgentSummary } from "../../api/types.js";
@@ -25,9 +26,11 @@ import type { TraceIndex } from "../../mechanisms/traces.js";
 import type { ErrorLog } from "../../mechanisms/observability.js";
 import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
 import type { Access } from "../../mechanisms/projects.js";
+import type { AgentApi } from "../../mechanisms/agent-api.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentsRouteDeps {
+  agentApi: AgentApi;
   agentConfigService: AgentConfig;
   agentService: AgentLifecycle;
   errorsRepo: ErrorLog;
@@ -50,6 +53,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const items = await deps.agentService.listAgents(projectId);
+    // One query for the whole list: which Agents have their API switch on (this server's web.db).
+    const apiEnabled = new Set(deps.agentApi.enabledAgents(projectId));
     const agents: AgentSummary[] = await Promise.all(
       items.map(async (item) => {
         const stats = await deps.sessionService.sessionStats(
@@ -62,6 +67,7 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
           activeSessionCount: deps.manager.activeCountForAgent(projectId, item.agentId),
           sessionCount: stats.sessionCount,
           sessionActivity: stats.activity,
+          apiEnabled: apiEnabled.has(item.agentId),
         };
       }),
     );
@@ -116,6 +122,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       activeSessionCount: 0,
       sessionCount: 0,
       sessionActivity: Array.from({ length: ACTIVITY_DAYS }, () => 0),
+      // A new Agent's API is off until its owner turns it on.
+      apiEnabled: false,
     };
     return c.json({ agent } satisfies AgentCreateResponse, 201);
   });
@@ -143,6 +151,9 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       // are deliberately kept — historical stats survive Agent deletion (see deleteAgent).
       deps.schedulesRepo.deleteByAgent(projectId, agentId);
       deps.errorsRepo.deleteByAgent(projectId, agentId);
+      // The Agent's API exposure goes with it: a later Agent created under the same id starts
+      // off, and no key minted for this one opens it.
+      deps.agentApi.deleteByAgent(projectId, agentId);
     } finally {
       deps.manager.endAgentDeletion(projectId, agentId);
     }

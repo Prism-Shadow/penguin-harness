@@ -84,6 +84,7 @@ import {
   compactionEnd,
   mcpConnectBegin,
   mcpConnectEnd,
+  normalizeSessionSource,
   sessionMeta,
   toolListReady,
   userText,
@@ -93,6 +94,7 @@ import type {
   MessageOrigin,
   OmniMessage,
   SessionMetaPayload,
+  SessionSource,
   ToolCallPayload,
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
@@ -249,8 +251,13 @@ export interface CreateSessionOptions {
   baseUrl?: string;
   /** Internal use: this Session's depth in the subagent spawn chain (0 at the top level), used to cap spawn depth. */
   subagentDepth?: number;
-  /** Session origin recorded in session_meta (absent = user-created); the subagent spawn site passes "subagent", callers driven by a scheduled task pass "schedule", and a Benchmark evaluation or optimization passes "benchmark". */
-  source?: "subagent" | "schedule" | "benchmark";
+  /**
+   * What kind of conversation this is, recorded in session_meta; absent = `user`, a person's.
+   * The subagent spawn site passes `subagent`; a host passes the source its caller stands for
+   * (the server: `schedule` for a scheduled task, `cli` for `penguin run`, `api` for the Agent API,
+   * `company` for company mode's desk and ticket Sessions).
+   */
+  source?: SessionSource;
 }
 
 export interface ResumeSessionOptions {
@@ -288,7 +295,7 @@ interface SessionSpec {
    */
   thinkingLevel: ThinkingLevelName | null | undefined;
   subagentDepth: number;
-  source?: "subagent" | "schedule" | "benchmark";
+  source: SessionSource;
 }
 
 /**
@@ -627,7 +634,7 @@ export class Agent {
       system_prompt: systemPrompt,
       agent_state: state.stateDir,
       workspace: spec.workspaceDir,
-      ...(spec.source !== undefined ? { source: spec.source } : {}),
+      source: spec.source,
     };
 
     return {
@@ -735,7 +742,7 @@ export class Agent {
       credentialOverride: { apiKey: opts.apiKey, baseUrl: opts.baseUrl },
       thinkingLevel: opts.thinkingLevel,
       subagentDepth: opts.subagentDepth ?? 0,
-      ...(opts.source !== undefined ? { source: opts.source } : {}),
+      source: opts.source ?? "user",
     };
     // The first context: assembled from the Agent State on disk now (never from this Agent
     // object's load-time snapshot — a long-lived Agent, a self-spawned subagent's for
@@ -821,10 +828,10 @@ export class Agent {
 
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
     // and contexts opened without a pin read the Agent config's chain (the same chain
-    // createSession uses). The origin carries over from the original session_meta (a
-    // resumed subagent / scheduled / benchmark Session stays marked); the on-disk value
-    // is untrusted: only the exact known origins pass, junk written by a third party is
-    // dropped rather than cast through.
+    // createSession uses). The source carries over from the original session_meta (a
+    // resumed subagent / scheduled / CLI Session stays what it was); the on-disk value is
+    // untrusted and is narrowed (a Trace from before the source was required reads as
+    // `user`, the retired `benchmark` as `cli`, junk as `user`).
     const spec: SessionSpec = {
       sessionId,
       workspaceDir,
@@ -832,9 +839,7 @@ export class Agent {
       credentialOverride: { apiKey: opts.apiKey, baseUrl: opts.baseUrl },
       thinkingLevel: undefined,
       subagentDepth: 0,
-      ...(meta.source === "subagent" || meta.source === "schedule" || meta.source === "benchmark"
-        ? { source: meta.source }
-        : {}),
+      source: normalizeSessionSource(meta.source),
     };
     // The context follows the Trace. A context a completed compaction closed is opened here
     // for the first time — nothing was produced under any configuration yet — so it is

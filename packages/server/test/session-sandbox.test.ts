@@ -22,6 +22,7 @@ const NO_BACKEND = {
   confinementSupported: false,
   noNetworkSupported: false,
   localNetworkSupported: false,
+  maskPathsSupported: false,
   unavailableBackends: [],
 };
 
@@ -85,6 +86,8 @@ describe("picking a Session's sandbox from the composer", () => {
       network: "none",
       ...NO_BACKEND,
       advanced: true,
+      // The masked paths need a backend that masks; none is mounted here.
+      masksPaths: true,
     });
   });
 
@@ -111,6 +114,7 @@ describe("picking a Session's sandbox from the composer", () => {
       confinementSupported: true,
       noNetworkSupported: false,
       localNetworkSupported: false,
+      maskPathsSupported: false,
       unavailableBackends: [],
     });
   });

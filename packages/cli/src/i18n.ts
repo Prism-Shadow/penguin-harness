@@ -44,10 +44,12 @@ export interface Messages {
     json: string;
     /** --server: explicit server URL (overrides PENGUIN_API_URL, the local lock and auto-start). */
     server: string;
-    /** --timeout: soft-yield wait budget on run/input/logs -f (30s / 5m / 2h / bare seconds). */
+    /** --timeout: soft-yield wait budget on run / session input / session log -f (30s / 5m / 2h / bare seconds). */
     timeout: string;
-    /** input/logs' --agent-id: whose most recent session the omitted session argument means. */
+    /** The session group's --agent-id: whose most recent session the omitted session argument means. */
     latestAgentId: string;
+    /** run's --title and session rename's -t/--title: empty or over `max` characters once whitespace is collapsed. */
+    titleInvalid(length: number, max: number): string;
   };
   /** Commander's own parse failures, rebuilt in the user's language (see usage-error.ts). */
   usage: {
@@ -114,16 +116,31 @@ export interface Messages {
     goal: string;
     /** run's --session: reuse an existing Session (full id or unique fragment). */
     session: string;
-    /** run's --source: mark the NEW Session as created by a Benchmark evaluation. */
-    source: string;
     /** run's --background: POST the task and exit immediately, printing the session id. */
     background: string;
-    /** --session combined with --workspace / the model pair / --source: all fixed at creation. */
+    /** --session combined with --workspace / the model pair: both fixed at creation. */
     sessionNoOverride(): string;
-    /** --source given a value other than `benchmark` (the only origin a client may set). */
+    /** The retired --source given a value other than `benchmark`. Removed at 0.3.0 with the flag. */
     sourceInvalid(value: string): string;
+    /** The retired `--source benchmark`, accepted as a no-op until 0.3.0: why it is ignored. */
+    sourceIgnored(): string;
     /** --background never waits, so a wait budget cannot apply to it. */
     timeoutWithBackground(): string;
+    /** run's --title: name the Session being run (manual rename; the auto-title never overwrites it; with --session it renames the reused Session). */
+    title: string;
+  };
+  /** `penguin session`: the group that lists, reads, messages and renames sessions. */
+  session: {
+    /** Group description. */
+    desc: string;
+    /** `penguin session rename`'s own description. */
+    renameDesc: string;
+    /** rename's optional session_id argument. */
+    renameSessionId: string;
+    /** rename's required -t/--title option. */
+    renameTitle: string;
+    /** The success line (short id form; the full id is what --json prints). */
+    renamed(sessionId: string, title: string): string;
   };
   chat: {
     desc: string;
@@ -131,7 +148,7 @@ export interface Messages {
     /** chat's --verbose: start with full tool output (collapsing off). */
     verbose: string;
   };
-  /** `penguin ls`: session listing. */
+  /** `penguin session ls`: session listing. */
   ls: {
     desc: string;
     /** -a/--all: include archived sessions. */
@@ -149,15 +166,15 @@ export interface Messages {
     stateIdle(): string;
     stateRunning(): string;
   };
-  /** `penguin input`: send a message into an existing session (steer when running, task when idle). */
+  /** `penguin session input`: send a message into an existing session (steer when running, task when idle). */
   input: {
     desc: string;
     message: string;
     /** Poll form on a session that has produced no assistant text yet. */
     noReplyYet(): string;
   };
-  /** `penguin logs`: render a session's history, optionally following the live stream. */
-  logs: {
+  /** `penguin session log`: render a session's history, optionally following the live stream. */
+  log: {
     desc: string;
     tail: string;
     follow: string;
@@ -180,6 +197,58 @@ export interface Messages {
     colName(): string;
     colSessions(): string;
     colDescription(): string;
+    /** `penguin agent api …`: an agent's public API (this server's switches, approval mode and keys). */
+    apiDesc: string;
+    apiStatusDesc: string;
+    apiEnableDesc: string;
+    apiDisableDesc: string;
+    apiSetDesc: string;
+    /** --open / --no-open: keyless access on or off. */
+    apiOpen: string;
+    apiNoOpen: string;
+    /** --approve on enable/set: the mode API conversations are created with. */
+    apiApprove: string;
+    /** `set` given nothing to change. */
+    apiNothingToSet(): string;
+    apiKeysDesc: string;
+    apiKeysLsDesc: string;
+    apiKeysCreateDesc: string;
+    apiKeysRmDesc: string;
+    /** --name of `keys create`. */
+    apiKeyName: string;
+    apiServerDesc: string;
+    /** `server <state>` given something other than on/off. */
+    apiServerStateInvalid(value: string): string;
+    /** The status block: its heading, then one labelled line per fact. */
+    apiStatusTitle(agentRef: string): string;
+    apiFieldEnabled(): string;
+    apiFieldOpen(): string;
+    apiFieldApproval(): string;
+    apiFieldBaseUrl(): string;
+    apiFieldAgentId(): string;
+    apiFieldKeys(): string;
+    apiFieldServer(): string;
+    apiYes(): string;
+    apiNo(): string;
+    apiServerOn(): string;
+    apiServerOff(): string;
+    /** `keys ls` columns, and the line for an agent with none. */
+    apiColKeyId(): string;
+    apiColKeyName(): string;
+    apiColPrefix(): string;
+    apiColCreated(): string;
+    apiColLastUsed(): string;
+    apiKeyNever(): string;
+    apiKeysEmpty(agentRef: string): string;
+    /** stderr beside the bare secret on stdout. */
+    apiKeyCreated(name: string, prefix: string, agentRef: string): string;
+    apiKeyDeleted(keyId: string, agentRef: string): string;
+    /** After `server on|off`. */
+    apiServerSet(on: boolean): string;
+    /** A write refused 403 human_required: it carried the local API token, and no stored sign-in stood in. */
+    apiSignInRequired(): string;
+    /** On stderr after `--open` switched keyless access on. */
+    apiOpenWarning(): string;
   };
   /** `penguin project`: project listing. */
   project: {
@@ -701,9 +770,9 @@ export interface Messages {
     stillRunning(shortId: string): string;
     /** Caller-context lookup failed (PENGUIN_SESSION_ID names a session this server cannot answer for): plain defaults apply. */
     callerDefaultsFailed(sessionId: string): string;
-    /** Dim stderr note naming the session a bare `logs` / `input` resolved to (the agent's most recent). */
+    /** Dim stderr note naming the session a bare `session log` / `input` / `rename` resolved to (the agent's most recent). */
     latestSession(sessionId: string): string;
-    /** Bare `logs` / `input` when the agent has no session at all: what to run to get one. */
+    /** Bare `session log` / `input` / `rename` when the agent has no session at all: what to run to get one. */
     noSessionsYet(agentId: string, projectId: string): string;
   };
   /** `/thinking` display when the Session pins no level: the Agent's configured default applies. */
@@ -1070,6 +1139,7 @@ const en: Messages = {
     timeout:
       "Wait at most this long (30s / 5m / 2h, or bare seconds), then detach and leave the task running (exit 0)",
     latestAgentId: "Agent whose most recent session is used when no session id is given",
+    titleInvalid: (length, max) => `--title must be 1–${max} characters (got ${length}).`,
   },
   usage: {
     missingArgument: (name) => `missing required argument <${name}>`,
@@ -1102,7 +1172,7 @@ const en: Messages = {
     addMaxTokens:
       "Per-model max output tokens (positive integer); when set it overrides the Agent's max_tokens, omit to inherit — lower it for small-context models",
     addClientType:
-      "MMSP client type (e.g. openai-chat): the model's own with --model-id, else the group's; a model without one follows its group, else MMSP routes it by id (a new custom or own-group model gets openai-chat when its group sets none)",
+      "MMSP client type (openai-responses, ant-messages, openai-chat, google-genai or mmsp, or a vendor's official client such as google-official): the model's own with --model-id, else the group's; a model without one follows its group, else MMSP routes it by id (a new custom or own-group model gets openai-chat when its group sets none)",
     addClearClientType:
       "Remove the stored client type: the model's own with --model-id, else the group's",
     addVision: "Mark the model as supporting image input (vision)",
@@ -1142,13 +1212,15 @@ const en: Messages = {
     message: "Prompt for this Task",
     goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
     session: "Reuse an existing Session (full id or a unique fragment, e.g. the 8-hex tail)",
-    source:
-      "Mark the new session as created by a Benchmark evaluation (`benchmark`); the Web App files it under the Evaluations folder",
     background: "Post the task and exit immediately, printing the session id",
+    title:
+      "Name the Session (manual rename; the auto-generated title never overwrites it; with --session, renames the reused Session)",
     sessionNoOverride: () =>
-      "--session reuses an existing Session: --workspace, --model-id, --provider and --source cannot be combined with it (the Session keeps its own; /switch-model inside penguin chat --resume changes its model, compacting first).",
+      "--session reuses an existing Session: --workspace, --model-id and --provider cannot be combined with it (the Session keeps its own; /switch-model inside penguin chat --resume changes its model, compacting first).",
     sourceInvalid: (value) =>
-      `Invalid --source value "${value}". The only accepted value is benchmark.`,
+      `Invalid --source value "${value}". penguin run takes no --source: every Session it creates is a CLI Session.`,
+    sourceIgnored: () =>
+      "--source benchmark is no longer needed and is ignored: every Session penguin run creates is a CLI Session, listed in the Web App's Background folder.",
     timeoutWithBackground: () =>
       "--timeout bounds the wait, and --background does not wait: drop one of them.",
   },
@@ -1179,13 +1251,22 @@ const en: Messages = {
     message: "Message text (omit to poll the session's last assistant reply instead)",
     noReplyYet: () => "(no assistant reply yet)",
   },
-  logs: {
+  session: {
+    desc: "Work with the project's sessions: list them, read a session's history, send it a message, rename it",
+    renameDesc:
+      "Set a session's title (the manual rename; the auto-generated title never overwrites it)",
+    renameSessionId:
+      "The session to rename (full id or a unique fragment, e.g. the 8-hex tail; default: PENGUIN_SESSION_ID, else the agent's most recent session)",
+    renameTitle: "The new title",
+    renamed: (sessionId, title) => `Renamed ${sessionId} to \u201c${title}\u201d`,
+  },
+  log: {
     desc: "Render a session's history (defaults to the agent's most recent session)",
     tail: "Show only the last <n> entries",
     follow: "Keep following the live stream after the history",
     tailInvalid: (value) => `Invalid --tail value "${value}": expected a positive integer.`,
     timeoutNeedsFollow: () =>
-      "--timeout only applies to -f/--follow: without it, logs never waits.",
+      "--timeout only applies to -f/--follow: without it, session log never waits.",
   },
   agent: {
     desc: "Manage the project's agents",
@@ -1201,6 +1282,53 @@ const en: Messages = {
     colName: () => "NAME",
     colSessions: () => "SESSIONS",
     colDescription: () => "DESCRIPTION",
+    apiDesc: "Manage an agent's public API: the switch, keyless access, approval mode and keys",
+    apiStatusDesc: "Show the agent's API settings, its address and the server-wide switch",
+    apiEnableDesc: "Turn the agent's API on",
+    apiDisableDesc: "Turn the agent's API off (settings and keys are kept)",
+    apiSetDesc: "Change keyless access or the approval mode without turning the API on or off",
+    apiOpen: "Allow keyless access: anything that can reach the server can talk to the agent",
+    apiNoOpen: "Require a key",
+    apiApprove:
+      "Approval mode new API conversations start with: allow-all, deny-all, read-only or always-ask (asks go to the caller)",
+    apiNothingToSet: () => "Nothing to change: pass --open, --no-open or --approve <mode>.",
+    apiKeysDesc: "Manage the agent's API keys",
+    apiKeysLsDesc: "List the agent's API keys",
+    apiKeysCreateDesc: "Create an API key; the key is printed once, alone on stdout",
+    apiKeysRmDesc: "Delete an API key; programs using it are refused from then on",
+    apiKeyName: "Name of the key (1-64 characters)",
+    apiServerDesc: "Turn the Agent API on or off for the whole server (admins only)",
+    apiServerStateInvalid: (value) => `Invalid state "${value}": expected on or off.`,
+    apiStatusTitle: (agentRef) => `Agent API of ${agentRef}`,
+    apiFieldEnabled: () => "Enabled",
+    apiFieldOpen: () => "Keyless access",
+    apiFieldApproval: () => "Approval mode",
+    apiFieldBaseUrl: () => "Base URL",
+    apiFieldAgentId: () => "Agent ID",
+    apiFieldKeys: () => "Keys",
+    apiFieldServer: () => "Server switch",
+    apiYes: () => "yes",
+    apiNo: () => "no",
+    apiServerOn: () => "on",
+    apiServerOff: () => "off (every API request is refused)",
+    apiColKeyId: () => "ID",
+    apiColKeyName: () => "NAME",
+    apiColPrefix: () => "PREFIX",
+    apiColCreated: () => "CREATED",
+    apiColLastUsed: () => "LAST USED",
+    apiKeyNever: () => "never",
+    apiKeysEmpty: (agentRef) => `${agentRef} has no API keys.`,
+    apiKeyCreated: (name, prefix, agentRef) =>
+      `Created key "${name}" (${prefix}…) for ${agentRef}. It is shown once, above; store it now.`,
+    apiKeyDeleted: (keyId, agentRef) => `Deleted key ${keyId} of ${agentRef}.`,
+    apiServerSet: (on) =>
+      on
+        ? "The Agent API is on for this server."
+        : "The Agent API is off for this server: every request is refused; per-agent settings and keys are kept.",
+    apiSignInRequired: () =>
+      "Sign in first: `penguin auth login` (or `penguin auth token` on the server's machine). The local API token may not change an Agent's exposure.",
+    apiOpenWarning: () =>
+      "Warning: keyless access is on. Anything that can reach this server's address can now talk to the agent without a key, on the Project's models and credentials. Keep it on only for a server that listens on loopback; `--no-open` turns it off.",
   },
   project: {
     desc: "Manage projects",
@@ -1697,16 +1825,16 @@ const en: Messages = {
     httpError: (status, code, message) =>
       `Server error ${status} (${code})${message ? `: ${message}` : ""}`,
     sessionNotFound: (ref, projectId) =>
-      `No session matching "${ref}" in project ${projectId} (try \`penguin ls\`).`,
+      `No session matching "${ref}" in project ${projectId} (try \`penguin session ls\`).`,
     sessionAmbiguous: (ref, candidates) =>
       `"${ref}" matches ${candidates.length} sessions:\n  ${candidates.join("\n  ")}\nUse a longer fragment or the full id.`,
     streamLost: (detail) => `Lost the server stream and reconnecting failed: ${detail}`,
     streamResynced: () =>
-      "[stream] reconnected past the server's replay buffer; some output may be missing here (penguin logs shows the full history)",
+      "[stream] reconnected past the server's replay buffer; some output may be missing here (penguin session log shows the full history)",
     timeoutInvalid: (value) =>
       `Invalid --timeout value "${value}": expected 30s, 5m, 2h, or a bare number of seconds.`,
     stillRunning: (shortId) =>
-      `[still running] session ${shortId} continues on the server — follow with \`penguin logs -f ${shortId}\` or poll with \`penguin input ${shortId}\``,
+      `[still running] session ${shortId} continues on the server — follow with \`penguin session log -f ${shortId}\` or poll with \`penguin session input ${shortId}\``,
     callerDefaultsFailed: (sessionId) =>
       `[caller context] could not read calling session ${sessionId}; using the plain defaults`,
     latestSession: (sessionId) => `[latest] session ${sessionId}`,
@@ -2088,6 +2216,7 @@ const zh: Messages = {
     timeout:
       "最长等待时长（30s / 5m / 2h，或纯数字秒数）；到时脱开、任务继续在服务端运行（退出码 0）",
     latestAgentId: "省略 session id 时，取哪个 Agent 的最近一次会话",
+    titleInvalid: (length, max) => `--title 须为 1–${max} 个字符（实际 ${length} 个）。`,
   },
   usage: {
     missingArgument: (name) => `缺少必填参数 <${name}>`,
@@ -2117,7 +2246,7 @@ const zh: Messages = {
     addMaxTokens:
       "该模型的最大输出长度（正整数）；设置后覆盖 Agent 的 max_tokens，缺省沿用——小上下文模型建议调低",
     addClientType:
-      "MMSP 客户端协议（如 openai-chat）：带 --model-id 为该模型自己的，否则为分组的；模型没有自己的即跟随分组，分组也没有即由 MMSP 按 id 路由（custom 与自建分组的新模型在分组未设协议时取 openai-chat）",
+      "MMSP 客户端协议（openai-responses、ant-messages、openai-chat、google-genai 或 mmsp，或厂商的官方客户端，如 google-official）：带 --model-id 为该模型自己的，否则为分组的；模型没有自己的即跟随分组，分组也没有即由 MMSP 按 id 路由（custom 与自建分组的新模型在分组未设协议时取 openai-chat）",
     addClearClientType: "清除已存的协议：带 --model-id 为该模型自己的，否则为分组的",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",
@@ -2152,11 +2281,15 @@ const zh: Messages = {
     message: "本次 Task 的 Prompt",
     goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
     session: "复用既有 Session（完整 id 或唯一片段，如末尾 8 位十六进制）",
-    source: "把新建会话标记为 Benchmark 评估创建（`benchmark`）；Web App 将其归入「评估任务」子夹",
     background: "提交任务后立即退出，打印 session id",
+    title:
+      "为 Session 命名（手动重命名；自动生成的标题不会覆盖它；配合 --session 时重命名被复用的 Session）",
     sessionNoOverride: () =>
-      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider、--source 同时使用（均沿用该 Session；如需换模型，在 penguin chat --resume 内用 /switch-model，会先压缩上下文）。",
-    sourceInvalid: (value) => `无效的 --source 取值 "${value}"。唯一可用取值为 benchmark。`,
+      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider 同时使用（均沿用该 Session；如需换模型，在 penguin chat --resume 内用 /switch-model，会先压缩上下文）。",
+    sourceInvalid: (value) =>
+      `无效的 --source 取值 "${value}"。penguin run 不再接受 --source：它创建的每个会话都是 CLI 会话。`,
+    sourceIgnored: () =>
+      "--source benchmark 已不再需要，已忽略：penguin run 创建的每个会话都是 CLI 会话，列在 Web App 的「后台会话」折叠夹中。",
     timeoutWithBackground: () => "--timeout 限定等待，而 --background 不等待：二者去其一。",
   },
   chat: {
@@ -2185,12 +2318,20 @@ const zh: Messages = {
     message: "消息文本（省略时改为轮询该会话的最近助手回复）",
     noReplyYet: () => "（还没有助手回复）",
   },
-  logs: {
+  session: {
+    desc: "管理 Project 的会话：列出会话、查看历史、发送消息、重命名",
+    renameDesc: "设置会话标题（手动重命名；自动生成的标题不会覆盖它）",
+    renameSessionId:
+      "要重命名的会话，完整 id 或唯一片段（如末尾 8 位十六进制；缺省 PENGUIN_SESSION_ID，再缺省取当前 Agent 最近一次会话）",
+    renameTitle: "新标题",
+    renamed: (sessionId, title) => `已将 ${sessionId} 重命名为「${title}」`,
+  },
+  log: {
     desc: "渲染会话的历史消息（省略 session id 即取当前 Agent 最近一次会话）",
     tail: "只显示最后 <n> 条",
     follow: "渲染历史后继续跟随实时输出流",
     tailInvalid: (value) => `--tail 值「${value}」无效：应为正整数。`,
-    timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 logs 不等待。",
+    timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 session log 不等待。",
   },
   agent: {
     desc: "管理 Project 的 Agent",
@@ -2205,6 +2346,53 @@ const zh: Messages = {
     colName: () => "名称",
     colSessions: () => "会话数",
     colDescription: () => "描述",
+    apiDesc: "管理 Agent 的对外 API：开关、无密钥访问、审批模式与密钥",
+    apiStatusDesc: "查看 Agent 的 API 设置、访问地址与服务器总开关",
+    apiEnableDesc: "开启 Agent 的 API 访问",
+    apiDisableDesc: "关闭 Agent 的 API 访问（设置与密钥保留）",
+    apiSetDesc: "更改无密钥访问或审批模式，不改变开关",
+    apiOpen: "允许无密钥访问：任何能访问服务器的程序都能与该 Agent 对话",
+    apiNoOpen: "要求密钥",
+    apiApprove:
+      "新建 API 会话使用的审批模式：allow-all、deny-all、read-only 或 always-ask（需要确认时发给调用方）",
+    apiNothingToSet: () => "没有要更改的内容：请给出 --open、--no-open 或 --approve <mode>。",
+    apiKeysDesc: "管理 Agent 的 API 密钥",
+    apiKeysLsDesc: "列出 Agent 的 API 密钥",
+    apiKeysCreateDesc: "新建 API 密钥；密钥只输出一次，单独占据 stdout",
+    apiKeysRmDesc: "删除 API 密钥；使用它的程序此后会被拒绝",
+    apiKeyName: "密钥名称（1–64 个字符）",
+    apiServerDesc: "为整个服务器开启或关闭 Agent API（仅管理员）",
+    apiServerStateInvalid: (value) => `状态「${value}」无效：应为 on 或 off。`,
+    apiStatusTitle: (agentRef) => `${agentRef} 的 Agent API`,
+    apiFieldEnabled: () => "已开启",
+    apiFieldOpen: () => "无密钥访问",
+    apiFieldApproval: () => "审批模式",
+    apiFieldBaseUrl: () => "Base URL",
+    apiFieldAgentId: () => "Agent ID",
+    apiFieldKeys: () => "密钥数",
+    apiFieldServer: () => "服务器总开关",
+    apiYes: () => "是",
+    apiNo: () => "否",
+    apiServerOn: () => "开",
+    apiServerOff: () => "关（所有 API 请求均被拒绝）",
+    apiColKeyId: () => "ID",
+    apiColKeyName: () => "名称",
+    apiColPrefix: () => "前缀",
+    apiColCreated: () => "创建时间",
+    apiColLastUsed: () => "最近使用",
+    apiKeyNever: () => "从未",
+    apiKeysEmpty: (agentRef) => `${agentRef} 还没有 API 密钥。`,
+    apiKeyCreated: (name, prefix, agentRef) =>
+      `已为 ${agentRef} 新建密钥「${name}」（${prefix}…）。密钥只在上方显示这一次，请立即保存。`,
+    apiKeyDeleted: (keyId, agentRef) => `已删除 ${agentRef} 的密钥 ${keyId}。`,
+    apiServerSet: (on) =>
+      on
+        ? "这台服务器的 Agent API 已开启。"
+        : "这台服务器的 Agent API 已关闭：所有请求均被拒绝，各 Agent 的设置与密钥保留。",
+    apiSignInRequired: () =>
+      "请先登录：`penguin auth login`（或在服务器本机运行 `penguin auth token`）。本机 API token 不能改变 Agent 的对外暴露。",
+    apiOpenWarning: () =>
+      "警告：已开启无密钥访问。任何能访问此服务器地址的程序现在都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据。仅建议在只监听本机的服务器上保持开启；`--no-open` 可关闭。",
   },
   project: {
     desc: "管理 Project",
@@ -2667,15 +2855,15 @@ const zh: Messages = {
     httpError: (status, code, message) =>
       `服务器错误 ${status}（${code}）${message ? `：${message}` : ""}`,
     sessionNotFound: (ref, projectId) =>
-      `Project ${projectId} 中没有匹配「${ref}」的会话（可用 \`penguin ls\` 查看）。`,
+      `Project ${projectId} 中没有匹配「${ref}」的会话（可用 \`penguin session ls\` 查看）。`,
     sessionAmbiguous: (ref, candidates) =>
       `「${ref}」匹配到 ${candidates.length} 个会话：\n  ${candidates.join("\n  ")}\n请使用更长的片段或完整 id。`,
     streamLost: (detail) => `与服务器的输出流断开且重连失败：${detail}`,
     streamResynced: () =>
-      "[stream] 重连时已超出服务端回放缓冲，此处可能缺少部分输出（penguin logs 可查看完整历史）",
+      "[stream] 重连时已超出服务端回放缓冲，此处可能缺少部分输出（penguin session log 可查看完整历史）",
     timeoutInvalid: (value) => `--timeout 值「${value}」无效：应为 30s、5m、2h 或纯数字秒数。`,
     stillRunning: (shortId) =>
-      `[仍在运行] 会话 ${shortId} 继续在服务端执行——可用 \`penguin logs -f ${shortId}\` 跟随，或 \`penguin input ${shortId}\` 轮询`,
+      `[仍在运行] 会话 ${shortId} 继续在服务端执行——可用 \`penguin session log -f ${shortId}\` 跟随，或 \`penguin session input ${shortId}\` 轮询`,
     callerDefaultsFailed: (sessionId) =>
       `[调用方上下文] 无法读取调用方会话 ${sessionId}，改用普通缺省值`,
     latestSession: (sessionId) => `[latest] 会话 ${sessionId}`,

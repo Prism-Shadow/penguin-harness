@@ -8,8 +8,9 @@
  * paused, held silently when the master switch is off); ticket changes are noticed once;
  * channel mentions reach desks and the chain stops at the limit; budgets warn, pause and
  * resume (a zero budget being over before anything is spent); a ticket session the runner
- * refuses leaves the ticket as it was; and every pass brings an employee whose company
- * plugins fell behind the library back up to it.
+ * refuses leaves the ticket as it was; every desk and ticket session is opened as a company
+ * Session (`source: "company"`) stamped with the `org` client; and every pass brings an
+ * employee whose company plugins fell behind the library back up to it.
  */
 import fs from "node:fs/promises";
 import { wire } from "@prismshadow/penguin-core/kernel";
@@ -84,6 +85,7 @@ describe("organization runtime", () => {
     modelId?: string;
     provider?: string;
     client: "org";
+    source: "company";
   }>;
   let agentsCreated: Array<{ agentId: string; plugins: readonly string[] }>;
   let briefs: Map<string, string>;
@@ -186,6 +188,7 @@ describe("organization runtime", () => {
             ...(args.modelId !== undefined ? { modelId: args.modelId } : {}),
             ...(args.provider !== undefined ? { provider: args.provider } : {}),
             client: args.client,
+            source: args.source,
           });
           const createdAt = new Date(nowMs).toISOString();
           sessions.insert({
@@ -938,10 +941,10 @@ describe("organization runtime", () => {
   });
 
   describe("company mode's own sessions", () => {
-    it('stamps every desk and ticket session client: "org", and a reconcile pass marks one that is not', async () => {
+    it('opens every desk and ticket session as a company Session stamped client: "org", and a reconcile pass marks one that is not', async () => {
       await createOrg();
       const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
-      expect(created.at(-1)?.client).toBe("org");
+      expect(created.at(-1)).toMatchObject({ client: "org", source: "company" });
       expect(sessions.findById(ceoDesk)?.client).toBe("org");
       const t = await service.createTicket(
         P,
@@ -956,6 +959,7 @@ describe("organization runtime", () => {
         {},
         { userId: "alice" },
       );
+      expect(created.at(-1)).toMatchObject({ client: "org", source: "company" });
       expect(sessions.findById(work)?.client).toBe("org");
 
       // What an organization that predates the marker looks like: its files still name the

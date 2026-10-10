@@ -96,7 +96,7 @@ penguin chat
 
 `run`、`chat` 以及其他会话命令都是服务端的瘦客户端：本机已有服务端在运行时直接连上它，没有时静默启动一个。连接本机的服务端无需登录，连接规则见 [CLI 参考](/cli)。
 
-这些命令创建的内容同样会出现在 Web App 里；在终端里也可以用 `penguin ls`、`penguin logs`、`penguin input` 继续操作这些会话。全部命令与选项见 [CLI 参考](/cli)。
+这些命令创建的内容同样会出现在 Web App 里；在终端里也可以用 `penguin session` 的各条命令（`ls`、`log`、`input`、`rename`）继续操作这些会话。全部命令与选项见 [CLI 参考](/cli)。
 
 ## 安装参考
 
@@ -200,9 +200,11 @@ Windows 上还有以下不同：
 
 ### Ubuntu 上的沙盒
 
-Linux 沙盒后端 `@penguinharness/sandbox-bwrap` 用 bubblewrap 约束命令，需要非特权 user namespace。Ubuntu 23.10 及以后的版本（包括默认的 Ubuntu 24.04）只把它交给带有相应 AppArmor profile 的程序（`kernel.apparmor_restrict_unprivileged_userns` 为 `1`）。桌面 `.deb` 会为应用装上这样一份 profile，应用启动的 bubblewrap 也在它的覆盖之内。安装脚本、npm 安装和 Release 压缩包都不以 root 运行，装不了 profile。这几种安装上，后端的启动检查会失败，[沙盒](/settings#沙盒)卡片显示 `@penguinharness/sandbox-bwrap is not in use:`，原因里带有 `setting up uid map: Permission denied`。
+在 Linux 上打开沙盒会装上两个后端。`@penguinharness/sandbox-bwrap` 用 bubblewrap 约束命令，覆盖文件写入、网络与屏蔽路径；`@penguinharness/sandbox-dsh` 只约束文件写入，在 bubblewrap 无法运行的地方通过 Landlock 实施。两者都能用时，每条命令都由 bubblewrap 约束。
 
-解决办法是为后端自带的 bubblewrap 装一份 profile。这一步需要 root，只做一次：
+Ubuntu 23.10 及以后的版本（包括默认的 Ubuntu 24.04）只把非特权 user namespace 交给带有相应 AppArmor profile 的程序（`kernel.apparmor_restrict_unprivileged_userns` 为 `1`），而 bubblewrap 需要它。桌面 `.deb` 会为应用装上这样一份 profile。安装脚本、npm 安装和 Release 压缩包都不以 root 运行，装不了 profile，所以在这些安装上 bubblewrap 被拒绝，沙盒改由 Landlock 实施，你无需做任何操作。[沙盒](/settings#沙盒)卡片会写明这一点：`本机实施：文件写入，由 Landlock (dsh-local) 实施。本机不实施：网络隔离、仅本机网络、屏蔽路径。`内置预设都不限制网络，因此全部可以实施。卡片会把设为「无网络」的预设显示为灰色；屏蔽路径会被拒绝，而不是以更弱的约束运行。这一行下方的**更多信息**会给出 bubblewrap 未启用的原因（`setting up uid map: Permission denied`）以及它尝试的 bwrap 路径。
+
+如果还需要网络隔离与屏蔽路径，可以为后端自带的 bubblewrap 装一份 AppArmor profile，让它能够运行。这一步是可选的，需要 root，只做一次：
 
 ```bash
 sudo tee /etc/apparmor.d/penguin-sandbox-bwrap >/dev/null <<'EOF'
@@ -216,7 +218,7 @@ EOF
 sudo apparmor_parser -r /etc/apparmor.d/penguin-sandbox-bwrap
 ```
 
-然后在沙盒卡片上点**保存**，后端会重新检查，无需重启。profile 在每次开机时重新加载。它的路径模式匹配 `~/.penguin` 下后端自带的 bubblewrap 可能解压到的每个位置：下载到数据根目录的（`~/.penguin/data/plugins/`）、安装目录随包带的插件（`~/.penguin/lib/plugins/`），以及热推送携带的插件（位于 `~/.penguin/data/hmr/` 下）。升级会在同一路径上替换这个包，所以后端升级后依然有效。如果 `PENGUIN_HOME` 或 `PENGUIN_INSTALL_DIR` 指向 `~/.penguin` 之外，再以另一个名字加载一份 profile，把其中的 `@{HOME}/.penguin` 换成那个目录。
+然后在沙盒卡片上点**保存**，后端会重新检查，无需重启，卡片随即改为由 bubblewrap 实施。profile 在每次开机时重新加载。它的路径模式匹配 `~/.penguin` 下后端自带的 bubblewrap 可能解压到的每个位置：下载到数据根目录的（`~/.penguin/data/plugins/`）、安装目录随包带的插件（`~/.penguin/lib/plugins/`），以及热推送携带的插件（位于 `~/.penguin/data/hmr/` 下）。升级会在同一路径上替换这个包，所以后端升级后依然有效。如果 `PENGUIN_HOME` 或 `PENGUIN_INSTALL_DIR` 指向 `~/.penguin` 之外，再以另一个名字加载一份 profile，把其中的 `@{HOME}/.penguin` 换成那个目录。
 
 这份 profile 作用于该路径上的任何程序，而这个路径你自己就能写入。在与不受信任的用户共用的机器上，改为在沙盒卡片上把 bwrap 程序设为一份属于 root 的副本（例如 `apt install bubblewrap` 装的 `/usr/bin/bwrap`），并在 profile 里写那个路径。另一种做法是用 `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` 对所有程序解除这项限制。要在重启后保留这项设置，把同一行（去掉 `sudo sysctl -w`）写进 `/etc/sysctl.d/` 下的一个文件。
 

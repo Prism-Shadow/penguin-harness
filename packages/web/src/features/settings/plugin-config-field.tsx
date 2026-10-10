@@ -1,9 +1,10 @@
 /**
  * One field of a settings group, drawn from its declared type: a text box, a password box with
- * the stored value's mask and a clear box, a switch, a number box, a select (its options this
- * machine cannot honour greyed out with the reason), a list of lines, or a table
- * (plugin-config-table.tsx). It shows the draft it is handed and reports each edit; the page
- * owns the drafts, the errors and what a change sets in motion.
+ * the stored value's mask and a clear box, a switch (held where one position is not supported
+ * here), a number box, a select (its options this machine cannot honour greyed out with the
+ * reason), a list of lines, or a table (plugin-config-table.tsx). It shows the draft it is
+ * handed and reports each edit; the page owns the drafts, the errors and what a change sets in
+ * motion.
  */
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import {
@@ -127,19 +128,35 @@ export function ConfigField({
           onChange={(e) => onChange(e.target.value)}
         />
       );
-    case "boolean":
+    case "boolean": {
+      // A position this machine cannot honour ("true" / "false") is named under the switch, and
+      // the switch is held at the other one — unless it already stands there (a backend went
+      // away since), where it stays movable so the setting can be put right.
+      const off = entry.unavailable?.find(
+        (u) => u.field === name && (u.value === "true" || u.value === "false"),
+      );
+      const position = off?.value === "true";
+      const locked =
+        off === undefined
+          ? undefined
+          : S.settings.pluginPositionUnavailable(
+              position ? S.settings.pluginPositionOn : S.settings.pluginPositionOff,
+              localized(off.reason, off.reasonZh) ?? off.reason,
+            );
+      const shownHint = [hint, locked].filter((h) => h !== undefined).join(" ");
       return (
         <ToggleRow
           key={name}
           variant="plain"
           label={label}
-          {...(hint !== undefined ? { hint } : {})}
+          {...(shownHint !== "" ? { hint: shownHint } : {})}
           {...(info !== undefined ? { info } : {})}
           checked={value === true}
           onChange={onChange}
-          disabled={disabled}
+          disabled={disabled || (off !== undefined && (value === true) !== position)}
         />
       );
+    }
     case "secret": {
       const masked = typeof entry.values[name] === "string" ? (entry.values[name] as string) : "";
       const typed = typeof value === "string" ? (value as string) : "";

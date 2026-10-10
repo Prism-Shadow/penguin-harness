@@ -160,6 +160,7 @@ describe("seatbelt provider", () => {
       "network",
       "network-local",
       "mask-paths",
+      "closed-temp",
     ]);
   });
 

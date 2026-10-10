@@ -43,11 +43,22 @@ interface SessionMetaPayload {
   system_prompt: string;                  // fully assembled, placeholders substituted
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
-  source?: "subagent" | "schedule" | "benchmark"; // spawned by a subagent / a scheduled task / a Benchmark run; absent = user-created
+  source: "user" | "api" | "schedule" | "subagent" | "cli" | "company"; // what kind of conversation this is
 }
 ```
 
 Workspace 在整个 Session 生命周期内不变，模型与系统提示词则按上下文固定：会话内切换模型时，新上下文开在另一个模型上，所用模型只记在这条记录里。
+
+`source` 表示这个 Session 是哪一类会话，同样在整个生命周期内不变：
+
+- `user`：人发起的对话，包括 Web App 的输入框、`penguin chat`，以及分叉出的会话；
+- `api`：外部程序经 Agent API 开出的会话；
+- `schedule`：定时任务的一次运行；
+- `subagent`：`run_subagent` 派生的子会话；
+- `cli`：`penguin run` 创建的会话；
+- `company`：[公司模式](/company-mode)开出的工位会话与工单会话。
+
+旧版本写下的 Trace 可能没有 `source`，读作 `user`；若服务器的索引行表明它由公司模式开出，则读作 `company`。也可能是已停用的 `benchmark`，读作 `cli`。文件本身从不改写。
 
 每个 Trace 文件都以一条 `session_meta` 开头。压缩开启新上下文时，新文件的 `session_meta` 记录的系统提示词，按当时的 Agent State 为这个上下文重新装配（见[上下文压缩](/agent-loop#上下文压缩)）。恢复 Session 时，引擎以最新文件里的 `session_meta` 作为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。
 
@@ -436,6 +447,8 @@ type StopReason = "completed" | "aborted" | "retryable" | "fatal";
 | SDK 边界（`session.run` 的输出） | 完整 `model_msg` + 流式 `partial_*` + 全部 `event_msg` |
 | 落盘的 Trace | `session_meta` + 完整 `model_msg` + 全部 `event_msg`（不存分片，也不存带 `origin` 的消息） |
 | Server 的 SSE 推送 | 与 SDK 边界相同，原样的单行 JSON，见 [Server API](/server-api) |
+
+[Agent API](/agent-api) 不推送 OmniMessage，它的事件流是 [AMSP](/amsp)：服务器为 PenguinHarness 之外的程序，对同一条实时流所做的投影。OmniMessage 不因此改变，没有新增任何字段、类型或取值。
 
 消息沿这些通道传递的机制与各项顺序保证，见[消息流转与时序](/message-flow)。
 

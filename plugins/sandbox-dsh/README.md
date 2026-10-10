@@ -19,6 +19,32 @@ DSH's policy vocabulary governs **file-write effects only**, so this adaptor dec
 exactly `fs-write`. The sandbox service therefore never routes a `network` or
 `mask-paths` policy here, and the adaptor never has to silently drop a dimension it
 cannot honor — for those, use the bubblewrap, Seatbelt or WSL backend for your platform.
+Mounted beside one of those, it is used only where that backend is refused: the service
+routes every policy to the backend implementing the most dimensions.
+
+The chain picks its rung when the adaptor loads, and the settings card names the rung that
+serves (`Landlock`, with `(partial)` on an older Landlock ABI). On Linux that runs the chain's
+probes, so a host where neither rung works fails the load with DSH's reason rather than
+mounting a backend that refuses every command; macOS and Windows have one rung each, which DSH
+selects without probing.
+
+What every rung leaves open, disclosed on the card under what the machine enforces:
+
+- **The Session scratchpad is not writable** under Workspace Write. DSH's policy takes the
+  Workspace alone, so commands cannot write the plan, goal or attachment files kept there.
+- **The temporary directory cannot be closed.** Every rung grants one under Workspace Write;
+  Landlock grants the host's shared `/tmp`. The adaptor does not declare `closed-temp`, so the
+  card greys out turning **Temporary directory writable** off, and a policy turning it off is
+  never routed here.
+- **Landlock (partial)**: on a kernel older than Landlock ABI 5 (Linux 6.10; Ubuntu 24.04's
+  6.8 has ABI 4), ioctl on device files outside the Workspace is not restricted, and below ABI 3
+  (Linux 6.2) neither is truncating a file. The launcher reports this on every run; the harness
+  drops that line from the command's stderr.
+
+On Linux this is the floor the Sandbox card installs beside bubblewrap. Ubuntu 23.10 and later
+restrict unprivileged user namespaces to AppArmor-profiled programs, which refuses bubblewrap
+on an install that could not add a profile; Landlock needs neither a namespace nor root, so file
+writes stay confined there with no host step.
 
 ## Windows: run command sessions under PowerShell
 

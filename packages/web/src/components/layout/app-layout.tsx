@@ -44,6 +44,7 @@ import { ChannelRailRows, DefaultChannelRailRow } from "../../features/company/c
 import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
 import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../features/company/company-nav";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
+import { FindBar } from "../find/find-bar";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
@@ -106,7 +107,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
 
-  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions are never conversations of this list. */
+  /** Newest loaded conversation across the current Project (the user's own only — archived and background rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions are never conversations of this list. */
   const lastSession = useMemo(() => latestConversation(withoutOrgSessions(sessions)), [sessions]);
 
   /** Mirrors Sidebar.openSession: the current Agent follows the opened Session's Agent. */
@@ -443,6 +444,9 @@ export function AppLayout() {
               <Sidebar onNavigate={() => setDrawerOpen(false)} />
             </div>
           </Drawer>
+          {/* The find bar (`find.open` / `find.all`): in the layout, so it serves every route
+              that mounts a [data-find-region] container, not only the chat page. */}
+          <FindBar />
         </>
       }
     >

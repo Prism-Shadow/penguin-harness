@@ -235,6 +235,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.modelsGroupSort",
+    scope: "browser",
+    why: "How each model group orders its models, as differences from price low to high; a view preference, and a user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
     key: "penguin.steerMode",
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",
@@ -330,6 +336,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.sidebarPinnedGroups.",
     scope: "install",
     why: "Pinned sidebar groups, same key space.",
+  },
+  {
+    kind: "family",
+    key: "penguin.a2uiDraft.",
+    scope: "install",
+    why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
   },
   {
     kind: "exact",

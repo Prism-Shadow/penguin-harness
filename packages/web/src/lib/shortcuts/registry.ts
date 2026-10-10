@@ -8,7 +8,8 @@
  * `Ctrl+` token is reserved for the case where the macOS binding must NOT follow ⌘, and the
  * registry test holds that line. Defaults also stay off the browsers' own shortcuts
  * (reserved.ts), which is why most sit on Mod+Alt — ⌥⌘ on macOS, Ctrl+Alt elsewhere; the registry
- * test holds that line too, and names the defaults that still share a chord with a browser.
+ * test holds that line too, and names the defaults that still share a chord with a browser. Two
+ * kinds do on purpose: save and find, whose chords every editor and every find bar use.
  */
 import { normalizeChord, parseChord } from "./chord";
 import type { Chord, CommandId, Platform, ShortcutCommand, ShortcutGroup } from "./types";
@@ -34,6 +35,21 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     group: "general",
     // Mod+N opens a browser window. On macOS this takes over Chrome's ⌥⌘N (split view).
     defaults: { default: "Mod+Alt+KeyN" },
+  },
+  {
+    id: "find.open",
+    scope: "global",
+    group: "general",
+    // The browser's own find: the find bar takes it on purpose, as the editors take Save Page. The
+    // bar declines while no searchable region is on screen, so the browser keeps it there.
+    defaults: { default: "Mod+KeyF" },
+  },
+  {
+    id: "find.all",
+    scope: "global",
+    group: "general",
+    // On macOS ⇧⌘F is Firefox's full screen.
+    defaults: { default: "Mod+Shift+KeyF" },
   },
   {
     id: "sidebar.toggle",

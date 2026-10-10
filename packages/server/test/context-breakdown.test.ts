@@ -43,6 +43,7 @@ function metaPayload(systemPrompt: string): SessionMetaPayload {
     system_prompt: systemPrompt,
     agent_state: `/data/${P}/agents/${A}`,
     workspace: "/data/ws",
+    source: "user",
   };
 }
 

@@ -38,7 +38,7 @@ function backend(seen: Seen[]): ModuleDef {
           {
             id: "test.provider",
             name: "test-backend",
-            dimensions: ["fs-write", "network", "mask-paths"],
+            dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
           },
           // Installed for another platform: it declines here, and says nothing on the card.
           { id: "elsewhere.provider", name: "other-platform", dimensions: ["fs-write"] },
@@ -61,7 +61,7 @@ function backend(seen: Seen[]): ModuleDef {
         bind: {
           "elsewhere.provider": Promise.resolve(null),
           "test.provider": {
-            dimensions: ["fs-write", "network", "mask-paths"],
+            dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
             confine(argv: readonly string[], policy: SandboxPolicy) {
               seen.push({ policy, runner: config.get("sandbox-test").runner });
               return {
@@ -112,7 +112,8 @@ describe("sandbox settings group", () => {
     expect(sandbox.notices).toEqual([
       expect.objectContaining({
         tone: "muted",
-        text: "Backends: test-backend (fs-write, network, mask-paths)",
+        // What this machine enforces, by the backend that serves (no mechanism declared: its name).
+        text: "Enforced here: file writes, network isolation, masked paths and closing the temporary directory, by test-backend. Not enforced here: localhost-only network.",
       }),
     ]);
     const child = entries.find((e) => e.name === "sandbox-test")!;
@@ -277,7 +278,7 @@ describe("sandbox settings group", () => {
       ],
       [
         "attention",
-        "This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command and hook script. other-platform is installed, but for another platform.",
+        "This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Full access refuses every agent command and hook script. other-platform is installed, but for another platform.",
       ],
       ["attention", "wrong-backend is not in use: 'bwrap' is missing"],
     ]);
@@ -356,7 +357,11 @@ describe("sandbox settings group", () => {
     const card = ((await saved.json()) as PluginConfigResponse).plugins.find(
       (e) => e.name === "sandbox",
     )!;
-    expect(card.notices?.map((n) => n.text)).toEqual(["Backends: probed (fs-write)"]);
+    expect(card.notices?.map((n) => n.text)).toEqual([
+      "Enforced here: file writes, by probed. Not enforced here: network isolation, localhost-only network, masked paths and closing the temporary directory.",
+    ]);
+    // Nothing failed any more: nothing to disclose under it.
+    expect(card.notices?.[0]?.details).toBeUndefined();
     expect(sandbox.failures()).toEqual([]);
     sandbox.configure({ mode: "read-only" });
     expect(sandbox.confiner()(["true"], { workspaceDir: "/w" } as never).argv).toEqual([

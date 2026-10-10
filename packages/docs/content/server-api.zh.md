@@ -3,7 +3,7 @@ title: Server API
 description: PenguinHarness 服务器的 HTTP API 参考：认证、全部路由分组、SSE 流式协议和 DTO 类型导入。
 ---
 
-PenguinHarness 服务器提供一组同源 HTTP API，内置 Web App 和其他任何 HTTP 客户端用的都是它。本页先讲认证，再按功能分组介绍路由（每组先给路由表，再补充细节），最后讲 SSE 流式协议。启动服务器的方法见[快速开始](/quickstart)。
+PenguinHarness 服务器提供一组同源 HTTP API，内置 Web App 和其他任何 HTTP 客户端用的都是它。本页先讲认证，再按功能分组介绍路由（每组先给路由表，再补充细节），最后讲 SSE 流式协议。启动服务器的方法见[快速开始](/quickstart)。PenguinHarness 之外的程序凭 Agent 的密钥调用的 API 另有专页，见 [Agent API](/agent-api)。
 
 ## 概览
 
@@ -42,7 +42,7 @@ API 接受两种凭证：Cookie 会话和本地 API token。
 - Cookie 会话：`penguin_session`（HttpOnly，SameSite=Lax），有效期 30 天，滑动续期。
 - 密码以 scrypt 哈希存储。会话是 `auth_sessions` 表中的一行，以随机 Cookie token 的 sha256 为键；原始 token 从不存储。会话重启后依然有效，并在原地续期；登出则删除这一行。
 - 不开放注册。启动时，服务器会用一个随机密码初始化内置管理员 `admin`：密码哈希后保存，明文随即丢弃，没有任何人见过它。在设置密码之前，每次启动都会打印一条首次登录链接，用来认领账号。自动化场景可以改用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定一个已知密码。其余所有账号都由管理员创建。
-- 仅限同源：未启用任何 CORS 中间件。
+- 仅限同源：未启用任何 CORS 中间件。例外是 Agent API 的 `/api/amsp/v1`：它应答任何来源的预检，并在带 `Authorization` 的请求上返回 `Access-Control-Allow-Origin: *`。这组路由不接受上面两种凭证：请求出示的是该 Agent 的 API 密钥；Agent 允许无密钥访问时，也可以不出示。见 [Agent API](/agent-api)。
 - 标为「仅管理员」的路由，对其他用户一律返回 `403` `admin_required`。
 
 ```bash
@@ -59,6 +59,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 - 服务器每次启动都生成一个新 token，写入 `<root>/api-token`，文件权限仅限所有者（`0600`）。新 token 一经生成，上一次启动的 token 立即失效。
 - 有效的 Bearer token 以内置 `admin` 的身份通过认证。这是有意设计的授权模型：在本机文件系统上能访问数据根目录，本身就等于管理员权限，因为能读 `api-token` 的人也能读它旁边的 `web.db`。`penguin server reset-admin-password` 依赖的正是这条规则。
 - 服务器驱动的会话会把当前 token 注入每个工具子进程的环境变量 `PENGUIN_API_TOKEN`，同时注入 `PENGUIN_API_URL`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`。Agent 自己的 `penguin` 命令和 API 调用正是靠这些变量获得授权，才能连上运行自己的服务器。
+- 这个 token 不能改变 Agent 的对外暴露。`PUT …/agents/:agentId/api`、`POST …/api/keys`、`DELETE …/api/keys/:keyId`、`POST …/api/try`，以及请求体带 `agentApiEnabled` 的 `PUT /api/admin/settings`，对它一律答 `403` `human_required`，不写入任何内容；这些路由只接受 Cookie 会话。[Agent 浏览器](#agent-浏览器)的选择后端与生成配对码对它也是同一种拒绝。读取路由对它照常开放。每个工具子进程都持有这个 token，否则 Agent 就能在自己的 shell 里把自己开放到网络上。这收窄了交给 Agent 的凭据，但不是边界：在沙盒之外、以数据根目录所属操作系统账号运行的进程可以用 `penguin auth token` 自行铸造会话。边界是沙盒。
 - SSE 端点和其他路由一样接受这个请求头。消费它们要用 `fetch`，不要用 `EventSource`——后者无法发送请求头。
 - 写请求只接受 JSON 的 Content-Type 检查，对 Bearer 请求同样生效。
 
@@ -106,11 +107,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ## 服务器设置（仅管理员）
 
-服务器全局的代理、附件、公司模式和 Chrome 扩展设置，以及插件声明的设置分组。
+服务器全局的代理、附件、公司模式、Chrome 扩展和 Agent API 设置，以及插件声明的设置分组。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled}}` |
+| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled, agentApiEnabled}}` |
 | PUT | `/api/admin/settings` | 更新设置；省略的字段保持当前值，任何字段非法都会拒绝整个 PUT。返回更新后的完整设置 |
 | GET | `/api/admin/settings/proxy-probe` | 可达性探测的目标：`{targets: [{provider, url}]}`。不发起任何请求 |
 | POST | `/api/admin/settings/proxy-probe/:provider` | 经服务器的出站链路探测其中一个目标，不发送任何凭证：`{probe: {provider, url, outcome, ms, status?}}` |
@@ -167,13 +168,17 @@ PUT 按如下规则校验：
 
 `browserExtensionsEnabled` 是服务器的**允许 Chrome 扩展连接**开关，默认开启。关闭后立即断开所有已连接的 PenguinHarness Browser 扩展（WebSocket 关闭码 `4009`），拒绝新的连接和配对码，所有用户的 Chrome 后端都不可用（`extension_disabled`）。配对会保留，重新开启后扩展可以重新连上。见 [Agent 浏览器](#agent-浏览器)。
 
+### Agent API 开关
+
+`agentApiEnabled` 是服务器的**允许 Agent API** 开关，默认开启。关闭后，`/api/amsp/v1` 下除 CORS 预检以外的所有请求都以 `403` `agent_api_disabled` 拒绝。各 Agent 的 API 开关、审批模式和密钥都会保留，[Agent API 设置](#agent-api-设置)下的路由照常可用。修改从下一个请求起生效，无需重启。修改它需要登录：本地 API token 可以修改这里的其余各项设置，但请求体带 `agentApiEnabled` 时，对它答 `403` `human_required`，该请求体中的字段一项也不写入。所有成员都能从 Agent 的 API 设置中的 `serverEnabled` 读到这个开关。见[管理员开关](/agent-api#管理员开关)。
+
 ### 插件设置
 
 设置分组是投给 `PluginConfigProvider.groups` 的 contribution，沙盒的排在最前。列表中的每个分组带有它的 schema（`configuration`）、合并到缺省值上的存储值（密钥掩码）、它被画在哪个分组的卡片里（`parent`），以及实时状态行（`notices`）。
 
 字段类型有 `string`、`secret`、`boolean`、`number`、`enum`（带 `options`）和 `list`（每行一个值，可选 `maxItems`）。`number` 可声明 `minimum` 与 `maximum`；`string` 与 `list` 可声明每个值或每一行都须匹配的 `pattern`（配 `patternErrorMessage`）。标记 `advanced: true` 的字段画在卡片默认折叠的「高级选项」里，存储与校验与其他字段相同。字段的 `description` 说明其含义，收在标题旁的「?」里；`hint` 是取值须符合的格式，显示在字段下方。`table` 字段有固定的 `rows` 与 `columns`（`string`、`boolean` 或 `enum`，各可带 `description`，用于列标题的「?」），并可声明 `rowChoice`（单选一行，存入该组的一个 `enum` 字段，画作被选行名称后带括号的标题，在该行的「…」菜单里选定）、`pin`（把一个布尔列画成图钉按钮，带 `on` 与 `off` 两种提示）、`columnGroup`（相邻几列上方的分组标题）与 `extensible`（可新增行并调整顺序，在改动的单元格旁存于 `"$added"` 与 `"$order"`；只有新增的行可删除，单选列不指向任何行的保存会被拒绝）。行可带 `description`，`enum` 的选项也可带 `description`，都用于行名称后的「?」。配置可把一个布尔字段声明为 `switch`：它关闭时，卡片只画这一个字段。
 
-沙盒条目另带 `backend`：`installed` 表示是否装有适用于本机操作系统的沙盒后端，`recommended` 是本系统的默认后端包（Linux 为 `@penguinharness/sandbox-bwrap`，macOS 为 `@penguinharness/sandbox-seatbelt`，Windows 为 `@penguinharness/sandbox-wsl`）。其 `enabled` 开关决定新建 Session 是否进入沙盒，`defaultPreset`（预设表的 `rowChoice`，画作行名称后的「（默认）」）指定新 Session 取哪一行的封禁模式、网络与审批方式。开关出现之前保存的设置，旧策略有任何封禁（封禁模式不是「关闭」、网络不是完全开放，或设置了屏蔽路径）即视为打开；默认预设出现之前保存的设置（带自身的 `mode` 或 `network`、或设置了屏蔽路径，且没有 `defaultPreset`），新 Session 仍按其自身的 `mode` 与 `network` 开始，直到管理员选定默认行。对这类文档，`values.defaultPreset` 是起点与之完全相同的第一行，保存时写入它；没有这样的行时（网络为 `none` 或 `local`，或模式为关闭而设了屏蔽路径），`defaultPreset` 缺省，一条提示写明实际生效的值，保存别的字段也不写入 `defaultPreset`。读取时都不改写文档。表的 `rowChoice` 可以不指向任何一行：保存不因此被拒，只有让它指向表里已不存在的行时才被拒。chat defaults 的 `sandbox.defaultApprovalMode` 是开关打开时默认预设的审批方式。
+沙盒条目另带 `backend`：`installed` 表示是否装有适用于本机操作系统的沙盒后端，`recommended` 列出本系统默认一并安装的后端包（Linux 为 `@penguinharness/sandbox-bwrap` 与 `@penguinharness/sandbox-dsh`，macOS 为 `@penguinharness/sandbox-seatbelt`，Windows 为 `@penguinharness/sandbox-wsl`）。它的第一条提示写明本机实施什么、由什么实施；提示可以带 `details`（及 `detailsZh`），折叠显示在其下方——这里是每个已安装但未启用的后端及原因。其 `enabled` 开关决定新建 Session 是否进入沙盒，`defaultPreset`（预设表的 `rowChoice`，画作行名称后的「（默认）」）指定新 Session 取哪一行的封禁模式、网络与审批方式。开关出现之前保存的设置，旧策略有任何封禁（封禁模式不是「关闭」、网络不是完全开放，或设置了屏蔽路径）即视为打开；默认预设出现之前保存的设置（带自身的 `mode` 或 `network`、或设置了屏蔽路径，且没有 `defaultPreset`），新 Session 仍按其自身的 `mode` 与 `network` 开始，直到管理员选定默认行。对这类文档，`values.defaultPreset` 是起点与之完全相同的第一行，保存时写入它；没有这样的行时（网络为 `none` 或 `local`，或模式为关闭而设了屏蔽路径），`defaultPreset` 缺省，一条提示写明实际生效的值，保存别的字段也不写入 `defaultPreset`。读取时都不改写文档。表的 `rowChoice` 可以不指向任何一行：保存不因此被拒，只有让它指向表里已不存在的行时才被拒。chat defaults 的 `sandbox.defaultApprovalMode` 是开关打开时默认预设的审批方式。
 
 PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，密钥按掩码原样送回即保持存储值。被拒的字段返回 `400` `plugin_config_invalid` 并点名该字段；没有分组叫这个名字时返回 `404` `plugin_config_unknown`。声明它的模块自己经 watch 或下次读取拿到改动，无需重启。
 
@@ -425,6 +430,9 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | POST | `/agents/:agentId/hooks/archive` | 从 zip 安装钩子包：`{dataBase64, overwrite?}` |
 | GET | `/agents/:agentId/hooks/:name/archive` | 将已安装的钩子包导出为 zip |
 | DELETE | `/agents/:agentId/hooks/:name` | 卸载一个钩子包 |
+| GET / PUT | `/agents/:agentId/api` | Agent 的 API 设置：开关、无密钥访问、审批模式和密钥（PUT 仅限所有者） |
+| POST | `/agents/:agentId/api/keys` | 新建 API 密钥：`{name}` → 201 `{key, secret}`（仅所有者） |
+| DELETE | `/agents/:agentId/api/keys/:keyId` | 删除 API 密钥（仅所有者） |
 | GET | `/api/plugins`（全局） | 按分类返回插件库（任何已登录用户） |
 | GET | `/api/plugins/:plugin/files`（全局） | 单个插件库插件自带的所有文件，以路径为键返回文本（任何已登录用户） |
 
@@ -452,6 +460,38 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 - `POST …/hooks/archive` 要求 `hooks.json` 及其脚本位于 zip 根目录或同一个顶层目录内，且列出的每条命令都必须指向包内的文件。不带 `overwrite` 时，同名钩子包已安装会返回 409 `hook_exists`。`GET …/hooks/:name/archive` 导出的 zip 可以再通过这个路由安装。
 - `GET /api/plugins` 按分类返回插件库的全部插件，包括每个插件的 Skill 元数据和钩子点。
 - `GET /api/plugins/:plugin/files` 返回单个插件库插件自带的全部文件，以路径为键返回文本：`skills/<name>/` 下是每个 Skill 可安装的 `SKILL.md` 和参考文件，`hooks/` 下是钩子脚本。插件详情页的文件浏览器用的就是这个路由。
+
+### Agent API 设置
+
+这组路由支撑 Agent 的 **API** 标签页和 `penguin agent api`。这些设置属于这台服务器，保存在它的数据库里，不在 Agent State 中，也不在 Project 文件中，因此 Agent 既不能自行对外开放，也不能放宽自己的审批模式。任何成员都能读取；修改设置和管理密钥仅限 Project 所有者，成员会得到 `403` `owner_required`。这些修改还需要登录：本地 API token 会得到 `403` `human_required`，见上文「本地 API token（Bearer）」。
+
+```ts
+interface AgentApiResponse {
+  api: {
+    enabled: boolean;      // the API tab's switch; off = every /api/amsp/v1 request for the agent is 404 agent_not_found
+    open: boolean;         // keyless access: a request without Authorization is accepted
+    approvalMode: "allow-all" | "deny-all" | "read-only" | "always-ask";
+    keys: AgentApiKeyInfo[];
+  };
+  serverEnabled: boolean;  // the admin's agentApiEnabled, readable by every member
+}
+
+interface AgentApiKeyInfo {
+  keyId: string;
+  name: string;            // 1-64 characters
+  prefix: string;          // the key's first 16 characters
+  createdBy: string;       // the owner who created it
+  createdAt: string;
+  lastUsedAt: string | null; // null until a run authenticates with it
+}
+```
+
+- 从未配置过的 Agent 读作：关闭、需要密钥、`allow-all`、没有密钥。
+- `PUT …/api` 接受 `{enabled?, open?, approvalMode?}`，返回完整的 `AgentApiResponse`。省略的字段保持原值；所有字段校验通过后才会写入任何一项。每个 API Session 在创建时复制 `approvalMode`，所以修改只影响之后新建的 API Session。
+- `POST …/api/keys` 接受 `{name}`，返回 201 `{key, secret}`。`secret` 形如 `penguin_` 加 43 个字符，只出现在这一次响应里：服务器只保存它的 SHA-256，列表中以 `prefix` 区分密钥。
+- `DELETE …/api/keys/:keyId` 返回 204，该密钥从下一个请求起即被拒绝。密钥不存在时返回 `404` `key_not_found`。
+- `GET /agents` 给每个 Agent 标上 `apiEnabled`，即同一个开关，智能体页面据此显示 API 图标。删除 Agent 会一并删除它的 API 设置和密钥；删除 Project 会删除其下所有 Agent 的这些数据。
+- 程序凭密钥能做什么，见 [Agent API](/agent-api)；它读取的事件流见 [AMSP](/amsp)。
 
 ## 插件注册表与 Project 插件
 
@@ -642,13 +682,14 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/workspace-files/search?workspace=&q=` | 按条目名搜索该目录 |
 | POST | `/workspace-files/reveal?workspace=&path=` | 在机器自带的文件管理器中显示文件 |
 
-- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`subagent`、`schedule`、`benchmark` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数，与取哪一页无关）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
+- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`background` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数，与取哪一页无关）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
 - `order` 决定列表顺序：`created`（默认）按创建时间从新到旧；`activity` 按 `lastActiveAt` 从新到旧，时间相同时按 `sessionId` 降序，两者都按码点比较而非按区域设置排序。在 `order=activity` 下，`before=<lastActiveAt>,<sessionId>` 搭配 `limit` 以游标代替 `offset` 分页：只返回严格排在这个键之后的行，通常就是客户端已显示的最后一行。两页之间变为活跃的 Session 会移到游标之前，因此不会被再次返回，也不会让其他行漏掉。`before` 未搭配 `order=activity`、与 `offset` 同时出现、缺少 `limit`，或在第一个逗号处拆开后不是日期加合法 id，均返回 400。
 - `excludeOrg=1` 会把组织的工位会话、工单会话和子 Session 一并移出这一页以及 `counts=1` 的总数，这正是开发模式的列表所要的。取其他值返回 400。
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
-- `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。只有 `excludeOrg` 会把它当作过滤条件，而且只用来剔除这些行。
-- `source` 只接受 `"benchmark"`，用于 Benchmark 评估或优化创建的 Session。`subagent` 和 `schedule` 由服务器自己设置。
+- `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，Agent API 的运行新建的 Session 由服务器写入 `"api"`，这两个值客户端都不能发送。`excludeOrg` 用它剔除 `org` 行，Agent API 只延续 `api` 行；见 [Agent API](/agent-api#会话)。Trace 未记录 `source` 的 `"org"` 行（旧版本写下的，或尚未运行过的）读作 `company` 会话。
+- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/omni-message#sessionmeta)），类别由它决定：`company` 会话不属于任何类别，归档与否都一样，因此带 `category`、`workspaceGroup` 或 `counts=1` 的请求会把它移出这一页和所有总数，只有不带这些参数的完整列表才返回它。其余的会话，已归档的无论来源都是 `archived`；`user` 会话为 `active`，`api`、`schedule`、`subagent`、`cli` 会话为 `background`。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
+- 创建时 `source` 只接受 `"cli"`，由 `penguin run` 发送；其他来源只由服务器自己写入，省略时创建 `user` 会话。已停用的 `"benchmark"` 仍然接受，按 `"cli"` 处理。
 - `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，系统隐藏的条目（带隐藏属性，如 `AppData`、`NTUSER.DAT`）另带 `hidden: true`，只写盘符如 `D:` 即视为其根目录 `D:\`。请求主目录并带 `places=1` 时，另附选择器左栏所需的两项：`standardFolders`（桌面、文档、下载、图片，按该机器自己的规则取得——Windows 的已知文件夹、Linux 的 XDG 用户目录；读取失败时省略）与 `locations`（Windows 的各盘符、macOS 的各卷、Linux 的根目录及 `/media`、`/run/media`、`/mnt` 下的挂载点，各带 `kind`，有名称时带 `label`）。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
 - `POST /dirs/access` 是桌面端 Workspace 选择器里的**允许访问**。macOS 只替它认定为读取责任方的应用询问桌面、文稿与下载的访问权限，因此由桌面 shell 的主进程把绝对路径 `path` 读一次，响应要等用户作答后才返回。`granted` 表示这次读取是否成功（非 macOS 平台不读取，恒为 `true`）。`packaged` 为 `false` 表示这是从终端启动的开发实例，macOS 把它的读取记在该终端名下。`path` 不是绝对路径时返回 `400` `dir_not_absolute`；服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`；shell 在 120 秒内没有应答时返回 `504` `timeout`。只有桌面应用自己的窗口可以调用，其他会话返回 `403` `desktop_shell_only`。
 - `GET /dir-skills` 只读取绝对路径下的 `<path>/.agents/skills` 和 `<path>/.claude/skills`，响应为 `{path, skills}`。没有 Skill 的目录返回空列表。参见 [Agent](#agent) 一节中的 `POST /agents`。
@@ -683,7 +724,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `GET /usage/errors` 接受 `offset`、`limit`、同样的 `from` / `to` / `fromTs` / `toTs` / `agentId` 过滤条件，以及可选的 `kind`（`unexpected` 或 `expected`）。
 - 错误表把同一天里来源、错误码、分类和消息都相同的记录合为一行，带上次数 `count`、最近一次的时间 `ts` 和首次的时间 `firstTs`。`offset`、`limit` 和 `rows` 按行计；`total` 和仪表盘的汇总数字按记录计。`GET /usage` 与 `GET /usage/errors` 都接受可选的 `utcOffsetMinutes`，即读者所在时区相对 UTC 向东的分钟数（−840 到 840），它决定「同一天」按哪一天算；不传时按服务器自己的日期。
 - `DELETE /usage/errors` 接受与读取相同的过滤条件（`from` / `to` / `fromTs` / `toTs` / `agentId`），但不接受 `kind`，因为面板上没有这个控件。这里 `from` 和 `to` 都必填（否则返回 400），因为少一个边界，清空的就是整段历史，而不是过滤后的一部分。清空的范围与调用者读取的范围完全一致：管理员清空时，也会删掉只有管理员读取才能看到的未归属行；成员清空时则永远不会。
-- `GET /agents/:agentId/traces` 还接受 `limit` 和 `offset` 分页，以及 `category`（必须搭配 `limit`），用于只列出某一类别的 Session。
+- `GET /agents/:agentId/traces` 还接受 `limit` 和 `offset` 分页，以及 `category`（必须搭配 `limit`），用于只列出某一类别的 Session。分页列表不含不属于任何类别的 `company` 会话；不带 `limit` 的完整目录列出所有 Trace。
 - 任何成员都可以下载 Trace。导入只有所有者能做，与 Agent State 快照导入一样，上限 14MB。导入的文件必须是有效的 Trace JSONL，首条记录必须是 `session_meta`，`session_id` 须可安全用作文件名。session id 与 Agent 已有的重复时拒绝导入（409 `trace_session_exists`），所以导入的文件总是成为新 Session 的 index 001，按首条记录的时间戳存入对应的本地日期目录。
 
 ## Session 级端点
@@ -708,6 +749,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 - `GET /` 返回 Session 的信息。与列表行不同，单个 Session 的响应还带 `tracePath`，即最新 Trace 文件的绝对路径。`orgId` 标记公司模式缓存持有的会话（工位会话，或这个组织某个工单的贡献会话）；普通 Session 一律不带这个字段，列表路由同样会设置它。
 - `PATCH /` 先校验全部字段再写入任何一个，`sandbox` 选择（`{mode?, network?}`）也在其中：非管理员选的档位比服务端的沙盒设置更宽时为 `403` `sandbox_forbidden`，本机没有后端能实施的档位为 `400` `sandbox_unsupported`；被拒的请求什么都不落盘，`approvalMode` 与 `title` 也不例外。Session 的 `sandbox` 视图里，`presets` 中比服务端设置更宽的行带 `aboveCeiling: true`（只出现在响应里），与这条拒绝用同一次比较：非管理员选这样的行会被拒绝。
+- `PATCH /` 带 `title` 设置手动标题，自动生成的标题不会取代它。连续空白（含换行与制表符）存为一个空格，结果须为 1–120 个字符；含控制字符，或双向嵌入、覆盖、隔离字符（U+202A–U+202E、U+2066–U+2069）时为 `400` `invalid_title`。
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
@@ -1136,7 +1178,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
-| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_state`、`session_background`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
+| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
 
 ### 传输格式
 
@@ -1157,11 +1199,12 @@ export type ServerEvent =
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "session_state"; sessionId: string; projectId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
+  | { type: "session_approvals"; sessionId: string; count: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "web_updated"; rev: string }
-  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source?: SessionSource }
+  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "goal_started"; sessionId: string; objective: string; budget: number }
@@ -1180,6 +1223,7 @@ export type ServerEvent =
 | `session_title` | 第一轮对话后，模型生成的标题已保存 |
 | `session_state` | Session 的运行状态变化；`task_state` 在用户通道上的对应事件 |
 | `session_background` | Session 的后台任务计数变化 |
+| `session_approvals` | Session 中等待审批的工具调用数变化 |
 | `resync_required` | `Last-Event-ID` 已被挤出缓冲区；客户端必须重新拉取历史 |
 | `credentials_updated` | Project 的模型凭据发生变化 |
 | `hello` | 用户通道上的握手 |
@@ -1200,9 +1244,10 @@ export type ServerEvent =
 - `session_title` 发送到 Session 的通道，以及 Project 所有者和成员的用户通道。
 - `session_state` 用 `sessionId` 指明是哪个 Session、用 `projectId` 指明所属 Project，因此 Session 列表的每一行都能保持实时，而不只是客户端当前打开的那个会话；列表还能据此认出本 Project 中自己尚未持有的 Session，再按 id 单独拉取。事件携带重绘这一行所需的字段，无需重新拉取：刚写入的 `lastActiveAt`，以及 `hasTrace`。状态为 `running` 或 `compacting` 时 `hasTrace` 必为 true，因为正在运行的 Session 必然已经启动过 Task。它发送到 Project 所有者和成员的用户通道。
 - 以下情况会触发 `session_background`：命令超过让出窗口转入后台，或以 `run_in_background` 启动；进程退出或停止；后台子 Agent 开始一轮、结束一轮或释放。事件携带 `SessionInfo.backgroundTasks` 的当前值（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转入后台、正处于一轮中的子 Agent Session 数），归零时同样发送，列表无需重新拉取就能撤下标记。两个计数都为零时，列表行和单个 Session 的 GET 会省略这个字段。受众与 `session_state` 相同。
+- 以下情况会触发 `session_approvals`：工具调用升级给人审批（`always-ask` 下的每个调用，`read-only` 下读写或权限未知的调用）；某个审批得到回答；中断拒绝了所有等待中的审批（只发一个事件）。`count` 是 Session 当前的 `pendingApprovalCount`，归零时同样发送。调用本身以 `approval_request` 出现在该 Session 自己的流上，订阅时会重放。受众与 `session_state` 相同。
 - `credentials_updated` 在 `PUT /models` 或签发 API key 的流程完成之后发送。缓存的运行时已失效，客户端应清除因认证失败而禁用的输入框状态。
 - `web_updated` 以 `rev` 携带新的 web 修订号，发送到每个用户通道。
-- `session_created` 在每次创建时发送到 Project 所有者和成员的用户通道；子 Agent Session 还会同时发送到父 Session 的通道。用户创建的 Session 没有 `source`，与行上一致。通过 `PATCH /api/sessions/:id` 设置的标题以同样方式作为 `session_title` 宣告。
+- `session_created` 在每次创建时发送到 Project 所有者和成员的用户通道；子 Agent Session 还会同时发送到父 Session 的通道。`source` 是新 Session 的 `session_meta` 所记录的来源。通过 `PATCH /api/sessions/:id` 设置的标题以同样方式作为 `session_title` 宣告。
 - `schedule_fired` 的 `sessionId` 是接收 Prompt 的 Session，在新建 Session 模式下是一个新 Session。排队的触发会在 Session 空闲后发送。
 - `goal_round` 携带 `used`，即目前累计的 Token 数。
 - `org_*` 事件发送到 Project 成员的用户通道。`org_channel` 包含消息里的提及信息，客户端可据此判断消息是否指向自己。这些事件是尽力而为的；持久状态以组织路由为准。

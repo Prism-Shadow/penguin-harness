@@ -262,15 +262,20 @@ describe("sandbox service — capability routing across backends", () => {
     return { dsh, bwrap };
   };
 
-  it("a filesystem-only policy takes the first backend covering it (the portable one)", async () => {
-    const { dsh, bwrap } = entries();
-    const svc = await service([
-      ["dsh-local", dsh.provider],
-      ["penguin-bwrap", bwrap.provider],
-    ]);
-    svc.configure({ mode: "workspace-write" });
-    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["dsh", "--", ...ARGV]);
-    expect(bwrap.calls).toHaveLength(0);
+  it("a filesystem-only policy goes to the backend implementing more, whatever the registration order", async () => {
+    for (const order of ["dsh first", "bwrap first"]) {
+      const { dsh, bwrap } = entries();
+      const both: Array<[string, SandboxProviderSource]> = [
+        ["dsh-local", dsh.provider],
+        ["penguin-bwrap", bwrap.provider],
+      ];
+      const svc = await service(order === "dsh first" ? both : both.reverse());
+      svc.configure({ mode: "workspace-write" });
+      expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["bwrap", "--", ...ARGV]);
+      expect(dsh.calls).toHaveLength(0);
+      // The card reads them in the same preference.
+      expect(svc.backends().map((b) => b.name)).toEqual(["penguin-bwrap", "dsh-local"]);
+    }
   });
 
   it("a policy requiring network or mask-paths routes past it to the backend implementing them", async () => {
@@ -338,7 +343,8 @@ describe("sandbox service — capability routing across backends", () => {
       ["penguin-bwrap", bwrap.provider],
     ]);
     svc.configure({ mode: "read-only", maskPaths: [] });
-    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["dsh", "--", ...ARGV]);
+    // Either backend serves it: the one implementing more does.
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["bwrap", "--", ...ARGV]);
   });
 
   it("a backend throw (unusable runner, etc.) propagates — fail-closed end to end", async () => {

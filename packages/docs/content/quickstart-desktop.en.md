@@ -39,7 +39,7 @@ The app opens signed in. The window signs itself in, so there is no password to 
 PenguinHarness ships with no model credentials. Give it an API key for the model you want to use:
 
 1. In the sidebar, select **Models**. Models are listed in one group per provider, and the default model is marked **Default**.
-2. At the end of your provider's group header, click **Settings** (the gear), enter the API key, and click **Save**. It becomes the group key, which every model in the group without a key of its own uses. TokenDance, Penguin Go and ModelScope can also get a key for you: click **Not connected** on their group.
+2. At the end of your provider's group header, click **Settings** (the gear), choose **Group settings…**, enter the API key, and click **Save**. It becomes the group key, which every model in the group without a key of its own uses. TokenDance, Penguin Go and ModelScope can also get a key for you: click **Not connected** on their group.
 3. If you want a model other than the default, open that model and click **Set as default model**.
 
 To add a model that is not listed, click **Add model** (the plus icon) in the **Custom** group (or a group you create) and fill in the **Model ID**; then open **Details** and fill in the **Custom base URL** and **API key**, unless the group's settings already give them. **vLLM**, **OpenRouter**, **TokenDance** and **SiliconFlow** take added models too; the other built-in groups hold their built-in models only.

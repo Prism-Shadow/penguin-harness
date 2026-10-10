@@ -141,9 +141,31 @@ export interface SessionMetaPayload {
   agent_state: string;
   /** Absolute path to the Workspace. */
   workspace: string;
-  /** Session origin: spawned by a subagent / triggered by a scheduled task / created by a Benchmark evaluation or optimization; absent = user-created. */
-  source?: "subagent" | "schedule" | "benchmark";
+  /**
+   * What kind of conversation this is (see {@link SessionSource}), recorded in every context's
+   * meta. A Trace written before the field was required may lack it or carry the retired
+   * `benchmark`; readers narrow what they read through `normalizeSessionSource`.
+   */
+  source: SessionSource;
 }
+
+/**
+ * What kind of conversation a Session is: a person's, or one a program opened for its own
+ * purposes.
+ *
+ * - `user`: a person's conversation, and the default when nothing names a source: the Web App
+ *   composer, `penguin chat`, and forks.
+ * - `api`: an external program opened it through the Agent API.
+ * - `schedule`: a scheduled task opened it for one of its runs.
+ * - `subagent`: a `run_subagent` child, whichever Session spawned it (a company Session's too).
+ * - `cli`: `penguin run` created it, the Test Sessions an evaluation launches included.
+ * - `company`: company mode's organization runtime opened it, as an employee's desk or for a
+ *   ticket. Only company mode's own views list it.
+ *
+ * Which program created the server's index row is a separate fact (the row's `client`); the two
+ * can differ, as `penguin chat` (a `cli` client writing a `user` Session) shows.
+ */
+export type SessionSource = "user" | "api" | "schedule" | "subagent" | "cli" | "company";
 
 // ---------------------------------------------------------------------------
 // model_msg — complete messages

@@ -1,12 +1,13 @@
 /**
  * The demo world the mocked API answers from, built for one language at a time: a signed-in
  * admin, one Project with two Agents, their conversations, the model table, the plugin
- * library and what is installed, thirty days of usage, two Benchmarks, schedules, the
+ * library and what is installed, thirty days of usage, three Benchmarks, schedules, the
  * machines, the memory and vault of the docs Agent, a small Workspace and the server's
  * settings. Every row is typed by the server's own DTOs, so the compiler is what keeps this
  * data in step with the app that reads it.
  */
 import type {
+  AgentApiSettings,
   AgentConfigResponse,
   AgentSummary,
   BenchmarkCaseSummary,
@@ -56,6 +57,8 @@ import {
   presetPromotions,
   presetProviderTable,
 } from "../../../../core/dist/state/model-catalog.js";
+// The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
+import type { AmspEvent } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
 import type { Lang } from "./types";
@@ -152,6 +155,8 @@ export interface DemoFixtures {
   update: UpdateCheckResponse;
   memory: Record<string, { overview: MemoryOverviewResponse; files: MemoryFileResponse[] }>;
   vault: Record<string, VaultResponse>;
+  /** Each Agent's public API settings, keyed by Agent id; an Agent missing here never had them set. */
+  agentApi: Record<string, AgentApiSettings>;
   workspace: { entries: Record<string, WorkspaceFileEntry[]>; content: Record<string, string> };
   chatDefaults: ChatDefaultsDto;
   commandPolicy: CommandPolicyDto;
@@ -231,6 +236,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       hookCount: 1,
       pluginUpdates: [{ name: IDS.plugins.registry, version: "2026.09.20.1" }],
       memoryCount: 4,
+      // Its API is on: see `agentApi` below.
+      apiEnabled: true,
     },
     {
       agentId: IDS.agents.notes,
@@ -253,6 +260,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       hookCount: 0,
       pluginUpdates: [],
       memoryCount: 0,
+      apiEnabled: false,
     },
   ];
 
@@ -573,7 +581,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       L("评估 CASE-001", "Evaluate CASE-001"),
       ago(3),
       {
-        source: "benchmark",
+        // A Test Session the evaluation launched through `penguin run`.
+        source: "cli",
         workspace: `/home/demo/.penguin/data/projects/${IDS.project}/agents/${IDS.agents.docs}/workspaces/case-001`,
       },
     ),
@@ -601,7 +610,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       L("破坏性变更清单", "Breaking changes list"),
       ago(9),
     ),
-    // An organization's desk Session (the durable `org` stamp): reached by its link, never listed.
+    // An organization's desk Session (a company Session, with the durable `org` stamp):
+    // reached by its link, never listed.
     session(
       IDS.sessions.orgDesk,
       IDS.agents.notes,
@@ -611,6 +621,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         workspace: "/home/demo/projects/release-notes",
         lastActiveAt: iso(orgDesk.endedAt),
         client: "org",
+        source: "company",
       },
     ),
   ];
@@ -932,6 +943,83 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       cases,
     };
   };
+  /**
+   * The built-in Benchmark's cases (Sec E, Terminal-Bench): one task each, and the trial its one
+   * run recorded. Their statements and rubric are the ones core writes, word for word.
+   */
+  const harborCases = [
+    {
+      id: "CASE-001-music-harmony",
+      task: "music-harmony",
+      title: "Harmonize a chorale excerpt in four parts",
+      summary:
+        "Complete a four-voice (SATB) harmonization of the excerpt in a score PDF, in the style of a Bach chorale, and label every chord with a Roman numeral. The deliverable is a MusicXML file with the harmony annotations embedded.",
+      category: "Media / Music",
+      expertHours: 1,
+      cpus: 2,
+      memoryGb: 4,
+      trial: "music-harmony__3xQpL7a",
+    },
+    {
+      id: "CASE-002-html-js-filter",
+      task: "html-js-filter",
+      title: "Strip JavaScript from HTML without breaking it",
+      summary:
+        "Write a Python script that removes every way to run JavaScript from an HTML file in place, while keeping legitimate markup, formatting and harmless attributes intact. The deliverable is the script, run by the verifier on its own HTML samples.",
+      category: "Security / AppSec",
+      expertHours: 0.75,
+      cpus: 2,
+      memoryGb: 8,
+      trial: "html-js-filter__Vb81mKd",
+    },
+    {
+      id: "CASE-003-foodstuff-beta-activity",
+      task: "foodstuff-beta-activity",
+      title: "Determine the beta activity of a foodstuff",
+      summary:
+        "From liquid-scintillation measurements and Sr-90 reference tables, derive the counting efficiency, the volumetric and gravimetric factors, the detection limit and the sample's activity concentration. The results go into a text file in a fixed format, which the verifier compares with the expected values.",
+      category: "Science / Chemistry",
+      expertHours: 1.5,
+      cpus: 2,
+      memoryGb: 4,
+      trial: "foodstuff-beta-activit__Qe2Rt9s",
+    },
+  ];
+  const harborStatement = (c: (typeof harborCases)[number]): string =>
+    [
+      `# ${c.title}`,
+      "",
+      c.summary,
+      "",
+      `- Benchmark: PenguinHarness Benchmark Sec E — Terminal-Bench 4.0 (Harbor Hub \`terminal-bench/terminal-bench\`, revision 4) · Category: ${c.category} · Expert estimate: ${c.expertHours} h`,
+      `- Task: \`${c.task}\` in https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/c12d65bc20beb5130ed57b3b7983c62d497b7d2f/benchmarks/terminal-bench/tasks/${c.task}`,
+      "- Upstream: https://github.com/harbor-framework/terminal-bench (Apache-2.0)",
+      `- Container: ${c.cpus} CPU, ${c.memoryGb} GB RAM, CPU only · Agent network: public · Verifier: separate container`,
+      "",
+      "## How this case is run",
+      "",
+      "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker with Harbor 0.23.0 and the PenguinHarness adapter from the repository above, following that repository's rules for agents — https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/c12d65bc20beb5130ed57b3b7983c62d497b7d2f/README.md#running-a-task-for-agents — from the root of a checkout at commit `c12d65bc20beb5130ed57b3b7983c62d497b7d2f`:",
+      "",
+      "```bash",
+      'export PYTHONPATH="$PWD/agents"',
+      `uvx --from harbor==0.23.0 harbor run -p benchmarks/terminal-bench/tasks -i ${c.task} \\`,
+      "  -a penguin_agent:PenguinAgent -m <provider>/<model_id> \\",
+      "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
+      "  --ak run_timeout=25m --ak max_turns=200 \\",
+      "  --extra-docker-compose tools/docker/shared-network.yaml \\",
+      "  --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name <job name> -o <jobs dir> -y",
+      "```",
+      "",
+      "Caps: the agent is stopped at 25m and after 200 turns. Run at most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker with Compose v2; uv; network access to Docker Hub (the prebuilt task images), nodejs.org, the npm registry and the model provider; the model under test configured in this machine's PenguinHarness with its API key saved (the adapter copies that one entry into the container, outside the trial's log directory). The instruction keeps upstream's own time budget; the run stops the agent at `run_timeout`.",
+      "",
+      "The score is the verifier's reward × 100: a pass (1) scores 100, a fail (0) scores 0, and a fractional reward r scores 100·r. An evaluation from the Evaluation Center keeps every trial under this Benchmark's `.jobs/` directory and records its Session id as `harbor:<trial name>`.",
+      "",
+      "Measured results of PenguinHarness on these tasks: https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/c12d65bc20beb5130ed57b3b7983c62d497b7d2f/results/v0.2.13/README.md",
+      "",
+    ].join("\n");
+  const harborRubric =
+    "# Scoring rubric (max 100 points)\n\n- 100 pts: the Harbor verifier's reward for this trial (`/logs/verifier/reward.txt` or the `reward` key of `reward.json`) multiplied by 100. The task's own tests decide; there is no manual judging and no partial credit beyond what the verifier itself reports.\n";
+
   const benchmarks: BenchmarkSummary[] = [
     {
       id: IDS.benchmarks.docs,
@@ -959,6 +1047,48 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       evaluations: [],
       agentIds: [],
     },
+    // Built in, English in either locale like the product's own; one evaluation, whose runs
+    // are Harbor trials rather than Sessions.
+    {
+      id: IDS.benchmarks.builtin,
+      title: "PenguinHarness Benchmark Sec E",
+      description:
+        "Sec E is Terminal-Bench 4.0: hard, realistic tasks done in a terminal, across software, security, science, machine learning, operations, hardware and media. Chosen to run on CPU-only Docker. A built-in benchmark: each task runs in Docker through the Harbor framework and is scored by its own verifier; the task files are in the public repository Prism-Shadow/penguin-harness-benchmark. It is written when the Project is created; a deleted one stays deleted.",
+      runs: 1,
+      status: "published",
+      caseCount: harborCases.length,
+      evaluations: [
+        {
+          time: iso(ago(1)),
+          agentId: IDS.agents.docs,
+          summaryTitle: L("首个 Harbor 基线", "First Harbor baseline"),
+          summary: L(
+            "每题一次 Harbor trial；分数即验证器的 reward × 100。",
+            "One Harbor trial per case; each score is the verifier's reward × 100.",
+          ),
+          modelId: "deepseek-flash",
+          provider: "deepseek",
+          thinkingLevel: "max",
+          version: 14,
+          score: 33.33,
+          cost: 0.0712,
+          durationMs: 694_000,
+          cases: harborCases.map((c, i) => {
+            const score = i === 0 ? 100 : 0;
+            const cost = [0.0521, 0.0934, 0.0681][i]!;
+            const durationMs = [512_000, 903_000, 667_000][i]!;
+            return {
+              case: c.id,
+              score,
+              cost,
+              durationMs,
+              runs: [{ score, cost, durationMs, sessionId: `harbor:${c.trial}` }],
+            };
+          }),
+        },
+      ],
+      agentIds: [IDS.agents.docs],
+    },
   ];
   const benchmarkCases: Record<string, BenchmarkCaseSummary[]> = {
     [IDS.benchmarks.docs]: [
@@ -974,6 +1104,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       { id: "CASE-001-lead", title: L("写一段导语", "Write a lead paragraph") },
       { id: "CASE-002-breaking", title: L("列出破坏性变更", "List the breaking changes") },
     ],
+    [IDS.benchmarks.builtin]: harborCases.map((c) => ({ id: c.id, title: c.title })),
   };
   const caseFiles: DemoFixtures["caseFiles"] = {};
   for (const [benchmarkId, cases] of Object.entries(benchmarkCases)) {
@@ -988,6 +1119,13 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         },
       };
     }
+  }
+  // A Harbor case is text only: what the task is, where its folder is, and how it is launched.
+  for (const c of harborCases) {
+    caseFiles[`${IDS.benchmarks.builtin}/${c.id}`] = {
+      statement: { "README.md": harborStatement(c) },
+      rubric: { "README.md": harborRubric },
+    };
   }
 
   const machines: MachinesResponse = {
@@ -1144,6 +1282,33 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       ],
     },
     [IDS.agents.notes]: { entries: [] },
+  };
+
+  // The docs Agent answers programs: one key in daily use, one minted and never used.
+  const agentApi: DemoFixtures["agentApi"] = {
+    [IDS.agents.docs]: {
+      enabled: true,
+      open: false,
+      approvalMode: "allow-all",
+      keys: [
+        {
+          keyId: "kq3VtX9cRb2LmN0a",
+          name: L("文档站检索", "docs-site search"),
+          prefix: "penguin_Zr8kQ2vT",
+          createdBy: user.userId,
+          createdAt: iso(ago(21)),
+          lastUsedAt: iso(ago(0, 12)),
+        },
+        {
+          keyId: "Hc7pW2sYd4EfJ6uB",
+          name: L("每周报告脚本", "weekly report script"),
+          prefix: "penguin_4mGxL7pA",
+          createdBy: user.userId,
+          createdAt: iso(ago(2)),
+          lastUsedAt: null,
+        },
+      ],
+    },
   };
 
   const file = (name: string, sizeBytes: number, days: number): WorkspaceFileEntry => ({
@@ -1462,6 +1627,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       attachmentTotalMb: 120,
       companyMode: false,
       browserExtensionsEnabled: true,
+      agentApiEnabled: true,
     },
     project,
     members: [
@@ -1490,6 +1656,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     update,
     memory,
     vault,
+    agentApi,
     workspace,
     chatDefaults,
     commandPolicy,
@@ -1500,4 +1667,162 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     usage,
     usageErrors,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The API tab's Try it: one run's AMSP stream
+// ---------------------------------------------------------------------------------------------
+
+/** The Session the demo's Try it runs open. */
+export const TRY_SESSION_ID = "session-2026-10-09-09-30-00-7d2e41c8";
+
+/** `date`'s own format, in UTC: `Fri Oct  9 09:30:00 UTC 2026`. */
+function dateOutput(ms: number): string {
+  const d = new Date(ms);
+  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+  const month = d.toLocaleString("en", { month: "short", timeZone: "UTC" });
+  const date = String(d.getUTCDate()).padStart(2, " ");
+  const time = d.toISOString().slice(11, 19);
+  return `${day} ${month} ${date} ${time} UTC ${d.getUTCFullYear()}`;
+}
+
+/**
+ * The body the try route streams, as `data:` lines and `[DONE]`: the example question answered
+ * by running `date` over two Requests — the tool call's fragments and the complete call, its
+ * result, then the answer's fragments and the complete answer, so the rendered view has
+ * fragments to merge; a run that continues a Session gets one answer in one Request.
+ */
+export function amspTryStream(
+  body: unknown,
+  run: { agent: string; lang: Lang; now: number },
+): string {
+  const { agent, lang, now } = run;
+  const L = <T>(zh: T, en: T): T => (lang === "zh" ? zh : en);
+  const sessionField = (body as { session_id?: unknown } | null)?.session_id;
+  const sessionId = typeof sessionField === "string" ? sessionField : TRY_SESSION_ID;
+  let clock = now;
+  const at = (stepMs: number) => new Date((clock += stepMs)).toISOString();
+  const usage = (output: number, total: number, cacheRead: number) => ({
+    cache_read: cacheRead,
+    cache_write: 0,
+    output,
+    total,
+  });
+  const started: AmspEvent = {
+    type: "run.started",
+    at: at(0),
+    session_id: sessionId,
+    agent,
+  };
+  let events: AmspEvent[];
+  if (typeof sessionField === "string") {
+    const answer = usage(38, 3120, 2944);
+    events = [
+      started,
+      { type: "request.started", at: at(120), request: 1 },
+      {
+        type: "text.done",
+        at: at(1400),
+        role: "assistant",
+        text: L(
+          "演示数据只回答第一个问题；真实的 Agent 会在这里接着同一个会话作答。",
+          "The demo answers only the first question; a real agent would carry on this conversation here.",
+        ),
+        stop_reason: "completed",
+      },
+      { type: "request.done", at: at(20), request: 1, status: "completed", usage: answer },
+      {
+        type: "run.done",
+        at: at(10),
+        status: "completed",
+        requests: 1,
+        usage: answer,
+        session_usage: usage(124, 5848, 5184),
+      },
+    ];
+  } else {
+    const call = usage(31, 1376, 1152);
+    const answer = usage(55, 1352, 1088);
+    const clockText = dateOutput(now + 1900);
+    const answerText = L(
+      `现在是 ${clockText.slice(11, 16)}（UTC），${new Date(now).getUTCFullYear()} 年 ${new Date(now).getUTCMonth() + 1} 月 ${new Date(now).getUTCDate()} 日。`,
+      `It is ${clockText.slice(11, 16)} UTC on ${clockText.slice(0, 10)}, ${new Date(now).getUTCFullYear()}.`,
+    );
+    // The answer as a model streams it: three fragments, then the complete text.
+    const third = Math.ceil(answerText.length / 3);
+    const fragments = [0, 1, 2].map((i) => answerText.slice(i * third, (i + 1) * third));
+    events = [
+      started,
+      {
+        type: "context.opened",
+        at: at(60),
+        session_id: sessionId,
+        provider: "anthropic",
+        model_id: "claude-sonnet-5",
+        context_window: 200000,
+      },
+      {
+        type: "tools.ready",
+        at: at(20),
+        tools: ["exec_command", "read_file", "write_file", "edit_file", "web_fetch"].map(
+          (name) => ({ name, description: "" }),
+        ),
+      },
+      { type: "request.started", at: at(40), request: 1 },
+      {
+        type: "tool_call.delta",
+        at: at(1200),
+        tool_call_id: "toolu_try_date",
+        name: "exec_command",
+        arguments: '{"cmd": ',
+      },
+      {
+        type: "tool_call.delta",
+        at: at(200),
+        tool_call_id: "toolu_try_date",
+        name: "",
+        arguments: '"date"}',
+      },
+      {
+        type: "tool_call.done",
+        at: at(100),
+        tool_call_id: "toolu_try_date",
+        name: "exec_command",
+        arguments: '{"cmd":"date"}',
+        stop_reason: "completed",
+      },
+      {
+        type: "tool_result.done",
+        at: at(260),
+        tool_call_id: "toolu_try_date",
+        output: `${clockText}\n`,
+        stop_reason: "completed",
+      },
+      { type: "request.done", at: at(10), request: 1, status: "completed", usage: call },
+      { type: "request.started", at: at(30), request: 2 },
+      ...fragments.map((text): AmspEvent => ({
+        type: "text.delta",
+        at: at(400),
+        role: "assistant",
+        text,
+      })),
+      {
+        type: "text.done",
+        at: at(10),
+        role: "assistant",
+        text: answerText,
+        stop_reason: "completed",
+      },
+      { type: "request.done", at: at(20), request: 2, status: "completed", usage: answer },
+      {
+        type: "run.done",
+        at: at(10),
+        status: "completed",
+        requests: 2,
+        usage: usage(86, 2728, 2240),
+        session_usage: usage(86, 2728, 2240),
+      },
+    ];
+  }
+  return [...events.map((e) => JSON.stringify(e)), "[DONE]"].map((d) => `data: ${d}\n\n`).join("");
 }

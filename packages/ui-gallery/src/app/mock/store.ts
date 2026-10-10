@@ -214,6 +214,7 @@ export class DemoStore {
       projectId: IDS.project,
       agentId,
       sessionId: row.sessionId,
+      source: row.source ?? "user",
     });
     return row;
   }

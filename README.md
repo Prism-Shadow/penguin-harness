@@ -105,9 +105,9 @@ The same commands can drive your own Chrome instead, through the PenguinHarness 
 | GLM 5.3          | Z.AI, OpenRouter, TokenDance                                                                     |
 | Hunyuan 3        | OpenRouter                                                                                       |
 | Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance                                      |
-| GPT 5.6          | OpenAI, OpenRouter                                                                               |
-| Gemini 3.7 Flash | Google Gemini, OpenRouter                                                                        |
-| Claude 5         | Anthropic, OpenRouter                                                                            |
+| GPT 6.1          | OpenAI, OpenRouter                                                                               |
+| Gemini 3.8 Flash | Google Gemini, OpenRouter                                                                        |
+| Claude 5.5       | Anthropic, OpenRouter                                                                            |
 | Inkling          | OpenRouter, Fireworks AI                                                                         |
 
 Each family's latest generation only — the app's **Models** page lists every built-in preset, and any OpenAI-protocol endpoint works too: pick a preset, or point a custom endpoint at any of the 1000+ online and local models.
@@ -127,7 +127,7 @@ Start with the desktop app, or install the command line on a workstation or serv
 
 - **🖥️ Desktop app** — a double-click install: it embeds the server and opens already signed in, no terminal involved.
 - **⌨️ CLI** — a one-line installer (or npm / offline package) puts the `penguin` command on the machine; `penguin web` then serves the full Web experience in your browser at `http://127.0.0.1:7364` (multi-session chat, agent / skill / model management, usage stats, Trace observability, evaluation center). The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
-- **🧩 Chrome extension** (optional) — `penguin-browser-extension.zip` on each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases) lets agents drive the tabs you hand them in your own Chrome: load it unpacked at `chrome://extensions`, then pair it from the Browser panel.
+- **🧩 Chrome extension** (optional) — [PenguinHarness Browser](https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp) lets agents drive the tabs you hand them in your own Chrome: install it from the Chrome Web Store, then pair it from the Browser panel. Where the store is out of reach, load `penguin-browser-extension.zip` from any [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases) unpacked at `chrome://extensions`.
 
 > [!NOTE]
 > On a CLI install, the server prints a first-login link as a framed notice on every start until a password is set — open it to claim the built-in `admin` account and choose one. Models are configured on the in-app **Models** page.

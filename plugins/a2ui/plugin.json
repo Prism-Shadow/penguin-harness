@@ -1,8 +1,13 @@
 {
-  "description": "Rich reply blocks for readable output: a choice, a form, a procedure in steps, a callout or a Mermaid diagram written as a fenced block inside an ordinary Markdown reply, rendered by the Web App with its own components and shown as plain text everywhere else; a pick fills the composer as ordinary text. Comes with STE-style writing rules for Chinese and English and a checker script that validates every block, scores the draft and prints a self-review rubric before the reply is sent.",
-  "description_zh": "让模型输出更易读的富文本组件：选项、表单、分步操作、提示框和 Mermaid 图，以围栏代码块的形式写在普通 Markdown 回复里，Web App 用自己的组件渲染，其他界面显示为纯文本；用户的选择以普通文字填入输入框。附带中英文的 STE 风格写作规则，以及一个检查脚本：发送前校验每个组件、给草稿打分并打印自审清单。",
-  "short_description": "Choices, forms, steps, callouts and diagrams in replies, with a checker.",
-  "short_description_zh": "在回复里使用选项、表单、步骤、提示框和图表，并自带检查脚本。",
-  "version": "2026.10.03.1",
-  "category": "office-productivity"
+  "description": "Rich reply blocks for readable output: a choice, a form, a procedure in steps, a callout, a Mermaid diagram, and glanceable widgets (a weather card, a live clock or countdown, and a dashboard of gauges for a system snapshot, a quota or a job's progress), each written as a fenced block inside an ordinary Markdown reply, rendered by the Web App with its own components and shown as plain text everywhere else; a pick fills the composer as ordinary text. Comes with STE-style writing rules for Chinese and English, two scripts that turn a weather lookup and a system snapshot into ready-made blocks, and a checker script that validates every block, scores the draft and prints a self-review rubric before the reply is sent.",
+  "description_zh": "让模型输出更易读的富文本组件：选项、表单、分步操作、提示框、Mermaid 图，以及一眼可读的小组件（天气卡片、实时时钟与倒计时、用仪表展示系统快照、额度余量或任务进度的指标面板），以围栏代码块的形式写在普通 Markdown 回复里，Web App 用自己的组件渲染，其他界面显示为纯文本；用户的选择以普通文字填入输入框。附带中英文的 STE 风格写作规则、两个把天气查询和系统快照直接生成组件块的脚本，以及一个检查脚本：发送前校验每个组件、给草稿打分并打印自审清单。",
+  "short_description": "Choices, forms, steps, callouts, diagrams and widgets in replies, with a checker.",
+  "short_description_zh": "在回复里使用选项、表单、步骤、提示框、图表和小组件，并自带检查脚本。",
+  "version": "2026.10.09.1",
+  "category": "office-productivity",
+  "quick_start": {
+    "prompt": "Ask me which of three weekend plans I prefer as a choice block, then show the one I pick as a short procedure in steps.",
+    "prompt_zh": "用选项组件问我三个周末计划中更喜欢哪一个，再把我选中的那个写成一份简短的分步操作。",
+    "skills": ["a2ui"]
+  }
 }

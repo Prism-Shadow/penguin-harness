@@ -1,7 +1,8 @@
 /**
- * A Session's permission level, as the composer's button shows it: one colour for how much the
- * Agent may do on its own. Derived from the two knobs that decide it — the approval mode, and
- * the Session's sandbox policy — never stored.
+ * A Session's permission level, as the composer's button shows it — and each row of its menu,
+ * for the level that row's pick would set: one colour for how much the Agent may do on its own.
+ * Derived from the two knobs that decide it — the approval mode, and the Session's sandbox
+ * policy — never stored.
  *
  * - `off`: every tool call is denied.
  * - `read-only`: commands cannot write anywhere.
@@ -19,7 +20,10 @@ import type { Tone } from "./tone";
 
 export type PermissionLevel = "all" | "partial" | "read-only" | "off";
 
-export function permissionLevel(approval: ApprovalMode, sandbox: SessionSandbox): PermissionLevel {
+export function permissionLevel(
+  approval: ApprovalMode,
+  sandbox: Pick<SessionSandbox, "mode" | "network">,
+): PermissionLevel {
   if (approval === "deny-all") return "off";
   if (sandbox.mode === "read-only") return "read-only";
   if (
@@ -64,7 +68,8 @@ export const PERMISSION_LEVEL_GLYPH: Record<PermissionLevel, string> = {
  * cannot enforce. Only an explicit false from the server counts — one that does not report a
  * level is not second-guessed.
  */
-export type LevelBlock = "no-backend" | "unavailable" | "local-unsupported" | "none-unsupported";
+export type LevelBlock =
+  "no-backend" | "unavailable" | "local-unsupported" | "none-unsupported" | "mask-unsupported";
 
 /** The first enabled backend that is not in use, whose reason the composer shows, or null. */
 export function firstUnavailableBackend(
@@ -76,6 +81,17 @@ export function firstUnavailableBackend(
 /** The block for a level no mounted backend can enforce: why nothing is mounted. */
 function unmounted(sandbox: SessionSandbox): LevelBlock {
   return firstUnavailableBackend(sandbox) === null ? "no-backend" : "unavailable";
+}
+
+/**
+ * The block every level shares when the Session's policy masks paths (kept by every pick) and no
+ * mounted backend masks: each command would be refused, full access included. Only an explicit
+ * false counts, like the other flags.
+ */
+export function maskBlock(sandbox: SessionSandbox): LevelBlock | null {
+  if (sandbox.masksPaths !== true) return null;
+  if (sandbox.confinementSupported === false) return unmounted(sandbox);
+  return sandbox.maskPathsSupported === false ? "mask-unsupported" : null;
 }
 
 export function fsModeBlock(
@@ -268,6 +284,20 @@ export function permissionMenu(
 }
 
 /**
+ * The level a menu row would leave the Session at, which the row wears before its name — the
+ * mark the button takes once the row is picked: a preset's own three values, or (switch off) the
+ * approval mode over the policy the Session keeps.
+ */
+export function menuRowLevel(
+  row: PermissionMenuRow,
+  sandbox: Pick<SessionSandbox, "mode" | "network">,
+): PermissionLevel {
+  return row.kind === "preset"
+    ? permissionLevel(row.preset.approvalMode, row.preset)
+    : permissionLevel(row.mode, sandbox);
+}
+
+/**
  * Why a preset cannot be picked: a `LevelBlock` (this server cannot enforce it), or
  * `above-ceiling` — wider than the server's sandbox settings, which only an administrator may go
  * past (the server marks such a row `aboveCeiling` and refuses a non-admin's pick of it).
@@ -281,8 +311,8 @@ export interface PresetPicker {
 }
 
 /**
- * Why a preset cannot be picked, or null when it can: its mode's enforcement block, else its
- * network's, else — given who is picking — the ceiling, which holds a non-admin only and never on
+ * Why a preset cannot be picked, or null when it can: the masked paths' enforcement block, else
+ * its mode's, else its network's, else — given who is picking — the ceiling, which holds a non-admin only and never on
  * the preset the Session is already on (picking it changes nothing).
  */
 export function presetBlock(
@@ -291,7 +321,10 @@ export function presetBlock(
     Partial<Pick<SessionSandboxPreset, "id" | "aboveCeiling">>,
   picker?: PresetPicker,
 ): PresetBlock | null {
-  const enforce = fsModeBlock(sandbox, preset.mode) ?? networkBlock(sandbox, preset.network);
+  const enforce =
+    maskBlock(sandbox) ??
+    fsModeBlock(sandbox, preset.mode) ??
+    networkBlock(sandbox, preset.network);
   if (enforce !== null) return enforce;
   if (
     picker !== undefined &&

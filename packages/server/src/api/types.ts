@@ -16,6 +16,7 @@
 import type {
   CompactionMode,
   OmniMessage,
+  SessionSource,
   ToolCallPayload,
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
@@ -43,8 +44,11 @@ export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask"
 /** Session run status: idle / Task in progress / compacting. */
 export type SessionStatus = "idle" | "running" | "compacting";
 
-/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session / created by a Benchmark evaluation or optimization. */
-export type SessionSource = "schedule" | "subagent" | "benchmark";
+/**
+ * What kind of conversation a Session is (`user` / `api` / `schedule` / `subagent` / `cli`):
+ * core's type, the one definition, re-exported for the DTOs below.
+ */
+export type { SessionSource };
 
 // ---------------------------------------------------------------------------
 // Authentication and users
@@ -263,6 +267,12 @@ export interface ServerSettings {
    * kept, so turning it on again lets the extensions reconnect.
    */
   browserExtensionsEnabled: boolean;
+  /**
+   * Whether external programs may talk to Agents through the Agent API (default on). Off answers
+   * every `/api/amsp/v1` request 403 `agent_api_disabled` (a CORS preflight excepted); every
+   * Agent's API switch, approval mode and keys are kept, so turning it on again restores them.
+   */
+  agentApiEnabled: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -277,6 +287,8 @@ export interface ServerSettingsUpdateRequest {
   companyMode?: boolean;
   /** Chrome extension switch; see `ServerSettings.browserExtensionsEnabled`. */
   browserExtensionsEnabled?: boolean;
+  /** Agent API switch; see `ServerSettings.agentApiEnabled`. */
+  agentApiEnabled?: boolean;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -1244,6 +1256,8 @@ export interface AgentSummary {
   pluginUpdates: PluginUpdateRef[];
   /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
   memoryCount: number;
+  /** Whether the Agent's API tab switch is on (this server's web.db, see AgentApiSettings.enabled): the list card's API mark. */
+  apiEnabled: boolean;
 }
 
 export interface AgentsResponse {
@@ -1439,6 +1453,72 @@ export interface AgentConfigUpdateRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Agent API (/api/projects/:projectId/agents/:agentId/api; the stream itself is AMSP,
+// /api/amsp/v1, whose snake_case wire types live in @prismshadow/amsp)
+// ---------------------------------------------------------------------------
+
+/** One API key of an Agent, as listed: the secret itself is shown once, at creation, and never again. */
+export interface AgentApiKeyInfo {
+  keyId: string;
+  /** 1-64 characters, given by whoever created it. */
+  name: string;
+  /** The key's first 16 characters (`penguin_` + 8), enough to tell keys apart. */
+  prefix: string;
+  /** user_id of the Project owner who created it. */
+  createdBy: string;
+  createdAt: string;
+  /** Last run request that authenticated with it; null = never used. */
+  lastUsedAt: string | null;
+}
+
+/**
+ * One Agent's public API settings — this server's, kept in web.db, never in the Agent State or
+ * the Project file, so the Agent cannot expose itself or loosen its own approvals. An Agent
+ * never configured reads as disabled, keyed, allow-all, with no keys.
+ */
+export interface AgentApiSettings {
+  /** The API tab's switch; off = every AMSP request for this Agent is 404 `agent_not_found`. */
+  enabled: boolean;
+  /** Keyless access: a request without `Authorization` is accepted; off = 401 `unauthorized`. */
+  open: boolean;
+  /**
+   * The approval mode an API Session is created with. It is copied onto each API Session when
+   * that Session is created, and the Session's own mode is what every decision reads, so a
+   * change here applies to API Sessions created afterwards.
+   */
+  approvalMode: ApprovalMode;
+  keys: AgentApiKeyInfo[];
+}
+
+export interface AgentApiResponse {
+  api: AgentApiSettings;
+  /**
+   * The admin's server-wide switch (`ServerSettings.agentApiEnabled`), which only an admin can
+   * read through /api/admin/settings: off, every Agent's API is refused (403) whatever `api` says.
+   */
+  serverEnabled: boolean;
+}
+
+/** PUT body (owner only): every field optional, omitted fields keep their current value. */
+export interface AgentApiUpdateRequest {
+  enabled?: boolean;
+  open?: boolean;
+  approvalMode?: ApprovalMode;
+}
+
+/** POST …/api/keys body (owner only). */
+export interface AgentApiKeyCreateRequest {
+  /** 1-64 characters. */
+  name: string;
+}
+
+/** The one response that carries the secret (`penguin_` + 43 base64url characters); only its hash is stored. */
+export interface AgentApiKeyCreateResponse {
+  key: AgentApiKeyInfo;
+  secret: string;
+}
+
+// ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------
 
@@ -1593,6 +1673,19 @@ export interface SessionSandbox {
    * (400 `sandbox_unsupported`).
    */
   localNetworkSupported?: boolean;
+  /** Response only, ignored in requests: whether a backend here can enforce `masksPaths`. */
+  maskPathsSupported?: boolean;
+  /**
+   * Response only, ignored in requests: true when this policy hides paths (the Sandbox card's
+   * masked paths, kept by every pick). Where `maskPathsSupported` is false, every level then
+   * refuses every command, and the composer says so.
+   */
+  masksPaths?: boolean;
+  /**
+   * Response only, ignored in requests: the names of the sandbox backends in use here, which the
+   * composer names when a level is beyond what they enforce. Absent with none in use.
+   */
+  backendsInUse?: string[];
   /**
    * Response only, ignored in requests: the sandbox backends that are enabled here but failed
    * to load or failed their check (a WSL distro not set up, a wrong program path), each with
@@ -1682,7 +1775,16 @@ export interface SessionInfo {
   thinkingLevel?: ThinkingLevelName;
   /** Short title auto-generated by the model after the first turn; unset until generated (frontend shows "New Chat"). */
   title?: string;
-  /** Session source (for list badges/folders), derived from core session_meta — the single source of truth (not stored in the DB); unset for user-created sessions. */
+  /**
+   * What kind of conversation this is, read from core session_meta — the single source of
+   * truth (the DB stores no source). A `user` Session is an active row of the sidebar; `api`,
+   * `schedule`, `subagent` and `cli` file the row under its Background folder, marked with its
+   * source; a `company` Session is in no folder of the list at all — company mode's own views
+   * list it. A Trace head that records no source (written before it was required) reads as
+   * `company` for a row the organization runtime opened (`client: "org"`), else as `user`; so
+   * does such a row before its first run. Absent only while any other row is not yet
+   * classified (its Trace head has not been read yet), which renders as `user`.
+   */
   source?: SessionSource;
   createdAt: string;
   /**
@@ -1732,14 +1834,14 @@ export interface SessionInfo {
   /**
    * Which client opened the Session, as stored on the index row: "cli" from the CLI (a
    * Session adopted from a legacy CLI-direct Trace included), "org" from the organization
-   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "web"
-   * otherwise. Absent only on a row that
-   * predates the column, which reads as "web". Unlike {@link SessionInfo.orgId} — projected
-   * from the organization caches, so it disappears with the organization and is not read
-   * while company mode is off — this is a durable stamp on the row: development mode's list
-   * hides an "org" Session either way.
+   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "api"
+   * from an Agent API run (the only Sessions the API may continue), "web" otherwise. Absent
+   * only on a row that predates the column, which reads as "web". Unlike
+   * {@link SessionInfo.orgId} — projected from the organization caches, so it disappears with
+   * the organization and is not read while company mode is off — this is a durable stamp on
+   * the row: development mode's list hides an "org" Session either way.
    */
-  client?: "web" | "cli" | "org";
+  client?: "web" | "cli" | "org" | "api";
   /**
    * Background work the Session's loaded runtime still owns: command sessions running past
    * their yield window (`exec_command` promotions and `run_in_background` launches) and
@@ -1761,11 +1863,14 @@ export interface SessionBackgroundTasks {
 }
 
 /**
- * Session list category, the sidebar's five-way split applied server-side: archived wins
- * regardless of origin (archiving is an explicit user action), then the origin's bucket,
- * and a Session with no (or an unknown) source is `active` — user-created rows.
+ * Session list category, the sidebar's three-way split applied server-side: archived wins
+ * regardless of source (archiving is an explicit user action); otherwise a `user` Session (or
+ * one not yet classified) is `active`, and every other source is `background` — the one
+ * folder that holds what programs opened (API, scheduled, subagent and CLI Sessions). A
+ * `company` Session belongs to none of the three, archived or not: the list leaves it out of
+ * every category and every total.
  */
-export type SessionCategory = "active" | SessionSource | "archived";
+export type SessionCategory = "active" | "background" | "archived";
 
 /** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
 export type SessionCategoryCounts = Record<SessionCategory, number>;
@@ -1785,7 +1890,9 @@ export type SessionCategoryCounts = Record<SessionCategory, number>;
  *   `order=activity`, beside `offset`, without `limit`, or when not a parseable stamp and a
  *   valid id split at the first comma.
  * - `category`, `workspaceGroup`, `excludeOrg=1` filter before paging; `counts=1` adds the
- *   whole-list totals below, which no cursor or offset narrows.
+ *   whole-list totals below, which no cursor or offset narrows. A request with `category`,
+ *   `workspaceGroup` or `counts=1` leaves every `company` Session out of the page and the
+ *   totals (it is in no category); one with none of them serves every row.
  */
 export interface SessionsResponse {
   /**
@@ -1943,12 +2050,12 @@ export interface SessionCreateRequest {
    */
   client?: "web" | "cli" | "org";
   /**
-   * Marks the Session as created by a Benchmark evaluation or optimization (the Evaluation
-   * Center's Use flows, and the Test Sessions agent-evaluation launches through the CLI). Only
-   * this value is accepted from a client: `subagent` and `schedule` are written by the server
-   * itself. The Web App files such Sessions into the Evaluations folder of the session list.
+   * The Session's source, when it is not a person's conversation: only `cli` is accepted from
+   * a client (`penguin run` sends it); every other source is the server's own to write, and
+   * absent means `user`. The retired `benchmark` is still accepted, as `cli`, until 0.3.0, for
+   * an older CLI or Web App that still sends it.
    */
-  source?: "benchmark";
+  source?: "cli";
 }
 
 export interface SessionCreateResponse {
@@ -2962,6 +3069,15 @@ export type ServerEvent =
    * the user channels of the Project's owner and members, like `session_state`.
    */
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
+  /**
+   * A Session's count of tool calls waiting for a person's approval changed: a call was
+   * escalated (every call under always-ask, rw/unknown calls under read-only), answered, or
+   * denied by an interrupt. The count is the row's `pendingApprovalCount` as it stands after
+   * the change, zeros included, so a list moves its mark without refetching; the calls
+   * themselves are on the Session's own stream (`approval_request`, replayed on subscribe).
+   * Published to the user channels of the Project's owner and members, like `session_state`.
+   */
+  | { type: "session_approvals"; sessionId: string; count: number }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
   /**
@@ -2980,14 +3096,14 @@ export type ServerEvent =
    * A Session now exists. On the user channel for every creation — the CLI, another tab,
    * a schedule, an agent spawning a child — so the list learns about rows it did not make;
    * and on the parent Session's channel for a subagent, so a tab watching the parent run
-   * refreshes in place. `source` is absent for a user-created Session, as it is on the row.
+   * refreshes in place. `source` is what the new Session's meta records.
    */
   | {
       type: "session_created";
       projectId: string;
       agentId: string;
       sessionId: string;
-      source?: SessionSource;
+      source: SessionSource;
     }
   | ScheduleServerEvent
   | GoalServerEvent
@@ -4046,6 +4162,18 @@ export interface PluginItem {
   hooks: string[];
   /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
+  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`); absent = pre-select its first skill. */
+  quickStart?: QuickStartItem;
+}
+
+/** A quick start: a prompt pre-filled into a new-chat draft — never sent by the page. */
+export interface QuickStartItem {
+  prompt: string;
+  promptZh?: string;
+  /** Skills to pre-select (a library plugin's own). */
+  skills?: string[];
+  /** Open the draft in goal mode. */
+  goal?: boolean;
 }
 
 export interface PluginGroupItem {
@@ -5665,6 +5793,9 @@ export interface PluginConfigNotice {
   tone: "attention" | "muted" | "progress";
   text: string;
   textZh?: string;
+  /** More about the notice, disclosed under it on request; lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
 }
 
 /** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
@@ -5684,26 +5815,31 @@ export interface PluginConfigEntry {
   unavailable?: PluginConfigUnavailableDecl[];
   /**
    * For a group whose settings a backend plugin enforces (the sandbox): whether one that
-   * applies to this machine's OS is installed, and which package this OS defaults to. The card
+   * applies to this machine's OS is installed, and which packages this OS defaults to. The card
    * offers to install `recommended` when the group's switch is turned on and none is installed.
    * Asked per read, like the notices; the client never guesses the OS.
    */
   backend?: PluginConfigBackend;
 }
 
-/** Whether a backend that applies to this machine is installed, and this OS's default one. */
+/** Whether a backend that applies to this machine is installed, and this OS's default ones. */
 export interface PluginConfigBackend {
   /** A backend for this OS is installed: loaded, or installed and failing its check. */
   installed: boolean;
-  /** The npm package this OS defaults to; absent on an OS with no default backend. */
-  recommended?: string;
+  /**
+   * The npm packages this OS defaults to, installed together; absent on an OS with no default
+   * backend. Linux names two: bubblewrap, and sandbox-dsh, which confines files through
+   * Landlock where bubblewrap is refused.
+   */
+  recommended?: string[];
 }
 
-/** One enum option a settings group cannot honour on this machine, and why. */
+/** One enum option (or boolean position) a settings group cannot honour on this machine, and why. */
 export interface PluginConfigUnavailableDecl {
   field: string;
   /** A `table` field's column: the option is unavailable in every cell of that column. */
   column?: string;
+  /** An enum option, or a boolean field's position: "true" or "false". */
   value: string;
   reason: string;
   reasonZh?: string;

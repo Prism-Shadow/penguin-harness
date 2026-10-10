@@ -156,6 +156,8 @@ export const en: Strings = {
       "palette.toggle": "Command palette",
       "sessions.search": "Search sessions",
       "chat.new": "New chat",
+      "find.open": "Find in page",
+      "find.all": "Find in all areas",
       "sidebar.toggle": "Show or hide the sidebar",
       "dock.toggleRight": "Show or hide the right sidebar",
       "dock.toggleBottom": "Show or hide the bottom panel",
@@ -338,7 +340,10 @@ export const en: Strings = {
       "Install the PenguinHarness Browser extension and pair it, and agents can open and work in pages in your own Chrome, signed in as you are there.",
     pairTitle: "Connect your Chrome",
     pairStepInstall:
-      "Download the extension and unzip it. In Chrome, open chrome://extensions, turn on Developer mode, choose Load unpacked and pick the unzipped folder, then pin the extension to the toolbar.",
+      "Install the extension and pin it to the toolbar. The Chrome Web Store is the recommended source: Chrome keeps the extension up to date.",
+    pairStore: "Open the Chrome Web Store",
+    pairStepInstallZip:
+      "If the store does not open, download the zip and unzip it instead. In chrome://extensions, turn on Developer mode, choose Load unpacked and pick the unzipped folder.",
     pairDownload: "Download the extension (zip)",
     pairStepOpen:
       "Click the PenguinHarness Browser icon in the toolbar and choose Settings to open its pairing page.",
@@ -459,6 +464,14 @@ export const en: Strings = {
     chromeExtensionTitle: "Chrome extension",
     chromeExtensionInfo:
       "When on, every user of this server can pair their own Chrome for agents to work in. When off, every extension disconnects; pairings are kept.",
+    agentApiTitle: "Agent API",
+    agentApiToggle: "Allow the Agent API",
+    agentApiHint:
+      "Off refuses every agent's API requests; per-agent switches, approval modes and keys are kept.",
+    agentApiOffTitle: "Turn the Agent API off?",
+    agentApiOffConfirm:
+      "Every agent's API on this server refuses requests at once, and the programs calling them fail until it is on again. Per-agent switches, approval modes and keys are kept.",
+    agentApiOff: "Turn off",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -521,6 +534,11 @@ export const en: Strings = {
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) =>
       `${title} (not supported: ${reason})`,
+    /** A switch one of whose positions this machine cannot honour, under the switch. */
+    pluginPositionUnavailable: (position: string, reason: string) =>
+      `${position} is not supported here: ${reason}`,
+    pluginPositionOn: "On",
+    pluginPositionOff: "Off",
     pluginsInfo:
       "The options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here.",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
@@ -577,8 +595,9 @@ export const en: Strings = {
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
       title: "Install a sandbox backend",
-      body: (machine: string, pkg: string) =>
-        `${machine} has no sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkg}?`,
+      body: (machine: string, pkgs: readonly string[]) =>
+        `${machine} has no sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkgs.join(" and ")}?` +
+        (pkgs.length > 1 ? " Where both work, the one that confines more is used." : ""),
       cost: "Installing reloads the server's plugins, which stops agent runs in progress in every Project. The switch stays on either way.",
       install: "Install",
       installing: "Installing…",
@@ -934,6 +953,31 @@ export const en: Strings = {
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
+  },
+
+  find: {
+    placeholder: "Find in this area…",
+    next: "Next match",
+    prev: "Previous match",
+    close: "Close",
+    caseSensitive: "Match case",
+    /** Counter line when the query matches nothing. */
+    noResults: "No results",
+    regionConversation: "Conversation",
+    regionSubagent: "Subagent",
+    regionSessions: "Sessions",
+    regionFiles: "Files",
+    /** Scope button while the search is limited to one region: widen it to everything on screen. */
+    scopeAll: "All areas",
+    /** Scope button while searching everything: narrow it back to `region`. */
+    scopeThisRegion: (region: string): string => `${region} only`,
+    /** The region's own notice that it holds content this search could not reach. */
+    loadMore: "Earlier content is not loaded",
+    loadMoreAction: "Load and keep searching",
+    /** `count` hits past the rows the result list shows. */
+    moreRows: (count: number): string => `${count} more not shown`,
+    /** Name of the aggregated result list (read out when it is announced). */
+    resultsLabel: "Find results",
   },
 
   common: {
@@ -1309,6 +1353,7 @@ export const en: Strings = {
     tabHooks: "Hooks",
     tabVault: "Vault",
     tabSchedules: "Schedules",
+    tabApi: "API",
     stateDir: "State path",
     copyStateDir: "Copy State path",
     agentsMd: "AGENTS.md",
@@ -1509,6 +1554,64 @@ export const en: Strings = {
         : `Kernel updated to ${version}; every tab was already current or kept as customized`,
     kernelUpdateKeptIntro: "Kept whole because customized:",
     kernelListSeparator: ", ",
+    apiEnable: "Enable API access",
+    apiEnableHint:
+      "External programs can talk to this agent with the URL, a key and the Agent ID; the conversations appear in the sidebar's Background folder.",
+    apiOwnerOnly: "Only the Project owner can change these settings.",
+    apiAdminOff:
+      "An admin has turned the Agent API off for this server: every API request is refused, and the settings and keys here are kept.",
+    apiApprovalMode: "Approval mode for API conversations",
+    apiApprovalModeHint:
+      "Applies to API conversations created from now on; when a mode asks, the request goes to the caller and can also be answered here.",
+    apiConnection: "Connection",
+    apiBaseUrl: "Base URL",
+    apiAgentId: "Agent ID",
+    apiCopy: (what: string): string => `Copy ${what}`,
+    apiKeys: "Keys",
+    apiKeysEmpty: "No keys yet.",
+    apiNewKey: "New key",
+    apiKeyName: "Key name",
+    apiKeyCreated: "Created",
+    apiKeyLastUsed: "Last used",
+    apiKeyNever: "never",
+    apiKeyShownOnce: "This key is shown once; copy it now.",
+    apiCopySecret: "Copy key",
+    apiKeyDone: "Done",
+    apiDeleteKey: "Delete key",
+    apiDeleteKeyBody: (name: string): string =>
+      `Delete the key "${name}"? Programs using it are refused at once; this cannot be undone.`,
+    apiOpen: "Allow keyless access",
+    apiOpenHint:
+      "Anything that can reach this address can talk to the agent; recommended for loopback use only.",
+    apiExamples: "Examples",
+    apiOpenTitle: "Allow keyless access?",
+    apiOpenBody:
+      "Once on, anything that can reach this server's address can talk to this agent without a key, on the Project's models and credentials, with tools run under the API conversations' approval mode. Turn it on only for a server that listens on loopback.",
+    apiOpenConfirm: "Allow anyway",
+    apiOffTitle: "Turn API access off?",
+    apiOffBody:
+      "External programs can no longer talk to this agent. The approval mode and the keys are kept and work again once it is back on.",
+    apiOff: "Turn off",
+    apiOn: "API access on",
+    apiTry: "Try it",
+    apiTryHint:
+      "Runs the route a program calls, your sign-in in place of a key, and shows what it receives; filed under Background.",
+    apiTryExample: "What time is it now?",
+    apiTryRun: "Run",
+    apiTryStop: "Stop",
+    apiTryFollowUp: "Continue this conversation…",
+    apiTryNewSession: "New conversation",
+    apiTryRendered: "Rendered",
+    apiTryRaw: "Raw",
+    apiTryCopyRaw: "Copy the raw lines",
+    apiTryEmpty: "The stream shows here once you run.",
+    apiTryStatus: "Status",
+    apiTryRequests: "Requests",
+    apiTryTokens: "Tokens (output / total)",
+    apiTryCacheRead: "Cache read",
+    apiTryCacheWrite: "Cache write",
+    apiTryElapsed: "Elapsed",
+    apiTryStreamBroken: "The stream ended before run.done.",
   },
 
   models: {
@@ -1657,6 +1760,8 @@ export const en: Strings = {
       "openai-responses": "OpenAI Responses",
       "ant-messages": "Anthropic Messages",
       "openai-chat": "OpenAI Chat Completions",
+      "google-genai": "Google GenAI (generateContent)",
+      mmsp: "MMSP",
     } as Record<string, string | undefined>,
     protocolTriggerTitle: (name: string): string => `Protocol: ${name}. Click to change it.`,
     /** Suffix placeholder while no protocol is selected — never a protocol name, so nothing looks pre-chosen. */
@@ -1674,7 +1779,7 @@ export const en: Strings = {
     /** Save-time detection came back empty: the save proceeds on the compatible client. */
     detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
     addProtocolHintDetect:
-      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or press Detect to probe the endpoint — saving without one detects it first",
+      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions / Google GenAI / MMSP), or press Detect to probe the endpoint for one of the first three — saving without one detects it first",
     vision: "Vision support",
     /** Detect action beside the vision switch. */
     detectVision: "Detect",
@@ -1758,6 +1863,14 @@ export const en: Strings = {
     getModelIds: "Get model IDs",
     modelList: "Model list",
     groupSettings: "Settings",
+    groupMenuTitle: (sort: string): string => `Settings · Sort: ${sort}`,
+    sortHeading: "Sort",
+    sortModes: {
+      "price-asc": "Price (low to high)",
+      "price-desc": "Price (high to low)",
+      name: "Name (A→Z)",
+    },
+    groupSettingsEntry: "Group settings…",
     groupSettingsTitle: (label: string): string => `${label} group settings`,
     clearGroupKey: "Clear the group key",
     baseUrlNone: "Not set: the client's default endpoint",
@@ -2306,8 +2419,12 @@ export const en: Strings = {
     detailHooks: "Hooks",
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
-    /** Title on a disabled quick-start button: it pre-selects one of the plugin's skills on the currently selected agent, so the plugin has to be installed there first. */
-    quickInvokeNeedsInstall: "Install this plugin on the current agent first to quick-start",
+    /** Quick start's tooltip: what pressing it does, and what it does not. */
+    quickStartHint:
+      "Quick start: opens a draft with a demo of this plugin — nothing runs until you send it",
+    quickStartInstallTitle: (plugin: string, agent: string) =>
+      `Install ${plugin} on ${agent} to quick-start?`,
+    quickStartAfterInstall: "Then a draft with its demo opens; nothing runs until you send it.",
     installedToast: (plugin: string, agent: string): string => `Installed ${plugin} to ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string =>
       `Uninstalled ${plugin} from ${agent}`,
@@ -2491,8 +2608,6 @@ export const en: Strings = {
   },
 
   chat: {
-    thinkingLevelChangeNote:
-      "Applies right away. Changing it invalidates the model's cached context — compacting first is recommended.",
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",
@@ -2874,7 +2989,11 @@ Scenarios:
       notInstalled: "Not installed",
       noBackend:
         "No sandbox backend is installed on this server, so commands cannot be confined. An administrator can enable this platform's backend on the Plugins page (More…).",
-      noNetworkUnsupported: "No sandbox backend on this machine can cut the network off",
+      /** `backends`: the backends in use, as the server names them (absent from an older server). */
+      noNetworkUnsupported: (backends?: string) =>
+        `The sandbox on this machine confines files only${backends !== undefined ? ` (${backends} does not isolate the network)` : ""}, so it cannot cut the network off`,
+      maskUnsupported: (backends?: string) =>
+        `This session hides masked paths from its commands, and no sandbox backend on this machine can${backends !== undefined ? ` (${backends} cannot mask paths)` : ""}, so every command would be refused. An administrator can clear the masked paths on the Sandbox card (More…).`,
       /** The short note beside a level whose enabled backend failed its check. */
       notAvailable: "Unavailable",
       /** The short note beside a preset wider than the server's sandbox settings, for a non-admin. */
@@ -3091,6 +3210,10 @@ Scenarios:
     replaceTyped: "Replace",
     replaceTypedBody:
       "Replace what you typed with this prompt? Your text in the composer is cleared.",
+    /** A choice's "Other…" about to empty the composer of text the user typed. */
+    clearTypedTitle: "Clear composer text",
+    clearTyped: "Clear",
+    clearTypedBody: "Clear what you typed to write your own answer?",
     statTokens: "Total Tokens",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "Total Tokens",
@@ -3295,6 +3418,7 @@ Scenarios:
     copyCode: "Copy code",
     copyReply: "Copy reply",
     a2ui: {
+      lang: "en",
       fill: "Fill in",
       other: "Other…",
       recommended: "Recommended",
@@ -3306,6 +3430,45 @@ Scenarios:
       cannotShow: (reason: string) => `This component can't be shown: ${reason}`,
       diagram: "Diagram",
       showSource: "Show source",
+      stepUp: "Increase",
+      stepDown: "Decrease",
+      conditions: {
+        clear: "Clear",
+        "partly-cloudy": "Partly cloudy",
+        cloudy: "Overcast",
+        fog: "Fog",
+        drizzle: "Drizzle",
+        rain: "Rain",
+        "heavy-rain": "Heavy rain",
+        thunder: "Thunderstorm",
+        snow: "Snow",
+        sleet: "Sleet",
+        wind: "Windy",
+      },
+      asOf: (time: string) => `As of ${time}`,
+      source: (name: string) => `Source: ${name}`,
+      feelsLike: "Feels like",
+      humidity: "Humidity",
+      wind: "Wind",
+      precipitation: "Precipitation",
+      high: "High",
+      low: "Low",
+      hourly: "Next hours",
+      daily: "Coming days",
+      today: "Today",
+      weather: "Weather",
+      clock: "Clock",
+      countdown: "Countdown",
+      metrics: "Metrics",
+      localTime: "Local time",
+      countdownDone: "Time's up",
+      unitDays: "days",
+      unitHours: "hours",
+      unitMinutes: "min",
+      unitSeconds: "sec",
+      done: "Done",
+      deltaUp: "up",
+      deltaDown: "down",
     },
     forkSession: "Fork chat from here",
     forkSessionConfirmBody:
@@ -3340,10 +3503,14 @@ Scenarios:
     loadMoreSessions: "Load more chats",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
-      subagent: (n: number) => `Subagents (${n})`,
-      schedule: (n: number) => `Scheduled (${n})`,
-      benchmark: (n: number) => `Evaluations (${n})`,
+      background: (n: number) => `Background (${n})`,
       archived: (n: number) => `Archived (${n})`,
+    },
+    sessionSource: {
+      api: "API",
+      schedule: "Scheduled",
+      subagent: "Subagent",
+      cli: "CLI",
     },
     /** Tooltip of a folder-only group's header (nothing active of its own): what its folders hold, plus the Workspace path where the header has one. */
     folderOnlyGroup: (n: number, path?: string) =>
@@ -4039,6 +4206,8 @@ Scenarios:
     colCase: "Case",
     colRun: "Run",
     colSession: "Session",
+    /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
+    copyTrialName: "Copy Harbor trial name",
     askAi: "Ask AI",
     evaluationDetailTitle: (time: string): string => `Evaluation · ${time}`,
     askEvaluationTitle: "Ask AI about this evaluation",
@@ -4247,7 +4416,7 @@ Scenarios:
       "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
-      "The model that dispatches and totals the runs, the Project's default model unless changed; the tested agent uses the model it is configured with, which is not changed here",
+      "The model this conversation runs on, the Project's default model unless changed; the tested agent is evaluated on this same model, at the thinking level it is configured with",
     evaluateRunsHint:
       "How many times every case runs, averaged; defaults to the Benchmark's configured count",
     evaluateNoteField: "Note",
@@ -4258,8 +4427,10 @@ Scenarios:
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
       `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
       `- runs: \`${p.runs}\`\n\n` +
-      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned subagent per matrix cell (omit `agent_id`), and say in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
-      "the evaluation runtime is the model and thinking level that tested agent is configured with right now. Require every returned result to agree on " +
+      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned subagent per matrix cell (omit `agent_id`), and say in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill. " +
+      "The tested model is this conversation's own: read `Provider` and `Model ID` from your Environment once, before the first `run_subagent`, and pass them as `provider` and `model_id` in every request. " +
+      "An agent stores no model, so look for none in the tested agent's files, the Project configuration or the server; if your Environment lacks either line, stop and ask me. " +
+      "The thinking level is the one the tested agent is configured with. Require every returned result to agree on " +
       "`agent_id`, `provider`, `model_id` and `thinking_level`, and stop rather than merge two labels into one record. Average the runs per case and the cases " +
       "per evaluation as the scoreboard contract specifies, then append exactly ONE evaluation to `scoreboard.yaml`, labelled with `agent_id`, `version`, " +
       "`provider` / `model_id` and `thinking_level`. Change neither the tested agent nor the Benchmark. " +
