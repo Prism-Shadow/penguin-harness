@@ -74,7 +74,7 @@ import { SettingsDialog } from "../settings/settings-dialog";
 import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
-import { StdioInstallBody } from "./plugin-mcp";
+import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
 import {
   PLUGIN_GROUP_BYS,
@@ -885,6 +885,13 @@ export function PluginsPage() {
                 </li>
               ))}
             </ul>
+            {/* The reinstalls write each plugin's stdio servers again: what they run here is
+                said before they do, as a single install says it. */}
+            <StdioDisclosure
+              plugins={(groups ?? [])
+                .flatMap((group) => group.plugins)
+                .filter((plugin) => pendingBulk.plugins.includes(plugin.name))}
+            />
           </div>
         </ConfirmModal>
       )}

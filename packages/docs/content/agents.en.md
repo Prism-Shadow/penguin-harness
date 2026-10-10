@@ -257,7 +257,7 @@ A row may also show an icon for a server that cannot connect yet. A conversation
 
 ### Test MCP servers
 
-1. In the **MCP Servers** section, select **Test connection**.
+1. In the **MCP Servers** section, select **Test all** in the table's header.
 2. Select **Start test**.
 
 PenguinHarness connects to each server in turn and discovers its tools. Nothing is saved. Each row shows the number of tools and the time taken, or **Connection failed** with the reason. References to the vault are filled in first; a server whose keys the vault lacks fails with their names, without a connection attempt.

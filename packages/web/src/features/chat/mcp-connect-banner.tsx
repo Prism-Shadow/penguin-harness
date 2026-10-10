@@ -10,7 +10,10 @@
  * shows that server's tool list, or the full failure detail for a server that could not
  * connect (non-fatal either way, matching core's warn-and-skip stance). A server that was not
  * contacted at all — the Agent's vault lacks a key it needs, or it needs an OAuth sign-in —
- * reads as waiting on the user rather than as a failed connection, with the keys in its detail.
+ * reads as waiting on the user rather than as a failed connection, with the keys in its detail:
+ * its row's mark is the hourglass, and the header names it apart from the failed servers and
+ * stays settled rather than failed — an Agent with such a server shows the row at the start of
+ * every conversation, and a red mark there would be an alarm about nothing that went wrong.
  */
 import { ActivityGroup, DisclosureRow, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -78,7 +81,7 @@ function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: Mcp
   return (
     <DisclosureRow
       sticky
-      activity={{ kind: "event", state: failed ? "error" : "done" }}
+      activity={{ kind: "event", state: failed && !skipped ? "error" : "done" }}
       icon={<StatusIcon state={skipped ? "waiting" : failed ? "failed" : "done"} size="sm" />}
       // No label: the server's name is a detail, so no theme recases it.
       trailing={
@@ -114,10 +117,11 @@ export function McpConnectBanner({ item }: { item: McpConnectItem }) {
       />
     );
   }
+  // A server waiting on the user is named in the detail, not counted as a failure.
   const failed = item.aborted || (item.failed?.length ?? 0) > 0;
   const detail = item.aborted
     ? S.chat.mcpConnectAborted
-    : S.chat.mcpConnectResult(item.toolCount ?? 0, item.failed ?? []);
+    : S.chat.mcpConnectResult(item.toolCount ?? 0, item.failed ?? [], item.waiting ?? []);
   const results = item.results ?? [];
   const tools = item.tools ?? [];
   const serverNames = results.map((r) => r.server);

@@ -385,7 +385,10 @@ export function McpServersSection({
             {/* Bulk-test badge column appears only once results exist (no headline). */}
             {showBadges && <TableHeaderCell />}
             {/* Bulk test lives in the table's own header bar, over the actions column: a
-                tighter cell than a column name's, so the button does not heighten the bar. */}
+                tighter cell than a column name's, so the button does not heighten the bar. It
+                tests every row, so it says so — with the plug glyph and "Test all" — rather than
+                reading as the title of a column whose rows carry no test of their own (a single
+                server is tested from its edit dialog). */}
             <th scope="col" className="px-3 py-1 text-right font-normal whitespace-nowrap">
               <Button
                 size="sm"
@@ -393,7 +396,8 @@ export function McpServersSection({
                 disabled={busy || testAllRunning}
                 onClick={() => setTestAllOpen(true)}
               >
-                {testAllRunning ? S.agent.mcpTestPending : S.agent.mcpTest}
+                <GlyphIcon d={ICONS.plug} size={ICON_SIZE.iconButton} />
+                {testAllRunning ? S.agent.mcpTestPending : S.agent.mcpTestAll}
               </Button>
             </th>
           </TableHead>

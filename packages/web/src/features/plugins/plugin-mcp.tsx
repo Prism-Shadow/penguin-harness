@@ -155,25 +155,55 @@ export function PluginMcpSection({ servers }: { servers: readonly PluginMcpServe
 }
 
 /**
- * What installing a plugin with a stdio server says before it runs: the question, when the
- * confirm is this one's own (the compact confirm card renders no title, so the body asks), then
- * each stdio server with the exact command it runs on this server whenever a session of the
- * Agent starts.
+ * What installing a plugin with a stdio server says before it runs: a lead line — the question,
+ * when the confirm is this one's own (the compact confirm card renders no title, so the body
+ * asks), or the plugin's title where several plugins are listed — then each stdio server with
+ * the exact command it runs on this server whenever a session of the Agent starts.
  */
 export function StdioInstallBody({
   plugin,
-  question,
+  lead,
 }: {
   plugin: Pick<PluginItem, "mcpServers">;
-  question?: string;
+  lead?: string;
 }) {
   return (
     <div className="space-y-2 text-sm">
-      {question !== undefined && <p className="font-medium">{question}</p>}
+      {lead !== undefined && <p className="font-medium">{lead}</p>}
       {stdioServers(plugin).map((server) => (
         <p key={server.name} className="break-words text-fg-muted">
           {S.plugins.installStdioBody(server.name, server.target)}
         </p>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * What installing several plugins at once runs on this server — an update of every outdated
+ * plugin, a new Agent's seed plugins: each plugin that carries a stdio server, under its title,
+ * with the command each of those servers runs whenever a session of the Agent starts. Nothing
+ * when none carries one.
+ */
+export function StdioDisclosure({
+  plugins,
+  className = "",
+}: {
+  plugins: ReadonlyArray<Pick<PluginItem, "name" | "title" | "titleZh" | "mcpServers">>;
+  /** Spacing from what precedes it; nothing is rendered, spacing included, when no plugin runs a command. */
+  className?: string;
+}) {
+  const { locale } = useLocale();
+  const running = plugins.filter((plugin) => stdioServers(plugin).length > 0);
+  if (running.length === 0) return null;
+  return (
+    <div className={`space-y-3 ${className}`}>
+      {running.map((plugin) => (
+        <StdioInstallBody
+          key={plugin.name}
+          plugin={plugin}
+          lead={localizedText(locale, plugin.title || plugin.name, plugin.titleZh)}
+        />
       ))}
     </div>
   );

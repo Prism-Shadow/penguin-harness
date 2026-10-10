@@ -422,6 +422,8 @@ export interface McpConnectItem {
   tools?: McpToolSummary[];
   /** Servers that failed to connect (empty list omitted); reasons live in `results`. */
   failed?: string[];
+  /** Servers not contacted because they wait on the user — a vault key, a sign-in (empty list omitted); reasons live in `results`. */
+  waiting?: string[];
   /** The user aborted the run mid-connect (a fresh connect starts on the next send). */
   aborted?: boolean;
 }
@@ -1721,10 +1723,16 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           ...(r.error_code !== undefined ? { errorCode: r.error_code } : {}),
         };
       });
+      // A server skipped before any contact waits on the user (a vault key, a sign-in): named
+      // apart from the servers that failed to connect, so the row does not read as a failure.
+      const waits = (r: (typeof p.results)[number]) =>
+        r.error_code === "mcp_needs_setup" || r.error_code === "mcp_sign_in_required";
       const failedResults = p.results.filter(
-        (r) => r.status === "fatal" || (r.status as string) === "failed",
+        (r) => (r.status === "fatal" || (r.status as string) === "failed") && !waits(r),
       );
       if (failedResults.length > 0) item.failed = failedResults.map((r) => r.server);
+      const waitingResults = p.results.filter(waits);
+      if (waitingResults.length > 0) item.waiting = waitingResults.map((r) => r.server);
       return;
     }
     case "tool_list_ready": {

@@ -1295,8 +1295,11 @@ export const zh = {
     createPlugins: "插件",
     createPluginsPlaceholder: "未选择插件",
     createPluginsPicked: (n: number): string => `已选 ${n} 个插件`,
-    createPluginsHint: "创建时安装到该 Agent（技能与钩子包），之后可在其「技能」「钩子」标签页增删",
+    createPluginsHint:
+      "创建时安装到该 Agent（技能、钩子包与 MCP 服务器），之后可在其「技能」「钩子」「工具」标签页增删",
     createPluginsEmpty: "插件库暂无可安装的插件",
+    /** The confirmation a picked plugin's stdio MCP server asks for before the Agent is created: the question; the commands follow it. */
+    createStdioQuestion: (agent: string): string => `创建 ${agent}？`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
     createSkillsPlaceholder: "未选择技能",
     createSkillsPicked: (n: number): string => `已选 ${n} 个技能`,
@@ -1508,6 +1511,8 @@ export const zh = {
     mcpNumberInvalid: "必须是 > 0 的整数",
     mcpDuplicateName: "同名 Server 已存在",
     mcpTest: "测试连接",
+    /** The MCP table header's button: tests every server in turn (a single one is tested from its edit dialog). */
+    mcpTestAll: "全部测试",
     mcpTesting: "测试中…",
     mcpTestOk: (toolCount: number, latencyMs?: number): string => {
       const timing = latencyMs !== undefined ? `（${(latencyMs / 1000).toFixed(1)}s）` : "";
@@ -3538,11 +3543,14 @@ Benchmark：
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
     mcpConnectTitle: "MCP 连接",
     mcpServerList: (servers: string[]): string => servers.join("、"),
-    /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
-    mcpConnectResult: (toolCount: number, failed: string[]): string => {
+    /** One-line result detail: tool count, plus the NAMES of failed servers and of servers waiting on the user for a vault value or a sign-in (reasons live in the expanded server groups). */
+    mcpConnectResult: (toolCount: number, failed: string[], waiting: string[]): string => {
       const parts: string[] = [];
-      if (toolCount > 0 || failed.length === 0) parts.push(`发现 ${toolCount} 个工具`);
+      if (toolCount > 0 || (failed.length === 0 && waiting.length === 0)) {
+        parts.push(`发现 ${toolCount} 个工具`);
+      }
       if (failed.length > 0) parts.push(`不可用：${failed.join("、")}`);
+      if (waiting.length > 0) parts.push(`待设置：${waiting.join("、")}`);
       return parts.join("；");
     },
     /** Per-server group row meta inside the expanded connect row. */

@@ -34,7 +34,9 @@
  * - A plugin's MCP servers: the dialog lists each with its transport and target, a mark naming
  *   the values it needs (by their labels) and one saying it needs a sign-in; a stdio server's
  *   mark names the command it runs on this server.
- * - Installing a plugin with a stdio server asks first, and the question shows the command.
+ * - Installing a plugin with a stdio server asks first, and the question shows the command; an
+ *   install of several plugins at once (a bulk update, a new Agent's plugins) names each plugin
+ *   that runs one, with its commands.
  * - In Manage installs, an Agent whose copy waits for vault values says which; its owner gets
  *   Set up, a member is told the owner sets them. Saving writes the vault with every existing
  *   key kept, the new values added, an empty field left out.
@@ -59,7 +61,11 @@ import {
   pluginArchiveUrl,
   type PluginCardProps,
 } from "../src/features/plugins/plugin-card";
-import { StdioInstallBody, setUpVaultEntries } from "../src/features/plugins/plugin-mcp";
+import {
+  StdioDisclosure,
+  StdioInstallBody,
+  setUpVaultEntries,
+} from "../src/features/plugins/plugin-mcp";
 import {
   PluginDetailSections,
   type PluginDetailHead,
@@ -576,7 +582,7 @@ describe("a plugin's MCP servers", () => {
     const html = text(
       inLocale(StdioInstallBody, {
         plugin: MAIL,
-        question: en.plugins.installStdioTitle("mail", "General Agent"),
+        lead: en.plugins.installStdioTitle("mail", "General Agent"),
       }),
     );
     expect(html).toContain("Install mail on General Agent?");
@@ -584,6 +590,18 @@ describe("a plugin's MCP servers", () => {
       en.plugins.installStdioBody("mail-local", "node ${PLUGIN_ROOT}/server.mjs"),
     );
     expect(html).not.toContain("https://mail.example.com/mcp");
+  });
+
+  it("names the commands an install of several plugins runs here under each plugin's title, and nothing for plugins without one", () => {
+    const html = text(
+      inLocale(StdioDisclosure, { plugins: [LIBRARY, { ...MAIL, title: "Mail tools" }] }),
+    );
+    expect(html).toContain("Mail tools");
+    expect(html).toContain(
+      en.plugins.installStdioBody("mail-local", "node ${PLUGIN_ROOT}/server.mjs"),
+    );
+    expect(html).not.toContain("data-analysis");
+    expect(inLocale(StdioDisclosure, { plugins: [LIBRARY] })).toBe("");
   });
 
   it("names the values an Agent's copy waits for, and offers its owner Set up", () => {

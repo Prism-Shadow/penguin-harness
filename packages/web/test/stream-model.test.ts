@@ -14,7 +14,8 @@
  * - A compaction renders one banner: its summary and thinking stream onto it, each body
  *   section is timed over the window it shows itself running (retries included), history
  *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
- * - The MCP connect row sums tools, keeps per-server outcomes and its wall time.
+ * - The MCP connect row sums tools, keeps per-server outcomes and its wall time, and names a
+ *   server skipped for a vault key or a sign-in as waiting rather than failed.
  * - Retries render one ladder line per streak, with their countdown inputs, settling as
  *   gave-up on abort, exhaustion or a new Task; request events inside a compaction do not.
  * - Subagent output routes into the nearest approved, unfinished run_subagent card, one hop
@@ -926,6 +927,44 @@ describe("approvals and events", () => {
         error: "spawn nope ENOENT",
         errorCode: "connect_failed",
       },
+    ]);
+  });
+
+  it("mcp connect row: a server skipped for a vault key or a sign-in is named as waiting, not as failed", () => {
+    const m = createStreamModel();
+    pushMessage(m, mcpConnectBegin(["fx", "mail", "cf"]));
+    pushMessage(
+      m,
+      mcpConnectEnd({
+        status: "fatal",
+        results: [
+          { server: "fx", transport: "stdio", status: "completed", duration_ms: 90, tools: 1 },
+          {
+            server: "mail",
+            transport: "http",
+            status: "fatal",
+            duration_ms: 0,
+            error_code: "mcp_sign_in_required",
+            error_message: "requires OAuth sign-in, which this version does not support yet",
+          },
+          {
+            server: "cf",
+            transport: "http",
+            status: "fatal",
+            duration_ms: 0,
+            error_code: "mcp_needs_setup",
+            error_message: "needs setup: vault key CLOUDFLARE_API_TOKEN is not set",
+          },
+        ],
+      }),
+    );
+    const row = items(m)[0] as McpConnectItem;
+    expect(row.failed).toBeUndefined();
+    expect(row.waiting).toEqual(["mail", "cf"]);
+    expect(row.results?.map((r) => r.errorCode)).toEqual([
+      undefined,
+      "mcp_sign_in_required",
+      "mcp_needs_setup",
     ]);
   });
 

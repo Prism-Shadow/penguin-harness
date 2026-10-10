@@ -13,7 +13,8 @@
  *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
  *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
  *   Update. Installing a plugin with a stdio MCP server on an Agent that lacks it asks first,
- *   showing the command it runs on this server. Beside an Agent whose copy of the plugin's MCP
+ *   showing the command it runs on this server, and an update's confirmation shows it too (the
+ *   reinstall writes the servers again). Beside an Agent whose copy of the plugin's MCP
  *   servers waits for vault values or a sign-in, marks say so, and the Project owner gets Set up,
  *   which writes those values into the Agent's vault.
  * - A server module: Install, or Remove, for an admin only; a member reads the card and its
@@ -63,6 +64,7 @@ import {
   changedParts,
   installNeedsConfirm,
   pluginMcpState,
+  stdioServers,
   type InstalledMap,
   type LibraryUsage,
   type PluginStatus,
@@ -495,6 +497,9 @@ export function PluginCard(props: PluginCardProps) {
                 );
               })}
             </ul>
+            {/* The reinstall writes the plugin's stdio servers again — perhaps one the Agent did
+                not carry, or a changed command: what each runs here is said before it does. */}
+            {stdioServers(plugin).length > 0 && <StdioInstallBody plugin={plugin} />}
           </div>
         </ConfirmModal>
       )}
@@ -559,7 +564,7 @@ export function PluginCard(props: PluginCardProps) {
         >
           <StdioInstallBody
             plugin={plugin}
-            question={S.plugins.installStdioTitle(title, nameOf(pendingStdio))}
+            lead={S.plugins.installStdioTitle(title, nameOf(pendingStdio))}
           />
         </ConfirmModal>
       )}

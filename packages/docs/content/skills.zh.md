@@ -50,7 +50,7 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 
 安装的是整个插件：包括全部 Skill、钩子包和 MCP Server。新对话立即生效。已经打开的对话里，钩子包和 MCP Server 从下一轮起生效，Skill 在下一次压缩后生效。
 
-带 stdio MCP Server 的插件，装到还没有它的 Agent 上之前会先询问：对话框给出该 Server 在这个 Agent 每次开启会话时于本服务器上运行的命令。
+带 stdio MCP Server 的插件，装到还没有它的 Agent 上之前会先询问：对话框给出该 Server 在这个 Agent 每次开启会话时于本服务器上运行的命令。更新的确认同样给出该命令，选了这类插件创建 Agent 或招聘员工时也是如此。
 
 MCP Server 可能要先有一些值才能连接，例如 API token。插件会列出这些键，值存放在 Agent 的 [Vault](/agents#密钥保险柜标签页) 里，从不写进插件或 Agent 的配置。缺键时，Agent 那一行显示钥匙图标，指向它可以看到缺少哪些键。Project owner 点击该行的**设置**，为每个键填一个值；Vault 中已有的键显示为已设置，不再要值。其他成员能看到缺少哪些键，以及由 owner 填写。也可以在 Agent 的**密钥保险柜**标签页添加这些键。用 OAuth 登录的 Server 改为显示登录图标：本版本还不能登录，这个 Server 保持未连接。两种情况下插件都算已安装，对话连接时跳过这个 Server。
 

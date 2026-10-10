@@ -50,7 +50,7 @@ The buttons on the right of a card:
 
 The whole plugin is installed: all of its Skills, its hook package and its MCP servers. New conversations pick it up right away. In a conversation already open, the hook package and the MCP servers apply from the next turn, and the Skills after the next compaction.
 
-A plugin with a stdio MCP server asks before it installs on an agent that does not have it yet: the dialog shows the command that the PenguinHarness server will run whenever a session of the agent starts.
+A plugin with a stdio MCP server asks before it installs on an agent that does not have it yet: the dialog shows the command that the PenguinHarness server will run whenever a session of the agent starts. An update's confirmation shows the command as well, and so does creating an agent, or hiring an employee, with such a plugin picked.
 
 An MCP server may need values before it can connect, such as an API token. The plugin names them, and they live in the agent's [vault](/agents#vault-tab), never in the plugin or in the agent's configuration. While one is missing, the agent's row shows a key icon; point at it for the missing keys. The Project owner selects **Set up** on that row and fills in one field per key; a key the vault already holds shows as set and asks for nothing. Other members see which keys are missing and that the owner sets them. The keys can also be added on the agent's **Vault** tab. A server that signs in with OAuth shows a sign-in icon instead: this version cannot sign in yet, so the server stays unconnected. Either way the plugin counts as installed, and the server is skipped when a conversation connects.
 
