@@ -604,6 +604,22 @@ export interface Messages {
     actionRunEnded: (run: string, outcome: string, message: string | null) => string;
     /** An ambiguous key's answer: each contribution's exact invocation. */
     actionExecForm: (cli: string) => string;
+    /** `org roadmap item`: the company-roadmaps plugin's one-item writes. */
+    roadmapDesc: string;
+    roadmapItemDesc: string;
+    roadmapItemAddDesc: string;
+    roadmapItemRemoveDesc: string;
+    roadmapItemKey: string;
+    roadmapItemKind: string;
+    roadmapItemTitle: string;
+    roadmapItemBrief: string;
+    roadmapItemOwner: string;
+    roadmapItemEmployees: string;
+    roadmapItemCites: string;
+    roadmapItemStackedOn: string;
+    roadmapItemProposal: string;
+    roadmapNumberInvalid: (value: string) => string;
+    roadmapItemProposalInvalid: (value: string) => string;
     /** `org workflow`: the organization's company workflows. */
     workflowDesc: string;
     workflowLsDesc: string;
@@ -1871,6 +1887,25 @@ const en: Messages = {
     actionRunEnded: (run, outcome, message) =>
       `Run ${run} ${outcome}${message === null || message === "" ? "" : `: ${message}`}.`,
     actionExecForm: (cli) => `  ${cli}`,
+    roadmapDesc:
+      "The organization's roadmaps: one item of a discussing draft, added or removed without rewriting the rest",
+    roadmapItemDesc: "One item of a discussing roadmap's draft",
+    roadmapItemAddDesc:
+      "Add one item to a discussing roadmap's draft (the roadmap.item.add Action), leaving every other item, the record and the body as they are",
+    roadmapItemRemoveDesc:
+      "Remove one item from a discussing roadmap's draft (the roadmap.item.remove Action), unless it stands for a proposal",
+    roadmapItemKey: "The item's key, 1–40 lowercase letters, digits or dashes",
+    roadmapItemKind: "The item's kind: proposal or roadmap",
+    roadmapItemTitle: "The item's title",
+    roadmapItemBrief: "The item's brief, one or two sentences",
+    roadmapItemOwner: "A proposal item's owner, an employee id",
+    roadmapItemEmployees: "A roadmap item's employees, comma-separated (the first one moderates)",
+    roadmapItemCites: "The body sections the brief draws on, comma-separated",
+    roadmapItemStackedOn:
+      "The earlier proposal item this one stacks on; `null` for none (without the flag it stacks on the previous proposal item)",
+    roadmapItemProposal: "An adopted proposal number the item stands for",
+    roadmapNumberInvalid: (value) => `Roadmap number "${value}" is invalid: a positive integer.`,
+    roadmapItemProposalInvalid: (value) => `--proposal must be a proposal number: ${value}`,
     workflowDesc:
       "The organization's company workflows: packages whose Actions, guards and hooks take effect in it once loaded",
     workflowLsDesc: "List the company workflows, the revision serving and whether the files load",
@@ -3138,6 +3173,24 @@ const zh: Messages = {
     actionRunEnded: (run, outcome, message) =>
       `运行 ${run} ${outcome}${message === null || message === "" ? "" : `：${message}`}。`,
     actionExecForm: (cli) => `  ${cli}`,
+    roadmapDesc: "组织的 roadmap：讨论中草稿的单个条目，加一条或删一条，无需重写其余",
+    roadmapItemDesc: "讨论中 roadmap 草稿的一个条目",
+    roadmapItemAddDesc:
+      "向讨论中的 roadmap 草稿追加一个条目（roadmap.item.add Action），其余条目、记录与正文保持原样",
+    roadmapItemRemoveDesc:
+      "从讨论中的 roadmap 草稿移除一个条目（roadmap.item.remove Action），代表提案的条目除外",
+    roadmapItemKey: "条目的 key，1–40 个小写字母、数字或连字符",
+    roadmapItemKind: "条目的种类：proposal 或 roadmap",
+    roadmapItemTitle: "条目的标题",
+    roadmapItemBrief: "条目的简介，一两句话",
+    roadmapItemOwner: "proposal 条目的 owner，一个员工 id",
+    roadmapItemEmployees: "roadmap 条目的员工，逗号分隔（第一位主持）",
+    roadmapItemCites: "简介所依据的正文小节，逗号分隔",
+    roadmapItemStackedOn:
+      "该条目叠在其上的更早 proposal 条目；写 null 表示不叠（不给该旗标时叠在上一个 proposal 条目上）",
+    roadmapItemProposal: "该条目所代表的已采纳提案编号",
+    roadmapNumberInvalid: (value) => `Roadmap 编号「${value}」无效：应为正整数。`,
+    roadmapItemProposalInvalid: (value) => `--proposal 应为提案编号：${value}`,
     workflowDesc: "组织的 company workflow：其 Action、guard 与挂钩加载后即在本组织生效",
     workflowLsDesc: "列出 company workflow、正在生效的版本以及文件能否加载",
     workflowPutDesc: "把本地目录写成 company workflow <id> 并加载（workflow.write Action）",

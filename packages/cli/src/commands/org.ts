@@ -113,6 +113,7 @@ import { getSessionInfo } from "../server-session.js";
 import { registerProposalDeploy, type DeployKit } from "./proposal-deploy.js";
 import { actionRequester, runAction, type ActionRequester } from "./action-client.js";
 import { registerOrgAction } from "./action.js";
+import { registerOrgRoadmap } from "./roadmap.js";
 import { registerOrgWorkflow } from "./workflow.js";
 import { registerClaudeCode } from "./claude-code.js";
 import { implLine, registerProposalImpl } from "./proposal-impl.js";
@@ -2406,6 +2407,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
   registerProposalImpl(proposal, t, kit);
   registerProposalDeploy(proposal, t, kit);
   registerOrgAction(org, t, kit);
+  registerOrgRoadmap(org, t, kit);
   registerOrgWorkflow(org, t, kit);
 
   const deployment = proposal.command("deployment").description(t.org.proposalDeploymentDesc);
