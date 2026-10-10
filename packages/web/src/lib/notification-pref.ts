@@ -21,8 +21,12 @@
  * settings row and the app-wide hook stay in step without either owning the state.
  */
 
+import { S } from "./strings";
+
 /** localStorage key of the opt-in; only NOTIFICATIONS_ON counts as on. */
 export const NOTIFICATIONS_KEY = "penguin.notifications";
+/** Tag of the confirmation notice fired when the user turns the switch on. */
+export const ENABLED_NOTIFICATION_TAG = "penguin-notifications-enabled";
 const NOTIFICATIONS_ON = "1";
 const NOTIFICATIONS_OFF = "0";
 
@@ -130,12 +134,35 @@ export async function requestNotificationPermission(): Promise<NotificationAcces
  * a denial, a dismissed prompt (which leaves "default"), a platform without the API — is
  * returned for the caller to explain, and leaves the preference off, so the switch never
  * latches on over a notification that cannot be shown.
+ *
+ * When granted, a confirmation notification is also shown immediately. On Windows (Electron
+ * and browsers alike), `Notification.requestPermission()` resolves "granted" in memory
+ * without touching the OS notification centre, and Windows only adds an app to System →
+ * Notifications (`HKCU\...\Notifications\Settings\<AUMID>`) after it has actually posted its
+ * first toast (`LastNotificationAddedTime`). Emitting one here registers the app on the spot
+ * and gives the user immediate feedback that system notifications work.
  */
 export async function enableNotifications(
   storage?: NotificationStorage | null,
 ): Promise<NotificationAccess> {
   const access = await requestNotificationPermission();
-  if (access === "granted") writeNotificationsEnabled(true, storage);
+  if (access === "granted") {
+    writeNotificationsEnabled(true, storage);
+    try {
+      const notification = new Notification(S.notify.enabledTitle, {
+        body: S.notify.enabledBody,
+        tag: ENABLED_NOTIFICATION_TAG,
+        icon: "/penguin-logo.svg",
+      });
+      notification.onclick = () => {
+        notification.close();
+        if (typeof window !== "undefined") window.focus();
+      };
+    } catch {
+      // Best-effort: a non-constructible stub or restricted platform still keeps the
+      // stored preference once permission itself was granted.
+    }
+  }
   return access;
 }
 

@@ -18,6 +18,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
+  ENABLED_NOTIFICATION_TAG,
   NOTIFICATIONS_KEY,
   enableNotifications,
   notificationHintFor,
@@ -30,19 +31,34 @@ import {
 } from "../src/lib/notification-pref";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
+interface RecordedNotice {
+  title: string;
+  options: NotificationOptions | undefined;
+}
+
 /**
  * A platform whose permission answer is fixed. `requestPermission` records its calls so a
- * test can tell an answer that came from the platform apart from one assumed by the app.
+ * test can tell an answer that came from the platform apart from one assumed by the app, and
+ * constructing `new Notification(...)` records the confirmation notice.
  */
-function stubNotification(permission: NotificationPermission): { requests: number } {
-  const calls = { requests: 0 };
-  vi.stubGlobal("Notification", {
-    permission,
-    requestPermission: async () => {
+function stubNotification(permission: NotificationPermission): {
+  requests: number;
+  notices: RecordedNotice[];
+} {
+  const calls = { requests: 0, notices: [] as RecordedNotice[] };
+  class FakeNotification {
+    static permission = permission;
+    static async requestPermission(): Promise<NotificationPermission> {
       calls.requests += 1;
       return permission;
-    },
-  });
+    }
+    onclick: (() => void) | null = null;
+    constructor(title: string, options?: NotificationOptions) {
+      calls.notices.push({ title, options });
+    }
+    close(): void {}
+  }
+  vi.stubGlobal("Notification", FakeNotification);
   return calls;
 }
 
@@ -108,25 +124,28 @@ describe("asking the platform for permission", () => {
 });
 
 describe("turning the preference on", () => {
-  it("stores the opt-in once the request came back granted", async () => {
+  it("stores the opt-in and shows a confirmation notice once the request came back granted", async () => {
     const storage = memoryStorage();
     const calls = stubNotification("granted");
 
     await expect(enableNotifications(storage)).resolves.toBe("granted");
     expect(calls.requests).toBe(1);
     expect(readNotificationsEnabled(storage)).toBe(true);
+    expect(calls.notices).toHaveLength(1);
+    expect(calls.notices[0]?.options?.tag).toBe(ENABLED_NOTIFICATION_TAG);
   });
 
   it.each(["denied", "default", "unsupported"] as const)(
-    "does not latch on when the answer is %s (a refusal, a dismissed prompt, no API at all)",
+    "does not latch on or show a notice when the answer is %s (a refusal, a dismissed prompt, no API at all)",
     async (answer) => {
       const storage = memoryStorage();
+      const calls = answer === "unsupported" ? null : stubNotification(answer);
       if (answer === "unsupported") vi.stubGlobal("Notification", undefined);
-      else stubNotification(answer);
 
       await expect(enableNotifications(storage)).resolves.toBe(answer);
       expect(readNotificationsEnabled(storage)).toBe(false);
       expect(storage.map.has(NOTIFICATIONS_KEY)).toBe(false);
+      expect(calls?.notices ?? []).toEqual([]);
     },
   );
 

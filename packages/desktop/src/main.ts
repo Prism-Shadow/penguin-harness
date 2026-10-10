@@ -112,6 +112,7 @@ import {
   restartDelayMs,
   urlForLog,
 } from "./util.js";
+import { registerWindowsAumid } from "./win-aumid.js";
 
 // Identity first: the name decides the userData directory, which also keys the
 // single-instance lock requested below — the dev profile takes a dev-suffixed identity
@@ -192,6 +193,11 @@ function createWindow(url: string): void {
       // The built-in browser's tabs are <webview> guests of this page. This window only:
       // windows it opens are built from their own preferences, which leave the tag off.
       webviewTag: true,
+      // Keep timers and network delivery running at full rate while the window is
+      // unfocused or hidden to the tray: the renderer's SSE stream and its
+      // task-completion notifications are only useful when they fire before the
+      // user comes back to look.
+      backgroundThrottling: false,
     },
   });
   builtinBrowser.host(win);
@@ -747,6 +753,13 @@ if (!app.requestSingleInstanceLock()) {
         platform: process.platform,
         env: process.env,
         shell: process.env.SHELL,
+        log: (line) => logLine(`[shell] ${line}`),
+      });
+      await registerWindowsAumid({
+        platform: process.platform,
+        appUserModelId: identity.appUserModelId,
+        displayName: identity.name,
+        iconPath: resolveWindowIcon(app.getAppPath(), process.platform),
         log: (line) => logLine(`[shell] ${line}`),
       });
       // Standard menu plus native desktop-only actions; the window gets no IPC channel.
