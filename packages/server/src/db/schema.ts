@@ -158,6 +158,14 @@ CREATE TABLE IF NOT EXISTS messaging_bindings ( -- Session ↔ messaging-channel
   PRIMARY KEY (session_id, channel)
 );
 CREATE INDEX IF NOT EXISTS idx_messaging_by_account ON messaging_bindings(channel, account_id);  -- serves the enable guard's by-account lookup; deliberately NOT unique, unlike its predecessor idx_messaging_account (dropped on open) which made an account exclusive to one Session forever
+CREATE TABLE IF NOT EXISTS messaging_conversations ( -- per-(bot, chat) delivery state a connector must keep across reconnects and restarts (WeChat: the context token, its send count, held replies); deleted once no messaging_bindings row references (channel, account_id) — see MessagingBindingsRepo
+  channel    TEXT NOT NULL,                     -- messaging channel discriminator (only 'wechat' writes rows today)
+  account_id TEXT NOT NULL,                     -- the bot, as messaging_bindings.account_id names it
+  chat_id    TEXT NOT NULL,                     -- the connector's own chat id (wechat: the user's ilink_user_id)
+  state_json TEXT NOT NULL,                     -- connector-owned JSON (wechat: {contextToken, tokenAt, spent, held, heldSince}); the token is a conversation handle at rest, same trade-off as config_json's credentials
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (channel, account_id, chat_id)
+);
 CREATE TABLE IF NOT EXISTS ui_prefs (
   user_id    TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
   prefs_json TEXT NOT NULL                    -- {theme?, lastProjectId?, ...} free-form JSON

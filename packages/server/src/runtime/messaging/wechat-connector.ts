@@ -2,8 +2,8 @@
  * WeChat messaging connector — the fourth implementation of the MessagingChannelConnector
  * seam, over the official claw bot channel. It owns everything WeChat-specific: the config
  * document a scan produces, the transport behind it (injectable for tests — see
- * wechat-api.ts), the long-poll loop that stands in for an event stream, and the context
- * token that threads an outbound send back onto the conversation it answers.
+ * wechat-api.ts), the long-poll loop that stands in for an event stream, and the ledger of
+ * context tokens without which the platform refuses every send.
  *
  * ## Inbound is a poll, and there is no webhook anywhere
  *
@@ -12,7 +12,8 @@
  * the property that made Telegram's `getUpdates` and QQ's gateway usable here, and QQ's
  * webhook mode not. The loop's lifecycle mirrors telegram-connector's: failures back off and
  * report once per outage, and a recovery fires `onReady` again so the bridge's status tracks
- * the outage.
+ * the outage. One dropped request is the exception: it is retried at once and opens no outage,
+ * because it is the commonest failure there is and the next request usually lands.
  *
  * A window that closes with nothing to report is the ORDINARY case on a long poll, not a
  * failure — the transport resolves it as an empty answer on an unchanged cursor, and a loop
@@ -35,15 +36,23 @@
  * ## The first poll is a DRAIN, and asks for a short deadline
  *
  * An empty cursor means "start from the beginning", so the first poll of a connection can
- * return everything sent while nothing was connected. Its messages are dropped and only its
+ * return everything sent while nothing was connected. Its old messages are dropped and only its
  * cursor is kept — the same choice telegram-connector makes with `offset: -1`, for the same
  * reason: a binding switched on after a week dark must not replay that week as a task flood.
- * A blip is not affected, because a reconnect keeps the cursor it already had.
+ * A blip is not affected, because a reconnect keeps the cursor it already had. Dropped means
+ * not relayed: the context tokens they carry are still learned (see below).
  *
- * The short deadline is what keeps that from eating a live message. A drain parked for the
- * long-poll window returns not the backlog but the first thing a user sends AFTER enabling —
- * and then discards it as backlog. Asking only for what the platform is already holding makes
- * "before this connection" and "after it" the two different things they are meant to be.
+ * "Old" is decided by the message's send time, not by which poll returned it. A drained
+ * message sent within WECHAT_BACKLOG_RELAY_MS of now is handled exactly like a live one: it was
+ * written to a bot the user believed was there — just after the switch was flipped, or while
+ * the server restarted — and dropping it is the "no reply" this channel was reported for. A
+ * week-old backlog is still dropped whole, and so is a message with no send time, which proves
+ * nothing about its age.
+ *
+ * The short deadline keeps the two apart for a message that carries no send time. A drain
+ * parked for the long-poll window returns not the backlog but the first thing a user sends
+ * AFTER enabling; asking only for what the platform is already holding makes "before this
+ * connection" and "after it" the two different things they are meant to be.
  *
  * ## Direct chats only, because that is the whole channel
  *
@@ -55,9 +64,9 @@
  *
  * ## Media
  *
- * Text, images and files travel in BOTH directions, and nothing outbound is refused — the
- * widest of the four channels here, where QQ refuses outbound media outright and the other
- * two carry it at a permission's mercy.
+ * Text, images and files travel in BOTH directions — the widest of the four channels here,
+ * where QQ refuses outbound media outright and the other two carry it at a permission's mercy.
+ * Outbound media spends the same per-token budget text does (see below).
  *
  * Two inbound kinds are folded rather than carried as themselves. A VOICE message is relayed
  * as the platform's OWN transcription of it: there is no audio on this seam and nothing
@@ -68,15 +77,33 @@
  * inventing a channel-specific refusal for it would say no more than the shared one already
  * does.
  *
- * ## The context token
+ * ## The context token, the reply budget and held replies
  *
- * Every inbound message carries one, and echoing it on a send is what puts the reply in the
- * right conversation. It is held per (bot, user) in memory only: it is derived from traffic,
- * and the platform accepts a send without one, so persisting it would add a place for a
- * conversation handle to sit at rest in exchange for nothing a fresh inbound message does
- * not fix. A send before this connection has seen any message from that user goes without —
- * which is exactly what "send test message" does after a restart.
+ * The platform checks a context token on EVERY send: one arrives with each inbound message and
+ * must be echoed, and a send without one, with an expired one, or past about ten on one token
+ * is refused with `ret: -2` "prepare failed" (see wechat-api.ts). So this file keeps a ledger
+ * per (bot, user):
+ *
+ *   - The latest token, when it arrived and how many sends it has funded are STORED
+ *     (WeChatConversationStore; `messaging_conversations` in production). A restart, a
+ *     re-enable and a saved delivery preference all reconnect, and none of them may cost the
+ *     conversation. The rows live as long as a binding references the bot.
+ *   - The budget is QQ's passive-reply budget (see qq-connector.ts): the first
+ *     `WECHAT_REPLY_BUDGET - 1` sends under a token go out at once, and later ones are combined
+ *     into one send on the reserved last slot after a quiet period.
+ *   - What cannot go out now — no token yet, the budget spent, a refusal — is HELD rather than
+ *     dropped: stored with the token, bounded by WECHAT_HELD_MAX_CHARS, and sent under a
+ *     bilingual header as soon as the user's next message brings a fresh token, ahead of that
+ *     message's own answer. A send that holds throws MessagingReplyHeldError, which the bridge
+ *     does not count as a failure; `onHeldChange` reports what the bot holds.
+ *   - A refusal of the FIRST send under a fresh token cannot be the token's doing, so it is
+ *     the content's: held text refused that way is dropped and reported, never held again.
+ *   - Pictures and files are never held: they need a token and an ordinary slot, and fail like
+ *     any other send without one. Neither is "send test message", which is a probe — a test
+ *     that arrives an hour later proves nothing — and fails at once with
+ *     MessagingNeedsRecentMessageError.
  */
+import { chunkMessagingText } from "./bridge.js";
 import { sniffImageMime } from "./media.js";
 import type {
   MessagingChannelConnector,
@@ -88,7 +115,11 @@ import type {
   MessagingOutboundFile,
   MessagingSendOptions,
 } from "./connector.js";
-import { MessagingChannelError } from "./connector.js";
+import {
+  MessagingChannelError,
+  MessagingNeedsRecentMessageError,
+  MessagingReplyHeldError,
+} from "./connector.js";
 import { wechatMarkdownOf } from "./wechat-markdown.js";
 import type {
   WeChatBotClient,
@@ -96,10 +127,17 @@ import type {
   WeChatInboundEvent,
   WeChatTransport,
 } from "./wechat-api.js";
-import { WECHAT_API_BASE, createWeChatTransport } from "./wechat-api.js";
+import {
+  WECHAT_API_BASE,
+  WECHAT_SEND_REFUSED_CODE,
+  WeChatApiError,
+  createWeChatTransport,
+} from "./wechat-api.js";
 import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
 import type { MessagingTuning } from "./bridge.js";
+import type { Clock } from "../../hmr/capabilities.js";
+import type { MessagingConversations } from "../../mechanisms/messaging.js";
 
 /** The WeChat binding's stored config document (`messaging_bindings.config_json`). */
 export interface WeChatBindingConfig extends Record<string, unknown> {
@@ -114,13 +152,70 @@ export interface WeChatBindingConfig extends Record<string, unknown> {
 }
 
 /**
+ * How many sends one context token funds. The platform does not publish the number; about ten
+ * is what the issues filed against Tencent's own plugin report.
+ */
+export const WECHAT_REPLY_BUDGET = 10;
+
+/**
+ * How long the withheld tail waits for the run to say something else before it is sent — the
+ * same trade QQ_TAIL_FLUSH_MS makes: short enough that a finished answer is not left hanging,
+ * long enough that messages completed in quick succession share the reserved last slot.
+ */
+export const WECHAT_TAIL_FLUSH_MS = 1500;
+
+/**
+ * Ceiling on one conversation's held text (and on a withheld tail). A bound, not a target: when
+ * it is hit the OLDEST text goes and the newest stays, because the end of an answer is its
+ * conclusion; the elision marker says what happened.
+ */
+export const WECHAT_HELD_MAX_CHARS = 12_000;
+
+/** Heads held replies when they are finally delivered (bilingual, like the other chat notices). */
+export const WECHAT_HELD_HEADER =
+  "(Replies that could not be delivered earlier 之前未能送达的回复)";
+
+/** Marker left in place of held text dropped by the ceiling. */
+const WECHAT_HELD_ELIDED = "…(earlier part omitted 前略)…";
+
+/** What a held text send throws, by why it was held (see MessagingReplyHeldError). */
+const HELD_NO_TOKEN =
+  "WeChat accepts the bot's messages only after the user has messaged it: the reply is held and will be sent with their next message";
+const HELD_NO_BUDGET =
+  "WeChat accepts only about ten messages from the bot per message from the user: the reply is held and will be sent with their next message";
+
+/** What a probe throws when the platform wants a recent message first. */
+const NEEDS_RECENT_MESSAGE =
+  "WeChat only accepts messages from the bot for a while after you message it: send the bot a message in WeChat, then try again.";
+
+/**
+ * What an outbound picture or file throws without a token or a slot. It names no file, so the
+ * refusals of one reply share a reason line (see the bridge's messagingFilesNotSentRecords).
+ */
+const MEDIA_NO_TOKEN = "WeChat accepts files from the bot only after the user has messaged it";
+const MEDIA_NO_BUDGET =
+  "WeChat accepts only about ten messages from the bot per message from the user, and this conversation has used them";
+
+/**
+ * How far back a drained message may have been sent and still be answered (5 minutes).
+ *
+ * Long enough to cover what actually happens between a user's message and the connection that
+ * should read it — a server restart, the seconds after the switch is flipped, a retried drain —
+ * and short enough that re-enabling a binding after a dark spell answers nothing from it. A
+ * send time in the FUTURE is clock skew between the platform and this host, and counts as
+ * recent: the message cannot be older than now.
+ */
+export const WECHAT_BACKLOG_RELAY_MS = 5 * 60_000;
+
+/**
  * How many drains a connection asks for before it proceeds regardless.
  *
  * A drain that closed on its own deadline said nothing about where the platform stands, so
  * spending it there is what lets a whole backlog through later (see the poll loop). But an idle
- * bot's long poll may park until the deadline every time, so the retry has to be bounded: the
- * window in which an arriving message is read as backlog and dropped is already one drain long,
- * and this widens it by one more rather than leaving it open.
+ * bot's long poll may park until the deadline every time, so the retry has to be bounded, or the
+ * connection would ask on the short deadline forever. A message arriving meanwhile is relayed by
+ * its send time (WECHAT_BACKLOG_RELAY_MS); only one carrying none is read as backlog, and this
+ * widens that window by one drain rather than leaving it open.
  */
 const DRAIN_ATTEMPTS = 2;
 
@@ -217,43 +312,182 @@ export function chatOfWeChatReplyRef(ref: string): string {
   return ref.slice(0, cut);
 }
 
+/** Whether a send failed with the platform's catch-all refusal (see WECHAT_SEND_REFUSED_CODE). */
+function isSendRefusal(err: unknown): boolean {
+  return err instanceof WeChatApiError && err.ret === WECHAT_SEND_REFUSED_CODE;
+}
+
+/**
+ * Drops text from the FRONT of `parts` until it fits `max`, leaving the elision marker in its
+ * place. The newest part always stays, however long: it is the end of the answer.
+ */
+function trimFront(parts: string[], max: number): void {
+  let total = parts.reduce((n, part) => n + part.length + 2, 0);
+  while (total > max) {
+    const elided = parts[0] === WECHAT_HELD_ELIDED;
+    if (parts.length <= (elided ? 2 : 1)) return;
+    const [dropped] = parts.splice(elided ? 1 : 0, 1);
+    total -= (dropped?.length ?? 0) + 2;
+    if (!elided) {
+      parts.unshift(WECHAT_HELD_ELIDED);
+      total += WECHAT_HELD_ELIDED.length + 2;
+    }
+  }
+}
+
+/** One conversation's stored state — `messaging_conversations.state_json` for this channel. */
+export interface WeChatConversationState {
+  /** The latest context token the user's messages carried; null before any arrived. */
+  contextToken: string | null;
+  /** When it arrived (ISO 8601). Informational: the platform does not publish the token's lifetime. */
+  tokenAt: string | null;
+  /** Sends already made under `contextToken` — the budget it has used. */
+  spent: number;
+  /** Replies waiting for the user's next message, oldest first. */
+  held: string[];
+  /** Since when anything is held (ISO 8601); null while `held` is empty. */
+  heldSince: string | null;
+}
+
+/**
+ * Where conversation state is kept, bound to this channel: the account is the bot id and the
+ * chat the user id. Production wires it to `messaging_conversations`; the default is memory.
+ */
+export interface WeChatConversationStore {
+  get(botId: string, userId: string): Record<string, unknown> | null;
+  list(botId: string): { chatId: string; state: Record<string, unknown> }[];
+  put(botId: string, userId: string, state: Record<string, unknown>): void;
+}
+
+/** A store in memory, copying on the way in as the database does (tests, and the default). */
+export function createMemoryWeChatConversationStore(): WeChatConversationStore {
+  const bots = new Map<string, Map<string, Record<string, unknown>>>();
+  return {
+    get: (botId, userId) => bots.get(botId)?.get(userId) ?? null,
+    list: (botId) => {
+      const chats = bots.get(botId);
+      return chats === undefined ? [] : [...chats].map(([chatId, state]) => ({ chatId, state }));
+    },
+    put: (botId, userId, state) => {
+      let chats = bots.get(botId);
+      if (chats === undefined) {
+        chats = new Map();
+        bots.set(botId, chats);
+      }
+      chats.set(userId, JSON.parse(JSON.stringify(state)) as Record<string, unknown>);
+    },
+  };
+}
+
+/** Reads a stored document back, defaulting whatever is missing or malformed. */
+function conversationStateOf(raw: Record<string, unknown> | null): WeChatConversationState {
+  const token = raw?.contextToken;
+  const tokenAt = raw?.tokenAt;
+  const spent = raw?.spent;
+  const heldRaw = raw?.held;
+  const held = Array.isArray(heldRaw)
+    ? heldRaw.filter((part): part is string => typeof part === "string" && part !== "")
+    : [];
+  const heldSince = raw?.heldSince;
+  return {
+    contextToken: typeof token === "string" && token !== "" ? token : null,
+    tokenAt: typeof tokenAt === "string" ? tokenAt : null,
+    spent: typeof spent === "number" && Number.isFinite(spent) && spent > 0 ? Math.floor(spent) : 0,
+    held,
+    heldSince: held.length > 0 && typeof heldSince === "string" ? heldSince : null,
+  };
+}
+
+/**
+ * One conversation's ledger: the stored state, plus what lives only in this process — the tail
+ * withheld for the reserved slot, its quiet timer, the send chain and the client to send with.
+ */
+interface WeChatConversation extends WeChatConversationState {
+  botId: string;
+  userId: string;
+  /** Text withheld for the reserved last slot (see flushTail). */
+  tail: string[];
+  timer: ReturnType<typeof setTimeout> | null;
+  /**
+   * Sends are serialised per conversation, and every DECISION is made on the chain too: the
+   * budget is read when a send's turn comes, not when it was asked for, so a held-reply flush
+   * already in flight is counted before the run's next message chooses between a slot and the
+   * tail.
+   */
+  chain: Promise<void>;
+  /**
+   * The client the last send or inbound message used, which is the one a deferred flush uses —
+   * a flush can be started by an inbound message or a timer, neither of which has an outbound
+   * client of its own. Null until either has happened, and nothing can be held or withheld
+   * before then without one being set.
+   */
+  bot: WeChatBotClient | null;
+  /**
+   * The token came with a LIVE message, not with the backlog a drain read. Only such a token
+   * is known to be fresh, so only its first refusal can be blamed on the content rather than
+   * on the token (see flushHeld): a backlog message may be days old, and its token with it.
+   */
+  tokenLive: boolean;
+}
+
 export interface WeChatConnectorOpts {
   /** Test hook: the poll loop's backoff (tests collapse it to zero). */
   retryDelayMs?: (failures: number) => number;
+  /** Where conversation state is stored (default: memory, which a restart loses). */
+  store?: WeChatConversationStore;
+  /** Test hook: how long the tail waits for more output before it is sent (default WECHAT_TAIL_FLUSH_MS). */
+  tailFlushMs?: number;
+  /** Clock for stored timestamps and the drain's age rule (default: the wall clock). */
+  now?: () => number;
 }
 
 export class WeChatConnector implements MessagingChannelConnector {
   readonly channel = "wechat" as const;
+  /** The bridge caps the one-message-per-line split at this rather than at its own 20. */
+  readonly replyBudget = WECHAT_REPLY_BUDGET;
 
   /**
-   * The most recent context token per `(botId, userId)`.
-   *
-   * On the connector rather than on a client because the two halves that need it arrive
-   * separately: tokens come in through `connect`, and sends go out through the client
-   * `createClient` hands the bridge. The bot is part of the key so two bindings on different
-   * bots can never spend each other's conversation handles.
+   * Conversation ledgers per `(botId, userId)`. On the connector rather than on a client,
+   * because the two halves that need them arrive separately: tokens come in through `connect`,
+   * and sends go out through the client `createClient` hands the bridge. The bot is part of the
+   * key so two bindings on different bots can never spend each other's conversation handles.
    */
-  private readonly contextTokens = new Map<string, string>();
+  private readonly conversations = new Map<string, WeChatConversation>();
+  /**
+   * The open connection's handlers per bot. The client half reports through them too — a held
+   * reply or a failed flush belongs to the binding's status whichever half caused it — and a
+   * client has no connection of its own to report through.
+   */
+  private readonly handlers = new Map<string, MessagingConnectorHandlers>();
+  /** The `onHeldChange` value last reported per bot, so only changes are reported. */
+  private readonly heldReported = new Map<string, string>();
+  private readonly store: WeChatConversationStore;
   private readonly retryDelayMs: (failures: number) => number;
+  private readonly tailFlushMs: number;
+  private readonly now: () => number;
 
   constructor(
     private readonly transport: WeChatTransport,
     opts: WeChatConnectorOpts = {},
   ) {
     this.retryDelayMs = opts.retryDelayMs ?? wechatRetryDelayMs;
+    this.store = opts.store ?? createMemoryWeChatConversationStore();
+    this.tailFlushMs = opts.tailFlushMs ?? WECHAT_TAIL_FLUSH_MS;
+    this.now = opts.now ?? (() => Date.now());
   }
 
   async createClient(config: Record<string, unknown>): Promise<MessagingClient> {
     const creds = credsOf(config);
     const bot = this.transport.createClient(creds);
-    /** One send's arguments: the rendered body, and this conversation's token when known. */
-    const args = (userId: string, text: string, opts?: MessagingSendOptions) => {
-      const contextToken = this.contextTokens.get(this.tokenKey(creds.botId, userId));
-      return {
-        userId,
-        text: opts?.markdown === true ? wechatMarkdownOf(text) : text,
-        ...(contextToken !== undefined ? { contextToken } : {}),
-      };
+    const text = async (
+      userId: string,
+      body: string,
+      opts: MessagingSendOptions | undefined,
+    ): Promise<void> => {
+      const rendered = opts?.markdown === true ? wechatMarkdownOf(body) : body;
+      await this.enqueue(creds.botId, bot, userId, (c) =>
+        opts?.probe === true ? this.deliverProbe(c, rendered) : this.deliverText(c, rendered),
+      );
     };
     return {
       async checkCredentials(): Promise<null> {
@@ -262,18 +496,16 @@ export class WeChatConnector implements MessagingChannelConnector {
         // account, so there is no label to surface — the same shape as QQ's probe.
         return null;
       },
-      sendText: (chatId: string, text: string, opts?: MessagingSendOptions) =>
-        bot.sendText(args(chatId, text, opts)),
+      sendText: (chatId: string, body: string, opts?: MessagingSendOptions) =>
+        text(chatId, body, opts),
       // The same operation as sendText: this channel has no quote relation to thread onto
       // (see the module doc), so the anchor is read only for the chat it names.
-      replyText: (ref: string, text: string, opts?: MessagingSendOptions) =>
-        bot.sendText(args(chatOfWeChatReplyRef(ref), text, opts)),
+      replyText: async (ref: string, body: string, opts?: MessagingSendOptions) =>
+        text(chatOfWeChatReplyRef(ref), body, opts),
       sendImage: (chatId: string, file: MessagingOutboundFile) =>
-        // The caption is empty because the bridge sends a reply's text as its own message:
-        // a picture here is the picture, and pairing it would duplicate what already went.
-        bot.sendImage({ ...args(chatId, ""), file }),
+        this.enqueue(creds.botId, bot, chatId, (c) => this.deliverMedia(c, "image", file)),
       sendFile: (chatId: string, file: MessagingOutboundFile) =>
-        bot.sendFile({ ...args(chatId, ""), file }),
+        this.enqueue(creds.botId, bot, chatId, (c) => this.deliverMedia(c, "file", file)),
     };
   }
 
@@ -282,7 +514,13 @@ export class WeChatConnector implements MessagingChannelConnector {
     handlers: MessagingConnectorHandlers,
   ): Promise<MessagingConnection> {
     const creds = credsOf(config);
+    const botId = creds.botId;
     const bot = this.transport.createClient(creds);
+    this.handlers.set(botId, handlers);
+    this.heldReported.delete(botId);
+    this.hydrate(botId);
+    // A backlog held before a restart or a disable is this connection's to report.
+    this.reportHeld(botId);
     const abort = new AbortController();
     let closed = false;
     void this.poll(creds, bot, handlers, abort.signal, () => closed);
@@ -290,24 +528,420 @@ export class WeChatConnector implements MessagingChannelConnector {
       close: () => {
         closed = true;
         abort.abort();
-        // A conversation handle may not outlive the binding that learned it: without this, a
-        // token from before a disable would be echoed onto the first send after a re-enable,
-        // addressing a conversation the user has since ended.
-        this.dropTokens(creds.botId);
+        // Only the bot's CURRENT connection lets go of it: a stale attempt the bridge closes
+        // after a newer one opened must not take the newer one's handlers or tails with it.
+        if (this.handlers.get(botId) !== handlers) return;
+        this.handlers.delete(botId);
+        this.heldReported.delete(botId);
+        // Tokens are deliberately NOT dropped: they live as long as a binding references the
+        // bot (see MessagingBindingsRepo), because every reconnect dropping them is what left
+        // replies refused. A withheld tail has no connection left to time it, so it is held.
+        this.parkTails(botId);
       },
     };
   }
 
-  private tokenKey(botId: string, userId: string): string {
-    return `${botId}:${userId}`;
+  // —— The conversation ledger ——————————————————————————————————————————————
+
+  private key(botId: string, userId: string): string {
+    return `${botId}\n${userId}`;
   }
 
-  /** Forgets every conversation handle of one bot — the connection's close (see connect). */
-  private dropTokens(botId: string): void {
-    const prefix = `${botId}:`;
-    for (const key of this.contextTokens.keys()) {
-      if (key.startsWith(prefix)) this.contextTokens.delete(key);
+  private nowIso(): string {
+    return new Date(this.now()).toISOString();
+  }
+
+  private load(
+    botId: string,
+    userId: string,
+    raw: Record<string, unknown> | null,
+  ): WeChatConversation {
+    const state = conversationStateOf(raw);
+    return {
+      ...state,
+      // A document from before `heldSince` was written, or one that lost it, still says
+      // something is held; when it started is then unknown, and now is the honest bound.
+      heldSince: state.held.length > 0 ? (state.heldSince ?? this.nowIso()) : null,
+      botId,
+      userId,
+      tail: [],
+      timer: null,
+      chain: Promise.resolve(),
+      bot: null,
+      // A stored token's freshness is unknown after a load (see tokenLive).
+      tokenLive: false,
+    };
+  }
+
+  /** Get-or-load one conversation; a store that cannot be read reads as a conversation never seen. */
+  private conversationFor(botId: string, userId: string): WeChatConversation {
+    const key = this.key(botId, userId);
+    let c = this.conversations.get(key);
+    if (c === undefined) {
+      let raw: Record<string, unknown> | null = null;
+      try {
+        raw = this.store.get(botId, userId);
+      } catch {
+        // The user's next message rebuilds the token; nothing more is lost than a restart costs.
+      }
+      c = this.load(botId, userId, raw);
+      this.conversations.set(key, c);
     }
+    return c;
+  }
+
+  /**
+   * Brings the bot's ledgers in line with the store at connect: every stored conversation is
+   * loaded, so its token is ready and its held backlog reported; and a ledger the store no
+   * longer has is forgotten, because its rows were deleted with the bot's last binding — a
+   * token or a held reply must not carry over onto a binding scanned afresh.
+   */
+  private hydrate(botId: string): void {
+    let stored: { chatId: string; state: Record<string, unknown> }[];
+    try {
+      stored = this.store.list(botId);
+    } catch {
+      return;
+    }
+    const ids = new Set(stored.map((s) => s.chatId));
+    for (const [key, c] of this.conversations) {
+      if (c.botId !== botId || ids.has(c.userId)) continue;
+      if (c.timer !== null) clearTimeout(c.timer);
+      this.conversations.delete(key);
+    }
+    for (const { chatId, state } of stored) {
+      const key = this.key(botId, chatId);
+      if (this.conversations.has(key)) continue;
+      this.conversations.set(key, this.load(botId, chatId, state));
+    }
+  }
+
+  /**
+   * Writes one conversation's stored half. Best effort: the in-memory ledger stays right for
+   * this process either way, and a failed write costs only what a restart would — the next
+   * inbound message's token. A send that already went out must not be reported as failed
+   * because its bookkeeping could not be written.
+   */
+  private persist(c: WeChatConversation): void {
+    const state = {
+      contextToken: c.contextToken,
+      tokenAt: c.tokenAt,
+      spent: c.spent,
+      held: c.held,
+      heldSince: c.heldSince,
+    } satisfies WeChatConversationState;
+    try {
+      this.store.put(c.botId, c.userId, state);
+    } catch {
+      // See above.
+    }
+  }
+
+  /** Since when the bot has held anything: the oldest of its conversations' `heldSince`. */
+  private heldSinceOf(botId: string): string | null {
+    let since: string | null = null;
+    for (const c of this.conversations.values()) {
+      if (c.botId !== botId || c.held.length === 0 || c.heldSince === null) continue;
+      if (since === null || c.heldSince < since) since = c.heldSince;
+    }
+    return since;
+  }
+
+  private reportHeld(botId: string): void {
+    const since = this.heldSinceOf(botId);
+    if ((this.heldReported.get(botId) ?? null) === since) return;
+    if (since === null) this.heldReported.delete(botId);
+    else this.heldReported.set(botId, since);
+    this.handlers.get(botId)?.onHeldChange?.(since);
+  }
+
+  private reportSendFailed(botId: string, err: unknown): void {
+    this.handlers.get(botId)?.onSendFailed?.(err);
+  }
+
+  /** Appends to the held text, trimming from the front, and stores it. */
+  private hold(c: WeChatConversation, texts: readonly string[]): void {
+    if (texts.length === 0) return;
+    c.held.push(...texts);
+    trimFront(c.held, WECHAT_HELD_MAX_CHARS);
+    c.heldSince ??= this.nowIso();
+    this.persist(c);
+    this.reportHeld(c.botId);
+  }
+
+  /** Replaces the held text with what is still undelivered, and stores it. */
+  private setHeld(c: WeChatConversation, held: string[]): void {
+    c.held = held;
+    if (held.length === 0) c.heldSince = null;
+    this.persist(c);
+    this.reportHeld(c.botId);
+  }
+
+  /** The token has funded everything it will: a refusal says so whatever the local count was. */
+  private exhaust(c: WeChatConversation): void {
+    c.spent = Math.max(c.spent, WECHAT_REPLY_BUDGET);
+    this.persist(c);
+  }
+
+  /** Every withheld tail of one bot, moved into its held text — the connection's close. */
+  private parkTails(botId: string): void {
+    for (const c of this.conversations.values()) {
+      if (c.botId !== botId) continue;
+      if (c.timer !== null) {
+        clearTimeout(c.timer);
+        c.timer = null;
+      }
+      if (c.tail.length === 0) continue;
+      const tail = c.tail;
+      c.tail = [];
+      this.hold(c, tail);
+    }
+  }
+
+  /**
+   * An inbound message (drained or live): learns its token, and when that is a NEW one —
+   * fresh budget — delivers what was held, before the bridge hears of the message, so the
+   * user reads what they missed ahead of the answer to what they just said. Never rejects:
+   * what fails here is reported, and must not read as a poll failure.
+   */
+  private async noteInbound(
+    botId: string,
+    bot: WeChatBotClient,
+    evt: WeChatInboundEvent,
+    live: boolean,
+  ) {
+    const token = evt.contextToken;
+    if (token === undefined) return;
+    const c = this.conversationFor(botId, evt.userId);
+    c.bot = bot;
+    // The same token again is a redelivery, not fresh budget: resetting the count on it would
+    // send past what the token funds and have the rest of the answer refused.
+    if (c.contextToken === token) return;
+    c.contextToken = token;
+    c.tokenAt = this.nowIso();
+    c.spent = 0;
+    c.tokenLive = live;
+    this.persist(c);
+    // A tail still waiting for its quiet period was written before this message; it goes out
+    // with the held text, ahead of the answer this message will get.
+    if (c.timer !== null) {
+      clearTimeout(c.timer);
+      c.timer = null;
+    }
+    if (c.tail.length > 0) {
+      c.held.push(...c.tail);
+      c.tail = [];
+      trimFront(c.held, WECHAT_HELD_MAX_CHARS);
+      c.heldSince ??= this.nowIso();
+    }
+    if (c.held.length === 0) return;
+    await this.chain(c, () => this.flushHeld(c)).catch(() => {});
+  }
+
+  /**
+   * Sends the held text under the bilingual header, in channel-sized chunks, while ordinary
+   * slots last — the reserved last one stays for the answer this message will get. What does
+   * not fit stays held for the message after.
+   *
+   * A refusal of the very first send under a token a LIVE message just brought is about the
+   * CONTENT — the token is fresh and has funded nothing yet — so the held text is dropped
+   * rather than held to be refused again, and reported. A backlog token proves no freshness
+   * (see tokenLive), and any later refusal is the token's: both keep the rest held. A network
+   * failure keeps it too, and is reported.
+   */
+  private async flushHeld(c: WeChatConversation): Promise<void> {
+    if (c.held.length === 0 || c.contextToken === null || c.bot === null) return;
+    const chunks = chunkMessagingText([WECHAT_HELD_HEADER, ...c.held].join("\n\n"));
+    const fresh = c.spent === 0 && c.tokenLive;
+    let sent = 0;
+    try {
+      while (sent < chunks.length && c.spent < WECHAT_REPLY_BUDGET - 1) {
+        await this.sendNow(c, chunks[sent]!);
+        sent += 1;
+      }
+    } catch (err) {
+      if (isSendRefusal(err) && fresh && sent === 0) {
+        this.setHeld(c, []);
+        // Not `recovers`: the same text would be refused the same way, and it is gone.
+        const reason = err instanceof Error ? err.message : String(err);
+        this.reportSendFailed(
+          c.botId,
+          new MessagingChannelError(
+            `WeChat refused the held replies under a fresh conversation token, so they were dropped: ${reason}`,
+            false,
+          ),
+        );
+        return;
+      }
+      if (isSendRefusal(err)) this.exhaust(c);
+      else this.reportSendFailed(c.botId, err);
+    }
+    // Nothing sent keeps the held text exactly as it was, so the header is never doubled.
+    this.setHeld(c, sent === 0 ? c.held : chunks.slice(sent));
+  }
+
+  /** One real text send under the conversation's token, counted before the wire. */
+  private async sendNow(c: WeChatConversation, text: string): Promise<void> {
+    const bot = c.bot;
+    const contextToken = c.contextToken;
+    if (bot === null || contextToken === null) throw new MessagingReplyHeldError(HELD_NO_TOKEN);
+    // Reserved before the await: whether a send that failed on the way counted against the
+    // token is unknown, and over-counting costs a reply's place in the tail, never the reply.
+    c.spent += 1;
+    this.persist(c);
+    await bot.sendText({ userId: c.userId, text, contextToken });
+  }
+
+  /** Get-or-load the conversation and queue `run` on its chain. */
+  private enqueue(
+    botId: string,
+    bot: WeChatBotClient,
+    userId: string,
+    run: (c: WeChatConversation) => Promise<void>,
+  ): Promise<void> {
+    const c = this.conversationFor(botId, userId);
+    c.bot = bot;
+    return this.chain(c, () => run(c));
+  }
+
+  /**
+   * One outbound text: sent while an ordinary slot is free, withheld for the reserved last slot
+   * once only that is left, and held — with MessagingReplyHeldError — when nothing can carry it
+   * now.
+   */
+  private async deliverText(c: WeChatConversation, text: string): Promise<void> {
+    if (c.contextToken === null) {
+      this.hold(c, [text]);
+      throw new MessagingReplyHeldError(HELD_NO_TOKEN);
+    }
+    if (c.spent < WECHAT_REPLY_BUDGET - 1) {
+      try {
+        await this.sendNow(c, text);
+      } catch (err) {
+        if (!isSendRefusal(err)) throw err;
+        // Expired, or spent on sends this ledger did not count: either way this token is done.
+        this.exhaust(c);
+        this.hold(c, [text]);
+        throw new MessagingReplyHeldError(HELD_NO_BUDGET);
+      }
+      return;
+    }
+    if (c.spent < WECHAT_REPLY_BUDGET) {
+      c.tail.push(text);
+      trimFront(c.tail, WECHAT_HELD_MAX_CHARS);
+      this.scheduleTailFlush(c);
+      return;
+    }
+    this.hold(c, [text]);
+    throw new MessagingReplyHeldError(HELD_NO_BUDGET);
+  }
+
+  private scheduleTailFlush(c: WeChatConversation): void {
+    if (c.timer !== null) clearTimeout(c.timer);
+    c.timer = setTimeout(() => {
+      c.timer = null;
+      void this.chain(c, () => this.flushTail(c)).catch(() => {});
+    }, this.tailFlushMs);
+    // A pending flush must never be the reason the process cannot exit.
+    c.timer.unref?.();
+  }
+
+  /**
+   * Spends the reserved last slot on everything withheld, as one message. A combined tail over
+   * the channel's size cap sends its FIRST chunk and holds the rest; a refusal holds all of it.
+   */
+  private async flushTail(c: WeChatConversation): Promise<void> {
+    if (c.tail.length === 0) return;
+    const tail = c.tail;
+    c.tail = [];
+    if (c.contextToken === null || c.bot === null || c.spent >= WECHAT_REPLY_BUDGET) {
+      this.hold(c, tail);
+      return;
+    }
+    const [head, ...rest] = chunkMessagingText(tail.join("\n\n"));
+    if (head === undefined) return;
+    try {
+      await this.sendNow(c, head);
+    } catch (err) {
+      if (isSendRefusal(err)) {
+        this.exhaust(c);
+        this.hold(c, [head, ...rest]);
+        return;
+      }
+      this.hold(c, rest);
+      this.reportSendFailed(c.botId, err);
+      return;
+    }
+    this.hold(c, rest);
+  }
+
+  /** "Send test message": sent now or refused now, never held or withheld (see the module doc). */
+  private async deliverProbe(c: WeChatConversation, text: string): Promise<void> {
+    if (c.contextToken === null || c.spent >= WECHAT_REPLY_BUDGET) {
+      throw new MessagingNeedsRecentMessageError(NEEDS_RECENT_MESSAGE);
+    }
+    try {
+      await this.sendNow(c, text);
+    } catch (err) {
+      if (!isSendRefusal(err)) throw err;
+      this.exhaust(c);
+      throw new MessagingNeedsRecentMessageError(NEEDS_RECENT_MESSAGE);
+    }
+  }
+
+  /**
+   * One outbound picture or file. It takes an ordinary slot, never the reserved one, and is
+   * never held: bytes are not what the conversation store is for, and the reply's text — which
+   * names the file — already went out or is held itself.
+   */
+  private async deliverMedia(
+    c: WeChatConversation,
+    kind: "image" | "file",
+    file: MessagingOutboundFile,
+  ): Promise<void> {
+    const bot = c.bot;
+    const contextToken = c.contextToken;
+    if (bot === null || contextToken === null) {
+      throw new MessagingChannelError(MEDIA_NO_TOKEN, true);
+    }
+    if (c.spent >= WECHAT_REPLY_BUDGET - 1) throw new MessagingChannelError(MEDIA_NO_BUDGET, true);
+    // One slot: the transport sends a caption as a message of its own only when there is one,
+    // and these sends carry none (below).
+    c.spent += 1;
+    this.persist(c);
+    // The caption is empty because the bridge sends a reply's text as its own message: a
+    // picture here is the picture, and pairing it would duplicate what already went.
+    const args = { userId: c.userId, text: "", contextToken, file };
+    try {
+      if (kind === "image") await bot.sendImage(args);
+      else await bot.sendFile(args);
+    } catch (err) {
+      if (!isSendRefusal(err)) throw err;
+      this.exhaust(c);
+      throw new MessagingChannelError(MEDIA_NO_BUDGET, true);
+    }
+  }
+
+  /**
+   * Appends to the conversation's chain. The chain never rejects — the caller's promise carries
+   * the failure, and one failed send must not poison the conversation's later ones.
+   */
+  private chain(c: WeChatConversation, run: () => Promise<void>): Promise<void> {
+    const result = c.chain.then(run);
+    c.chain = result.catch(() => {});
+    return result;
+  }
+
+  // —— The long poll ————————————————————————————————————————————————————————
+
+  /**
+   * A drained message the user sent recently enough to be answered (see
+   * WECHAT_BACKLOG_RELAY_MS). No send time proves nothing about age, so it reads as backlog;
+   * one in the future is clock skew and reads as recent.
+   */
+  private sentRecently(evt: WeChatInboundEvent): boolean {
+    const sentAt = evt.createdAtMs;
+    return sentAt !== undefined && this.now() - sentAt <= WECHAT_BACKLOG_RELAY_MS;
   }
 
   private async poll(
@@ -324,6 +958,8 @@ export class WeChatConnector implements MessagingChannelConnector {
     /** Drains that closed on their deadline without the platform answering. */
     let drainAttempts = 0;
     let failures = 0;
+    /** A dropped request was just retried at once; the next failure before a poll comes back is an outage. */
+    let blipRetried = false;
     /** What this outage has already reported (see qq-api's GatewaySession.reported). */
     let reported: "none" | "routine" | "defect" = "none";
     let cursor = "";
@@ -360,18 +996,30 @@ export class WeChatConnector implements MessagingChannelConnector {
         });
         if (isClosed()) return;
         cursor = next;
+        blipRetried = false;
         if (!drained) {
-          // The cursor above is kept; these messages are not. Everything from before the
-          // connection existed is confirmed rather than relayed.
-          //
+          // The cursor above is kept. Backlog from before the connection existed is confirmed
+          // rather than relayed — but its tokens are the newest the user has given, so they are
+          // learned, and what was held goes out on them. A message sent within
+          // WECHAT_BACKLOG_RELAY_MS is not backlog: it was written to this connection, a moment
+          // early, and takes the live path below exactly.
+          for (const evt of messages) {
+            if (isClosed()) return;
+            if (this.sentRecently(evt)) {
+              await this.noteInbound(creds.botId, bot, evt, true);
+              await handlers.onMessage(inboundOf(bot, evt));
+              continue;
+            }
+            await this.noteInbound(creds.botId, bot, evt, false);
+          }
           // A drain that hit its short deadline said nothing about where the platform stands,
           // and its cursor is the one it was given — so spending it there would leave the
           // cursor at the beginning and let the next ordinary poll relay a whole backlog as
           // live traffic, which is the flood this exists to prevent. Retried instead, a few
           // times: a bounded retry, because an idle bot whose long poll simply parks would
           // otherwise ask forever, and after the bound the old behaviour is the safer of the
-          // two remaining wrongs — replaying a backlog beats discarding the first message a
-          // user sends after enabling.
+          // two remaining wrongs — replaying a backlog beats discarding a message that carries
+          // no send time.
           if (!timedOut || ++drainAttempts >= DRAIN_ATTEMPTS) drained = true;
           continue;
         }
@@ -382,15 +1030,22 @@ export class WeChatConnector implements MessagingChannelConnector {
         reported = "none";
         for (const evt of messages) {
           if (isClosed()) return;
-          // The token is learned BEFORE the bridge is told, so the reply to this very
-          // message is already addressed to the right conversation.
-          if (evt.contextToken !== undefined) {
-            this.contextTokens.set(this.tokenKey(creds.botId, evt.userId), evt.contextToken);
-          }
+          // The token is learned BEFORE the bridge is told, so the reply to this very message
+          // is already addressed to the right conversation — and what was held is delivered
+          // before that reply is even written.
+          await this.noteInbound(creds.botId, bot, evt, true);
           await handlers.onMessage(inboundOf(bot, evt));
         }
       } catch (err) {
         if (isClosed()) return;
+        // One dropped request is retried at once, as if it had not happened: no outage, no
+        // report, no backoff. It is the commonest failure there is and the next request usually
+        // lands, while an outage costs the panel an `error` flash and the table a record. A
+        // second one before a poll comes back is no longer a blip, and takes the path below.
+        if (!blipRetried && err instanceof WeChatApiError && err.network) {
+          blipRetried = true;
+          continue;
+        }
         ready = false;
         failures += 1;
         // Reported once per outage, not once per attempt: a token revoked overnight would
@@ -438,13 +1093,21 @@ export class WeChatConnector implements MessagingChannelConnector {
 export class WechatMessaging {
   @Use() private readonly wechat!: WeChatTransportHandle;
   @Use() private readonly tuning!: MessagingTuning;
+  @Use() private readonly clock!: Clock;
+  @Use() private readonly conversations!: MessagingConversations;
   @Bind("messaging-wechat.connector") connector!: MessagingChannelConnector;
   setup() {
     const { retryDelayMs } = this.tuning;
-    this.connector = new WeChatConnector(
-      this.wechat.transport,
-      retryDelayMs !== undefined ? { retryDelayMs } : {},
-    );
+    const conversations = this.conversations;
+    this.connector = new WeChatConnector(this.wechat.transport, {
+      ...(retryDelayMs !== undefined ? { retryDelayMs } : {}),
+      store: {
+        get: (botId, userId) => conversations.get("wechat", botId, userId),
+        list: (botId) => conversations.list("wechat", botId),
+        put: (botId, userId, state) => conversations.put("wechat", botId, userId, state),
+      },
+      now: () => this.clock.now().getTime(),
+    });
   }
 }
 

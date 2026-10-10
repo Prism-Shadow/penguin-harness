@@ -94,6 +94,7 @@ import type {
   MessagingInboundMessage,
   MessagingSendNote,
 } from "./connector.js";
+import { MessagingReplyHeldError } from "./connector.js";
 import { messagingErrorKind } from "./error-kind.js";
 import { chunkMarkdown } from "./markdown.js";
 import {
@@ -817,6 +818,16 @@ export interface MessagingTaskRunnerShape {
      */
     opts: { queueIfBusy: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }>;
+  /**
+   * Pins the Session's runtime against idle eviction while a connection is enabled (`on`), or
+   * releases the pin.
+   */
+  keepLoaded(sessionId: string, on: boolean): void;
+  /**
+   * Loads the Session's runtime ahead of its first message, starting nothing; resolves quietly
+   * for a Session that is gone or being deleted.
+   */
+  preload(sessionId: string): Promise<void>;
 }
 
 /**
@@ -939,6 +950,18 @@ interface BridgeEntry {
    * healthy in every snapshot taken between its failures.
    */
   lastConnectionError: { at: string; detail: string } | null;
+  /**
+   * Since when the connector has been holding replies for the chat's next inbound message (see
+   * MessagingReplyHeldError), as its `onHeldChange` last said; null while it holds none. Not a
+   * delivery failure and never folded into `lastDeliveryError`: the replies are kept, not lost.
+   */
+  heldReplySince: string | null;
+  /**
+   * A held reply has been logged in the current holding episode. Every send of a long run is
+   * held once the platform's budget is spent, and a line per send would bury the one fact that
+   * matters — that holding started. Cleared when the connector reports nothing held.
+   */
+  heldLogged: boolean;
   /** Last observed run state on the Session channel. */
   active: string;
   /** False while joined mid-run: that run's partial tail must not mirror as half a reply. */
@@ -1097,6 +1120,7 @@ export class MessagingBridge {
       ...(entry.lastConnectionError !== null
         ? { lastConnectionError: entry.lastConnectionError }
         : {}),
+      ...(entry.heldReplySince !== null ? { heldReplySince: entry.heldReplySince } : {}),
     };
   }
 
@@ -1141,7 +1165,9 @@ export class MessagingBridge {
   async sendTestMessage(row: MessagingBindingRow): Promise<void> {
     if (row.lastChatId === null) throw new Error("no chat is known yet");
     const client = await this.clientFor(row.sessionId, row);
-    await client.sendText(row.lastChatId, MESSAGING_TEST_MESSAGE);
+    // A probe: a channel that would hold an undeliverable reply must refuse this one instead,
+    // because a test message arriving an hour later proves nothing (see MessagingSendOptions).
+    await client.sendText(row.lastChatId, MESSAGING_TEST_MESSAGE, { probe: true });
   }
 
   // -------------------------------------------------------------------------
@@ -1178,6 +1204,8 @@ export class MessagingBridge {
       lastDeliveryError: null,
       lastSendNote: null,
       lastConnectionError: null,
+      heldReplySince: null,
+      heldLogged: false,
       active: runState,
       armed: runState === "idle",
       inCompaction: false,
@@ -1189,6 +1217,18 @@ export class MessagingBridge {
       sendChain: Promise.resolve(),
     };
     this.entries.set(row.sessionId, entry);
+    // The Session is where this bot lives on the server, so it stays loaded for as long as the
+    // connection is enabled, and is loaded NOW rather than by the first message — which after
+    // an enable or a restart would otherwise wait for a resume from the Trace before anything
+    // else. `disconnect` releases it, and a reconnect re-pins it right here. Not awaited: a slow
+    // or failing load must not hold up the connection, and the first message meets the same
+    // failure and reports it on the binding's status.
+    this.deps.runner.keepLoaded(row.sessionId, true);
+    void this.deps.runner.preload(row.sessionId).catch((err: unknown) => {
+      this.log(
+        `[messaging] preload of ${row.sessionId} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
     // Before the stream can hand over its first event: the binding row's watermark is the
     // only thing that outlived the previous process, and a channel opening a connection is
     // exactly when it replays what it never saw acknowledged. Without this, the first
@@ -1204,6 +1244,12 @@ export class MessagingBridge {
         onMessage: (msg) => this.onInbound(entry, msg),
         onReady: () => this.setStatus(entry, { state: "connected" }),
         onError: (err) => this.recordConnectionFailure(entry, err),
+        onHeldChange: (since) => this.setHeldReplySince(entry, since),
+        // A flush the connector made on its own: no send in the chain is waiting to record it.
+        onSendFailed: (err) => {
+          if (!this.live(entry)) return;
+          this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+        },
       });
       if (this.entries.get(row.sessionId) !== entry) {
         // A concurrent sync/unbind replaced this attempt while the channel was loading.
@@ -1220,6 +1266,7 @@ export class MessagingBridge {
     const entry = this.entries.get(sessionId);
     if (!entry) return;
     this.entries.delete(sessionId);
+    this.deps.runner.keepLoaded(sessionId, false);
     entry.unsubscribe?.();
     try {
       entry.connection?.close();
@@ -1322,6 +1369,27 @@ export class MessagingBridge {
     if (seen === entry.lastSendNote) return;
     entry.lastSendNote = seen;
     if (seen !== null) this.log(`[messaging] ${entry.channel} delivered degraded: ${seen}`);
+  }
+
+  /** The connector's `onHeldChange`, behind the stale-entry guard every connector callback has. */
+  private setHeldReplySince(entry: BridgeEntry, since: string | null): void {
+    if (!this.live(entry)) return;
+    entry.heldReplySince = since;
+    if (since === null) entry.heldLogged = false;
+  }
+
+  /**
+   * Whether a send's failure is the connector HOLDING the reply rather than losing it (see
+   * MessagingReplyHeldError). Such a send is not a delivery failure — no error record, no
+   * `lastDeliveryError` — and is logged once per holding episode, not once per message.
+   */
+  private wasHeld(entry: BridgeEntry, err: unknown): boolean {
+    if (!(err instanceof MessagingReplyHeldError)) return false;
+    if (!entry.heldLogged) {
+      entry.heldLogged = true;
+      this.log(`[messaging] ${entry.channel} replies held for later delivery: ${err.message}`);
+    }
+    return true;
   }
 
   private async clientFor(sessionId: string, row: MessagingBindingRow): Promise<MessagingClient> {
@@ -1652,12 +1720,16 @@ export class MessagingBridge {
     const row = this.deps.repo.find(entry.sessionId, entry.channel);
     if (!row) return;
     const client = await this.clientFor(entry.sessionId, row);
-    this.noteSend(
-      entry,
-      msg.chatKind === "direct"
-        ? await client.sendText(msg.chatId, text)
-        : await client.replyText(msg.messageId, text),
-    );
+    try {
+      this.noteSend(
+        entry,
+        msg.chatKind === "direct"
+          ? await client.sendText(msg.chatId, text)
+          : await client.replyText(msg.messageId, text),
+      );
+    } catch (err) {
+      if (!this.wasHeld(entry, err)) throw err;
+    }
   }
 
   // —— Outbound ——————————————————————————————————————————————————————————————
@@ -1903,7 +1975,9 @@ export class MessagingBridge {
           this.noteSend(entry, await client.sendText(to.chatId, chunk, { markdown }));
         }
       } catch (err) {
-        this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+        if (!this.wasHeld(entry, err)) {
+          this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+        }
       }
     }
   }
@@ -2047,7 +2121,9 @@ export class MessagingBridge {
     try {
       this.noteSend(entry, await target.client.sendText(target.chatId, text));
     } catch (err) {
-      this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+      if (!this.wasHeld(entry, err)) {
+        this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+      }
     }
   }
 

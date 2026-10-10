@@ -728,6 +728,8 @@ export class SessionManager {
   private readonly deletingAgents = new Set<string>();
   /** Sessions currently being deleted (guards against the entry/Trace file being rebuilt and reviving it inside the deletion race window). */
   private readonly deletingSessions = new Set<string>();
+  /** Sessions whose runtime entry idle eviction leaves alone (see keepLoaded). */
+  private readonly keptLoaded = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
   private readonly agentGenerations = new Map<string, number>();
   /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
@@ -1862,9 +1864,65 @@ export class SessionManager {
       // Undelivered background completion notices pin the entry too: they live in the core
       // Session object, so evicting it would silently drop them.
       if (entry.session.hasPendingBackgroundNotices?.()) continue;
+      // An enabled messaging connection pins it for latency rather than correctness: the
+      // Session is where a bot lives on this server, and the next chat message after a quiet
+      // half hour would otherwise wait for a resume from the Trace (see keepLoaded).
+      if (this.keptLoaded.has(key)) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }
+  }
+
+  /**
+   * Pins (`on`) or releases a Session's runtime entry against idle eviction (see sweepIdle).
+   * The messaging bridge holds the pin for as long as a binding's connection is enabled: that
+   * Session is where the bot lives on this server, and evicting it after half an hour of quiet
+   * makes the next chat message wait for a resume from the Trace before anything else happens.
+   *
+   * It pins only what is loaded and loads nothing itself (preload does). A stale id pins
+   * nothing: an entry a delete removed is gone from the table whatever this set says, and the
+   * bridge releases the id when its connection goes.
+   */
+  keepLoaded(sessionId: string, on: boolean): void {
+    if (on) this.keptLoaded.add(sessionId);
+    else this.keptLoaded.delete(sessionId);
+  }
+
+  /**
+   * Loads a Session's runtime into the active table ahead of its first Task, through the same
+   * get-or-resume path that Task would take, so the first message after a messaging connection
+   * comes up — an enable, a server restart — does not pay for a resume from the Trace on top of
+   * everything else. Only the load: no run starts, and the core bootstrap (session metadata,
+   * MCP connections) still happens on the first run. Under the Session lock, like startTask, so
+   * a Task arriving mid-load waits for this load instead of starting a second one.
+   *
+   * A Session that is gone or being deleted, alone or with its Agent, resolves quietly: there is
+   * nothing to warm and the caller has nothing to do about it. So does one with no Trace yet,
+   * because loading it is a self-heal REBUILD under a new session id — that would move the
+   * Session out from under the binding that asked, and earlier than any Task would. The row's
+   * `hasTrace` is a cache, so a row that has not caught up only misses the warm-up. Any other
+   * load failure rejects; the first Task meets the same failure and reports it where a person
+   * will see it.
+   */
+  async preload(sessionId: string): Promise<void> {
+    await this.withLock(sessionId, async () => {
+      if (this.closed || this.deletingSessions.has(sessionId)) return;
+      const row = this.deps.sessions.findById(sessionId);
+      if (!row || this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
+      if (!this.entries.has(sessionId) && row.hasTrace !== true) return;
+      try {
+        await this.ensureEntry(sessionId);
+      } catch (err) {
+        // A delete that began while the runtime was loading: ensureEntry re-checks after it.
+        if (
+          err instanceof HttpError &&
+          ["session_not_found", "session_deleting", "agent_deleting"].includes(err.code)
+        ) {
+          return;
+        }
+        throw err;
+      }
+    });
   }
 
   // —— Internal ——
@@ -2552,6 +2610,8 @@ export abstract class Sessions extends Interface<
     | "atIdleBoundary"
     | "shutdown"
     | "sweepIdle"
+    | "keepLoaded"
+    | "preload"
   >
 >() {}
 

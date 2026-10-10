@@ -988,7 +988,7 @@ Session 可以连接消息机器人。目前支持的渠道是飞书、Telegram�
 - PUT 不影响连接，只有一个例外：绑定为启用状态时，连接器会用新凭据重启，因此已存储的配置和活跃连接永远不会出现偏差。也正因为如此，保存操作不会在 Session 之间产生冲突，除非它把一个已启用的绑定指向了另一个 Session 已启用的账号。这种情况返回 409 `account_enabled_elsewhere`——否则重启会让这个账号出现第二条活跃连接，等于绕过了启用检查。
 - `POST …/state` 传入 `{enabled: true}` 时用已存储的凭据建立连接，传入 `{enabled: false}` 时断开。本 Session 的另一个渠道处于启用状态时，返回 409 `another_channel_enabled`；另一个 Session 已启用同一账号时，返回 409 `account_enabled_elsewhere`。两种情况的含义相同：先把那一个停用。第二种错误不会透露占用者是谁，对方可能位于调用者看不到的 Project 里。没有已存储的密钥时，开关操作返回 400 `feishu_secret_required`、`telegram_token_required`、`qq_secret_required` 或 `wechat_token_required`。
 - 飞书、Telegram 和 QQ 的 test 路由用请求中的草稿值探测，缺少的值回退到已存储的配置；微信的 test 不接受请求体（见下文）。凭据未通过验证时返回 `ok: false`，而不是 HTTP 错误。
-- test-message 路由在有人在对应应用里给机器人发过消息之前，返回 409 `feishu_no_chat`、`telegram_no_chat`、`qq_no_chat` 或 `wechat_no_chat`。
+- test-message 路由在有人在对应应用里给机器人发过消息之前，返回 409 `feishu_no_chat`、`telegram_no_chat`、`qq_no_chat` 或 `wechat_no_chat`。微信的 test-message 路由在微信暂不接受机器人发消息、需要用户先给机器人发一条消息时，另外返回 409 `wechat_needs_recent_message`。测试消息从不暂存。
 
 ### 各渠道细节
 
@@ -1078,6 +1078,8 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 - `lastConnectionError`：`{at, detail}`，记录最近一次连接失败，连接恢复后仍保留。相比之下，`lastError` 属于 `error` 状态，状态一离开它就消失。
 
 这三个字段都保存在服务器进程中，每次连接或重连都会重置；重新启用渠道或保存凭据都会开启新连接。因此 `lastInboundAt` 缺失意味着「本次连接建立以来没有消息」，绝不是「从来没有过消息」。提供这些字段，是因为一个扣着消息不投递的渠道，照样显示 `connected`，而且没有任何报错。
+
+在微信上，`heldReplySince` 报告文字回复从何时起在等待用户的下一条微信消息；没有等待中的回复时，这个字段不存在。微信只接受带着该用户近期会话令牌的机器人消息，每枚令牌约 10 条；它暂时不接受的回复会先暂存，用户的下一条消息到达时先行补发。暂存的回复随会话一起落库，重启后仍在；它也不算投递失败，从不写入 `lastDeliveryError`。
 
 连接失败还会记一条错误记录 `messaging_connect_failed`，每次故障一条；从未到达聊天的回复记为 `messaging_send_failed`。在 Telegram、QQ 和微信上，下一次尝试就能自行解决的失败属于 `expected`：请求根本没有完成、超时、HTTP 408、429 或 5xx、QQ 网关不再响应心跳或要求重连，以及微信的会话超时。会一直重复、直到有人处理的失败属于 `unexpected`，例如凭据被拒、缺少权限，或者 Telegram 机器人上登记了 webhook、另有程序在轮询同一个机器人。一次故障以 `expected` 的失败开头时，随后第一个 `unexpected` 的失败也会记录。
 

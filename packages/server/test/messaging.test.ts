@@ -58,6 +58,8 @@
  *   bounded, survives a server and a connector restart, is not moved by a message without an
  *   id or one whose Task never started, and is dropped with the chat on a re-save to another
  *   bot; a redelivery leaves the arrival stamp alone.
+ * - An enabled connection keeps its Session loaded and preloads it on connect, still kept after
+ *   a reconnect and released when disabled.
  * - The session list marks a Session bound on any channel.
  */
 import fs from "node:fs/promises";
@@ -3140,6 +3142,8 @@ describe("messaging binding routes and bridge", () => {
     const stillborn = restartBridge({
       statusOf: () => "idle",
       startTask: () => Promise.reject(new Error("the Session went away")),
+      keepLoaded: () => {},
+      preload: async () => {},
     });
     try {
       await stillborn.start();
@@ -3161,6 +3165,39 @@ describe("messaging binding routes and bridge", () => {
       expect(runs[0]![0]!.text).toBe("deploy the build");
     } finally {
       successor.stop();
+    }
+  });
+
+  it("keeps the bound Session loaded while its connection is enabled, preloading it on connect", async () => {
+    await bindEnabled(SID);
+    t.deps.messaging.stop();
+    const manager = t.deps.manager;
+    const calls: string[] = [];
+    const bridge = restartBridge({
+      statusOf: (sid) => manager.statusOf(sid),
+      startTask: (sid, input, opts) => manager.startTask(sid, input, opts),
+      keepLoaded: (sid, on) => {
+        calls.push(`${sid === SID ? "SID" : sid} keep ${String(on)}`);
+      },
+      preload: async (sid) => {
+        calls.push(`${sid === SID ? "SID" : sid} preload`);
+      },
+    });
+    try {
+      // A server start: the enabled binding pins its Session and warms it before any message.
+      await bridge.start();
+      expect(calls).toEqual(["SID keep true", "SID preload"]);
+      // A reconnect (a credential save while enabled) releases and re-pins: it ends kept.
+      calls.length = 0;
+      await bridge.sync(SID);
+      expect(calls).toEqual(["SID keep false", "SID keep true", "SID preload"]);
+      // Disabled: released, and nothing loads.
+      calls.length = 0;
+      t.deps.messagingRepo.setEnabled(SID, "feishu", false);
+      await bridge.sync(SID);
+      expect(calls).toEqual(["SID keep false"]);
+    } finally {
+      bridge.stop();
     }
   });
 
