@@ -43,6 +43,10 @@
  *   deleted here and an id that is gone are not listed, and none is asked about again.
  * - A reload that was already running when such a Session was fetched keeps it.
  *
+ * Workspace stamps:
+ * - Every Session's newest per Workspace is kept for the picker, the active ones' for the
+ *   groups' order; an older server's every-Session stamp stands in for the active one.
+ *
  * Archive, unarchive and delete:
  * - An archive toggle the page makes (replace) moves the row out of the sidebar and back in
  *   place, the totals in step; a row not held yet is put in.
@@ -743,6 +747,41 @@ describe("a Session that becomes active", () => {
     release();
     await reloading;
     expect(ids(store)[0]).toBe("fresh");
+  });
+});
+
+describe("the Workspace stamps", () => {
+  it("keeps every Session's newest per Workspace for the picker, and the active ones' for the groups' order", async () => {
+    answers.set(key(null, "a1"), {
+      sessions: [session("own")],
+      counts: COUNTS,
+      workspaceCounts: { "/w": COUNTS },
+      // An archived run made after the conversation: it is the Workspace's newest Session.
+      workspaceLatest: { "/w": "2026-09-17T09:00:00.000Z" },
+      workspaceLatestActive: { "/w": "2026-09-16T09:00:00.000Z" },
+    });
+    const store = boot();
+    await store.getState().reload();
+    expect(store.getState().workspaceLatestByAgent.get("a1")).toEqual({
+      "/w": "2026-09-17T09:00:00.000Z",
+    });
+    expect(store.getState().workspaceLatestActiveByAgent.get("a1")).toEqual({
+      "/w": "2026-09-16T09:00:00.000Z",
+    });
+  });
+
+  it("places the groups by an older server's every-Session stamp, the only one it sends", async () => {
+    answers.set(key(null, "a1"), {
+      sessions: [session("own")],
+      counts: COUNTS,
+      workspaceCounts: { "/w": COUNTS },
+      workspaceLatest: { "/w": "2026-09-17T09:00:00.000Z" },
+    });
+    const store = boot();
+    await store.getState().reload();
+    expect(store.getState().workspaceLatestActiveByAgent.get("a1")).toEqual({
+      "/w": "2026-09-17T09:00:00.000Z",
+    });
   });
 });
 

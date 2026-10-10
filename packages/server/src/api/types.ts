@@ -1959,11 +1959,18 @@ export interface SessionsResponse {
   workspaceCounts?: Record<string, SessionCategoryCounts>;
   /**
    * Present with `counts`: each Workspace path's newest Session (any category), as its
-   * `createdAt`. With `workspaceCounts` this is what lets the sidebar list every Workspace
-   * that holds Sessions and place the groups by recency before — or without — loading any
-   * of their rows.
+   * `createdAt` — the Workspace picker's "recently used", which counts every Session that
+   * worked there.
    */
   workspaceLatest?: Record<string, string>;
+  /**
+   * Present with `counts`: each Workspace path's newest `active` Session, as its `createdAt`
+   * (a path holding none is absent). With `workspaceCounts` this is what lets the sidebar list
+   * every Workspace that holds conversations and place the groups by recency before — or
+   * without — loading any of their rows; an archived Session does not move a group it is not
+   * shown in.
+   */
+  workspaceLatestActive?: Record<string, string>;
 }
 
 /**

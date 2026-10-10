@@ -11,6 +11,8 @@
  * - Given a group, its rows page newest first by cursor, each row exactly once.
  * - Given many archived Sessions, the counts build no Session's full view and a page builds one
  *   per row it returns.
+ * - Given archived runs beside a conversation, the Session list stamps each Workspace's newest
+ *   Session (the picker's) and, apart, its newest active one (the sidebar's order).
  * - Given a query, it matches a stored title and a first-prompt title; the source filter keeps
  *   one kind (`user` = archived by hand); a Project filter keeps one Project.
  * - Given ids, unarchive keeps each archived one in the sidebar's list, through a later run;
@@ -256,6 +258,24 @@ describe("the archive page", () => {
     } finally {
       toInfo.mockRestore();
     }
+  });
+
+  it("stamps a Workspace's newest Session for the picker and its newest active one for the sidebar", async () => {
+    const w = await world();
+    const conversation = await seed(w.p1, { workspace: "/tmp/arch-ws-stamp" });
+    const run = await seed(w.p1, { source: "cli", workspace: "/tmp/arch-ws-stamp" });
+    const onlyRuns = await seed(w.p1, { source: "schedule", workspace: "/tmp/arch-ws-runs" });
+    const list = await json<SessionsResponse>(
+      w.owner.get(
+        `/api/projects/${w.p1}/agents/${AGENT}/sessions?category=active&counts=1&order=activity&limit=11`,
+      ),
+    );
+    const created = (id: string) => t.deps.sessionsRepo.findById(id)!.createdAt;
+    expect(list.workspaceLatest?.["/tmp/arch-ws-stamp"]).toBe(created(run));
+    expect(list.workspaceLatestActive?.["/tmp/arch-ws-stamp"]).toBe(created(conversation));
+    // A Workspace holding nothing but archived Sessions is recently used, but no sidebar group.
+    expect(list.workspaceLatest?.["/tmp/arch-ws-runs"]).toBe(created(onlyRuns));
+    expect(list.workspaceLatestActive).not.toHaveProperty("/tmp/arch-ws-runs");
   });
 
   it("matches a stored title and a first-prompt title, and filters by source and by Project", async () => {

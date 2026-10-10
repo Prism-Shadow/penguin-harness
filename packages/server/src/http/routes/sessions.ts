@@ -599,7 +599,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     if (rawExcludeOrg !== undefined && rawExcludeOrg !== "1") {
       throw badRequest("excludeOrg only accepts 1.");
     }
-    const { sessions, counts, workspaceCounts, workspaceLatest } =
+    const { sessions, counts, workspaceCounts, workspaceLatest, workspaceLatestActive } =
       await deps.sessionService.listSessions(projectId, agentId, {
         ...(paging ? { paging } : {}),
         order,
@@ -613,6 +613,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       ...(counts ? { counts } : {}),
       ...(workspaceCounts ? { workspaceCounts } : {}),
       ...(workspaceLatest ? { workspaceLatest } : {}),
+      ...(workspaceLatestActive ? { workspaceLatestActive } : {}),
     } satisfies SessionsResponse);
   });
 

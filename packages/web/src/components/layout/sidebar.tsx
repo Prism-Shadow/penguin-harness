@@ -329,7 +329,7 @@ export function Sidebar({
     byAgent: allByAgent,
     countsByAgent,
     workspaceCountsByAgent,
-    workspaceLatestByAgent,
+    workspaceLatestActiveByAgent,
     machineLabels,
     isLoadedFor,
     hasMoreFor,
@@ -633,10 +633,14 @@ export function Sidebar({
     [workspaceCountsByAgent],
   );
 
-  /** Workspace-mode per-group newest-Session stamps (folded the same way): a group's recency before any of its rows are loaded. */
+  /**
+   * Workspace-mode per-group newest-active-Session stamps (folded the same way): a group's
+   * recency before any of its rows are loaded. Active only, like the rows a group shows: an
+   * archived Session — a scheduled task's run, say — does not move the group it is not in.
+   */
   const workspaceGroupLatest = useMemo(
-    () => aggregateWorkspaceLatest(workspaceLatestByAgent),
-    [workspaceLatestByAgent],
+    () => aggregateWorkspaceLatest(workspaceLatestActiveByAgent),
+    [workspaceLatestActiveByAgent],
   );
 
   /**

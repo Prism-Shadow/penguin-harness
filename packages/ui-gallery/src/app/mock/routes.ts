@@ -993,7 +993,7 @@ router
     const response: { sessions: SessionInfo[] } & Partial<
       Pick<
         import("@prismshadow/penguin-server/api").SessionsResponse,
-        "counts" | "workspaceCounts" | "workspaceLatest"
+        "counts" | "workspaceCounts" | "workspaceLatest" | "workspaceLatestActive"
       >
     > = { sessions: page };
     if (query.get("counts") === "1") {
@@ -1003,12 +1003,18 @@ router
       response.workspaceCounts = Object.fromEntries(
         Object.entries(byWorkspace).map(([path, list]) => [path, countsOf(list)]),
       );
-      // The newest CREATION per path, whatever order the page is in.
+      // The newest CREATION per path, whatever order the page is in: over every row (the
+      // Workspace picker's "recently used"), and over the active ones (the sidebar's order).
+      const newest = (list: readonly SessionInfo[]) =>
+        list.reduce((latest, row) => (row.createdAt > latest ? row.createdAt : latest), "");
       response.workspaceLatest = Object.fromEntries(
-        Object.entries(byWorkspace).map(([path, list]) => [
-          path,
-          list.reduce((latest, row) => (row.createdAt > latest ? row.createdAt : latest), ""),
-        ]),
+        Object.entries(byWorkspace).map(([path, list]) => [path, newest(list)]),
+      );
+      response.workspaceLatestActive = Object.fromEntries(
+        Object.entries(byWorkspace).flatMap(([path, list]) => {
+          const active = list.filter((row) => categoryOf(row) === "active");
+          return active.length > 0 ? [[path, newest(active)] as const] : [];
+        }),
       );
     }
     return response;

@@ -118,8 +118,10 @@ interface SessionsContextValue {
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   /** agentId → the same totals broken down by Workspace group — a path ON a machine, keyed by workspaceGroupKey (workspace-mode groups read their own share from it; maintained like countsByAgent). */
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
-  /** agentId → each Workspace path's newest Session `createdAt` from the last list fetch: what places a workspace-mode group before any of its rows are loaded. */
+  /** agentId → each Workspace path's newest Session `createdAt` from the last list fetch, every category counted: the Workspace picker's "recently used". */
   workspaceLatestByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
+  /** agentId → each Workspace path's newest ACTIVE Session `createdAt` from the last list fetch: what places a workspace-mode group before any of its rows are loaded (an archived Session does not move a group it is not shown in). */
+  workspaceLatestActiveByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /** Every run status the user channel has reported this page's lifetime, by Session id — loaded row or not (see useLiveSessionStatuses). */
   liveStatuses: ReadonlyMap<string, SessionStatus>;
   /**
@@ -349,6 +351,7 @@ interface SessionsStoreState {
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
   workspaceLatestByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
+  workspaceLatestActiveByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /**
    * Run status by Session id as the user channel last reported it, for every `session_state`
    * received — the rows this store holds AND the ones it never fetches (an organization's
@@ -631,6 +634,7 @@ export function createSessionsStore() {
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
       workspaceLatestByAgent: new Map(),
+      workspaceLatestActiveByAgent: new Map(),
       liveStatuses: new Map(),
       loading: true,
 
@@ -697,6 +701,9 @@ export function createSessionsStore() {
                       counts: res.counts,
                       workspaceCounts: res.workspaceCounts,
                       workspaceLatest: res.workspaceLatest,
+                      // A server from before the split sends only the every-Session stamp, which
+                      // is what the groups were ordered by then: it stands in.
+                      workspaceLatestActive: res.workspaceLatestActive ?? res.workspaceLatest,
                       ...splitPage(res.sessions, SIDEBAR_PAGE_SIZE),
                     };
                   }),
@@ -760,8 +767,24 @@ export function createSessionsStore() {
             }>
           >();
           // Newest-Session stamps per group, keyed the way the counts are (a path on a
-          // machine); the newest answer for a group wins.
+          // machine); the newest answer for a group wins. Two of them: every Session's (the
+          // Workspace picker's "recently used") and the active ones' (the groups' order).
           const nextWorkspaceLatest = new Map<string, Readonly<Record<string, string>>>();
+          const nextWorkspaceLatestActive = new Map<string, Readonly<Record<string, string>>>();
+          const foldStamps = (
+            into: Map<string, Readonly<Record<string, string>>>,
+            agentId: string,
+            source: string | null,
+            stamps: Readonly<Record<string, string>>,
+          ) => {
+            const latest: Record<string, string> = { ...(into.get(agentId) ?? {}) };
+            for (const [path, stamp] of Object.entries(stamps)) {
+              const groupKey = workspaceGroupKey(path, source);
+              const held = latest[groupKey];
+              if (held === undefined || held < stamp) latest[groupKey] = stamp;
+            }
+            into.set(agentId, latest);
+          };
           for (const r of results) {
             for (const p of r.pages) {
               const last = p.items.at(-1);
@@ -778,15 +801,10 @@ export function createSessionsStore() {
                 ]);
               }
               if (p.workspaceLatest) {
-                const latest: Record<string, string> = {
-                  ...(nextWorkspaceLatest.get(r.agentId) ?? {}),
-                };
-                for (const [path, stamp] of Object.entries(p.workspaceLatest)) {
-                  const groupKey = workspaceGroupKey(path, r.source);
-                  const held = latest[groupKey];
-                  if (held === undefined || held < stamp) latest[groupKey] = stamp;
-                }
-                nextWorkspaceLatest.set(r.agentId, latest);
+                foldStamps(nextWorkspaceLatest, r.agentId, r.source, p.workspaceLatest);
+              }
+              if (p.workspaceLatestActive) {
+                foldStamps(nextWorkspaceLatestActive, r.agentId, r.source, p.workspaceLatestActive);
               }
               for (const s of p.items) {
                 if (seen.has(s.sessionId)) continue;
@@ -878,6 +896,8 @@ export function createSessionsStore() {
               if (workspaceCounts) nextWorkspaceCounts.set(agentId, workspaceCounts);
               const latest = held.workspaceLatestByAgent.get(agentId);
               if (latest) nextWorkspaceLatest.set(agentId, latest);
+              const latestActive = held.workspaceLatestActiveByAgent.get(agentId);
+              if (latestActive) nextWorkspaceLatestActive.set(agentId, latestActive);
             }
           }
           // A Session adopted from a live event after this reload started may have run after
@@ -907,6 +927,7 @@ export function createSessionsStore() {
             countsByAgent: nextCounts,
             workspaceCountsByAgent: nextWorkspaceCounts,
             workspaceLatestByAgent: nextWorkspaceLatest,
+            workspaceLatestActiveByAgent: nextWorkspaceLatestActive,
           });
           applied = true;
         } finally {
@@ -1581,6 +1602,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
             countsByAgent: new Map(),
             workspaceCountsByAgent: new Map(),
             workspaceLatestByAgent: new Map(),
+            workspaceLatestActiveByAgent: new Map(),
             // The pages were just cleared, so the list is loading from this instant —
             // including the window where the Agent set itself is still being refetched (a
             // Project switch empties it, which makes reload() below return without fetching
@@ -1740,6 +1762,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       countsByAgent: state.countsByAgent,
       workspaceCountsByAgent: state.workspaceCountsByAgent,
       workspaceLatestByAgent: state.workspaceLatestByAgent,
+      workspaceLatestActiveByAgent: state.workspaceLatestActiveByAgent,
       liveStatuses: state.liveStatuses,
       machineLabels,
       machineIds: state.machineIds,

@@ -486,9 +486,11 @@ export class SessionService {
    * without `withCounts` the walk stops as soon as the requested page is complete.
    * `withCounts` classifies every row, a cursor or not, and returns per-category totals over
    * the whole list — plus the same totals broken down by Workspace path, and each path's
-   * newest Session's `createdAt` — so the sidebar can list every Workspace that holds active
-   * Sessions (not only the ones its loaded pages happen to touch) and place the groups by
-   * recency, all without loading them.
+   * newest Session's `createdAt`, once over every category (`workspaceLatest`, the Workspace
+   * picker's "recently used") and once over the active ones (`workspaceLatestActive`) — so the
+   * sidebar can list every Workspace that holds active Sessions (not only the ones its loaded
+   * pages happen to touch) and place the groups by the recency of what they show, all without
+   * loading them.
    *
    * `workspaceGroup` filters the same way, to one Workspace group (see workspace-group.ts),
    * so a sidebar grouped by Workspace pages each group down its OWN stream instead of
@@ -504,7 +506,7 @@ export class SessionService {
    *
    * `excludeOrg` drops the rows an organization owns (its desk and ticket sessions, and the
    * sub-sessions they spawned) from the stream BEFORE anything else looks at it — the page,
-   * `counts`, `workspaceCounts`, `workspaceLatest` and the limit+1 "has more" all describe the
+   * `counts`, `workspaceCounts`, both Workspace stamps and the limit+1 "has more" all describe the
    * same own-rows stream. It is what development mode's list asks for: that list draws the
    * user's own conversations, and a total or a stamp that still counted a desk or a ticket
    * session would make its Workspace appear as a group the list can never fill. The rule above
@@ -529,6 +531,7 @@ export class SessionService {
     counts?: SessionCategoryCounts;
     workspaceCounts?: Record<string, SessionCategoryCounts>;
     workspaceLatest?: Record<string, string>;
+    workspaceLatestActive?: Record<string, string>;
   }> {
     const { paging, order = "created", category, workspaceGroup, withCounts, excludeOrg } = opts;
     const { rows, orgIds, traces } = await this.walkRows(projectId, agentId, excludeOrg === true);
@@ -561,6 +564,7 @@ export class SessionService {
     const counts: SessionCategoryCounts = { active: 0, archived: 0 };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const workspaceLatest: Record<string, string> = {};
+    const workspaceLatestActive: Record<string, string> = {};
     const matched: SessionRow[] = [];
     for (const [i, row] of sorted.entries()) {
       // Rows above a cursor are the client's already: never served, and classified only for
@@ -576,10 +580,18 @@ export class SessionService {
       if (withCounts) {
         const ws = (workspaceCounts[row.workspace] ??= { active: 0, archived: 0 });
         ws[cat] += 1;
-        // A path's newest Session by creation, whichever order the walk is in.
+        // A path's newest Session by creation, whichever order the walk is in — and apart, its
+        // newest active one: an archived Session must not move a sidebar group it is not in.
         const latest = workspaceLatest[row.workspace];
         if (latest === undefined || row.createdAt.localeCompare(latest) > 0) {
           workspaceLatest[row.workspace] = row.createdAt;
+        }
+        const latestActive = workspaceLatestActive[row.workspace];
+        if (
+          cat === "active" &&
+          (latestActive === undefined || row.createdAt.localeCompare(latestActive) > 0)
+        ) {
+          workspaceLatestActive[row.workspace] = row.createdAt;
         }
       }
       const wanted =
@@ -589,7 +601,9 @@ export class SessionService {
       if (wanted && matched.length < want) matched.push(row);
     }
     const sessions = await toPage(paging ? matched.slice(skip, want) : matched);
-    return withCounts ? { sessions, counts, workspaceCounts, workspaceLatest } : { sessions };
+    return withCounts
+      ? { sessions, counts, workspaceCounts, workspaceLatest, workspaceLatestActive }
+      : { sessions };
   }
 
   /**
