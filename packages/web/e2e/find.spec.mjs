@@ -3,8 +3,9 @@
  *
  * - Ctrl+F (`find.open`) scopes the search to the area the focus is inside, falling back to the
  *   conversation; typing counts without moving the page, the first Enter shows the selected hit
- *   and the second travels; `Aa` matches case; Escape closes the bar and its paint, which is a
- *   CSS highlight rather than rewritten DOM.
+ *   and the second travels; `Aa` matches case; other global shortcuts keep working while the bar
+ *   is open; Escape closes the bar and its paint, which is a CSS highlight rather than rewritten
+ *   DOM.
  * - Ctrl+Shift+F (`find.all`) searches every area on screen and lists the hits by area, and the
  *   scope button narrows back to the area the focus was in.
  * - A match inside a collapsed work group is found: the groups of the searched area open while
@@ -118,6 +119,15 @@ test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async 
   await expect(bar.getByText("无结果", { exact: true })).toBeVisible();
   await bar.getByRole("button", { name: "区分大小写" }).click();
   await expect(bar.getByText(`1/${HITS}`, { exact: true })).toBeVisible();
+
+  // The bar is no Escape layer, so the other global shortcuts still run while it is open: the
+  // sidebar folds away and comes back (Ctrl+Alt+1), from inside the query field.
+  const sidebarRegion = page.locator('[data-find-region="sessions"]');
+  await expect(sidebarRegion).toBeVisible();
+  await input.press("Control+Alt+1");
+  await expect(sidebarRegion).toBeHidden();
+  await input.press("Control+Alt+1");
+  await expect(sidebarRegion).toBeVisible();
 
   // Escape closes it, and the paint goes with it.
   await page.keyboard.press("Escape");
