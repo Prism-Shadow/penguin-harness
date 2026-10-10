@@ -16,6 +16,7 @@ import type { Resources, Opaque, ClassCtx, Json } from "@prismshadow/penguin-cor
 import path from "node:path";
 import { HttpError } from "../http/errors.js";
 import { spawnHelperHint } from "./spawn-helper.js";
+import { loadedNodePtyDir } from "./pty-module.js";
 import {
   TerminalSession,
   expandHomePath,
@@ -131,12 +132,14 @@ export class TerminalManager {
       session = new TerminalSession(options);
     } catch (err) {
       // A bare "posix_spawnp failed." says nothing; when the cause is node-pty's
-      // non-executable spawn-helper, name the file and the fix.
-      const hint = spawnHelperHint();
+      // non-executable spawn-helper, name the file and the fix. A node-pty that loads on
+      // nothing here already says so in a sentence of its own (pty-module.ts).
+      const hint = spawnHelperHint(loadedNodePtyDir());
+      const said = err instanceof Error ? err.message : String(err);
       throw new HttpError(
         500,
         "terminal_spawn_failed",
-        `Could not start a shell: ${err instanceof Error ? err.message : String(err)}` +
+        (said.startsWith("Terminals cannot start") ? said : `Could not start a shell: ${said}`) +
           (hint === null ? "" : ` (${hint})`),
       );
     }
