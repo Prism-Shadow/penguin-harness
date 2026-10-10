@@ -24,7 +24,7 @@
 
 ## 不同系统与架构的机器
 
-- 推送到机器上的平台在打开终端时，先用那台机器上已安装发布版自带的 node-pty（按那台机器发布），再用推送带去的那份（在推送它的机器上构建）。Mac 构建的推送只带 node-pty 的 darwin 与 win32 二进制，Linux 机器上的每个终端因此都以「Failed to load native module: pty.node」失败。修复 spawn-helper 执行权限的步骤跟随实际加载的那一份；哪一份都加载不了的机器，用一句话说明原因。
+- 推送到机器上的平台在打开终端时，先用那台机器上已安装发布版自带的 node-pty（按那台机器发布），再用推送带去的那份（在推送它的机器上构建）。Mac 构建的推送只带 node-pty 的 darwin 与 win32 二进制，Linux 机器上的每个终端因此都以「Failed to load native module: pty.node」失败。修复 spawn-helper 执行权限的步骤跟随实际加载的那一份；哪一份都加载不了的机器，用一句话说明原因；二进制在、却被拒绝加载时（比如 glibc 比构建它时的旧），附上动态链接器的原话，而不是 node-pty 最后一次查找落空的信息。
 - 发布版程序包带上 node-pty 的 linux-arm64 二进制（`prebuilds/linux-arm64/pty.node`），由发布流程在 QEMU 下构建一次。此前没有任何发布版带这份二进制，arm64 Linux 机器上的终端全部失败。
 - 安装时复制的 hmr 状态改在进程内打包（可移植的 tar），不再调用服务端所在机器的 `tar`。macOS 的 `bsdtar` 会为每个带扩展属性的文件加一个 AppleDouble `._<name>` 成员，机器随后把 `archives/._node-pty.tgz` 当作归档解包。平台自己解包时也跳过 `._*` 文件。
 - 连不上 GitHub 与 OSS 镜像、或者没有 `curl` 的机器，改由服务端为它取发布包：从镜像或 GitHub 下载一次，核对发布时附带的校验和，存放在 `<root>/machines/releases/v<version>/`，经 ssh 会话发过去，再以 `--archive` 安装。两个下载源都没有的发布版，安装停在 `download the release` 这一步。

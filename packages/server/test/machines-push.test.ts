@@ -536,6 +536,7 @@ describe("installOnRemote", () => {
       probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
       installSays: [
         "Bundle checksum OK.",
+        "Payload checksum OK.",
         "node: /lib64/libc.so.6: version `GLIBC_2.28' not found (required by node)",
         "error: candidate PenguinHarness failed to run (exit status 1). See the error above.",
       ],
@@ -550,6 +551,7 @@ describe("installOnRemote", () => {
     });
     expect(outcome.kind).toBe("failed");
     if (outcome.kind !== "failed") return;
+    expect(outcome.detail).not.toContain("checksum OK");
     const said = outcome.detail.split("\n");
     expect(said.at(-2)).toBe(
       "node: /lib64/libc.so.6: version `GLIBC_2.28' not found (required by node)",

@@ -25,6 +25,7 @@
  * <arch>`, so a copy without a binding for this machine fails at require time and the next
  * one is asked. When none loads, the error says so in one sentence before the details.
  */
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
@@ -106,19 +107,41 @@ export function loadNodePtyFrom(
 ): LoadedNodePty {
   const failures: string[] = [];
   for (const source of sources) {
+    let dir: string | null = null;
     try {
       const req = source.require();
-      const dir = path.dirname(req.resolve("node-pty/package.json"));
+      dir = path.dirname(req.resolve("node-pty/package.json"));
       return { pty: req("node-pty") as NodePty, dir };
     } catch (err) {
-      const said = (err instanceof Error ? err.message : String(err)).split("\n")[0]!;
-      failures.push(`${source.label}: ${said}`);
+      const refused = dir === null ? null : bindingRefusal(dir);
+      failures.push(`${source.label}: ${refused ?? firstLine(err)}`);
     }
   }
   throw new Error(
     `Terminals cannot start on this machine: no copy of node-pty here loads on ${where}. ` +
       `(${failures.join(" / ")})`,
   );
+}
+
+const firstLine = (err: unknown): string =>
+  (err instanceof Error ? err.message : String(err)).split("\n")[0]!;
+
+/**
+ * Why the binding a copy was built with would not load, when node-pty's loader hid it: the
+ * loader tries `build/Release` and then the prebuilds, and reports only its last miss, so a
+ * binding that is there but refused — built against a newer glibc than this machine's, or for
+ * another OS — reads as "Cannot find module './prebuilds/…'". Loading it by path gets the
+ * dynamic linker's own words. Null when there is no such binding, or it loads.
+ */
+function bindingRefusal(dir: string): string | null {
+  const binding = path.join(dir, "build", "Release", "pty.node");
+  if (!fs.existsSync(binding)) return null;
+  try {
+    createRequire(binding)(binding);
+    return null;
+  } catch (err) {
+    return firstLine(err);
+  }
 }
 
 /**

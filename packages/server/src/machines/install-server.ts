@@ -101,13 +101,15 @@ export function installerFailure(output: string): string {
     return said === "" ? "the installer stopped without a message." : said;
   }
   const errors = lines.filter(isError);
+  // The installer's own "… checksum OK." lines come just before the program runs; a line
+  // that says something went well is not the error it points at.
   const above = errors.some((line) => /\bthe error above\b/i.test(line))
-    ? lines.slice(Math.max(0, first - ABOVE_LINES), first)
+    ? lines.slice(Math.max(0, first - ABOVE_LINES), first).filter((line) => !/\bOK\.?$/.test(line))
     : [];
   return [...above, ...errors].join("\n");
 }
 
-/** How many of the program's own lines lead an installer refusal that points above itself. */
+/** How many lines above an installer refusal that points above itself may be the program's own. */
 const ABOVE_LINES = 3;
 
 /** Which installer runs the far side; also the asset keys deploy.mjs pushes. */

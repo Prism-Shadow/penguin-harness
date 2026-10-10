@@ -13,6 +13,9 @@
  * - Given the program's copy has no binding for this machine, the pushed copy is tried next.
  * - Given no copy loads, the error says terminals cannot start here and names this machine's
  *   platform, then what each copy said.
+ * - Given a copy whose binding is there but cannot be loaded (a glibc older than the one it was
+ *   built against), the error carries the loader's words for that binding, not node-pty's
+ *   last miss.
  * - The copy that loaded is the one whose directory is reported, for the spawn-helper repair.
  */
 import fs from "node:fs";
@@ -26,10 +29,17 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-/** A node-pty package under `<dir>/node_modules/node-pty` that loads, or fails as a foreign binding does. */
-function fakeNodePty(dir: string, copy: string, loads: boolean): void {
+/**
+ * A node-pty package under `<dir>/node_modules/node-pty` that loads, or fails as a foreign
+ * binding does; `binding` puts a file at build/Release/pty.node that no loader accepts.
+ */
+function fakeNodePty(dir: string, copy: string, loads: boolean, binding = false): void {
   const pkg = path.join(dir, "node_modules", "node-pty");
   fs.mkdirSync(pkg, { recursive: true });
+  if (binding) {
+    fs.mkdirSync(path.join(pkg, "build", "Release"), { recursive: true });
+    fs.writeFileSync(path.join(pkg, "build", "Release", "pty.node"), "not a shared object");
+  }
   fs.writeFileSync(
     path.join(pkg, "package.json"),
     JSON.stringify({ name: "node-pty", main: "index.js" }),
@@ -43,14 +53,14 @@ function fakeNodePty(dir: string, copy: string, loads: boolean): void {
 }
 
 /** An installed program (`<program>/lib/dist/penguin-hmr.js`) and a pushed assets directory. */
-async function machine(opts: { program: boolean; pushed: boolean }) {
+async function machine(opts: { program: boolean; pushed: boolean; programBinding?: boolean }) {
   const root = await makeTempRoot();
   roots.push(root);
   const lib = path.join(root, "program", "lib");
   fs.mkdirSync(path.join(lib, "dist"), { recursive: true });
   const entry = path.join(lib, "dist", "penguin-hmr.js");
   fs.writeFileSync(entry, "");
-  fakeNodePty(lib, "program", opts.program);
+  fakeNodePty(lib, "program", opts.program, opts.programBinding);
   const assets = path.join(root, "data", "hmr", "store", "assets", "abc");
   fakeNodePty(assets, "pushed", opts.pushed);
   // The pushed platform's own graph resolves nothing: it is imported from the store.
@@ -71,6 +81,20 @@ describe("node-pty for a pushed platform", () => {
     const loaded = loadNodePtyFrom(sources);
     expect((loaded.pty as unknown as { copy: string }).copy).toBe("pushed");
     expect(loaded.dir).toBe(path.join(assets, "node_modules", "node-pty"));
+  });
+
+  it("says why a binding that is there would not load, instead of node-pty's last miss", async () => {
+    const { sources } = await machine({ program: false, pushed: false, programBinding: true });
+    let said = "";
+    try {
+      loadNodePtyFrom(sources, "linux-x64");
+    } catch (err) {
+      said = (err as Error).message;
+    }
+    const program = said.split(" / ").find((part) => part.includes("the installed program's: "));
+    expect(program).toBeDefined();
+    expect(program).not.toContain("Failed to load native module");
+    expect(said).toContain("the pushed build's: Failed to load native module");
   });
 
   it("says plainly that terminals cannot start here when no copy loads, and what each said", async () => {
