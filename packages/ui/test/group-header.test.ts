@@ -91,7 +91,9 @@ describe("FolderSection and MoreRow", () => {
           createElement("ul", null, "rows"),
         ),
       );
-    expect(folder(true)).toContain('data-fold="settled" class="grid"><div class="min-h-0"><ul>');
+    expect(folder(true)).toContain(
+      'data-fold="settled" class="grid"><div class="min-h-0 min-w-0"><ul>',
+    );
     const folded = folder(false);
     expect(folded).toContain('aria-expanded="false"');
     expect(folded).not.toContain("rows");
