@@ -4723,8 +4723,8 @@ export interface MachineJob {
 
 /**
  * A source checkout's install image (machines/checkout-image.ts), built from the checkout
- * when an install or a use first needs it: not built yet, building, built, or failed with
- * the build's own last words.
+ * again at each install or use: not built yet, building, built, or failed with the build's
+ * own last words.
  */
 export type MachinesCheckoutImage =
   | { state: "unbuilt" }
