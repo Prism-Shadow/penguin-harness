@@ -182,7 +182,7 @@ export function formatDateTime(iso: string): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-/** English month abbreviations for formatMonthDay (Intl-free — see the rationale there). */
+/** English month abbreviations for the date formatters below (Intl-free — see formatMonthDay). */
 const EN_MONTHS = [
   "Jan",
   "Feb",
@@ -218,6 +218,24 @@ export function formatMonthDay(iso: string, locale: "zh" | "en"): string {
   // zh writes the date without spaces (8月30日), the way the message-time format does;
   // en keeps the abbreviated month (Aug 30).
   return locale === "en" ? `${EN_MONTHS[month - 1]} ${day}` : `${month}月${day}日`;
+}
+
+/**
+ * `yyyy-mm-dd` (or a full ISO timestamp — only the date part is read) → localized date with
+ * the year: en `Sep 15, 2026`, zh `2026年9月15日` (a release's date in the release notes, whose
+ * entries span years). Read straight from the string for the same reason as formatMonthDay;
+ * unparsable or out-of-range input returns unchanged.
+ */
+export function formatYearMonthDay(iso: string, locale: "zh" | "en"): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(iso);
+  if (!m) return iso;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+  return locale === "en"
+    ? `${EN_MONTHS[month - 1]} ${day}, ${year}`
+    : `${year}年${month}月${day}日`;
 }
 
 /**

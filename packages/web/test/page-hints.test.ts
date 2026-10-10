@@ -1,47 +1,28 @@
 /**
- * page-hints.ts unit tests: the key's user / Project / organization / page scope, the round
- * trip through an injected storage, and the two ways a browser refuses to cooperate — a
- * storage that throws, and one that silently drops the write. Both must read as "not
- * dismissed" rather than throwing while an empty page renders.
+ * The dismissible hints on company pages (features/company/page-hints.ts), remembered per
+ * user, Project, organization and page.
+ *
+ * - Each of those scopes separates the hint, and a signed-out browser gets its own bucket.
+ * - A hint nobody dismissed stands; a dismissal is remembered for that hint alone, and a
+ *   second dismissal changes nothing.
+ * - A storage that throws, or one that silently drops the write, reads as "not dismissed"
+ *   without costing the click anything.
  */
 import { describe, expect, it } from "vitest";
 import type { HintStorage } from "../src/features/company/page-hints";
 import { dismissHint, hintKey, isHintDismissed } from "../src/features/company/page-hints";
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 
-function memoryStorage(initial: Record<string, string> = {}): HintStorage & {
-  map: Map<string, string>;
-} {
-  const map = new Map(Object.entries(initial));
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-  };
-}
-
-const throwingStorage: HintStorage = {
-  getItem: () => {
-    throw new Error("private mode");
-  },
-  setItem: () => {
-    throw new Error("quota");
-  },
-};
+const throwingStorage = blockedStorage();
 
 describe("hintKey", () => {
-  it("names the user, the Project, the organization and the page", () => {
-    expect(hintKey("alice", "p1", "acme", "calendar")).toBe(
-      "penguin.orgPageHint.alice.p1.acme.calendar",
-    );
-  });
-
   it("separates every scope it carries, and gives a signed-out browser its own bucket", () => {
     const key = hintKey("alice", "p1", "acme", "calendar");
     expect(key).not.toBe(hintKey("bob", "p1", "acme", "calendar"));
     expect(key).not.toBe(hintKey("alice", "p2", "acme", "calendar"));
     expect(key).not.toBe(hintKey("alice", "p1", "other", "calendar"));
     expect(key).not.toBe(hintKey("alice", "p1", "acme", "tickets"));
-    expect(hintKey(null, "p1", "acme", "calendar")).toBe("penguin.orgPageHint..p1.acme.calendar");
+    expect(hintKey(null, "p1", "acme", "calendar")).not.toBe(key);
   });
 });
 

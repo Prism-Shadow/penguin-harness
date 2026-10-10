@@ -583,7 +583,12 @@ export class WorkflowService implements Workflows {
         if (!service.agents.exists(projectId, target)) {
           throw new Error(`createSession: this Project has no Agent '${target}'`);
         }
-        return service.sessions.createSession({ projectId, agentId: target });
+        // Unattended, like a scheduled run: allow-all, whatever the default preset asks.
+        return service.sessions.createSession({
+          projectId,
+          agentId: target,
+          approvalMode: "allow-all",
+        });
       },
       async run(sessionId: string, input: WorkflowInput[]) {
         service.ownSession(projectId, sessionId, "run");

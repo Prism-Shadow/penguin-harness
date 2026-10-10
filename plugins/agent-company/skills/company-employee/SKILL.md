@@ -19,7 +19,7 @@ Write in the organization's **working language** — the one the handbook's 「�
 
 | Path | What it is | Who writes it |
 | --- | --- | --- |
-| `org_config.toml` | Name, mission, status, timezone, approval mode, mention chain limit, budget ratios, creator | humans, the CEO |
+| `org_config.toml` | Name, mission, status, timezone, approval mode, mention chain limit, budget ratios, creator | humans, the CEO — except `approval_mode`, which only the board changes, in the organization's settings |
 | `org_chart.yaml` | The employee tree: `agent_id`, `title`, `reports_to`, `duties`, `workspace`, `budget`, `model` | the CEO and HR, through `penguin org hire` / `employee set` |
 | `desks.toml` | Employee → current desk session | the server only |
 | `calendar/<agent_id>/<name>.toml` | One calendar event per file | its employee, HR |
@@ -74,7 +74,7 @@ A sweep, on a calendar event or whenever a human asks you for one — start it b
 
 1. `penguin org ticket ls --owner agent:<your_agent_id> --json` — your tickets; add `--status proposed` for candidates and `--blocked` to see what is stuck. Skip every blocked ticket: no new session for it until its `blocked` field is cleared.
 2. For each `in_progress` ticket of yours that no session is working on, start one: `penguin org ticket start <ticket_id> -m "<what to do first, what to leave alone>"`. It runs in the background and prints the session id; start several for independent streams of one ticket. **Only the ticket's owner starts its sessions** — the server answers `403 not_ticket_owner` on anyone else's ticket. When you need a colleague on your ticket, ask in a channel and they answer with `penguin org ticket start <your_ticket_id> --agent-id <them>`; when a colleague asks you for help, it is their ticket, so they start the session naming you and you work in it. To move the work itself, reassign the ticket: `penguin org ticket assign <ticket_id> --owner agent:<them>`, and their desk picks it up in its next sweep.
-3. Check on the sessions you started earlier: `penguin input <session_id> --timeout 0` for the latest reply, `penguin logs <session_id> --tail 40` for the trail, `penguin input <session_id> -m "<course correction>" --timeout 0` to steer.
+3. Check on the sessions you started earlier: `penguin session input <session_id> --timeout 0` for the latest reply, `penguin session log <session_id> --tail 40` for the trail, `penguin session input <session_id> -m "<course correction>" --timeout 0` to steer.
 4. Verify what a finished session claims — `penguin org ticket show <ticket_id>`, then the files in the workspace — and write the verdict back: `penguin org ticket progress <ticket_id> -m "verified: …"`, and `penguin org ticket move <ticket_id> --to review` (or `done`, where the handbook allows) if the session did not already.
 5. Report only what needs someone — a decision, a blocker, a completion — in the channel that work belongs to (see etiquette).
 
@@ -156,6 +156,8 @@ Your sessions run unattended under the organization's approval mode, so the line
 **Just do it** — routine work on an accepted ticket inside your partition: editing files, short builds and tests, reading the shared inputs, every `penguin org` command.
 
 When you cannot measure a threshold, estimate; when two rules could apply, the stricter one does.
+
+The approval mode itself belongs to the board. The board changes it in the organization's settings, which moves every open desk and ticket session to the new mode at once; `approval_mode` in `org_config.toml` is never yours to edit, not even after a yes, because a hand edit reaches only the sessions opened after it. If you think the organization needs another mode, ask the board in the all-hands channel ("Asking the board"), naming the mode and what it would unblock.
 
 ## Asking the board
 

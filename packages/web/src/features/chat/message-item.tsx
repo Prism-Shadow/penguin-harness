@@ -1,25 +1,34 @@
 /**
- * Rendering dispatch for a single view-model item: user prompts are
- * right-aligned brand bubbles (including image thumbnails), thinking collapsible blocks, text
- * streamed as Markdown, tool cards, subagent cards, compaction banners, abort markers, and Task
- * stats lines. Items have a light entrance animation.
+ * Rendering dispatch for a single view-model item: user prompts are right-aligned bubbles
+ * (including image thumbnails), thinking collapsible blocks, text streamed as Markdown, tool
+ * cards, subagent cards, compaction banners, abort markers, and Task stats lines. Items have a
+ * light entrance animation.
+ *
+ * The drawing is the UI package's (MessageRow / MessageBubble / MessageMeta for what the person
+ * sent and the run's notice lines, AssistantText for a reply); what stays here is which item
+ * becomes what, the text parsing that collapses harness blocks into banners, and the reconnect
+ * line's countdown and controls.
  */
 import { useEffect, useState } from "react";
+import {
+  AssistantText,
+  Button,
+  MessageBubble,
+  MessageImage,
+  MessageMeta,
+  MessageRow,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { formatMessageTime } from "../../lib/format";
-import { STAT_ICONS } from "../../lib/stat-icons";
 import { splitAttachments } from "../../lib/attachments";
+import { routedUrl } from "../../lib/session-machines";
 import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
-import { Md } from "./md";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CopyButton } from "../../components/ui/copy-button";
-import { ZoomableImage } from "../../components/ui/image-zoom";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
-import { ThinkingBlock } from "./thinking-block";
-import { ToolCallCard } from "./tool-call-card";
-import { SubagentChip } from "./subagent-chip";
+import { SessionThinking } from "./thinking-block";
+import { SessionToolCall } from "./tool-call-card";
+import { SessionSubagentChip } from "./subagent-chip";
 import { CompactionBanner } from "./compaction-banner";
 import { McpConnectBanner } from "./mcp-connect-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
@@ -39,47 +48,20 @@ import {
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
-import { toneInk } from "../../lib/tone";
-
-/** User glyph (24×24 line path) for the mid-run steering chip. */
-const USER_STEERING_ICON =
-  "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0";
 
 /**
- * Message footer: timestamp + copy. At ≥sm it is **invisible but takes up space by default**
- * (`sm:opacity-0` rather than `hidden`) — it surfaces on hovering the message list, and because
- * the space is always reserved, surfacing it never pushes content below it down (using `hidden`
- * would cause every item to jitter). Keyboard users can also reveal it via `focus-within`
- * (otherwise the copy button would be focusable but never visible). Below sm the footer is
- * always visible — hover doesn't exist on touch screens (and Tailwind v4 scopes hover: variants
- * to `@media (hover: hover)`), so a hover-revealed footer would simply never appear on phones;
- * same treatment as the AI reply's stats footer.
- *
- * When `text` is omitted, only the timestamp is shown, no copy button — there's no clear meaning
- * to copying an image message.
+ * The footer under a message the person sent (MessageMeta): its time in the reader's locale, and
+ * a copy button when there is text to copy — none for an image or a files notice, where copying
+ * has no clear meaning. The same hover reveal as the reply's stats footer, and always shown below
+ * sm, where touch has no hover.
  */
-function MessageMeta({
-  atMs,
-  text,
-  align = "left",
-}: {
-  atMs?: number;
-  text?: string;
-  align?: "left" | "right";
-}) {
+function SentMessageMeta({ atMs, copyText }: { atMs: number | undefined; copyText?: string }) {
   const { locale } = useLocale();
   return (
-    <div
-      className={`flex h-5 items-center gap-2 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 ${
-        align === "right" ? "justify-end" : "justify-start"
-      }`}
-    >
-      {atMs !== undefined && (
-        <span className="text-[11px] text-gray-400">{formatMessageTime(atMs, locale)}</span>
-      )}
-      {/* No copy button for image-only messages: copying an image message has no clear meaning. */}
-      {text !== undefined && <CopyButton text={text} label={S.chat.copyMessage} />}
-    </div>
+    <MessageMeta
+      {...(atMs !== undefined ? { time: formatMessageTime(atMs, locale) } : {})}
+      {...(copyText !== undefined ? { copy: { text: copyText, label: S.chat.copyMessage } } : {})}
+    />
   );
 }
 
@@ -138,8 +120,43 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
   const showControls =
     live && ctx.origin.length === 0 && (ctx.onRetryNow !== undefined || ctx.onGiveUp !== undefined);
   return (
-    <p
-      className={`anim-msg my-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs ${toneInk.attention}`}
+    <MessageBubble
+      variant="notice"
+      tone="attention"
+      actions={
+        showControls ? (
+          <>
+            {/* The line's two controls on the button rungs: the retry is the one it offers, the
+                bordered secondary; giving up is the quieter ghost beside it. */}
+            {ctx.onRetryNow && (
+              <Button
+                variant="secondary"
+                size="xs"
+                disabled={acted}
+                onClick={() => {
+                  setActed(true);
+                  ctx.onRetryNow!();
+                }}
+              >
+                {S.chat.reconnectRetryNow}
+              </Button>
+            )}
+            {ctx.onGiveUp && (
+              <Button
+                variant="ghost"
+                size="xs"
+                disabled={acted}
+                onClick={() => {
+                  setActed(true);
+                  ctx.onGiveUp!();
+                }}
+              >
+                {S.chat.reconnectGiveUp}
+              </Button>
+            )}
+          </>
+        ) : undefined
+      }
     >
       <span>
         {S.chat.reconnect(
@@ -151,37 +168,7 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
           item.errorCode,
         )}
       </span>
-      {showControls && (
-        <span className="flex shrink-0 items-center gap-1.5">
-          {ctx.onRetryNow && (
-            <button
-              type="button"
-              disabled={acted}
-              onClick={() => {
-                setActed(true);
-                ctx.onRetryNow!();
-              }}
-              className="rounded border border-amber-300 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/40"
-            >
-              {S.chat.reconnectRetryNow}
-            </button>
-          )}
-          {ctx.onGiveUp && (
-            <button
-              type="button"
-              disabled={acted}
-              onClick={() => {
-                setActed(true);
-                ctx.onGiveUp!();
-              }}
-              className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-500 transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-800"
-            >
-              {S.chat.reconnectGiveUp}
-            </button>
-          )}
-        </span>
-      )}
-    </p>
+    </MessageBubble>
   );
 }
 
@@ -230,47 +217,28 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
           {skills && <SkillsBanner names={skills.skills} />}
           {text && (
-            <div className="anim-msg group my-4 flex flex-col items-end">
-              <div className="max-w-[88%] rounded-lg bg-gray-100 px-4 py-2.5 md:max-w-[75%] dark:bg-gray-800">
-                {/* wrap-anywhere: long unbroken strings like attachment paths/long URLs wrap within the bubble on narrow (mobile) screens instead of overflowing; unlike break-words it also shrinks min-content, so a pathological token can't stretch the flex bubble itself. Normal words still only break when a token can't fit on a line. */}
-                <p className="wrap-anywhere whitespace-pre-wrap text-base leading-relaxed text-gray-900 dark:text-gray-100">
-                  {text}
-                </p>
-              </div>
-              <MessageMeta
-                {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
-                text={text}
-                align="right"
-              />
-            </div>
+            <MessageRow>
+              <MessageBubble variant="user">{text}</MessageBubble>
+              <SentMessageMeta atMs={item.atMs} copyText={text} />
+            </MessageRow>
           )}
           {/* Files uploaded with this message: shown below the text in the same user-side
               container and with the same timestamp footer as uploaded images. The bytes live in
               the session scratchpad, where the model opens them by path (goal mode never gets
               here: it takes text and images only). */}
           {files.length > 0 && (
-            <div className="anim-msg group my-4 flex flex-col items-end">
+            <MessageRow>
               <AttachedFilesBanner files={files} />
-              <MessageMeta
-                {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
-                align="right"
-              />
-            </div>
+              <SentMessageMeta atMs={item.atMs} />
+            </MessageRow>
           )}
           {images.map((src, i) => (
-            <div key={i} className="anim-msg group my-4 flex flex-col items-end">
-              <div className="max-w-[88%] rounded-lg bg-gray-100 p-1.5 md:max-w-[75%] dark:bg-gray-800">
-                <ZoomableImage
-                  src={src}
-                  alt={S.chat.imageAlt}
-                  className="max-h-48 max-w-full rounded-md"
-                />
-              </div>
-              <MessageMeta
-                {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
-                align="right"
-              />
-            </div>
+            <MessageRow key={i}>
+              <MessageBubble variant="image">
+                <MessageImage src={src} alt={S.chat.imageAlt} />
+              </MessageBubble>
+              <SentMessageMeta atMs={item.atMs} />
+            </MessageRow>
           ))}
         </>
       );
@@ -301,60 +269,42 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         images: steerImages,
         files: steerFiles,
       } = splitAttachments(item.text);
-      const shown = [...steerImages, ...(item.images ?? [])];
+      // A steer's own images can be a history page's Trace references: routed to the
+      // Session's machine like the user_image below.
+      const shown = [...steerImages, ...(item.images ?? []).map(routedUrl)];
       return (
-        <div className="anim-msg group my-2 flex flex-col items-end">
-          <div className="flex max-w-[88%] flex-col gap-1.5 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 md:max-w-[75%] dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-start gap-1.5">
-              <GlyphIcon
-                d={USER_STEERING_ICON}
-                className="mt-1 shrink-0 text-gray-400 dark:text-gray-500"
-              />
-              <p className="wrap-anywhere whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-100">
-                <span className="mr-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  {S.chat.userSteering}
-                </span>
-                {steerText}
-              </p>
-            </div>
-            {shown.length > 0 && (
-              <div className="flex flex-wrap justify-end gap-1.5">
-                {shown.map((src, i) => (
-                  <ZoomableImage
-                    key={i}
-                    src={src}
-                    alt={S.chat.imageAlt}
-                    className="max-h-28 max-w-full rounded-md"
-                  />
-                ))}
-              </div>
-            )}
-            {steerFiles.length > 0 && (
-              <div className="flex justify-end">
-                <AttachedFilesBanner files={steerFiles} />
-              </div>
-            )}
-          </div>
-          <MessageMeta
-            {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
-            text={steerText}
-            align="right"
-          />
-        </div>
+        <MessageRow spacing="steer">
+          <MessageBubble
+            variant="steering"
+            label={S.chat.userSteering}
+            {...(shown.length > 0
+              ? {
+                  media: shown.map((src, i) => (
+                    <MessageImage key={i} src={src} alt={S.chat.imageAlt} size="chip" />
+                  )),
+                }
+              : {})}
+            {...(steerFiles.length > 0
+              ? { attachments: <AttachedFilesBanner files={steerFiles} /> }
+              : {})}
+          >
+            {steerText}
+          </MessageBubble>
+          <SentMessageMeta atMs={item.atMs} copyText={steerText} />
+        </MessageRow>
       );
     }
     case "user_image":
+      // Inline bytes live, or a windowed history page's reference to the Trace record
+      // (`/api/sessions/<id>/trace-image?…`), which the browser must fetch from the machine
+      // the Session lives on.
       return (
-        <div className="anim-msg group my-4 flex flex-col items-end">
-          <div className="max-w-[88%] rounded-lg bg-gray-100 p-1.5 md:max-w-[75%] dark:bg-gray-800">
-            <ZoomableImage
-              src={item.imageUrl}
-              alt={S.chat.imageAlt}
-              className="max-h-48 max-w-full rounded-md"
-            />
-          </div>
-          <MessageMeta {...(item.atMs !== undefined ? { atMs: item.atMs } : {})} align="right" />
-        </div>
+        <MessageRow>
+          <MessageBubble variant="image">
+            <MessageImage src={routedUrl(item.imageUrl)} alt={S.chat.imageAlt} />
+          </MessageBubble>
+          <SentMessageMeta atMs={item.atMs} />
+        </MessageRow>
       );
     case "assistant_text":
       // Doesn't attach MessageMeta: this turn's reply timestamp and copy both belong to the
@@ -362,13 +312,12 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // footer, and rendering both would pop up two copy buttons in the same spot. The stats
       // line's copy grabs **all** of this turn's assistant text (see collectTaskAssistant),
       // which is more useful than copying segment by segment.
+      // The body (Markdown, caret, the theme's reveal) is AssistantText; the stop reason and a
+      // nested reply's files card follow the text once it is fully revealed.
       return (
-        <div className="md-body anim-msg my-3 text-base leading-relaxed text-gray-800 dark:text-gray-100">
-          {/* Re-renders the accumulated text directly while streaming (a key point of the contract implementation); memoized so settled messages skip the re-parse, and code blocks highlight once on settle (see md.tsx). */}
-          <Md text={item.text} streaming={item.streaming} />
-          {item.streaming && <span className="animate-pulse text-gray-400">▌</span>}
+        <AssistantText text={item.text} streaming={item.streaming}>
           {item.stopReason && item.stopReason !== "completed" && (
-            <span className="ml-1 font-mono text-xs text-gray-400">[{item.stopReason}]</span>
+            <span className="ml-1 font-mono text-xs text-fg-subtle">[{item.stopReason}]</span>
           )}
           {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
           {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
@@ -379,36 +328,50 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
               onOpenFile={ctx.onOpenFile}
             />
           )}
-        </div>
+        </AssistantText>
       );
     case "thinking":
-      return <ThinkingBlock item={item} />;
+      return <SessionThinking item={item} />;
     case "tool_call":
-      return <ToolCallCard item={item} ctx={ctx} />;
+      return <SessionToolCall item={item} ctx={ctx} />;
     case "subagent":
       // Standalone child session (no run_subagent card to bind to): same full-width shortcut
       // bar as the bound site — the conversation itself lives in the subagents panel.
       return (
         <div className="anim-msg my-2">
-          <SubagentChip sessionId={item.sessionId} model={item.model} running={false} ctx={ctx} />
+          <SessionSubagentChip
+            sessionId={item.sessionId}
+            model={item.model}
+            running={false}
+            ctx={ctx}
+          />
         </div>
       );
     case "abort":
-      return (
-        <p className="anim-msg my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
-          {S.chat.aborted(item)}
-        </p>
-      );
+      return <MessageBubble variant="notice">{S.chat.aborted(item)}</MessageBubble>;
     case "llm_error":
-      return (
-        <p className="anim-msg my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
-          {S.chat.llmError(item.errorMessage)}
-        </p>
-      );
+      return <MessageBubble variant="notice">{S.chat.llmError(item.errorMessage)}</MessageBubble>;
     case "reconnect":
       return <ReconnectLine item={item} ctx={ctx} />;
     case "compaction":
       return <CompactionBanner item={item} />;
+    case "model_change": {
+      // A slim divider between two contexts on different models (an in-session model switch),
+      // named by model id: it renders from the Trace alone, so a model removed from the
+      // configuration since still reads. One id under two providers is told apart by the pair.
+      const sameId = item.from.modelId === item.to.modelId;
+      const name = (m: { provider: string; modelId: string }): string =>
+        sameId ? `${m.provider} / ${m.modelId}` : m.modelId;
+      return (
+        <div className="anim-msg my-3 flex items-center gap-3 text-xs text-fg-muted">
+          <span aria-hidden className="h-px flex-1 bg-line" />
+          <span className="min-w-0 break-words text-center">
+            {S.chat.modelChanged(name(item.from), name(item.to))}
+          </span>
+          <span aria-hidden className="h-px flex-1 bg-line" />
+        </div>
+      );
+    }
     case "mcp_connect":
       return <McpConnectBanner item={item} />;
     case "task_stats":
@@ -440,7 +403,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
           <TaskStatsLine
             stats={item.stats}
             assistantText={item.assistantText}
-            cost={item.stats ? (ctx.taskCost?.(item.stats) ?? null) : null}
+            cost={item.stats ? (ctx.taskCost?.(item.stats, item.model) ?? null) : null}
             {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
             {...(ctx.origin.length === 0 && item.forkable && ctx.onFork
               ? { onFork: ctx.onFork }

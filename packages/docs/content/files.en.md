@@ -3,12 +3,12 @@ title: Files panel
 description: Browse, preview, edit, and manage the files in a conversation's Workspace.
 ---
 
-The **Files** panel is one of the chat page's side panels. It shows the Workspace of the open conversation: a directory tree on the left, and a preview of the selected file on the right. Every member of the Project can browse, preview, edit, upload, rename and delete files here.
+The **Files** panel is one of the chat page's side panels. It shows the Workspace of the open conversation, or on the new-chat page the folder picked for the new one: a directory tree on the left, and a preview of the selected file on the right. Every member of the Project can browse, preview, edit, upload and delete files here, and create, rename and move files and folders.
 
 - To get started, see [Open the Files panel](#open-the-files-panel).
 - To find a file, see [Search the Workspace](#search-the-workspace).
 - To change files, see [Edit a text file](#edit-a-text-file) and [Use the context menu](#use-the-context-menu).
-- To add files, see [Upload files](#upload-files).
+- To add files, see [Create a file or folder](#create-a-file-or-folder) and [Upload files](#upload-files).
 
 ## Open the Files panel
 
@@ -17,14 +17,16 @@ Open the panel from any of these places:
 - The top right of the chat toolbar: select **Right sidebar** or **Bottom panel**, then choose **Files**. If the dock already shows other panels, use its **Add panel** menu.
 - The **Shortcuts** launcher on the conversation's right edge.
 - A message: select a file chip or file card to open the panel at that file. A link in a reply that names a file in the Workspace opens it here too, instead of navigating the browser; whether the file exists is not checked first, so the panel says when it is missing.
+- The new-chat page: select **Files** right of the Workspace pill under the composer. The panel shows the folder picked in the pill, and picking another folder moves it there. **Add to conversation** adds to the new chat's composer.
+- The sidebar: in a Workspace group's **…** menu, select **Browse files**. When the page on screen is already in that folder, the panel opens there. Otherwise a new chat opens on that folder, with the panel.
 
-The panel is available once the conversation has started. See [Use side panels](/chat#use-side-panels).
+On the new-chat page the panel needs a folder. A temporary workspace is created with the first message, so until then **Files** is unavailable, and its tooltip says why. When the first message is sent, the panel carries on with the new conversation's Workspace. See [Use side panels](/chat#use-side-panels).
 
 ## Browse the file tree
 
 The tree lists the contents of a directory the first time you open it. File rows show the file size after the name. Point at a row to see its path, size, and modified time.
 
-The tree pane's header holds the search box, **Refresh** and **Upload**.
+The tree pane's header holds the search box, **New**, **Refresh** and **Upload**.
 
 The path row above the preview names the open file. The leading directories collapse into a single `…` first, and the file name is the last thing to go. When no file is open, the path row names the current directory. The root reads `.`, and the Workspace's absolute path lives in the Session details card.
 
@@ -40,7 +42,7 @@ The tree and the open preview re-read when a turn finishes. The tree also re-rea
 
 ### Hide the tree or change its width
 
-At the left end of the panel's header row, select **Hide file tree** to slide the tree out of the panel's left edge. The search box, **Refresh** and **Upload** are hidden with it. Select **Show file tree** to bring the tree back. The tree is shown by default, and the panel remembers your choice in the browser.
+At the left end of the panel's header row, select **Hide file tree** to slide the tree out of the panel's left edge. The search box, **New**, **Refresh** and **Upload** are hidden with it. Select **Show file tree** to bring the tree back. The tree is shown by default, and the panel remembers your choice in the browser.
 
 Drag the divider between the two panes to set the tree's width. When the divider has focus, the arrow keys nudge it. The panel remembers the width too.
 
@@ -78,7 +80,7 @@ A Markdown file larger than 64KB opens in the source view. You can still switch 
 An HTML file can also be opened in a new browser tab: in the preview, select **Open in new tab**.
 
 > [!NOTE]
-> When the app is reached through an address with no separate preview origin, the tab opens sandboxed, without localStorage, cookies or third-party embeds. To avoid the sandbox, reach the app over 127.0.0.1 or localhost, or set `PENGUIN_PREVIEW_ORIGIN`.
+> When the app is reached through an address with no separate preview origin, the tab opens sandboxed, without localStorage, cookies or third-party embeds. To avoid the sandbox, reach the app over 127.0.0.1 or localhost, or set `PENGUIN_PREVIEW_ORIGIN`. On the new-chat page HTML always opens sandboxed: the separate preview origin serves a conversation's files only.
 
 A text preview reads up to 1MB. A larger file is shown truncated, with the message "File too large; preview truncated, download for the full file", and cannot be edited here. **Download** is in the preview header.
 
@@ -86,12 +88,14 @@ Three buttons float over the top right of the file view: **Copy code**, **Wrap**
 
 ## Edit a text file
 
-1. Open the file in the preview, then select **Edit** at the top right of the file view. The preview becomes an editor: the same highlighted text with line numbers, now editable. There is no rich editor.
+1. Open the file in the preview, then select **Edit** at the top right of the file view. The preview becomes an editor: the same highlighted text with line numbers, now editable. There is no rich editor. The editor opens where the preview was scrolled, with the cursor at the start of the first line in view.
 2. Make your changes.
 3. Select **Save** (the check mark), or press Ctrl+S / Cmd+S.
 4. In the **Save file** dialog, select **Save** to write the file back.
 
-Select **Cancel** (×) to return to the preview without saving.
+As in a code editor, saving leaves the editor open, with the cursor, the selection and the scroll where they were.
+
+Select **Stop editing** (×) to return to the preview. It asks first when there are unsaved changes, and the preview comes back where the editor was scrolled.
 
 The panel asks before your unsaved changes are lost: when you switch to another file, close the panel's tab, or leave the page.
 
@@ -104,29 +108,44 @@ A save over the 14MB write limit is refused with a message.
 
 ## Handle a file that changed on disk
 
-The agent writes to the same Workspace, so a file can change while you are editing it. The panel checks for changes whenever a turn finishes. Your text is never replaced. As soon as the file has changed on disk, the editor header shows **Changed on disk**.
+The agent writes to the same Workspace, so a file can change while you are editing it. The panel checks for changes whenever a turn finishes:
+
+- If the editor holds no unsaved changes, it takes the new text in place. The cursor stays on its line and the view does not move.
+- If it holds unsaved changes, your text is never replaced. The editor header shows **Changed on disk**.
 
 A save that would land on a changed file is refused before anything is written. The **File changed on disk** dialog asks whether to **Overwrite** the file with your version or keep editing. Your text is kept either way.
 
 ## Use the context menu
 
-Right-click a tree row or the file view to open the context menu. On a touch screen, long-press. On a keyboard, press Shift+F10 or the menu key.
+Right-click a tree row, the blank space under the rows, or the file view to open the context menu. On a touch screen, long-press. On a keyboard, press Shift+F10 or the menu key.
 
 > [!NOTE]
 > The context menu does not open inside an HTML or PDF preview, or inside the editor, where the browser's own menu is how text is pasted.
 
 | Menu item | What it does | Available for |
 | --- | --- | --- |
-| **Copy relative path** | Copies the path from the Workspace root. | Files and directories |
+| **Copy relative path** | Copies the path from the Workspace root to the clipboard of the computer your browser runs on, also when the app is reached over plain HTTP, such as a LAN address. | Files and directories |
 | **Add to conversation** | Adds a reference to the file or directory to the composer as a chip. A directory's path ends in `/`. Nothing is sent until you send the message. | Files and directories |
 | **Add selection to conversation** | On send, the message carries the selected text as a code block headed by the file and line range, such as `@src/app.ts:12-18`. | Files, in the file view, with text selected |
+| **New text file** / **New folder** | Creates one in this directory. See [Create a file or folder](#create-a-file-or-folder). | Directories, and the blank space under the rows (the Workspace root) |
 | **Upload here** | Uploads into this directory. See [Upload files](#upload-files). | Directories |
 | **Download** | Downloads the file. See [Download a file](#download-a-file). | Files |
-| **Rename or move** | Enter a **New path** relative to the Workspace root and select **Move**. Missing directories are created. An existing target is refused. | Files |
+| **Rename or move** | Enter a **New path** relative to the Workspace root and select **Move**. Missing directories are created. An existing target is refused. A directory moves with everything in it, and cannot move into itself; a file that was open follows it. | Files and directories |
 | **Delete** | Deletes the file after a confirmation. The file does not go to a trash folder. | Files |
 
 > [!NOTE]
-> Rename, move and delete read the file's current version first. If the agent rewrote the file while the dialog was open, they change nothing.
+> Rename, move and delete read the file's current version first. If the agent rewrote the file while the dialog was open, they change nothing. A directory has no version, so renaming one does not wait for this read.
+
+## Create a file or folder
+
+1. Choose where the new entry goes:
+   - To create in the current directory, the one the path row names, select **New** in the tree pane's header.
+   - To create inside a directory, right-click its row.
+   - To create at the Workspace root, right-click the blank space under the rows.
+2. Select **New text file** or **New folder**.
+3. Enter a name and select **Create**, or press Enter. A text file starts as `untitled.txt` with `untitled` selected, so typing replaces the name and keeps the extension. A `/` in the name also creates the folders in between.
+
+A new folder opens in the tree and becomes the current directory. A new text file is empty and opens in the editor, unless the editor holds unsaved changes. A name that is already taken is refused with "… already exists, so nothing was changed."; the dialog stays open so you can change the name.
 
 ## Upload files
 

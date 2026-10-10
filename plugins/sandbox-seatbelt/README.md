@@ -1,8 +1,9 @@
 # macOS Seatbelt sandbox backend
 
 The macOS counterpart to the bubblewrap backend, built on `sandbox-exec` (Seatbelt).
-Implements **all three** dimensions of the harness sandbox interface — filesystem writes,
-network isolation and path masking — as policy rules rather than mounts.
+Implements every dimension of the harness sandbox interface — filesystem writes, network
+isolation (none, or localhost only), path masking and closing the temporary directory — as
+policy rules rather than mounts.
 
 ## The program it runs
 
@@ -24,7 +25,7 @@ still name another program, and a host where it does not work is caught by the l
 (allow default)                              ; start from the host's world
 (deny file-write*)                           ; nothing is writable…
 (allow file-write* (literal "/dev/null") …)  ; …beyond the required sinks
-;; workspace-write, and the temp areas when temp is writable
+;; workspace-write (the Workspace and the policy's writableRoots, the Session's scratchpad), and the temp areas when temp is writable
 (allow file-write* (subpath "<workspaceRoot>") …)
 ;; network: none
 (deny network*)
@@ -57,7 +58,7 @@ run it: the App re-assembles itself, no restart. Written by hand, it is a row of
 
 ```toml
 [plugins]
-"@prismshadow/penguin-plugin-sandbox-seatbelt" = "*"
+"@penguinharness/sandbox-seatbelt" = "*"
 ```
 
 Installing is an operator-side action: the harness resolves the package from the installation,

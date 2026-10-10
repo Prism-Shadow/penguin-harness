@@ -36,6 +36,10 @@ export interface OrgTaskRunner {
  */
 export interface OrgRunsShape extends OrgTaskRunner {
   invalidateAgentRuntimes(projectId: string, agentId: string): void;
+  /** Subscribes to a Session's model moving (an in-session switch); returns the unsubscribe. */
+  onModelChanged(
+    listener: (sessionId: string, model: { provider: string; modelId: string }) => void,
+  ): () => void;
 }
 
 /** Session creation (desk and ticket sessions are ordinary sessions of the employee's Agent). */
@@ -54,6 +58,12 @@ export interface OrgSessionCreator {
      * forget it.
      */
     client: "org";
+    /**
+     * Always "company": what kind of conversation a desk or ticket session is, recorded in its
+     * session_meta. It keeps the Session out of every category of the session list, so it is
+     * listed only in company mode's own views. Required for the same reason as `client`.
+     */
+    source: "company";
   }): Promise<{ sessionId: string; workspace: string }>;
 }
 

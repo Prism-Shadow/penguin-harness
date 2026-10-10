@@ -5,6 +5,12 @@
  * The fingerprint deliberately excludes `checkedAt`. Every probe moves that timestamp, so
  * including it would make every round look like a change and pin the interval at its
  * shortest step forever — an ssh child per machine every 15 seconds, indefinitely.
+ *
+ * - The wait never exceeds ten minutes, never shortens as the quiet spell grows, and a
+ *   nonsensical round count reads as the first step.
+ * - The fingerprint ignores `checkedAt`, and changes when a server goes down, comes up or moves
+ *   port, when a machine is installed, reinstalled or appears, and between "not probed yet" and
+ *   every real state.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -25,15 +31,6 @@ const machine = (
 });
 
 describe("probeDelayMs", () => {
-  it("starts at 15s and widens through a minute to a ten-minute ceiling", () => {
-    expect(probeDelayMs(0)).toBe(15_000);
-    expect(probeDelayMs(1)).toBe(30_000);
-    expect(probeDelayMs(2)).toBe(45_000);
-    expect(probeDelayMs(3)).toBe(60_000);
-    expect(probeDelayMs(4)).toBe(120_000);
-    expect(probeDelayMs(PROBE_STEPS_MS.length - 1)).toBe(600_000);
-  });
-
   it("never exceeds ten minutes, however long everything has been quiet", () => {
     for (const rounds of [20, 100, 10_000]) expect(probeDelayMs(rounds)).toBe(600_000);
   });

@@ -23,7 +23,7 @@ The stack, top to bottom:
                        │ session.run(...)   ← Human boundary
 ┌──────────────────────┴───────────────────────┐
 │  core: context_engine (ReAct loop)           │
-│    ├── LLMInterface ──→ AgentHub ──→ models  │
+│    ├── LLMInterface ──→ MMSP ──→ models      │
 │    ├── EnvironmentInterface ──→ builtin tools│
 │    ├── Agent State (editable files)          │
 │    └── Trace (append-only JSONL)             │
@@ -36,6 +36,7 @@ The CLI and the Web App talk to the Server over HTTP and SSE. Among the shipped 
 | --- | --- |
 | `packages/core` | SDK and engine: `context_engine`, OmniMessage, the LLM and Environment interfaces, hooks, state and Trace |
 | `packages/server` | The Human implementation: runs Tasks through core, takes input and approvals over HTTP, streams output over SSE |
+| `packages/amsp` | The [Agent API](/agent-api)'s protocol package: the [AMSP](/amsp) wire types, which the Server imports, and a zero-dependency client for Node and browsers |
 | `packages/cli` | Terminal client of the Server: REPL and one-shot runs over HTTP and SSE. It starts a local Server when none is running. Only `penguin config` reads and writes configuration files directly through the SDK |
 | `packages/web` | Rendering SPA: renders the OmniMessage stream and contains no engine logic |
 | `packages/desktop` | Desktop app: an Electron shell that runs the Server as a `utilityProcess` and opens its window on the local HTTP address |
@@ -47,7 +48,7 @@ The CLI and the Web App talk to the Server over HTTP and SSE. Among the shipped 
 The `context_engine` is the heart of the system. It does exactly two things: it maintains the linear message history, and it orchestrates the event flow between three interfaces. It speaks only [OmniMessage](/omni-message) and performs no protocol conversion.
 
 - **Human**: the user-side boundary. It is deliberately not an interface class: the SDK's single entry point, `session.run(newMessages, { approve, signal })`, *is* the Human boundary. Input is a list of new OmniMessages plus an approval callback; output is a stream of OmniMessages. The Server is the shipped implementation. The CLI and the Web App reach it over HTTP and SSE, and SDK embedders call `session.run` themselves.
-- **LLM**: the model-side interface, `LLMInterface`. It translates OmniMessage into requests against the AgentHub model gateway, and streamed events back into OmniMessage. All provider protocol adaptation happens inside AgentHub, so core never imports a vendor SDK.
+- **LLM**: the model-side interface, `LLMInterface`. It translates OmniMessage into requests against the MMSP model gateway, and streamed events back into OmniMessage. All provider protocol adaptation happens inside MMSP, so core never imports a vendor SDK.
 - **Environment**: the tool-execution interface, `EnvironmentInterface`. It runs approved tool calls and streams the results back.
 
 The kernel contains no provider, tool or UI specifics, so each side swaps by configuration without touching core: a local shell today, another sandbox tomorrow; the CLI, the Web App or a programmatic caller. See [Core Interfaces](/interfaces) for the signatures.
@@ -81,7 +82,7 @@ Item by item, each design maps to an owner and to the file or module that carrie
 | The ReAct loop, carry-over, reconnect, compaction | SDK | `core/src/engine/context-engine.ts` — see [The Agent Loop](/agent-loop) |
 | The approval mechanism (one decision per `tool_call`) | SDK | `ApproveFn` (`core/src/interfaces/shared.ts`); the concrete mode is injected by the Server or an SDK host |
 | Tool execution and centralized close-out | SDK | `core/src/environment/` — see [Tools & Approval](/tools) |
-| Model access (provider protocol adaptation) | SDK → AgentHub | `core/src/llm/` + `@prismshadow/agenthub` — see [Models & Providers](/models) |
+| Model access (provider protocol adaptation) | SDK → MMSP | `core/src/llm/` + `@prismshadow/mmsp` — see [Models & Providers](/models) |
 | Trace writing and Session-recovery logic | SDK | `core/src/trace/` (the records themselves live in the file layer) |
 | Subagent spawning and message forwarding | SDK | the `run_subagent` tool + the injected `SubagentRunner` |
 | Multi-user auth and Project authorization | Server | `server/src/auth/`, `server/src/services/project-service.ts` |
@@ -122,9 +123,9 @@ packages/
 ├── core/src
 │   ├── agent.ts / session.ts       # the createAgent composition layer and Session (run / compact / generateTitle)
 │   ├── engine/context-engine.ts    # ReAct loop orchestration: turn lifecycle, approvals, carry-over, reconnect, compaction
-│   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · aggregate.ts partial aggregation · markers/
+│   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · markers/
 │   ├── interfaces/                 # llm.ts · environment.ts · shared.ts (ApproveFn and the vocabulary both sides share)
-│   ├── llm/                        # generative-model.ts AgentHub adapter · tool-call-ids.ts id uniqueness · context-limits.ts
+│   ├── llm/                        # generative-model.ts MMSP adapter · tool-call-ids.ts id uniqueness · context-limits.ts
 │   ├── environment/                # environment.ts execution close-out · tools/ registry, 7 builtin tools, background sessions · mcp/
 │   ├── hooks/                      # the stop / pre_tool_use / user_prompt hook points and the hook-script runner
 │   ├── plugins/                    # the built-in plugin library and its loader
@@ -175,6 +176,6 @@ The LLM and the Environment never throw into the engine. Their results carry a f
 
 ### A thin model layer
 
-Core defines only `LLMInterface`. Provider adaptation lives entirely in AgentHub (`@prismshadow/agenthub`), which is what makes any OpenAI-compatible endpoint reachable. See [Models & Providers](/models).
+Core defines only `LLMInterface`. Provider adaptation lives entirely in MMSP ([`@prismshadow/mmsp`](https://www.npmjs.com/package/@prismshadow/mmsp)), which is what makes any OpenAI-compatible endpoint reachable. See [Models & Providers](/models).
 
 Source entry points: `packages/core/src/engine/context-engine.ts`, `packages/core/src/interfaces/`.

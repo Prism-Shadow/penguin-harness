@@ -1,24 +1,53 @@
 /**
- * Telegram messaging tests — the mirror of messaging.test.ts for the second channel, and
- * the proof the connector seam holds: the /api/sessions/:id/messaging/telegram routes
- * (token masking + keep-on-blank, the bot id as the account identity and the enable-time
- * 409 it collides on, the save/enable split, the getMe
- * probe surfacing the bot username), the channel-agnostic GET the channel-aware editor
- * reads, and the connector's long-poll loop through a fake Bot API transport — offset
- * advancement, the connect-time backlog drain, inbound routing as plain user input,
- * an inbound photo (largest variant, caption as the message text, a failed download
- * degrading to a notice), an inbound `document` (the one media field the file seam takes —
- * scratchpad attachment, caption as the message text, and Telegram's own 20MB bot download
- * ceiling reported as a size refusal rather than an unexplained failure),
- * per-message mirroring with one reply thread per run in groups,
- * mentioned files leaving as a photo or a document, 4096-safe chunking,
- * non-text notices, poll-failure status flips, and the conflict path a second poller
- * produces (the 409 backoff, the connect-time webhook clear, and the actionable text the
- * transport maps a 409 to). No test opens real network.
+ * Telegram messaging — the mirror of messaging.test.ts for the second channel, over a fake Bot
+ * API transport (the Feishu side, where a case needs one, is the suite's Feishu fake). No test
+ * opens a network connection.
+ *
+ * Routes:
+ * - The bot id is read off the token (a malformed token refused). A PUT saves the token only
+ *   (masked, the bot id as the account, disabled, no poll; a blank token keeps the stored one,
+ *   the clear flag drops it after a disable); the delivery flags ride the same PUT, defaulting
+ *   off. POST /state owns the connection (getMe, then the poll); a new token while enabled
+ *   restarts the poll; a rotated secret saves freely and collides with another Session's
+ *   enabled bot only on enable.
+ * - GET /messaging lists every saved channel side by side; enabling a second channel of one
+ *   Session is a 409 another_channel_enabled.
+ * - POST /test probes getMe, reporting the username and @BotFather's Group Privacy; failures
+ *   are ok:false. /test-message needs a known chat.
+ *
+ * The connector and the bridge:
+ * - Inbound text starts an ordinary user Task and advances the offset; the reply mirrors each
+ *   completed message on its own, in groups threaded onto the inbound message (the run's first
+ *   only), in a real supergroup too; non-message updates are skipped.
+ * - This bot's @mention is stripped from a group message (case-insensitively, by text_mention
+ *   id, by UTF-16 units), others' kept, a mention that is not the addressing prefix kept, a
+ *   mention-only message starting nothing.
+ * - Forum topics: the reply follows the remembered topic, the newest one the user writes in,
+ *   and a held reply answers where its run was asked; notices go there too; a deleted topic
+ *   degrades to a plain send; General, private chats, non-forum supergroups, reply chains in
+ *   General and pre-topic chat ids mint no topic.
+ * - A flood wait is not retried; a send failing every way surfaces after bounded attempts.
+ * - An inbound photo becomes an image_url part at its largest size, its caption (this bot's
+ *   mention stripped) as the text; a failed download degrades to a notice. A document lands in
+ *   the scratchpad as a path line (caption first), past Telegram's own ceiling is a size
+ *   refusal, and a nameless one gets a placeholder; video, audio and voice get the
+ *   not-supported notice.
+ * - Mentioned files leave as a photo and a document after the text; a long reply is chunked
+ *   under the shared cap; formatting renders what Telegram has (degrading the rest, escaping
+ *   the model's HTML), plain when renderMarkdown is off, falls back to plain on a refusal,
+ *   never retries a send that may have landed, and chunks without splitting a fence or entity.
+ * - Connecting drains the dark-period backlog; poll failures flip the status to error once and
+ *   recovery re-probes; start() connects an enabled binding; a message delivered under two
+ *   update ids starts one Task; racing syncs leave one poller.
+ * - Under a persistent 409 the poll reports once and backs off, recovers when the conflict ends,
+ *   probes for a webhook once per connection and names it, and a closed connection issues
+ *   nothing; a failure that recovers on its own does not silence the refusal behind it.
+ * - A 409 is reported as the action to take (another poller, a leftover webhook); other Bot
+ *   API descriptions pass through; the bot token is never echoed.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   approvalDecision,
   assistantText,
@@ -29,13 +58,14 @@ import {
   toolCall,
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import { wire } from "@prismshadow/penguin-core/kernel";
 import type {
   FeishuBindingResponse,
   MessagingBindingsResponse,
   TelegramBindingResponse,
   TelegramTestResponse,
 } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import { ProjectsRepo } from "../src/db/repos/projects.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
@@ -45,6 +75,8 @@ import {
   messagingImageFailedNotice,
   messagingInboundFileTooLargeNotice,
 } from "../src/runtime/messaging/bridge.js";
+import { MessagingChannelError } from "../src/runtime/messaging/connector.js";
+import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
 import { MessagingMediaTooLargeError, collectUnderCap } from "../src/runtime/messaging/media.js";
 import type {
   TelegramBotClient,
@@ -62,17 +94,13 @@ import {
   createTelegramTransport,
 } from "../src/runtime/messaging/telegram-api.js";
 import { TelegramConnector, telegramBotIdOf } from "../src/runtime/messaging/telegram-connector.js";
-import type {
-  FeishuApiClient,
-  FeishuCredentials,
-  FeishuEventHandlers,
-  FeishuSdk,
-} from "../src/runtime/messaging/feishu-sdk.js";
+import { FakeFeishuSdk } from "./fixtures/feishu.js";
+import { fakeFetch, jsonResponse } from "./fixtures/fetch.js";
+import { forwardingTo } from "./fixtures/forwarding.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-08-26-10-00-00-t9000001";
-const SID2 = "session-2026-08-26-10-00-01-t9000002";
 const BASE = (sid: string) => `/api/sessions/${sid}/messaging/telegram`;
 const TOKEN = "7000000001:test-secret-AAAA-1111";
 
@@ -363,39 +391,6 @@ class FakeTelegramTransport {
   }
 }
 
-/**
- * Minimal fake Feishu SDK for the cross-channel tests (enabling the feishu side must not
- * import the real Lark SDK or open network): connects instantly, records nothing.
- */
-class FakeFeishuSdk implements FeishuSdk {
-  async createClient(_creds: FeishuCredentials): Promise<FeishuApiClient> {
-    return {
-      async checkCredentials() {
-        return null;
-      },
-      async sendText() {},
-      async replyText() {},
-      async sendCard() {},
-      async replyCard() {},
-      async botOpenId() {
-        return null;
-      },
-      async fetchMessageImage(): Promise<never> {
-        throw new Error("the feishu side of these tests never carries an image");
-      },
-      async fetchMessageFile(): Promise<never> {
-        throw new Error("the feishu side of these tests never carries a file");
-      },
-      async sendImage() {},
-      async sendFile() {},
-    };
-  }
-  async connect(_creds: FeishuCredentials, handlers: FeishuEventHandlers) {
-    handlers.onReady?.();
-    return { close: () => {} };
-  }
-}
-
 /** A private-chat text message from a fixed user. */
 function privateText(text: string, messageId = 1): TelegramUpdate["message"] {
   return {
@@ -465,19 +460,12 @@ function echoFakeSession(
   runs: InputPayload[][],
   reply = "Reply text",
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(input: OmniMessage[]) {
       runs.push(input.map((m) => m.payload as InputPayload));
       yield assistantText(reply);
     },
-    async *compact() {},
-  };
+  });
 }
 
 /**
@@ -490,32 +478,19 @@ function multiMessageFakeSession(
   texts: readonly string[],
   gate?: Promise<void>,
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run() {
       for (let i = 0; i < texts.length; i += 1) {
         if (gate !== undefined && i === texts.length - 1) await gate;
         yield assistantText(texts[i]!);
       }
     },
-    async *compact() {},
-  };
+  });
 }
 
 /** Fake Session that parks on one approval per run (drives an approval_request event). */
 function parkingFakeSession(sessionId: string): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-forum" });
       yield tc;
@@ -523,23 +498,7 @@ function parkingFakeSession(sessionId: string): RuntimeSession {
       yield approvalDecision(decision, "tc-forum");
       yield assistantText("after approval");
     },
-    async *compact() {},
-  };
-}
-
-function sessionRowOf(sessionId: string, projectId: string): SessionRow {
-  return {
-    sessionId,
-    projectId,
-    agentId: "default_agent",
-    provider: "custom",
-    modelId: "m1",
-    workspace: "/tmp/w",
-    approvalMode: "allow-all",
-    title: null,
-    createdAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-  };
+  });
 }
 
 describe("telegramBotIdOf", () => {
@@ -555,10 +514,19 @@ describe("telegram binding routes and connector loop", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let fake: FakeTelegramTransport;
-  let projectId: string;
   let runs: InputPayload[][];
   /** The server log, so a delivery that succeeded only in a degraded form is observable. */
-  let logLines: string[];
+  let logLines: string[] = [];
+  /**
+   * The case's Project and its two Sessions, fresh per case: the app is the describe's, a
+   * binding, a poll and a status belong to their Session, and the error log dedupes and reads
+   * per Project. The Project is birder's row alone — every Session here is a fake, so nothing
+   * opens a default Agent's tree.
+   */
+  let projectId: string;
+  let SID: string;
+  let SID2: string;
+  let cases = 0;
 
   /** Save the token, then flip the toggle on and wait for the poll loop's handshake. */
   const bindEnabled = async (sid: string, botToken = TOKEN) => {
@@ -567,25 +535,40 @@ describe("telegram binding routes and connector loop", () => {
     await waitFor(() => t.deps.messaging.statusOf(sid, "telegram").state === "connected");
   };
 
-  beforeEach(async () => {
-    fake = new FakeTelegramTransport();
-    logLines = [];
+  beforeAll(async () => {
     t = await createTestApp({
-      telegramTransport: fake,
+      telegramTransport: forwardingTo(() => fake),
       telegramRetryDelayMs: () => 1,
       feishuSdk: new FakeFeishuSdk(),
       log: (line) => logLines.push(line),
     });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
-    projectId = "birder-default_project";
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(() => {
+    fake = new FakeTelegramTransport();
+    logLines = [];
     runs = [];
-    const row = sessionRowOf(SID, projectId);
+    cases += 1;
+    projectId = `birder-case-${cases}`;
+    wire(ProjectsRepo, { db: t.deps.db }).insert({
+      projectId,
+      ownerUserId: "birder",
+      createdAt: new Date().toISOString(),
+    });
+    SID = uniqueSessionId();
+    SID2 = uniqueSessionId();
+    const row = sessionRow(SID, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID, runs));
   });
-  afterEach(async () => {
-    await t.cleanup();
+  afterEach(() => {
+    // What the case bound goes with it, poll loop and all, and so does the error log it wrote.
+    for (const row of t.deps.messagingRepo.listAll()) t.deps.messaging.unbindSession(row.sessionId);
+    t.deps.db.prepare("DELETE FROM error_records").run();
   });
 
   it("PUT saves the token only (masked, bot id extracted, disabled, no poll); blank keeps the stored token", async () => {
@@ -658,7 +641,7 @@ describe("telegram binding routes and connector loop", () => {
   });
 
   it("a token swap cannot re-point an ENABLED binding at a bot another Session has enabled", async () => {
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId }));
     // Two Sessions, each polling its own bot.
     await bindEnabled(SID);
     await bindEnabled(SID2, "7000000002:test-secret-BBBB-2222");
@@ -716,7 +699,7 @@ describe("telegram binding routes and connector loop", () => {
   });
 
   it("the account is the bot id: a rotated secret saves freely and collides only on enable", async () => {
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId }));
     await bindEnabled(SID);
     // Different secret half, same id half: the identity is the id, not the whole token. It
     // saves without a murmur — saving is never exclusive across Sessions...
@@ -1135,7 +1118,7 @@ describe("telegram binding routes and connector loop", () => {
   it("remembers the topic, and every later message of the run reaches it", async () => {
     // Three completed messages in ONE run: the first threads onto the inbound message, the
     // two after it are plain sends — which is precisely where the topic used to be lost.
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["first", "second", "third"]));
     await bindEnabled(SID2);
@@ -1173,7 +1156,7 @@ describe("telegram binding routes and connector loop", () => {
     // reply anchor. Addressed at delivery time, the WHOLE answer to the first question would
     // land in their topic, quoted onto their message — the every-message relay can misplace
     // the tail of a reply that way, never the entire thing.
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row);
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -1221,7 +1204,7 @@ describe("telegram binding routes and connector loop", () => {
   });
 
   it("sends the approval notice and the test message into the remembered topic", async () => {
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     // The approval only becomes an event when something is actually asked.
     row.approvalMode = "always-ask";
     t.deps.sessionsRepo.insert(row);
@@ -1250,7 +1233,7 @@ describe("telegram binding routes and connector loop", () => {
   it("a topic that has been deleted degrades to a plain send instead of losing the reply", async () => {
     // Three completed messages in one run: the topic is gone for every one of them, which is
     // what the trace has to survive without turning into a line per send.
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["first", "second", "third"]));
     await bindEnabled(SID2);
@@ -1606,7 +1589,7 @@ describe("telegram binding routes and connector loop", () => {
     const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
     await fs.writeFile(path.join(ws, "chart.png"), PHOTO_BYTES);
     await fs.writeFile(path.join(ws, "notes.md"), "hello");
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     row2.workspace = ws;
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(
@@ -1630,7 +1613,7 @@ describe("telegram binding routes and connector loop", () => {
   });
 
   it("relays each completed assistant message separately, in order, as it completes", async () => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     let release = () => {};
     const gate = new Promise<void>((r) => {
@@ -1652,7 +1635,7 @@ describe("telegram binding routes and connector loop", () => {
   });
 
   it("in a group only the run's first message carries the reply ref", async () => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, ["first", "second"]));
     await bindEnabled(SID2, "7000000004:test-secret-FFFF-6666");
@@ -1671,7 +1654,7 @@ describe("telegram binding routes and connector loop", () => {
   });
 
   it("chunks a long reply under the shared 4000-char cap (inside Telegram's 4096 limit)", async () => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, echoFakeSession(SID2, runs, "x".repeat(9000)));
     await bindEnabled(SID2, "7000000002:test-secret-DDDD-4444");
@@ -1687,7 +1670,7 @@ describe("telegram binding routes and connector loop", () => {
 
   /** SID2 replying with one fixed text, bound and connected, ready to be messaged. */
   const bindReplying = async (text: string, token: string, put: Record<string, unknown> = {}) => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, echoFakeSession(SID2, runs, text));
     expect((await api.put(BASE(SID2), { botToken: token, ...put })).status).toBe(200);
@@ -1929,6 +1912,8 @@ class ConflictBotClient implements TelegramBotClient {
   pollCalls = 0;
   /** getUpdates rejects with the 409 while this is true. */
   conflict = false;
+  /** Failures the next polls reject with, one each and in order, ahead of the conflict. */
+  readonly failWith: Error[] = [];
   /** Rejects the parked long poll (what Telegram does to the loser of the conflict). */
   private parkedReject: ((err: Error) => void) | null = null;
 
@@ -1957,6 +1942,8 @@ class ConflictBotClient implements TelegramBotClient {
     signal: AbortSignal;
   }): Promise<TelegramUpdate[]> {
     this.pollCalls++;
+    const failure = this.failWith.shift();
+    if (failure !== undefined) return Promise.reject(failure);
     if (this.conflict)
       return Promise.reject(new Error(`getUpdates failed: ${CONFLICT_DESCRIPTION}`));
     if (args.timeoutSec === 0) return Promise.resolve([]);
@@ -1969,6 +1956,10 @@ class ConflictBotClient implements TelegramBotClient {
   startConflicting(): void {
     this.conflict = true;
     this.parkedReject?.(new Error(`getUpdates failed: ${CONFLICT_DESCRIPTION}`));
+  }
+  /** Ends the parked long poll with this failure, as a dropped connection does. */
+  failParked(err: Error): void {
+    this.parkedReject?.(err);
   }
 }
 
@@ -2070,6 +2061,40 @@ describe("telegram poll loop under a persistent 409", () => {
     expect(inbound).toEqual([]);
   });
 
+  it("a failure that recovers on its own does not silence the refusal behind it", async () => {
+    // A dropped poll is filed as routine, so if it kept the outage's one report, a token
+    // revoked while the connection was down would never be filed: the binding stays down and
+    // the dashboard reads zero defects. The adapter's verdicts are asserted where they are made
+    // (messaging-wire.test.ts); these stand in for them.
+    const { connector, transport } = conflictConnector();
+    const errors: unknown[] = [];
+    let readies = 0;
+    const conn = await connector.connect(
+      { botToken: TOKEN },
+      {
+        onMessage: async () => {},
+        onReady: () => {
+          readies++;
+        },
+        onError: (err) => {
+          errors.push(err);
+        },
+      },
+    );
+    const bot = transport.clients[0]!;
+    await waitFor(() => readies === 1);
+    const revoked = () => new TelegramApiError("getUpdates failed: Unauthorized (code 401)", 401);
+    bot.failWith.push(revoked(), revoked());
+    bot.failParked(new MessagingChannelError("getUpdates failed: socket hang up", true));
+    await waitFor(() => bot.failWith.length === 0 && readies === 2);
+    conn.close();
+    // The blip, then the refusal behind it — and nothing more: the repeat stays quiet.
+    expect(errors.map((err) => messagingErrorKind(err, "messaging_connect_failed"))).toEqual([
+      "expected",
+      "unexpected",
+    ]);
+  });
+
   it("probes for a webhook once per connection, before the first poll", async () => {
     const { connector, transport } = conflictConnector();
     let readies = 0;
@@ -2160,13 +2185,11 @@ describe("telegram transport error mapping", () => {
     // Through the transport's own fetch seam, not the global: the production transport
     // calls undici's fetch on purpose (see telegram-api's TelegramFetch), so replacing
     // `globalThis.fetch` would leave it talking to the real Bot API.
-    const stub = (async () =>
-      new Response(JSON.stringify(body), {
-        status: 409,
-        headers: { "content-type": "application/json" },
-      })) as unknown as TelegramTransportOpts["fetch"];
+    const refusing = fakeFetch(() => jsonResponse(body, 409));
     try {
-      const bot = createTelegramTransport({ fetch: stub }).createClient({ botToken: TOKEN });
+      const bot = createTelegramTransport({
+        fetch: refusing.fetch as unknown as TelegramTransportOpts["fetch"],
+      }).createClient({ botToken: TOKEN });
       await run(bot);
       return "";
     } catch (err) {

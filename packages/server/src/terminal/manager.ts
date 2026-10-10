@@ -25,7 +25,9 @@ import {
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
-import { Hmr, ResourceGroups } from "../hmr/capabilities.js";
+import { Config, Hmr, ResourceGroups } from "../hmr/capabilities.js";
+import type { SessionEnv } from "../runtime/session-manager.js";
+import { shellStartupDir, type TerminalPathFirst } from "./shell-startup.js";
 import { terminalRoutes } from "./routes.js";
 import { identityFrom } from "./identity.js";
 import type { Auth } from "../mechanisms/identity.js";
@@ -63,6 +65,11 @@ export class TerminalManager {
        * runtime's owner check reads.
        */
       beyond?: (id: string) => TerminalSession | undefined;
+      /**
+       * What leads each new shell's PATH once its startup files have run (the server's CLI
+       * shim directory, see shell-startup.ts); read per terminal. Absent or null: nothing.
+       */
+      pathFirst?: () => TerminalPathFirst | null;
     } = {},
   ) {}
 
@@ -106,12 +113,14 @@ export class TerminalManager {
     let seq = 1;
     while (usedSeqs.has(seq)) seq += 1;
 
+    const pathFirst = this.opts.pathFirst?.() ?? null;
     const options: CreateTerminalSessionOptions = {
       cwd,
       ownerUserId: request.ownerUserId,
       seq,
       name,
       ...(this.opts.assets !== undefined ? { assets: this.opts.assets } : {}),
+      ...(pathFirst !== null ? { pathFirst } : {}),
       ...(request.cols !== undefined ? { cols: request.cols } : {}),
       ...(request.rows !== undefined ? { rows: request.rows } : {}),
       ...(request.shell !== undefined ? { shell: request.shell } : {}),
@@ -287,18 +296,19 @@ function resourceId(sessionId: string): string {
 export type Terminal = Opaque<"TerminalSession", TerminalSession>;
 
 /** Live ptys: the spawn primitive behind /api/terminals and the terminal WebSocket. */
-export abstract class Terminals extends Interface<{
-  create(request: CreateTerminalRequest): Promise<Terminal>;
-  adopt(ids: readonly string[]): void;
-  quiesce(): void;
-  handleIds(): string[];
-  require(id: string, userId: string): Terminal;
-  get(id: string): Terminal | undefined;
-  list(userId: string): Terminal[];
-  listInfo(userId: string): TerminalSessionInfo[];
-  kill(id: string, userId: string): void;
-  disposeAll(): void;
-}>() {}
+@Interface()
+export abstract class Terminals {
+  abstract create(request: CreateTerminalRequest): Promise<Terminal>;
+  abstract adopt(ids: readonly string[]): void;
+  abstract quiesce(): void;
+  abstract handleIds(): string[];
+  abstract require(id: string, userId: string): Terminal;
+  abstract get(id: string): Terminal | undefined;
+  abstract list(userId: string): Terminal[];
+  abstract listInfo(userId: string): TerminalSessionInfo[];
+  abstract kill(id: string, userId: string): void;
+  abstract disposeAll(): void;
+}
 
 /** The manager satisfies the contract; this keeps the two from drifting. */
 export type _Check = TerminalManager extends Terminals ? true : never;
@@ -323,6 +333,9 @@ export type _Check = TerminalManager extends Terminals ? true : never;
 })
 export class TerminalModule {
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly config!: Config;
+  /** The directories every Agent command finds first on PATH; a terminal gets the same. */
+  @Use() private readonly sessionEnv!: SessionEnv;
   @Use() private readonly resourceGroups!: ResourceGroups;
   @Use() private readonly auth!: Auth;
   /** Answers `get` for a pty on a machine (machines/terminal-relay.ts). */
@@ -334,6 +347,11 @@ export class TerminalModule {
       // A pushed bundle's node-pty binaries live where the host materialized them.
       assets: () => this.hmr.assetsDir() ?? null,
       beyond: (id) => this.remote.get(id),
+      // `penguin` in a terminal is the one the Agent's commands get: this harness's own.
+      pathFirst: () => {
+        const dirs = this.sessionEnv.pathPrepend();
+        return dirs.length === 0 ? null : { dirs, startupDir: shellStartupDir(this.config.root) };
+      },
     });
     // Shells started before this App existed are still running in the registry: claim
     // them back so a push is invisible to whoever was typing in one — unless their group

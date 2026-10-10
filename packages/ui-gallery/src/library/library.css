@@ -1,0 +1,186 @@
+/*
+ * The framed component library's stylesheet: the Web App's own entry, exactly as the app loads
+ * it (Tailwind pointed at the app's sources, since they sit outside this Vite root), then the
+ * Foundations boards' sheet, then the little the board pages add — a page padding on the theme's
+ * canvas and a few row layouts. The boards read the theme's tokens, so lengths here are rem and
+ * every colour is a token, as in foundations.css.
+ */
+@import "../../../web/src/styles.css";
+@source "../../../web/src";
+@import "../foundations/foundations.css";
+
+/* Framed, the document is exactly as tall as its board — the page around it takes the height
+   from the board and sizes the frame — so it never scrolls itself: a scrollbar would only flash
+   between the board's first paint and the frame's resize. Standalone, the page scrolls as usual. */
+html[data-framed],
+html[data-framed] body {
+  overflow: hidden;
+}
+.lib-page {
+  padding: 1.5rem;
+  background: var(--ui-canvas);
+  color: var(--ui-fg);
+}
+
+/* A row of controls, wrapping; the wide variant stacks full-width fields. */
+.lib-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.lib-stack {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 28rem;
+}
+.lib-stack-wide {
+  max-width: none;
+  gap: 1.25rem;
+}
+/* A part of a board that groups several specimens under a heading of its own: the chart
+   foundation's primitives, tokens and charts. */
+.lib-part {
+  display: grid;
+  gap: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--ui-line);
+}
+.lib-part:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.lib-part-head h2 {
+  margin: 0;
+  font-size: var(--ui-text-body-size);
+  line-height: var(--ui-text-body-lh);
+  font-weight: var(--ui-weight-medium);
+  color: var(--ui-fg);
+}
+.lib-part-head p {
+  margin: 0.25rem 0 0;
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+  color: var(--ui-fg-muted);
+}
+/* The token table: a swatch, the name, what it is for, the computed value. */
+.lib-tokens {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+}
+.lib-tokens td,
+.lib-tokens th {
+  padding: 0.375rem 0.75rem 0.375rem 0;
+  border-top: 1px solid var(--ui-line);
+  text-align: left;
+  vertical-align: middle;
+  font-weight: var(--ui-weight-body);
+}
+.lib-tokens tr:first-child td,
+.lib-tokens tr:first-child th {
+  border-top: 0;
+}
+.lib-tokens code {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-caption-size);
+}
+.lib-tokens-swatch {
+  width: 1.5rem;
+}
+.lib-tokens-swatch span {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--ui-radius-control);
+  box-shadow: inset 0 0 0 1px var(--ui-line-emphasis);
+}
+.lib-tokens-meaning {
+  color: var(--ui-fg-muted);
+}
+.lib-tokens-value {
+  text-align: right;
+  white-space: nowrap;
+}
+.lib-tokens tr[data-unset] .lib-tokens-value {
+  color: var(--ui-fg-subtle);
+}
+/* A primitive shown on its own: a small SVG stage on the surface. */
+.lib-stage {
+  display: block;
+  width: 100%;
+  max-width: 24rem;
+  height: auto;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
+}
+.lib-stage-small {
+  width: 8rem;
+}
+/* One lane of the timeline stage: a label and a track the bar sits in. */
+.lib-lane {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+.lib-lane-track {
+  position: relative;
+  height: 1rem;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-muted);
+}
+.lib-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+}
+/* A caption under a specimen: the caption rung in the subtle ink. */
+.lib-caption {
+  font-size: var(--ui-text-caption-size);
+  line-height: var(--ui-text-caption-lh);
+  color: var(--ui-fg-subtle);
+}
+/* A framed area for a component that owns its layout: the file tree, a truncated row. */
+.lib-box {
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+.lib-box[data-narrow] {
+  max-width: 18rem;
+}
+/* The streaming board's reply at a chat column's measure: the live reply laid over an invisible
+   copy of the finished one in a single grid cell, so the box is the finished reply's height from
+   the first chunk on and the frame never grows line by line. */
+.lib-stream {
+  display: grid;
+  max-width: 46rem;
+  padding: 0.25rem 1.25rem;
+}
+.lib-stream > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.lib-stream-sizer {
+  visibility: hidden;
+}
+/* The same script as a tool call's output: the output block on its own, ruled off above as it is
+   under its row, at the reply's measure; the block brings its own padding. */
+.lib-stream-output {
+  padding: 0;
+}
+/* A line a row truncates, for the tooltip board. */
+.lib-truncated {
+  display: block;
+  max-width: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-small-size);
+}

@@ -17,15 +17,15 @@
  * the page expands the ones above the selected document.
  */
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
+import { FileTree, ICONS } from "@prismshadow/penguin-ui";
+import type { TreeToggle } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/format";
 import type { Locale } from "../../state/locale";
-import { FileTree } from "../../components/ui/file-tree";
-import type { TreeToggle } from "../../components/ui/file-tree";
 import type { HandbookRow } from "./handbook-tree";
 
-/** Collapse-all mark (lucide chevrons-down-up): two chevrons closing on each other. */
-export const COLLAPSE_ALL_ICON = "m7 20 5-5 5 5M7 4l5 5 5-5";
+/** Collapse-all mark: two chevrons closing on each other. */
+export const COLLAPSE_ALL_ICON = ICONS.chevronsDownUp;
 
 /** How a row's tooltip spells "written then, this big"; empty for a row the listing has lost. */
 function writtenAt(file: OrgHandbookFile | null): string[] {
@@ -65,7 +65,7 @@ export function HandbookExplorer({
       // Only the index overrides its name: every other row says on screen everything it means.
       rowLabel={(row) => (row.isIndex ? tooltip(row) : undefined)}
       rowTrailing={(row) => (
-        <span className="shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+        <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
           {row.kind === "dir"
             ? row.docs
             : row.file === null

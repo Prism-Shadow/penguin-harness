@@ -1,9 +1,17 @@
 {
-  "name": "@prismshadow/penguin-plugin-sandbox-dsh",
-  "version": "0.2.2",
-  "private": true,
+  "name": "@penguinharness/sandbox-dsh",
+  "version": "0.2.3",
   "type": "module",
   "description": "DeepSeek Harness sandbox adaptor for PenguinHarness: the DSH local backend chain behind the harness's own sandbox interface.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/sandbox-dsh"
+  },
+  "engines": {
+    "node": ">=24"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -12,12 +20,15 @@
       "import": "./dist/index.js"
     }
   },
-  "license": "Apache-2.0",
   "files": [
     "dist",
     "README.md",
-    "ifaces.json"
+    "ifaces.json",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",

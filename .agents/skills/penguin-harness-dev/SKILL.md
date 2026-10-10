@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-dev
-description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; running the test suite here or, when asked, on another machine; reading a prompt-cache regression out of the core suites; deciding what to do about data already on disk; or auditing prose that reads like a leaked authoring session. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
+description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; running the test suite here or, when asked, on another machine; reading a prompt-cache regression out of the core suites; deciding what to do about data already on disk; auditing prose that reads like a leaked authoring session; or changing anything a user sees or reads — a component, a style, UI strings, docs, landing copy — which must not read as AI slop. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
 ---
 
 # Developing PenguinHarness
@@ -9,10 +9,10 @@ PenguinHarness is a TypeScript monorepo: an Agent SDK (`packages/core`), an HTTP
 (`packages/server`), a Web App (`packages/web`), a CLI (`packages/cli`), an Electron shell
 (`packages/desktop`), the landing and docs sites, and the shipped plugin library — one npm package
 per plugin under the repo root's `plugins/`, with `packages/plugins` as the loader that depends on
-them all. It **consumes** LLM providers through `@prismshadow/agenthub` and implements no provider
-clients of its own.
+them all. It **consumes** LLM providers through `@prismshadow/mmsp` (MMSP, formerly
+`@prismshadow/agenthub`) and implements no provider clients of its own.
 
-This page is the part that applies to every change. Four reference files carry the detail, read
+This page is the part that applies to every change. The reference files carry the detail, read
 them when the task reaches them:
 
 | Read | When |
@@ -22,6 +22,18 @@ them when the task reaches them:
 | `reference/model-catalog.md` | Touching `model-catalog.ts`, pricing, provider groups or glyphs |
 | `reference/authoring.md` | Writing a blog post, auditing prose, or proposing a simplification |
 | `reference/release.md` | Preparing a release: the branch order, what changes, the announcement, the blog post and its screenshots |
+| `reference/testing.md` | **Writing or changing any test**: scenarios first, behaviour only, one fake per boundary, branch coverage, speed |
+| `reference/ai-slop.md` | **Every** change a user sees or reads: UI, styles, UI strings, docs, landing, blog, changelog — the rules, the scanner, the catalogue of tells |
+
+## No AI slop — every time something is rendered or written
+
+Whatever you add to the UI or the copy, check it before you call it done: **decide before you
+decorate; one accent, one voice; hierarchy from scale and space; subtract first; specific beats
+punchy; decoration must mean something.** No gradients, glows, emoji, pill spam, cards in cards,
+coloured keywords or "it's not just X — it's Y". Reuse the theme tokens and `lib/tone.ts`; status
+is an icon plus a tooltip; sections are ruled, not boxed. Run
+`node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs <what you touched>` and triage
+every hit. `reference/ai-slop.md` has the repo's own decisions and the full catalogue.
 
 ## Repo shape — read before your first edit
 
@@ -56,9 +68,20 @@ checkout's copy of the file you are already looking at. When a path does not res
 narrowing — reason about the package layout, ask `git ls-files`, follow the conventions above — over
 widening the root. The only paths outside the worktree worth reading are the siblings named here:
 `../penguin-harness-design` for specs, `../penguin-harness-wt/*` for another topic's tree, and
-`../agenthub` where it is checked out. Reach them by name; never find them by scanning. Say all of
-this to every subagent you dispatch — widening the search root is the first move a subagent makes
-when a path does not resolve.
+`../agenthub` for MMSP where it is checked out (the checkout keeps the library's former name).
+Reach them by name; never find them by scanning. Say all of this to every subagent you dispatch —
+widening the search root is the first move a subagent makes when a path does not resolve.
+
+## Tests prove behaviour, not the source
+
+Before a test, write its scenarios (Given / When / Then) in the file header; one `it` per
+scenario, named as the behaviour. Assert only what the caller can observe — and look first for
+what must *not* happen (a retry that must not duplicate, a refusal that must not write). Never
+test a constant, a copied table, a UI string against its dictionary, or which private helper
+ran. Fake only at the system's edge with the package's shared helpers (one fetch fake, one mock
+LLM, `createTestApp`, real temp dirs, fake timers); do not `vi.mock` the package's own modules.
+Every branch a change adds is taken by a scenario; pruning never lowers branch coverage. No real
+sleeps, no per-test servers. `reference/testing.md` has the rules and the checklist.
 
 ## Verify what you changed
 
@@ -83,6 +106,8 @@ pnpm --filter @prismshadow/penguin-web test                                     
 | Request assembly, history rebuild, compaction, the system prompt, a tool's description or schema | core's three `prompt-cache-*` suites — read the section below before you touch what they report |
 | One package's source | that package's `test`, plus `typecheck` |
 | Exported core types, or anything downstream imports | `pnpm build` + `pnpm typecheck` before any test |
+| Anything that opens, folds, resizes or animates in the Web App or `packages/ui` | the `ui` and `web` tests + frames captured mid-transition in all three themes (`penguin-harness-frontend`, "Motion"); a resting screenshot is not evidence |
+| A remote test tree after `main` moved (a merge, a rebase) | rebuild `@prismshadow/penguin-server...` there first: a stale core `dist` reads as dozens of TS2305 "no exported member" errors in web and the gallery |
 | `package.json`, the lockfile, `pnpm-workspace.yaml` | `pnpm install --frozen-lockfile` + `pnpm build` |
 | Installers, `release.yml` | `sh scripts/test-installer.sh` |
 
@@ -157,3 +182,11 @@ Whatever is decided, compatibility code is a standing cost: name **how long it s
 it, and what has to be true first**, at the code site and in a dedicated
 `changelog/unreleased/YYYY-MM-DD-backward-compatibility.md`. Other entries in that batch reference
 that file instead of re-telling it. A batch with no compatibility handling has no such file.
+
+## The message protocol is closed by default
+
+- **OmniMessage is closed by default.** No new field, type or enum value unless the fact is
+  unrepresentable by existing records and underivable by readers; prefer recording earlier or
+  streaming an existing record over a new field. Say so in the PR. The architecture spec's
+  message-format section states the rule, and `packages/core/src/omnimessage/types.ts` repeats it
+  at its head.

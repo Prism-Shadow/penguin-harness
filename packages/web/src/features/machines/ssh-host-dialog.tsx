@@ -16,14 +16,10 @@ import type {
   SshHostRequest,
   SshHostResponse,
 } from "@prismshadow/penguin-server/api";
+import { Button, Input, Modal, NoticeStrip, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { toneStrip } from "../../lib/tone";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { toastSuccess } from "../../components/ui/toast";
 
 type Field = "alias" | "hostName" | "user" | "port" | "identityFile";
 type Form = Record<Field, string>;
@@ -163,9 +159,9 @@ export function SshHostDialog({
     >
       <div className="space-y-3">
         {locked && (
-          <div className={`rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}>
+          <NoticeStrip tone="attention" className="rounded-md border px-3 py-2 text-xs">
             {m.foreign}
-          </div>
+          </NoticeStrip>
         )}
         <Input
           size="sm"

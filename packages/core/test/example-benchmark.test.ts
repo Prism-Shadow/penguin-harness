@@ -1,10 +1,13 @@
 /**
- * Example Benchmark provisioning tests:
- * default_agent initialization pre-seeds the Project-level benchmarks/example-benchmark/ (a
- * parseable config, runs=2, a scoreboard with three self-consistent evaluations labelled with
- * the Agent they tested); an ordinary Agent's creation seeds nothing; the decision is made on
- * the benchmarks/ DIRECTORY, so a Project that already holds Benchmarks of its own gets no
- * example, and loading default_agent re-creates one only when that directory is gone.
+ * The example Benchmark, as a new Project's provisioning writes it.
+ *
+ * - A new Project's provisioning writes the Project-level benchmarks/example-benchmark/: a
+ *   parseable config (runs = 2), and a scoreboard with three self-consistent evaluations
+ *   labelled with the Agent they tested.
+ * - Benchmarks of the user's own, and a copy at the retired per-agent location, do not stand in
+ *   for it, and are left as they are.
+ * - No Agent writes it: initializing or loading default_agent leaves a deleted example deleted,
+ *   and creating an ordinary Agent writes no Benchmark.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -20,7 +23,7 @@ import {
   benchmarksDir,
   buildExampleScoreboard,
   loadAgentState,
-  provisionProjectAgents,
+  provisionProjectBenchmarks,
 } from "../src/state/index.js";
 
 let tmpRoot: string;
@@ -70,8 +73,8 @@ interface Evaluation extends Omit<CaseScore, "case" | "runs"> {
 }
 
 describe("example benchmark provisioning", () => {
-  it("default_agent init creates a parseable example benchmark (config + scoreboard + cases)", async () => {
-    await loadAgentState({ init: {} });
+  it("a new Project's example benchmark is parseable (config + scoreboard + cases)", async () => {
+    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
     const dir = path.join(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID), EXAMPLE_BENCHMARK_ID);
 
     // benchmark_config.toml: title/description/runs=2/status=published; contains no model
@@ -159,33 +162,29 @@ describe("example benchmark provisioning", () => {
     }
   });
 
-  it("provisionProjectAgents seeds the example benchmark at the Project level", async () => {
-    await provisionProjectAgents({ root: tmpRoot, projectId: "proj_x" });
+  it("provisionProjectBenchmarks writes the example at the Project level, for any Project", async () => {
+    await provisionProjectBenchmarks(tmpRoot, "proj_x");
     expect(await exists(path.join(benchmarksDir(tmpRoot, "proj_x"), EXAMPLE_BENCHMARK_ID))).toBe(
       true,
     );
   });
 
-  it("does not create benchmarks when a non-default agent is created", async () => {
-    await loadAgentState({ init: {}, agentId: "worker" });
-    expect(await exists(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID))).toBe(false);
-  });
-
-  it("seeds the example beside Benchmarks the user already keeps, touching none of them", async () => {
+  it("writes the example beside Benchmarks the user already keeps, touching none of them", async () => {
     const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
-    // Creating a Benchmark makes benchmarks/ on its own, and an older build seeded only on
-    // initialization — so a Project can hold its own Benchmarks and no example. The example's
-    // own directory is the check, not the directory around it.
+    // A default_project adopted from a data root the CLI made can hold Benchmarks of its own
+    // and no example.
     await fs.mkdir(path.join(dir, "swe-bench-v1"), { recursive: true });
     await fs.writeFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), 'title = "mine"\n');
-    await loadAgentState({ init: {} });
-    expect((await fs.readdir(dir)).sort()).toEqual([EXAMPLE_BENCHMARK_ID, "swe-bench-v1"]);
+    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(await fs.readdir(dir)).toEqual(
+      expect.arrayContaining([EXAMPLE_BENCHMARK_ID, "swe-bench-v1"]),
+    );
     expect(await fs.readFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), "utf8")).toBe(
       'title = "mine"\n',
     );
   });
 
-  it("seeds the Project-level example even when the retired per-agent location holds one", async () => {
+  it("writes the Project-level example even when the retired per-agent location holds one", async () => {
     // A data root from before Benchmarks moved to the Project level keeps
     // agents/default_agent/benchmarks/example-benchmark/; nothing reads it, and it must not
     // stand in for the Project-level example.
@@ -196,7 +195,7 @@ describe("example benchmark provisioning", () => {
     );
     await fs.mkdir(legacy, { recursive: true });
     await fs.writeFile(path.join(legacy, "benchmark_config.toml"), 'title = "old"\n');
-    await loadAgentState({ init: {} });
+    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
     const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
     expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID, "benchmark_config.toml"))).toBe(true);
     // The legacy copy is left exactly as it was.
@@ -205,22 +204,19 @@ describe("example benchmark provisioning", () => {
     );
   });
 
-  it("loading default_agent re-creates the example when benchmarks/ is gone", async () => {
+  it("loading default_agent writes no example: a deleted example stays deleted", async () => {
+    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
+    const example = path.join(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID), EXAMPLE_BENCHMARK_ID);
+    await fs.rm(example, { recursive: true, force: true });
+
     await loadAgentState({ init: {} });
-    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
-    await fs.rm(dir, { recursive: true, force: true });
-    // The load path, not the init path: an existing Agent is only read, and a data root that
-    // predates this provisioning gets its example on that first load.
     await loadAgentState();
-    expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID, "benchmark_config.toml"))).toBe(true);
+
+    expect(await exists(example)).toBe(false);
   });
 
-  it("loading default_agent writes the example back once it alone was deleted", async () => {
-    await loadAgentState({ init: {} });
-    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
-    await fs.rm(path.join(dir, EXAMPLE_BENCHMARK_ID), { recursive: true, force: true });
-    await loadAgentState();
-    // The example's own directory is the check, so a deletion lasts until the next load.
-    expect(await fs.readdir(dir)).toEqual([EXAMPLE_BENCHMARK_ID]);
+  it("creating a non-default agent writes no Benchmark", async () => {
+    await loadAgentState({ init: {}, agentId: "worker" });
+    expect(await exists(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID))).toBe(false);
   });
 });

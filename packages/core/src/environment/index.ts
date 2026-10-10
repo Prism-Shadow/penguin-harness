@@ -3,6 +3,8 @@
  */
 export { Environment } from "./environment.js";
 export type { BuiltinTool, ToolExecutionContext } from "./tools/types.js";
+export { localFsPort } from "./tools/fs-port.js";
+export type { FsDirent, FsFetchResult, FsPort, FsStat } from "./tools/fs-port.js";
 export { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
 export type { BuiltinToolFactory } from "./tools/registry.js";
 export { createReadFileTool, READ_FILE_NAME } from "./tools/read-file.js";

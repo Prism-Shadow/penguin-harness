@@ -1,9 +1,17 @@
 {
-  "name": "@prismshadow/penguin-plugin-sandbox-bwrap",
-  "version": "0.2.2",
-  "private": true,
+  "name": "@penguinharness/sandbox-bwrap",
+  "version": "0.2.3",
   "type": "module",
   "description": "Bubblewrap sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/sandbox-bwrap"
+  },
+  "engines": {
+    "node": ">=24"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -12,13 +20,20 @@
       "import": "./dist/index.js"
     }
   },
-  "license": "Apache-2.0",
   "files": [
     "dist",
     "vendor",
     "README.md",
-    "ifaces.json"
+    "ifaces.json",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "executableFiles": [
+      "./vendor/linux-x64/bin/bwrap",
+      "./vendor/linux-arm64/bin/bwrap"
+    ]
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",

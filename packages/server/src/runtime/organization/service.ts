@@ -126,7 +126,7 @@ import {
   employeeLeft,
   systemMessage,
 } from "./notices.js";
-import { appendChannelMessage, listTickets, syncCaches } from "./reconcile.js";
+import { appendChannelMessage, listTickets, syncApprovalMode, syncCaches } from "./reconcile.js";
 import type { LoadedTicket } from "./reconcile.js";
 import { rotaWarnings } from "./rota.js";
 import { OrganizationScheduler } from "./scheduler.js";
@@ -628,6 +628,30 @@ export class OrganizationService {
     return this.detail(projectId, orgId, userId);
   }
 
+  /**
+   * Deletes the organization — and ONLY the organization: its directory goes to the Project's
+   * trash (store.trash), whole and restorable, and the rows this server derived from it go
+   * with it, since a new organization under the same id must not inherit
+   * another's read cursors, calendar state or pending notices.
+   *
+   * What it had is left exactly as it is. Its employees stay Agents of the Project, with
+   * everything they learned. Its desk and ticket Sessions stay too, still marked as an
+   * organization's (`client = org`), so they do not spill into development mode's list;
+   * with the organization gone no page lists them either, which is the price of not
+   * deleting conversations along with a company.
+   *
+   * Under the organization's lock, so a pass in flight finishes first and the next one finds
+   * no directory — the same state a hand-removed directory always was.
+   */
+  async delete(projectId: string, orgId: string): Promise<void> {
+    await this.requireOrg(projectId, orgId);
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      await this.deps.store.trash(projectId, orgId, new Date(this.now()).toISOString());
+      this.deps.cache.deleteOrg(projectId, orgId);
+    });
+    this.deps.log?.(`[organization] ${projectId}/${orgId} deleted (moved to the trash)`);
+  }
+
   async patch(
     projectId: string,
     orgId: string,
@@ -669,8 +693,16 @@ export class OrganizationService {
         await this.validateModel(projectId, req.model);
         next.model = req.model;
       }
+      const modeChanged = next.approvalMode !== org.config.approvalMode;
       await this.deps.store.writeConfig(org.dir, next);
       org.config = next;
+      // Every API write of the approval mode comes through here, so this is where a change
+      // reaches the desk and ticket sessions already open rather than only the next ones. A
+      // hand edit of org_config.toml does not pass here.
+      if (modeChanged) {
+        const { tickets } = await listTickets(this.deps, org);
+        syncApprovalMode(this.deps, org, tickets);
+      }
       return this.settings(org);
     });
   }
@@ -933,6 +965,36 @@ export class OrganizationService {
     });
     await this.scheduler.reconcile(projectId, orgId);
     return item;
+  }
+
+  /**
+   * A Session's model moved (an in-session switch). When that Session is an employee's
+   * CURRENT desk the switch is the employee's: its chart entry takes the desk's model, so a
+   * desk renewed later opens on it (ticket Sessions read the desk itself, see
+   * `openTicketSession`). Any other Session — a ticket Session, a desk already replaced, one
+   * no organization owns — leaves the chart alone.
+   */
+  async deskModelChanged(
+    sessionId: string,
+    model: { provider: string; modelId: string },
+  ): Promise<void> {
+    const owner = this.deps.cache.ownerOfSession(sessionId);
+    if (owner === null || owner.kind !== "desk") return;
+    const { projectId, orgId, agentId } = owner;
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await loadOrg(this.deps, projectId, orgId);
+      // An organization that needs repair is repaired by editing its files, not from here.
+      if (org === null || org.invalid !== undefined) return;
+      if (org.desks[agentId]?.sessionId !== sessionId) return;
+      const employee = org.byId.get(agentId);
+      if (!employee) return;
+      if (employee.model?.provider === model.provider && employee.model.modelId === model.modelId)
+        return;
+      await this.writeChart(
+        org,
+        org.chart.employees.map((e) => (e.agentId === agentId ? { ...e, model } : e)),
+      );
+    });
   }
 
   /** Removes the employee from the tree (subordinates move up to its manager); the Agent and its sessions stay. */
@@ -2640,6 +2702,7 @@ export abstract class OrgService extends Interface<
     | "list"
     | "create"
     | "detail"
+    | "delete"
     | "patch"
     | "leave"
     | "suggestId"
@@ -2772,7 +2835,20 @@ export class OrganizationModule {
     };
     const orgScheduler = new OrganizationScheduler(deps);
     this.orgScheduler = orgScheduler;
-    this.orgService = new OrganizationService(deps, orgScheduler);
+    const service = new OrganizationService(deps, orgScheduler);
+    this.orgService = service;
+    // An employee's model is its desk Session's: a switch made on a desk reaches the chart.
+    const unsubscribe = runner.onModelChanged((sessionId, model) => {
+      service.deskModelChanged(sessionId, model).catch((err: unknown) =>
+        deps.errors.record({
+          source: "organization",
+          err,
+          code: "org_desk_model_sync_failed",
+          ctx: { sessionId },
+        }),
+      );
+    });
+    effect(() => unsubscribe());
     // Only active while this App is; the successor's start() reconciles from the files.
     effect(() => orgScheduler.stop());
   }

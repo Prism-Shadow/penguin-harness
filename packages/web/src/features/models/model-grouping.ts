@@ -96,10 +96,11 @@ export interface ProviderGroup<T extends ModelRowLike> {
 }
 
 /**
- * Filter + group by vendor; rows within a group keep their original order. Built-in groups
- * follow MODEL_PROVIDERS order (the custom group is returned even when empty, when there's
- * no search query); user-defined groups each form their own group, sorted by name and
- * appended after custom.
+ * Filter + group by vendor; rows within a group keep their original order (the models page
+ * then orders each group by that group's sort, model-sort.ts; the chat model picker keeps
+ * this order). Built-in groups follow MODEL_PROVIDERS order (the custom group is returned
+ * even when empty, when there's no search query); user-defined groups each form their own
+ * group, sorted by name and appended after custom.
  *
  * `groupOrder` then rearranges that list: groups it names take its order, groups it does
  * not keep their automatic order and TRAIL (orderModelGroups — a group the user just
@@ -127,7 +128,7 @@ export function groupModelRows<T extends ModelRowLike>(
 }
 
 /**
- * Flattens the library grouping into one ordered list (the chat model dropdown uses this):
+ * Flattens the library grouping into one ordered list (the chat model picker uses this):
  * rows ordered exactly as the model page shows them — built-in provider groups in
  * MODEL_PROVIDERS order (custom last), then user-defined groups, with `groupOrder` applied
  * on top; in-group row order preserved. Passing the page's stored order here is what keeps
@@ -141,8 +142,9 @@ export function orderModelsLikeLibrary<T extends ModelRowLike>(
 }
 
 /**
- * Row shape for the configured-key filter: adds the read-only credential display and the masked
- * env-fallback preview (the DTO's ModelInfo is a superset).
+ * Row shape for the configured-key filter: adds the read-only credential display, the masked
+ * env-fallback preview and the effective connection's key source (the DTO's ModelInfo is a
+ * superset).
  */
 export interface ModelCredentialRowLike extends ModelRowLike {
   credential?: { apiKeyMasked?: string };
@@ -152,17 +154,23 @@ export interface ModelCredentialRowLike extends ModelRowLike {
    * this entry.
    */
   envKeyMasked?: string;
+  /** Where the key the row is used with comes from (GET /models' `effective`); its group's key included. */
+  effective?: { apiKeySource: "model" | "provider" | "env" | "none" };
 }
 
 /**
  * Whether the model has an API key behind it — the single rule shared by the model library, the
- * chat model picker and the chat credential guide: a stored (masked) key **or** a masked env
- * fallback, since a user who exported the variable has configured the key just as deliberately as
- * one who typed it into the dialog. `envKey` is only the NAME of that variable and says nothing
- * about whether it is set, so it never counts on its own.
+ * chat model picker and the chat credential guide: a key of its own, its group's key, or a masked
+ * env fallback, since a user who exported the variable has configured the key just as
+ * deliberately as one who typed it into the dialog. `envKey` is only the NAME of that variable
+ * and says nothing about whether it is set, so it never counts on its own.
  */
 export function hasConfiguredKey(m: ModelCredentialRowLike): boolean {
-  return !!m.credential?.apiKeyMasked || !!m.envKeyMasked;
+  return (
+    !!m.credential?.apiKeyMasked ||
+    !!m.envKeyMasked ||
+    (m.effective !== undefined && m.effective.apiKeySource !== "none")
+  );
 }
 
 /**
@@ -341,6 +349,23 @@ export function discountedPrice(
   };
 }
 
+/**
+ * What the seller bills for one row at `now`, bucket by bucket: the figures its card prints, so
+ * the stored list price less whatever discountedPrice takes off at that moment. Undefined for a
+ * row without a full price (a bucket blank or not a number), the shape that saves as no pricing
+ * at all.
+ */
+export function billedPrice(
+  row: ModelRowLike & PricingBucketsLike,
+  now: Date = new Date(),
+): BucketPrices | undefined {
+  const cacheRead = bucketValue(row.cacheRead);
+  const cacheWrite = bucketValue(row.cacheWrite);
+  const output = bucketValue(row.output);
+  if (cacheRead === undefined || cacheWrite === undefined || output === undefined) return undefined;
+  return discountedPrice(row, now)?.billed ?? { cacheRead, cacheWrite, output };
+}
+
 export interface VisibleChatModelsOptions {
   /** true = list every model (the dropdown's expanded "show all" state). */
   showAll: boolean;
@@ -354,10 +379,10 @@ export interface VisibleChatModelsOptions {
 }
 
 /**
- * Candidate list for the chat model dropdown: library order → keep only models with a key
- * (hasConfiguredKey: stored or env-backed; plus the selected and the default model, unless
+ * Candidate list for the chat model picker: library order → keep only models with a key
+ * (hasConfiguredKey: its own, its group's or env-backed; plus the selected and the default model, unless
  * showAll) → the query then filters whatever is visible. When NO model has a key, the filter
- * degrades to showAll (everything listed), so the dropdown is never uselessly empty.
+ * degrades to showAll (everything listed), so the picker is never uselessly empty.
  */
 export function visibleChatModels<T extends ModelCredentialRowLike>(
   models: T[],

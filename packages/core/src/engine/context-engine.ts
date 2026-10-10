@@ -26,7 +26,7 @@
  *
  * Implementation note: an internal queue merges "the LLM event stream + N concurrent tool
  * output streams" into a single yield sequence. GenerativeModel is a stateful object
- * (AgentHub maintains the history); each turn the engine only hands it the "new" messages:
+ * (MMSP maintains the history); each turn the engine only hands it the "new" messages:
  * the user Prompt on the first turn, and the previous turn's tool_call_output afterward.
  */
 import {
@@ -38,6 +38,7 @@ import {
   addTokenCounts,
   emptyTokenCounts,
   isCompleteModelMessage,
+  isModelMessage,
   isSessionMeta,
   partialText,
   requestBegin,
@@ -79,6 +80,8 @@ import type {
   ApproveFn,
   PreToolUseFn,
   PreToolUseOutcome,
+  UserPromptFn,
+  UserPromptOutcome,
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
@@ -146,7 +149,7 @@ interface CompactionResult {
   errorCode?: ErrorCode;
   errorMessage?: string;
   /**
-   * Whether at least one summarize attempt was **committed** by AgentHub (only a `completed`
+   * Whether at least one summarize attempt was **committed** by MMSP (only a `completed`
    * attempt commits — a `retryable` attempt ends an incomplete stream and fatal/aborted
    * throw or cut off before a clean end). The carry rule at every caller is a two-case binary on
    * this flag (issue #85): committed → the input the caller folded in (mid-Task tool outputs,
@@ -172,6 +175,8 @@ export interface RunOptions {
   approve?: ApproveFn;
   /** Pre-tool-use hook consult, called before `approve` for each complete tool_call; its events are recorded on the stream, its decision applied (see {@link PreToolUseFn}). */
   preToolUse?: PreToolUseFn;
+  /** User-prompt hook consult, called once with this call's Prompt after it is written and before the first request; its records follow the Prompt on the stream and in the Trace, and the user texts among them join the request input (see {@link UserPromptFn}). */
+  userPrompt?: UserPromptFn;
 }
 
 /**
@@ -184,6 +189,8 @@ export interface EngineInitialState {
   carryOver?: OmniMessage[];
   /** Summary recovered from a completed summarize compaction: used as the prefix of the next `run` input (merged with the user Prompt). */
   pendingSummary?: OmniMessage;
+  /** The summary the resumed context opened with, when it is already on the context's own file and no turn has completed since (see ResumeResult.openingSummary). */
+  openingSummary?: OmniMessage;
   /** Carried-over Session cumulative turn count. */
   sessionTurns?: number;
   /**
@@ -295,19 +302,25 @@ export interface ContextEngineDeps {
    * inside the new turn in the Trace, after the user's message (their timestamps precede
    * the write; the file stays chronologically consistent because the input message was
    * created before the connect began). Streaming already yielded them live before the
-   * engine existed. Present (possibly empty) marks "first-run records still owed".
+   * engine existed. Present (possibly empty) marks "first-run records still owed". Owed
+   * only while the first context runs: when that context is replaced before any run wrote
+   * them (a compaction or a model switch on a Session just resumed, whose engine was built
+   * outside a run), they are dropped with it — and the first-run write of `toolList` with
+   * them — rather than landing behind the next run's input, in the next context's file.
    */
   bootstrapRecords?: OmniMessage[];
   /**
    * Input adapter for a session whose model has no vision: folds image messages into text
    * lines appended to the input's user text. Absent = the model takes images directly. `run`'s
    * Prompt is folded by the caller before it reaches the engine; this hook exists for the one
-   * input the engine assembles itself — steering (see `steeringMessages`).
+   * input the engine assembles itself — steering (see `steeringMessages`). A `null` answer
+   * leaves the input as it is too: the caller's model can change between contexts (a model
+   * switch), and only the caller knows whether the one running now takes images.
    *
    * Expected to settle rather than reject: it runs mid-Task, and Session's binding already
    * degrades a failure into text saying the images were dropped.
    */
-  foldInputImages?: (messages: OmniMessage[]) => Promise<OmniMessage[]>;
+  foldInputImages?: (messages: OmniMessage[]) => Promise<OmniMessage[] | null>;
   /**
    * Background-task completion notices (harness user messages the Session queues when a
    * `run_in_background` task settles — see Session's notice queue). Pull seam: the engine
@@ -492,12 +505,19 @@ export class ContextEngine {
   private lastSessionTokens: TokenCounts = emptyTokenCounts();
   /** Summary produced by a Task-boundary compaction: used as the prefix of the next `run` input (merged with the next user Prompt). */
   private pendingSummary: OmniMessage | null = null;
+  /**
+   * The summary the running context opened with, until a turn completes on it. It is the only
+   * record of the conversation before the compaction, so a model switch away from such a
+   * context writes it at the head of the next context's file (see `switchContext`).
+   */
+  private openingSummary: OmniMessage | null = null;
   /** Bootstrap records still owed to the Trace (written after the first run's input); see ContextEngineDeps.bootstrapRecords. */
   private pendingBootstrapRecords: OmniMessage[] | null = null;
   /**
    * Set to true once compaction completes: Trace rotation is deferred until the next
    * message that needs writing (see `write`) — so that if no further messages follow the
-   * compaction, we don't create an empty file containing only session_meta.
+   * compaction, we don't create an empty file containing only session_meta. A model switch is
+   * the one exception: it performs the rotation at once (see `switchContext`).
    */
   private pendingTraceRotation = false;
   /**
@@ -558,6 +578,9 @@ export class ContextEngine {
     if (init) {
       this.pendingCarryOver = init.carryOver ?? [];
       this.pendingSummary = init.pendingSummary ?? null;
+      // A resumed context that has not completed a turn still opens with its summary: the one
+      // already on its own file, or the one a closed file left pending.
+      this.openingSummary = init.openingSummary ?? this.pendingSummary;
       this.sessionTurns = init.sessionTurns ?? 0;
       this.fromCompaction = init.fromCompaction ?? false;
       this.lastSessionTokens = init.sessionTokens ?? emptyTokenCounts();
@@ -666,8 +689,8 @@ export class ContextEngine {
    */
   private async steeringMessages(input: OmniMessage[]): Promise<OmniMessage[]> {
     // No images, no fold: an image-free steering message is the same message either way.
-    const fold = input.some(isImageMessage) ? this.deps.foldInputImages : undefined;
-    const messages = fold ? await fold(input) : input;
+    const folded = input.some(isImageMessage) ? await this.deps.foldInputImages?.(input) : null;
+    const messages = folded ?? input;
     const texts: string[] = [];
     // The delivered [user_steering] message keeps the queued input's sender: a parent agent
     // steering its child (input_subagent) records as "parent_agent" in the child's Trace,
@@ -686,7 +709,7 @@ export class ContextEngine {
     // model known to refuse it, and no text at all means the images were dropped rather than
     // written down as paths. Name the contract instead of delivering a steering message that
     // lost what it was sent to carry.
-    if (fold && (rest.some(isImageMessage) || texts.length === 0)) {
+    if (folded && (rest.some(isImageMessage) || texts.length === 0)) {
       throw new Error("foldInputImages must return the input's images folded into a user text.");
     }
     return [userText(userSteeringText(texts.join("\n\n")), sender), ...rest];
@@ -710,7 +733,7 @@ export class ContextEngine {
     const carryOver = this.pendingCarryOver;
     this.pendingCarryOver = [];
     const prefix = summary ? [summary, ...carryOver] : carryOver;
-    const input = prefix.length ? [...prefix, ...newMessages] : newMessages;
+    let input = prefix.length ? [...prefix, ...newMessages] : newMessages;
 
     // Input is written to Trace (Prompt record, incl. audit trail) but not replayed to
     // the render layer. carry-over is not written to Trace: real messages (tool outputs etc.)
@@ -721,6 +744,27 @@ export class ContextEngine {
     // context's first input record, is written as usual.
     if (summary) await this.write(summary);
     for (const msg of newMessages) await this.write(msg);
+    // User-prompt hooks (RunOptions.userPrompt, wired by the Session from the Agent's
+    // installed hook packages): consulted once per Prompt, here, so what they answer lands
+    // right behind the user's message — on the stream, in the Trace and in the request
+    // input alike. A throw collapses to nothing to add: a broken hook must not cost the
+    // user their Prompt.
+    if (opts?.userPrompt && !signal?.aborted) {
+      let expanded: UserPromptOutcome | null = null;
+      try {
+        expanded = await opts.userPrompt(newMessages, signal);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[penguin] userPrompt consult threw: ${message}; ignoring.\n`);
+      }
+      const contexts: OmniMessage[] = [];
+      for (const record of expanded?.records ?? []) {
+        yield record;
+        await this.write(record);
+        if (isModelMessage(record)) contexts.push(record);
+      }
+      if (contexts.length > 0) input = [...input, ...contexts];
+    }
     if (this.pendingBootstrapRecords) {
       // First run only: the connect pair, then the toolset record, follow the input into
       // the Trace (see ContextEngineDeps.bootstrapRecords for the ordering rationale).
@@ -757,7 +801,7 @@ export class ContextEngine {
         // This turn's pending input (usually the previous turn's tool outputs) was never
         // submitted to the LLM: hold it as carry-over, to be resent merged with new input on
         // the next `run` (same as interruption-cleanup case A) — the previous turn's assistant
-        // tool_call has already been committed by AgentHub, so discarding its paired output and
+        // tool_call has already been committed by MMSP, so discarding its paired output and
         // sending a fresh message would be rejected by the provider as an unanswered tool_use
         // (400, see issue #33).
         this.pendingCarryOver = nextInput;
@@ -767,7 +811,7 @@ export class ContextEngine {
       turnCount += 1;
 
       // This turn's input. The safety invariant behind resending it: **no retryable attempt
-      // is ever committed to AgentHub's history**. AgentHub appends a turn to `_history` only
+      // is ever committed to MMSP's history**. MMSP appends a turn to `_history` only
       // after its stream has been consumed to the end and validated, so every abnormal exit —
       // whether the stream was cut, the payload failed to parse, or the request was rejected
       // outright — leaves history untouched.
@@ -964,7 +1008,7 @@ export class ContextEngine {
       // this turn's tool outputs (or alone as the continuation input when the turn produced
       // no tool calls, instead of ending the Task — subject to the max-turns guard at the
       // top of the loop). Notices first; the user's own words come last. The whole batch is
-      // user-side and reaches AgentHub as ONE user message (streamGenerate merges a
+      // user-side and reaches MMSP as ONE user message (streamGenerate merges a
       // request's input into a single UniMessage), so injections never put two adjacent
       // user messages on the wire — the per-message granularity exists only in the
       // OmniMessage stream and the Trace.
@@ -1024,7 +1068,11 @@ export class ContextEngine {
     });
   }
 
-  async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
+  async *compact(opts?: {
+    signal?: AbortSignal | undefined;
+    /** Compacts in this mode whatever the settings say (a model switch always summarizes). */
+    mode?: CompactionMode;
+  }): AsyncGenerator<OmniMessage, StopReason | undefined> {
     // The manual entry into a compaction, and the second place the live settings decide
     // something: the `mode` below, and the prompt summarizeContext reads from them.
     await this.refreshCompaction();
@@ -1035,15 +1083,15 @@ export class ContextEngine {
     // pendingSummary with an "empty summary," permanently losing the only record of the prior
     // conversation.
     if (this.sessionTurns === 0) return;
-    if (this.compaction.mode === "discard") {
+    if ((opts?.mode ?? this.compaction.mode) === "discard") {
       this.pendingCarryOver = this.pendingCarryOver.filter(
         (m) => (m.payload as { type?: string }).type !== "tool_call_output",
       );
       yield* this.discardContext("manual");
-      return;
+      return "completed";
     }
     // The carry seam is a clean binary on whether the compaction committed anything to
-    // AgentHub (PR #87 review):
+    // MMSP (PR #87 review):
     //   - nothing committed (every attempt retryable/fatal/aborted): the fold
     //     never reached the model context — restore the prior carry-over **verbatim**. Zero
     //     committed attempts also means zero synthesized repairs, so there is no stash to
@@ -1060,6 +1108,51 @@ export class ContextEngine {
       this.pendingCarryOver = folded;
     }
     // committed but not completed: the carry-over is deliberately not restored.
+    return result.status;
+  }
+
+  /**
+   * A model switch's rotation: closes the running context and opens the next one at once.
+   * Which model the next context runs on is the opener's business (`openNextContext`, which
+   * the Session owns); the engine only closes and opens. Callable at a Task boundary, with
+   * compaction configured, like `compact()`.
+   *
+   * - A context with completed turns is closed by `compact()`, always in **summarize** mode:
+   *   the summary is what the next model continues from. It is an ordinary compaction request
+   *   on the running LLM object — the same model, prompt, toolset and parameters, one appended
+   *   user turn — so it extends the prefix the provider has cached. Short of `completed`, the
+   *   context stays as it was.
+   * - A context with none has nothing to summarize and is simply replaced: no request and no
+   *   event pair. Its pending text rides on in memory. Nothing is written until the next
+   *   context is open, so an opener that throws leaves the Trace as it was.
+   *
+   * The next context's Trace file is then opened at once rather than at its first message:
+   * its `session_meta` is the durable record of the switch — a resume reads the model from
+   * the latest file — and the summary the context opens with follows it. That meta is yielded
+   * last. Returns the terminal status.
+   */
+  async *switchContext(signal?: AbortSignal): AsyncGenerator<OmniMessage, StopReason> {
+    if (this.sessionTurns > 0) {
+      const status = yield* this.compact({ signal, mode: "summarize" });
+      if (status !== "completed") return status ?? "fatal";
+    } else {
+      yield* this.startNewContext();
+      // A switch carries text alone: tool outputs pair with tool calls only the context left
+      // behind holds, and images stay behind with them.
+      this.pendingCarryOver = this.pendingCarryOver.filter(
+        (m) => (m.payload as { type?: string }).type === "text",
+      );
+    }
+    // The eager open: session_meta and the opener's records head the new file, then the summary.
+    await this.rotateIfPending();
+    if (this.openingSummary) await this.write(this.openingSummary);
+    if (this.pendingSummary) {
+      // On the file now: from here it is pending input, which a run sends without writing.
+      this.pendingCarryOver = [this.pendingSummary, ...this.pendingCarryOver];
+      this.pendingSummary = null;
+    }
+    if (this.contextMeta) yield this.contextMeta;
+    return "completed";
   }
 
   /**
@@ -1177,7 +1270,7 @@ export class ContextEngine {
       try {
         // Request boundary events (replayability): start is
         // emitted when the request is issued, stop carries the terminal state at completion —
-        // replay mechanically determines from these whether the turn was committed by AgentHub.
+        // replay mechanically determines from these whether the turn was committed by MMSP.
         const startEvt = requestBegin();
         queue.push(startEvt);
         await this.write(startEvt);
@@ -1234,7 +1327,11 @@ export class ContextEngine {
           // written, so the stream and the Trace carry the Session series rather than the
           // LLM's per-request stand-in — and increment the Session turn count (counted per
           // LLM Request, across Tasks; used for compaction threshold checks).
-          if (this.observeTokenUsage(msg)) this.sessionTurns += 1;
+          if (this.observeTokenUsage(msg)) {
+            this.sessionTurns += 1;
+            // A turn completed: the summary the context opened with is history now.
+            this.openingSummary = null;
+          }
           queue.push(msg);
           await this.write(msg);
           // Collect complete thinking/text segments (including partial segments finalized on
@@ -1250,7 +1347,7 @@ export class ContextEngine {
           // finishInterrupted): its arguments weren't fully emitted, and it exists only
           // for structural closure and observability — it isn't dispatched for execution, isn't
           // added to this turn's ledger, and gets no paired output backfilled: such a tool_call
-          // was never committed to history by AgentHub, so there's nothing to pair. This turn
+          // was never committed to history by MMSP, so there's nothing to pair. This turn
           // must then end with a non-completed outcome (only interruption closure produces such
           // a tool_call): a retryable outcome is cleaned up by
           // reconnect resending the flatten carry-over, while the run-ending ones
@@ -1596,7 +1693,7 @@ export class ContextEngine {
     await this.write(prompt);
 
     // Whether the folded input was absorbed into the old object's history — true once any
-    // attempt was committed by AgentHub (only `completed` commits: a retryable failure ends
+    // attempt was committed by MMSP (only `completed` commits: a retryable failure ends
     // an incomplete stream, and fatal/aborted throw or cut off before a clean end — none of
     // those reach the stateful commit). Returned as
     // `committed`: the callers' two-case carry rule branches on it.
@@ -1637,7 +1734,7 @@ export class ContextEngine {
       // be rebuilt below — repairs + corrective note + Prompt — instead of resent unchanged.
       let unusable = false;
       if (attempt.status === "completed") {
-        // The attempt was committed by AgentHub, so whatever its input carried — including
+        // The attempt was committed by MMSP, so whatever its input carried — including
         // repairs synthesized for a previous rejection — is now in history and must not be
         // resent. The first commit absorbs the folded turn input: the base shrinks to the
         // Prompt alone.
@@ -1656,6 +1753,7 @@ export class ContextEngine {
           const summary = userText(buildContextSummaryText(summaryText));
           yield* this.emitCompactionEnd(reason, "summarize", "completed", { attempt: attempts });
           yield* this.startNewContext();
+          this.openingSummary = summary;
           return { status: "completed", summary, committed };
         }
         // Not a summary — one more failed attempt, sharing the reconnect budget below. Tool
@@ -1710,7 +1808,7 @@ export class ContextEngine {
         lastErrorCode = attempt.errorCode;
       }
       // One failure path for everything else — unusable summaries and retryable failures
-      // (never committed by AgentHub) — treated like an
+      // (never committed by MMSP) — treated like an
       // ordinary LLM request's failures: the same budget (defaulting to the shared
       // maxReconnects, issue #170) and the same exponential ladder. An unusable attempt's
       // request_end carries status completed, for which no retry_in_ms is announced — the
@@ -1930,7 +2028,8 @@ export class ContextEngine {
    * tool_list_ready) are yielded live as they come, so a slow connect is never a silent gap.
    * Trace **does not** split files immediately — that's deferred until the next message that
    * needs writing, when it rotates and opens with the context's session_meta and records (see
-   * `write`), avoiding an empty file if no further messages follow the compaction.
+   * `write`), avoiding an empty file if no further messages follow the compaction; a model
+   * switch opens the file right after this returns instead (see `switchContext`).
    */
   private async *startNewContext(): AsyncGenerator<OmniMessage> {
     // The opener publishes records through a callback; a merge queue turns them into this
@@ -1958,6 +2057,9 @@ export class ContextEngine {
     if (opened.compaction) this.compaction = opened.compaction;
     this.sessionTurns = 0;
     this.lastRequestTotal = 0;
+    // First-run records no run has written yet describe the context this one replaces: they
+    // are dropped with it rather than written into this context's file.
+    this.pendingBootstrapRecords = null;
     // Lets compactability() distinguish "just compacted" from "hasn't chatted yet" — both have
     // sessionTurns === 0, but they mean two completely different things to the user (being told
     // "no completed conversation turns yet" right after compacting is as good as saying nothing).
@@ -2007,7 +2109,7 @@ export class ContextEngine {
    * does reconnect retry: retry input is assembled by withRetriedTurns, appending
    * `[turn_retried]` with the failed attempt's output, distinct from the user-interruption
    * `[turn_aborted]`):
-   * - Model output completed (case A, outcome=completed): AgentHub already committed an
+   * - Model output completed (case A, outcome=completed): MMSP already committed an
    *   assistant turn containing `tool_call`, so it can only be resent as a structured
    *   `tool_call_output` to pair with it (cannot flatten, or the already-committed tool_call
    *   would be left unanswered and rejected).
@@ -2123,24 +2225,33 @@ export class ContextEngine {
   }
 
   /**
+   * Performs the deferred Trace rotation when one is pending: splits the file and opens it with
+   * the current context's session_meta and records (its MCP connect pair, if any, and its
+   * toolset). Best-effort like every Trace write. Reached through `write` by the first message
+   * after a compaction, and directly by `switchContext`, which opens the file at once.
+   */
+  private async rotateIfPending(): Promise<void> {
+    const trace = this.deps.trace;
+    if (!trace || !this.pendingTraceRotation) return;
+    this.pendingTraceRotation = false;
+    try {
+      if (trace.rotate) await trace.rotate();
+      if (this.contextMeta) await trace.write(this.contextMeta);
+      for (const record of this.contextRecords) await trace.write(record);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[trace] rotate failed: ${message}\n`);
+    }
+  }
+
+  /**
    * Trace writes are **best-effort**: observability should never interrupt the ReAct
    * loop, so write failures only warn rather than throw. The first write after compaction first
-   * performs the deferred Trace rotation: splitting the file and opening it with the current
-   * context's session_meta and records (its MCP connect pair, if any, and its toolset).
+   * performs the deferred Trace rotation (see `rotateIfPending`).
    */
   private async write(msg: OmniMessage): Promise<void> {
+    await this.rotateIfPending();
     if (!this.deps.trace) return;
-    if (this.pendingTraceRotation) {
-      this.pendingTraceRotation = false;
-      try {
-        if (this.deps.trace.rotate) await this.deps.trace.rotate();
-        if (this.contextMeta) await this.deps.trace.write(this.contextMeta);
-        for (const record of this.contextRecords) await this.deps.trace.write(record);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`[trace] rotate failed: ${message}\n`);
-      }
-    }
     try {
       await this.deps.trace.write(msg);
     } catch (err) {

@@ -15,15 +15,17 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import {
+  DownloadIcon,
+  EmptyState,
+  ICON_SIZE,
+  NoticeStrip,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatBytes } from "../../lib/format";
-import { DownloadIcon } from "../../components/ui/icons";
-import { EmptyState } from "../../components/ui/empty-state";
-import { Skeleton } from "../../components/ui/skeleton";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { toneStrip } from "../../lib/tone";
 import { TraceFileView } from "./trace-file-view";
 import {
   activeTraceFile,
@@ -93,7 +95,7 @@ export function TracePanel({
         // "whatever activeTraceFile falls back to" — the newest file, re-resolved on every
         // re-list — so a compaction shard appearing mid-run would move a reader who never
         // clicked a pill onto the new file, remounting the view below onto a different index
-        // and taking its collapsed rounds, pinned row and scroll position with it. Pinned,
+        // and taking its open rounds, pinned row and scroll position with it. Pinned,
         // only a pill click moves the selection.
         setFileIndex((cur) => cur ?? sorted[0]?.index ?? null);
         setError(null);
@@ -142,9 +144,9 @@ export function TracePanel({
         {/* A re-list that failed keeps everything below it and says so here; the listing on
             screen is the last one that arrived, so it may be a turn or two behind. */}
         {error !== null && (
-          <p className={`rounded-md border px-2.5 py-1.5 text-xs ${toneStrip.danger}`}>
+          <NoticeStrip tone="danger" as="p" className="rounded-md border px-2.5 py-1.5 text-xs">
             {S.tracePanel.loadFailed} · {error}
-          </p>
+          </NoticeStrip>
         )}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs text-gray-400">{S.traces.filesTitle}</span>
@@ -153,7 +155,7 @@ export function TracePanel({
               key={f.index}
               type="button"
               onClick={() => setFileIndex(f.index)}
-              title={`${f.date} · ${formatBytes(f.sizeBytes)}`}
+              data-tooltip={`${f.date} · ${formatBytes(f.sizeBytes)}`}
               className={`rounded-md border px-2 py-0.5 font-mono text-xs transition-colors duration-150 ${
                 f.index === activeFile.index
                   ? "border-gray-400 bg-gray-200/70 font-semibold text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
@@ -166,7 +168,7 @@ export function TracePanel({
           {!showAllFiles && files.length > FILE_PILL_CAP && (
             <button
               type="button"
-              title={S.chat.loadMore}
+              data-tooltip={S.chat.loadMore}
               aria-label={S.chat.loadMore}
               onClick={() => setShowAllFiles(true)}
               className="rounded-md border border-gray-200 px-2 py-0.5 font-mono text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/60"

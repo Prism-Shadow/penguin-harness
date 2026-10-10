@@ -1,20 +1,24 @@
 /**
- * Integration tests for composer file attachments (POST /api/sessions/:id/tasks with a
- * `{type:"file"}` input part):
- *   - the bytes land in the Session scratchpad and the Prompt gains an
- *     `[attached file: <path>]` line, so the model reaches the file by path;
- *   - a files-only Prompt still reaches the model (the lines become the message), including
- *     when the only text message is a `[handoff_from]` origin block that must stay parseable;
- *   - two uploads of the same name coexist instead of overwriting each other;
- *   - malformed parts are 400s, an oversize file / too many files / too many bytes are 413s,
- *     and goal mode rejects attachments before anything is written;
- *   - nothing survives a request that does not end up starting a Task, and a scratchpad
- *     directory that resolves outside the Agent's scratchpad root is refused outright.
+ * Composer file attachments: POST /api/sessions/:id/tasks with `{type:"file"}` input parts.
+ *
+ * - The bytes land in the Session's scratchpad and the Prompt gains an `[attached file: <path>]`
+ *   line after the user's text, so the model reaches the file by path.
+ * - A files-only Prompt still reaches the model (the lines become the message), and a Prompt
+ *   whose only text is a `[handoff_from]` origin block keeps that block parseable.
+ * - Two uploads of one name coexist; unsafe names are sanitized (keeping the extension,
+ *   non-ASCII kept, the stem capped by UTF-8 bytes, Windows device names prefixed).
+ * - A media type with parameters is accepted; malformed parts are 400s and write nothing.
+ * - A file over the per-file cap, more files or more bytes than one request may carry are 413s
+ *   that write nothing; what /api/me advertises is exactly what is enforced; an inline image
+ *   has its own cap, independent of the attachment limit.
+ * - Goal mode, and a busy Session without queueIfBusy, refuse before anything is written.
+ * - A Task that never starts leaves no orphaned bytes, and a scratchpad directory resolving
+ *   outside the Agent's scratchpad root is refused, not written through.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   assistantText,
   buildHandoffMessage,
@@ -26,14 +30,14 @@ import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { MAX_ATTACHMENT_COUNT } from "../src/services/attachment-limits.js";
+import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-07-29-10-00-00-aabb0001";
 const PROJECT_ID = "attacher-default_project";
 
 /**
- * Deliberately tiny limits for the cap tests (see beforeEach), in whole MB and in bytes. The
+ * Deliberately tiny limits for the cap tests (see beforeAll), in whole MB and in bytes. The
  * total is kept below twice the per-file cap so that "two individually legal files that together
  * cross the aggregate" is expressible — with total >= 2x per-file, each half would trip the
  * per-file check first and the aggregate cap would never be the thing under test.
@@ -45,30 +49,22 @@ const TEST_TOTAL_BYTES = TEST_TOTAL_MB * 1024 * 1024;
 
 /** Fake Session that records each run's input and finishes immediately (no LLM, no approvals). */
 function recordingFakeSession(sessionId: string, runs: OmniMessage[][]): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(input: OmniMessage[]) {
       runs.push(input);
       yield assistantText("done");
     },
-    async *compact() {},
-  };
+  });
 }
 
 /** Fake Session whose run parks until `until` resolves, so the Session stays busy while the test posts. */
 function parkingFakeSession(sessionId: string, until: Promise<void>): RuntimeSession {
-  return {
-    ...recordingFakeSession(sessionId, []),
+  return fakeSession(sessionId, {
     async *run() {
       await until;
       yield assistantText("done");
     },
-  };
+  });
 }
 
 /** Base64 data URL of some bytes, the shape the composer submits. */
@@ -87,30 +83,14 @@ function promptText(input: OmniMessage[]): string {
 describe("task input file attachments", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
+  let SID: string;
   let runs: OmniMessage[][];
   let dir: string;
   let row: SessionRow;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
-    const { cookie } = await provisionUser(t.app, "attacher");
-    api = apiClient(t.app, cookie);
-    row = {
-      sessionId: SID,
-      projectId: PROJECT_ID,
-      agentId: "default_agent",
-      provider: "custom",
-      modelId: "m1",
-      workspace: "/tmp/w",
-      approvalMode: "allow-all",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    };
-    t.deps.sessionsRepo.insert(row);
-    runs = [];
-    t.deps.manager.adopt(row, recordingFakeSession(SID, runs));
-    dir = path.join(scratchpadDir(t.root, PROJECT_ID, "default_agent"), SID);
+    api = apiClient(t.app, (await provisionUser(t.app, "attacher")).cookie);
     // The shipped defaults are 100MB/120MB — allocating buffers that size to prove a cap works
     // would cost hundreds of megabytes per assertion. The caps are read from the settings repo
     // per request, so the tests turn them down instead: that also makes these the tests of the
@@ -118,8 +98,14 @@ describe("task input file attachments", () => {
     t.deps.serverSettingsRepo.setAttachmentMaxMb(TEST_MAX_MB);
     t.deps.serverSettingsRepo.setAttachmentTotalMb(TEST_TOTAL_MB);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    runs = [];
+    row = adoptSession(t.deps, recordingFakeSession(SID, runs), { projectId: PROJECT_ID });
+    dir = path.join(scratchpadDir(t.root, PROJECT_ID, "default_agent"), SID);
   });
 
   it("writes the file into the session scratchpad and appends the marker line to the text", async () => {
@@ -423,6 +409,28 @@ describe("task input file attachments", () => {
     release();
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
   });
+
+  // Symlink creation needs a privilege or developer mode on Windows; the containment rule
+  // itself is platform-independent.
+  it.skipIf(process.platform === "win32")(
+    "a session directory symlinked out of the scratchpad root is refused, not written through",
+    async () => {
+      const outside = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-outside-"));
+      try {
+        await fs.mkdir(path.dirname(dir), { recursive: true });
+        // `fs.mkdir(dir, {recursive:true})` succeeds silently on an existing symlink-to-directory,
+        // so without the realpath check the upload would land in `outside`.
+        await fs.symlink(outside, dir, "dir");
+        const res = await api.post(`/api/sessions/${SID}/tasks`, {
+          input: [{ type: "file", fileName: "escape.txt", dataUrl: dataUrl("bytes") }],
+        });
+        expect(res.status).toBe(500);
+        expect(await fs.readdir(outside)).toEqual([]);
+      } finally {
+        await fs.rm(outside, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("task attachments are removed when the Task never starts", () => {
@@ -445,18 +453,7 @@ describe("task attachments are removed when the Task never starts", () => {
     });
     const { cookie } = await provisionUser(t.app, "failer");
     api = apiClient(t.app, cookie);
-    t.deps.sessionsRepo.insert({
-      sessionId: FAIL_SID,
-      projectId: PID,
-      agentId: "default_agent",
-      provider: "custom",
-      modelId: "m1",
-      workspace: "/tmp/w",
-      approvalMode: "allow-all",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    });
+    t.deps.sessionsRepo.insert(sessionRow(FAIL_SID, { projectId: PID }));
     dir = path.join(scratchpadDir(t.root, PID, "default_agent"), FAIL_SID);
   });
   afterEach(async () => {
@@ -475,57 +472,4 @@ describe("task attachments are removed when the Task never starts", () => {
     // that a retry cannot find a stale `a-<hex>.txt` next to its own upload.
     expect(await fs.readdir(dir).catch(() => [])).toEqual([]);
   });
-});
-
-describe("scratchpad directory containment", () => {
-  const LINK_SID = "session-2026-07-29-12-00-00-aabb0003";
-  const PID = "linker-default_project";
-  let t: TestApp;
-  let api: ReturnType<typeof apiClient>;
-  let outside: string;
-
-  beforeEach(async () => {
-    t = await createTestApp();
-    const { cookie } = await provisionUser(t.app, "linker");
-    api = apiClient(t.app, cookie);
-    t.deps.sessionsRepo.insert({
-      sessionId: LINK_SID,
-      projectId: PID,
-      agentId: "default_agent",
-      provider: "custom",
-      modelId: "m1",
-      workspace: "/tmp/w",
-      approvalMode: "allow-all",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    });
-    t.deps.manager.adopt(
-      t.deps.sessionsRepo.findById(LINK_SID)!,
-      recordingFakeSession(LINK_SID, []),
-    );
-    outside = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-outside-"));
-  });
-  afterEach(async () => {
-    await fs.rm(outside, { recursive: true, force: true });
-    await t.cleanup();
-  });
-
-  // Symlink creation needs a privilege or developer mode on Windows; the containment rule
-  // itself is platform-independent.
-  it.skipIf(process.platform === "win32")(
-    "a session directory symlinked out of the scratchpad root is refused, not written through",
-    async () => {
-      const root = scratchpadDir(t.root, PID, "default_agent");
-      await fs.mkdir(root, { recursive: true });
-      // `fs.mkdir(dir, {recursive:true})` succeeds silently on an existing symlink-to-directory,
-      // so without the realpath check the upload would land in `outside`.
-      await fs.symlink(outside, path.join(root, LINK_SID), "dir");
-      const res = await api.post(`/api/sessions/${LINK_SID}/tasks`, {
-        input: [{ type: "file", fileName: "escape.txt", dataUrl: dataUrl("bytes") }],
-      });
-      expect(res.status).toBe(500);
-      expect(await fs.readdir(outside)).toEqual([]);
-    },
-  );
 });

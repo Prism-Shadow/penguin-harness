@@ -53,7 +53,8 @@ export const UBUNTU_IMAGES = "https://cdimage.ubuntu.com/ubuntu-base/releases";
 export const UBUNTU_ARCHIVE = "http://archive.ubuntu.com/ubuntu";
 export const UBUNTU_SECURITY = "http://security.ubuntu.com/ubuntu";
 export const ALPINE_MIRROR = "https://dl-cdn.alpinelinux.org/alpine";
-export const DEFAULT_PACKAGES = ["git", "curl"];
+/** `nodejs` is what runs the harness's hook scripts and its file-tool helper inside the distro (see core's fs-worker.ts); the rest is what a shell session expects to find. */
+export const DEFAULT_PACKAGES = ["git", "curl", "nodejs"];
 /** The account commands run as inside the distro: not root, so bwrap is the only way up. */
 export const SANDBOX_USER = "penguin";
 
@@ -693,6 +694,17 @@ export async function check(
     "bubblewrap 能启动被隔离的命令",
     alive.code === 0,
     alive.stdout || alive.stderr,
+  );
+
+  report({ en: "Node is in the distro", zh: "发行版里有 Node" });
+  const node = await confined(base, "node --version");
+  add(
+    "Node runs hook scripts and the file tools' helper",
+    "Node 能运行钩子脚本与文件工具的助手",
+    node.code === 0,
+    node.code === 0
+      ? node.stdout.trim()
+      : "nodejs is not installed: hook scripts and the file tools fail under this sandbox until the distro is initialized again with it.",
   );
 
   report({ en: "writing the Workspace", zh: "写工作区" });

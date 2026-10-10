@@ -6,7 +6,7 @@
  * - Pairing-fallback placeholders, once constructed, are written into the original trace file;
  *   session_meta is never written twice.
  * - Errors when the session doesn't exist / the workspace is missing / the model is no longer in the project config.
- * - `groupHistoryToUniMessages` groups by adjacent same role; `GenerativeModel.setHistory` injects into AgentHub.
+ * - `groupHistoryToUniMessages` groups by adjacent same role; `GenerativeModel.setHistory` injects into MMSP.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -23,11 +23,12 @@ import {
   sessionMeta,
   tokenUsage,
   toolCall,
+  toolListReady,
   userText,
 } from "../src/omnimessage/index.js";
 import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
 import { GenerativeModel, groupHistoryToUniMessages } from "../src/llm/index.js";
-import { readTrace } from "../src/trace/index.js";
+import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
 import { agentsMdPath, tracesDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
 
@@ -79,12 +80,7 @@ async function writeTraceFile(
   return file;
 }
 
-function metaFor(
-  sessionId: string,
-  workspaceDir: string,
-  model = MODEL,
-  source?: "subagent" | "schedule",
-): OmniMessage {
+function metaFor(sessionId: string, workspaceDir: string, model = MODEL): OmniMessage {
   return sessionMeta({
     session_id: sessionId,
     provider: model.provider,
@@ -93,7 +89,7 @@ function metaFor(
     system_prompt: "ORIGINAL SYSTEM PROMPT",
     agent_state: "/agent/state",
     workspace: workspaceDir,
-    ...(source !== undefined ? { source } : {}),
+    source: "user",
   });
 }
 
@@ -120,43 +116,6 @@ describe("agent.resumeSession", () => {
       (m) => (m.payload as { text?: string }).text ?? "",
     );
     expect(texts).toEqual(["hello", "hi there"]);
-  });
-
-  it("preserves the stored session source across resume (and its absence for user sessions)", async () => {
-    const agent = await createAgent({});
-    await writeTraceFile(tmpRoot, SID, [
-      metaFor(SID, workspace, MODEL, "subagent"),
-      userText("child task"),
-      requestBegin(),
-      assistantText("done"),
-      requestEnd("completed"),
-    ]);
-    const session = await agent.resumeSession({ sessionId: SID });
-    // The rebuilt session_meta carries the origin over (a rotated Trace file must re-record it).
-    expect((session.metaMessage.payload as { source?: string }).source).toBe("subagent");
-    session.dispose();
-
-    // A user-created session's meta has no source key, and resume must not invent one.
-    const SID2 = "session-2026-07-06-11-00-00-abcdef02";
-    await writeTraceFile(tmpRoot, SID2, [metaFor(SID2, workspace), userText("hi")]);
-    const plain = await agent.resumeSession({ sessionId: SID2 });
-    expect("source" in (plain.metaMessage.payload as unknown as Record<string, unknown>)).toBe(
-      false,
-    );
-    plain.dispose();
-
-    // On-disk values are untrusted: a junk source written by a third party is dropped on
-    // resume (only the exact known origins pass), not cast through into the rebuilt meta.
-    const SID3 = "session-2026-07-06-12-00-00-abcdef03";
-    await writeTraceFile(tmpRoot, SID3, [
-      metaFor(SID3, workspace, MODEL, "weird-origin" as unknown as "subagent"),
-      userText("hi"),
-    ]);
-    const junk = await agent.resumeSession({ sessionId: SID3 });
-    expect("source" in (junk.metaMessage.payload as unknown as Record<string, unknown>)).toBe(
-      false,
-    );
-    junk.dispose();
   });
 
   it("keeps abort events in resumed render history", async () => {
@@ -434,12 +393,12 @@ describe("setHistory injection", () => {
       assistantText("done"),
     ]);
     expect(uni.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
-    expect(uni[1]!.content_items.map((c) => c.type)).toEqual(["text", "tool_call"]);
-    expect(uni[2]!.content_items.map((c) => c.type)).toEqual(["tool_result", "text"]);
+    expect(uni[1]!.content_items.map((c) => c.type)).toEqual(["text.done", "tool_call.done"]);
+    expect(uni[2]!.content_items.map((c) => c.type)).toEqual(["tool_result.done", "text.done"]);
   });
 
-  it("GenerativeModel.setHistory seeds the AgentHub client history", () => {
-    // GenerativeModel takes the request id sent to AgentHub (the upstream id), not the storage id.
+  it("GenerativeModel.setHistory seeds the MMSP client history", () => {
+    // GenerativeModel takes the request id sent to MMSP (the upstream id), not the storage id.
     const model = new GenerativeModel({ modelId: "claude-sonnet-4-6", tools: [] });
     model.setHistory([userText("hello"), assistantText("hi")]);
     const client = (model as unknown as { client: { getHistory(): unknown[] } }).client;
@@ -533,6 +492,155 @@ describe("agent.resumeSession system prompt per context", () => {
     const session = await agent.resumeSession({ sessionId: SID });
     try {
       expect(promptOf(session)).toBe("ORIGINAL SYSTEM PROMPT");
+    } finally {
+      session.dispose();
+    }
+  });
+});
+
+describe("agent.resumeSession after an in-session model switch", () => {
+  const SID = "session-2026-07-06-11-00-00-abcdef02";
+  // The default Project config ships both: the Session starts on ORIGINAL and switches to MODEL.
+  const ORIGINAL = { provider: "deepseek", model_id: "deepseek-flash" };
+  const SUMMARY = "[context_summary]\nthe story so far\n[/context_summary]";
+  const engineStateOf = (session: unknown) =>
+    (
+      session as {
+        engineDeps: {
+          initialState?: {
+            pendingSummary?: OmniMessage;
+            openingSummary?: OmniMessage;
+            carryOver?: OmniMessage[];
+            sessionTurns?: number;
+            pendingTraceRotation?: boolean;
+          };
+        };
+      }
+    ).engineDeps.initialState;
+  /** File 1: a context on `model` with one completed turn, closed by a completed summarize pair of `reason`. */
+  const closedFile = (
+    model: { provider: string; model_id: string },
+    reason: "manual" | "context",
+  ) => [
+    metaFor(SID, workspace, model),
+    userText("q1"),
+    requestBegin(),
+    assistantText("a1"),
+    requestEnd("completed"),
+    tokenUsage(usage(150), usage(150)),
+    compactionBegin({ reason, mode: "summarize", context: 150, turns: 1 }),
+    userText("COMPACT NOW"),
+    requestBegin(),
+    assistantText("[summary]the story so far[/summary]"),
+    requestEnd("completed"),
+    compactionEnd({ reason, mode: "summarize", status: "completed" }),
+  ];
+
+  it("resumes on the model of the eagerly opened file: history empty, the summary is the carry-over, on the switched-to model", async () => {
+    const agent = await createAgent({});
+    // The switch closed the original model's context with a plain manual pair, and opened the
+    // target's file at once: its session_meta, its toolset, the summary as its first input.
+    await writeTraceFile(tmpRoot, SID, closedFile(ORIGINAL, "manual"));
+    await writeTraceFile(
+      tmpRoot,
+      SID,
+      [metaFor(SID, workspace, MODEL), toolListReady([]), userText(SUMMARY)],
+      { index: "002" },
+    );
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(session.provider).toBe(MODEL.provider);
+      expect(session.modelId).toBe(MODEL.model_id);
+      expect((session.metaMessage.payload as { model_id: string }).model_id).toBe(MODEL.model_id);
+      const state = engineStateOf(session);
+      expect(state?.pendingSummary).toBeUndefined();
+      expect(state?.pendingTraceRotation).toBe(false);
+      expect(state?.sessionTurns).toBe(0);
+      expect((state?.carryOver ?? []).map((m) => (m.payload as { text: string }).text)).toEqual([
+        SUMMARY,
+      ]);
+      // Already on the file, so pending input rather than a pending summary — and still named
+      // as the summary this context opened with.
+      expect(state?.openingSummary).toBe(state?.carryOver?.[0]);
+      expect(session.compactability()).toBe("just_compacted");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a switch made right after the restart carries the summary on: the next file opens with it", async () => {
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, closedFile(ORIGINAL, "manual"));
+    const leaving = await writeTraceFile(
+      tmpRoot,
+      SID,
+      [metaFor(SID, workspace, MODEL), toolListReady([]), userText(SUMMARY)],
+      { index: "002" },
+    );
+    const kind = (m: OmniMessage): string | undefined =>
+      m.type === "session_meta" ? "session_meta" : (m.payload as { type?: string }).type;
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      // Nothing ran since the restart: the engine is built by the switch itself.
+      const streamed: OmniMessage[] = [];
+      for await (const msg of session.switchModel({
+        provider: ORIGINAL.provider,
+        modelId: ORIGINAL.model_id,
+      })) {
+        streamed.push(msg);
+      }
+      // The engine is built first, so the bootstrap of the context being left streams. That
+      // context holds the summary and no completed turn: nothing to summarize and no pair —
+      // the target's own records and its meta follow.
+      expect(streamed.map(kind)).toEqual(["tool_list_ready", "tool_list_ready", "session_meta"]);
+      expect(session.provider).toBe(ORIGINAL.provider);
+      expect(session.modelId).toBe(ORIGINAL.model_id);
+
+      const located = await findLatestTraceFile(
+        tracesDir(tmpRoot, "default_project", "default_agent"),
+        SID,
+      );
+      expect(located!.index).toBe(3);
+      const opened = await readTrace(located!.path);
+      expect(opened.map(kind)).toEqual(["session_meta", "tool_list_ready", "text"]);
+      expect((opened[0]!.payload as { model_id: string }).model_id).toBe(ORIGINAL.model_id);
+      expect((opened[2]!.payload as { text: string }).text).toBe(SUMMARY);
+      // Nothing was added to the file being left.
+      expect((await readTrace(leaving)).map(kind)).toEqual([
+        "session_meta",
+        "tool_list_ready",
+        "text",
+      ]);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a file a compaction opened, with no completed turn yet, answers just_compacted after a restart", async () => {
+    const agent = await createAgent({});
+    // An ordinary compaction, then the process died before the new context's first answer: the
+    // file past the first holds the summary and a prompt whose request never completed.
+    await writeTraceFile(tmpRoot, SID, closedFile(MODEL, "context"));
+    await writeTraceFile(
+      tmpRoot,
+      SID,
+      [
+        metaFor(SID, workspace),
+        toolListReady([]),
+        userText(SUMMARY),
+        userText("q2"),
+        requestBegin(),
+        abortEvent(),
+      ],
+      { index: "002" },
+    );
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(engineStateOf(session)?.sessionTurns).toBe(0);
+      expect(session.compactability()).toBe("just_compacted");
     } finally {
       session.dispose();
     }

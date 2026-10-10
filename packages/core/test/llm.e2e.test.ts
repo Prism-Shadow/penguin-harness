@@ -13,7 +13,7 @@ import { GenerativeModel } from "../src/llm/index.js";
 import { toolCallOutput, userText } from "../src/omnimessage/index.js";
 import type { OmniMessage, ToolCallPayload } from "../src/omnimessage/index.js";
 
-/** Picks a provider in order by available key; AgentHub routes by modelId and auto-reads the matching env var. */
+/** Picks a provider in order by available key; MMSP routes by modelId and auto-reads the matching env var. */
 const PROVIDERS = [
   { key: "ANTHROPIC_API_KEY", modelId: "claude-sonnet-4-6" },
   { key: "DEEPSEEK_API_KEY", modelId: "deepseek-v4-flash" },
@@ -67,7 +67,7 @@ describe(`GenerativeModel live e2e (${provider?.modelId ?? "skipped"})`, () => {
 
 // --- Gemini tool_call_id uniqueness live regression (consecutive same-name tool calls made the
 // frontend tool cards overwrite each other) ---
-// Gemini's functionCall has no call id, so AgentHub uses the function name as tool_call_id; this group
+// Gemini's functionCall has no call id, so MMSP uses the function name as tool_call_id; this group
 // verifies EventTranslator's in-Session uniqueness (#n suffix) and outbound restoration
 // (functionResponse paired by function name) round-trip on the real API. Runs only when explicitly
 // opted in with GEMINI_API_KEY set.

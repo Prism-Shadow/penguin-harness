@@ -41,9 +41,9 @@ export type Tone = "busy" | "attention" | "success" | "link" | "danger" | "muted
 /**
  * Ink for a glyph or a line of status text. Measured as WCAG 2.x contrast ratios against the
  * four surfaces these marks actually sit on — white and gray-50 in light (chat surfaces and the
- * sidebar), and the neutral scale this app overrides in `styles.css` for dark: gray-950 `#000000`
- * and gray-900 `#0d0d0d`. The lower number of each pair is the sidebar, which is the worse case
- * in both themes:
+ * sidebar), and the neutral scale the default theme overrides for dark (`@prismshadow/penguin-ui`
+ * `themes/github.css`): gray-950 `#000000` and gray-900 `#0d0d0d`. The lower number of each pair
+ * is the sidebar, which is the worse case in both themes:
  *
  * - `busy` / `success`  emerald-600 / emerald-400 …… 3.65–3.50 : 1 light, 10.83–10.03 : 1 dark
  * - `link`              blue-600 / blue-400 …………… 5.17–4.95 : 1 light, 8.26–7.69 : 1 dark
@@ -95,22 +95,4 @@ export const toneDot: Record<Tone, string> = {
   link: "bg-blue-500",
   danger: "bg-red-500",
   muted: "bg-gray-400 dark:bg-gray-600",
-};
-
-/**
- * Border plus tinted background for the bordered notice strips (the degraded-mode banner, the
- * missing-placeholder alerts): a heavier treatment than `toneSurface`, for a notice that owns a
- * whole row rather than sitting inside one.
- */
-export const toneStrip: Record<Tone, string> = {
-  busy: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  attention:
-    "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-  success:
-    "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  link: "border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
-  danger:
-    "border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-950/40 dark:text-red-300",
-  muted:
-    "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400",
 };

@@ -1,28 +1,38 @@
 /**
- * Organization routes over the real app: the admin master switch starts off, 404s the whole
- * group while it is off, and is reported by /api/me and /api/admin/settings; Project
- * authorization gates reads and writes (an outsider gets 404, a member may write), and no
- * route deletes an organization; bodies are validated before the service is asked; and the
- * calling session and employee ride write bodies as `sessionId` / `agentId` (a read's query
- * string), but only from the control environment's API token — a signed-in member's claim is
- * dropped. The service itself is a recording fake here — its semantics have their
- * own suites — so no Agent is created and no session runs. The one exception is the sessions
- * route's desk mark, which is wiring rather than semantics: an organization written straight to
- * disk is served by the real service, and a desk's enabled messaging binding has to reach its
- * row from the real bindings table.
+ * Organization routes over the real app. The service is a recording fake — its semantics have
+ * their own suites — so no Agent is created and no Session runs, except in the sessions-route
+ * case, which is wiring rather than semantics.
+ *
+ * - The admin master switch starts off; while it is off every route answers 404
+ *   company_mode_off, and /api/me and /api/admin/settings report it.
+ * - Project authorization gates the group: an outsider gets 404, a member reads and writes, and
+ *   only the owner deletes an organization (pausing stays a setting any writer may change).
+ * - Bodies are validated before the service is asked: organizations, tickets (owner and slug
+ *   included), handbook documents by their relative path, the channel family and its members.
+ * - The organization's language, a ticket's owner and slug, and the channel of the path reach
+ *   the service.
+ * - The calling session and employee ride a read's query and a write's body only from the
+ *   control environment's API token; a signed-in member's claim is dropped.
+ * - The sessions route marks a desk whose Session has an enabled messaging binding, read from
+ *   the real bindings table for an organization written straight to disk.
+ * - The sessions route finds an employee's desk and a ticket's session, company Sessions that
+ *   the employee's own session list leaves out of every category and total.
  */
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { sessionMeta, userText } from "@prismshadow/penguin-core";
+import type { SessionSource } from "@prismshadow/penguin-core";
 import type {
   MeResponse,
   OrgSessionsResponse,
   ServerSettingsResponse,
   SessionResponse,
+  SessionsResponse,
 } from "../src/api/types.js";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";
 import type { OrganizationService } from "../src/runtime/organization/service.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 type Call = { method: string; args: unknown[] };
@@ -97,25 +107,28 @@ function fromSession(t: TestApp, apiPath: string, body: unknown) {
 
 describe("organization routes", () => {
   let t: TestApp;
-  let calls: Call[];
+  const calls: Call[] = [];
   let owner: ReturnType<typeof apiClient>;
-  let ownerProject: string;
+  const ownerProject = "olivia-default_project";
 
-  beforeEach(async () => {
-    calls = [];
-    // The service is a recording fake: it goes in as a boot override, since the route
-    // group takes the one the module tree provides at creation.
+  // One app serves the group. The service is a recording fake: it goes in as a boot override,
+  // since the route group takes the one the module tree provides at creation.
+  beforeAll(async () => {
     t = await createTestApp({ orgService: fakeService(calls) });
-    // Company mode is off on a server nobody turned it on (its own test below): every case
-    // here is about what the routes do once an admin has enabled it.
-    t.deps.serverSettingsRepo.setCompanyMode(true);
-    const u = await provisionUser(t.app, "olivia");
-    owner = apiClient(t.app, u.cookie);
-    ownerProject = "olivia-default_project";
+    owner = apiClient(t.app, (await provisionUser(t.app, "olivia")).cookie);
+    // The control environment's credential is the admin's: it joins the Project the CLI
+    // writes to, as the Session-attribution cases below need.
+    const grant = await owner.post(`/api/projects/${ownerProject}/members`, { userId: "admin" });
+    expect([200, 201]).toContain(grant.status);
   });
-
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(() => {
+    calls.length = 0;
+    // Company mode is off on a server nobody turned it on (its own case below): every other
+    // case is about what the routes do once an admin has enabled it.
+    t.deps.serverSettingsRepo.setCompanyMode(true);
   });
 
   it("is off on a server whose admin never touched the switch", async () => {
@@ -185,13 +198,17 @@ describe("organization routes", () => {
     });
   });
 
-  it("has no route that deletes an organization", async () => {
-    // Pause is the whole lifecycle. DELETE is not a route, so the Project's own owner gets 404
-    // and the service is never asked; pausing is a PATCH like any other setting.
-    expect((await owner.delete(`/api/projects/${ownerProject}/organizations/acme`)).status).toBe(
-      404,
-    );
+  it("deletes an organization for the Project's owner only; pausing stays a setting", async () => {
+    // A Project-level management operation, like deleting an Agent: a member who can write
+    // everything else in the organization cannot make it go away.
+    const path = `/api/projects/${ownerProject}/organizations/acme`;
+    const mira = await provisionUser(t.app, "mira");
+    await owner.post(`/api/projects/${ownerProject}/members`, { userId: "mira" });
+    calls.length = 0;
+    expect((await apiClient(t.app, mira.cookie).delete(path)).status).toBe(403);
     expect(calls).toEqual([]);
+    expect((await owner.delete(path)).status).toBe(204);
+    expect(calls.at(-1)).toEqual({ method: "delete", args: [ownerProject, "acme"] });
     const patch = await owner.patch(`/api/projects/${ownerProject}/organizations/acme`, {
       status: "paused",
     });
@@ -433,9 +450,6 @@ describe("organization routes", () => {
 
   it("honours a read's sessionId only from the control environment", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/channels`;
-    expect([200, 201]).toContain(
-      (await owner.post(`/api/projects/${ownerProject}/members`, { userId: "admin" })).status,
-    );
     const res = await t.app.request(`${base}?sessionId=session-desk&agentId=acme_dev`, {
       headers: { authorization: `Bearer ${t.deps.authService.localApiToken()}` },
     });
@@ -458,9 +472,6 @@ describe("organization routes", () => {
 
   it("passes the calling session through write bodies so the file records the employee", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/tickets/2026-09-01-site`;
-    // The control environment's credential: the admin joins the Project the CLI writes to.
-    const grant = await owner.post(`/api/projects/${ownerProject}/members`, { userId: "admin" });
-    expect([200, 201]).toContain(grant.status);
     const res = await fromSession(t, `${base}/progress`, {
       text: "half done",
       sessionId: "session-desk",
@@ -656,6 +667,119 @@ describe("organization sessions route over the real service", () => {
       // Unbinding takes the mark away with it.
       t.deps.messagingRepo.setEnabled(ceoDesk, "telegram", false);
       expect((await desks()).get("acme_ceo")).not.toHaveProperty("messagingChannel");
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("finds an employee's desk and a ticket's session, which the employee's session list leaves out", async () => {
+    const t = await createTestApp();
+    try {
+      t.deps.serverSettingsRepo.setCompanyMode(true);
+      const u = await provisionUser(t.app, "piper");
+      const api = apiClient(t.app, u.cookie);
+      const projectId = "piper-default_project";
+      const agentId = "acme_ceo";
+      expect((await api.post(`/api/projects/${projectId}/agents`, { agentId })).status).toBe(201);
+      const desk = "session-2026-09-01-09-00-00-0abc0031";
+      const ticketSession = "session-2026-09-02-10-00-00-0abc0032";
+      const own = "session-2026-09-03-11-00-00-0abc0033";
+
+      const store = new OrgStore(t.deps.config.root);
+      const dir = store.dir(projectId, "acme");
+      await store.createLayout(dir);
+      await store.writeConfig(dir, {
+        ...ORG_CONFIG_DEFAULTS,
+        name: "Acme",
+        mission: "Ship the site",
+        timezone: "UTC",
+        createdBy: "piper",
+      });
+      await store.writeChart(dir, {
+        employees: [{ agentId, title: "CEO", reportsTo: null, workspace: "." }],
+      });
+      const workspace = path.join(dir, "workspace");
+      await store.writeDesks(dir, {
+        [agentId]: {
+          sessionId: desk,
+          workspace,
+          openedAt: "2026-09-01T09:00:00.000Z",
+          previous: [],
+        },
+      });
+      await store.writeTicket(dir, "2026-09-02-site", "in_progress", {
+        title: "Launch the site",
+        status: "in_progress",
+        owner: `agent:${agentId}`,
+        notify: [],
+        priority: "P2",
+        sessions: [ticketSession],
+        history: [],
+        goal: "",
+        acceptanceCriteria: "",
+        progress: [],
+        result: "",
+        extra: {},
+        extraSections: [],
+      });
+      // The desk has not run yet (no Trace); the ticket's session ran and recorded `company`;
+      // the person's own conversation recorded `user`.
+      for (const [sessionId, client, source] of [
+        [desk, "org", undefined],
+        [ticketSession, "org", "company"],
+        [own, "web", "user"],
+      ] as const) {
+        const stamp = `${sessionId.slice(8, 18)}T09:00:00.000Z`;
+        t.deps.sessionsRepo.insert({
+          sessionId,
+          projectId,
+          agentId,
+          provider: "custom",
+          modelId: "m-org",
+          workspace,
+          approvalMode: "allow-all",
+          title: null,
+          client,
+          createdAt: stamp,
+          lastActiveAt: stamp,
+        });
+        if (source === undefined) continue;
+        await writeTraceFile(t.root, projectId, agentId, sessionId.slice(8, 18), sessionId, 1, [
+          sessionMeta({
+            session_id: sessionId,
+            model_id: "m-org",
+            provider: "custom",
+            model_context_window: 1000,
+            system_prompt: "",
+            agent_state: "/tmp/a",
+            workspace,
+            source: source satisfies SessionSource,
+          }),
+          userText("work"),
+        ]);
+      }
+
+      const org = (await (
+        await api.get(`/api/projects/${projectId}/organizations/acme/sessions`)
+      ).json()) as OrgSessionsResponse;
+      expect(org.desks.map((d) => d.sessionId)).toEqual([desk]);
+      expect(org.tickets.flatMap((tk) => tk.sessions.map((s) => s.sessionId))).toEqual([
+        ticketSession,
+      ]);
+
+      const list = async (qs: string) =>
+        (await (
+          await api.get(`/api/projects/${projectId}/agents/${agentId}/sessions${qs}`)
+        ).json()) as SessionsResponse;
+      const counted = await list("?category=active&counts=1");
+      expect(counted.sessions.map((s) => s.sessionId)).toEqual([own]);
+      expect(counted.counts).toEqual({ active: 1, background: 0, archived: 0 });
+      expect((await list("?category=background")).sessions).toEqual([]);
+      expect((await list("?category=archived")).sessions).toEqual([]);
+      // Both are company Sessions as the list reads them.
+      const sources = new Map((await list("")).sessions.map((s) => [s.sessionId, s.source]));
+      expect(sources.get(desk)).toBe("company");
+      expect(sources.get(ticketSession)).toBe("company");
     } finally {
       await t.cleanup();
     }

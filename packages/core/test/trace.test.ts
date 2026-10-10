@@ -36,6 +36,7 @@ function meta() {
     system_prompt: "test system prompt",
     agent_state: "/tmp/agent_state",
     workspace: "/tmp/workspace",
+    source: "user",
   });
 }
 
@@ -96,6 +97,7 @@ describe("Writer", () => {
       system_prompt: "child prompt",
       agent_state: "/tmp/child_agent/agent_state",
       workspace: "/tmp/workspace",
+      source: "user",
     });
     await writer.writeAll([
       meta(),

@@ -8,13 +8,8 @@
  */
 import type { Todo } from "./todo-badges";
 
-/**
- * The two numbers a notice may state. `added` is absent on the trails that cannot honestly
- * report one — see {@link Todo.breakdown}; the notice then names the upgradable count alone
- * rather than padding the sentence with a zero.
- */
+/** The number a notice states: how many things the bulk action would update. */
 export interface NoticeCounts {
-  added: number | null;
   updated: number;
 }
 
@@ -23,14 +18,9 @@ export interface NoticeCounts {
  * back to the underlying data for a second opinion is the one thing this must not do: a block
  * claiming three updates under a dot raised for four is a bug the user cannot resolve, and it is
  * exactly what two independent counts drift into.
- *
- * A trail with no breakdown reports its whole count as upgradable, which is what it is: a Skill
- * some Agent has fallen behind on and an Agent behind the defaults generation are both things
- * the Project already has an older form of.
  */
 export function noticeCounts(todo: Todo): NoticeCounts {
-  if (todo.breakdown === undefined) return { added: null, updated: todo.count };
-  return { added: todo.breakdown.added, updated: todo.breakdown.updated };
+  return { updated: todo.count };
 }
 
 /** How a bulk write went, in the terms the toast reports it in. */

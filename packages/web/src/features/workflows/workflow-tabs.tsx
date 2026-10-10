@@ -11,11 +11,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { WorkflowInfo, WorkflowVersion } from "@prismshadow/penguin-server/api";
+import { Button, ConfirmModal, NoticeStrip } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { Button } from "../../components/ui/button";
 import { formatDateTime } from "../../lib/format";
+import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { forwardFrameKeys, readDocumentTheme, themeWorkflowFrame } from "../../lib/workflow-theme";
 import {
   FILL_APP_MESSAGE,
@@ -93,8 +94,8 @@ export function useWorkflowTabs(
 const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
 const TAB_BASE =
-  "relative h-9 shrink-0 border-b-2 px-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
-const TAB_ACTIVE = "border-[var(--accent-bg)] font-medium text-gray-900 dark:text-gray-100";
+  "relative h-9 shrink-0 whitespace-nowrap border-b-2 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
+const TAB_ACTIVE = "border-accent font-medium text-gray-900 dark:text-gray-100";
 const TAB_IDLE =
   "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
 
@@ -115,16 +116,16 @@ export function WorkflowTabStrip({
   return (
     <>
       {notices.map((n) => (
-        <div
+        <NoticeStrip
           key={n.workflowId}
+          tone={n.error === null ? "neutral" : "attention"}
           role="status"
-          className={`shrink-0 truncate px-3 py-1 text-xs ${
-            n.error === null ? toneStrip.muted : toneStrip.attention
-          }`}
-          title={n.error ?? n.hints.join("\n")}
+          className="shrink-0 truncate px-3 py-1 text-xs"
+          data-tooltip={n.error ?? n.hints.join("\n")}
+          data-tooltip-content="text"
         >
           <span className="font-mono">{n.workflowId}</span>: {n.error ?? n.hints[0]}
-        </div>
+        </NoticeStrip>
       ))}
       {tabs.length > 0 && (
         <div
@@ -147,7 +148,7 @@ export function WorkflowTabStrip({
               type="button"
               role="tab"
               aria-selected={active === t.tabId}
-              title={t.error ?? undefined}
+              data-tooltip={t.error ?? undefined}
               className={`${TAB_BASE} ${active === t.tabId ? TAB_ACTIVE : TAB_IDLE}`}
               onClick={() => onSelect(t.tabId)}
             >
@@ -183,7 +184,7 @@ export function WorkflowFrame({
   /** The workflow and its versions are gone; the caller drops the tab (the list refetch confirms). */
   onRemoved: () => void;
 }) {
-  const { dark, accent, fontScale } = useTheme();
+  const { dark, themeId, accent, textSize, fontLatin, fontCjk } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [busy, setBusy] = useState<"reload" | "rollback" | "remove" | null>(null);
   // Removal is armed by a first click and sent by the second; the arm drops when the tab changes.
@@ -192,6 +193,8 @@ export function WorkflowFrame({
   const [failure, setFailure] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versions, setVersions] = useState<WorkflowVersion[] | null>(null);
+  /** A revision whose restore awaits confirmation: it replaces the workflow's files. */
+  const [restoring, setRestoring] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -236,8 +239,8 @@ export function WorkflowFrame({
     }
   };
 
-  // The page is a separate document: the app's dark class, accent and root font size stop at
-  // the frame, so they are copied in (lib/workflow-theme.ts) on load and on every appearance
+  // The page is a separate document: the app's dark class, theme, accent, fonts and root font
+  // size stop at the frame, so they are copied in (lib/workflow-theme.ts) on load and on every appearance
   // change. Past the commit, because the provider that stamps them on the app's own document
   // is an ancestor and its effect runs after this one's.
   const applyTheme = useCallback(() => {
@@ -246,7 +249,7 @@ export function WorkflowFrame({
   useEffect(() => {
     const id = requestAnimationFrame(applyTheme);
     return () => cancelAnimationFrame(id);
-  }, [applyTheme, dark, accent, fontScale, tab.uiRev]);
+  }, [applyTheme, dark, themeId, accent, textSize, fontLatin, fontCjk, tab.uiRev]);
 
   // A page is its own document: until it has loaded and been themed it paints the browser's
   // white canvas, and then its own unstyled markup — a white flash in a dark app, on every
@@ -286,6 +289,7 @@ export function WorkflowFrame({
   // Filling the app: the bar's button, or the page asking for it itself
   // (`parent.postMessage({ type: "penguin:fill-app" }, "*")`) — only from our own frame.
   const navigate = useNavigate();
+  const paletteShortcut = useShortcutLabel("palette.toggle");
   const fillApp = useCallback(
     () =>
       void navigate(workflowAppPath(projectId, agentId, tab.workflowId, tab.key, tab.machineId)),
@@ -312,7 +316,12 @@ export function WorkflowFrame({
         {tab.version !== null && <span>v{tab.version}</span>}
         <span className="font-mono">{tab.revision}</span>
         <span className="flex-1" />
-        <Button variant="secondary" size="sm" title={S.workflows.fillAppHint} onClick={fillApp}>
+        <Button
+          variant="secondary"
+          size="sm"
+          title={S.workflows.fillAppHint(paletteShortcut)}
+          onClick={fillApp}
+        >
           {S.workflows.fillApp}
         </Button>
         <Button
@@ -364,12 +373,14 @@ export function WorkflowFrame({
         )}
       </div>
       {tab.error !== null && !bare && (
-        <div className={`shrink-0 px-3 py-1.5 text-xs ${toneStrip.danger}`}>
+        <NoticeStrip banner tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
           {S.workflows.loadError}: {tab.error}
-        </div>
+        </NoticeStrip>
       )}
       {failure !== null && (
-        <div className={`shrink-0 px-3 py-1.5 text-xs ${toneStrip.danger}`}>{failure}</div>
+        <NoticeStrip banner tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
+          {failure}
+        </NoticeStrip>
       )}
       <div
         id={historyId}
@@ -398,7 +409,7 @@ export function WorkflowFrame({
                       variant="secondary"
                       size="sm"
                       disabled={busy !== null}
-                      onClick={() => void rollback(v.revision)}
+                      onClick={() => setRestoring(v.revision)}
                     >
                       {S.workflows.restore}
                     </Button>
@@ -420,6 +431,21 @@ export function WorkflowFrame({
         }`}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
       />
+      <ConfirmModal
+        open={restoring !== null}
+        title={S.workflows.restoreTitle}
+        onClose={() => setRestoring(null)}
+        onConfirm={() => {
+          if (restoring !== null) void rollback(restoring);
+          setRestoring(null);
+        }}
+        confirmLabel={S.workflows.restore}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {restoring !== null ? S.workflows.restoreConfirm(restoring) : ""}
+        </p>
+      </ConfirmModal>
     </div>
   );
 }

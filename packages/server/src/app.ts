@@ -34,7 +34,6 @@ import {
   HMR_CONFIG_RESOURCE_ID,
   HMR_DB_RESOURCE_ID,
   HMR_DESKTOP_RESOURCE_ID,
-  HMR_LIFECYCLE_RESOURCE_ID,
   HMR_HOST_RESOURCE_ID,
   HMR_CONTROL_RESOURCE_ID,
   HMR_OVERRIDES_RESOURCE_ID,
@@ -59,6 +58,7 @@ import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { jsonOnlyWrites } from "./auth/middleware.js";
+import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
@@ -101,7 +101,6 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { LifecycleService } from "./services/lifecycle-service.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -188,8 +187,6 @@ export interface ServerBoot {
   /** The frozen operations over `hmr` (packages/hmr's main.ts): the seam and the upgrade route drive it, nothing drives the host directly. */
   control: Hmr<PlatformApi>;
   desktop: DesktopService | null;
-  /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
-  lifecycle: LifecycleService;
   tree: ModuleTree;
 }
 
@@ -296,8 +293,6 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
-  const lifecycle = new LifecycleService(config.supervised);
-  hmr.resources.register(HMR_LIFECYCLE_RESOURCE_ID, lifecycle);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -319,7 +314,7 @@ export async function bootAppDeps(
   // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
   // members: the runtime singletons published above. The tree is THIS generation's and
   // goes stale at the next push — per-request business dispatch rides the seam.
-  booted = { config, db, channels, hmr, control: ctl, desktop, lifecycle, tree };
+  booted = { config, db, channels, hmr, control: ctl, desktop, tree };
   return booted;
 }
 
@@ -438,6 +433,10 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   // 300MB bodies on a server whose limits were left at 10MB. It is re-derived per request, so an
   // admin's change takes effect immediately; the middleware itself is memoized on the resulting
   // size so the steady state allocates nothing.
+  //
+  // The Agent API is called from browsers too: its CORS header (amsp/cors.ts) has to reach these
+  // two refusals, which answer before its group runs, or a caller reads a CORS failure, not the code.
+  app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
     const size = bodyLimitBytes(settings().getAttachmentLimitsMb());

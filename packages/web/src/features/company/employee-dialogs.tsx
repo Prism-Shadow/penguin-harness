@@ -11,6 +11,22 @@
  */
 import { useEffect, useState } from "react";
 import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ConfirmModal,
+  FieldError,
+  FieldLabel,
+  FormPicker,
+  ICONS,
+  Input,
+  Modal,
+  RuledSection,
+  Segmented,
+  Select,
+  Textarea,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -20,21 +36,10 @@ import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { Input, Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
-import { Segmented } from "../../components/ui/segmented";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { FormPicker } from "../../components/ui/form-picker";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import { PLUGIN_ICON } from "../../components/ui/icons";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { OrgSection } from "./org-layout";
-import { MoneyPerMonthInput } from "./shared";
+import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
 import { managerCandidates } from "./org-chart-tree";
@@ -117,7 +122,7 @@ export function HireDialog({
       .then((res) => {
         if (cancelled) return;
         setLibrary(
-          res.groups.flatMap((g) => g.plugins.map((p) => ({ ...p, fallbackIcon: PLUGIN_ICON }))),
+          res.groups.flatMap((g) => g.plugins.map((p) => ({ ...p, fallbackIcon: ICONS.puzzle }))),
         );
       })
       .catch(() => {
@@ -217,8 +222,8 @@ export function HireDialog({
           </>
         }
       >
-        <div className="space-y-5">
-          <OrgSection title={S.company.chart.hireAgentSection}>
+        <div className="space-y-6">
+          <RuledSection level={3} title={S.company.chart.hireAgentSection}>
             <div className="space-y-3">
               <div>
                 <FieldLabel>{S.company.chart.hireSource}</FieldLabel>
@@ -233,28 +238,34 @@ export function HireDialog({
                 />
               </div>
               {source === "existing" ? (
-                <Select
-                  size="sm"
-                  label={S.company.chart.agent}
-                  required
-                  value={agentId}
-                  hint={S.company.chart.agentHint}
-                  {...(errors.agent !== undefined ? { error: errors.agent } : {})}
-                  onChange={(e) => {
-                    setAgentId(e.target.value);
-                    setErrors((p) => ({ ...p, agent: undefined }));
-                  }}
-                >
-                  {candidates.length === 0 ? (
-                    <option value="">{S.company.chart.noAgentsLeft}</option>
-                  ) : (
-                    candidates.map((a) => (
-                      <option key={a.agentId} value={a.agentId}>
-                        {agentDisplayName(a)} ({a.agentId})
-                      </option>
-                    ))
-                  )}
-                </Select>
+                <div>
+                  <InfoFieldLabel
+                    label={S.company.chart.agent}
+                    info={S.company.chart.agentHint}
+                    required
+                  />
+                  <Select
+                    size="sm"
+                    aria-label={S.company.chart.agent}
+                    required
+                    value={agentId}
+                    {...(errors.agent !== undefined ? { error: errors.agent } : {})}
+                    onChange={(e) => {
+                      setAgentId(e.target.value);
+                      setErrors((p) => ({ ...p, agent: undefined }));
+                    }}
+                  >
+                    {candidates.length === 0 ? (
+                      <option value="">{S.company.chart.noAgentsLeft}</option>
+                    ) : (
+                      candidates.map((a) => (
+                        <option key={a.agentId} value={a.agentId}>
+                          {agentDisplayName(a)} ({a.agentId})
+                        </option>
+                      ))
+                    )}
+                  </Select>
+                </div>
               ) : (
                 <>
                   <Input
@@ -274,7 +285,7 @@ export function HireDialog({
                     label={S.company.chart.agentName}
                     size="sm"
                     value={newName}
-                    hint={S.company.chart.agentNameHint}
+                    info={S.company.chart.agentNameHint}
                     onChange={(e) => setNewName(e.target.value)}
                   />
                   <Textarea
@@ -285,7 +296,10 @@ export function HireDialog({
                     onChange={(e) => setNewDescription(e.target.value)}
                   />
                   <div>
-                    <FieldLabel>{S.company.chart.plugins}</FieldLabel>
+                    <InfoFieldLabel
+                      label={S.company.chart.plugins}
+                      info={S.company.chart.pluginsHint}
+                    />
                     <FormPicker
                       open={pluginsOpen}
                       setOpen={setPluginsOpen}
@@ -295,7 +309,6 @@ export function HireDialog({
                           : S.company.chart.pluginsPicked(plugins.length)
                       }
                       muted={plugins.length === 0}
-                      title={S.company.chart.plugins}
                       ariaLabel={S.company.chart.plugins}
                       disabled={busy}
                       menuClass="w-[26rem]"
@@ -314,13 +327,12 @@ export function HireDialog({
                         searchPlaceholder={S.plugins.searchPlaceholder}
                       />
                     </FormPicker>
-                    <FieldHint>{S.company.chart.pluginsHint}</FieldHint>
                   </div>
                 </>
               )}
             </div>
-          </OrgSection>
-          <OrgSection title={S.company.chart.hirePositionSection}>
+          </RuledSection>
+          <RuledSection level={3} title={S.company.chart.hirePositionSection}>
             <div className="space-y-3">
               <Input
                 label={S.company.chart.employeeTitle}
@@ -339,7 +351,7 @@ export function HireDialog({
                 size="sm"
                 rows={2}
                 value={duties}
-                hint={S.company.chart.dutiesHint}
+                info={S.company.chart.dutiesHint}
                 onChange={(e) => setDuties(e.target.value)}
               />
               <Input
@@ -347,7 +359,7 @@ export function HireDialog({
                 size="sm"
                 value={workspace}
                 className="font-mono"
-                hint={S.company.chart.hireWorkspaceHint}
+                hint={S.company.chart.workspaceHint}
                 placeholder={hireAgentId}
                 onChange={(e) => setWorkspace(e.target.value)}
               />
@@ -355,8 +367,8 @@ export function HireDialog({
                 label={S.company.chart.budget}
                 currency={currency}
                 value={budget}
-                placeholder={S.company.chart.budgetPlaceholder}
-                hint={S.company.chart.budgetHint}
+                placeholder={S.company.noBudget}
+                info={S.company.chart.budgetHint}
                 {...(errors.budget !== undefined ? { error: errors.budget } : {})}
                 onChange={(text) => {
                   setBudget(text);
@@ -364,7 +376,7 @@ export function HireDialog({
                 }}
               />
             </div>
-          </OrgSection>
+          </RuledSection>
         </div>
       </Modal>
       <ConfirmModal
@@ -372,6 +384,7 @@ export function HireDialog({
         title={S.company.chart.hire}
         tone="primary"
         confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setConfirmOpen(false))}
         onConfirm={() => void hire()}
@@ -508,8 +521,8 @@ export function EmployeeEditDialog({
               label={S.company.chart.budget}
               currency={currency}
               value={value}
-              placeholder={S.company.chart.budgetPlaceholder}
-              hint={S.company.chart.budgetHint}
+              placeholder={S.company.noBudget}
+              info={S.company.chart.budgetHint}
               {...(error !== undefined ? { error } : {})}
               autoFocus
               onChange={(text) => {
@@ -538,11 +551,16 @@ export function EmployeeEditDialog({
               value={employee.reportsTo === null ? "—" : managerName(employee.reportsTo)}
             />
             <div>
+              <InfoFieldLabel
+                label={S.company.chart.manager}
+                info={S.company.chart.reportsToHint}
+                required
+              />
               <Select
                 size="sm"
-                label={S.company.chart.manager}
+                aria-label={S.company.chart.manager}
+                required
                 value={value}
-                hint={S.company.chart.reportsToHint}
                 {...(error !== undefined ? { error } : {})}
                 onChange={(e) => {
                   setValue(e.target.value);
@@ -565,6 +583,7 @@ export function EmployeeEditDialog({
         title={title}
         tone="primary"
         confirmLabel={S.common.save}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setConfirmOpen(false))}
         onConfirm={() => void save()}
@@ -671,11 +690,8 @@ export function DeskRenewDialog({
       }
     >
       <div className="space-y-3">
-        {/* This dialog is its own confirmation, so what it will do stays on screen instead of
-            hiding behind a "?" the reader would have to open before deciding. */}
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {S.company.chart.renewDeskExplain}
-        </p>
+        {/* What confirming does sits behind the field's "?": the title and the button already
+            say a new desk session opens, and the only field is the workspace it writes. */}
         <Input
           label={S.company.chart.workspace}
           required
@@ -684,6 +700,7 @@ export function DeskRenewDialog({
           className="font-mono"
           placeholder="."
           hint={S.company.chart.workspaceHint}
+          info={S.company.chart.renewDeskExplain}
           {...(error !== undefined ? { error } : {})}
           autoFocus
           onChange={(e) => {

@@ -6,6 +6,7 @@ import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { authMiddleware, jsonOnlyWrites } from "../auth/middleware.js";
+import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
@@ -16,9 +17,10 @@ import type { Errors } from "../mechanisms/observability.js";
 import type { Settings } from "../mechanisms/settings.js";
 
 /** The assembled business surface: one request in, one response (or a decline) out. */
-export abstract class Http extends Interface<{
-  fetch(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
-}>() {}
+@Interface()
+export abstract class Http {
+  abstract fetch(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
+}
 
 export interface HttpSlots {
   /**
@@ -67,6 +69,10 @@ export class HttpModule {
         `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
       );
     });
+    // The same header the host layer puts ahead of its copies of these two checks (src/app.ts):
+    // their refusals answer before the Agent API's group runs, and a browser caller must read the
+    // code, not a CORS failure.
+    app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
     let capped: { size: number; mw: MiddlewareHandler } | null = null;
     app.use("/api/*", (c, next) => {
       const size = bodyLimitBytes(this.settings.getAttachmentLimitsMb());

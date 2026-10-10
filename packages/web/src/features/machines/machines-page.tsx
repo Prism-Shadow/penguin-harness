@@ -25,6 +25,23 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  ChevronDown,
+  ConfirmModal,
+  Dropdown,
+  Fold,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  NoticeStrip,
+  PageFrame,
+  PageHeader,
+  SearchInput,
+  Skeleton,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
 import { useLocale } from "../../state/locale";
@@ -32,15 +49,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMessageTime } from "../../lib/format";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { Button } from "../../components/ui/button";
-import { Dropdown } from "../../components/ui/dropdown";
-import { Skeleton } from "../../components/ui/skeleton";
-import { toastError } from "../../components/ui/toast";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { noAutofill, panelSearchClass } from "../../components/ui/input";
-import { ChevronDown, GEAR_ICON, NAV_ICONS } from "../../components/ui/icons";
+import { toneDot, toneInk } from "../../lib/tone";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   MACHINE_PHASES,
   anyJobPending,
@@ -61,23 +71,17 @@ import type { HostFormMode } from "./ssh-host-dialog";
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
 
-/**
- * Enable: a plug seated in its socket, cord trailing. Disable: the plug lifted clear of the
- * socket — prongs in the air, a gap, and the empty socket cup below. The two must differ in
- * silhouette, not in detail: at icon size a detail is invisible.
- */
-const PLUG_PATH = "M9 2v4M15 2v4M6 6h12v4a6 6 0 0 1-12 0V6zM12 16v6";
-const UNPLUG_PATH = "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17 22v-4";
+/** Enable: the plug, cord trailing. Disable: the same plug lifted clear of its socket. */
+const PLUG_PATH = ICONS.plug;
+const UNPLUG_PATH = ICONS.plugLifted;
 
-/** The + in the picker's foot: a new host for the ssh config. */
-const PLUS_PATH = "M12 5v14M5 12h14";
-/** The expand verb's glyph, on the 24-grid like the others; turned over when unfolded. */
-const CHEVRON_PATH = "M6 9l6 6 6-6";
+/** The expand verb's glyph; turned over when unfolded. */
+const CHEVRON_PATH = ICONS.chevronDown;
 /** Select all: a box with a check. Select none: the empty box. */
-const SELECT_ALL_PATH = "M4 5h16v14H4zM8 12l3 3 5-6";
-const SELECT_NONE_PATH = "M4 5h16v14H4z";
+const SELECT_ALL_PATH = ICONS.rectangleCheck;
+const SELECT_NONE_PATH = ICONS.rectangle;
 
-const MONO = "font-mono text-[13px] tabular-nums";
+const MONO = "font-mono text-xs tabular-nums";
 
 /** The reason a card gives under its name, when it has one: the far side's own words. */
 function reasonText(reading: MachineReading): string | null {
@@ -122,6 +126,16 @@ function stepIndex(job: MachineJob | null): number {
   return MACHINE_PHASES.indexOf(job.phase);
 }
 
+/**
+ * A verb that interrupts someone, waiting on its confirmation: letting machines go (their
+ * connection drops), a forced install (the service there restarts), and updating every
+ * machine that is behind (each reinstalls and reconnects).
+ */
+type PendingVerb =
+  | { kind: "stopUsing"; ids: string[] }
+  | { kind: "replaceProgram"; id: string }
+  | { kind: "updateAll"; ids: string[] };
+
 function toggled(set: Set<string>, id: string): Set<string> {
   const next = new Set(set);
   if (next.has(id)) next.delete(id);
@@ -147,6 +161,7 @@ export function MachinesPage() {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   /** The form that adds a host to the ssh config, or configures one; null while closed. */
   const [hostForm, setHostForm] = useState<HostFormMode | null>(null);
+  const [pendingVerb, setPendingVerb] = useState<PendingVerb | null>(null);
 
   /** The picker panel; closing it always clears the query and its picks, so it reopens fresh. */
   const [pickerOpen, setPickerOpenState] = useState(false);
@@ -304,6 +319,39 @@ export function MachinesPage() {
       return answer;
     });
   const stopUsing = (ids: string[]) => post((project) => api.stopUsingMachines(project, ids));
+  const runPendingVerb = () => {
+    const verb = pendingVerb;
+    setPendingVerb(null);
+    if (verb === null) return;
+    if (verb.kind === "stopUsing") void stopUsing(verb.ids);
+    else if (verb.kind === "replaceProgram") void use([verb.id], true);
+    else void use(verb.ids);
+  };
+  const aliasOf = (id: string) => machines.find((machine) => machine.id === id)?.alias ?? id;
+  /** The confirmation's verb, body and tone: interrupting work is danger, the update primary. */
+  const verbPrompt =
+    pendingVerb === null
+      ? null
+      : pendingVerb.kind === "stopUsing"
+        ? {
+            label: S.machines.stopUsing,
+            body:
+              pendingVerb.ids.length === 1
+                ? S.machines.stopUsingOne(aliasOf(pendingVerb.ids[0]!))
+                : S.machines.stopUsingMany(pendingVerb.ids.length),
+            tone: "danger" as const,
+          }
+        : pendingVerb.kind === "replaceProgram"
+          ? {
+              label: S.machines.replaceProgram,
+              body: S.machines.replaceProgramConfirm(aliasOf(pendingVerb.id)),
+              tone: "danger" as const,
+            }
+          : {
+              label: S.machines.updateAll(pendingVerb.ids.length),
+              body: S.machines.updateAllConfirm(pendingVerb.ids.length),
+              tone: "primary" as const,
+            };
   const configure = async (alias: string) => {
     if (projectId === null) return;
     try {
@@ -322,17 +370,21 @@ export function MachinesPage() {
   const noImage = state !== null && imageVersion === null;
 
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-3xl">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">{S.machines.pageTitle}</h1>
-          <div className="flex items-center gap-2">
+    <PageFrame width="sm">
+      {/* The notices belong to the header: they sit under the title, and the selection bar
+          keeps one gap below whichever block ends the header. */}
+      <PageHeader
+        title={S.machines.pageTitle}
+        actions={
+          <>
             {behind.length > 0 && (
               <Button
                 size="sm"
                 variant="secondary"
                 disabled={posting || pending}
-                onClick={() => void use(behind.map((machine) => machine.id))}
+                onClick={() =>
+                  setPendingVerb({ kind: "updateAll", ids: behind.map((machine) => machine.id) })
+                }
               >
                 {S.machines.updateAll(behind.length)}
               </Button>
@@ -358,15 +410,13 @@ export function MachinesPage() {
               {/* The search row: matched characters bright and the rest dimmed — with a
                   subsequence match, an unmarked row looks wrong. */}
               <div className="px-2 pt-2 pb-1">
-                <input
-                  type="search"
+                <SearchInput
+                  variant="panel"
                   autoFocus
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={setQuery}
                   placeholder={S.machines.search}
                   aria-label={S.machines.search}
-                  {...noAutofill}
-                  className={`${panelSearchClass} px-2.5 py-1.5`}
                 />
               </div>
               <ul
@@ -381,10 +431,8 @@ export function MachinesPage() {
                       <button
                         type="button"
                         onClick={() => toggleAdding(machine.id)}
-                        className={`flex w-full min-w-0 items-center gap-2.5 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                          on
-                            ? "bg-gray-100 shadow-[inset_3px_0_0_var(--accent-bg)] dark:bg-gray-800/60"
-                            : ""
+                        className={`flex w-full min-w-0 items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                          on ? "bg-gray-100 dark:bg-gray-800/60" : ""
                         }`}
                       >
                         <span
@@ -431,7 +479,7 @@ export function MachinesPage() {
                     label={showAll ? S.machines.fewer : S.machines.expand}
                     title={showAll ? S.machines.fewer : S.machines.allHosts(hiddenCount)}
                     d={CHEVRON_PATH}
-                    glyphClass={`transition-transform ${showAll ? "rotate-180" : ""}`}
+                    glyphClass={showAll ? "rotate-180" : ""}
                     ariaExpanded={showAll}
                     onClick={() => setShowAll((open) => !open)}
                   />
@@ -441,7 +489,7 @@ export function MachinesPage() {
                 <Verb
                   label={S.machines.host.newVerb}
                   title={S.machines.host.addTitle}
-                  d={PLUS_PATH}
+                  d={ICONS.plus}
                   onClick={() => {
                     setPickerOpen(false);
                     setHostForm({ kind: "add" });
@@ -467,110 +515,125 @@ export function MachinesPage() {
                 </div>
               )}
             </Dropdown>
-          </div>
-        </div>
-        {projectId !== null && hostForm !== null && (
-          <SshHostDialog
-            key={hostForm.kind === "edit" ? hostForm.host.alias : "add"}
-            mode={hostForm}
-            projectId={projectId}
-            onClose={() => setHostForm(null)}
-            onSaved={(next) => {
-              setState(next);
-              setError(null);
-            }}
-          />
-        )}
-
+          </>
+        }
+      >
         {error !== null && (
-          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>
+          <NoticeStrip tone="danger" className="mt-4 rounded-md border px-3 py-2 text-sm">
             {error}
-          </div>
+          </NoticeStrip>
         )}
         {noImage && error === null && (
-          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
+          <NoticeStrip tone="attention" className="mt-4 rounded-md border px-3 py-2 text-sm">
             {S.machines.noImage}
-          </div>
+          </NoticeStrip>
         )}
+      </PageHeader>
+      {projectId !== null && hostForm !== null && (
+        <SshHostDialog
+          key={hostForm.kind === "edit" ? hostForm.host.alias : "add"}
+          mode={hostForm}
+          projectId={projectId}
+          onClose={() => setHostForm(null)}
+          onSaved={(next) => {
+            setState(next);
+            setError(null);
+          }}
+        />
+      )}
+      <ConfirmModal
+        open={verbPrompt !== null}
+        title={verbPrompt?.label ?? ""}
+        tone={verbPrompt?.tone ?? "danger"}
+        onClose={() => setPendingVerb(null)}
+        onConfirm={runPendingVerb}
+        confirmLabel={verbPrompt?.label ?? ""}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{verbPrompt?.body}</p>
+      </ConfirmModal>
 
-        {/* The selection bar: a fixed slot between the title and the cards, so the cards
-            never move when a selection appears or goes. The count is the slot's label; on the
-            right, select all and none, then the two verbs — bare glyphs here (see Verb), each
-            dimmed when it would do nothing. */}
-        <div className="mt-3 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2 px-1 text-xs text-gray-500">
-          <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
-          <span className="ml-auto flex flex-wrap items-center gap-1">
-            <Verb
-              wordless
-              label={S.machines.pickAll}
-              d={SELECT_ALL_PATH}
-              disabled={inUse.length === 0 || selectedIds.length === inUse.length}
-              onClick={pickAll}
-            />
-            <Verb
-              wordless
-              label={S.machines.pickNone}
-              d={SELECT_NONE_PATH}
-              disabled={selectedIds.length === 0}
-              onClick={pickNone}
-            />
-            <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
-            <Verb
-              wordless
-              label={S.machines.use}
-              d={PLUG_PATH}
-              disabled={selectedIds.length === 0 || posting || noImage}
-              onClick={() => void use(selectedIds)}
-            />
-            <Verb
-              wordless
-              label={S.machines.stopUsing}
-              d={UNPLUG_PATH}
-              disabled={selectedIds.length === 0 || posting}
-              onClick={() => void stopUsing(selectedIds)}
-            />
-          </span>
-        </div>
-
-        {state === null ? (
-          <Skeleton className="h-40 w-full rounded-xl" />
-        ) : (
-          <ul className="space-y-2">
-            {local !== null && (
-              <LocalCard
-                machine={local}
-                locale={locale}
-                open={expanded.has(local.id)}
-                onToggleOpen={() => toggleExpanded(local.id)}
-              />
-            )}
-            {inUse.map((machine) => (
-              <MachineCard
-                key={machine.id}
-                machine={machine}
-                job={jobFor(jobs, machine.id)}
-                imageVersion={imageVersion}
-                locale={locale}
-                selected={selection.has(machine.id)}
-                onToggle={() => togglePicked(machine.id)}
-                open={expanded.has(machine.id)}
-                onToggleOpen={() => toggleExpanded(machine.id)}
-                busy={posting}
-                onUse={(replaceProgram) => void use([machine.id], replaceProgram)}
-                onStopUsing={() => void stopUsing([machine.id])}
-                onConfigure={() => void configure(machine.alias)}
-              />
-            ))}
-            {inUse.length === 0 && (
-              <li className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700">
-                <p>{S.machines.noneInUse}</p>
-                <p className="mt-1 text-xs">{S.machines.sshHint}</p>
-              </li>
-            )}
-          </ul>
-        )}
+      {/* The selection bar: a fixed slot between the title and the cards, so the cards
+          never move when a selection appears or goes. The count is the slot's label; on the
+          right, select all and none, then the two verbs — bare glyphs here (see Verb), each
+          dimmed when it would do nothing. */}
+      <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2 px-1 text-xs text-gray-500">
+        <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
+        <span className="ml-auto flex flex-wrap items-center gap-1">
+          <Verb
+            wordless
+            label={S.machines.pickAll}
+            d={SELECT_ALL_PATH}
+            disabled={inUse.length === 0 || selectedIds.length === inUse.length}
+            onClick={pickAll}
+          />
+          <Verb
+            wordless
+            label={S.machines.pickNone}
+            d={SELECT_NONE_PATH}
+            disabled={selectedIds.length === 0}
+            onClick={pickNone}
+          />
+          <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
+          <Verb
+            wordless
+            label={S.machines.use}
+            d={PLUG_PATH}
+            disabled={selectedIds.length === 0 || posting || noImage}
+            onClick={() => void use(selectedIds)}
+          />
+          <Verb
+            wordless
+            label={S.machines.stopUsing}
+            d={UNPLUG_PATH}
+            disabled={selectedIds.length === 0 || posting}
+            onClick={() => setPendingVerb({ kind: "stopUsing", ids: selectedIds })}
+          />
+        </span>
       </div>
-    </div>
+
+      {state === null ? (
+        <Skeleton className="h-40 w-full rounded-xl" />
+      ) : (
+        <ul className="space-y-2">
+          {local !== null && (
+            <LocalCard
+              machine={local}
+              locale={locale}
+              open={expanded.has(local.id)}
+              onToggleOpen={() => toggleExpanded(local.id)}
+            />
+          )}
+          {inUse.map((machine) => (
+            <MachineCard
+              key={machine.id}
+              machine={machine}
+              job={jobFor(jobs, machine.id)}
+              imageVersion={imageVersion}
+              locale={locale}
+              selected={selection.has(machine.id)}
+              onToggle={() => togglePicked(machine.id)}
+              open={expanded.has(machine.id)}
+              onToggleOpen={() => toggleExpanded(machine.id)}
+              busy={posting}
+              onUse={(replaceProgram) =>
+                replaceProgram
+                  ? setPendingVerb({ kind: "replaceProgram", id: machine.id })
+                  : void use([machine.id])
+              }
+              onStopUsing={() => setPendingVerb({ kind: "stopUsing", ids: [machine.id] })}
+              onConfigure={() => void configure(machine.alias)}
+            />
+          ))}
+          {inUse.length === 0 && (
+            <li className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700">
+              <p>{S.machines.noneInUse}</p>
+              <p className="mt-1 text-xs">{S.machines.sshHint}</p>
+            </li>
+          )}
+        </ul>
+      )}
+    </PageFrame>
   );
 }
 
@@ -619,7 +682,7 @@ function Verb({
       <button
         type="button"
         disabled={disabled}
-        title={title ?? label}
+        data-tooltip={title ?? label}
         aria-label={label}
         aria-expanded={ariaExpanded}
         onClick={click}
@@ -669,10 +732,7 @@ function ExpandButton({
       }}
       className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
     >
-      <ChevronDown
-        size={ICON_SIZE.chevron}
-        className={`transition-transform ${open ? "rotate-180" : ""}`}
-      />
+      <ChevronDown size={ICON_SIZE.chevron} className={open ? "rotate-180" : ""} />
     </button>
   );
 }
@@ -681,15 +741,17 @@ function ExpandButton({
 function Stepper({ step, caption }: { step: number; caption: string }) {
   return (
     <div className="mt-1.5 w-44 max-w-full">
-      <div className="flex gap-0.5" aria-hidden="true">
+      <div className="flex gap-px" aria-hidden="true">
         {MACHINE_PHASES.map((phase, index) => (
           <span
             key={phase}
+            // The segment being worked on pulses as a live signal, so a theme can re-time it.
+            data-live={index === step ? "dot" : undefined}
             className={`h-[3px] flex-1 rounded-sm ${
               index < step
                 ? toneDot.busy
                 : index === step
-                  ? `${toneDot.busy} animate-pulse`
+                  ? `${toneDot.busy} ui-live animate-pulse`
                   : "bg-gray-200 dark:bg-gray-700"
             }`}
           />
@@ -723,17 +785,21 @@ function LocalCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className={`${MONO} truncate font-medium`}>{machine.alias}</span>
-            <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-[11px] text-gray-500 dark:border-gray-700">
+            <Badge variant="outline" size="sm">
               {S.machines.localTitle}
-            </span>
+            </Badge>
           </div>
           <div className="mt-0.5 truncate text-xs text-gray-500">{S.machines.state.serving}</div>
         </div>
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.link}`} aria-hidden="true" />
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
-      <div id={id} hidden={!open}>
-        <Record machine={machine} locale={locale} />
+      {/* The box the chevron's `aria-controls` names stays in the DOM, empty while folded, so the
+          reference resolves in every state; the details inside it fold through `Fold`. */}
+      <div id={id}>
+        <Fold open={open}>
+          <Record machine={machine} locale={locale} />
+        </Fold>
       </div>
     </li>
   );
@@ -798,7 +864,8 @@ function MachineCard({
           ) : (
             <div
               className={`mt-0.5 truncate text-xs ${lineInk}`}
-              title={reasonText(reading) ?? undefined}
+              data-tooltip={reasonText(reading) ?? undefined}
+              data-tooltip-content="text"
             >
               {stateLine(reading, machine, locale)}
             </div>
@@ -808,47 +875,53 @@ function MachineCard({
           <Verb label={S.machines.use} d={PLUG_PATH} disabled={busy} onClick={() => onUse(false)} />
         )}
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "ui-live animate-pulse" : ""}`}
+          data-live={moving ? "dot" : undefined}
           aria-hidden="true"
         />
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
-      <div id={id} hidden={!open} onClick={(event) => event.stopPropagation()}>
-        <Record machine={machine} locale={locale} />
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {reading.kind === "failed" && reading.canReplaceProgram && (
+      {/* The box the chevron's `aria-controls` names stays in the DOM, empty while folded, so the
+          reference resolves in every state; the details inside it fold through `Fold`. A click
+          in the details must not select the card, so the box swallows it. */}
+      <div id={id} onClick={(event) => event.stopPropagation()}>
+        <Fold open={open}>
+          <Record machine={machine} locale={locale} />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {reading.kind === "failed" && reading.canReplaceProgram && (
+              <Verb
+                label={S.machines.replaceProgram}
+                title={S.machines.replaceProgramWhy}
+                d={PLUG_PATH}
+                variant="danger"
+                disabled={busy}
+                onClick={() => onUse(true)}
+              />
+            )}
+            {wantsUse(reading) && (
+              <Verb
+                label={S.machines.use}
+                d={PLUG_PATH}
+                disabled={busy}
+                onClick={() => onUse(false)}
+              />
+            )}
             <Verb
-              label={S.machines.replaceProgram}
-              title={S.machines.replaceProgramWhy}
-              d={PLUG_PATH}
-              variant="danger"
+              label={S.machines.stopUsing}
+              d={UNPLUG_PATH}
               disabled={busy}
-              onClick={() => onUse(true)}
+              onClick={onStopUsing}
             />
-          )}
-          {wantsUse(reading) && (
             <Verb
-              label={S.machines.use}
-              d={PLUG_PATH}
+              label={S.machines.host.configureVerb}
+              title={S.machines.host.configure}
+              d={ICONS.gear}
               disabled={busy}
-              onClick={() => onUse(false)}
+              onClick={onConfigure}
             />
-          )}
-          <Verb
-            label={S.machines.stopUsing}
-            d={UNPLUG_PATH}
-            disabled={busy}
-            onClick={onStopUsing}
-          />
-          <Verb
-            label={S.machines.host.configureVerb}
-            title={S.machines.host.configure}
-            d={GEAR_ICON}
-            disabled={busy}
-            onClick={onConfigure}
-          />
-        </div>
-        <Output job={job} />
+          </div>
+          <Output job={job} />
+        </Fold>
       </div>
     </li>
   );
@@ -901,7 +974,7 @@ function Output({ job }: { job: MachineJob | null }) {
   return (
     <div className="mt-3">
       <div className="mb-1 text-xs text-gray-500">{S.machines.output}</div>
-      <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-gray-500 dark:bg-gray-900">
+      <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-gray-500 dark:bg-gray-900">
         {job.log.slice(0, -1).join("\n")}
         {job.log.length > 1 ? "\n" : ""}
         <span className="text-gray-900 dark:text-gray-100">{job.log.at(-1)}</span>

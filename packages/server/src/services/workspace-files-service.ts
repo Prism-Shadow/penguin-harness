@@ -1,8 +1,8 @@
 /**
  * Workspace file browsing: list directory / read file (preview & download) / write file
- * (upload) / move, delete and search. Security: a relative path, once resolved, must stay
- * inside the Workspace — a logical prefix check plus a realpath check against the nearest
- * existing ancestor (guards against `..` and symlink escapes).
+ * (upload) / create a file or folder / move, delete and search. Security: a relative path, once
+ * resolved, must stay inside the Workspace — a logical prefix check plus a realpath check
+ * against the nearest existing ancestor (guards against `..` and symlink escapes).
  */
 import fs from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
@@ -102,15 +102,25 @@ function fileChanged(): HttpError {
 }
 
 /**
- * A move's destination is occupied. Unlike the source, the destination has no precondition —
- * the caller never read it, so there is no marker it could have carried — which makes an
- * overwrite here a silent destruction of a file nobody looked at. Refuse instead.
+ * The path a move or a create would write is occupied. It has no precondition — the caller
+ * never read it, so there is no marker it could have carried — which makes an overwrite here a
+ * silent destruction of something nobody looked at. Refuse instead.
  */
-function targetExists(): HttpError {
+function targetExists(action: "move" | "create"): HttpError {
   return new HttpError(
     409,
     "target_exists",
-    "Something already exists at the destination; nothing was moved.",
+    action === "move"
+      ? "Something already exists at the destination; nothing was moved."
+      : "Something already exists at this path; nothing was created.",
+  );
+}
+
+/** Whether anything at all is at `p`, a dangling link included (lstat, not stat). */
+async function occupied(p: string): Promise<boolean> {
+  return fs.lstat(p).then(
+    () => true,
+    () => false,
   );
 }
 
@@ -492,8 +502,13 @@ export class WorkspaceFilesService implements WorkspaceFiles {
    * changed". With a marker the file must already exist, so O_CREAT is left out — a
    * missing file is a change like any other (ENOENT → the same 409), and a refused write
    * must not leave an empty file behind.
+   *
+   * Resolves to the version the write produced, read as soon as the bytes are down: the marker
+   * the caller's next conditional write of this file carries. Reading it back with a second
+   * request instead would adopt a rewrite landing between the two as the caller's own, and the
+   * next save would silently overwrite it.
    */
-  async write(workspace: string, rel: string, data: Buffer, ifVersion?: string): Promise<void> {
+  async write(workspace: string, rel: string, data: Buffer, ifVersion?: string): Promise<string> {
     if (rel === "" || rel.endsWith("/")) throw badRequest("path must be a file path.");
     if (data.length > MAX_UPLOAD_BYTES) {
       throw new HttpError(413, "file_too_large", "Uploaded file exceeds the 14MB limit.");
@@ -518,6 +533,7 @@ export class WorkspaceFilesService implements WorkspaceFiles {
       if (code === "EISDIR") throw badRequest("path is a directory.");
       throw err;
     }
+    let written: Stats;
     try {
       if (conditional) {
         if (fileVersion(await handle.stat()) !== ifVersion) throw fileChanged();
@@ -526,31 +542,85 @@ export class WorkspaceFilesService implements WorkspaceFiles {
         await handle.truncate(0);
       }
       await handle.writeFile(data);
+      written = await handle.stat();
     } finally {
       await handle.close();
+    }
+    // Windows may stamp a write's time when its handle closes rather than at the write, so there
+    // the version is read back once the handle is closed — the one a later read reports. lstat:
+    // the path is not followed anywhere. Elsewhere the open handle's own stat is exact, with no
+    // room for another writer between the bytes and the read.
+    return fileVersion(process.platform === "win32" ? await fs.lstat(file) : written);
+  }
+
+  /**
+   * Create one empty file or one folder at `rel` (the Files panel's New menu), refusing anything
+   * already there.
+   *
+   * Missing parents are created the way a write creates them (resolveWriteParent), so a
+   * symlinked ancestor pointing out of the Workspace is caught by the write path's own checks.
+   * The entry itself is made by the primitive that fails rather than replaces: `O_CREAT |
+   * O_EXCL` for a file — which on POSIX also refuses a symlink at the final segment instead of
+   * following it (Windows gets an lstat first, below) — and a non-recursive `mkdir` for a folder.
+   * Either way an occupied path is 409 `target_exists` with nothing written, and on POSIX there
+   * is no check-then-act window to lose to the Agent writing the same path.
+   */
+  async create(workspace: string, rel: string, kind: "file" | "dir"): Promise<void> {
+    if (rel === "" || rel.endsWith("/")) throw badRequest("path must name the new entry.");
+    const { dir, name } = await this.resolveWriteParent(workspace, rel);
+    const target = path.join(dir, name);
+    // Windows has no O_NOFOLLOW, and there O_EXCL alone does not refuse a final-segment link: the
+    // open follows it and creates whatever it points at, possibly outside the Workspace. So a link
+    // at the path is refused by lstat first, as assertNotSymlink refuses one for a write (best
+    // effort, the same window); POSIX keeps the atomic guarantee of the flags below.
+    if (process.platform === "win32" && (await occupied(target))) throw targetExists("create");
+    try {
+      if (kind === "dir") {
+        await fs.mkdir(target);
+      } else {
+        const handle = await fs.open(
+          target,
+          fsc.O_WRONLY | fsc.O_CREAT | fsc.O_EXCL | (fsc.O_NOFOLLOW ?? 0),
+          0o644,
+        );
+        await handle.close();
+      }
+    } catch (err) {
+      // Platforms word an occupied path differently for a directory in the way (EISDIR, or a
+      // bare access error on Windows), so anything that is there answers the same.
+      if ((err as NodeJS.ErrnoException).code === "EEXIST" || (await occupied(target))) {
+        throw targetExists("create");
+      }
+      throw err;
     }
   }
 
   /**
-   * Move or rename one Workspace file.
+   * Move or rename one Workspace file or folder.
    *
-   * **Files only** — a directory `from` is a 400. A directory has no single version marker, so
-   * the precondition that protects this operation cannot be expressed for one, and moving a
-   * whole tree with no precondition at all is worse than refusing to move it.
-   *
-   * The source is resolved as a mutable entry (canonical parent, O_NOFOLLOW on the final
-   * segment, version marker read off the open handle); the destination is resolved as a write,
-   * so its parent is created when missing under the same checks an upload runs. An occupied
+   * A file is resolved as a mutable entry (canonical parent, O_NOFOLLOW on the final segment,
+   * version marker read off the open handle); the destination is resolved as a write, so its
+   * parent is created when missing under the same checks an upload runs. An occupied
    * destination is a 409 rather than an overwrite — see {@link targetExists} — and a move onto
    * the file's own path is a 400 rather than a success that did nothing.
+   *
+   * A folder moves whole, and without a precondition: it has no single version marker, and
+   * one sent for it is a 400 rather than a check that silently never ran. See
+   * {@link moveFolder} for the two destinations it refuses.
    */
   async move(workspace: string, from: string, to: string, ifVersion?: string): Promise<void> {
-    if (from === "" || from.endsWith("/")) throw badRequest("from must be a file path.");
-    if (to === "" || to.endsWith("/")) throw badRequest("to must be a file path.");
+    if (from === "" || from.endsWith("/")) throw badRequest("from must name a file or folder.");
+    if (to === "" || to.endsWith("/")) throw badRequest("to must name a file or folder.");
     const conditional = ifVersion !== undefined;
     const source = await this.resolveMutableEntry(workspace, from);
     if (source === null) throw this.vanished(conditional);
     const file = path.join(source.dir, source.name);
+    // lstat, not stat: a link to a folder is a link, which the file path below refuses.
+    if ((await fs.lstat(file).catch(() => null))?.isDirectory() === true) {
+      if (conditional) throw badRequest("ifVersion does not apply to a folder.");
+      await this.moveFolder(workspace, file, to);
+      return;
+    }
     await this.assertFileAndVersion(file, ifVersion);
 
     const { dir, name } = await this.resolveWriteParent(workspace, to);
@@ -570,7 +640,7 @@ export class WorkspaceFilesService implements WorkspaceFiles {
       return;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code === "EEXIST") throw targetExists();
+      if (code === "EEXIST") throw targetExists("move");
       if (code === "EXDEV") {
         // The two canonical parents are on different filesystems (a bind-mounted subdirectory,
         // say), which neither link nor rename can cross. Copy, then drop the original.
@@ -579,7 +649,7 @@ export class WorkspaceFilesService implements WorkspaceFiles {
         try {
           await fs.copyFile(file, dest, fsc.COPYFILE_EXCL);
         } catch (copyErr) {
-          if ((copyErr as NodeJS.ErrnoException).code === "EEXIST") throw targetExists();
+          if ((copyErr as NodeJS.ErrnoException).code === "EEXIST") throw targetExists("move");
           throw copyErr;
         }
         await fs.unlink(file);
@@ -594,12 +664,61 @@ export class WorkspaceFilesService implements WorkspaceFiles {
         throw err;
       }
     }
-    const occupied = await fs.lstat(dest).then(
-      () => true,
-      () => false,
-    );
-    if (occupied) throw targetExists();
+    if (await occupied(dest)) throw targetExists("move");
     await fs.rename(file, dest);
+  }
+
+  /**
+   * The folder half of {@link move}: the whole tree by one rename, refusing two destinations.
+   *
+   * One inside the folder itself. That is decided on the canonical path of the destination's
+   * nearest existing ancestor, and decided BEFORE any missing parent of the destination is
+   * created — a refused move leaves no half-made directories behind.
+   *
+   * And an occupied one. `rename` replaces an empty directory silently, so the destination is
+   * lstat'ed first; the window left between the two can at most swallow an empty directory
+   * created inside it, and nothing with content is ever replaced (a non-empty directory fails
+   * the rename). Two filesystems cannot be crossed by a rename, and copying a tree across is
+   * not something to do behind a menu row, so that is refused too.
+   */
+  private async moveFolder(workspace: string, folder: string, to: string): Promise<void> {
+    const target = this.lexicalTarget(path.resolve(workspace), to);
+    let probe = path.dirname(target);
+    for (;;) {
+      let anchor: string;
+      try {
+        anchor = await fs.realpath(probe);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        const up = path.dirname(probe);
+        if (up === probe) break;
+        probe = up;
+        continue;
+      }
+      if (this.isInside(anchor, folder)) throw badRequest("A folder cannot move into itself.");
+      break;
+    }
+    const { dir, name } = await this.resolveWriteParent(workspace, to);
+    const dest = path.join(dir, name);
+    if (dest === folder) throw badRequest("to must differ from from.");
+    if (await occupied(dest)) throw targetExists("move");
+    try {
+      await fs.rename(folder, dest);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EEXIST" || code === "ENOTEMPTY" || code === "ENOTDIR") {
+        throw targetExists("move");
+      }
+      if (code === "EINVAL") throw badRequest("A folder cannot move into itself.");
+      if (code === "EXDEV") {
+        throw new HttpError(
+          409,
+          "cross_device",
+          "The folder and its destination are on different filesystems; nothing was moved.",
+        );
+      }
+      throw err;
+    }
   }
 
   /**

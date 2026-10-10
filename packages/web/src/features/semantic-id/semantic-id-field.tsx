@@ -25,24 +25,26 @@
  * fills in the part after it.
  */
 import { useId, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import type { SemanticIdKind } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  InfoPopover,
+  Input,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { toastError } from "../../components/ui/toast";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { idSuggestNotice, proposalValue } from "./id-suggest-notice";
 import type { IdSuggestNotice } from "./id-suggest-notice";
-
-/** Generate (lucide sparkles): the four-pointed star with its two smaller companions. */
-const SPARKLES_ICON =
-  "m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275zM5 3v4M19 17v4M3 5h4M17 19h4";
 
 export function SemanticIdField({
   projectId,
@@ -55,6 +57,7 @@ export function SemanticIdField({
   error,
   lockedPrefix,
   generateHint,
+  info,
   disabled = false,
   onChange,
   onEnter,
@@ -80,6 +83,12 @@ export function SemanticIdField({
   lockedPrefix?: string;
   /** The generation clause appended to `hint`, when "the display name" is not what the dialog calls it. */
   generateHint?: string;
+  /**
+   * What the id means beyond its format (it names a directory, it is fixed once created), behind
+   * a "?" beside the label. With it the hint below keeps the format alone: the generation clause
+   * goes behind the "?" too, since the button beside the box already says it generates.
+   */
+  info?: ReactNode;
   disabled?: boolean;
   onChange: (id: string) => void;
   /** Enter inside the field, where the dialog submits on it. */
@@ -146,9 +155,18 @@ export function SemanticIdField({
 
   return (
     <div>
-      <FieldLabel htmlFor={controlId} required>
-        {label}
-      </FieldLabel>
+      {info === undefined ? (
+        <FieldLabel htmlFor={controlId} required>
+          {label}
+        </FieldLabel>
+      ) : (
+        <span className="mb-1 flex items-center gap-1">
+          <FieldLabel htmlFor={controlId} required block={false}>
+            {label}
+          </FieldLabel>
+          <InfoPopover label={label}>{info}</InfoPopover>
+        </span>
+      )}
       <div className="flex items-center gap-2">
         {lockedPrefix === undefined ? (
           input
@@ -164,16 +182,12 @@ export function SemanticIdField({
         <Button
           size="sm"
           title={S.semanticId.generateId}
-          aria-busy={busy || undefined}
-          disabled={disabled || busy || !derivable || projectId === null}
+          loading={busy}
+          disabled={disabled || !derivable || projectId === null}
           onClick={() => void generate()}
           className="shrink-0 whitespace-nowrap"
+          leading={<GlyphIcon d={ICONS.sparkles} size={ICON_SIZE.inlineGlyph} />}
         >
-          {busy ? (
-            <span className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-          ) : (
-            <GlyphIcon d={SPARKLES_ICON} size={ICON_SIZE.inlineGlyph} />
-          )}
           {S.semanticId.generateIdLabel}
         </Button>
       </div>
@@ -190,7 +204,9 @@ export function SemanticIdField({
           {/* The generation clause carries its own leading separator: what joins two clauses
               is punctuation, and punctuation is part of the language. The id rule stays on
               screen beside a quiet note — it is what the user reads while typing. */}
-          <FieldHint>{`${hint}${generateHint ?? S.semanticId.idGenerateHint}`}</FieldHint>
+          <FieldHint>
+            {info === undefined ? `${hint}${generateHint ?? S.semanticId.idGenerateHint}` : hint}
+          </FieldHint>
           {notice !== null && (
             <span id={messageId} role="status" className={`mt-1 block text-xs ${toneInk.muted}`}>
               {notice.text}

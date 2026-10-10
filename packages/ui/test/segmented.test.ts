@@ -1,0 +1,81 @@
+/**
+ * Segmented (src/components/forms/segmented/segmented.tsx): options in a well, the chosen one a
+ * pressed chip. A badge rides out of flow and reaches the option's name as ` · <name>`; the
+ * web app's `company-beta.test.ts` covers the beta tag the work-mode switch hangs on it. An
+ * option with a short label shows it on a phone and keeps its full label as its name.
+ */
+import { createElement } from "react";
+import { describe, expect, it } from "vitest";
+import { Segmented } from "../src/components/forms/segmented/segmented";
+import { classTokens, renderStatic } from "../src/testing";
+
+const render = (cols?: 2 | 3 | 4 | 5, badge = false) =>
+  renderStatic(
+    createElement(Segmented<"light" | "dark">, {
+      options: [
+        { value: "light", label: "Light" },
+        {
+          value: "dark",
+          label: "Dark",
+          ...(badge ? { badge: { node: createElement("sup", null, "beta"), name: "Beta" } } : {}),
+        },
+      ],
+      value: "dark",
+      onChange: () => {},
+      ...(cols !== undefined ? { cols } : {}),
+    }),
+  );
+
+describe("Segmented", () => {
+  it("presses the chosen option and only that one", () => {
+    const html = render();
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html).toMatch(/aria-pressed="true" class="[^"]*bg-surface[^"]*">Dark</);
+  });
+
+  it("spells its column count as a whole class, for every count it takes", () => {
+    for (const cols of [2, 3, 4, 5] as const) {
+      expect(classTokens(render(cols))).toContain(`grid-cols-[repeat(${cols},1fr)]`);
+    }
+    expect(classTokens(render())).toContain("grid-cols-[repeat(3,1fr)]");
+  });
+
+  it("sits in a control-shaped well on the rhythm's steps", () => {
+    expect(classTokens(render())).toEqual(
+      expect.arrayContaining(["rounded-control", "bg-line-muted", "p-1", "gap-1"]),
+    );
+  });
+
+  it("rounds its chips concentric with the well: the well's radius less its one-unit inset", () => {
+    const html = render();
+    const chip = "rounded-[max(0px,calc(var(--ui-radius-control)_-_var(--ui-space-unit)))]";
+    expect(html.match(/aria-pressed="(true|false)" class="[^"]*"/g)).toHaveLength(2);
+    for (const option of html.match(/aria-pressed="(?:true|false)" class="[^"]*"/g) ?? []) {
+      expect(option.split(/[" ]/)).toContain(chip);
+    }
+  });
+
+  it("keeps the full label as the name of an option that shows a short one on a phone", () => {
+    const html = renderStatic(
+      createElement(Segmented<"2026-09" | "2026-10">, {
+        options: [
+          { value: "2026-09", label: "Previous period 2026-09", shortLabel: "2026-09" },
+          { value: "2026-10", label: "This period 2026-10", shortLabel: "2026-10" },
+        ],
+        value: "2026-10",
+        onChange: () => {},
+        cols: 2,
+      }),
+    );
+    expect(html).toContain('aria-label="Previous period 2026-09"');
+    expect(html).toContain('aria-label="This period 2026-10"');
+    expect(html).toContain(">2026-09</span>");
+  });
+
+  it("folds a badge into the option's name and keeps it out of flow", () => {
+    const html = render(3, true);
+    expect(html).toContain('aria-label="Dark · Beta"');
+    expect(html).toMatch(/<span aria-hidden="true" class="absolute[^"]*"><sup>beta<\/sup>/);
+    expect(render()).not.toContain("aria-label");
+  });
+});

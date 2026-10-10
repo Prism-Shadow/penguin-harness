@@ -33,19 +33,24 @@ import type {
   SubagentRuntimeInfo,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  StatusIcon,
+  Text,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
-import { toastError } from "../../components/ui/toast";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { StatusIcon } from "../../components/ui/status-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
+import type { PermissionPick } from "../../lib/permission-level";
 import { noteSessionSeen } from "../../lib/session-seen";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -79,8 +84,8 @@ export function SubagentsView({
   subagents,
   models,
   approvalMode,
-  onChangeApprovalMode,
-  onChangeSandbox,
+  approvalModes,
+  onChangePermission,
   modeSaving,
   parentThinkingLevel,
 }: {
@@ -100,9 +105,10 @@ export function SubagentsView({
   models: ModelInfo[];
   /** The PARENT session's approval mode — child approvals are judged by it (the same value the main composer edits). */
   approvalMode: ApprovalMode;
-  onChangeApprovalMode: (mode: ApprovalMode) => void;
-  /** Edits the PARENT session's sandbox policy — a child runs under its root's. */
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void;
+  /** The approval modes the picker may offer for the PARENT session (the main composer's list). */
+  approvalModes: readonly ApprovalMode[];
+  /** Edits the PARENT session's approval mode and sandbox policy — a child runs under its root's. */
+  onChangePermission: (pick: PermissionPick) => void | Promise<unknown>;
   modeSaving: boolean;
   /** The parent session's effective thinking level ("" = unknown): the child composer's display fallback — a child inherits it at spawn unless the spawning call pinned its own. */
   parentThinkingLevel: string;
@@ -205,9 +211,9 @@ export function SubagentsView({
     <div className="flex h-full min-h-0 flex-col">
       {/* Call graph of the displayed Task — latest by default, a chip's Task when pinned (capped height; scrolls both ways for deep/wide trees). */}
       <div className="shrink-0 border-b border-gray-200 px-3 pb-2 pt-1.5 dark:border-gray-800">
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        <Text variant="eyebrow" className="mb-1.5">
           {S.subagentPanel.topologyLabel}
-        </p>
+        </Text>
         {nodes.length > 1 ? (
           <div className="max-h-48 overflow-y-auto">
             <AgentTopologyView
@@ -252,28 +258,25 @@ export function SubagentsView({
               {activeLabel}
             </span>
             <span
-              title={active.sessionId}
-              className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500"
+              data-tooltip={active.sessionId}
+              className="shrink-0 font-mono text-xs text-fg-subtle"
             >
               {shortSessionId(active.sessionId)}
             </span>
             {activeRunning && (
-              <StatusIcon state="running" size={10} label={S.chat.subagentRunning} />
+              <StatusIcon state="running" size="xs" label={S.chat.subagentRunning} />
             )}
             <span className="min-w-0 flex-1" />
             {/* Jump out of the panel: the child conversation as a full Session. */}
             <button
               type="button"
-              title={S.subagentPanel.openAsSession}
+              data-tooltip={S.subagentPanel.openAsSession}
               aria-label={S.subagentPanel.openAsSession}
               data-testid="subagent-open-session"
               onClick={openAsSession}
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
             >
-              <GlyphIcon
-                d="M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"
-                size={ICON_SIZE.rowLead}
-              />
+              <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.rowLead} />
             </button>
           </div>
           <div className="min-h-0 flex-1">
@@ -285,6 +288,7 @@ export function SubagentsView({
                 version={version}
                 ctx={childCtx}
                 onAddExcerpt={addChildExcerpt}
+                findRegion="subagent"
               />
             )}
           </div>
@@ -300,9 +304,9 @@ export function SubagentsView({
             deliveredInputs={countDeliveredInputs(activeModel)}
             models={models}
             approvalMode={approvalMode}
-            onChangeApprovalMode={onChangeApprovalMode}
+            approvalModes={approvalModes}
             sandbox={session.sandbox}
-            onChangeSandbox={onChangeSandbox}
+            onChangePermission={onChangePermission}
             modeSaving={modeSaving}
             fallbackThinkingLevel={activeNode?.spawnThinkingLevel ?? parentThinkingLevel}
           />
@@ -344,9 +348,9 @@ function SubagentComposer({
   deliveredInputs,
   models,
   approvalMode,
-  onChangeApprovalMode,
+  approvalModes,
   sandbox,
-  onChangeSandbox,
+  onChangePermission,
   modeSaving,
   fallbackThinkingLevel,
 }: {
@@ -360,11 +364,11 @@ function SubagentComposer({
   deliveredInputs: number;
   models: ModelInfo[];
   approvalMode: ApprovalMode;
-  onChangeApprovalMode: (mode: ApprovalMode) => void;
+  approvalModes: readonly ApprovalMode[];
   /** The PARENT session's sandbox policy. */
   sandbox: SessionSandbox;
-  /** Edits the PARENT session's sandbox policy — a child runs under its root's. */
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void;
+  /** Edits the PARENT session's approval mode and sandbox policy — a child runs under its root's. */
+  onChangePermission: (pick: PermissionPick) => void | Promise<unknown>;
   modeSaving: boolean;
   /** Display fallback for the thinking picker while the user hasn't picked: the spawn call's explicit level, else the parent session's effective level (what the child inherited). */
   fallbackThinkingLevel: string;
@@ -465,9 +469,9 @@ function SubagentComposer({
         contextNow={contextNow}
         vision={false}
         approvalMode={approvalMode}
-        onChangeApprovalMode={onChangeApprovalMode}
+        approvalModes={approvalModes}
         sandbox={sandbox}
-        onChangeSandbox={onChangeSandbox}
+        onChangePermission={onChangePermission}
         modeSaving={modeSaving}
         agents={[]}
         skills={skills}

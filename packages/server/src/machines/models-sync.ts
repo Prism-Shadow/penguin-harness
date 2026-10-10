@@ -12,21 +12,26 @@
  *
  * MERGED, NOT REPLACED. `PUT /models` is a whole-table replace, so every remote-only entry is
  * re-sent — WITHOUT `apiKey`, since omitting it keeps the stored value and a GET reports keys
- * masked. Ours win on a collision.
+ * masked. Ours win on a collision. The groups' connections (`[providers.<id>]`) travel in the
+ * same PUT's `providers`, which the far side merges per group and per field: a value we hold
+ * replaces theirs, and one we do not hold is left as it is there.
  */
 import type { MachineApi } from "./machine-api.js";
-import type { ModelEntry, ModelRef } from "@prismshadow/penguin-core";
+import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
   ModelRefDto,
   ModelUpdateEntry,
   ModelsResponse,
   ModelsUpdateRequest,
+  ProviderConnectionUpdate,
 } from "../api/types.js";
 
-/** This side's half of the merge: a Project's configured models, keys in plaintext. */
+/** This side's half of the merge: a Project's configured models and groups, keys in plaintext. */
 export interface LocalModels {
   models: ModelEntry[];
+  /** The groups' connections (`[providers.<id>]`); absent = none. */
+  providers?: ProviderTable;
   defaultModel?: ModelRef;
   visionModel?: ModelRef;
   /** Display name, so a Project created on the machine reads as the same Project it is. */
@@ -85,9 +90,9 @@ function fromLocal(entry: ModelEntry): ModelUpdateEntry {
  * One of theirs, carried across the whole-table replace untouched.
  *
  * No `apiKey` — see the header: omitting it is what preserves the key already on that
- * machine. The one field that does not round-trip exactly is `vision`, which a GET reports
- * from the built-in catalog when the entry carries no annotation; re-sending it writes that
- * catalog value down explicitly. Same effective value, one more line in their TOML.
+ * machine. Every other field a GET reports is the row's own (`vision` is the file's
+ * annotation, `clientType` and `credential.baseUrl` the row's own values), so the row
+ * round-trips as stored; a display name equal to the catalog's label is not written down.
  */
 function fromRemote(info: ModelInfo): ModelUpdateEntry {
   return {
@@ -101,6 +106,18 @@ function fromRemote(info: ModelInfo): ModelUpdateEntry {
     ...(info.fastMode === true ? { fastMode: true } : {}),
     ...(info.pricing !== undefined ? { pricing: info.pricing } : {}),
     ...(info.credential?.baseUrl !== undefined ? { baseUrl: info.credential.baseUrl } : {}),
+  };
+}
+
+/**
+ * One of our groups' connections, as the far side's PUT merges it: the fields we hold, key in
+ * plaintext. An absent field is omitted, never cleared — the machine may hold its own.
+ */
+function providerFromLocal(connection: ProviderTable[string]): ProviderConnectionUpdate {
+  return {
+    ...(connection.base_url !== undefined ? { baseUrl: connection.base_url } : {}),
+    ...(connection.client_type !== undefined ? { clientType: connection.client_type } : {}),
+    ...(connection.api_key !== undefined ? { apiKey: connection.api_key } : {}),
   };
 }
 
@@ -129,10 +146,16 @@ export function planModelSync(local: LocalModels, remote: ModelsResponse): Model
       : undefined;
   const defaultModel = follow(local.defaultModel);
   const visionModel = follow(local.visionModel);
+  const providers = Object.fromEntries(
+    Object.entries(local.providers ?? {})
+      .map(([id, connection]) => [id, providerFromLocal(connection)] as const)
+      .filter(([, update]) => Object.keys(update).length > 0),
+  );
   return {
     models,
     ...(defaultModel !== undefined ? { defaultModel } : {}),
     ...(visionModel !== undefined ? { visionModel } : {}),
+    ...(Object.keys(providers).length > 0 ? { providers } : {}),
   };
 }
 
@@ -196,8 +219,15 @@ export async function syncModelsToMachine(opts: {
     const local = await opts.loadLocal(projectId);
     // Nothing configured here is not a reason to touch their table: a replace built from an
     // empty local list would delete every model they have. It is also not a reason to create
-    // the Project — an empty shell is not worth a directory on someone's machine.
-    if (local === null || local.models.length === 0) continue;
+    // the Project — an empty shell is not worth a directory on someone's machine. A group
+    // connection is something configured, though: a key held once for a group of presets
+    // travels with no row beside it.
+    if (
+      local === null ||
+      (local.models.length === 0 && Object.keys(local.providers ?? {}).length === 0)
+    ) {
+      continue;
+    }
     const path = `/api/projects/${encodeURIComponent(projectId)}/models`;
     try {
       if (!theirs.includes(projectId)) {

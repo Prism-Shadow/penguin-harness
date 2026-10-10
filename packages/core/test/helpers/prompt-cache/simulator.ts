@@ -28,7 +28,7 @@
  *   - **Writes happen only at a breakpoint.** A completed request writes one entry per
  *     breakpoint it carries: the hash of the prefix ending at that block. Content sitting
  *     behind a breakpoint is not separately addressable — a read finds entries prior requests
- *     wrote, never a stable prefix nobody ever closed. AgentHub's Claude client sets exactly
+ *     wrote, never a stable prefix nobody ever closed. MMSP's Claude client sets exactly
  *     one breakpoint, the automatic one at the last block (a top-level
  *     `cache_control: ephemeral`), which is what `breakpoints: "automatic"` models and the
  *     default. `breakpoints: "tools-system-automatic"` models the alternative Anthropic allows
@@ -54,7 +54,7 @@ import type { RecordedRequest } from "./recording.js";
 
 /** Smallest prefix a provider will cache, in tokens. */
 export const DEFAULT_MIN_CACHEABLE_TOKENS = 1024;
-/** Lifetime of an ephemeral cache entry (five minutes, AgentHub's default). */
+/** Lifetime of an ephemeral cache entry (five minutes, MMSP's default). */
 export const DEFAULT_TTL_MS = 5 * 60 * 1000;
 /**
  * Positions checked per breakpoint. The documented wording is "up to 20 positions before the
@@ -70,7 +70,7 @@ const CHARS_PER_TOKEN = 4;
 
 /**
  * Prompt-affecting parameters rendered *ahead* of the system block, so that changing one keeps
- * the tool definitions and loses everything behind them. AgentHub sets exactly this pair for
+ * the tool definitions and loses everything behind them. MMSP sets exactly this pair for
  * fast mode.
  */
 const SPEED_KEYS = ["speed", "betas"] as const;
@@ -123,7 +123,7 @@ export interface CacheUsage {
 }
 
 /**
- * Where a request's cache breakpoints sit. `"automatic"` is what AgentHub's Claude client
+ * Where a request's cache breakpoints sit. `"automatic"` is what MMSP's Claude client
  * sends: one breakpoint, at the last block. `"tools-system-automatic"` adds the two explicit
  * breakpoints the API allows alongside it — on the last tool block and on the system block — so
  * a request whose messages moved can still read the fixed prefix back.

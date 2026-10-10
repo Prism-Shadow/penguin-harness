@@ -286,7 +286,7 @@ export function requestBegin(): OmniMessage<RequestBeginPayload> {
 
 /**
  * request end event: carries the terminal state (`completed` means this turn was already
- * committed to AgentHub), plus the unified retry detail block (see RequestRetryDetail):
+ * committed to MMSP), plus the unified retry detail block (see RequestRetryDetail):
  * the error detail (from LLMOutcome.errorMessage), the 1-based attempt ordinal, and — when the
  * engine will retry in-run — the planned backoff wait (`retry_in_ms`, rendered by the Web
  * App as a live countdown). This builder is the one place the block is stamped.

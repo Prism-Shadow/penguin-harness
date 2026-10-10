@@ -1,31 +1,25 @@
 /**
- * Integration tests for the session background-process endpoints:
- *   - GET  /api/sessions/:id/processes            — list (ISO startedAt, running flag);
- *   - POST /api/sessions/:id/processes/:pid/kill  — stop a running process (drops the row);
- *   - DELETE /api/sessions/:id/processes/:pid     — remove an EXITED entry from the list:
- *       204 removes it, 409 process_running while it still runs (stop is the kill route's
- *       job — removal never signals a live process group), 404 for unknown ids and for
- *       sessions whose runtime is gone (nothing left to remove either way);
- *   - POST /api/sessions/:id/tool-calls/:tcid/background — hand an executing call back as a
- *       background task: 204, 404 tool_call_not_found when nothing with that id is running,
- *       409 tool_not_detachable when the tool has no background form;
- *   - 404 for foreign/unknown sessions (the shared resolveSession semantics).
+ * The Session background-process endpoints the process panel drives.
+ *
+ * - GET lists the runtime's processes with ISO start times (refreshing their service probes);
+ *   an unloaded Session reports none.
+ * - Kill stops a running process and drops its row.
+ * - DELETE removes an EXITED entry (204); a running one is a 409 process_running (removal never
+ *   signals a live process group — stopping is the kill route's job); an unknown id, or a
+ *   Session whose runtime is gone, is a 404.
+ * - Backgrounding hands an executing call back as a background task (204); a call that is not
+ *   running is a 404 tool_call_not_found, a tool with no background form a 409.
+ * - Foreign and unknown Sessions are 404s, as on every Session route.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type {
-  BackgroundCommandInfo,
-  OmniMessage,
-  ApproveFn,
-  ToolDetachResult,
-} from "@prismshadow/penguin-core";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { BackgroundCommandInfo, ToolDetachResult } from "@prismshadow/penguin-core";
 import type { SessionProcessesResponse } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-08-18-10-00-00-ccdd0031";
-const SID_UNLOADED = "session-2026-08-18-10-00-00-ccdd0032";
+const PROJECT = "procuser-default_project";
 const STARTED_AT = Date.UTC(2026, 7, 18, 12, 4, 0);
 
 /**
@@ -46,15 +40,7 @@ function processesFakeSession(
   probes?: string[],
   detaches?: string[],
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
-    async *run(_input: OmniMessage[], _opts: { approve: ApproveFn; signal: AbortSignal }) {},
-    async *compact() {},
+  return fakeSession(sessionId, {
     listBackgroundCommands: () => [...procs],
     probeBackgroundCommandServices: async () => {
       probes?.push(sessionId);
@@ -71,37 +57,31 @@ function processesFakeSession(
       if (answer === "detached") detaches?.push(toolCallId);
       return answer;
     },
-  };
+  });
 }
 
 describe("session processes routes", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let outsider: ReturnType<typeof apiClient>;
+  let SID: string;
+  let SID_UNLOADED: string;
   let procs: BackgroundCommandInfo[];
   let kills: string[];
   let probes: string[];
   let detaches: string[];
 
-  const sessionRow = (sessionId: string): SessionRow => ({
-    sessionId,
-    projectId: "procuser-default_project",
-    agentId: "default_agent",
-    modelId: "m1",
-    provider: "custom",
-    workspace: "/tmp/w",
-    approvalMode: "always-ask",
-    title: null,
-    createdAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-  });
-
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
-    const { cookie } = await provisionUser(t.app, "procuser");
-    const other = await provisionUser(t.app, "outsider_p");
-    api = apiClient(t.app, cookie);
-    outsider = apiClient(t.app, other.cookie);
+    api = apiClient(t.app, (await provisionUser(t.app, "procuser")).cookie);
+    outsider = apiClient(t.app, (await provisionUser(t.app, "outsider_p")).cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    SID_UNLOADED = uniqueSessionId();
     procs = [
       {
         processId: "proc-11111111",
@@ -124,16 +104,12 @@ describe("session processes routes", () => {
     kills = [];
     probes = [];
     detaches = [];
-    t.deps.sessionsRepo.insert(sessionRow(SID));
-    t.deps.manager.adopt(
-      sessionRow(SID),
-      processesFakeSession(SID, procs, kills, probes, detaches),
-    );
+    adoptSession(t.deps, processesFakeSession(SID, procs, kills, probes, detaches), {
+      projectId: PROJECT,
+      approvalMode: "always-ask",
+    });
     // A second session with no runtime entry: truthfully reports no processes.
-    t.deps.sessionsRepo.insert(sessionRow(SID_UNLOADED));
-  });
-  afterEach(async () => {
-    await t.cleanup();
+    t.deps.sessionsRepo.insert(sessionRow(SID_UNLOADED, { projectId: PROJECT }));
   });
 
   it("GET lists the runtime's processes with ISO start times; an unloaded session reports none", async () => {

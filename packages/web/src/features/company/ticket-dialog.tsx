@@ -16,9 +16,12 @@
  * its own save / cancel; the footer holds the block / unblock and move actions. Saves confirm
  * first, like every organization write.
  *
- * Nothing here is a whole-row link: a child, a session and the parent are opened by their own
- * small corner button, so a click always says where it lands. Only a session leaves the page —
- * a conversation has no in-place form — and a parent or a child swaps the dialog's own ticket.
+ * The parent, a child and a ticket session are each opened by clicking their title — a text
+ * button that underlines on hover and names its destination in its tooltip — while the rest of
+ * their row stays inert, so the controls and marks beside a title are never a click target.
+ * A parent or a child swaps the dialog's own ticket. Only a session leaves the page, since a
+ * conversation has no in-place form: it opens as the full conversation page and joins the
+ * company sidebar's Temporary group (temp-session.ts).
  * A session's live status is not drawn: a ticket reports its own work, not what a session is
  * doing this second.
  */
@@ -33,36 +36,48 @@ import type {
   OrgTicketUpdateRequest,
 } from "@prismshadow/penguin-server/api";
 import type { ReactNode } from "react";
+import {
+  Button,
+  Chevron,
+  CloseButton,
+  ConfirmModal,
+  CopyButton,
+  FieldLabel,
+  ICON_GAP,
+  ICON_SIZE,
+  Input,
+  KeyValue,
+  KeyValueRow,
+  Modal,
+  Notice,
+  RuledSection,
+  Segmented,
+  Select,
+  Skeleton,
+  Text,
+  Textarea,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
+import { useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { Chevron } from "../../components/ui/chevron";
-import { Input, Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
-import { Segmented } from "../../components/ui/segmented";
-import { FieldLabel } from "../../components/ui/field";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { CloseButton } from "../../components/ui/icons";
-import { Modal } from "../../components/ui/modal";
-import { Skeleton } from "../../components/ui/skeleton";
-import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Md } from "../chat/md";
-import { OrgSection } from "./org-layout";
+import { PathMarkdown, PathText } from "./path-capsule";
 import {
   BlockedBadge,
-  JumpButton,
   PrincipalChip,
   PriorityBadge,
   TicketStatusBadge,
+  TitleButton,
   principalLabel,
+  titledHint,
 } from "./shared";
 import { agentPrincipal, splitPrincipalList } from "./principals";
 import {
@@ -75,6 +90,9 @@ import {
 } from "./ticket-board";
 import { ticketHistoryRows, ticketSummaryCounts } from "./ticket-history";
 import { dayKey } from "./calendar-geom";
+import { orgKey } from "./company-nav";
+import { deskRows } from "./org-sessions";
+import { chatPath, openTempSession } from "./temp-session";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
@@ -137,6 +155,7 @@ function TicketDialog({
 }) {
   const navigate = useNavigate();
   const company = useCompany();
+  const { setCurrentAgentId } = useProject();
   const { currency } = useTheme();
   const { user } = useAuth();
   const me = user?.userId ?? null;
@@ -377,23 +396,34 @@ function TicketDialog({
       <p className="text-xs text-gray-400 dark:text-gray-500">{empty}</p>
     ) : (
       <div className="md-body text-sm leading-relaxed text-gray-800 dark:text-gray-100">
-        <Md text={text} />
+        <PathMarkdown text={text} scope={{ projectId }} />
       </div>
     );
 
   /**
-   * One field of the summary grid. Every row is exactly one line tall, so labels and values
-   * line up down the column: anything taller than the line — the parent's jump button is the
-   * only such thing — pulls its own box back in with a negative margin rather than growing
-   * the row and pushing its label off the others' baseline.
+   * Opens a ticket session: the one way out of the dialog. The session goes to the top of the
+   * company sidebar's Temporary group (a desk session keeps its desk row instead) and the
+   * conversation opens as its full page. The current Agent follows it, as a desk row's does.
    */
+  const openSession = (session: { sessionId: string; agentId: string; title?: string }) => {
+    const desks = deskRows(company.orgChart, company.orgSessions.get(orgKey(projectId, orgId)));
+    openTempSession(
+      me,
+      projectId,
+      orgId,
+      { sessionId: session.sessionId, agentId: session.agentId, title: session.title ?? "" },
+      desks.map((d) => d.sessionId),
+    );
+    if (session.agentId !== "") setCurrentAgentId(session.agentId);
+    onClose();
+    navigate(chatPath(session.sessionId));
+  };
+
+  /** One field of the summary list: every row is one line tall, so labels and values line up down the column. */
   const row = (label: string, value: ReactNode) => (
-    <>
-      <dt className="whitespace-nowrap text-gray-500 dark:text-gray-400">{label}</dt>
-      <dd className="flex min-w-0 items-center gap-1.5 text-gray-800 dark:text-gray-100">
-        {value}
-      </dd>
-    </>
+    <KeyValueRow label={label}>
+      <span className="flex min-w-0 items-center gap-1.5">{value}</span>
+    </KeyValueRow>
   );
 
   return (
@@ -427,18 +457,17 @@ function TicketDialog({
           <CloseButton onClose={onClose} />
         </div>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4 sm:px-6">
           {error !== null && detail === null ? (
-            <div
-              className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}
+            <Notice
+              tone="danger"
+              role="alert"
+              retry={{ label: S.common.retry, onClick: () => void load() }}
             >
-              <span>{error}</span>
-              <Button size="sm" onClick={() => void load()}>
-                {S.common.retry}
-              </Button>
-            </div>
+              {error}
+            </Notice>
           ) : detail === null || !contextReady ? (
-            <div className="space-y-5">
+            <div className="space-y-6">
               <div className="flex gap-2">
                 <Skeleton className="h-5 w-14 rounded-full" />
                 <Skeleton className="h-5 w-10 rounded-full" />
@@ -459,12 +488,13 @@ function TicketDialog({
                     {...(detail.blockedBy !== undefined ? { by: detail.blockedBy } : {})}
                   />
                 )}
-                <span className="inline-flex items-center gap-0.5 font-mono">
+                <span className="inline-flex items-center gap-1 font-mono">
                   {detail.ticketId}
                   <CopyButton
                     text={detail.ticketId}
                     label={S.company.tickets.copyId}
-                    className={ROW_COPY_CLASS}
+                    size="sm"
+                    className="shrink-0"
                   />
                 </span>
                 <span className="ml-auto tabular-nums">
@@ -479,30 +509,30 @@ function TicketDialog({
                   </span>
                 </span>
               </div>
-              {detail.invalid !== undefined && (
-                <div className={`rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}>
-                  {detail.invalid}
-                </div>
-              )}
+              {detail.invalid !== undefined && <Notice tone="danger">{detail.invalid}</Notice>}
               {blocked && (
-                <div
-                  className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}
-                >
-                  <span>
-                    <span className="font-medium">{S.company.tickets.blockedReason}:</span>{" "}
-                    {detail.blocked}
-                  </span>
-                  {detail.blockedBy !== undefined && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <span>{S.company.tickets.blockedBy}:</span>
-                      <PrincipalChip principal={detail.blockedBy} names={names} />
+                <Notice tone="attention">
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span>
+                      <span className="font-medium">{S.company.tickets.blockedReason}:</span>{" "}
+                      <PathText text={detail.blocked ?? ""} scope={{ projectId }} />
                     </span>
-                  )}
-                </div>
+                    {detail.blockedBy !== undefined && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span>{S.company.tickets.blockedBy}:</span>
+                        <PrincipalChip principal={detail.blockedBy} names={names} />
+                      </span>
+                    )}
+                  </span>
+                </Notice>
               )}
 
               {/* Summary: the header fields as a definition list, a form while editing. */}
-              <OrgSection title={S.company.tickets.summary} actions={sectionActions("summary")}>
+              <RuledSection
+                level={3}
+                title={S.company.tickets.summary}
+                actions={sectionActions("summary")}
+              >
                 {editing === "summary" && summaryDraft !== null ? (
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div className="md:col-span-2">
@@ -566,6 +596,7 @@ function TicketDialog({
                         label={S.company.tickets.notify}
                         value={summaryDraft.notify}
                         hint={S.company.tickets.notifyHint}
+                        info={S.company.tickets.notifyInfo}
                         className="font-mono"
                         onChange={(e) =>
                           setSummaryDraft({ ...summaryDraft, notify: e.target.value })
@@ -574,7 +605,7 @@ function TicketDialog({
                     </div>
                   </div>
                 ) : (
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+                  <KeyValue>
                     {row(
                       S.company.tickets.owner,
                       <PrincipalChip principal={detail.owner} names={names} />,
@@ -582,16 +613,13 @@ function TicketDialog({
                     {row(
                       S.company.tickets.parent,
                       detail.parent !== undefined ? (
-                        <>
-                          <span className="min-w-0 truncate" title={detail.parent}>
-                            {titles.get(detail.parent) ?? detail.parent}
-                          </span>
-                          <JumpButton
-                            label={S.company.tickets.openTicket}
-                            className="-my-1"
-                            onClick={() => onOpenTicket(detail.parent!)}
-                          />
-                        </>
+                        <TitleButton
+                          hint={titledHint(titles.get(detail.parent), detail.parent)}
+                          className="truncate"
+                          onClick={() => onOpenTicket(detail.parent!)}
+                        >
+                          {titles.get(detail.parent) ?? detail.parent}
+                        </TitleButton>
                       ) : (
                         <span className="text-gray-400 dark:text-gray-500">
                           {S.company.tickets.noParent}
@@ -639,15 +667,20 @@ function TicketDialog({
                         S.common.created,
                         <span className="font-mono tabular-nums">{created}</span>,
                       )}
-                  </dl>
+                  </KeyValue>
                 )}
-              </OrgSection>
+              </RuledSection>
 
-              <OrgSection title={S.company.tickets.goal} actions={sectionActions("goal")}>
+              <RuledSection
+                level={3}
+                title={S.company.tickets.goal}
+                actions={sectionActions("goal")}
+              >
                 {textSection("goal", detail.goal, S.company.tickets.noGoal)}
-              </OrgSection>
+              </RuledSection>
 
-              <OrgSection
+              <RuledSection
+                level={3}
                 title={S.company.tickets.acceptance}
                 actions={sectionActions("acceptance")}
               >
@@ -656,12 +689,12 @@ function TicketDialog({
                   detail.acceptanceCriteria,
                   S.company.tickets.noAcceptance,
                 )}
-              </OrgSection>
+              </RuledSection>
 
               {/* Progress: the sentences as written, oldest first, plus the one-line append.
                   Who wrote one and when is a history entry, not a chip on the sentence; the
                   bullets are md-compact so a one-line note reads as a line, not a paragraph. */}
-              <OrgSection title={S.company.tickets.progress}>
+              <RuledSection level={3} title={S.company.tickets.progress}>
                 {detail.progress.length === 0 ? (
                   <p className="text-xs text-gray-400 dark:text-gray-500">
                     {S.company.tickets.progressEmpty}
@@ -670,7 +703,7 @@ function TicketDialog({
                   <ul className="md-body md-compact list-disc pl-5 text-sm text-gray-800 marker:text-gray-400 dark:text-gray-100 dark:marker:text-gray-500">
                     {detail.progress.map((p, i) => (
                       <li key={`${i}-${p}`}>
-                        <Md text={p} />
+                        <PathMarkdown text={p} scope={{ projectId }} />
                       </li>
                     ))}
                   </ul>
@@ -692,13 +725,17 @@ function TicketDialog({
                     {S.company.tickets.addProgress}
                   </Button>
                 </div>
-              </OrgSection>
+              </RuledSection>
 
-              <OrgSection title={S.company.tickets.result} actions={sectionActions("result")}>
+              <RuledSection
+                level={3}
+                title={S.company.tickets.result}
+                actions={sectionActions("result")}
+              >
                 {textSection("result", detail.result, S.company.tickets.noResult)}
-              </OrgSection>
+              </RuledSection>
 
-              {/* The child tickets, folded: a plain list, each row opened by its own button. */}
+              {/* The child tickets, folded: a plain list, each opened by clicking its title. */}
               <Fold
                 title={S.company.tickets.children}
                 summary={
@@ -712,11 +749,17 @@ function TicketDialog({
                     {S.company.tickets.childrenEmpty}
                   </p>
                 ) : (
-                  <ul className="space-y-0.5">
+                  <ul className="space-y-1">
                     {children.map((c) => (
                       <li key={c.ticketId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
-                        <span className="min-w-0 flex-1 truncate" title={c.ticketId}>
-                          {c.title}
+                        <span className="flex min-w-0 flex-1">
+                          <TitleButton
+                            hint={titledHint(c.title, c.ticketId)}
+                            className="truncate"
+                            onClick={() => onOpenTicket(c.ticketId)}
+                          >
+                            {c.title}
+                          </TitleButton>
                         </span>
                         {"status" in c && <TicketStatusBadge status={c.status} />}
                         {"owner" in c && (
@@ -726,25 +769,21 @@ function TicketDialog({
                         )}
                         {"cost" in c && (
                           <span
-                            className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500"
-                            title={S.company.tickets.cost}
+                            className="shrink-0 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                            data-tooltip={S.company.tickets.cost}
                           >
                             {formatMoney(c.cost, currency)}
                           </span>
                         )}
-                        <JumpButton
-                          label={S.company.tickets.openTicket}
-                          onClick={() => onOpenTicket(c.ticketId)}
-                        />
                       </li>
                     ))}
                   </ul>
                 )}
               </Fold>
 
-              {/* The sessions this ticket was worked in, folded. They are opened from here and
-                  nowhere else: starting one and attaching one belong to the owner's desk and to
-                  the CLI, not to a reader of the board. */}
+              {/* The sessions this ticket was worked in, folded, each opened by clicking its
+                  title. They are opened from here and nowhere else: starting one and attaching
+                  one belong to the owner's desk and to the CLI, not to a reader of the board. */}
               <Fold
                 title={S.company.tickets.sessions}
                 summary={
@@ -756,27 +795,38 @@ function TicketDialog({
                 {detail.sessionItems.length === 0 ? (
                   <p className="text-xs text-gray-400 dark:text-gray-500">{S.common.none}</p>
                 ) : (
-                  <ul className="space-y-0.5">
+                  <ul className="space-y-1">
                     {detail.sessionItems.map((s) => (
                       <li key={s.sessionId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
                         <PrincipalChip principal={agentPrincipal(s.agentId)} names={names} />
-                        <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300">
-                          {s.title ?? s.sessionId}
+                        <span className="flex min-w-0 flex-1">
+                          {s.agentId === "" ? (
+                            // The ticket still names a session whose row is gone (its Agent
+                            // was deleted, say): the server answers it with no Agent, and
+                            // there is nothing to open, so it is plain text and never
+                            // becomes a Temporary entry.
+                            <span
+                              className="truncate text-gray-400 dark:text-gray-500"
+                              data-tooltip={titledHint(s.title, s.sessionId)}
+                              data-tooltip-content="text"
+                            >
+                              {s.title ?? s.sessionId}
+                            </span>
+                          ) : (
+                            <TitleButton
+                              hint={titledHint(s.title, s.sessionId)}
+                              className="truncate text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+                              onClick={() => openSession(s)}
+                            >
+                              {s.title ?? s.sessionId}
+                            </TitleButton>
+                          )}
                         </span>
                         {s.lastActiveAt !== undefined && (
-                          <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+                          <span className="shrink-0 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500">
                             {formatDateTime(s.lastActiveAt)}
                           </span>
                         )}
-                        {/* The one way out of the dialog: a conversation has no in-place form,
-                            so opening a session closes this and lands on it. */}
-                        <JumpButton
-                          label={S.company.tickets.openSession}
-                          onClick={() => {
-                            onClose();
-                            navigate(`/chat/${s.sessionId}`);
-                          }}
-                        />
                       </li>
                     ))}
                   </ul>
@@ -804,7 +854,7 @@ function TicketDialog({
                               <span
                                 key="at"
                                 className="shrink-0 font-mono tabular-nums text-gray-400 dark:text-gray-500"
-                                title={h.at}
+                                data-tooltip={h.at}
                               >
                                 {formatDateTime(h.at)}
                               </span>,
@@ -819,7 +869,7 @@ function TicketDialog({
                       return (
                         <li
                           key={h.key}
-                          className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-gray-600 dark:text-gray-300"
+                          className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-gray-600 dark:text-gray-300"
                         >
                           {parts.map((part, i) => (
                             <Fragment key={i}>
@@ -898,6 +948,7 @@ function TicketDialog({
         title={S.common.confirmSaveTitle}
         tone="primary"
         confirmLabel={S.common.save}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setPendingSave(null))}
         onConfirm={commitSave}
@@ -911,6 +962,7 @@ function TicketDialog({
         title={S.company.tickets.unblock}
         tone="primary"
         confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setConfirmUnblock(false))}
         onConfirm={() => {
@@ -962,7 +1014,7 @@ function TicketDialog({
             label={S.company.tickets.blockedReason}
             required
             value={blockReason}
-            hint={S.company.tickets.blockReasonHint}
+            info={S.company.tickets.blockReasonHint}
             autoFocus
             onChange={(e) => setBlockReason(e.target.value)}
           />
@@ -970,7 +1022,7 @@ function TicketDialog({
             size="sm"
             label={S.company.tickets.blockedBy}
             value={blockBy}
-            hint={S.company.tickets.blockByHint}
+            info={S.company.tickets.blockByHint}
             className="font-mono"
             onChange={(e) => setBlockBy(e.target.value)}
           />
@@ -981,8 +1033,8 @@ function TicketDialog({
 }
 
 /**
- * The confirmation every move goes through, wherever the move was asked for — the board's
- * drag-and-drop and the dialog's footer — so a card dropped in a column and a ticket moved
+ * The confirmation every move goes through, wherever the move was asked for — a card dragged
+ * on the board and the dialog's footer — so a card dropped in a column and a ticket moved
  * from its detail ask the same question. Moving into rejected also asks for the one-line
  * reason that is recorded under the ticket's result; the box empties whenever a new move is
  * proposed, so yesterday's wording cannot ride along.
@@ -1014,6 +1066,7 @@ export function MoveTicketConfirm({
       title={S.company.tickets.moveTitle}
       tone={move?.to === "rejected" ? "danger" : "primary"}
       confirmLabel={S.common.confirm}
+      cancelLabel={S.common.cancel}
       confirmDisabled={needsReason && reason.trim() === ""}
       busy={busy}
       onClose={onClose}
@@ -1034,7 +1087,7 @@ export function MoveTicketConfirm({
             label={S.company.tickets.rejectReason}
             required
             value={reason}
-            hint={S.company.tickets.rejectReasonHint}
+            info={S.company.tickets.rejectReasonHint}
             autoFocus
             onChange={(e) => setReason(e.target.value)}
           />
@@ -1045,7 +1098,7 @@ export function MoveTicketConfirm({
 }
 
 /**
- * A section of the dialog that is folded on every visit: the ruled header of `OrgSection`
+ * A section of the dialog that is folded on every visit: the ruled header of a `RuledSection`
  * with the app's one collapse chevron in front of it, and what it holds after it — a count,
  * a count and a cost — so a reader decides from the closed row whether to open it. The panel
  * stays in the DOM and is `hidden` while collapsed — the WAI-ARIA disclosure pattern, so
@@ -1071,13 +1124,18 @@ function Fold({
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className={`flex w-full items-center ${ICON_GAP.row} border-b border-gray-200 pb-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:border-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
+        className={`group/fold flex w-full items-center ${ICON_GAP.row} border-b border-gray-200 pb-2 text-left text-xs text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:border-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
       >
         <Chevron open={open} size={ICON_SIZE.chevronDense} />
-        <span className="min-w-0 truncate">{title}</span>
-        <span className="min-w-0 truncate font-normal normal-case tracking-normal text-gray-400 dark:text-gray-500">
-          · {summary}
-        </span>
+        {/* The title is a group label, like the ruled sections' above it. */}
+        <Text
+          variant="eyebrow"
+          as="span"
+          className="min-w-0 truncate transition-colors duration-150 group-hover/fold:text-fg"
+        >
+          {title}
+        </Text>
+        <span className="min-w-0 truncate text-gray-400 dark:text-gray-500">· {summary}</span>
       </button>
       <div id={panelId} hidden={!open} className="mt-3 space-y-4">
         {children}

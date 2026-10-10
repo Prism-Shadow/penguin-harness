@@ -1,5 +1,5 @@
 /**
- * @prismshadow/penguin-plugin-sandbox-seatbelt — a macOS Seatbelt sandbox backend.
+ * @penguinharness/sandbox-seatbelt — a macOS Seatbelt sandbox backend.
  *
  * A PLUGIN PACKAGE, not part of the platform: a Project asks for it on the Plugins page
  * and the harness resolves it from the installation. It compiles against the
@@ -110,14 +110,17 @@ export function canonicalPath(target: string): string {
 }
 
 /**
- * The writable roots a policy grants, canonical and deduplicated: the workspace under
- * `workspace-write`, and the temp areas whenever the policy makes temp writable (either mode).
+ * The writable roots a policy grants, canonical and deduplicated: the workspace and the
+ * policy's further roots (the Session's scratchpad) under `workspace-write`, and the temp
+ * areas whenever the policy makes temp writable (either mode).
  */
 export function writableRoots(policy: SandboxPolicy): string[] {
   return [
     ...new Set(
       [
-        ...(policy.mode === "workspace-write" ? [policy.workspaceRoot] : []),
+        ...(policy.mode === "workspace-write"
+          ? [policy.workspaceRoot, ...(policy.writableRoots ?? [])]
+          : []),
         ...(policy.writableTemp === true ? ["/tmp", tmpdir()] : []),
       ].map(canonicalPath),
     ),
@@ -229,7 +232,7 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
   const settings = internals.settings ?? (() => ({ runner: internals.runner ?? defaultRunner() }));
   const usable = new Map<string, boolean>();
   return {
-    dimensions: ["fs-write", "network", "network-local", "mask-paths"],
+    dimensions: ["fs-write", "network", "network-local", "mask-paths", "closed-temp"],
     confine(argv, policy): ConfinedArgv {
       const { runner } = settings();
       if (!usable.has(runner)) usable.set(runner, probe(PROBE_TIMEOUT_MS, runner));
@@ -263,7 +266,7 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
       {
         id: "sandbox-seatbelt.provider",
         name: "penguin-seatbelt",
-        dimensions: ["fs-write", "network", "network-local", "mask-paths"],
+        dimensions: ["fs-write", "network", "network-local", "mask-paths", "closed-temp"],
       },
     ],
     "PluginConfigProvider.groups": [

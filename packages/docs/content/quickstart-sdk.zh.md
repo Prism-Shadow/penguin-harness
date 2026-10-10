@@ -31,7 +31,7 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 
 把 `sk-...` 换成你的 API Key。CLI 会把模型写入数据目录，SDK 马上就能使用。
 
-凭据也可以完全不落盘。模型条目没有内联 `api_key` 时，LLM 网关库 AgentHub 会读取 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY` 等环境变量。工作目录下的 `.env` 文件会自动加载。
+凭据也可以完全不落盘。模型条目没有内联 `api_key`、且请求发往厂商自己的端点时，key 取自 LLM 网关库 [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) 读取的该厂商环境变量，如 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`。工作目录下的 `.env` 文件会自动加载。
 
 ## 运行第一个程序
 

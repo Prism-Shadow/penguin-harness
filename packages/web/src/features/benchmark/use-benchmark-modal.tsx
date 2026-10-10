@@ -8,14 +8,19 @@
  * Send stays the user's move. A Benchmark can score several agents, so which one is under test
  * is a choice here; the baseline and the default target follow that choice. The model of the
  * conversation that carries the work out is picked with the Project settings' own model picker
- * (ModelSelect in its form variant, the one the new-chat defaults and the schedule form use),
+ * (ModelCatalogSelect in its form variant, the one the new-chat defaults and the schedule form use),
  * preset to the Project's default model. The new conversation opens with the Skills its tab
  * rests on preselected — the evaluator on both tabs, the optimizer on its own — so the
  * `[use_skills]` block names them on send and the model reads them before it acts; a model
  * left to its own devices sometimes scored the runs itself instead of delegating to
- * agent-evaluation. The evaluation runtime is never picked in this dialog —
- * Evaluate takes the tested agent's own configured model and thinking level, and Optimize reuses
- * what that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
+ * agent-evaluation. Evaluate tests on that conversation's own model, at the tested agent's
+ * configured thinking level: an agent stores no model of its own. The prompt names no model —
+ * the evaluator reads its Session's model from its Environment — so one changed in the composer
+ * after the prefill is still the one tested, and the text never goes stale. Optimize reuses what
+ * that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
+ *
+ * The conversation is an ordinary Session, listed with the agent's own: only the Test Sessions
+ * it starts through `penguin run` (CLI Sessions) are filed under the Background folder.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -24,21 +29,25 @@ import type {
   ModelRefDto,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  FieldHint,
+  FieldLabel,
+  GlyphIcon,
+  ICONS,
+  Input,
+  Modal,
+  NoticeStrip,
+  Segmented,
+  Select,
+  Textarea,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatScore } from "../../lib/format";
-import { toneStrip } from "../../lib/tone";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
-import { FieldHint, FieldLabel } from "../../components/ui/field";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { MAGIC_WAND_ICON } from "../../components/ui/icons";
-import { Input, Textarea } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { Segmented } from "../../components/ui/segmented";
-import { Select } from "../../components/ui/select";
 import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
-import { ModelSelect } from "../chat/model-select";
+import { ModelCatalogSelect } from "../chat/model-select";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import { MAX_RUNS, evaluateTail, optimizeTail } from "./benchmark-prompts";
 import type { EvaluateParams, OptimizeParams } from "./benchmark-prompts";
@@ -180,9 +189,6 @@ export function UseBenchmarkModal({
       text,
       skills: tab === "evaluate" ? [EVALUATION_SKILL] : [OPTIMIZATION_SKILL, EVALUATION_SKILL],
       ...(ref !== undefined ? { modelRef: ref } : {}),
-      // An evaluation / optimization run, not a conversation of the user's own: the session
-      // list files it, and the Test Sessions it launches, under the Evaluations folder.
-      source: "benchmark",
     });
     onClose();
   };
@@ -201,7 +207,7 @@ export function UseBenchmarkModal({
       {models !== null && models.models.length === 0 ? (
         <p className="text-xs text-gray-400">{S.models.empty}</p>
       ) : (
-        <ModelSelect
+        <ModelCatalogSelect
           models={models?.models ?? []}
           value={modelRef}
           {...(defaultModel !== undefined ? { defaultModel } : {})}
@@ -215,7 +221,9 @@ export function UseBenchmarkModal({
   );
   const missingSkillStrip = (missing: boolean, message: string) =>
     missing ? (
-      <div className={`rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}>{message}</div>
+      <NoticeStrip tone="attention" className="rounded-md border px-3 py-2 text-xs">
+        {message}
+      </NoticeStrip>
     ) : null;
   const testedAgentSelect = (hint: string) => (
     <Select
@@ -256,7 +264,7 @@ export function UseBenchmarkModal({
             parameter of the open tab is in range.
           */}
           <Button size="sm" variant="primary" disabled={!ready} onClick={go}>
-            <GlyphIcon d={MAGIC_WAND_ICON} />
+            <GlyphIcon d={ICONS.wand} />
             {S.aiCreate.editInChat}
           </Button>
         </>
@@ -306,9 +314,9 @@ export function UseBenchmarkModal({
               {S.benchmark.optimizeDescription}
             </p>
             {baseline === null ? (
-              <div className={`rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}>
+              <NoticeStrip tone="attention" className="rounded-md border px-3 py-2 text-xs">
                 {S.benchmark.noBaseline}
-              </div>
+              </NoticeStrip>
             ) : (
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {S.benchmark.baselineLine(formatScore(baseline.score), optimizeParams.targetScore)}

@@ -42,14 +42,19 @@ import type {
   SubagentMessageOutcome,
   SubagentRunner,
   ThinkingLevelName,
+  SpawnConfiner,
   ToolConfig,
   ToolDefinition,
   ToolDetachResult,
   ToolExecutionRequest,
   ToolPermission,
+  VisionDescriberService,
 } from "../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
+import { SandboxedFsHost, fsWorkerArgv } from "./tools/fs-worker.js";
+import { lazyToolFs, localFsPort } from "./tools/fs-port.js";
+import type { ToolFs } from "./tools/fs-port.js";
 import { McpToolProvider } from "./mcp/provider.js";
 import { CommandSessionManager } from "./tools/command/index.js";
 import { ManagedSubagentSession, SubagentSessionManager } from "./tools/subagent/index.js";
@@ -75,7 +80,7 @@ const TOOL_EMPTY_NOTE = "[no output]";
 
 /**
  * Explanation for a failed argument JSON parse. The normal pipeline never reaches this: bad
- * JSON already throws during AgentHub's parsing stage, and the LLM layer finalizes it as
+ * JSON already throws during MMSP's parsing stage, and the LLM layer finalizes it as
  * malformed for the engine to reconnect (see generative-model.ts) — it's never dispatched into
  * Environment as a completed tool_call. This function is only a defensive fallback for the
  * public interface.
@@ -159,6 +164,12 @@ export class Environment implements EnvironmentInterface {
   private readonly subagentRunner: SubagentRunner | null;
   /** The runtime services every tool factory receives — Session-lifetime registries and sinks, so each context's toolset is assembled onto the same ones. */
   private readonly services: EnvironmentServices;
+  /** The Session's scratchpad, writable beside the Workspace under a workspace-write policy. */
+  private readonly sessionScratchpadDir: string | null;
+  /** The Session's confiner getter (see EnvironmentConfig.confineSpawn), for the stdio MCP servers and the file helper this Environment starts; commands take it through their session manager. */
+  private readonly confineSpawn: (() => SpawnConfiner | null) | undefined;
+  /** The file tools' sandboxed helper (see tools/fs-worker.ts): started at the first confined file operation, kept for the Session, restarted when the confiner's answer changes. */
+  private readonly fsHost = new SandboxedFsHost();
 
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
@@ -178,7 +189,12 @@ export class Environment implements EnvironmentInterface {
       ...(config.pathPrepend !== undefined ? { pathPrepend: config.pathPrepend } : {}),
       ...(config.confineSpawn !== undefined ? { confineSpawn: config.confineSpawn } : {}),
       workspaceDir: config.workspaceDir,
+      ...(config.sessionScratchpadDir !== undefined
+        ? { scratchpadDir: config.sessionScratchpadDir }
+        : {}),
     });
+    this.sessionScratchpadDir = config.sessionScratchpadDir ?? null;
+    this.confineSpawn = config.confineSpawn;
     this.subagentSessions = new SubagentSessionManager();
     // Background-task liveness fans in from both registries and from the subagent run-state
     // pings: the host's background-state listener hears every change of "what is still
@@ -228,8 +244,40 @@ export class Environment implements EnvironmentInterface {
    */
   private newMcpProvider(servers: ToolConfig["mcpServers"]): McpToolProvider | null {
     return servers.length > 0
-      ? new McpToolProvider(servers, { workspaceDir: this.workspaceDir })
+      ? new McpToolProvider(servers, {
+          workspaceDir: this.workspaceDir,
+          // A stdio server is started under the Session's sandbox like a command, with the
+          // same confiner and scope (see McpToolProviderOptions.confineSpawn).
+          ...(this.confineSpawn !== undefined ? { confineSpawn: this.confineSpawn } : {}),
+          ...(this.sessionScratchpadDir !== null
+            ? { scratchpadDir: this.sessionScratchpadDir }
+            : {}),
+        })
       : null;
+  }
+
+  /**
+   * The port the file tools work through: the sandboxed helper's when the Session is
+   * confined, this process's when it is not. The confiner is asked for the helper's argv at
+   * every call that touches a file, like for a command at every spawn: an answer that
+   * leaves the argv alone is the confiner's word for "unconfined" (see SpawnConfiner), and
+   * the tools then work in this process; any other answer names the sandboxed helper to
+   * work through, started from that very answer (see fs-worker.ts).
+   */
+  private fileSystem(): ToolFs {
+    const confiner = this.confineSpawn?.() ?? null;
+    if (confiner === null) return localFsPort;
+    const argv = fsWorkerArgv();
+    const confined = confiner(argv, {
+      cwd: this.workspaceDir,
+      workspaceDir: this.workspaceDir,
+      ...(this.sessionScratchpadDir !== null ? { scratchpadDir: this.sessionScratchpadDir } : {}),
+    });
+    const unchanged =
+      confined.env === undefined &&
+      confined.argv.length === argv.length &&
+      confined.argv.every((arg, i) => arg === argv[i]);
+    return unchanged ? localFsPort : this.fsHost.portFor(confined);
   }
 
   /**
@@ -244,14 +292,28 @@ export class Environment implements EnvironmentInterface {
    * started with. The Session-lifetime parts — background command processes, subagent child
    * sessions, the listeners, the Workspace and the scratchpad — are untouched. Concrete-class
    * surface, not part of EnvironmentInterface.
+   *
+   * `visionDescriber` is the new context's answer to "does the session model view images"
+   * (see EnvironmentServices.visionDescriber): a service when that context's model has no
+   * vision, `null` when it views images itself — a model switch can move either way — and
+   * absent leaves the running answer in place. Applied before the toolset is re-equipped, so
+   * the new context's read_file is built on it.
    */
-  reconfigure(config: { toolConfig: ToolConfig; vault: Record<string, string> }): void {
+  reconfigure(config: {
+    toolConfig: ToolConfig;
+    vault: Record<string, string>;
+    visionDescriber?: VisionDescriberService | null;
+  }): void {
     const servers = config.toolConfig.mcpServers;
     if (this.mcp && servers.length > 0) {
       this.mcp.reconfigure(servers);
     } else {
       this.mcp?.closeQuietly();
       this.mcp = this.newMcpProvider(servers);
+    }
+    if (config.visionDescriber !== undefined) {
+      if (config.visionDescriber === null) delete this.services.visionDescriber;
+      else this.services.visionDescriber = config.visionDescriber;
     }
     this.equip(config.toolConfig);
     this.commandSessions.setVault(config.vault);
@@ -262,7 +324,7 @@ export class Environment implements EnvironmentInterface {
     return this.mcp?.pendingServerNames() ?? [];
   }
 
-  /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent) and closes MCP clients (stdio server processes included). Idempotent. */
+  /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent), closes MCP clients (stdio server processes included) and stops the file tools' sandboxed helper. Idempotent. */
   dispose(): void {
     // Suppress completion reports first: dispose kills the remaining background sessions, and
     // their exits must not masquerade as task completions after the Session has ended.
@@ -272,6 +334,7 @@ export class Environment implements EnvironmentInterface {
     this.commandSessions.dispose();
     this.subagentSessions.dispose();
     this.mcp?.closeQuietly();
+    this.fsHost.dispose();
   }
 
   // Background completion reports: a single listener (the owning Session), with events fired
@@ -640,6 +703,9 @@ export class Environment implements EnvironmentInterface {
       toolCallId,
       signal: ac.signal,
       detachSignal: detachCtrl.signal,
+      // The file system a file tool works through, decided from the Session's confiner
+      // when the tool first touches a file (see fileSystem below).
+      fs: lazyToolFs(() => this.fileSystem()),
       // Pass through the parent's approve callback (run_subagent uses it so the child Session
       // inherits the parent's approval mode; other tools ignore it).
       ...(request.approve ? { approve: request.approve } : {}),

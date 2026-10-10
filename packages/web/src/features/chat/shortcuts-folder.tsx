@@ -19,18 +19,21 @@
  *   out of reach on a phone.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Button,
+  ConfirmModal,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Input,
+  Modal,
+  PlusIcon,
+  Textarea,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { Button } from "../../components/ui/button";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { PlusIcon } from "../../components/ui/icons";
-import { Input, Textarea } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { PENCIL_ICON, TRASH_ICON } from "../../components/ui/session-row-menu";
-import { toastError } from "../../components/ui/toast";
 import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
 import {
   SHORTCUT_MAX_COUNT,
@@ -53,12 +56,11 @@ import type { ShortcutDraft, UserShortcut } from "./user-shortcuts";
 export const SHORTCUTS_FOLDER_ID = "shortcuts";
 
 /**
- * Lightning bolt (lucide zap): the folder's mark. Not the bookmark it might suggest — the folders
+ * The lightning bolt: the folder's mark. Not the bookmark it might suggest — the folders
  * themselves already behave bookmark-style (exactly one open), so that glyph would name the
  * mechanism every folder shares instead of what this one holds.
  */
-const SHORTCUTS_GLYPH =
-  "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z";
+const SHORTCUTS_GLYPH = ICONS.zap;
 
 /** An always-visible row action (edit / delete), sized and coloured to recede until pointed at. */
 function RowAction({
@@ -75,7 +77,7 @@ function RowAction({
   return (
     <button
       type="button"
-      title={label}
+      data-tooltip={label}
       aria-label={label}
       onClick={onClick}
       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 dark:text-gray-500 ${
@@ -167,12 +169,12 @@ export function ShortcutsFolder({
            folder's height plus the New-shortcut row. */
         <div className="mt-0.5 pl-4">
           {loaded && (
-            <ul className="space-y-0.5">
+            <ul className="space-y-1">
               {shortcuts.map((shortcut) => (
                 <li key={shortcut.id} className="flex items-center gap-1">
                   <button
                     type="button"
-                    title={`${shortcut.title}\n${S.chat.exampleFillHint}`}
+                    data-tooltip={`${shortcut.title}\n${S.chat.exampleFillHint}`}
                     onClick={() => onFill(shortcut.prompt)}
                     className={`flex min-w-0 flex-1 items-center gap-2 ${exampleRowClass}`}
                   >
@@ -180,12 +182,12 @@ export function ShortcutsFolder({
                   </button>
                   <RowAction
                     label={S.common.edit}
-                    glyph={PENCIL_ICON}
+                    glyph={ICONS.pencil}
                     onClick={() => setDraft({ ...shortcut })}
                   />
                   <RowAction
                     label={S.common.delete}
-                    glyph={TRASH_ICON}
+                    glyph={ICONS.trash}
                     danger
                     onClick={() => setDeleting(shortcut)}
                   />
@@ -197,7 +199,7 @@ export function ShortcutsFolder({
                 <li>
                   <button
                     type="button"
-                    title={S.chat.shortcuts.newFromComposer}
+                    data-tooltip={S.chat.shortcuts.newFromComposer}
                     onClick={startCreate}
                     className={`flex w-full items-center gap-2 ${exampleRowClass}`}
                   >
@@ -275,6 +277,7 @@ export function ShortcutsFolder({
         open={deleting !== null}
         title={S.chat.shortcuts.deleteTitle}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         onClose={() => setDeleting(null)}
         onConfirm={() => {
           if (deleting !== null) persist(removeShortcut(shortcuts, deleting.id));

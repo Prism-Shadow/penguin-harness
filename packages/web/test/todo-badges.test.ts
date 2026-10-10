@@ -29,12 +29,15 @@ function agent(
 function errorPage(total: number, ...timestamps: string[]): UsageErrorsPage {
   return {
     total,
+    rows: timestamps.length,
     items: timestamps.map((ts) => ({
       ts,
       source: "runtime",
       code: "boom",
       kind: "unexpected",
       message: "boom",
+      count: 1,
+      firstTs: ts,
     })),
   };
 }
@@ -58,12 +61,6 @@ describe("pluginUpdateTodo", () => {
       count: 2,
       match: "set",
     });
-  });
-
-  it("reports no added/upgradable split: an uninstalled plugin is not waiting for anyone", () => {
-    expect(
-      pluginUpdateTodo([agent({ name: "a", version: "2026.08.02.1" })])!.breakdown,
-    ).toBeUndefined();
   });
 
   it("is order-independent, so two loads of the same state dismiss alike", () => {
@@ -94,14 +91,13 @@ describe("pluginUpdateTodo", () => {
 });
 
 describe("presetUpdateTodo", () => {
-  it("is null when the table already matches the catalog", () => {
-    expect(presetUpdateTodo({ added: 0, updated: 0, refs: [] })).toBeNull();
+  it("is null when the table already holds every preset", () => {
+    expect(presetUpdateTodo({ added: 0, refs: [] })).toBeNull();
   });
 
-  it("counts the entries that would change and signs itself with them", () => {
+  it("counts the new presets and signs itself with them", () => {
     const todo = presetUpdateTodo({
-      added: 1,
-      updated: 1,
+      added: 2,
       refs: ["anthropic/claude-opus-5", "openai/gpt-5"],
     });
     expect(todo).toEqual({
@@ -109,21 +105,12 @@ describe("presetUpdateTodo", () => {
       items: ["anthropic/claude-opus-5", "openai/gpt-5"],
       count: 2,
       match: "set",
-      breakdown: { added: 1, updated: 1 },
     });
   });
 
-  it("carries the delta's own added/updated split, and it always sums to the count", () => {
-    // The page notice states these two numbers under a dot raised from `count`. If the split
-    // could disagree with the total, the block and the badge would be describing different work.
-    const todo = presetUpdateTodo({ added: 2, updated: 3, refs: ["a", "b", "c", "d", "e"] })!;
-    expect(todo.breakdown).toEqual({ added: 2, updated: 3 });
-    expect(todo.breakdown!.added + todo.breakdown!.updated).toBe(todo.count);
-  });
-
   it("separates two deltas of the same size, so a different model still raises the dot", () => {
-    const first = presetUpdateTodo({ added: 1, updated: 0, refs: ["a/one"] });
-    const second = presetUpdateTodo({ added: 1, updated: 0, refs: ["b/two"] });
+    const first = presetUpdateTodo({ added: 1, refs: ["a/one"] });
+    const second = presetUpdateTodo({ added: 1, refs: ["b/two"] });
     expect(first!.count).toBe(second!.count);
     expect(first!.signature).not.toBe(second!.signature);
   });
@@ -168,12 +155,6 @@ describe("kernelUpdateTodo", () => {
       { agentId: "b", kernelOutdated: true },
     ]);
     expect(a).toEqual(b);
-  });
-
-  it("reports no added/upgradable split: an Agent's kernel is never new", () => {
-    // The notice on that page shows one count for this reason. A `breakdown: {added: 0}` would
-    // be an answer to a question the page never asks.
-    expect(kernelUpdateTodo([{ agentId: "a", kernelOutdated: true }])!.breakdown).toBeUndefined();
   });
 
   it("stays down for the Agents already waved away, and comes back up for a new one", () => {

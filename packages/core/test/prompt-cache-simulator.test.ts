@@ -10,7 +10,7 @@
  * is what records them elsewhere), so each case is a statement about one rule and nothing else.
  */
 import { describe, expect, it } from "vitest";
-import type { UniConfig } from "@prismshadow/agenthub";
+import type { UniConfig } from "@prismshadow/mmsp";
 import {
   DEFAULT_TTL_MS,
   PromptCacheSim,
@@ -169,7 +169,7 @@ describe("prompt-cache simulator", () => {
   });
 
   it("loses the system prompt on a fast-mode toggle but keeps the tools", () => {
-    // `speed` and `betas` are what AgentHub sets for fast mode, and they are rendered ahead of
+    // `speed` and `betas` are what MMSP sets for fast mode, and they are rendered ahead of
     // the system block: the tools survive the toggle and the system prompt does not.
     const fast = request({
       parameters: { ...PLAIN_PARAMETERS, speed: "fast", betas: ["fast-mode-2026-01-01"] },

@@ -1,15 +1,16 @@
 /**
- * Fake API keys for testing: the provider SDK requires a credential at **construction time**
- * (throwing "Missing credentials" if absent), and `createSession` constructs an LLM client for
- * the default model.
+ * Fake API keys for testing: the provider client requires a credential at **construction
+ * time** (MMSP's DeepSeek client throws "DEEPSEEK_API_KEY is required" without one, the OpenAI
+ * SDK "Missing credentials"), and `createSession` constructs an LLM client for the default
+ * model.
  *
- * The default model uses the OpenAI protocol (DeepSeek), so `OPENAI_API_KEY` must have a value;
- * Anthropic's is stubbed too, for test cases that explicitly specify a claude model. The keys
- * are only used to construct the client; tests never actually send a request. CI has no keys
- * at all, while most local dev machines do -- without stubbing, tests would "pass locally,
- * fail in CI."
+ * The default model is DeepSeek's, so `DEEPSEEK_API_KEY` must have a value; the OpenAI and
+ * Anthropic pairs are stubbed too, for test cases that explicitly specify a gpt / claude model
+ * or an OpenAI-protocol client. The keys are only used to construct the client; tests never
+ * actually send a request. CI has no keys at all, while most local dev machines do -- without
+ * stubbing, tests would "pass locally, fail in CI."
  */
-const KEYS = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const;
+const KEYS = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY"] as const;
 
 /** Stubs in fake keys and returns a restore function (call it in afterEach). */
 export function stubProviderKeys(): () => void {
