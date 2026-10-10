@@ -526,9 +526,11 @@ describe("packages the operator installed on the server", () => {
       expect(bare, key).not.toHaveProperty(key);
     }
     expect(bare.skills.map((s) => s.name)).toEqual(["bare"]);
-    expect(loadPluginGroups().find((g) => g.id === "other")?.plugins.map((p) => p.name)).toContain(
-      "bare",
-    );
+    expect(
+      loadPluginGroups()
+        .find((g) => g.id === "other")
+        ?.plugins.map((p) => p.name),
+    ).toContain("bare");
     // Absent is not a fault: nothing to warn about.
     expect(warn).not.toHaveBeenCalled();
   });
@@ -643,7 +645,8 @@ describe("packages the operator installed on the server", () => {
     expect(old).toMatchObject({ description: "Old.", version: "0.2.13" });
     expect(old.icon).toBeDefined();
     expect(old.skills.map((s) => s.name)).toEqual(["old"]);
-    for (const key of ["descriptionZh", "category", "hooks"]) expect(old, key).not.toHaveProperty(key);
+    for (const key of ["descriptionZh", "category", "hooks"])
+      expect(old, key).not.toHaveProperty(key);
   });
 
   it("reads a local package directory the way the library will (readLibraryPackage), refusing one without a release version", async () => {

@@ -126,7 +126,8 @@ for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
     const { fields } = front;
     description = fields.get("description") ?? "";
     const when = fields.get("when_to_use");
-    if (typeof when === "string" && when !== "") description = `${description} Use when: ${when}`.trim();
+    if (typeof when === "string" && when !== "")
+      description = `${description} Use when: ${when}`.trim();
     if (DATED.test(fields.get("version") ?? "")) version = fields.get("version");
     const dropped = [...fields.keys()].filter(
       (key) => !["name", "description", "version", "when_to_use"].includes(key),
@@ -170,6 +171,8 @@ for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
   walk(dir, "");
   if (removed.length > 0) notes.push(`removed: ${removed.join(", ")}`);
   count += 1;
-  console.log(`skills/${name}: version ${version}${notes.length > 0 ? `; ${notes.join("; ")}` : ""}`);
+  console.log(
+    `skills/${name}: version ${version}${notes.length > 0 ? `; ${notes.join("; ")}` : ""}`,
+  );
 }
 console.log(`${count} skills normalised in ${skillsDir}`);

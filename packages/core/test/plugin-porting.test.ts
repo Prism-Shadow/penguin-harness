@@ -94,7 +94,8 @@ describe("normalize-skills.mjs", () => {
 
   it("keeps a dated version the skill already carries", async () => {
     const dir = await building({
-      "skills/kept/SKILL.md": "---\nname: kept\ndescription: Kept.\nversion: 2026.09.01.3\n---\n\nBody.\n",
+      "skills/kept/SKILL.md":
+        "---\nname: kept\ndescription: Kept.\nversion: 2026.09.01.3\n---\n\nBody.\n",
     });
     normalize(dir);
     expect(parseSkillFrontmatter(await read("skills/kept/SKILL.md"))?.version).toBe("2026.09.01.3");

@@ -595,7 +595,11 @@ describe("the route's own merge", () => {
       await mkdir(dir, { recursive: true });
       await writeFile(
         path.join(dir, "package.json"),
-        JSON.stringify({ name: entry.name, version: "1.0.0", penguin: { short_description: "Risky." } }),
+        JSON.stringify({
+          name: entry.name,
+          version: "1.0.0",
+          penguin: { short_description: "Risky." },
+        }),
       );
       await writeFile(
         path.join(dir, "icon.svg"),

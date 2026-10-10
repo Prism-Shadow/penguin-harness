@@ -623,12 +623,7 @@ function readDirFiles(
  * installed package's skill without one reads as unversioned (""), older than any real version
  * and never flagged behind.
  */
-function readSkillDir(
-  dir: string,
-  name: string,
-  strict: boolean,
-  skipped: string[],
-): LibrarySkill {
+function readSkillDir(dir: string, name: string, strict: boolean, skipped: string[]): LibrarySkill {
   const file = path.join(dir, "SKILL.md");
   const content = fs.readFileSync(file, "utf8");
   const meta = parseSkillFrontmatter(content);

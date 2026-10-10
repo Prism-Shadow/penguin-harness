@@ -247,7 +247,9 @@ describe("plugin import and export", () => {
     expect(res.status).toBe(201);
     const groups = ((await (await admin.get("/api/plugins")).json()) as PluginLibraryResponse)
       .groups;
-    const bare = groups.find((g) => g.id === "other")?.plugins.find((p) => p.name === "bare-skills");
+    const bare = groups
+      .find((g) => g.id === "other")
+      ?.plugins.find((p) => p.name === "bare-skills");
     expect(bare).toMatchObject({ description: "", version: "0.1.0", source: "installed" });
     for (const key of ["title", "shortDescription", "icon", "quickStart", "author", "license"]) {
       expect(bare, key).not.toHaveProperty(key);

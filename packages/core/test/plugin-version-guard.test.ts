@@ -149,7 +149,10 @@ describe("the plugin version guard", () => {
     // The base before the move: the hook declaration in plugin.json, no penguin block.
     const base = await checkout({
       ...PER_PART,
-      "plugins/demo/package.json": JSON.stringify({ name: "@penguinharness/demo", version: "0.2.13" }),
+      "plugins/demo/package.json": JSON.stringify({
+        name: "@penguinharness/demo",
+        version: "0.2.13",
+      }),
       "plugins/demo/plugin.json": JSON.stringify({ description: "Demo.", hooks: HOOKS }),
     });
     const moved = await guard(base, {
