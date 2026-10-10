@@ -164,11 +164,12 @@ describe("the SSE heartbeat re-checks its own session", () => {
     const res = await streamingApp(session, registry).request("/stream");
     const reader = res.body!.getReader();
     await reader.read(); // hello: the connection is established and registered
+    await reader.read(); // the ping every stream opens with
 
     vi.advanceTimersByTime(HEARTBEAT_MS);
     const beat = await reader.read();
     expect(beat.done).toBe(false);
-    expect(new TextDecoder().decode(beat.value)).toContain(": ping");
+    expect(new TextDecoder().decode(beat.value)).toContain("event: ping");
     expect(registry.countFor("alice")).toBe(1);
     await reader.cancel();
   });
@@ -179,7 +180,8 @@ describe("the SSE heartbeat re-checks its own session", () => {
     const session = { live: true };
     const res = await streamingApp(session, registry).request("/stream");
     const reader = res.body!.getReader();
-    await reader.read();
+    await reader.read(); // hello
+    await reader.read(); // the opening ping
     expect(registry.countFor("alice")).toBe(1);
 
     // Whatever dropped the rows did not tell the registry — the beat is what notices.
