@@ -1033,7 +1033,7 @@ describe("isFastModeUnsupportedError (fast_mode rejected by a model without a fa
     expect(
       isFastModeUnsupportedError(
         new UnsupportedParameterError({
-          client: "GeminiOfficialClient",
+          client: "GoogleOfficialClient",
           parameter: "temperature",
           message: "temperature is not supported.",
         }),

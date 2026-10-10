@@ -3016,14 +3016,14 @@ export interface ModelEnvInfo {
 
 /**
  * MMSP's routing rule, mirrored: without a client type, the family a model id begins with
- * names its official client (AutoLLMClient's `MODEL_FAMILIES`, which the package does not
- * export), and an id of no known family cannot be started at all.
+ * names its official client (AutoLLMClient's `MODEL_FAMILIES` as of MMSP 0.5.2, which the
+ * package does not export), and an id of no known family cannot be started at all.
  */
 const MODEL_FAMILIES: readonly (readonly [prefix: string, clientType: string])[] = [
   ["gpt-", "openai-official"],
   ["text-embedding-", "openai-official"],
   ["claude-", "anthropic-official"],
-  ["gemini-", "gemini-official"],
+  ["gemini-", "google-official"],
   ["glm-", "zai-official"],
   ["kimi-", "moonshot-official"],
   ["deepseek-", "deepseek-official"],
@@ -3043,14 +3043,20 @@ export type FastModeProtocol = "openai" | "anthropic";
  * What the harness mirrors about each MMSP client, in one place: the environment variable
  * prefix it reads its key and base URL from when handed none (an official client its vendor's,
  * a compatible client the vendor's whose wire protocol it speaks), the path it appends to its
- * base URL, and the protocol that carries `fast_mode` (absent = the client rejects it). A
- * client type this table does not name is one MMSP does not have either.
+ * base URL, the protocol that carries `fast_mode` (absent = the client rejects it, or the
+ * harness cannot tell what it does with it), and `openServer` for a client that calls a base
+ * URL handed no key with no key at all where every other client refuses it (see
+ * keylessEndpoint). A client type this table does not name is one MMSP does not have either.
  */
 export const MMSP_CLIENTS: Readonly<
-  Record<string, { env: string; path: string; fastMode?: FastModeProtocol }>
+  Record<string, { env: string; path: string; fastMode?: FastModeProtocol; openServer?: true }>
 > = {
   "openai-official": { env: "OPENAI", path: "/responses", fastMode: "openai" },
   "anthropic-official": { env: "ANTHROPIC", path: "/v1/messages", fastMode: "anthropic" },
+  "google-official": { env: "GEMINI", path: "/v1beta/interactions", fastMode: "openai" },
+  // compat: MMSP 0.5.2 keeps google-official's earlier name as an alias, and a Project written
+  // before it may still pin it, never rewritten; this row goes with the MMSP upgrade that drops
+  // the alias (changelog/unreleased/2026-10-10-backward-compatibility.md).
   "gemini-official": { env: "GEMINI", path: "/v1beta/interactions", fastMode: "openai" },
   "zai-official": { env: "ZAI", path: "/chat/completions" },
   "moonshot-official": { env: "MOONSHOT", path: "/chat/completions" },
@@ -3064,6 +3070,9 @@ export const MMSP_CLIENTS: Readonly<
   "google-genai": { env: "GEMINI", path: "/v1beta/models" },
   // MMSP 0.5.1 keeps the 0.5.0 name of google-genai as an alias.
   "gemini-generate-content": { env: "GEMINI", path: "/v1beta/models" },
+  // An MMSP server: the client posts to {base}/stream. It forwards `fast_mode` to the server,
+  // whose upstream client decides, so the harness offers no toggle it cannot vouch for.
+  mmsp: { env: "MMSP", path: "/stream", openServer: true },
 };
 
 /**
@@ -3134,6 +3143,9 @@ export const VENDOR_ENDPOINTS: Readonly<Record<string, readonly string[]>> = {
   ZAI_API_KEY: ["https://api.z.ai/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4"],
   MOONSHOT_API_KEY: ["https://api.moonshot.cn/v1", "https://api.moonshot.ai/v1"],
   MINIMAX_API_KEY: [MINIMAX_BASE_URL, "https://api.minimaxi.com/v1"],
+  // The mmsp client sends MMSP_API_KEY only to MMSP_BASE_URL (or its default), i.e. only when
+  // handed no base URL: no base URL a row names is lent it.
+  MMSP_API_KEY: [],
 };
 
 /**
@@ -3195,7 +3207,8 @@ export interface ModelEnvFallback extends ModelEnvInfo {
  *   `*_BASE_URL` the user set beside the key — that pairing is MMSP's own and is left to it
  *   entirely; the client reads the pair itself.
  * - A base URL that is one of that vendor's own official endpoints (VENDOR_ENDPOINTS) —
- *   allowed, the harness reading the variable and passing it explicitly.
+ *   allowed, the harness reading the variable and passing it explicitly. The mmsp client has
+ *   none: MMSP_API_KEY goes only where MMSP_BASE_URL points, to an entry with no base URL.
  * - Anything else — every gateway group's preset endpoint, custom / user-defined / vLLM rows
  *   with their own endpoints, a vendor row re-pointed at a proxy — refused. A row's own base
  *   URL equal to the `*_BASE_URL` variable's value earns no exception either (per the user:
@@ -3283,6 +3296,23 @@ export interface ResolvedModelCredential {
 }
 
 /**
+ * Whether a keyless request to this base URL goes out with no key rather than being refused:
+ * MMSP's mmsp client calls a base URL it is handed without a key as an open MMSP server (the
+ * `openServer` clients of MMSP_CLIENTS). Every other client lends the environment's key where
+ * modelEnvFallback allows it, or needs a key of its own.
+ */
+export function keylessEndpoint(
+  modelId: string,
+  clientType: string | undefined,
+  baseUrl: string | undefined,
+): boolean {
+  return (
+    Boolean(baseUrl?.trim()) &&
+    MMSP_CLIENTS[routedClientType(modelId, clientType) ?? ""]?.openServer === true
+  );
+}
+
+/**
  * The credential an MMSP client is built with for a **model entry**, applying
  * modelEnvFallback's rule (the one function every path shares): Session creation and resume,
  * the vision describer, the connectivity / speed / vision probes and the utility completion
@@ -3298,6 +3328,8 @@ export interface ResolvedModelCredential {
  *   provider-scoped pair: the variable's value is passed explicitly — MMSP refuses a base URL
  *   without a key rather than lend the vendor's variable to it — and an unset variable is
  *   refused here.
+ * - No key and a base URL on the mmsp client (keylessEndpoint): the base URL alone, so the
+ *   client sends no key, which an open MMSP server takes — as MMSP itself does.
  * - No key, no fallback: refused with a ModelCredentialError before any client exists.
  * - A provider-scoped group's row (Penguin Go) is also refused without a base URL, whatever
  *   the key's source: the relay key must not travel to the vendor's default endpoint.
@@ -3317,6 +3349,9 @@ export function resolveModelCredential(
   }
   if (apiKey !== undefined) return { apiKey, ...(baseUrl !== undefined ? { baseUrl } : {}) };
   if (fallback === undefined) {
+    if (baseUrl !== undefined && keylessEndpoint(entry.modelId, entry.clientType, baseUrl)) {
+      return { baseUrl };
+    }
     // A Bedrock region on the entry is not "not the vendor's": it is AWS, whose usual
     // credential is the default provider chain rather than a key. Until MMSP stops
     // letting its Bedrock client attach ANTHROPIC_API_KEY, a keyless row here is refused,
@@ -3572,6 +3607,8 @@ export function resolveEntryCredential(
  * - raises UnsupportedParameterError (the Z.AI, Moonshot, DeepSeek, google-genai and
  *   embedding clients, and anthropic-official on Bedrock or for the generations that reject
  *   the `speed` parameter) -> `undefined`;
+ * - forwards it to an MMSP server, whose upstream client decides what it does with it (mmsp)
+ *   -> `undefined`: the harness cannot say on which protocol, or whether at all;
  * - routes nowhere (AutoLLMClient throws for an id it cannot place) -> `undefined` as well,
  *   since a model that cannot run has no fast tier either.
  *
@@ -3595,12 +3632,15 @@ export function fastModeProtocol(
   baseUrl?: string,
 ): FastModeProtocol | undefined {
   const routed = routedClientType(modelId, clientType);
-  // Bedrock has no fast tier, and these Claude generations reject the `speed` parameter; both
-  // tests run against what the client was constructed with, as the client's own do.
+  // Bedrock has no fast tier, and these Claude generations reject the `speed` parameter (MMSP
+  // 0.5.2's NO_FAST_MODE); both tests run against what the client was constructed with, as the
+  // client's own do.
   if (
     routed === "anthropic-official" &&
     (baseUrl?.startsWith("bedrock://") ||
-      ["4-6", "sonnet-5-5", "fable-5-1"].some((generation) => modelId.includes(generation)))
+      ["4-6", "sonnet-5-5", "haiku-5-5", "fable-5-1"].some((generation) =>
+        modelId.includes(generation),
+      ))
   ) {
     return undefined;
   }

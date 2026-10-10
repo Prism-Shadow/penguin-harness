@@ -1,6 +1,8 @@
 /**
- * Custom-model protocol detection UI logic: the generic protocol client-type family
- * (selector visibility / value mapping), when saving must detect first — only when nothing,
+ * Custom-model protocol detection UI logic: the protocols the picker offers (the three
+ * detection probes, then Google GenAI and MMSP, each shown checked with its path and name once
+ * stored, older spellings as the protocol they name), selector visibility and value mapping,
+ * when saving must detect first — only when nothing,
  * not even the group, decides the protocol — what the failure popup explains, the guarantee
  * that no entry is persisted without a protocol while a blank one that follows its group
  * stays blank, and the protocol-path suffix for the new client types. A group decides only
@@ -40,35 +42,57 @@ function presetGroup(id: string): ProviderConnectionShape {
   return { baseUrl: table.base_url, clientType: table.client_type };
 }
 
-describe("PROTOCOL_CLIENT_TYPES", () => {
-  it("lists the three generic clients in the required detection order (responses first, chat completions last)", () => {
-    expect(PROTOCOL_CLIENT_TYPES).toEqual(["openai-responses", "ant-messages", "openai-chat"]);
+describe("the protocols the picker offers", () => {
+  // The three the server's detection probes come first, in its order; Google GenAI and MMSP
+  // follow, picked by hand only.
+  const OFFERED: Array<[string, string]> = [
+    ["openai-responses", "/responses"],
+    ["ant-messages", "/v1/messages"],
+    ["openai-chat", "/chat/completions"],
+    ["google-genai", "/v1beta/models"],
+    ["mmsp", "/stream"],
+  ];
+
+  it("offers the detectable three first, then Google GenAI and MMSP", () => {
+    expect([...PROTOCOL_CLIENT_TYPES]).toEqual(OFFERED.map(([t]) => t));
   });
+
+  it.each(OFFERED)(
+    "%s round-trips: stored, it is shown checked with the path its client appends and a name in both languages",
+    (clientType, path) => {
+      expect(isGenericProtocolClientType(clientType)).toBe(true);
+      expect(protocolSelectorValue(clientType)).toBe(clientType);
+      expect(protocolPathForModel("custom", clientType)).toBe(path);
+      expect(EN.models.protocolNames[clientType]).toBeTruthy();
+      expect(ZH.models.protocolNames[clientType]).toBeTruthy();
+    },
+  );
 });
 
 describe("isGenericProtocolClientType", () => {
-  it("accepts the protocol trio, the bare openai alias, and empty; rejects every other client type", () => {
-    expect(isGenericProtocolClientType("openai-responses")).toBe(true);
-    expect(isGenericProtocolClientType("ant-messages")).toBe(true);
-    expect(isGenericProtocolClientType("openai-chat")).toBe(true);
+  it("accepts the picker's protocols, their older spellings, and empty; rejects every other client type", () => {
     expect(isGenericProtocolClientType("openai")).toBe(true);
+    expect(isGenericProtocolClientType("gemini-generate-content")).toBe(true);
     expect(isGenericProtocolClientType("")).toBe(true);
     expect(isGenericProtocolClientType(" OpenAI-Responses ")).toBe(true);
-    // Official clients, compatible clients outside the trio, and a pre-0.5.0 vendor name.
+    expect(isGenericProtocolClientType(" MMSP ")).toBe(true);
+    // Official clients (the Gemini one under either name), compatible clients outside the
+    // picker, and a pre-0.5.0 vendor name.
     expect(isGenericProtocolClientType("deepseek-official")).toBe(false);
     expect(isGenericProtocolClientType("anthropic-official")).toBe(false);
-    expect(isGenericProtocolClientType("google-genai")).toBe(false);
+    expect(isGenericProtocolClientType("google-official")).toBe(false);
+    expect(isGenericProtocolClientType("gemini-official")).toBe(false);
     expect(isGenericProtocolClientType("openai-chat-vllm-adapter")).toBe(false);
     expect(isGenericProtocolClientType("minimax-m3")).toBe(false);
+    expect(isGenericProtocolClientType("constructor")).toBe(false);
   });
 });
 
 describe("protocolSelectorValue", () => {
-  it("maps openai / unknown to openai-chat for display without rewriting the stored value", () => {
-    expect(protocolSelectorValue("openai-responses")).toBe("openai-responses");
-    expect(protocolSelectorValue("ant-messages")).toBe("ant-messages");
-    expect(protocolSelectorValue("openai-chat")).toBe("openai-chat");
+  it("shows an older spelling as the protocol it names, and anything else as openai-chat, without rewriting the stored value", () => {
     expect(protocolSelectorValue("openai")).toBe("openai-chat");
+    expect(protocolSelectorValue(" Gemini-Generate-Content ")).toBe("google-genai");
+    expect(protocolSelectorValue("constructor")).toBe("openai-chat");
   });
 
   it("reports NOTHING selected for an unset protocol, so the control cannot imply a default", () => {
@@ -109,6 +133,8 @@ describe("clientTypeAfterProviderChange (protocol family kept on move to Custom)
     expect(clientTypeAfterProviderChange("custom", "ant-messages")).toBe("ant-messages");
     expect(clientTypeAfterProviderChange("custom", "openai-chat")).toBe("openai-chat");
     expect(clientTypeAfterProviderChange("custom", "openai")).toBe("openai");
+    expect(clientTypeAfterProviderChange("custom", "google-genai")).toBe("google-genai");
+    expect(clientTypeAfterProviderChange("custom", "mmsp")).toBe("mmsp");
   });
 
   it("still pins vendor-specific or empty types to openai-chat when moving to Custom, and never touches other groups", () => {

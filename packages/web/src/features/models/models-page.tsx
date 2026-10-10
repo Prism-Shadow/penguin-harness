@@ -2858,7 +2858,7 @@ function ModelDialog({
   };
 
   /**
-   * Protocol detection: POST /models/detect probes the base URL for the three generic
+   * Protocol detection: POST /models/detect probes the base URL for the three detectable
    * protocols (openai-responses → ant-messages → openai-chat, first hit wins) and applies
    * the result to the form's clientType. Resolves to the detected client type, or null
    * when nothing matched / the probe failed, so the save path can decide from the same run
@@ -3049,10 +3049,10 @@ function ModelDialog({
   const baseUrlRequired =
     (form.provider === PENGUIN_GO_PROVIDER_ID || (!preset && openAiLike)) &&
     !inherited.baseUrl?.trim();
-  // Custom-like groups (custom + user-defined) pick among MMSP's generic protocol
-  // clients: the base URL field's suffix becomes the protocol picker there, unless the
-  // entry is pinned to a client outside that trio — that keeps the read-only note below
-  // instead. Gateways stay pinned to their preset protocol (their base URL is fixed too).
+  // Custom-like groups (custom + user-defined) pick among the protocol clients the picker
+  // offers (PROTOCOL_CLIENT_TYPES): the base URL field's suffix becomes the protocol picker
+  // there, unless the entry is pinned to a client outside them — that keeps the read-only note
+  // below instead. Gateways stay pinned to their preset protocol (their base URL is fixed too).
   const customLikeGroup = form.provider === "custom" || providerInfo(form.provider) === undefined;
   const showProtocolSelector =
     customLikeGroup && isGenericProtocolClientType(form.clientType) && !preset;
@@ -3886,14 +3886,15 @@ function ModelDialog({
 
         {/* Identity on a saved model: model id (renamable) + display name and group. */}
         {!isNew && identityFields}
-        {/* An entry pinned to a protocol the dialog cannot edit — a client outside the generic
-            trio (a Penguin Go row the platform added, a vLLM-adapter row in a custom group), or
-            a pin from an older config: read-only display. Compared canonically so the
-            deprecated bare "openai" spelling (pre-0.4.2 configs) is not flagged either,
-            skipped when the protocol selector above already represents it (generic protocol
-            types in custom-like groups are editable there), and skipped when the value IS
-            what the model would follow anyway — that is this group's normal protocol, not a
-            leftover from an older config, and "kept as configured" would misdescribe it. */}
+        {/* An entry pinned to a protocol the dialog cannot edit — a pin outside a custom-like
+            group or a client outside the picker's (a Penguin Go row the platform added, a
+            vLLM-adapter row in a custom group), or a pin from an older config: read-only
+            display. Compared canonically so the deprecated bare "openai" spelling (pre-0.4.2
+            configs) is not flagged either, skipped when the protocol selector above already
+            represents it (the picker's protocols in custom-like groups are editable there), and
+            skipped when the value IS what the model would follow anyway — that is this group's
+            normal protocol, not a leftover from an older config, and "kept as configured" would
+            misdescribe it. */}
         {!isNew &&
           !preset &&
           !showProtocolSelector &&

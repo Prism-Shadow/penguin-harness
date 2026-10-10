@@ -1,12 +1,12 @@
 /**
  * Protocol-path suffix for the base URL field (pure mapping): which path the MMSP client
  * appends to a custom base URL, keyed off (provider, clientType, modelId). The expected paths
- * mirror the MMSP 0.5.0 clients: the Anthropic Messages clients post /v1/messages; OpenAI's,
+ * mirror the MMSP 0.5.2 clients: the Anthropic Messages clients post /v1/messages; OpenAI's,
  * DeepSeek's and MiniMax's official clients and the compatible Responses client use a
  * Responses API (/responses); OpenAI's embedding ids and the compatible embedding client post
  * /embeddings; Google's official client speaks the Interactions API (/v1beta/interactions) and
- * the generateContent client /v1beta/models/<id>:…; and every Chat Completions client posts
- * /chat/completions.
+ * the generateContent client /v1beta/models/<id>:…; an MMSP server's client posts /stream; and
+ * every Chat Completions client posts /chat/completions.
  */
 import { describe, expect, it } from "vitest";
 import { MODEL_CATALOG } from "@prismshadow/penguin-core/model-catalog";
@@ -43,6 +43,8 @@ describe("protocolPathForModel", () => {
   it("each official client pinned explicitly maps to its own path", () => {
     expect(protocolPathForModel("myproxy", "openai-official")).toBe("/responses");
     expect(protocolPathForModel("myproxy", "anthropic-official")).toBe("/v1/messages");
+    expect(protocolPathForModel("myproxy", "google-official")).toBe("/v1beta/interactions");
+    // Its name before MMSP 0.5.2, which a stored row may still carry, shows the same path.
     expect(protocolPathForModel("myproxy", "gemini-official")).toBe("/v1beta/interactions");
     expect(protocolPathForModel("myproxy", "deepseek-official")).toBe("/responses");
     expect(protocolPathForModel("myproxy", "minimax-official")).toBe("/responses");
@@ -139,6 +141,8 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("custom", "ant-messages")).toBe("/v1/messages");
     expect(protocolPathForModel("custom", "google-genai")).toBe("/v1beta/models");
     expect(protocolPathForModel("custom", "gemini-generate-content")).toBe("/v1beta/models");
+    expect(protocolPathForModel("custom", "mmsp")).toBe("/stream");
+    expect(protocolPathForModel("my-group", "mmsp", "gpt-5.6")).toBe("/stream");
     expect(protocolPathForModel("deepseek", "openai-responses")).toBe("/responses");
     expect(protocolPathForModel("myproxy", " Ant-Messages ")).toBe("/v1/messages");
     // Every built-in OpenRouter preset pins openai-responses, so the gateway's base URL is

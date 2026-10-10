@@ -2,10 +2,12 @@
  * Built-in model catalog unit tests: unique ids, valid provider references, positive
  * three-bucket pricing, lookups, and preset entry generation.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { AutoLLMClient } from "@prismshadow/mmsp";
 import { listEndpointModels } from "../src/llm/list-models.js";
 import {
   APP_URL,
+  MMSP_CLIENTS,
   MODEL_CATALOG,
   MODEL_PROVIDERS,
   canonicalClientType,
@@ -1602,8 +1604,9 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
     expect(routedClientType("deepseek-flash")).toBe("deepseek-official");
     expect(routedClientType("DeepSeek-V4-Pro")).toBe("deepseek-official"); // case-insensitive
     expect(routedClientType("claude-opus-4-8")).toBe("anthropic-official");
-    expect(routedClientType("gemini-3.8-flash")).toBe("gemini-official");
-    expect(routedClientType("gemini-embedding-001")).toBe("gemini-official");
+    // MMSP 0.5.2 names Google's official client after its vendor, as it names the others.
+    expect(routedClientType("gemini-3.8-flash")).toBe("google-official");
+    expect(routedClientType("gemini-embedding-001")).toBe("google-official");
     expect(routedClientType("gpt-6-astra")).toBe("openai-official");
     // OpenAI's official client hands its embedding ids to the Embeddings client, pinned or not.
     expect(routedClientType("text-embedding-3-large")).toBe("openai-embedding");
@@ -1616,6 +1619,9 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
     expect(routedClientType("deepseek-v4-pro", " OpenAI-Responses ")).toBe("openai-responses");
     expect(routedClientType("deepseek-v4-pro", "openai")).toBe("openai-chat");
     expect(routedClientType("deepseek-v4-pro", "")).toBe("deepseek-official");
+    // The two protocols the models page now offers to pick by hand route as pinned.
+    expect(routedClientType("served-model", "mmsp")).toBe("mmsp");
+    expect(routedClientType("gemini-3.8-flash", "google-genai")).toBe("google-genai");
     // A pin MMSP does not have is refused, never routed by the id instead.
     expect(routedClientType("deepseek-flash", "deepseek-v4")).toBeUndefined();
     expect(routedClientType("deepseek-flash", "constructor")).toBeUndefined();
@@ -1626,6 +1632,28 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
     // ...while an owner prefix that IS a family still routes: `deepseek-ai/…` reaches DeepSeek's
     // official client, which is why the vLLM / SiliconFlow / ModelScope rows pin their protocol.
     expect(routedClientType("deepseek-ai/DeepSeek-V4.1-Flash")).toBe("deepseek-official");
+  });
+
+  it("every client type the mirror names is one the installed MMSP builds, the gemini-official alias included", () => {
+    // The mirror may not route anything MMSP refuses: each row's client type constructs, and a
+    // pin the table lacks is one MMSP refuses as well. When an MMSP upgrade drops an alias, its
+    // row fails here and goes (see changelog/unreleased/2026-10-10-backward-compatibility.md).
+    for (const clientType of Object.keys(MMSP_CLIENTS)) {
+      expect(
+        () =>
+          new AutoLLMClient({
+            model: "probe-model",
+            clientType,
+            apiKey: "sk-probe",
+            baseUrl: "https://example.invalid/v1",
+          }),
+        clientType,
+      ).not.toThrow();
+    }
+    expect(routedClientType("probe-model", "gemini-3.8")).toBeUndefined();
+    expect(
+      () => new AutoLLMClient({ model: "probe-model", clientType: "gemini-3.8", apiKey: "sk" }),
+    ).toThrow(/Unknown client type/);
   });
 
   it("first-party model ids route to the official client's env var", () => {
@@ -1677,6 +1705,11 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
     // MMSP 0.5.1 keeps google-genai's 0.5.0 name as an alias.
     expect(resolveModelEnv("any-model", "gemini-generate-content")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("any-model", "openai-embedding")?.envKey).toBe("OPENAI_API_KEY");
+    // An MMSP server's client reads its own pair, whatever model the server's table serves.
+    expect(resolveModelEnv("any-model", "mmsp")).toEqual({
+      envKey: "MMSP_API_KEY",
+      envBaseUrlKey: "MMSP_BASE_URL",
+    });
     expect(resolveModelEnv("Qwen/Qwen3.8", "openai-chat-vllm-adapter")?.envKey).toBe(
       "OPENAI_API_KEY",
     );
@@ -1890,7 +1923,7 @@ describe("fastModeProtocol (which models may be offered MMSP's fast_mode, and on
     expect(fastModeProtocol("gpt-6-astra")).toBe("openai");
     // Google's Interactions API takes the priority tier too.
     expect(fastModeProtocol("gemini-3.5-flash")).toBe("openai");
-    expect(fastModeProtocol("gemini-3.8-flash", "gemini-official")).toBe("openai");
+    expect(fastModeProtocol("gemini-3.8-flash", "google-official")).toBe("openai");
   });
 
   it("Anthropic-protocol clients carry it as speed=fast", () => {
@@ -1914,6 +1947,9 @@ describe("fastModeProtocol (which models may be offered MMSP's fast_mode, and on
     expect(fastModeProtocol("deepseek-flash", "deepseek-official")).toBeUndefined();
     expect(fastModeProtocol("gemini-3.8-flash", "google-genai")).toBeUndefined();
     expect(fastModeProtocol("text-embedding-3-large", "openai-embedding")).toBeUndefined();
+    // An MMSP server forwards it to whatever client its table names for the model: nothing the
+    // harness could vouch for, so no toggle.
+    expect(fastModeProtocol("gpt-5.6", "mmsp")).toBeUndefined();
     // OpenAI's embedding ids route to its Embeddings API even without a pin.
     expect(fastModeProtocol("text-embedding-3-large")).toBeUndefined();
     // A future first-party generation inherits the verdict from its family, so a catalog row
@@ -1926,6 +1962,7 @@ describe("fastModeProtocol (which models may be offered MMSP's fast_mode, and on
     // The generations that reject the speed parameter are refused by name, whatever routes them.
     expect(fastModeProtocol("claude-sonnet-4-6")).toBeUndefined();
     expect(fastModeProtocol("claude-sonnet-5-5")).toBeUndefined();
+    expect(fastModeProtocol("claude-haiku-5-5")).toBeUndefined();
     expect(fastModeProtocol("claude-fable-5-1")).toBeUndefined();
     expect(fastModeProtocol("my-claude-sonnet-4-6-proxy", "anthropic-official")).toBeUndefined();
     // ...and conversely a served model id keeps fast mode under the same pin.
@@ -2410,6 +2447,35 @@ describe("modelEnvFallback / resolveModelCredential (a vendor key from the envir
     ).toBeUndefined();
     // An id nothing routes has no client and so no variable.
     expect(modelEnvFallback({ provider: "custom", modelId: "opaque" })).toBeUndefined();
+  });
+
+  it("an mmsp row reads MMSP_API_KEY only through MMSP_BASE_URL, and one naming a base URL is sent no key rather than refused", () => {
+    // MMSP's own rule: the mmsp client reads the MMSP_* pair only when handed no base URL, and
+    // calls a base URL handed without a key with no key at all, which an open MMSP server takes.
+    const env = { MMSP_API_KEY: "sk-mmsp-env", MMSP_BASE_URL: "http://127.0.0.1:25752/v1" };
+    const row = { provider: "custom", modelId: "qwen3.8", clientType: "mmsp" };
+    expect(modelEnvFallback(row)).toEqual({
+      envKey: "MMSP_API_KEY",
+      envBaseUrlKey: "MMSP_BASE_URL",
+      readByClient: true,
+    });
+    expect(resolveModelCredential(row, env)).toEqual({});
+    // Its own base URL, even the very one MMSP_BASE_URL names: no environment key goes with it,
+    // and nothing is refused either.
+    const named = { ...row, baseUrl: "http://127.0.0.1:25752/v1" };
+    expect(modelEnvFallback(named)).toBeUndefined();
+    expect(modelEnvPreviewKey(named)).toBeUndefined();
+    expect(endpointEnvApiKey("mmsp", named.baseUrl, env)).toBeUndefined();
+    expect(resolveModelCredential(named, env)).toEqual({ baseUrl: "http://127.0.0.1:25752/v1" });
+    expect(resolveModelCredential({ ...named, apiKey: "sk-row" }, env)).toEqual({
+      apiKey: "sk-row",
+      baseUrl: "http://127.0.0.1:25752/v1",
+    });
+    // The open-server exception is the mmsp client's alone: the same endpoint on an
+    // OpenAI-compatible client still needs a key.
+    expect(() => resolveModelCredential({ ...named, clientType: "openai-chat" }, env)).toThrow(
+      ModelCredentialError,
+    );
   });
 
   it("endpointEnvApiKey lends a bare endpoint the protocol's key on the same terms", () => {
@@ -2898,5 +2964,25 @@ describe("listEndpointModels credential gate (the add-group import)", () => {
         env: {},
       }),
     ).rejects.toThrow(ModelCredentialError);
+  });
+
+  it("lists an open MMSP server with no key, never lending it MMSP_API_KEY", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ object: "list", data: [{ id: "qwen3.8" }, { id: "gpt-5.5" }] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const models = await listEndpointModels({
+        clientType: "mmsp",
+        baseUrl: "http://127.0.0.1:25752/v1",
+        env: { MMSP_API_KEY: "sk-mmsp-env", MMSP_BASE_URL: "http://127.0.0.1:25752/v1" },
+      });
+      expect(models).toEqual(["qwen3.8", "gpt-5.5"]);
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe("http://127.0.0.1:25752/v1/models");
+      expect(new Headers(init?.headers).has("authorization")).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
