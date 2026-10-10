@@ -29,11 +29,17 @@ function wrappers(): [name: string, fn: AnyFn][] {
   return found;
 }
 
-/** Dummy arguments: ids everywhere; a wrapper reading a field off one gets `undefined`, which its path tolerates. */
-const ARGS = ["a", "b", "c", "d", "e", "f"];
+/**
+ * Dummy arguments: ids for the first three, plain objects for the rest — a wrapper reading a
+ * field off either gets `undefined`, and a membership test on a body takes the arm without the
+ * field; each one's path tolerates that.
+ */
+const ARGS: unknown[] = ["a", "b", "c", {}, {}, {}];
 
 describe("the mocked API", () => {
-  it("routes every endpoint the app's wrappers name", async () => {
+  // The walk is O(#wrappers), each against a fresh store, so it gets a timeout with room for
+  // the slower Windows runner — the 5 s default is not that.
+  it("routes every endpoint the app's wrappers name", { timeout: 30_000 }, async () => {
     const gaps: string[] = [];
     const crashes: string[] = [];
     for (const [name, fn] of wrappers()) {
