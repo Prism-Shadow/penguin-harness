@@ -886,16 +886,15 @@ export function librarySkill(
 /**
  * Category manifest, in display order. Categories group by audience, not by technology: a
  * hook-only plugin sits with the skills it serves the same audience as (goal mode and
- * continual learning are office productivity), and agent tuning is AI app development. The
- * last one, `sandbox`, is where the server modules that confine every Agent command sit — the
- * sandbox backends, whose index rows name it (`categories: ["sandbox"]`).
+ * continual learning are office productivity, and so is company mode), and agent tuning is AI
+ * app development. The last one, `sandbox`, is where the server modules that confine every
+ * Agent command sit — the sandbox backends, whose index rows name it (`categories: ["sandbox"]`).
  * Docs: /docs/skills § "Built-in library".
  */
 export const PLUGIN_CATEGORIES: PluginCategory[] = [
   { id: "office-productivity", title: "Office Productivity", titleZh: "办公效率" },
   { id: "software-development", title: "Software Development", titleZh: "软件开发" },
   { id: "ai-app-development", title: "AI App Development", titleZh: "AI 应用开发" },
-  { id: "agent-company", title: "Agent Company", titleZh: "Agent 公司" },
   { id: "sandbox", title: "Agent Sandbox", titleZh: "Agent 运行沙箱" },
 ];
 

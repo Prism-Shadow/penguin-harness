@@ -1,5 +1,5 @@
 /**
- * The Plugins page's pure decisions: its rows, how they are grouped and filtered, and the
+ * The Plugins page's pure decisions: its rows, how they are grouped and searched, and the
  * update-everything plan (features/plugins/plugin-groups.ts, plugins-page.tsx).
  *
  * - All machines: every module is listed, and a machine-only one says where it runs. This
@@ -12,7 +12,8 @@
  *   status (what wants a look first), by contents, or into one untitled section. The grouping
  *   and the folded sections are remembered per browser; nothing usable stored reads as
  *   category with nothing folded.
- * - The filters (category, contents, status) and the search box narrow the rows together.
+ * - The search box narrows the rows to those whose names, descriptions (in either language) or
+ *   keywords hold the query, whatever its case; a query nothing holds leaves none.
  * - The "update all" plan is empty when no Agent is behind, sends one request per Agent with
  *   every plugin it is behind on, and counts distinct plugins as the notice does.
  */
@@ -24,7 +25,6 @@ import type {
   PluginItem,
 } from "@prismshadow/penguin-server/api";
 import {
-  NO_FILTERS,
   foldKey,
   groupRows,
   initialFoldedGroups,
@@ -304,20 +304,15 @@ describe("grouping", () => {
   });
 });
 
-describe("filters", () => {
-  it("narrow the rows by category, contents and status together with the search box", () => {
-    const { rows, statusOf } = pageRows();
-    const keep = (filters: typeof NO_FILTERS, query = "") =>
-      rows.filter((row) => rowMatches(row, statusOf(row), filters, query)).map((r) => r.name);
-    expect(keep({ ...NO_FILTERS, category: "sandbox" })).toEqual(["sandbox-bwrap", "sandbox-wsl"]);
-    expect(keep({ ...NO_FILTERS, kind: "hooks" })).toEqual(["goal"]);
-    expect(keep({ ...NO_FILTERS, category: "sandbox", status: "available" })).toEqual([
-      "sandbox-wsl",
-    ]);
-    // The search reads names, descriptions in both languages and keywords.
-    expect(keep(NO_FILTERS, "wsl 后端")).toEqual(["sandbox-wsl"]);
-    expect(keep(NO_FILTERS, "LINUX")).toEqual(["sandbox-bwrap", "sandbox-wsl"]);
-    expect(keep({ ...NO_FILTERS, kind: "skills" }, "linux")).toEqual([]);
+describe("search", () => {
+  it("narrows the rows to the names, descriptions in either language and keywords that hold the query", () => {
+    const { rows } = pageRows();
+    const keep = (query: string) => rows.filter((row) => rowMatches(row, query)).map((r) => r.name);
+    expect(keep("")).toHaveLength(rows.length);
+    expect(keep("wsl 后端")).toEqual(["sandbox-wsl"]);
+    expect(keep("LINUX")).toEqual(["sandbox-bwrap", "sandbox-wsl"]);
+    expect(keep("mystery")).toEqual(["mystery"]);
+    expect(keep("no plugin says this")).toEqual([]);
   });
 });
 

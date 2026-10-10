@@ -8,10 +8,9 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins
 
 | Category | Plugins |
 | --- | --- |
-| Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
+| Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `agent-company` |
 | Software Development | `software-development`, `use-claude-code` |
 | AI App Development | `agent-development`, `model-development`, `skill-porting`, `agent-tuning` |
-| Agent Company | `agent-company` |
 
 The four `sandbox-*` packages are not library content but server modules: Agent Sandbox backends that confine every command an Agent runs (`sandbox-bwrap` on Linux, `sandbox-seatbelt` on macOS, `sandbox-wsl` on Windows, `sandbox-dsh` on all three, file writes only). Each carries a `plugin.json` (descriptions and the `sandbox` category, no skills or hooks) and an `icon.svg` for its card on the Plugins page, where an admin installs it on the server.
 

@@ -2354,18 +2354,12 @@ export const en: Strings = {
       kind: "Group by content",
       none: "No grouping",
     },
-    /** The three filter selects: each one's accessible name (what it filters) and its option that filters nothing; a chosen value reads as its own name. */
-    filterCategories: "Category",
-    filterKind: "Content",
-    filterState: "Status",
-    filterAllCategories: "All categories",
-    filterAnyKind: "Any content",
-    filterAllStatuses: "All statuses",
+    /** What a plugin carries: the section titles of the grouping by content. */
     kindLabel: { skills: "Skills", hooks: "Hooks", modules: "Server modules" },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent Sandbox",
     otherCategory: "Other",
-    /** A plugin's install status: the word beside the status glyph, the grouping's section titles, the filter's options. */
+    /** A plugin's install status: the word beside the status glyph, and the grouping's section titles. */
     status: {
       update: "Update available",
       installed: "Installed",

@@ -129,7 +129,6 @@ describe("skills api", () => {
       "office-productivity",
       "software-development",
       "ai-app-development",
-      "agent-company",
     ]);
     for (const group of body.groups) {
       expect(group.title.length).toBeGreaterThan(0);

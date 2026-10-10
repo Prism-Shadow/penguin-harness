@@ -1,5 +1,5 @@
 /**
- * The Plugins page's rows, and how they are grouped and filtered (pure decisions, unit tested).
+ * The Plugins page's rows, and how they are grouped and searched (pure decisions, unit tested).
  *
  * Every plugin is one row and one card, whatever it carries: a library plugin (Skills and/or a
  * hook package, installed per Agent), a server module (installed on the server, listed per
@@ -7,9 +7,9 @@
  * are one row.
  *
  * Groups default to the plugin's category; the page can group by status or by what a plugin
- * carries instead, or not group at all, and three filters (category, contents, status) plus the
- * search box narrow the rows. The grouping and which groups are folded are remembered per
- * browser (`penguin.pluginsGroupBy`, `penguin.pluginsGroupsFolded`); the filters are not.
+ * carries instead, or not group at all, and the search box narrows the rows. The grouping and
+ * which groups are folded are remembered per browser (`penguin.pluginsGroupBy`,
+ * `penguin.pluginsGroupsFolded`); the search is not.
  */
 import type {
   InstalledPluginsResponse,
@@ -44,7 +44,7 @@ export interface PluginRow {
   key: string;
   /** What the card and the dialog call it: the library name, or the unscoped package name. */
   name: string;
-  /** The category the row is grouped and filtered by: a library category id, `sandbox` or `other`. */
+  /** The category the row is grouped by: a library category id, `sandbox` or `other`. */
   category: string;
   library?: PluginItem;
   module?: ModulePart;
@@ -218,18 +218,9 @@ export function pluginCategories(
   ];
 }
 
-/** What a plugin carries: the payloads the "contents" filter and grouping name. */
+/** What a plugin carries: the payloads the grouping by content names. */
 export const PLUGIN_KINDS = ["skills", "hooks", "modules"] as const;
 export type PluginKind = (typeof PLUGIN_KINDS)[number];
-
-/** Everything a row carries. */
-export function rowKinds(row: PluginRow): PluginKind[] {
-  const kinds: PluginKind[] = [];
-  if ((row.library?.skills.length ?? 0) > 0) kinds.push("skills");
-  if ((row.library?.hooks.length ?? 0) > 0) kinds.push("hooks");
-  if (row.module !== undefined) kinds.push("modules");
-  return kinds;
-}
 
 /** The one kind a row is grouped under: a server module first, then Skills, then hooks. */
 export function primaryKind(row: PluginRow): PluginKind {
@@ -237,24 +228,8 @@ export function primaryKind(row: PluginRow): PluginKind {
   return (row.library?.skills.length ?? 0) > 0 ? "skills" : "hooks";
 }
 
-/** The filters' choices; "" is "all". */
-export interface PluginFilters {
-  category: string;
-  kind: PluginKind | "";
-  status: PluginStatus | "";
-}
-export const NO_FILTERS: PluginFilters = { category: "", kind: "", status: "" };
-
-/** Whether a row passes the filters and the search box (its names, descriptions and keywords). */
-export function rowMatches(
-  row: PluginRow,
-  status: PluginStatus,
-  filters: PluginFilters,
-  query: string,
-): boolean {
-  if (filters.category !== "" && row.category !== filters.category) return false;
-  if (filters.kind !== "" && !rowKinds(row).includes(filters.kind)) return false;
-  if (filters.status !== "" && status !== filters.status) return false;
+/** Whether a row passes the search box: its names, descriptions and keywords hold the query. */
+export function rowMatches(row: PluginRow, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (q === "") return true;
   const plugin = row.library;

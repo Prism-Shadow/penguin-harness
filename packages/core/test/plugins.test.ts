@@ -241,6 +241,7 @@ describe("groupPlugins / loadPluginGroups", () => {
     const names = (id: string) => groups.find((g) => g.id === id)?.plugins.map((p) => p.name);
     expect(names("office-productivity")).toEqual([
       "a2ui",
+      "agent-company",
       "browser-automation",
       "continual-learning",
       "data-analysis",
@@ -255,7 +256,6 @@ describe("groupPlugins / loadPluginGroups", () => {
       "model-development",
       "skill-porting",
     ]);
-    expect(names("agent-company")).toEqual(["agent-company"]);
   });
 });
 

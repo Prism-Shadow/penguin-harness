@@ -3,12 +3,11 @@
  * (Skills and/or a hook package, loaded by core from the @penguinharness/* packages and
  * installed on Agents) and the server modules a Project can ask for (the Agent Sandbox backends
  * and whatever the registry lists, installed on the server by an admin). Cards sit in
- * collapsible sections, by category unless the reader picks another grouping; a row of small
- * selects under the title (the Cost Center's header shape) changes the grouping — category,
- * status, contents, or none — and filters by category, contents and status, beside the title
- * row's search box. The grouping and which sections are folded are remembered per browser
- * (plugin-groups.ts); the filters are not. Clicking a card opens its detail dialog
- * (plugin-detail.tsx); the status rules are plugin-status.ts.
+ * collapsible sections, by category unless the reader picks another grouping — status,
+ * contents, or none — in the select beside the header's search box, which narrows the cards.
+ * The grouping and which sections are folded are remembered per browser (plugin-groups.ts); the
+ * search is not. Clicking a card opens its detail dialog (plugin-detail.tsx); the status rules
+ * are plugin-status.ts.
  *
  * - A library plugin is installed per Agent, by any member, through its card's "manage
  *   installs" dialog; the update nudge appears when the server lists some Agent's copy as
@@ -75,9 +74,7 @@ import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
 import { ImportPluginModal } from "./plugin-import-modal";
 import {
-  NO_FILTERS,
   PLUGIN_GROUP_BYS,
-  PLUGIN_KINDS,
   foldKey,
   groupRows,
   initialFoldedGroups,
@@ -85,17 +82,14 @@ import {
   moduleParts,
   pluginCategories,
   pluginRows,
-  rowKinds,
   rowMatches,
   storeFoldedGroups,
   storePluginsGroupBy,
-  type PluginFilters,
   type PluginGroupBy,
   type PluginRow,
   type PluginView,
 } from "./plugin-groups";
 import {
-  PLUGIN_STATUSES,
   libraryUsage,
   pluginComplete,
   pluginStatus,
@@ -190,7 +184,6 @@ export function PluginsPage() {
   const [reloadKey, setReloadKey] = useState(0);
   /** Free text over names, descriptions and keywords. */
   const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState<PluginFilters>(NO_FILTERS);
   const [groupBy, setGroupBy] = useState<PluginGroupBy>(() => initialPluginsGroupBy());
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => initialFoldedGroups());
 
@@ -611,9 +604,8 @@ export function PluginsPage() {
     }
   }
   const statusOf = (row: PluginRow): PluginStatus => pluginStatus(row, usages.get(row.key) ?? null);
-  const filtering =
-    query.trim() !== "" || filters.category !== "" || filters.kind !== "" || filters.status !== "";
-  const visible = rows.filter((row) => rowMatches(row, statusOf(row), filters, query));
+  const searching = query.trim() !== "";
+  const visible = rows.filter((row) => rowMatches(row, query));
   const sections = groupRows(visible, statusOf, groupBy, categories);
   const categoryTitle = (id: string) => categories.find((c) => c.id === id)?.title ?? id;
 
@@ -647,8 +639,8 @@ export function PluginsPage() {
     />
   );
 
-  // The scrollbar gutter stays reserved: a filter that shortens the page below the viewport
-  // would otherwise take the scrollbar with it and shift everything sideways at the click.
+  // The scrollbar gutter stays reserved: a search that shortens the page below the viewport
+  // would otherwise take the scrollbar with it and shift everything sideways as it is typed.
   return (
     <PageFrame className="[scrollbar-gutter:stable]">
       {/* The options loaded plugins declare live on the Settings dialog's Plugins page, an
@@ -661,6 +653,8 @@ export function PluginsPage() {
           <PluginsHeaderActions
             query={query}
             onQuery={setQuery}
+            groupBy={groupBy}
+            onGroupBy={chooseGroupBy}
             isAdmin={isAdmin}
             machinePicker={
               otherMachines.length > 0 ? (
@@ -742,43 +736,32 @@ export function PluginsPage() {
           ))}
         </div>
       ) : (
-        <>
-          <PluginControls
-            groupBy={groupBy}
-            onGroupBy={chooseGroupBy}
-            filters={filters}
-            onFilters={setFilters}
-            rows={rows}
-            statusOf={statusOf}
-            categories={categories}
-          />
-          <div className="space-y-3">
-            {groupBy === "none"
-              ? sections.map((section) => (
-                  <CardGrid key={section.id}>{section.rows.map(card)}</CardGrid>
-                ))
-              : sections.map((section) => {
-                  const key = foldKey(groupBy, section.id);
-                  // A match folded away would read as a missing one, so a search or a filter
-                  // opens every section it leaves; the remembered folds come back after.
-                  const open = filtering || !folded.has(key);
-                  return (
-                    <CollapsibleSection
-                      key={key}
-                      title={section.title}
-                      meta={S.plugins.pluginCount(section.rows.length)}
-                      open={open}
-                      onOpenChange={() => toggleFold(key)}
-                    >
-                      <CardGrid>{section.rows.map(card)}</CardGrid>
-                    </CollapsibleSection>
-                  );
-                })}
-            {sections.length === 0 && (
-              <p className="px-1 text-sm text-gray-400 dark:text-gray-500">{S.plugins.noMatch}</p>
-            )}
-          </div>
-        </>
+        <div className="space-y-3">
+          {groupBy === "none"
+            ? sections.map((section) => (
+                <CardGrid key={section.id}>{section.rows.map(card)}</CardGrid>
+              ))
+            : sections.map((section) => {
+                const key = foldKey(groupBy, section.id);
+                // A match folded away would read as a missing one, so a search opens every
+                // section it leaves; the remembered folds come back after.
+                const open = searching || !folded.has(key);
+                return (
+                  <CollapsibleSection
+                    key={key}
+                    title={section.title}
+                    meta={S.plugins.pluginCount(section.rows.length)}
+                    open={open}
+                    onOpenChange={() => toggleFold(key)}
+                  >
+                    <CardGrid>{section.rows.map(card)}</CardGrid>
+                  </CollapsibleSection>
+                );
+              })}
+          {sections.length === 0 && (
+            <p className="px-1 text-sm text-gray-400 dark:text-gray-500">{S.plugins.noMatch}</p>
+          )}
+        </div>
       )}
 
       {/* A server module change: what it does is said before it runs, and what it costs in
@@ -858,112 +841,22 @@ function CardGrid({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The row of small selects under the title — the Cost Center's header shape: the grouping,
- * then the three filters. Each filter offers only the values some plugin on the page has. Every
- * option says what it does on its own — "Group by status", "All categories" — and a chosen value
- * reads as its own name, while each select's accessible name says what it groups or filters.
- * Each is wide enough for its longest English option; on a phone they pair up, two to a row.
- */
-export function PluginControls({
-  groupBy,
-  onGroupBy,
-  filters,
-  onFilters,
-  rows,
-  statusOf,
-  categories,
-}: {
-  groupBy: PluginGroupBy;
-  onGroupBy: (by: PluginGroupBy) => void;
-  filters: PluginFilters;
-  onFilters: (filters: PluginFilters) => void;
-  rows: readonly PluginRow[];
-  statusOf: (row: PluginRow) => PluginStatus;
-  categories: readonly { id: string; title: string }[];
-}) {
-  const present = {
-    categories: categories.filter((c) => rows.some((row) => row.category === c.id)),
-    kinds: PLUGIN_KINDS.filter((k) => rows.some((row) => rowKinds(row).includes(k))),
-    statuses: PLUGIN_STATUSES.filter((s) => rows.some((row) => statusOf(row) === s)),
-  };
-  return (
-    <div className="mb-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-      <div className="min-w-0 sm:w-44">
-        <Select
-          size="sm"
-          aria-label={S.plugins.groupByLabel}
-          value={groupBy}
-          onChange={(e) => onGroupBy(e.target.value as PluginGroupBy)}
-        >
-          {PLUGIN_GROUP_BYS.map((by) => (
-            <option key={by} value={by}>
-              {S.plugins.groupBy[by]}
-            </option>
-          ))}
-        </Select>
-      </div>
-      <div className="min-w-0 sm:w-48">
-        <Select
-          size="sm"
-          aria-label={S.plugins.filterCategories}
-          value={filters.category}
-          onChange={(e) => onFilters({ ...filters, category: e.target.value })}
-        >
-          <option value="">{S.plugins.filterAllCategories}</option>
-          {present.categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.title}
-            </option>
-          ))}
-        </Select>
-      </div>
-      <div className="min-w-0 sm:w-40">
-        <Select
-          size="sm"
-          aria-label={S.plugins.filterKind}
-          value={filters.kind}
-          onChange={(e) => onFilters({ ...filters, kind: e.target.value as PluginFilters["kind"] })}
-        >
-          <option value="">{S.plugins.filterAnyKind}</option>
-          {present.kinds.map((k) => (
-            <option key={k} value={k}>
-              {S.plugins.kindLabel[k]}
-            </option>
-          ))}
-        </Select>
-      </div>
-      <div className="min-w-0 sm:w-44">
-        <Select
-          size="sm"
-          aria-label={S.plugins.filterState}
-          value={filters.status}
-          onChange={(e) =>
-            onFilters({ ...filters, status: e.target.value as PluginFilters["status"] })
-          }
-        >
-          <option value="">{S.plugins.filterAllStatuses}</option>
-          {present.statuses.map((s) => (
-            <option key={s} value={s}>
-              {S.plugins.status[s]}
-            </option>
-          ))}
-        </Select>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The page header's actions, the Models page's shape: search for everyone (a member filters the
- * list too), then, for an admin, the machine picker (which machine's plugins the rows show, and
- * which table an install or a removal edits: the shared one, or that machine's own), then the
- * pair the Agents page header has, in its look: Import plugin, the primary button, and Settings,
- * the secondary one, which opens the Settings dialog's Plugins page — the small rung, each glyph
- * before words that always show.
+ * The page header's actions, in the Agents page header's look: every control on the small rung,
+ * so the row is one height, at the header's gap. For everyone (a member narrows and regroups the
+ * list too): the search box, and beside it the grouping select, whose options each say what they
+ * do ("Group by status") while its accessible name says what it groups; it is wide enough for its
+ * longest English option. Then, for an admin, the machine picker (which machine's plugins the rows
+ * show, and which table an install or a removal edits: the shared one, or that machine's own), then
+ * the pair the Agents page header has: Import plugin, the primary button, and Settings, the
+ * secondary one, which opens the Settings dialog's Plugins page — each glyph before words that
+ * always show. On a phone the search box and the select share the first line, the box taking what
+ * the select leaves, and the admin's buttons wrap below them.
  */
 export function PluginsHeaderActions({
   query,
   onQuery,
+  groupBy,
+  onGroupBy,
   isAdmin,
   machinePicker,
   onOpenSettings,
@@ -971,6 +864,8 @@ export function PluginsHeaderActions({
 }: {
   query: string;
   onQuery: (query: string) => void;
+  groupBy: PluginGroupBy;
+  onGroupBy: (by: PluginGroupBy) => void;
   isAdmin: boolean;
   /** The machine picker, when there is another machine to pick; null otherwise. */
   machinePicker: React.ReactNode;
@@ -980,14 +875,30 @@ export function PluginsHeaderActions({
 }) {
   return (
     <>
-      <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-        <SearchInput
-          size="sm"
-          value={query}
-          placeholder={S.plugins.searchPlaceholder}
-          aria-label={S.plugins.searchPlaceholder}
-          onChange={onQuery}
-        />
+      <div className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto">
+        <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+          <SearchInput
+            size="sm"
+            value={query}
+            placeholder={S.plugins.searchPlaceholder}
+            aria-label={S.plugins.searchPlaceholder}
+            onChange={onQuery}
+          />
+        </div>
+        <div className="w-40 shrink-0">
+          <Select
+            size="sm"
+            aria-label={S.plugins.groupByLabel}
+            value={groupBy}
+            onChange={(e) => onGroupBy(e.target.value as PluginGroupBy)}
+          >
+            {PLUGIN_GROUP_BYS.map((by) => (
+              <option key={by} value={by}>
+                {S.plugins.groupBy[by]}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
       {isAdmin && (
         <>

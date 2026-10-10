@@ -16,9 +16,9 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 ## 浏览插件
 
 1. 在侧边栏选择**插件市场**。
-2. 浏览卡片。每个插件都有一张卡片，含 Skill 与钩子的插件和[服务端插件](#服务端插件)同样如此，并按分类分组：办公效率、软件开发、AI 应用开发、Agent 公司、存放沙箱后端的 **Agent 运行沙箱**，以及其他。点击分类标题可以折叠或展开该分组，页面会记住哪些分组折叠了。
-3. 要换一种分组方式，使用标题下方的第一个下拉框：**按类别分组**（默认）、**按状态分组**、**按内容分组**或**不分组**。页面会记住你的选择。
-4. 要缩小范围，可以在搜索框中输入，或在分组下拉框旁的三个下拉框中按类别、内容或状态选一个值；不筛选时它们分别显示**所有类别**、**任意内容**和**所有状态**。有搜索词或筛选条件时，所有分组都会展开。
+2. 浏览卡片。每个插件都有一张卡片，含 Skill 与钩子的插件和[服务端插件](#服务端插件)同样如此，并按分类分组：办公效率、软件开发、AI 应用开发、存放沙箱后端的 **Agent 运行沙箱**，以及其他。点击分类标题可以折叠或展开该分组，页面会记住哪些分组折叠了。
+3. 要换一种分组方式，使用搜索框旁的下拉框：**按类别分组**（默认）、**按状态分组**、**按内容分组**或**不分组**。页面会记住你的选择。
+4. 要缩小范围，在搜索框中输入。有搜索词时，所有分组都会展开。
 5. 点击卡片打开详情。
 
 每张卡片显示插件的图标、名称和简短描述，一行形如 `v<版本> · <状态> · N 个 Agent 在用` 的信息，以及**内置**等标签（管理员安装的插件标为**服务端安装**）；按其他方式分组时，还会标出分类。版本就是插件的 npm 版本。Agent 数量只对含 Skill 或钩子的插件显示，统计的是当前 Project 里完整装有这个插件、或已装副本被更新检查列为落后的 Agent。状态是一个图标加一个词，指向它可以看到它对这个插件意味着什么：
@@ -233,13 +233,13 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装） |
 | | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
+| | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
 | AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含四个 Skill：`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent |
 | | `agent-tuning` | 用四个 Skill 构成调优闭环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent） |
-| Agent 公司 | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
 | Agent 运行沙箱 | `sandbox-bwrap`、`sandbox-seatbelt`、`sandbox-wsl`、`sandbox-dsh` | 服务端插件，不属于插件库内容：封禁 Agent 执行的每条命令的后端，由管理员安装到服务端。见[服务端插件](#服务端插件)和[设置](/settings#沙盒) |
 
 ## 工作原理
@@ -265,7 +265,7 @@ plugins/<plugin>/
 | --- | --- |
 | `description` / `description_zh` | 一行描述（英文必填） |
 | `short_description` / `short_description_zh` | 卡片上显示的简短文案（可选；不填则使用完整描述） |
-| `category` | `office-productivity`、`software-development`、`ai-app-development`、`agent-company` 之一，Agent 运行沙箱后端用 `sandbox`；缺失或未知的分类归入「其他」 |
+| `category` | `office-productivity`、`software-development`、`ai-app-development` 之一，Agent 运行沙箱后端用 `sandbox`；缺失或未知的分类归入「其他」 |
 | `preinstall` | 可选；设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
 | `quick_start` | 插件页「快速开始」预填进新对话草稿的演示：`{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
 | `hooks.version` | 钩子包的日期版本 `YYYY.MM.DD.N`；插件带 `hooks/` 时必填，安装时写进 `hooks.json` |

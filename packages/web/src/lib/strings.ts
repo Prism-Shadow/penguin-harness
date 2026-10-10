@@ -2441,18 +2441,12 @@ export const zh = {
       kind: "按内容分组",
       none: "不分组",
     },
-    /** The three filter selects: each one's accessible name (what it filters) and its option that filters nothing; a chosen value reads as its own name. */
-    filterCategories: "类别",
-    filterKind: "内容",
-    filterState: "状态",
-    filterAllCategories: "所有类别",
-    filterAnyKind: "任意内容",
-    filterAllStatuses: "所有状态",
+    /** What a plugin carries: the section titles of the grouping by content. */
     kindLabel: { skills: "技能", hooks: "钩子", modules: "服务端模块" },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent 运行沙箱",
     otherCategory: "其他",
-    /** A plugin's install status: the word beside the status glyph, the grouping's section titles, the filter's options. */
+    /** A plugin's install status: the word beside the status glyph, and the grouping's section titles. */
     status: {
       update: "可更新",
       installed: "已安装",
