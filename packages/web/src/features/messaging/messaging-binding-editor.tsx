@@ -774,23 +774,34 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             "the reply never went out" sends them to the bot's permissions in the chat. Nothing
             clears it on a later success, so the time goes in the sentence like the connection
             error's: a revoked send right restored a minute later otherwise reads for days as a
-            live fault, and a title= is hover-only and unreachable on touch. */}
-        {facts.status.lastDeliveryError !== undefined && (
-          <p
-            data-tooltip={facts.status.lastDeliveryError.detail}
-            data-tooltip-content="text"
-            className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
-          >
-            {facts.status.lastDeliveryError.stage === "inbound"
-              ? S.messaging.deliveryFailedInbound(
-                  formatDateTime(facts.status.lastDeliveryError.at),
-                  facts.status.lastDeliveryError.detail,
-                )
-              : S.messaging.deliveryFailedSend(
-                  formatDateTime(facts.status.lastDeliveryError.at),
-                  facts.status.lastDeliveryError.detail,
-                )}
+            live fault, and a title= is hover-only and unreachable on touch.
+
+            WeChat replies the platform would not take yet are held for the user's next WeChat
+            message rather than failed, and while any are held this line says so instead: an
+            older failure beside it would read as the reason for the silence, when the remedy
+            is the held line's (message the bot), not the failure's. */}
+        {facts.status.heldReplySince !== undefined ? (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {S.messaging.repliesHeld(formatDateTime(facts.status.heldReplySince))}
           </p>
+        ) : (
+          facts.status.lastDeliveryError !== undefined && (
+            <p
+              data-tooltip={facts.status.lastDeliveryError.detail}
+              data-tooltip-content="text"
+              className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
+            >
+              {facts.status.lastDeliveryError.stage === "inbound"
+                ? S.messaging.deliveryFailedInbound(
+                    formatDateTime(facts.status.lastDeliveryError.at),
+                    facts.status.lastDeliveryError.detail,
+                  )
+                : S.messaging.deliveryFailedSend(
+                    formatDateTime(facts.status.lastDeliveryError.at),
+                    facts.status.lastDeliveryError.detail,
+                  )}
+            </p>
+          )
         )}
       </div>
       {/* Entry-level probes — the MCP dialog idiom: standalone buttons, results as toasts. */}
@@ -1136,6 +1147,7 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
           {channel === "telegram" && <li>{S.messaging.troubleGroupPrivacy}</li>}
           {channel === "qq" && <li>{S.messaging.troubleQQPassive}</li>}
           {channel === "wechat" && <li>{S.messaging.troubleWeChatDirect}</li>}
+          {channel === "wechat" && <li>{S.messaging.troubleWeChatReplyWindow}</li>}
           {channel === "telegram" && <li>{S.messaging.troubleNoGroupInbound}</li>}
         </ul>
       </HelpFold>

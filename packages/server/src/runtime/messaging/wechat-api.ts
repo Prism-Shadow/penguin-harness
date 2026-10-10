@@ -35,11 +35,14 @@
  *
  * ## `context_token`
  *
- * Every inbound message carries one, and it is echoed on every outbound send to the same
- * user. It is a routing hint rather than an authorization anchor — the platform accepts a
- * send without one, which is what a first send after a restart does — so it is threaded
- * through where it is known and omitted where it is not, and never persisted: it is derived
- * from traffic, and traffic is what re-derives it.
+ * Every inbound message carries one, and every outbound send must echo the latest one for that
+ * user. It is REQUIRED, not a routing hint: the platform refuses a send without one, a send
+ * whose token has expired (some time after the user's last message — unpublished, observed
+ * from minutes to about a day), and a send past roughly ten on one token, all with the same
+ * `ret: -2` "prepare failed" (WECHAT_SEND_REFUSED_CODE), which is what the issues filed against
+ * Tencent's own plugin (the repository named above) report. This file only carries the token
+ * where the caller supplies one; keeping it, counting what it funds and holding what it cannot
+ * fund is the connector's business (see wechat-connector.ts).
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
@@ -188,7 +191,7 @@ export interface WeChatInboundEvent {
   messageId: string;
   /** The message's text, or `""` when it carries none. */
   text: string;
-  /** Echoed on sends to this user while it is known (see the module doc). */
+  /** The token every send to this user must echo until a newer one arrives (see the module doc). */
   contextToken?: string;
   images: WeChatMediaRef[];
   files: WeChatInboundFile[];
@@ -281,6 +284,16 @@ export interface WeChatTransport {
 export const WECHAT_STALE_TOKEN_CODE = -14;
 
 /**
+ * The code a SEND is refused with — "prepare failed" — for every reason the platform has to
+ * refuse a message it authenticated: no context token, an expired one, one that has already
+ * funded its ~10 sends, and a body the platform will not take (an oversize one among them). The
+ * envelope never says which, so the connector reads it from what it knows: held replies refused
+ * on the very first send under a fresh token are refused for their content, and any other
+ * refusal is the token's (see wechat-connector.ts).
+ */
+export const WECHAT_SEND_REFUSED_CODE = -2;
+
+/**
  * A call the platform answered with a failure of its own, as opposed to one that never
  * arrived. `ret` is the protocol's numeric code where it returned one.
  *
@@ -309,16 +322,29 @@ export class WeChatApiError extends MessagingChannelError {
    * it for; nothing else here distinguishes it from a network fault.
    */
   readonly timedOut: boolean;
+  /**
+   * The request never completed, for a reason other than a deadline or a cancellation: the
+   * connection was refused or reset, the host did not resolve. The long poll retries one of
+   * these at once instead of opening an outage for it (see the connector's poll loop) — a
+   * single dropped request is the commonest failure there is, and the next one usually lands.
+   */
+  readonly network: boolean;
 
   constructor(
     readonly ret: number | undefined,
     message: string,
-    flags: { authenticated?: boolean; timedOut?: boolean; recovers?: boolean } = {},
+    flags: {
+      authenticated?: boolean;
+      timedOut?: boolean;
+      network?: boolean;
+      recovers?: boolean;
+    } = {},
   ) {
     super(message, flags.recovers ?? false);
     this.name = "WeChatApiError";
     this.authenticated = flags.authenticated ?? false;
     this.timedOut = flags.timedOut ?? false;
+    this.network = flags.network ?? false;
   }
 }
 
@@ -583,6 +609,7 @@ export function createWeChatTransport(): WeChatTransport {
             `${opts.label} failed: ${wechatFetchErrorText(err)}`,
             {
               timedOut: isAbortLike(err),
+              network: !isAbortLike(err),
               recovers: true,
             },
           );

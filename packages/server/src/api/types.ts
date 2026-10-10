@@ -2475,6 +2475,20 @@ export interface MessagingRuntimeStatus {
    * behind — for the life of the connection, like the two above it.
    */
   lastConnectionError?: { at: string; detail: string };
+  /**
+   * Since when (ISO 8601) the bot has been HOLDING replies it could not deliver yet, to send
+   * them with the chat's next inbound message; absent while nothing is held. WeChat only: the
+   * platform accepts a bot's messages only for a while after the user's last one, and only
+   * about ten per message, so a long run or a quiet user leaves replies waiting rather than
+   * lost.
+   *
+   * Not a failure, and deliberately not `lastDeliveryError`: nothing is broken and nobody has
+   * to act beyond what the panel says — message the bot in WeChat and the held replies arrive
+   * first. Cleared the moment they have been delivered. Unlike the fields above it is not
+   * scoped to one connection: held replies are stored, so a backlog from before a restart is
+   * reported again as soon as the connection opens.
+   */
+  heldReplySince?: string;
 }
 
 /**

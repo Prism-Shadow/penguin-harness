@@ -77,6 +77,7 @@ import { UsageRepo } from "./db/repos/usage.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { TraceIndexRepo } from "./db/repos/trace-index.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
+import { MessagingConversationsRepo } from "./db/repos/messaging-conversations.js";
 import { OrgCacheRepo } from "./db/repos/organizations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { SessionSources } from "./runtime/session-sources.js";
@@ -414,6 +415,7 @@ export class WorkspaceModule {}
     WeChatScanTransportProvider,
     DefaultMessagingTuning,
     MessagingBindingsRepo,
+    MessagingConversationsRepo,
     MessagingModule,
   ],
   exports: [Messaging, QQScan, MessagingBindings],

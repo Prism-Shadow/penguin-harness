@@ -42,7 +42,7 @@ The settings run from top to bottom in this order:
 | --- | --- |
 | Channel tabs | **Feishu**, **Telegram**, **QQ** and **WeChat**, along the top of the dialog. Each channel keeps its own saved settings for this conversation. |
 | **Enable connection** | Turns the connection on or off. Turning it on binds the bot to this conversation; turning it off releases the bot. Saved credentials stay either way. |
-| **Connection status** | **Not connected**, **Connecting**, **Connected** or **Connection error**, plus when the last message arrived and the last connection or delivery problem. The status refreshes on its own. |
+| **Connection status** | **Not connected**, **Connecting**, **Connected** or **Connection error**, plus when the last message arrived and the last connection or delivery problem. On WeChat it also says when replies are waiting to be sent. The status refreshes on its own. |
 | **Test connection** | Checks that the saved or typed credentials sign in, and reports the response time. |
 | **Send test message** | Sends a short test message to the chat. It works once the bot is connected and has received at least one message. |
 | Channel fields | The credentials for the selected channel. See the section for your channel: [Feishu](#connect-feishu), [Telegram](#connect-telegram), [QQ](#connect-qq) or [WeChat](#connect-wechat). |
@@ -160,6 +160,16 @@ WeChat differs from the other channels:
 - Text, images and files travel in both directions.
 - A voice message arrives as WeChat's own transcription. A recording WeChat could not transcribe cannot be read. A video arrives as a file.
 
+### How replies reach WeChat
+
+WeChat takes the bot's messages only for a while after your last message to it, and only about 10 for each message you send. The bot works within these limits:
+
+- For each message you send, the first 9 replies go out as they are written. The rest are combined into the 10th.
+- A text reply that WeChat will not take yet is held, not dropped. This happens once the time window has passed or the 10 messages are used up, for example late in a long run, or when you start a turn in the Web App long after your last WeChat message. The next time you message the bot in WeChat, the held replies are sent first, and then your message is answered.
+- While replies are held, **Connection status** shows a line starting "Replies waiting since" with the time, in place of a delivery failure. The line goes away once they are sent.
+- Images and files are not held. One that WeChat will not take is reported as a delivery failure.
+- **Send test message** also needs a recent message from you. If WeChat will not take it, PenguinHarness asks you to message the bot in WeChat first.
+
 ## After you connect
 
 A connected conversation shows a paper-plane icon on its row in the sidebar. Point at the icon to see which channel is enabled, for example "Telegram connection enabled".
@@ -243,5 +253,7 @@ Credentials are stored on the server and never sent back to the browser in full.
 **QQ: replies stop arriving.** The reply window has closed. Send the bot another message in QQ.
 
 **WeChat: the bot does not answer in a group.** The WeChat channel receives direct chats only. Message the bot directly.
+
+**WeChat: replies stop arriving, or arrive combined.** WeChat takes about 10 messages from the bot for each message you send, and only for a while after it. Send the bot a message in WeChat; any replies it was holding are sent first. See [How replies reach WeChat](#how-replies-reach-wechat).
 
 **WeChat: the first message gets no reply.** A message sent in the first seconds after the status turns **Connected** is dropped. Wait about 15 seconds, then send the message again.
