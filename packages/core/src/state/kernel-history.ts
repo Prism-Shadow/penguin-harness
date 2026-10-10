@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-10-09";
+export const KERNEL_VERSION = "2026-09-11";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -199,7 +199,7 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   an image-aware description and a 60000 timeout, and `input_command`'s timeout aligned
  *   with `exec_command` at 120000 (its empty-poll default became 110000): the tools tab
  *   moved.
- * - `2026-09-11` — the default system prompt gained its guardrails against loops
+ * - `2026-09-11` (current) — the default system prompt gained its guardrails against loops
  *   and unverified deliverables ("cannot resolve" means the same error after three different
  *   fixes, ambiguity is asked about only after the files were checked, names are never
  *   guessed, independent tool calls go out together, commands run non-interactively,
@@ -210,13 +210,11 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   system — links never in code formatting, a final answer that stands on its own, a
  *   one-sentence refusal), one specific question with options, and doing the work rather than
  *   pasting it. The prompt tab moved.
- * - `2026-10-09` (current) — `rename_session` joined the set: a model can rename a Session's
- *   title (its own by default, another by id), so the tools tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "9b2b54a241c7b8ac92faf7177d6f42c9c87b54f2e6d89411b37c53e5061ca515",
   runtime: "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346",
-  tools: "782ace51a124042310474126039466a017a55f1f3e92dd6aa9df54c59c5483c0",
+  tools: "a5e067fe58899be651c3c0541f587b2d5999030dc3008a39737a8fe21f5f7a23",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "53d190390829cc0132bb12e468a6891f2e0576ec0c4022a9b4a5d9233666900d",
   vault: "19bd36a6d4ab442b66583c423450602b817990a9a79bafa21c9b6137fb6b47d8",
@@ -252,7 +250,6 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
     "074248073c5fe89537ff257cc5d5662159288fc79ede7703eded6b440b4e38e9", // before background execution and the kill tools
     "8bbd336ff1f3fc283c4e11e54d43dd2bfe4ba2458577bf9eb3b6e3d7be4f3cde", // before the kill tools folded into the input tools
     "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d", // before the image tools folded into read_file
-    "a5e067fe58899be651c3c0541f587b2d5999030dc3008a39737a8fe21f5f7a23", // before rename_session
   ],
   // The memory prompt's wording before #397 named when a fact is worth saving.
   memory: ["c28acdda755552967cd0c99ba4ced407eddfa843b3dce228a965da4674676dc7"],

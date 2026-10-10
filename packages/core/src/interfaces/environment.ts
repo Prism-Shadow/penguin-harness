@@ -207,24 +207,6 @@ export interface SubagentRunner {
 }
 
 /**
- * Outcome of one SessionControl rename.
- */
-export type SessionRenameResult =
-  { ok: true; sessionId: string; title: string } | { ok: false; code: string; message?: string };
-
-/**
- * Harness-control seam for rename_session: renaming a Session's title on the host that
- * records Sessions. Bound per Session by the Agent (see {@link CreateAgentOptions.sessionControl}),
- * so an omitted `sessionId` means "the Session this tool runs in". A refusal is an outcome,
- * not a throw: the tool reports it back to the model, which may then try another id. Absent =
- * the tool is unavailable (SDK/CLI standalone use — no host records Sessions).
- * Docs: /docs/tools § "Sessions".
- */
-export interface SessionControl {
-  rename(input: { title: string; sessionId?: string }): Promise<SessionRenameResult>;
-}
-
-/**
  * Proxy-reading service for read_file's image branch: injected when the session model doesn't
  * support images (vision=false) — images are handed to the configured vision model for
  * description and the tool returns text, avoiding a 400 from feeding images back into a
@@ -245,8 +227,6 @@ export interface VisionDescriberService {
  */
 export interface EnvironmentServices {
   subagentRunner?: SubagentRunner;
-  /** Session-title seam for rename_session; bound to the running Session by the Agent. Absent = the tool reports itself unavailable. */
-  sessionControl?: SessionControl;
   /** Injected when (and only when) the running context's model doesn't support images: read_file then describes an image through it instead of returning image content. Follows the model across an in-session switch (`Environment.reconfigure` re-injects or removes it as each context opens). */
   visionDescriber?: VisionDescriberService;
   /** Registry of long-running command sessions (shared by `exec_command` / `input_command`); constructed and injected internally by Environment. */

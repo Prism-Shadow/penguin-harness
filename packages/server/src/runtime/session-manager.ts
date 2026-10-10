@@ -57,7 +57,6 @@ import type {
   AgentAssembly,
   OmniMessage,
   ProxyEnvPolicy,
-  SessionControl,
   SpawnConfiner,
   SessionMetaPayload,
   SessionTitleResult,
@@ -106,7 +105,6 @@ import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
 import type { ProjectConfigStore, ProjectEvents } from "../mechanisms/projects.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
-import { SESSION_TITLE_MAX } from "../mechanisms/sessions.js";
 import type { Errors, UsageRecording } from "../mechanisms/observability.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { Settings } from "../mechanisms/settings.js";
@@ -317,9 +315,6 @@ export interface SessionLoader {
  * coordinates; core evaluates it per Session — see CreateAgentOptions.controlEnv), and
  * `opts.pathPrepend` the directories every command of a resumed Session finds at the front
  * of its PATH (the harness's own CLI shim — see CreateAgentOptions.pathPrepend).
- * `opts.sessionControl` hands the rename_session tool its host seam: a per-Session
- * SessionControl whose rename confines the target to this Project (see
- * CreateAgentOptions.sessionControl).
  */
 export function createCoreSessionLoader(
   root: string,
@@ -329,7 +324,6 @@ export function createCoreSessionLoader(
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
     pathPrepend?: () => string[];
     confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
-    sessionControl?: (ctx: ControlEnvContext) => SessionControl;
     assembly?: AgentAssembly;
   } = {},
 ): SessionLoader {
@@ -343,7 +337,6 @@ export function createCoreSessionLoader(
         ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
         ...(opts.pathPrepend ? { pathPrepend: opts.pathPrepend } : {}),
         ...(opts.confineSpawn ? { confineSpawn: opts.confineSpawn } : {}),
-        ...(opts.sessionControl ? { sessionControl: opts.sessionControl } : {}),
         ...(opts.assembly ? { assembly: opts.assembly } : {}),
       });
       const located = await findLatestTraceFile(
@@ -2554,37 +2547,6 @@ export abstract class SessionServiceIface extends Interface<
   >
 >() {}
 
-/**
- * The rename_session tool's host seam, bound per Session like controlEnv: the target
- * defaults to the hosting Session, and an explicit id is confined to this Session's own
- * Project — a cross-Project id reads as not found, not as an access error.
- */
-export function sessionControlFor(
-  sessions: Pick<SessionIndex, "findById" | "updateTitle">,
-  notifyProjectUsers: (projectId: string, event: ServerEvent) => void,
-): (ctx: ControlEnvContext) => SessionControl {
-  return (ctx) => ({
-    rename: async ({ title, sessionId }) => {
-      const target = (sessionId ?? "").trim() || ctx.sessionId;
-      const row = sessions.findById(target);
-      if (row === null || row.projectId !== ctx.projectId) {
-        return { ok: false, code: "session_not_found" };
-      }
-      const t = title.trim();
-      if (t.length === 0 || t.length > SESSION_TITLE_MAX) {
-        return {
-          ok: false,
-          code: "invalid_title",
-          message: `title must be 1–${SESSION_TITLE_MAX} characters.`,
-        };
-      }
-      sessions.updateTitle(target, t);
-      notifyProjectUsers(ctx.projectId, { type: "session_title", sessionId: target, title: t });
-      return { ok: true, sessionId: target, title: t };
-    },
-  });
-}
-
 /** The per-spawn policies every Session's command environment is built with. */
 @Interface()
 export abstract class SessionEnv {
@@ -2705,7 +2667,6 @@ export class SessionsModule {
 
     const notifyProjectUsers = (projectId: string, event: ServerEvent): void =>
       this.projectEvents.notifyProjectUsers(projectId, event);
-    const sessionControl = sessionControlFor(sessionsRepo, notifyProjectUsers);
     const titles = this.titleGenerators.create({
       sessions: sessionsRepo,
       channels,
@@ -2722,7 +2683,6 @@ export class SessionsModule {
         controlEnv: env.controlEnv,
         pathPrepend: env.pathPrepend,
         confineSpawn: env.confineSpawn,
-        sessionControl,
         assembly,
       }),
       sources,
@@ -2749,7 +2709,6 @@ export class SessionsModule {
       traceStore: this.traceStore,
       proxyEnv: env.proxyEnv,
       controlEnv: env.controlEnv,
-      sessionControl,
       notifyProjectUsers,
       messagingChannel: (sessionId) => enabledMessagingChannel(this.messagingRepo, sessionId),
       // Company mode: which organization owns a Session, so development mode's list can hide

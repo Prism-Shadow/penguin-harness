@@ -23,14 +23,12 @@ import { EXEC_COMMAND_NAME, createExecCommandTool } from "./exec-command.js";
 import { INPUT_COMMAND_NAME, createInputCommandTool } from "./input-command.js";
 import { SUBAGENT_NAME, createSubagentTool } from "./run-subagent.js";
 import { INPUT_SUBAGENT_NAME, createInputSubagentTool } from "./input-subagent.js";
-import { RENAME_SESSION_NAME, createRenameSessionTool } from "./rename-session.js";
 
 /**
  * A factory that constructs a BuiltinTool instance from a tool config entry; optionally
  * receives runtime services injected by Environment.
  * Most tools ignore `services`; a few use it (`run_subagent` for the runner, `read_file` for
- * the vision describer that tells it the session model cannot view images, `rename_session`
- * for the host's Session-title control).
+ * the vision describer that tells it the session model cannot view images).
  */
 export type BuiltinToolFactory = (
   definition: ToolDefinitionConfig,
@@ -46,5 +44,4 @@ export const BUILTIN_TOOL_FACTORIES: Record<string, BuiltinToolFactory> = {
   [INPUT_COMMAND_NAME]: createInputCommandTool,
   [SUBAGENT_NAME]: createSubagentTool,
   [INPUT_SUBAGENT_NAME]: createInputSubagentTool,
-  [RENAME_SESSION_NAME]: createRenameSessionTool,
 };

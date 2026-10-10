@@ -11,9 +11,6 @@ import type { ScheduleStateRow } from "../db/repos/schedules.js";
 import type { ScheduleFileCache } from "../runtime/schedule-store.js";
 import type { ScheduleEntryView } from "../runtime/scheduler.js";
 
-/** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
-export const SESSION_TITLE_MAX = 120;
-
 /** SessionIndex: the mechanism SessionsRepo implements. */
 @Interface()
 export abstract class SessionIndex {

@@ -5,7 +5,7 @@ description: 内置工具如何运行在同一套执行契约之下，每次调�
 
 PenguinHarness 刻意只提供一套极简的内置工具集。专用文件工具（`read_file` / `edit_file` / `write_file`）负责精确的读取和编辑，因为带行号的输出和精确字符串替换，比手写 `sed` 单行命令更可靠。Shell（`exec_command`）则是其他一切的通用兜底：运行程序、搜索、安装依赖。留下来的每个工具，都配得上它在 schema 上占用的 Token。
 
-Environment 让每一次工具调用都走同一套共享契约，并集中处理收尾。本页先讲这套契约，之后依次介绍：各工具的配置字段、8 个内置工具和它们的后台行为、记录在 Trace 中的逐次调用审批，以及如何自定义工具集、添加 MCP Server。
+Environment 让每一次工具调用都走同一套共享契约，并集中处理收尾。本页先讲这套契约，之后依次介绍：各工具的配置字段、7 个内置工具和它们的后台行为、记录在 Trace 中的逐次调用审批，以及如何自定义工具集、添加 MCP Server。
 
 ## 执行契约
 
@@ -106,7 +106,7 @@ Trace 不会再存一份这些内容，但会记录展示给模型、Web App 和
 
 ## 内置工具
 
-内置工具共 8 个，通过 `packages/core/src/environment/tools/registry.ts` 组装：
+内置工具共 7 个，通过 `packages/core/src/environment/tools/registry.ts` 组装：
 
 | 工具 | 权限 | 超时（ms） | 用途 |
 | --- | --- | --- | --- |
@@ -117,7 +117,6 @@ Trace 不会再存一份这些内容，但会记录展示给模型、Web App 和
 | `write_file` | rw | 30000 | 创建或覆盖整个文件，必要时自动创建父目录 |
 | `run_subagent` | rw | 600000 | 把一个自包含的子任务委托给同一 Workspace 中的子 Agent |
 | `input_subagent` | rw | 600000 | 轮询后台子 Agent、在运行中向它插话、停止它当前这次运行，或用后续 Prompt 继续对话 |
-| `rename_session` | rw | 30000 | 重命名 Session 标题（1–120 字符）；不带 `session_id` 时重命名工具所在的 Session，带了则重命名同一 Project 内的另一个 Session |
 
 已有 Agent 保存的 `tools.builtin` 列表与写入时完全一致；设置界面可以编辑条目，但不会新增。因此：
 
