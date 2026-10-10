@@ -829,6 +829,7 @@ describe("model-catalog", () => {
       "x-ai/grok-4.6",
       "x-ai/grok-4.5",
       "xiaomi/mimo-v2.6-flash",
+      "xiaomi/mimo-v2.6-pro",
       "xiaomi/mimo-v2.5",
       "z-ai/glm-5.3",
       "z-ai/glm-5.3-flash",

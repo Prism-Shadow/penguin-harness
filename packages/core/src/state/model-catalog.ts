@@ -769,8 +769,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // (grok-4.6, deepseek-v4-pro-0813, glm-5.3, the openai/* additions) and every
   // pre-existing openai/* and google/* row were re-read on 2026-08-18 from the model
   // pages and the per-model endpoints API. The rows added on 2026-10-10 — the four Claude 5.x
-  // rows, openai/gpt-6.1-sol, stepfun/step-5-preview, x-ai/grok-4.7 and
-  // xiaomi/mimo-v2.6-flash — were read that day from the models API and the per-model
+  // rows, openai/gpt-6.1-sol, stepfun/step-5-preview, x-ai/grok-4.7,
+  // xiaomi/mimo-v2.6-flash and xiaomi/mimo-v2.6-pro — were read that day from the models API and the per-model
   // endpoints API, whose default endpoint runs no promotion (`discount: 0`) on any of them;
   // their context windows are the listing's `top_provider.context_length`, as on the
   // mimo-v2.5 and step-3.7-flash rows.
@@ -1359,6 +1359,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.0028, 0.14, 0.28),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // $0.435 input / $0.87 output with a published $0.0036 input_cache_read (models API and
+    // the per-model endpoints API, read 2026-10-10: Xiaomi's own endpoint, no discount — the
+    // USD face of TokenDance's CNY 0.025 / 3 / 6); text, image, video and audio input.
+    modelId: "xiaomi/mimo-v2.6-pro",
+    displayName: "MiMo-V2.6-Pro",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.0036, 0.435, 0.87),
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,

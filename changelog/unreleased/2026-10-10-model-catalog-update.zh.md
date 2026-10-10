@@ -18,7 +18,7 @@
 ## OpenRouter 分组
 
 - 新增上述四个 Claude 模型，即 `anthropic/claude-fable-5.1`、`anthropic/claude-opus-5.5`、`anthropic/claude-sonnet-5.5` 和 `anthropic/claude-haiku-5.5`，以及 `openai/gpt-6.1-sol`，价格均与各自的直连条目相同。
-- 新增 `stepfun/step-5-preview`（**Step 5 Preview**），USD 0.05 / 1 / 2.70，上下文窗口 1,000,000 Token；`x-ai/grok-4.7`（**Grok 4.7**），0.50 / 2 / 6，窗口 500,000 Token；以及 `xiaomi/mimo-v2.6-flash`（**MiMo-V2.6-Flash**），0.0028 / 0.14 / 0.28，窗口 1,048,576 Token。三者都支持图像输入。Grok 4.7 在提示超过 200K Token 时费率翻倍，条目记录的是基础档。
+- 新增 `stepfun/step-5-preview`（**Step 5 Preview**），USD 0.05 / 1 / 2.70，上下文窗口 1,000,000 Token；`x-ai/grok-4.7`（**Grok 4.7**），0.50 / 2 / 6，窗口 500,000 Token；`xiaomi/mimo-v2.6-flash`（**MiMo-V2.6-Flash**），0.0028 / 0.14 / 0.28；以及 `xiaomi/mimo-v2.6-pro`（**MiMo-V2.6-Pro**），0.0036 / 0.435 / 0.87，两者窗口均为 1,048,576 Token。四者都支持图像输入。Grok 4.7 在提示超过 200K Token 时费率翻倍，条目记录的是基础档。
 
 ## TokenDance 分组
 

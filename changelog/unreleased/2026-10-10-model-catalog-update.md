@@ -18,7 +18,7 @@ The built-in model catalog was updated on 2026-10-10. The new Claude and GPT mod
 ## OpenRouter
 
 - Added the four Claude rows above as `anthropic/claude-fable-5.1`, `anthropic/claude-opus-5.5`, `anthropic/claude-sonnet-5.5` and `anthropic/claude-haiku-5.5`, and `openai/gpt-6.1-sol`, each at the same price as its direct row.
-- Added `stepfun/step-5-preview` (**Step 5 Preview**) at USD 0.05 / 1 / 2.70 with a 1,000,000-token context window, `x-ai/grok-4.7` (**Grok 4.7**) at 0.50 / 2 / 6 with a 500,000-token window, and `xiaomi/mimo-v2.6-flash` (**MiMo-V2.6-Flash**) at 0.0028 / 0.14 / 0.28 with a 1,048,576-token window. All three take images. Grok 4.7's rates double above 200K prompt tokens, and the row records the base tier.
+- Added `stepfun/step-5-preview` (**Step 5 Preview**) at USD 0.05 / 1 / 2.70 with a 1,000,000-token context window, `x-ai/grok-4.7` (**Grok 4.7**) at 0.50 / 2 / 6 with a 500,000-token window, `xiaomi/mimo-v2.6-flash` (**MiMo-V2.6-Flash**) at 0.0028 / 0.14 / 0.28 and `xiaomi/mimo-v2.6-pro` (**MiMo-V2.6-Pro**) at 0.0036 / 0.435 / 0.87, both with a 1,048,576-token window. All four take images. Grok 4.7's rates double above 200K prompt tokens, and the row records the base tier.
 
 ## TokenDance
 
