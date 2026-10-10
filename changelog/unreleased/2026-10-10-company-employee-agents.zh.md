@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** fix
 - **Scope:** `server`, `web`, `ui`, `docs`
+- **PR:** [#1027](https://github.com/Prism-Shadow/penguin-harness/pull/1027)
 
 [English](2026-10-10-company-employee-agents.md)
 
