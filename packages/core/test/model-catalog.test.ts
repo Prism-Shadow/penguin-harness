@@ -206,7 +206,6 @@ describe("model-catalog", () => {
     // retired V4 Flash ids are not resold.
     expect(penguinGoModels.map((model) => model.modelId)).toEqual([
       "gemini-3.8-flash",
-      "gemini-3.7-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash",
       "gemini-3.5-flash-lite",
@@ -241,7 +240,7 @@ describe("model-catalog", () => {
     // No static promotion: the platform delivers whatever it runs at authorization and Sync,
     // so every row here is its list price and nothing else.
     expect(penguinGoModels.filter((model) => model.discount !== undefined)).toEqual([]);
-    for (const modelId of ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]) {
+    for (const modelId of ["gemini-3.8-flash", "gemini-3.6-flash"]) {
       expect(catalogEntryFor("penguin-go", modelId)!.pricing, modelId).toEqual({
         unit: "usd_per_mtok",
         cache_read: 0.075,
@@ -777,14 +776,18 @@ describe("model-catalog", () => {
 
   it("gateway models pin explicit protocols and preset base URLs; env fallback stays OPENAI_API_KEY", () => {
     const or = MODEL_CATALOG.filter((m) => m.provider === "openrouter");
-    // Dictionary order, newer versions of a series first (gpt-6-* before gpt-5.6-*,
-    // gpt-5.6-* before gpt-5.5, opus-4.8 before 4.7) — precomputed in the catalog, no
+    // Dictionary order, newer versions of a series first (gpt-6.1-* before gpt-6-*, gpt-6-*
+    // before gpt-5.6-*, opus-5.5 before opus-5 before 4.8) — precomputed in the catalog, no
     // runtime sorting.
     expect(or.map((m) => m.modelId)).toEqual([
+      "anthropic/claude-fable-5.1",
       "anthropic/claude-fable-5",
+      "anthropic/claude-haiku-5.5",
+      "anthropic/claude-opus-5.5",
       "anthropic/claude-opus-5",
       "anthropic/claude-opus-4.8",
       "anthropic/claude-opus-4.7",
+      "anthropic/claude-sonnet-5.5",
       "anthropic/claude-sonnet-5",
       "deepseek/deepseek-v4.1-flash",
       "deepseek/deepseek-v4-flash-0731",
@@ -793,7 +796,6 @@ describe("model-catalog", () => {
       "deepseek/deepseek-v4-pro-0813",
       "deepseek/deepseek-v4-pro",
       "google/gemini-3.8-flash",
-      "google/gemini-3.7-flash",
       "google/gemini-3.6-flash",
       "google/gemini-3.5-flash",
       "google/gemini-3.5-flash-lite",
@@ -801,6 +803,7 @@ describe("model-catalog", () => {
       "moonshotai/kimi-k3",
       "moonshotai/kimi-k2.6",
       "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "openai/gpt-6.1-sol",
       "openai/gpt-6-astra",
       "openai/gpt-5.6-luna",
       "openai/gpt-5.6-sol",
@@ -815,12 +818,15 @@ describe("model-catalog", () => {
       "qwen/qwen3.8-27b",
       "qwen/qwen3.8-max",
       "qwen/qwen3.6-35b-a3b",
+      "stepfun/step-5-preview",
       "stepfun/step-3.7-flash",
       "tencent/hy4-preview",
       "tencent/hy3",
       "thinkingmachines/inkling",
+      "x-ai/grok-4.7",
       "x-ai/grok-4.6",
       "x-ai/grok-4.5",
+      "xiaomi/mimo-v2.6-flash",
       "xiaomi/mimo-v2.5",
       "z-ai/glm-5.3",
       "z-ai/glm-5.3-flash",
@@ -863,8 +869,8 @@ describe("model-catalog", () => {
     }
     const sf = MODEL_CATALOG.filter((m) => m.provider === "siliconflow");
     // Dictionary order is case-insensitive (as in qwen-pay-as-you-go, where ZHIPU/GLM-5.3-Flash
-    // sorts last): Pro/ and Qwen/ fall between moonshotai/ and tencent/, and GLM-5.3 comes before
-    // GLM-5.2 as the newer version.
+    // sorts last): Pro/ and Qwen/ fall between moonshotai/ and tencent/, and GLM-5.3 and its
+    // Flash come before GLM-5.2 as the newer version.
     expect(sf.map((m) => m.modelId)).toEqual([
       "deepseek-ai/DeepSeek-V4-Flash",
       "deepseek-ai/DeepSeek-V4-Pro",
@@ -874,6 +880,7 @@ describe("model-catalog", () => {
       "Qwen/Qwen3.6-35B-A3B",
       "tencent/Hy4-preview",
       "zai-org/GLM-5.3",
+      "zai-org/GLM-5.3-Flash",
       "zai-org/GLM-5.2",
     ]);
     for (const m of sf) {
@@ -904,23 +911,33 @@ describe("model-catalog", () => {
       ["qwen3.7-plus", 1000000, true],
     ]);
     const td = MODEL_CATALOG.filter((m) => m.provider === "tokendance");
-    // Dictionary order by upstream id; vision flags and context windows from TokenDance's
-    // public catalog API.
+    // Plain dictionary order by upstream id; vision flags and context windows from TokenDance's
+    // public catalog API and portal model list.
     expect(td.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["deepseek-v4-flash", 1048576, false],
       ["deepseek-v4-flash-0731", 1048576, false],
       ["deepseek-v4-flash-vision-exp", 1000000, true],
+      ["deepseek-v4-pro", 1048576, false],
       ["deepseek-v4-pro-0813", 1000000, false],
       ["deepseek-v4.1-flash", 1000000, true],
       ["dots-3-note-preview", 512000, true],
+      ["glm-5.2", 1000000, false],
       ["glm-5.3", 1000000, false],
       ["glm-5.3-flash", 1000000, true],
+      ["glm-5.3-flashx", 1000000, true],
       ["hy4-preview", 1024000, false],
       ["kimi-k3", 1048576, true],
+      ["ling-3.0-flash", 256000, false],
+      ["ling-3.1-flash", 1000000, false],
+      ["mimo-v2.6-flash", 1000000, true],
+      ["mimo-v2.6-pro", 1000000, true],
+      ["mimo-v2.6-ultraspeed", 1000000, true],
       ["qwen3.8-flash", 1000000, true],
       ["qwen3.8-max", 1000000, true],
       ["seed-2.1-pro", 256000, true],
       ["seed-2.1-turbo", 256000, true],
       ["seed-evolving", 256000, true],
+      ["step-5-preview", 1000000, true],
     ]);
     for (const m of td) {
       expect(m.clientType).toBe("openai-chat");
@@ -930,12 +947,15 @@ describe("model-catalog", () => {
     // its rate in `discount` and the billed price is DERIVED from the two, never pasted
     // beside them. Reading the CNY prices back out of effectivePricing is what pins that:
     // change a list price or a discount alone and the recovered rate stops matching what
-    // TokenDance publishes. cache_write carries the input price (no separate cache-write fee
+    // TokenDance bills. cache_write carries the input price (no separate cache-write fee
     // on this gateway), so the published input / output / cache-hit triple is NOT in the
     // catalog's cny(cacheRead, cacheWrite, output) argument order.
     const CNY_PER_USD = 7;
-    const billedCny = (modelId: string): [number, number, number] => {
-      const billed = effectivePricing(td.find((m) => m.modelId === modelId)!)!;
+    const billedCny = (modelId: string, now?: Date): [number, number, number] => {
+      const billed = effectivePricing(
+        td.find((m) => m.modelId === modelId)!,
+        now,
+      )!;
       // input, output, cache hit — the order TokenDance's own price list uses.
       return [
         billed.cache_write * CNY_PER_USD,
@@ -944,11 +964,12 @@ describe("model-catalog", () => {
       ];
     };
     const discounted: Array<[string, number, [number, number, number]]> = [
-      ["glm-5.3-flash", 0.1, [0.72, 2.52, 0.207]],
+      ["deepseek-v4-flash", 0.2, [0.8, 1.6, 0.16]],
+      ["deepseek-v4-pro", 0.1, [8.1, 24.3, 0.27]],
+      ["glm-5.2", 0.2, [6.4, 22.4, 1.6]],
       ["glm-5.3", 0.1, [7.2, 25.2, 1.8]],
-      ["deepseek-v4-pro-0813", 0.1, [4.05, 12.15, 0.405]],
-      ["deepseek-v4-flash-0731", 0.1, [1.35, 4.05, 0.135]],
-      ["kimi-k3", 0.4, [12, 60, 0.96]],
+      ["glm-5.3-flash", 0.1, [0.72, 2.52, 0.207]],
+      ["ling-3.0-flash", 0.65, [0.14, 0.42, 0.028]],
       ["qwen3.8-max", 0.1, [10.8, 32.4, 1.35]],
       ["seed-2.1-pro", 0.5, [3, 15, 0.6]],
       ["seed-2.1-turbo", 0.5, [1.5, 7.5, 0.3]],
@@ -962,10 +983,10 @@ describe("model-catalog", () => {
       expect(output, `${modelId} output`).toBeCloseTo(cnyBilled[1], 4);
       expect(cacheHit, `${modelId} cache hit`).toBeCloseTo(cnyBilled[2], 4);
     }
-    // Exactly those nine carry a flat discount; every other row bills its list price
-    // unchanged. One of those others declares DeepSeek's peak/off-peak schedule instead, so
+    // Exactly those ten carry a flat discount; every other row bills its list price
+    // unchanged. Some of those others declare DeepSeek's peak/off-peak schedule instead, so
     // the rows are compared at a PEAK instant — 2026-09-10 is a Thursday, and 10:00 Beijing is
-    // inside the morning window — because effectivePricing halves it off-peak by design.
+    // inside the morning window — because effectivePricing halves them off-peak by design.
     expect(
       td
         .filter((m) => m.discount !== undefined)
@@ -976,17 +997,35 @@ describe("model-catalog", () => {
     for (const m of td.filter((x) => x.discount === undefined)) {
       expect(effectivePricing(m, peakInstant), m.modelId).toEqual(m.pricing);
     }
-    // The rows that follow the vendor's schedule instead of a gateway promotion (one of them
-    // retired), at the same peak tier the direct deepseek-flash row stores: CNY 0.04 / 2 / 8.
+    // The rows the portal prices by time (one of them retired) follow DeepSeek's own windows
+    // instead of a flat promotion: the peak list price in the windows, half of it at every other
+    // hour — which, for the 0731 and 0813 rows, is exactly what the gateway bills off-peak.
+    // Input, output, cache hit at peak, in CNY.
     const tdScheduled = td.filter((m) => m.offPeakDiscount !== undefined).map((m) => m.modelId);
-    expect(tdScheduled).toEqual(["deepseek-v4-flash-vision-exp", "deepseek-v4.1-flash"]);
+    expect(tdScheduled).toEqual([
+      "deepseek-v4-flash-0731",
+      "deepseek-v4-flash-vision-exp",
+      "deepseek-v4-pro-0813",
+      "deepseek-v4.1-flash",
+    ]);
+    const peakList: Record<string, [number, number, number]> = {
+      "deepseek-v4-flash-0731": [3, 9, 0.1],
+      "deepseek-v4-flash-vision-exp": [2, 8, 0.04],
+      "deepseek-v4-pro-0813": [9, 27, 0.3],
+      "deepseek-v4.1-flash": [2, 8, 0.04],
+    };
+    // 2026-09-12 is a Saturday: off-peak all day.
+    const offPeakInstant = new Date("2026-09-12T10:00:00+08:00");
     for (const id of tdScheduled) {
       const row = td.find((m) => m.modelId === id)!;
       expect(row.offPeakDiscount, id).toBe(DEEPSEEK_OFF_PEAK);
       expect(row.discount, id).toBeUndefined();
-      expect([row.pricing!.cache_read, row.pricing!.cache_write, row.pricing!.output], id).toEqual([
-        0.005714, 0.285714, 1.142857,
-      ]);
+      const peak = billedCny(id, peakInstant);
+      const off = billedCny(id, offPeakInstant);
+      for (let i = 0; i < 3; i++) {
+        expect(peak[i], `${id} peak`).toBeCloseTo(peakList[id]![i]!, 4);
+        expect(off[i], `${id} off-peak`).toBeCloseTo(peakList[id]![i]! / 2, 4);
+      }
     }
     // The one free row of the group: CNY 0 on every bucket, no discount decoration, a 512K
     // window, and the seller's own spelling of the name, its "（Free）" tag included, as the
@@ -1223,7 +1262,6 @@ describe("model-catalog", () => {
     // block follows for the identical Claude line-up).
     expect(MODEL_CATALOG.filter((m) => m.provider === "google").map((m) => m.modelId)).toEqual([
       "gemini-3.8-flash",
-      "gemini-3.7-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash",
       "gemini-3.5-flash-lite",
@@ -1238,16 +1276,14 @@ describe("model-catalog", () => {
       "glm-5.1",
       "glm-5",
     ]);
-    // Gemini 3.6 / 3.7 / 3.8 Flash: Google halves all three of them through 2026-12-31, and
-    // all six of their rows — direct and on OpenRouter — store Google's list price and
-    // declare that launch discount in `discount`, so the list survives the promotion and
-    // effectivePricing yields the 0.075/0.75/3.75 either seller bills today.
+    // Gemini 3.6 / 3.8 Flash: Google halves both of them through 2026-12-31, and all four of
+    // their rows — direct and on OpenRouter — store Google's list price and declare that
+    // launch discount in `discount`, so the list survives the promotion and effectivePricing
+    // yields the 0.075/0.75/3.75 either seller bills today.
     for (const [provider, modelId] of [
       ["google", "gemini-3.8-flash"],
-      ["google", "gemini-3.7-flash"],
       ["google", "gemini-3.6-flash"],
       ["openrouter", "google/gemini-3.8-flash"],
-      ["openrouter", "google/gemini-3.7-flash"],
       ["openrouter", "google/gemini-3.6-flash"],
     ] as const) {
       const row = catalogEntryFor(provider, modelId)!;
@@ -1266,7 +1302,7 @@ describe("model-catalog", () => {
       ]);
     }
     // No other Gemini row carries a launch discount: Google's pricing page marks one on the
-    // 3.6 / 3.7 / 3.8 Flash generations and on nothing else in this catalog, so these rows
+    // 3.6 / 3.8 Flash generations and on nothing else in this catalog, so these rows
     // bill exactly the list price they store. The numbers are pinned because none of them is
     // the Flash list price above and each is a genuine other tier, not a hidden promotion —
     // re-read 2026-09-09: 3.5 Flash $1.50 / $9.00 / $0.15 cache hit, 3.5 Flash-Lite
@@ -1357,10 +1393,14 @@ describe("model-catalog", () => {
       grok46.pricing!.output,
     ]).toEqual([0.5, 2, 6]);
     expect(MODEL_CATALOG.filter((m) => m.provider === "anthropic").map((m) => m.modelId)).toEqual([
+      "claude-fable-5-1",
       "claude-fable-5",
+      "claude-haiku-5-5",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-opus-4-7",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
     ]);
@@ -1389,6 +1429,19 @@ describe("model-catalog", () => {
     expect([opus5.pricing!.cache_read, opus5.pricing!.cache_write, opus5.pricing!.output]).toEqual([
       0.5, 6.25, 25,
     ]);
+    // The cache-hit price is a per-generation share of input, read back off the stored buckets
+    // (input = cache_write / 1.25): 0.025x on Fable 5.1, 0.05x on Opus 5.5 and Sonnet 5.5, the
+    // standard 0.1x everywhere else. A 5.5 row carrying the older 0.1x figure fails here.
+    for (const m of MODEL_CATALOG.filter((e) => e.provider === "anthropic")) {
+      const share = m.pricing!.cache_read / (m.pricing!.cache_write / 1.25);
+      const expected =
+        m.modelId === "claude-fable-5-1"
+          ? 0.025
+          : ["claude-opus-5-5", "claude-sonnet-5-5"].includes(m.modelId)
+            ? 0.05
+            : 0.1;
+      expect(share, m.modelId).toBeCloseTo(expected, 6);
+    }
     // Sonnet 5 prices below Sonnet 4.6 because that is Anthropic's list, not a slip.
     expect(catalogEntryFor("anthropic", "claude-sonnet-4-6")!.pricing).toEqual({
       unit: "usd_per_mtok",
@@ -1405,12 +1458,17 @@ describe("model-catalog", () => {
       ["deepseek", "deepseek-flash", "fireworks", "accounts/fireworks/models/deepseek-v4p1-flash"],
       ["deepseek", "deepseek-v4-pro", "openrouter", "deepseek/deepseek-v4-pro-0813"],
       ["deepseek", "deepseek-v4-pro", "qwen-token-plan", "deepseek-v4-pro-0813"],
+      ["openai", "gpt-6.1-sol", "openrouter", "openai/gpt-6.1-sol"],
       ["openai", "gpt-6-astra", "openrouter", "openai/gpt-6-astra"],
       ["openai", "gpt-5.6", "openrouter", "openai/gpt-5.6-sol"],
       ["openai", "gpt-5.6-luna", "openrouter", "openai/gpt-5.6-luna"],
       ["openai", "gpt-5.6-terra", "openrouter", "openai/gpt-5.6-terra"],
+      ["anthropic", "claude-fable-5-1", "openrouter", "anthropic/claude-fable-5.1"],
       ["anthropic", "claude-fable-5", "openrouter", "anthropic/claude-fable-5"],
+      ["anthropic", "claude-haiku-5-5", "openrouter", "anthropic/claude-haiku-5.5"],
+      ["anthropic", "claude-opus-5-5", "openrouter", "anthropic/claude-opus-5.5"],
       ["anthropic", "claude-opus-5", "openrouter", "anthropic/claude-opus-5"],
+      ["anthropic", "claude-sonnet-5-5", "openrouter", "anthropic/claude-sonnet-5.5"],
       ["anthropic", "claude-sonnet-5", "openrouter", "anthropic/claude-sonnet-5"],
       ["google", "gemini-3.5-flash-lite", "openrouter", "google/gemini-3.5-flash-lite"],
       ["moonshot", "kimi-k3", "openrouter", "moonshotai/kimi-k3"],
@@ -1496,6 +1554,7 @@ describe("model-catalog", () => {
     // gains a model.
     const direct = MODEL_CATALOG.filter((m) => m.provider === "openai").map((m) => m.modelId);
     expect(direct).toEqual([
+      "gpt-6.1-sol",
       "gpt-6-astra",
       "gpt-5.6",
       "gpt-5.6-luna",
@@ -1535,6 +1594,7 @@ describe("model-catalog", () => {
     // rather than the $10 input rate: the buckets have no slot for input that is never
     // written to cache.
     expect(price("openai", "gpt-6-astra")).toEqual([1, 12.5, 50]);
+    expect(price("openai", "gpt-6.1-sol")).toEqual([0.1, 2.5, 10]);
     expect(price("openai", "gpt-5.6")).toEqual([0.5, 5, 30]);
     expect(price("openai", "gpt-5.6-terra")).toEqual([0.2, 2, 12]);
     expect(price("openai", "gpt-5.6-luna")).toEqual([0.02, 0.2, 1.2]);
@@ -1547,6 +1607,8 @@ describe("model-catalog", () => {
     // GPT-6 Astra runs no promotion (`discount: 0`) and its default endpoint is OpenAI's own,
     // so every bucket matches the direct row.
     expect(price("openrouter", "openai/gpt-6-astra")).toEqual([1, 12.5, 50]);
+    // GPT-6.1 Sol likewise runs no promotion on OpenAI's own endpoint there.
+    expect(price("openrouter", "openai/gpt-6.1-sol")).toEqual(price("openai", "gpt-6.1-sol"));
     expect(catalogEntryFor("openrouter", "openai/gpt-6-astra")!.contextWindow).toBe(1050000);
     // The 5.4/5.5 rows run no promotion, so gateway and direct agree except on cache_write,
     // where the gateway publishes GPT's genuine 1.25x write premium and the direct rows use
@@ -1926,7 +1988,10 @@ describe("fastModeProtocol (which models may be offered MMSP's fast_mode, and on
     // The generations that reject the speed parameter are refused by name, whatever routes them.
     expect(fastModeProtocol("claude-sonnet-4-6")).toBeUndefined();
     expect(fastModeProtocol("claude-sonnet-5-5")).toBeUndefined();
+    expect(fastModeProtocol("claude-haiku-5-5")).toBeUndefined();
     expect(fastModeProtocol("claude-fable-5-1")).toBeUndefined();
+    // Opus 5.5 is the 5.5 model that keeps the fast tier.
+    expect(fastModeProtocol("claude-opus-5-5")).toBe("anthropic");
     expect(fastModeProtocol("my-claude-sonnet-4-6-proxy", "anthropic-official")).toBeUndefined();
     // ...and conversely a served model id keeps fast mode under the same pin.
     expect(fastModeProtocol("claude-sonnet-5", "anthropic-official")).toBe("anthropic");
@@ -1973,8 +2038,16 @@ describe("fastModeProtocol (which models may be offered MMSP's fast_mode, and on
     expect(verdictOf("anthropic", "claude-sonnet-5")).toBe("anthropic");
     expect(verdictOf("anthropic", "claude-opus-4-8")).toBe("anthropic");
     expect(verdictOf("anthropic", "claude-opus-4-7")).toBe("anthropic");
-    // The one Anthropic row the client refuses by name.
-    expect(verdictOf("anthropic", "claude-sonnet-4-6")).toBeUndefined();
+    expect(verdictOf("anthropic", "claude-opus-5-5")).toBe("anthropic");
+    // The Anthropic rows the client refuses by name.
+    for (const id of [
+      "claude-sonnet-4-6",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "claude-fable-5-1",
+    ]) {
+      expect(verdictOf("anthropic", id), id).toBeUndefined();
+    }
     expect(verdictOf("openai", "gpt-5.5")).toBe("openai");
     expect(verdictOf("openai", "gpt-5.4-pro")).toBe("openai");
     expect(verdictOf("minimax", "MiniMax-M3")).toBe("openai");
@@ -2085,7 +2158,7 @@ describe("off-peak schedules", () => {
 
   it("the DeepSeek rows store the peak price and declare the schedule", () => {
     // Every direct row, plus the resold rows whose sellers pass DeepSeek's own windows through:
-    // two on Penguin Go, four on OpenCode Go, two on TokenDance and one on OpenRouter. The
+    // two on Penguin Go, four on OpenCode Go, four on TokenDance and one on OpenRouter. The
     // retired rows keep the schedule too. A gateway row on the schedule carries no flat
     // `discount` — the two are mutually exclusive, pinned by the last case here.
     const rows = MODEL_CATALOG.filter((m) => m.offPeakDiscount === S);
@@ -2095,7 +2168,9 @@ describe("off-peak schedules", () => {
       "deepseek/deepseek-v4-flash-vision-exp",
       "deepseek/deepseek-v4-pro",
       "openrouter/deepseek/deepseek-v4.1-flash",
+      "tokendance/deepseek-v4-flash-0731",
       "tokendance/deepseek-v4-flash-vision-exp",
+      "tokendance/deepseek-v4-pro-0813",
       "tokendance/deepseek-v4.1-flash",
       "penguin-go/deepseek-flash",
       "penguin-go/deepseek-v4-pro",
