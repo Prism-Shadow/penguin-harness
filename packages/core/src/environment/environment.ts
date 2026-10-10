@@ -296,13 +296,16 @@ export class Environment implements EnvironmentInterface {
    * `visionDescriber` is the new context's answer to "does the session model view images"
    * (see EnvironmentServices.visionDescriber): a service when that context's model has no
    * vision, `null` when it views images itself — a model switch can move either way — and
-   * absent leaves the running answer in place. Applied before the toolset is re-equipped, so
-   * the new context's read_file is built on it.
+   * absent leaves the running answer in place. `maxImageSide` is the new context's model
+   * image-input pixel cap in the same terms (see EnvironmentServices.maxImageSide). Both are
+   * applied before the toolset is re-equipped, so the new context's read_file is built on
+   * them.
    */
   reconfigure(config: {
     toolConfig: ToolConfig;
     vault: Record<string, string>;
     visionDescriber?: VisionDescriberService | null;
+    maxImageSide?: number | null;
   }): void {
     const servers = config.toolConfig.mcpServers;
     if (this.mcp && servers.length > 0) {
@@ -314,6 +317,10 @@ export class Environment implements EnvironmentInterface {
     if (config.visionDescriber !== undefined) {
       if (config.visionDescriber === null) delete this.services.visionDescriber;
       else this.services.visionDescriber = config.visionDescriber;
+    }
+    if (config.maxImageSide !== undefined) {
+      if (config.maxImageSide === null) delete this.services.maxImageSide;
+      else this.services.maxImageSide = config.maxImageSide;
     }
     this.equip(config.toolConfig);
     this.commandSessions.setVault(config.vault);

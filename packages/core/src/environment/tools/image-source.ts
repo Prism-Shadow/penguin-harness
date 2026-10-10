@@ -1,7 +1,8 @@
 /**
  * Image loading for read_file's image branch: which sources count as images, how their bytes
  * are fetched (an http(s) URL through the global fetch, anything else as a path resolved
- * against the Workspace), and the validation every image passes (size cap, supported mime).
+ * against the Workspace), and the validation every image passes (size cap, supported mime,
+ * pixel dimensions).
  *
  * Detection order is magic number → response content-type (URLs only) → extension: a file
  * whose bytes say PNG is an image whatever it is called, and a `.png` path with unrecognized
@@ -19,6 +20,17 @@ import type { FsPort } from "./fs-port.js";
  * avoids oversized images blowing up the context and Trace.
  */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Image dimension upper bound as a longest side (px), the conservative default applied when
+ * the session model names no per-model cap: providers enforce such a cap on image input and
+ * answer an image over it with a blanket 400 that reports a format problem (DeepSeek draws
+ * the line at 8192 px on the longest side, issue #944) — and since a fatal tool result is
+ * replayed with every later request, that 400 would recur forever. An image that fits under
+ * this default is accepted everywhere a wider cap would also accept it; a model (or catalog
+ * row) with a different cap pins its own (EnvironmentServices.maxImageSide).
+ */
+export const MAX_IMAGE_SIDE = 8192;
 
 /** Supported image mime types (the four generally accepted across providers). */
 const SUPPORTED_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
@@ -60,6 +72,93 @@ function imageMimeFromExt(p: string): string | null {
   return EXT_TO_MIME[path.extname(p).toLowerCase()] ?? null;
 }
 
+/** Pixel dimensions as read from an image header. */
+export interface ImageDimensions {
+  width: number;
+  height: number;
+}
+
+/**
+ * Reads an image's pixel dimensions from its header alone (every supported format stores
+ * them in its first bytes): PNG's IHDR, JPEG's first SOFn frame header (walking the marker
+ * segments to reach it), GIF's logical screen descriptor, and WebP's VP8 / VP8L / VP8X
+ * chunk. Returns null when the bytes carry no recognizable header of their declared format —
+ * a caller refusing on dimensions then simply has no basis to.
+ */
+export function parseImageDimensions(buf: Buffer): ImageDimensions | null {
+  // PNG: signature, then the mandatory first chunk IHDR — big-endian width/height at 16..24.
+  if (
+    buf.length >= 24 &&
+    buf.readUInt32BE(0) === 0x89504e47 &&
+    buf.readUInt32BE(12) === 0x49484452
+  ) {
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  }
+  // JPEG: walk the marker segment chain to the first SOFn frame header (height/width
+  // big-endian inside). Standalone markers (TEM, RSTn, SOI/EOI) carry no length field;
+  // every other segment is skipped by its own, with a floor of 2 so a hostile header
+  // cannot stall the walk.
+  if (buf.length >= 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let off = 2;
+    while (off + 4 <= buf.length && buf[off] === 0xff) {
+      const marker = buf[off + 1]!;
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
+        off += 2;
+        continue;
+      }
+      if (
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 && // DHT
+        marker !== 0xc8 && // JPG
+        marker !== 0xcc // DAC
+      ) {
+        if (off + 9 > buf.length) return null;
+        return { height: buf.readUInt16BE(off + 5), width: buf.readUInt16BE(off + 7) };
+      }
+      off += 2 + Math.max(2, buf.readUInt16BE(off + 2));
+    }
+    return null;
+  }
+  // GIF: the logical screen descriptor carries little-endian width/height at 6..10.
+  if (buf.length >= 10) {
+    const head = buf.subarray(0, 6).toString("latin1");
+    if (head === "GIF87a" || head === "GIF89a") {
+      return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
+    }
+  }
+  // WebP: a RIFF container whose first chunk names the flavor — VP8 (lossy: 14-bit
+  // dimensions behind the 3-byte start code), VP8L (lossless: dimensions minus one,
+  // bit-packed after the 0x2F signature), VP8X (extended: canvas dimensions minus one as
+  // 24-bit little-endian).
+  if (
+    buf.length >= 30 &&
+    buf.subarray(0, 4).toString("latin1") === "RIFF" &&
+    buf.subarray(8, 12).toString("latin1") === "WEBP"
+  ) {
+    const chunk = buf.subarray(12, 16).toString("latin1");
+    if (chunk === "VP8 ") {
+      return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff };
+    }
+    if (chunk === "VP8L" && buf[20] === 0x2f) {
+      const b1 = buf[21]!;
+      const b2 = buf[22]!;
+      return {
+        width: 1 + (b1 | ((b2 & 0x3f) << 8)),
+        height: 1 + ((b2 >> 6) | (buf[23]! << 2) | ((buf[24]! & 0x0f) << 10)),
+      };
+    }
+    if (chunk === "VP8X") {
+      return {
+        width: 1 + (buf[24]! | (buf[25]! << 8) | (buf[26]! << 16)),
+        height: 1 + (buf[27]! | (buf[28]! << 8) | (buf[29]! << 16)),
+      };
+    }
+    return null;
+  }
+  return null;
+}
+
 /** Whether a source is an http(s) URL — the only kind of source that is never a local path. */
 export function isHttpUrl(source: string): boolean {
   return /^https?:\/\//i.test(source);
@@ -94,6 +193,10 @@ export function formatSize(bytes: number): string {
 const OVERSIZE_MESSAGE = (size: number): string =>
   `Image too large: ${formatSize(size)} exceeds the ${formatSize(MAX_IMAGE_BYTES)} limit.`;
 
+const OVER_DIMENSIONS_MESSAGE = (width: number, height: number, maxSide: number): string =>
+  `Image too large for this model: ${width}×${height} px exceeds the ${maxSide} px longest-side limit, so it is not attached. ` +
+  `The endpoint would reject the request over it (and report a misleading format error). Downscale the image first (e.g. with a shell command) and read the smaller copy.`;
+
 const UNSUPPORTED_MESSAGE = (detected: string | null): string =>
   `Unsupported image type${detected ? ` "${detected}"` : ""}: only png, jpeg, gif and webp are supported.`;
 
@@ -105,8 +208,9 @@ export type LoadImageResult =
 
 /**
  * Reads and validates an image: an http(s) URL is downloaded with the global fetch, otherwise
- * read as a local path (resolved against Workspace); validates the size upper bound and mime
- * type (determined in order by response header / magic number / extension). Never throws.
+ * read as a local path (resolved against Workspace); validates the size upper bound, mime
+ * type (determined in order by response header / magic number / extension), and pixel
+ * dimensions against the longest-side cap. Never throws.
  */
 export async function loadImage(
   source: string,
@@ -115,6 +219,8 @@ export async function loadImage(
   /** The file system (and network) to work through — the Session's sandboxed helper when confined (see fs-port.ts). */
   fs: FsPort = localFsPort,
   sandboxed = false,
+  /** Longest-side pixel cap (the session model's own when it names one, else MAX_IMAGE_SIDE). */
+  maxImageSide = MAX_IMAGE_SIDE,
 ): Promise<LoadImageResult> {
   if (signal?.aborted) return { ok: false, reason: "aborted" };
 
@@ -202,6 +308,19 @@ export async function loadImage(
   }
   if (mime === null || !SUPPORTED_MIMES.has(mime)) {
     return { ok: false, reason: "failed", message: UNSUPPORTED_MESSAGE(mime) };
+  }
+  // Dimension guard: an image past the model's longest-side cap is refused here, with the
+  // real reason, instead of being attached for the endpoint to 400 (a fatal tool result is
+  // replayed with every later request, so nothing downstream could recover from it). Bytes
+  // whose header parses to nothing — the extension fallback lets headerless content through
+  // as an image — pass: there is no basis to refuse them.
+  const dims = parseImageDimensions(bytes);
+  if (dims !== null && Math.max(dims.width, dims.height) > maxImageSide) {
+    return {
+      ok: false,
+      reason: "failed",
+      message: OVER_DIMENSIONS_MESSAGE(dims.width, dims.height, maxImageSide),
+    };
   }
   return { ok: true, bytes, mime };
 }

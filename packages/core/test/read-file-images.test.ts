@@ -13,7 +13,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { READ_FILE_NAME, createReadFileTool } from "../src/environment/tools/read-file.js";
-import { MAX_IMAGE_BYTES } from "../src/environment/tools/image-source.js";
+import { MAX_IMAGE_BYTES, parseImageDimensions } from "../src/environment/tools/image-source.js";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import { Environment } from "../src/environment/environment.js";
 import { assistantText, partialText, toolCall } from "../src/omnimessage/index.js";
@@ -34,6 +34,79 @@ const PNG_1X1 = Buffer.from(
   "base64",
 );
 const PNG_DATA_URL = `data:image/png;base64,${PNG_1X1.toString("base64")}`;
+
+/**
+ * A structurally valid PNG carrying nothing but the header chunks (signature + IHDR + IEND):
+ * the dimensions live in IHDR where every parser reads them, and no pixel data is needed —
+ * the guards under test decide from the header alone. CRC fields are zeroed; nothing
+ * downstream verifies them.
+ */
+function pngHeader(width: number, height: number): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr.writeUInt8(8, 8); // bit depth
+  ihdr.writeUInt8(6, 9); // color type: RGBA
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), // signature
+    Buffer.from([0x00, 0x00, 0x00, 0x0d]), // IHDR chunk length
+    Buffer.from("IHDR", "latin1"),
+    ihdr,
+    Buffer.from([0x00, 0x00, 0x00, 0x00]), // CRC
+    Buffer.from([0x00, 0x00, 0x00, 0x00]), // IEND chunk length
+    Buffer.from("IEND", "latin1"),
+    Buffer.from([0x00, 0x00, 0x00, 0x00]), // CRC
+  ]);
+}
+
+/** JPEG header: SOI, a minimal SOF0 frame header carrying the dimensions, EOI. */
+function jpegHeader(width: number, height: number): Buffer {
+  return Buffer.concat([
+    Buffer.from([0xff, 0xd8]), // SOI
+    Buffer.from([0xff, 0xc0, 0x00, 0x0b, 0x08]), // SOF0, segment length 11, precision 8
+    Buffer.from([(height >> 8) & 0xff, height & 0xff, (width >> 8) & 0xff, width & 0xff]),
+    Buffer.from([0x01, 0x01, 0x00, 0x00]), // one component
+    Buffer.from([0xff, 0xd9]), // EOI
+  ]);
+}
+
+/** GIF header: signature plus the logical screen descriptor's little-endian dimensions. */
+function gifHeader(width: number, height: number): Buffer {
+  const b = Buffer.alloc(13);
+  Buffer.from("GIF89a", "latin1").copy(b, 0);
+  b.writeUInt16LE(width, 6);
+  b.writeUInt16LE(height, 8);
+  return b;
+}
+
+/** WebP header of the given flavor (VP8 lossy / VP8L lossless / VP8X extended). */
+function webpHeader(flavor: "VP8 " | "VP8L" | "VP8X", width: number, height: number): Buffer {
+  const b = Buffer.alloc(34);
+  Buffer.from("RIFF", "latin1").copy(b, 0);
+  b.writeUInt32LE(26, 4); // RIFF size
+  Buffer.from("WEBP", "latin1").copy(b, 8);
+  Buffer.from(flavor, "latin1").copy(b, 12);
+  b.writeUInt32LE(flavor === "VP8X" ? 10 : flavor === "VP8L" ? 5 : 16, 16); // chunk size
+  if (flavor === "VP8 ") {
+    b[23] = 0x9d; // start code
+    b[24] = 0x01;
+    b[25] = 0x2a;
+    b.writeUInt16LE(width & 0x3fff, 26);
+    b.writeUInt16LE(height & 0x3fff, 28);
+  } else if (flavor === "VP8L") {
+    b[20] = 0x2f; // signature
+    const w1 = width - 1;
+    const h1 = height - 1;
+    b[21] = w1 & 0xff;
+    b[22] = ((w1 >> 8) & 0x3f) | ((h1 & 0x03) << 6);
+    b[23] = (h1 >> 2) & 0xff;
+    b[24] = (h1 >> 10) & 0x0f;
+  } else {
+    b.writeUIntLE(width - 1, 24, 3); // canvas dimensions minus one, 24-bit little-endian
+    b.writeUIntLE(height - 1, 27, 3);
+  }
+  return b;
+}
 
 const definition: ToolDefinitionConfig = {
   name: READ_FILE_NAME,
@@ -164,6 +237,97 @@ describe("read_file on an image — session model views images (no describer)", 
     const missing = await run({ file_path: "missing.png" }, tmp);
     expect(missing.result?.stopReason).toBe("fatal");
     expect(missing.text).toContain("File not found");
+  });
+});
+
+describe("read_file on an image — dimension guard", () => {
+  it("refuses to attach an image past the model's longest-side pixel cap, with the real reason", async () => {
+    // The reported failure: a 750×8618 px full-page screenshot (984 KB, well under the byte
+    // cap) that DeepSeek answers with a misleading "unsupported image format" 400 — and a
+    // fatal tool result is replayed on every later run, so the Session can never recover.
+    await writeFile(path.join(tmp, "tall.png"), pngHeader(750, 8618));
+    const { result, text } = await run({ file_path: "tall.png" }, tmp);
+    expect(result?.stopReason).toBe("fatal");
+    expect(result?.images).toBeUndefined();
+    expect(text).toContain("750×8618");
+    expect(text).toContain("8192");
+    expect(text).toContain("not attached");
+  });
+
+  it("attaches an image whose longest side sits exactly at the cap", async () => {
+    await writeFile(path.join(tmp, "edge.png"), pngHeader(750, 8192));
+    const { result, text } = await run({ file_path: "edge.png" }, tmp);
+    expect(result?.stopReason).toBeUndefined();
+    expect(result?.images).toHaveLength(1);
+    expect(result?.images?.[0]).toMatch(/^data:image\/png;base64,/);
+    expect(text).toContain("image/png");
+  });
+
+  it("honors a per-model cap from services — a wider cap attaches what the default refuses", async () => {
+    await writeFile(path.join(tmp, "tall.png"), pngHeader(750, 8618));
+    const strict = await run({ file_path: "tall.png" }, tmp, { maxImageSide: 100 });
+    expect(strict.result?.stopReason).toBe("fatal");
+    expect(strict.result?.images).toBeUndefined();
+    expect(strict.text).toContain("100 px");
+
+    const wide = await run({ file_path: "tall.png" }, tmp, { maxImageSide: 10000 });
+    expect(wide.result?.stopReason).toBeUndefined();
+    expect(wide.result?.images).toHaveLength(1);
+  });
+
+  it("applies the guard to a downloaded image too", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(pngHeader(750, 8618), {
+            status: 200,
+            headers: { "content-type": "image/png" },
+          }),
+      ),
+    );
+    const { result, text } = await run({ file_path: "https://example.com/tall.png" }, tmp);
+    expect(result?.stopReason).toBe("fatal");
+    expect(result?.images).toBeUndefined();
+    expect(text).toContain("750×8618");
+  });
+
+  it("an over-dimension image fails before any vision request on a text-only session", async () => {
+    await writeFile(path.join(tmp, "tall.png"), pngHeader(750, 8618));
+    const { llm, calls } = fakeLLM("desc");
+    const { result, text } = await run({ file_path: "tall.png" }, tmp, {
+      visionDescriber: { modelId: "vis-1", createLLM: () => llm },
+    });
+    expect(result?.stopReason).toBe("fatal");
+    expect(text).toContain("8192");
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("parseImageDimensions", () => {
+  it("reads PNG IHDR, JPEG SOF, GIF logical screen, and every WebP flavor", () => {
+    expect(parseImageDimensions(pngHeader(750, 8618))).toEqual({ width: 750, height: 8618 });
+    expect(parseImageDimensions(PNG_1X1)).toEqual({ width: 1, height: 1 });
+    expect(parseImageDimensions(jpegHeader(3, 9000))).toEqual({ width: 3, height: 9000 });
+    expect(parseImageDimensions(gifHeader(750, 8618))).toEqual({ width: 750, height: 8618 });
+    expect(parseImageDimensions(webpHeader("VP8 ", 750, 8618))).toEqual({
+      width: 750,
+      height: 8618,
+    });
+    expect(parseImageDimensions(webpHeader("VP8L", 750, 8618))).toEqual({
+      width: 750,
+      height: 8618,
+    });
+    expect(parseImageDimensions(webpHeader("VP8X", 750, 8618))).toEqual({
+      width: 750,
+      height: 8618,
+    });
+  });
+
+  it("returns null when the bytes carry no recognizable header", () => {
+    expect(parseImageDimensions(Buffer.from("no magic here"))).toBeNull();
+    expect(parseImageDimensions(Buffer.alloc(0))).toBeNull();
+    expect(parseImageDimensions(Buffer.alloc(60, 0x00))).toBeNull();
   });
 });
 
