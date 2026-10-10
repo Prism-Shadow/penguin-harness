@@ -590,7 +590,12 @@ export class MachinesService {
         }
         return done([
           { id: "ssh", state: "pass", user: "", host: "" },
-          { id: "platform", state: "fail", said: probe.stdout.trim().slice(0, 600) },
+          {
+            id: "platform",
+            state: "fail",
+            reason: "unsupported",
+            said: probe.stdout.trim().slice(0, 600),
+          },
           ...skipped,
         ]);
       }

@@ -509,6 +509,29 @@ describe("the connection check", () => {
     ).toBe(S.machines.check.downloadFrom("0.2.13", "oss"));
   });
 
+  it("names the glibc a machine has against the one the release needs, and a musl system", () => {
+    const old = line({
+      id: "platform",
+      state: "fail",
+      reason: "glibc",
+      os: "linux",
+      arch: "x64",
+      glibc: "2.17",
+      need: "2.28",
+    });
+    expect(old).toMatchObject({
+      text: S.machines.check.platformOldGlibc("2.17", "2.28"),
+      tone: "danger",
+      detail: null,
+    });
+    expect(
+      line({ id: "platform", state: "fail", reason: "musl", os: "linux", arch: "arm64" }).text,
+    ).toBe(S.machines.check.platformMusl);
+    expect(
+      line({ id: "platform", state: "fail", reason: "unsupported", said: "FreeBSD amd64" }),
+    ).toMatchObject({ text: S.machines.check.platformUnsupported, detail: "FreeBSD amd64" });
+  });
+
   it("names the room left against what an install needs, and who holds the port", () => {
     expect(line({ id: "disk", state: "fail", freeMb: 300, needMb: 800 }).text).toBe(
       S.machines.check.diskLow("300MB", "800MB"),

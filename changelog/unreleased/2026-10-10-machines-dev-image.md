@@ -38,7 +38,7 @@ A server running from a source checkout (`pnpm dev`, `pnpm desktop`) builds its 
 - One `Include` line may name several files.
 - A server start that dies on a port another program holds says so, and offers no forced install; a crash's stack trace becomes its error line.
 - The installer's progress bars stay out of the job log, and an installer failure is quoted by its `error:` lines.
-- `POST /api/projects/:projectId/machines/:machineId/diagnose` checks a machine without writing anything there: ssh sign-in, the system, the tools the installer runs, whether the machine reaches the release, free disk, and the port its server would use. The Machine dialog runs it as **Check connection** and says each result in a sentence.
+- `POST /api/projects/:projectId/machines/:machineId/diagnose` checks a machine without writing anything there: ssh sign-in, the system (a glibc older than the release's Node needs, and musl, fail by name), the tools the installer runs, whether the machine reaches the release, free disk, and the port its server would use. The Machine dialog runs it as **Check connection** and says each result in a sentence.
 
 ## Adding machines
 

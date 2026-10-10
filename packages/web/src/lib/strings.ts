@@ -301,6 +301,10 @@ export const zh = {
       platform: (os: string, arch: string) => `系统：${os} ${arch}。`,
       platformWindows: "Windows：可以安装，但暂时还不能连接。",
       platformUnsupported: "这个系统或架构没有发布版。",
+      platformOldGlibc: (glibc: string, need: string) =>
+        `这台机器的 glibc 是 ${glibc}，PenguinHarness 自带的 Node 需要 ${need} 或更新：请换一台较新的 Linux 系统。`,
+      platformMusl:
+        "这台机器用的是 musl libc（如 Alpine），PenguinHarness 自带的 Node 需要 glibc：请换一台基于 glibc 的 Linux 系统。",
       toolsPass: "安装所需的工具齐全。",
       toolsNoCurl: "没有 curl：那台机器无法自己下载，安装时本服务端会经 ssh 把发布版送过去。",
       toolsMissing: (tools: string) => `缺少安装所需的工具：${tools}。请在那台机器上装好后再试。`,

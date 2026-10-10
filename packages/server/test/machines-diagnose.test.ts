@@ -17,6 +17,8 @@
  * - Given too little room in its home, the disk check fails; given room for one install but
  *   not two, it warns.
  * - Given the port taken by another program it fails; held by its own server it passes.
+ * - Given a Linux machine whose glibc is older than the release's Node needs, the platform check
+ *   fails naming both versions; given a musl system (Alpine), it fails as musl.
  * - Given a Windows machine, it is installable but the POSIX checks are skipped.
  * - Given a job working on the machine, the check is refused rather than queued behind it.
  * - The release sources it asks are the installer's own.
@@ -37,6 +39,7 @@ import type { MachinesEffects } from "../src/machines/service.js";
 import { remoteLayoutFor } from "../src/machines/layout.js";
 import {
   INSTALL_NEEDS_MB,
+  MIN_GLIBC,
   RELEASE_SOURCES,
   diagnoseCommand,
   parseDiagnosis,
@@ -55,12 +58,15 @@ const said = (stdout: string, code = 0): ExecResult => ({
 
 /** A check command's answer: everything in place unless a test says otherwise. */
 function answer(
-  over: Partial<Record<"missing" | "disk" | "oss" | "github" | "lock" | "port", string>> = {},
+  over: Partial<
+    Record<"missing" | "disk" | "libc" | "oss" | "github" | "lock" | "port", string>
+  > = {},
 ) {
   const lines = ["@@who penguin box-1"];
   if (over.missing !== undefined)
     lines.push(...over.missing.split(" ").map((t) => `@@missing ${t}`));
   lines.push(`@@disk ${over.disk ?? String(50 * 1024 * 1024)}`);
+  lines.push(`@@libc ${over.libc ?? "ldd (Debian GLIBC 2.36-9+deb12u4) 2.36"}`);
   lines.push(`@@oss ${over.oss ?? "206 0"}`, `@@github ${over.github ?? "206 0"}`);
   if (over.lock !== undefined) lines.push(`@@lock ${over.lock}`);
   lines.push(`@@port ${over.port ?? "000 7"}`);
@@ -212,6 +218,28 @@ describe("the connection check", () => {
     expect(ours.byId.port).toMatchObject({ state: "pass", holder: "penguin" });
   });
 
+  it("fails a glibc older than the release's Node needs, naming both, and a musl system", async () => {
+    const old = await checksOf((command) =>
+      command.includes("@@who") ? said(answer({ libc: "ldd (GNU libc) 2.17" })) : said(LINUX_PROBE),
+    );
+    expect(old.byId.platform).toMatchObject({
+      state: "fail",
+      reason: "glibc",
+      glibc: "2.17",
+      need: MIN_GLIBC,
+    });
+    const alpine = await checksOf((command) =>
+      command.includes("@@who") ? said(answer({ libc: "musl libc (x86_64)" })) : said(LINUX_PROBE),
+    );
+    expect(alpine.byId.platform).toMatchObject({ state: "fail", reason: "musl" });
+    const ubuntu = await checksOf((command) =>
+      command.includes("@@who")
+        ? said(answer({ libc: "ldd (Ubuntu GLIBC 2.35-0ubuntu3.8) 2.35" }))
+        : said(LINUX_PROBE),
+    );
+    expect(ubuntu.byId.platform.state).toBe("pass");
+  });
+
   it("says a Windows machine is installable and skips the POSIX checks", async () => {
     const { byId, sent } = await checksOf(
       () => said("the connection to this machine ended: 'sh' is not recognized", 255),
@@ -291,6 +319,8 @@ describe("the connection check", () => {
       );
       const byId = Object.fromEntries(checks.map((check) => [check.id, check]));
       expect(byId.ssh).toMatchObject({ state: "pass", user: os.userInfo().username });
+      // CI's Linux and macOS both run the release's Node, so the libc this shell reports passes.
+      expect(byId.platform?.state).toBe("pass");
       expect(byId.download?.state).toBe("skip");
       expect(byId.disk?.state).not.toBe("skip");
       // CI images have curl; the check is that the port answer parses, not which tools exist.

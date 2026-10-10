@@ -550,7 +550,13 @@ export function checkLine(check: MachineCheck, alias: string): CheckLine {
         ? line(c.sshPass(check.user, check.host))
         : line(c.ssh[check.reason](alias), c.sshSaid(sshWords(check.said)));
     case "platform":
-      if (check.state === "fail") return line(c.platformUnsupported, check.said || null);
+      if (check.state === "fail") {
+        if (check.reason === "glibc") {
+          return line(c.platformOldGlibc(check.glibc ?? "?", check.need ?? "?"));
+        }
+        if (check.reason === "musl") return line(c.platformMusl);
+        return line(c.platformUnsupported, check.said || null);
+      }
       return check.state === "warn"
         ? line(c.platformWindows)
         : line(c.platform(OS_NAME[check.os] ?? check.os, check.arch));

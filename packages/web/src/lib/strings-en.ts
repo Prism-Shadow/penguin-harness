@@ -264,6 +264,10 @@ export const en: Strings = {
       platform: (os: string, arch: string) => `System: ${os} ${arch}.`,
       platformWindows: "Windows: it can be installed on, but not connected yet.",
       platformUnsupported: "No release is published for this system or architecture.",
+      platformOldGlibc: (glibc: string, need: string) =>
+        `This machine has glibc ${glibc}; the Node that PenguinHarness ships needs ${need} or newer. Use a newer Linux system.`,
+      platformMusl:
+        "This machine uses musl libc (Alpine, for example); the Node that PenguinHarness ships needs glibc. Use a glibc-based Linux system.",
       toolsPass: "It has the tools the installer needs.",
       toolsNoCurl:
         "No curl there: the machine cannot download the release itself, so an install sends it from this server over ssh.",

@@ -206,7 +206,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - `POST …/connect` 维持一条 `ssh -T -D` 会话：空闲时永不超时，断开后自动重连，服务器重启或热推送后也会自动恢复。Windows 机器返回 `409` `connect_unsupported`，因为没有 shell 可以维持会话。
 - `POST …/disconnect` 断开后远端服务器继续运行：它属于那台机器，其他人可能还在使用。
 - `POST …/restart` 之所以是独立操作，是因为机器上的文件可以在运行期间更新，只有重启才能让进程与文件保持一致。
-- `POST …/diagnose` 依次做六项检查，每项为 `pass`、`warn`、`fail` 或 `skip`：`ssh`（以 BatchMode 登录，失败时附原因与 ssh 的原话）、`platform`、`tools`（发布版安装脚本要用的工具；只缺 `curl` 时为 `warn`）、`download`（那台机器能否从 GitHub 或镜像拿到 `version` 发布版；两边都连不上时为 `warn`，因为安装会改由本服务器经 ssh 发送安装包）、`disk`（主目录的可用空间，以 MB 计，对照安装所需）与 `port`（`free`、`penguin` 或 `other`）。
+- `POST …/diagnose` 依次做六项检查，每项为 `pass`、`warn`、`fail` 或 `skip`：`ssh`（以 BatchMode 登录，失败时附原因与 ssh 的原话）、`platform`（`fail` 时带 `reason`：`unsupported`、`glibc`——低于发布版 Node 所需的 `need`——或 `musl`）、`tools`（发布版安装脚本要用的工具；只缺 `curl` 时为 `warn`）、`download`（那台机器能否从 GitHub 或镜像拿到 `version` 发布版；两边都连不上时为 `warn`，因为安装会改由本服务器经 ssh 发送安装包）、`disk`（主目录的可用空间，以 MB 计，对照安装所需）与 `port`（`free`、`penguin` 或 `other`）。
 - 无法自行下载发布版的机器，由本服务器为它取安装包：只下载一次，核对发布时附带的校验和，存放在 `<root>/machines/releases/v<version>/`，经 ssh 会话发送过去。
 - `GET …/dirs` 与下文的 API 代理一样，用机器自身的 id 寻址。机器未连接时返回 `404`，因为读取操作绝不会自行建立 ssh 连接；那台机器拒绝列出的目录返回 `403 dir_permission_denied`。其条目只有文件夹，不带 `kind` 与 `mtime`。
 

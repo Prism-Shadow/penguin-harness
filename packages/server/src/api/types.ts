@@ -4918,8 +4918,21 @@ export type MachineCheck =
   | { id: "ssh"; state: "fail"; reason: MachineSshFailure; said: string }
   /** `warn` for Windows: installable, not connectable yet. */
   | { id: "platform"; state: "pass" | "warn"; os: string; arch: string }
-  /** An OS or architecture no release is published for; `said` is what the machine answered. */
-  | { id: "platform"; state: "fail"; said: string }
+  /**
+   * What the release's Node cannot run on: an OS or architecture no release is published for
+   * (`unsupported`, `said` what the machine answered), a glibc older than `need` (`glibc`), or
+   * a musl libc such as Alpine's (`musl`).
+   */
+  | {
+      id: "platform";
+      state: "fail";
+      reason: "unsupported" | "glibc" | "musl";
+      os?: string;
+      arch?: string;
+      glibc?: string;
+      need?: string;
+      said?: string;
+    }
   /**
    * What the release installer needs and the machine lacks. `warn` when curl alone is missing:
    * the release is then sent over ssh rather than downloaded there.

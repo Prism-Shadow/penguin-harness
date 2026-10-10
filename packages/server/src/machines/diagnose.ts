@@ -44,6 +44,12 @@ export const INSTALL_NEEDS_MB = 800;
 /** Below this much free space an install fits, but not twice: worth saying, not a refusal. */
 const ROOM_MB = 2 * INSTALL_NEEDS_MB;
 
+/**
+ * The oldest glibc the release's bundled Node runs on: nodejs.org's Linux builds of Node 24
+ * are linked against glibc 2.28 (CentOS 7's 2.17 is too old; a musl system has none).
+ */
+export const MIN_GLIBC = "2.28";
+
 /** The tools install.sh runs besides the shell's own; one sha256 tool of the two it accepts. */
 const TOOLS = ["curl", "tar", "gzip", "mktemp"];
 
@@ -103,6 +109,7 @@ export function diagnoseCommand(
     `for t in ${TOOLS.join(" ")}; do command -v "$t" >/dev/null 2>&1 || echo "@@missing $t"; done`,
     `command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || echo "@@missing sha256sum"`,
     `echo "@@disk $(df -Pk "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')"`,
+    `if [ "$(uname -s)" = Linux ]; then echo "@@libc $( (ldd --version 2>&1 || true) | head -n 1)"; fi`,
     ...(version === null ? [] : [releaseReachCommand(version)]),
     `p=$(sed -n 's/.*"pid":[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p' "${lock}" 2>/dev/null)`,
     `q=$(sed -n 's/.*"port":[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p' "${lock}" 2>/dev/null)`,
@@ -153,6 +160,30 @@ export function sshFailureChecks(said: string, alias: string): MachineCheck[] {
   ];
 }
 
+/** Whether `version` (`a.b`) is older than `floor`. */
+function older(version: string, floor: string): boolean {
+  const [a = 0, b = 0] = version.split(".").map(Number);
+  const [x = 0, y = 0] = floor.split(".").map(Number);
+  return a < x || (a === x && b < y);
+}
+
+/**
+ * The platform as the release's Node sees it: a POSIX system and architecture a release is
+ * published for, on Linux with a glibc new enough — `ldd --version`'s first line names it, and
+ * a musl system says musl there.
+ */
+function platformCheck(identity: RemoteIdentity, libc: string | undefined): MachineCheck {
+  const { platform: os, arch } = identity;
+  if (os === "linux" && libc !== undefined) {
+    if (/musl/i.test(libc)) return { id: "platform", state: "fail", reason: "musl", os, arch };
+    const glibc = /(\d+\.\d+)\S*\s*$/.exec(libc)?.[1];
+    if (glibc !== undefined && older(glibc, MIN_GLIBC)) {
+      return { id: "platform", state: "fail", reason: "glibc", os, arch, glibc, need: MIN_GLIBC };
+    }
+  }
+  return { id: "platform", state: "pass", os, arch };
+}
+
 /**
  * The checks once the probe has said what the machine is: everything from the command's
  * output on POSIX, and only what the probe said for Windows.
@@ -173,7 +204,7 @@ export function parseDiagnosis(
     }
     return checks;
   }
-  checks.push({ id: "platform", state: "pass", os: identity.platform, arch: identity.arch });
+  checks.push(platformCheck(identity, first("libc")));
 
   // curl only downloads the release, and a machine without it is sent the release over ssh
   // (install-server.ts): a caveat. The rest the installer cannot do without.

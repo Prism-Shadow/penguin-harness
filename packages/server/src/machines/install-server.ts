@@ -84,18 +84,31 @@ export function installerLine(raw: string): string | null {
 
 /**
  * Why the installer stopped, as its own words: its `error:` lines when it said any (every
- * refusal it makes is one — install.sh's `fail`), else its last few lines. The whole
- * transcript is already in the job log, line by line; a failure's message is what it says.
+ * refusal it makes is one — install.sh's `fail`), else its last few lines. When the refusal
+ * points at "the error above" — the program it unpacked would not run — the lines just before
+ * it lead: they are the program's own error, such as a C library too old for its Node. The
+ * whole transcript is already in the job log, line by line; a failure's message is what it says.
  */
 export function installerFailure(output: string): string {
   const lines = output
     .split("\n")
     .map((line) => installerLine(line))
     .filter((line): line is string => line !== null);
-  const errors = lines.filter((line) => /^error:/i.test(line));
-  const said = (errors.length > 0 ? errors : lines.slice(-3)).join("\n");
-  return said === "" ? "the installer stopped without a message." : said;
+  const isError = (line: string) => /^error:/i.test(line);
+  const first = lines.findIndex(isError);
+  if (first === -1) {
+    const said = lines.slice(-3).join("\n");
+    return said === "" ? "the installer stopped without a message." : said;
+  }
+  const errors = lines.filter(isError);
+  const above = errors.some((line) => /\bthe error above\b/i.test(line))
+    ? lines.slice(Math.max(0, first - ABOVE_LINES), first)
+    : [];
+  return [...above, ...errors].join("\n");
 }
+
+/** How many of the program's own lines lead an installer refusal that points above itself. */
+const ABOVE_LINES = 3;
 
 /** Which installer runs the far side; also the asset keys deploy.mjs pushes. */
 const installerFileFor = (platform: RemotePlatform): string =>

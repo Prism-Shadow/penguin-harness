@@ -531,6 +531,34 @@ describe("installOnRemote", () => {
     });
   });
 
+  it("leads with the program's own error when the installer points above itself", async () => {
+    const channel = scripted({
+      probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
+      installSays: [
+        "Bundle checksum OK.",
+        "node: /lib64/libc.so.6: version `GLIBC_2.28' not found (required by node)",
+        "error: candidate PenguinHarness failed to run (exit status 1). See the error above.",
+      ],
+      installExit: 1,
+    });
+    const outcome = await installOnRemote({
+      target,
+      plan: plan(),
+      assets,
+      channel,
+      layout: RELEASE,
+    });
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind !== "failed") return;
+    const said = outcome.detail.split("\n");
+    expect(said.at(-2)).toBe(
+      "node: /lib64/libc.so.6: version `GLIBC_2.28' not found (required by node)",
+    );
+    expect(said.at(-1)).toBe(
+      "error: candidate PenguinHarness failed to run (exit status 1). See the error above.",
+    );
+  });
+
   it("refuses a base that cannot name a release", async () => {
     const channel = scripted({
       probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
