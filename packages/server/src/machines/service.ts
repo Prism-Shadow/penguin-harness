@@ -1173,6 +1173,9 @@ export class MachinesService {
         refused.push({ machineId: address, why: "no-image" });
         continue;
       }
+      // On the Project's list from the moment it is asked for, so its card shows the job — and
+      // keeps showing a first install that failed, with its Retry, rather than vanishing with it.
+      this.#setMember(projectId, address, true);
       this.#startJob(
         "use",
         machine,

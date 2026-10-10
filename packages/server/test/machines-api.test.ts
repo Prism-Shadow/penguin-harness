@@ -1744,13 +1744,21 @@ describe("machines API", () => {
       expect(after.machines.find((machine) => machine.id === "ssh:nas")?.member).toBeUndefined();
     });
 
-    it("stop using a machine whose first enable failed lets its job go too", async () => {
+    it("a machine asked for is on the list at once, and stays there with its failed first enable until stop using lets both go", async () => {
       await boot({
         install: async () => ({ kind: "failed", step: "install", detail: "error: no space left" }),
       });
-      await useBody(["ssh:nas"]);
+      const started = (await (await useBody(["ssh:nas"])).json()) as MachinesUseResponse;
+      expect(started.machines.find((machine) => machine.id === "ssh:nas")?.member).toBe(true);
       await waitFor(settled);
       expect(jobsOf().map((job) => job.machineId)).toEqual(["ssh:nas"]);
+      const failed = (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+      expect(failed.machines.find((machine) => machine.id === "ssh:nas")).toMatchObject({
+        member: true,
+        installed: null,
+      });
       await admin.post("/api/projects/default_project/machines/stop-using", {
         machines: ["ssh:nas"],
       });
