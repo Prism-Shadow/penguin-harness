@@ -16,8 +16,8 @@ import path from "node:path";
 import { strFromU8, unzipSync, zipSync } from "fflate";
 import { PLUGIN_NAME_PATTERN, readLibraryPackage } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
-import { assertSafeEntryPath } from "../http/routes/skills.js";
 import { PACKAGE_NAME } from "../plugin/loader.js";
+import { assertSafeEntryPath } from "./skill-import-limits.js";
 
 /** Decoded zip cap: the Skill archive's, which stays within the 20MB body limit after base64. */
 export const MAX_PLUGIN_ARCHIVE_BYTES = 14 * 1024 * 1024;
