@@ -113,7 +113,7 @@ async function writeText(p: string, text: string): Promise<void> {
   // Atomic whole-file replacement (uniquely-named temp file + rename): a crash mid-write
   // must not leave a truncated TOML/YAML/MD behind — an unparsable org file drops its
   // ticket from the board (reconcile's listTickets), so the core's own state-file
-  // discipline applies here too. The write lands 0600: these are the org's private files.
+  // discipline applies here too.
   await atomicWriteFile(p, text);
 }
 
