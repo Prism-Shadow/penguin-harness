@@ -110,19 +110,22 @@ export const zh = {
     /** Asked before letting a machine go: the connection drops, the install stays. */
     stopUsingOne: (alias: string) =>
       `停用 ${alias}？本 Project 会断开与它的连接并不再列出它，正在经它进行的工作会中断。程序仍留在那台机器上，之后可以重新启用。`,
-    /** The one word for a machine's state, keyed by its reading; `serving` is this server's. */
+    /**
+     * The one word for a machine's state, keyed by its reading; `serving` is this server's. The
+     * card's mark and the Machine dialog's status chip both say it.
+     */
     state: {
-      serving: "服务中",
+      serving: "运行中",
       queued: "排队中",
       working: "处理中",
       ready: "已连接",
       failed: "失败",
       installedOnly: "已安装",
-      behind: "待更新",
+      behind: "有新版本",
       notConnected: "未连接",
       unreachable: "连不上",
       stopped: "未运行",
-      linkedStopped: "已连接，未在提供服务",
+      linkedStopped: "已连接，服务未运行",
       unknown: "未检查",
     },
     /** The stepper's steps, in pipeline order, as the caption under a working row. */
@@ -133,6 +136,15 @@ export const zh = {
       restart: "重启服务…",
       connect: "建立连接…",
       sync: "下发模型配置…",
+    },
+    /** The same steps by name, in pipeline order: the Machine dialog's step list. */
+    step: {
+      check: "检查机器",
+      install: "安装程序",
+      handover: "传送构建",
+      restart: "重启服务",
+      connect: "建立连接",
+      sync: "同步模型配置",
     },
     stepOf: (step: number, total: number) => `第 ${step}/${total} 步`,
     queued: "排队中，等前面的机器处理完。",
@@ -147,17 +159,8 @@ export const zh = {
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
     refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
-    /** The record in the Machine dialog's Connection section. */
-    detailInstalled: "已安装",
-    detailSince: "安装于",
-    /** This server's own card says what build it runs and since when, not what was installed. */
-    detailVersion: "版本",
-    detailStarted: "启动于",
-    detailServer: "对端服务",
-    detailChecked: "上次检查",
+    /** The card's hover on the alias: the machine's own id. */
     detailMachineId: "机器 ID",
-    detailRoot: "服务端根目录",
-    serverUpOn: (port: number) => `运行中，端口 ${port}`,
     agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
@@ -175,30 +178,86 @@ export const zh = {
       updateNeeded: "需要更新",
       update: "更新",
     },
-    /** The Machine dialog (machine-detail-dialog.tsx): three ruled sections. */
+    /**
+     * The Machine dialog (machine-detail-dialog.tsx): a header under the alias, then Details,
+     * Progress and Actions.
+     */
     detail: {
-      connection: "连接",
-      job: "任务",
+      /** The header's line under the status: how this server reaches the machine. */
+      describeRemote: (alias: string) => `通过 ssh 别名「${alias}」连接的远程机器。`,
+      describeLocal: "本服务端所在的机器，不经 ssh。",
+      /** A machine on another build than this server's: the version this server would install. */
+      newerAvailable: (version: string) => `有新版本 ${version}`,
+      facts: "基本信息",
+      progress: "处理进度",
       actions: "操作",
-      alias: "ssh 别名",
-      host: "主机",
-      state: "状态",
+      /** Details: each fact's label, and the values said in words. */
+      fact: {
+        connection: "连接方式",
+        viaSsh: (alias: string) => `ssh · ${alias}`,
+        local: "本机，不经 ssh",
+        host: "主机地址",
+        root: "数据目录",
+        service: "远端服务",
+        serviceLocal: "服务",
+        running: (port: number) => `运行中（端口 ${port}）`,
+        stopped: "未运行",
+        unreachable: "连不上",
+        checked: "上次检查",
+        installed: "已安装",
+        version: "版本",
+        latest: (version: string) => `${version}（最新）`,
+        behind: (version: string, latest: string) => `${version} · 可更新到 ${latest}`,
+        installedAt: "安装时间",
+        started: "启动于",
+        machineId: "机器 ID",
+      },
       copyMachineId: "复制机器 ID",
-      jobDone: "已完成",
-      retry: "重试",
+      /** Progress: a job that finished well, in one line. */
+      lastJobDone: "上次任务已完成。",
+      failedAtStep: (step: string, message: string) => `在「${step}」这一步失败：${message}`,
+      showLog: "查看日志",
+      logLabel: "任务日志",
+      /** The one thing to do for a machine, and what it does, said beside it. */
+      primary: {
+        update: "更新",
+        updateWhy: (version: string) => `更新到 ${version}，会重启服务并重新连接。`,
+        start: "启动服务",
+        startWhy: "启动那台机器上的服务并连接。",
+        connect: "连接",
+        connectWhy: "连接到那台机器上的服务，没在运行就先启动它。",
+        tryAgain: "重试连接",
+        tryAgainWhy: "再次通过 ssh 连接；请先确认那台机器开着、网络通。",
+        retry: "重试",
+        retryWhy: "从头再跑一遍整个流程。",
+      },
+      /** The captions of the two rows of Actions: the single steps, and the ways out. */
+      maintenance: "维护",
+      leave: "退出",
+      configureSsh: "配置 ssh",
+      configureSshWhy: "修改这台机器在 ~/.ssh/config 里的地址、用户、端口和密钥。",
+      /** Why a verb is held right now. */
+      hold: {
+        busy: "正在处理上一个请求。",
+        moving: "这台机器有任务在处理，请稍候。",
+        noImage: "本服务端没有可推送的安装镜像。",
+        noConnection: "当前没有连接。",
+        unreachable: "上次检查时连不上这台机器，先试试「重试连接」。",
+      },
     },
-    /** The single steps the dialog offers beside Enable and Disable, each with what it does. */
+    /** The single steps and the ways out the dialog offers, each with what it does. */
     verbs: {
-      install: "安装",
-      installWhy: "安装或更新那台机器上的程序；版本已一致时跳过",
-      connect: "连接",
-      connectWhy: "启动那台机器上的服务，并保持一条通往它的连接",
-      restart: "重启",
-      restartWhy: "重启那台机器上的服务，让运行的程序与磁盘上的一致",
+      install: "安装程序",
+      installWhy: "把程序装到那台机器上，或更新到本服务端的版本；版本已一致时跳过。",
+      connect: "重新连接",
+      connectWhy: "重新建立通往那台机器的连接；服务没在运行就先启动它。",
+      restart: "重启服务",
+      restartWhy: "重启那台机器上的服务，让运行中的程序与磁盘上的一致。",
+      stopUsingWhy: "断开连接并把它从本 Project 移除；程序留在那台机器上，之后可以重新启用。",
       disconnect: "断开",
-      disconnectWhy: "关闭通往那台机器的连接，那边的服务继续运行",
+      disconnectWhy: "只断开连接；那边的服务继续运行。",
       release: "移出 Project",
-      releaseWhy: "本 Project 不再使用这台机器；那边的程序与连接保持不变",
+      releaseWhy: "本 Project 不再使用它；连接和程序都保持不变。",
       disconnectConfirm: (alias: string) =>
         `断开与 ${alias} 的连接？这条连接由使用它的所有 Project 共用，正在经它进行的工作会中断；那台机器上的服务继续运行，之后可以重新连接。`,
       releaseConfirm: (alias: string) =>

@@ -86,8 +86,9 @@ const APPENDIX_A = [
  * transcript's cards, the code block, the page's cards and a table that is its own box; the shell
  * for the app window; a decorative icon for the rows and headers whose label already says what the
  * icon says (a nav row's glyph in the sidebar or a rail, a group header's, a menu row's glyph, a
- * tab, an empty state) — a session row is not a host, its avatar and marks carry information; a
- * tree for a file tree and the rows under an activity card's head; a field for a settings row;
+ * tab, an empty state, a dialog fact's label) — a session row is not a host, its avatar and marks
+ * carry information; a tree for a file tree and the rows under an activity card's head; a field
+ * for a settings row;
  * activity for the transcript's work in progress and the harness's events — the activity card's
  * head, its rows (a thinking step, a tool call, a compaction's section, an MCP server) and the
  * one-line note.
@@ -142,6 +143,8 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "GroupHeader",
     "Tabs",
     "EmptyState",
+    // A Machine dialog fact's label (2026-10-10): its glyph says what the label's words say.
+    "FactLabel",
   ],
   "ui-tree": ["FileTree", "ActivityGroup"],
   "ui-field": ["Field", "PrefRow", "SettingRow"],

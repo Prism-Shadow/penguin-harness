@@ -86,8 +86,11 @@ export function machineMark(reading: MachineReading | null): MachineMark {
   };
 }
 
-/** The app's tones in the shared package's names, for its `Dot`: a busy dot takes the success fill. */
-const DOT_TONE: Record<Tone, ToneName> = {
+/**
+ * The app's tones in the shared package's names, for its `Dot` and `Badge`: a busy dot takes the
+ * success fill.
+ */
+export const DOT_TONE: Record<Tone, ToneName> = {
   busy: "success",
   attention: "attention",
   success: "success",
@@ -139,7 +142,7 @@ export function Stepper({ job, className = "" }: { job: MachineJob; className?: 
         : S.machines.working
       : result !== null && !result.ok
         ? S.machines.failedAt(result.step)
-        : S.machines.detail.jobDone;
+        : S.machines.detail.lastJobDone;
   const fill = (index: number): string => {
     if (job.queued || index > step) return "bg-gray-200 dark:bg-gray-700";
     if (index < step) return toneDot.busy;

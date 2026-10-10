@@ -134,6 +134,10 @@ export function readingTone(reading: MachineReading): Tone {
     case "linkedStopped":
       // The link is up and nothing is serving: something for a person to do, not a failure.
       return "attention";
+    case "installedOnly":
+      // As far as this server can take it (a Windows machine): nothing waits on anyone, so the
+      // mark recedes rather than asking for attention.
+      return "muted";
     case "unknown":
       return "muted";
     default:
