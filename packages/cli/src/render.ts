@@ -857,6 +857,11 @@ export class StreamRenderer {
           this.pendingRetryCode = undefined;
           this.finishLine();
           this.out.write(`${dim(this.t.llmFatalLabel(p.error_message), this.c)}\n`);
+          // A request over the model's context window: the provider's text names the
+          // overflow but not the way out, so a hint line says what to do next.
+          if (p.error_code === "context_overflow") {
+            this.out.write(`${dim(this.t.llmContextOverflowHint(), this.c)}\n`);
+          }
           this.lastLineKey = null;
         } else if (endStatus === "retryable" && p.retry_in_ms === undefined) {
           // A live-protocol retryable with no planned wait is the ladder giving up — the

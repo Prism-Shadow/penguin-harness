@@ -200,7 +200,7 @@ WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进
 
 `edit_file` 和 `write_file` 在服务器进程内按文件串行执行，串行键取文件的真实路径，因此符号链接与其目标算作同一个文件。并行编辑同一文件时，会依次应用各次修改；如果前一次编辑已经移除了某个 `old_string`，后续编辑将匹配失败，而不是覆盖前面的修改。其他进程的写入不受这把锁约束。
 
-`read_file` 除文本外还能读取图片。图片分支接受不超过 5MB 的 png、jpeg、gif 或 webp 文件（先按魔数识别，再按扩展名识别），也接受 `file_path` 中给出的 http(s) URL。URL 只能用作图片来源，且会先检查响应的 content-type。
+`read_file` 除文本外还能读取图片。魔数或扩展名表明是图片的文件走图片分支，`file_path` 中给出的 http(s) URL 也一样；URL 只能用作图片来源。格式只按文件字节（魔数）判定：不超过 5MB 的 png、jpeg、gif 或 webp 才会被读取，其余格式（如 SVG、HEIC 照片、改了扩展名的网页）一律拒绝，并提示先转换为 PNG 或 JPEG。扩展名和响应的 content-type 都不决定格式。
 
 返回什么取决于 Session 模型的 vision 标志：
 

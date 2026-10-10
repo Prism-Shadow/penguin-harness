@@ -5,7 +5,8 @@
  *   in the Trace and in the Task's first request — and a hook that fails leaves a `hook`
  *   event in the same place instead.
  * - Only a Prompt carrying text of the user's own is put to them: an input the server, the
- *   harness or a parent agent wrote is not one, and neither is a stop hook's continuation.
+ *   harness or a parent agent wrote is not one, and neither is a stop hook's continuation —
+ *   nor a retry, a run with no input that resends what a failed run left held.
  * - A hook marked `trigger: "host"` stays out of that consult and is reached by name.
  * - The hooks are those of the context that is running: a context a compaction opens brings
  *   its own set, and the Session consults that one from then on.
@@ -343,6 +344,43 @@ describe("Session user-prompt hooks", () => {
     // The continuation is the one input a `continue` event announces.
     const announced = out.findIndex(isHookContinue);
     expect(shape(out[announced + 1]!)).toBe("harness:again");
+  });
+
+  it("consults none for a retry: a run with no input resends the failed turn's input alone", async () => {
+    const hook = answering("clock", "tick");
+    const calls: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate({ newMessages }) {
+        calls.push(newMessages);
+        if (calls.length === 1) {
+          return { status: "fatal", errorCode: "auth", errorMessage: "401 invalid api key" };
+        }
+        yield assistantText("answer");
+        yield usage(20, 20);
+        return { status: "completed" };
+      },
+    };
+    const trace = recordingTrace();
+    const session = makeSession({ userPrompt: [hook] }, llm, { trace });
+    expect(session.hasPendingInput()).toBe(false);
+
+    await collect(session.run([userText("hello")]));
+    // The request was refused: the turn's input is held for the next run.
+    expect(session.hasPendingInput()).toBe(true);
+
+    await collect(session.run([]));
+    // The retry's request is that turn's input — the Prompt and its hook context — and
+    // nothing of its own: no hook is consulted again, and the only inputs the Trace records
+    // are the first run's.
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toHaveLength(1);
+    expect(textsOf(calls[1]!)[0]).toContain("hello");
+    expect(textsOf(calls[1]!)[0]).toContain("tick");
+    expect(hook.seen).toHaveLength(1);
+    const inputs = trace.written.filter((m) => (m.payload as TextPayload).role === "user");
+    expect(textsOf(inputs)).toEqual(["hello", "tick"]);
+    // Sent and answered: nothing is held any more.
+    expect(session.hasPendingInput()).toBe(false);
   });
 
   describe("across a rotation", () => {

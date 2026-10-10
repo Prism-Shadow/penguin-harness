@@ -20,8 +20,9 @@
  *
  * Determination order: first check file-level compaction closure; then evaluate turn by turn
  * (completed turns go to history, others are dropped wholesale while keeping outputs paired with
- * already-committed tool_calls); finally, the remaining input is the carry-over, with pairing
- * backfill applied.
+ * already-committed tool_calls — a turn whose provider rejected an image gives its input back
+ * with every image replaced by the note the engine resent it with); finally, the remaining
+ * input is the carry-over, with pairing backfill applied.
  * Docs: /docs/sessions-and-traces § "Session recovery".
  */
 import { readdir, readFile } from "node:fs/promises";
@@ -32,6 +33,7 @@ import {
   isCompleteModelMessage,
   isEventMessage,
   isSessionMeta,
+  replaceInputImages,
   toolCallOutput,
   userText,
 } from "../omnimessage/index.js";
@@ -427,6 +429,12 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
         outputs = [];
         inRequest = false;
       } else {
+        // The provider refused an image in this turn's input: the engine replaced every image
+        // in it with a fixed note before sending it again, so the input goes back the same
+        // way — otherwise the resumed history would carry the image the provider refuses, and
+        // every request after resume would fail on it. Only the attempt's own input: what
+        // landed during the request was never part of it.
+        if (msg.payload.error_code === "image_rejected") snapshot = replaceInputImages(snapshot);
         dropUncommittedRound();
       }
       continue;

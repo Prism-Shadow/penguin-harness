@@ -200,7 +200,7 @@ Under the WSL backend the helper runs inside the distro, which the initializatio
 
 `edit_file` and `write_file` serialize per file within the server process, keyed by the file's real path, so a symlink and its target count as one file. Parallel edits of one file are applied one after another, and an `old_string` that an earlier edit removed fails to match instead of overwriting it. Writes from other processes are outside this lock.
 
-`read_file` reads images as well as text. The image branch takes a png, jpeg, gif or webp file up to 5MB, recognized by its magic number and then by its extension, or an http(s) URL in `file_path`. A URL is only ever an image source, and the response's content-type is checked first.
+`read_file` reads images as well as text. A file whose magic number or extension says image takes the image branch, and so does an http(s) URL in `file_path`; a URL is only ever an image source. The format is decided by the file's bytes (magic number) only: a png, jpeg, gif or webp up to 5MB is read, and anything else, such as an SVG, a HEIC photo or a renamed web page, is refused with a hint to convert it to PNG or JPEG first. Neither the extension nor the response's content-type decides the format.
 
 What comes back depends on the Session model's vision flag:
 

@@ -1423,6 +1423,26 @@ export function ChatPage() {
     await api.postAbort(selected.sessionId).catch(() => undefined);
   }, [selected]);
 
+  // "Retry" on the line a failed run ended on: the Session runs once with no new input and
+  // sends the failed turn's held input on its own. A refusal surfaces as a toast — nothing held
+  // (a later message already sent it) has its own sentence, anything else reads like a failed
+  // send — and is rethrown, which enables the button again.
+  const onRetry = useCallback(async (): Promise<void> => {
+    if (!selected) return;
+    try {
+      // Same shape as tasks: the response carries the Session's actual id.
+      const res = await api.postRetry(selected.sessionId);
+      await syncHealedSessionId(selected.sessionId, res.sessionId);
+    } catch (e) {
+      toastError(
+        e instanceof ApiError && e.code === "nothing_to_retry"
+          ? S.chat.retryNothing
+          : apiErrorText(e, { modelId: selected.modelId }),
+      );
+      throw e;
+    }
+  }, [selected, syncHealedSessionId]);
+
   // Follow-up queue: post the full input with queueIfBusy — a busy session holds it
   // server-side and auto-sends it as an ordinary next task once this run finishes (the
   // "N queued" count arrives via task_state). Succeeds either way (queued or started
@@ -1927,6 +1947,9 @@ export function ChatPage() {
     onGiveUp: () => {
       void onStop();
     },
+    // Retry after a failed run: offered only while the composer could send — a Session on
+    // screen with nothing running or compacting, the same state its Send requires.
+    ...(selected && stream.taskState === "idle" ? { onRetry } : {}),
     onOpenFile: openWorkspaceFile,
     onOpenSubagent: (sessionId, origin) => {
       // Chip click: the agents tab focused on that child (the focus chain ends with the

@@ -9,10 +9,11 @@
  * through long files.
  *
  * Images (png/jpeg/gif/webp, ≤5MB; `file_path` may also be an http(s) URL, which is only ever
- * an image source) are recognized by magic number, then — for a URL — the response
- * content-type, then the extension, and loaded through image-source.ts. What happens next is
- * decided by the injected `services.visionDescriber`, present exactly when the session model
- * does not accept images:
+ * an image source) take the image branch by magic number or extension and are loaded through
+ * image-source.ts, where the format is decided by the bytes (magic number) alone — anything
+ * else is refused with a hint to convert it first. What happens next is decided by the
+ * injected `services.visionDescriber`, present exactly when the session model does not
+ * accept images:
  * - absent (the session model views images): yields a one-line `image/png, 123.4 kB` delta and
  *   returns the image via `ToolResult.images` for Environment to attach (a single streaming
  *   delta carries it whole before stop, and the complete `tool_call_output` carries it again);

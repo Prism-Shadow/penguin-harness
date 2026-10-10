@@ -227,6 +227,13 @@ export interface RuntimeSession {
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
   /**
+   * Whether a run with empty input would send anything (core `Session.hasPendingInput`): the
+   * failed turn's input held as carry-over — in process, or rebuilt from the Trace after a
+   * restart — or a compaction summary waiting for the next run. Optional: test fakes may omit
+   * it, reading as nothing held.
+   */
+  hasPendingInput?(): boolean;
+  /**
    * Runs the named package's `user_prompt` hook (core `Session.runUserPromptHook` — hooks
    * run in core and nowhere else); null = the package is not installed or names no such
    * command. Optional: test fakes may omit it, reading as not installed.
@@ -1113,6 +1120,36 @@ export class SessionManager {
   }
 
   /**
+   * Retry a failed run (`POST /retry`): a Task started with EMPTY input, so core sends the
+   * input of the turn that failed — held as carry-over since the run ended `fatal` or gave
+   * up reconnecting — and nothing else. No user message is published or recorded, and with no
+   * Prompt there is no user_prompt consult. Gated like startTask (busy is the same 409) but
+   * never queued, and refused with 409 `nothing_to_retry` when nothing is held — the user's
+   * next message already resent that input, or no run failed — since the run would end at
+   * once and the client would watch a Task start and stop with nothing sent. Not a person's
+   * input for company mode's hop accounting: the turn it resends was counted, or not, when
+   * it was first sent.
+   */
+  async retryTask(sessionId: string): Promise<{ sessionId: string }> {
+    return this.withLock(sessionId, async () => {
+      this.assertOpen();
+      this.assertAgentNotDeleting(sessionId);
+      this.assertSessionNotDeleting(sessionId);
+      const entry = await this.ensureEntry(sessionId);
+      this.assertIdle(entry);
+      if (!entry.session.hasPendingInput?.()) {
+        throw new HttpError(
+          409,
+          "nothing_to_retry",
+          "There is nothing to retry: the failed turn's input has already been sent.",
+        );
+      }
+      this.launchTask(entry, []);
+      return { sessionId: entry.sessionId };
+    });
+  }
+
+  /**
    * Start a goal run: like startTask, but the goal plugin composes the input and its stop
    * hook drives every later round inside this one `session.run` call — so the Session
    * stays `running` for the whole goal (every round), the existing abort endpoint
@@ -1289,7 +1326,12 @@ export class SessionManager {
     });
   }
 
-  /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run. Caller holds the session lock and has verified idle. */
+  /**
+   * Shared task launch (fresh tasks, auto-started follow-ups and retries): flips to running,
+   * publishes the input, and drives the run. Caller holds the session lock and has verified
+   * idle. A retry's input is empty: nothing is published or held, and drive gets no title
+   * material — the turn it resends already offered its text when it was first sent.
+   */
   private launchTask(entry: RuntimeEntry, input: OmniMessage[]): void {
     const channel = this.deps.channels.get(entry.sessionId);
     const ac = new AbortController();
@@ -2506,6 +2548,7 @@ export abstract class Sessions extends Interface<
     | "invalidateProjectRuntimes"
     | "assertCanAcceptTask"
     | "startTask"
+    | "retryTask"
     | "startGoal"
     | "startCompact"
     | "startSwitch"

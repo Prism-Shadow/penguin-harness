@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  IMAGE_REMOVED_NOTE,
   assistantText,
   compactionBegin,
   compactionEnd,
@@ -124,6 +125,49 @@ describe("resumeTrace", () => {
     expect(textsOf(result.history)).toEqual(["run it", "exec_command"]);
     // tc1 was committed but unanswered: its output is kept pending (structured re-delivery); the half-finished thinking is discarded.
     expect(textsOf(result.carryOver)).toEqual(["result-1"]);
+  });
+
+  it("an image-rejected round gives its input back with the images replaced, as the engine resent it", () => {
+    const image = "data:image/png;base64,iVBORw0KGgo=";
+    const upToRequest: OmniMessage[] = [
+      meta(),
+      userText("look at the screenshot"),
+      requestBegin(),
+      toolCall({ name: "read_file", arguments: "{}", toolCallId: "tc1" }),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      toolCallOutput({ output: "image/png, 8 B", toolCallId: "tc1", images: [image] }),
+      requestBegin(),
+    ];
+    const retried = resumeTrace([
+      ...upToRequest,
+      requestEnd("retryable", {
+        errorCode: "image_rejected",
+        errorMessage: "400 Could not process image",
+        attempt: 1,
+        retryInMs: 0,
+      }),
+      requestBegin(),
+      assistantText("I could not see it."),
+      requestEnd("completed", { attempt: 2 }),
+      tokenUsage(usage(20), usage(20)),
+    ]);
+    expect(textsOf(retried.history)).toEqual([
+      "look at the screenshot",
+      "read_file",
+      `image/png, 8 B\n${IMAGE_REMOVED_NOTE}`,
+      "I could not see it.",
+    ]);
+    expect((retried.history[2]!.payload as { images?: string[] }).images).toBeUndefined();
+    expect(retried.carryOver).toEqual([]);
+
+    // Any other failure gives the input back as it was: the image is resent.
+    const rejected = resumeTrace([
+      ...upToRequest,
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: "400 unknown parameter" }),
+    ]);
+    expect(rejected.carryOver).toHaveLength(1);
+    expect((rejected.carryOver[0]!.payload as { images?: string[] }).images).toEqual([image]);
   });
 
   it("treats begin-without-end as uncommitted: raw input re-carried, half-products lost", () => {

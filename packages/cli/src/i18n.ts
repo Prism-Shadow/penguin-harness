@@ -914,6 +914,12 @@ export interface Messages {
   abortLabel(abort?: { errorCode?: string; errorMessage?: string; reason?: string }): string;
   /** Run-ending LLM failure (request_end status fatal — no abort event follows); the provider's error text rides verbatim. */
   llmFatalLabel(errorMessage?: string): string;
+  /**
+   * Printed under the fatal line when the request exceeded the model's context window
+   * (error_code context_overflow): what to do next. `/switch-model` compacts on the current
+   * model first and would overflow the same way, so the way out is a new chat on another model.
+   */
+  llmContextOverflowHint(): string;
   /** The retry ladder gave up (request_end `retryable` with no planned retry); `attempt` is the final attempt's ordinal, `errorMessage` the last failure's detail. */
   reconnectGaveUpLabel(attempt: number, errorMessage?: string): string;
   /**
@@ -1980,6 +1986,8 @@ const en: Messages = {
   },
   llmFatalLabel: (errorMessage) =>
     `[error] llm request error${errorMessage ? `: ${errorMessage}` : ""}`,
+  llmContextOverflowHint: () =>
+    "[hint] The request is larger than the model's context window. Start a new chat on a model with a larger context window (penguin chat --provider <group> --model-id <id>), and check that this model's context window is not larger than what its server actually supports (penguin config model add --provider <group> --model-id <id> --context-window <n> changes it): set too large, automatic compaction starts too late.",
   reconnectGaveUpLabel: (attempt, errorMessage) =>
     `[retry] giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`,
   reconnectLabel: (status, attempt, errorCode) =>
@@ -1992,9 +2000,11 @@ const en: Messages = {
           ? "response incomplete or unparseable"
           : kind === "network"
             ? "network or service temporarily unavailable"
-            : kind === "failed"
-              ? "the model provider returned an error"
-              : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
+            : kind === "image_rejected"
+              ? "the model provider rejected an image in this turn's input (replaced with a note)"
+              : kind === "failed"
+                ? "the model provider returned an error"
+                : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
@@ -2988,6 +2998,8 @@ const zh: Messages = {
     return `[已中断]${text ? `：${text}` : ""}`;
   },
   llmFatalLabel: (errorMessage) => `[错误] 模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
+  llmContextOverflowHint: () =>
+    "[提示] 请求超出了模型的上下文窗口。可以换一个上下文更大的模型开新对话（penguin chat --provider <group> --model-id <id>）；也请检查这个模型的上下文窗口是否大于服务端实际支持的长度（penguin config model add --provider <group> --model-id <id> --context-window <n> 可修改）——设置偏大时，自动压缩会来不及触发。",
   reconnectGaveUpLabel: (attempt, errorMessage) =>
     `[重试] 第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`,
   reconnectLabel: (status, attempt, errorCode) =>
@@ -2998,9 +3010,11 @@ const zh: Messages = {
           ? "响应不完整或无法解析"
           : kind === "network"
             ? "网络或服务暂时不可用"
-            : kind === "failed"
-              ? "模型服务返回错误"
-              : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
+            : kind === "image_rejected"
+              ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
+              : kind === "failed"
+                ? "模型服务返回错误"
+                : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`

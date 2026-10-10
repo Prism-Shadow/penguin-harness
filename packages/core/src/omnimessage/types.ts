@@ -44,7 +44,9 @@ export type Role = "user" | "assistant";
  *     quota, and the credential failures of `isAuthenticationError`) or a deterministic
  *     client-side rejection (fast mode on a model without a fast tier). The engine stops
  *     the run and surfaces the error; the fix is a config/credential change, then a new
- *     request.
+ *     request. The one exception is an `image_rejected` 4xx on an input that holds images:
+ *     the engine replaces them with a text note and retries at once, recording that
+ *     attempt's `request_end` as `retryable`.
  *
  * The one vocabulary every stop_reason-carrying record shares — model messages, tool
  * results, request and compaction terminals alike. Tool executions rarely have a
@@ -347,6 +349,8 @@ export type ErrorCode =
   | "malformed" // response failed parsing/validation, or the stream was truncated
   | "auth" // the provider rejected the credentials
   | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
+  | "context_overflow" // a provider 4xx: the request exceeds the model's context window
+  | "image_rejected" // a provider 4xx refusing an image in the input (retried with it replaced)
   | "unsupported" // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input" // the input failed to assemble into a request
   // MCP connect failures.
@@ -415,7 +419,8 @@ export interface RetryDetail extends ErrorInfo {
    * Planned in-run retry wait (ms) — present ONLY when the engine will retry this failure
    * within the same run (status `retryable` with attempts remaining under the
    * applicable cap). Computed by the same formula as the actual backoff sleep
-   * (`reconnectDelayMs`), so the announced wait and the real one cannot drift; the Web App
+   * (`reconnectDelayMs`), so the announced wait and the real one cannot drift — except
+   * `image_rejected`, retried at once with the images replaced, which announces 0; the Web App
    * renders it as a live countdown to the next attempt. Absent on completed requests and on
    * final failures — a non-completed request_end without `retry_in_ms` is the run's
    * terminal record (no abort event follows: abort marks a user interruption).

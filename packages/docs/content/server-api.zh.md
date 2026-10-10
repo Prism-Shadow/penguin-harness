@@ -797,6 +797,7 @@ interface MessagesResponse {
 | POST | `/subagents/:childSessionId/abort` | 停止一个子 Agent 会话的当前运行 |
 | POST | `/abort` | 中断当前 Task：触发时返回 202，空闲时返回 204 |
 | POST | `/retry-now` | 跳过重连倒计时：→ 200 `{skipped}` |
+| POST | `/retry` | 重试失败的运行，重新发出失败那一轮的输入：202 |
 | POST | `/compact` | 开始上下文压缩：202 |
 | POST | `/switch-model` | 在本 Session 内切换模型：202；从未运行过的 Session 返回 200 与更新后的 Session |
 
@@ -809,6 +810,7 @@ interface MessagesResponse {
 - `POST /subagents/:childSessionId/message` 无论子 Agent 处于什么状态，都把文本作为用户输入投递给它。子 Agent 正在运行、消息作为插话排队时，`outcome` 为 `steered`；空闲的子 Agent 启动一次后续运行时为 `started`；已释放的子 Agent 重新拉起并开始下一轮时为 `resumed`。子 Agent 以自己上下文的思考等级运行，可以用子 Session 上的 `PATCH` 固定它。空 `text` 返回 400；404 `subagent_gone` 表示子 Agent 的记录不存在或无法复活；409 `subagent_busy` 表示子 Agent 目前无法接收消息。
 - `POST /subagents/:childSessionId/abort` 只停止子 Agent 当前的运行；子 Session 仍可用于插话和后续 Task。成功停止一次运行时返回 202；子 Agent 已空闲或未知时返回 204。
 - `POST /retry-now` 对应重连倒计时上的**立即重试**按钮。它跳过当前的退避等待，立即发起下一次重试，不改动尝试计数。`skipped: false` 表示当时没有等待在进行，这不是错误。
+- `POST /retry` 对应运行出错后的**重试**按钮。运行以 `fatal` 结束或放弃重连后，失败那一轮的输入会留给下一次运行；服务器重启后恢复的 Session 会从自己的 Trace 重建它。这个路由以空输入启动一个 Task，只把那份输入重新发出：不发布或记录新的用户消息，也不运行 `user_prompt` 钩子。响应 202 `{sessionId, queued: false}`；Session 忙碌时返回 409 `task_in_progress` / `compacting`，没有留存的输入时返回 409 `nothing_to_retry`，例如后来的消息已经把它补发出去。
 - `POST /compact` 在没有可压缩内容时返回 409，原因写在错误码里：`compaction_not_configured`（Agent 没有配置压缩）、`nothing_to_compact`（上下文还没有完整的对话轮次）或 `already_compacted`（上次压缩之后没有新内容）。服务器重启后恢复的 Session 会从自己的 Trace 推导出这些状态，所以已有对话无需先跑一个 Task 也能压缩。
 - `POST /switch-model` 接收 `{provider, modelId}`，必须是完整的一对（只给一半返回 400）。它先用当前模型压缩上下文（总是 summarize 模式），再在目标模型上开启下一个上下文。返回 202 并像 `/compact` 一样流式进行，Session 状态为 `compacting`：上下文有完成的轮可总结时，流上先是一对普通的 manual `compaction_begin` / `compaction_end`（否则没有：刚压缩过，或首个请求没有完成），随后是新上下文的开档记录和它的 `session_meta`，其 `provider` / `model_id` 就是 Session 此后所用的模型；从这条记录起 `GET /` 返回新的模型组合。压缩以非 `completed` 结束即没有切换：不会跟随 `session_meta`，Session 保持原模型。从未运行过的 Session 没有可压缩的上下文，切换在请求内完成，返回 200 与更新后的 `{session}`，不产生任何事件。拒绝返回 409，原因写在错误码里：`task_in_progress` / `compacting`（忙）、`same_model`、`model_not_configured`（目标不在 Project 的模型表中）、`model_unavailable`（目标无法构造，例如缺少凭据）和 `compaction_not_configured`。切换的压缩请求计入原模型的用量，之后的 Task 计入新模型。
 
