@@ -3,7 +3,7 @@ title: Skills & Plugins
 description: Browse plugins, install Skills and hook packages on an agent, add server plugins to a Project, use Skills in a chat, and write your own.
 ---
 
-A **Skill** is a set of reusable instructions that an agent reads when a task calls for it. A **hook package** is a set of scripts that the harness runs at fixed points of the agent loop. A **plugin** bundles Skills, a hook package, or both. The built-in plugins make up the plugin library, which the Web App's **Plugins** page lists together with [server plugins](#server-plugins), plugins that extend the server rather than an agent.
+A **Skill** is a set of reusable instructions that an agent reads when a task calls for it. A **hook package** is a set of scripts that the harness runs at fixed points of the agent loop. A **plugin** bundles Skills, a hook package, MCP servers, or a mix of them. The built-in plugins make up the plugin library, which the Web App's **Plugins** page lists together with [server plugins](#server-plugins), plugins that extend the server rather than an agent.
 
 - **Looking for new abilities?** See [Browse plugins](#browse-plugins) and [Install a plugin on an agent](#install-a-plugin-on-an-agent).
 - **An update is waiting?** See [Update installed plugins](#update-installed-plugins).
@@ -21,9 +21,9 @@ A **Skill** is a set of reusable instructions that an agent reads when a task ca
 4. To narrow the cards, type in the search box. Every section opens while a search is active.
 5. Select a card to open its details.
 
-Each card shows the plugin's icon, name and short description, a line in the form `v<version> · <status> · used by N agents`, and tags such as **built in**, or **installed on server** for a plugin an admin installed, plus the category when the cards are grouped another way. The version is the plugin's npm version. The agent count, shown for a plugin with Skills or hooks, covers the agents in the current Project that have the whole plugin installed, or a copy the update check lists as behind. The status is an icon and a word; point at it for what it means for that plugin:
+Each card shows the plugin's icon, name and short description, a line in the form `v<version> · <status> · used by N agents`, and tags such as **built in**, or **installed on server** for a plugin an admin installed, plus the category when the cards are grouped another way. The version is the plugin's npm version. The agent count, shown for a plugin with Skills, hooks or MCP servers, covers the agents in the current Project that have the whole plugin installed, or a copy the update check lists as behind. The status is an icon and a word; point at it for what it means for that plugin:
 
-| Status | A plugin with Skills or hooks | A server plugin |
+| Status | A plugin with Skills, hooks or MCP servers | A server plugin |
 | --- | --- | --- |
 | **Installed** | At least one agent in the Project has it | The server has installed and loaded it |
 | **Update available** | An agent's copy is behind the library | — |
@@ -32,13 +32,13 @@ Each card shows the plugin's icon, name and short description, a line in the for
 | **Not on this server** | — | It runs on other machines only |
 | **Available** | No agent in the Project has it | The Project has not added it |
 
-The details open in a dialog: the version, status and tags, then **About**, with the full description and, when the plugin's package ships a README, that README. Every server plugin has one; for a package that is not on this server yet, the dialog says the README shows once it is installed. A plugin with Skills or hooks also has **Files**, a file browser: the tree on the left has one folder per Skill, with its `SKILL.md` first and its reference files after it, and a **Hooks** folder for the hook scripts; the preview on the right shows the selected file. The dialog's buttons are the card's, after **Export**, which downloads the plugin's package as a zip; an admin also sees **Delete** on a plugin installed on the server. See [Import and export plugins](#import-and-export-plugins).
+The details open in a dialog: the version, status and tags, then **About**, with the full description and, when the plugin's package ships a README, that README. Every server plugin has one; for a package that is not on this server yet, the dialog says the README shows once it is installed. A plugin with Skills or hooks also has **Files**, a file browser: the tree on the left has one folder per Skill, with its `SKILL.md` first and its reference files after it, and a **Hooks** folder for the hook scripts; the preview on the right shows the selected file. A plugin that declares MCP servers has an **MCP servers** section after **About**: one row per server with its name, transport and target, the URL or the command, and icons you can point at — a key when the server needs vault keys, a sign-in icon when it signs in with OAuth, which this version does not support yet, and a terminal for a stdio server, with the command it runs on the server. The dialog's buttons are the card's, after **Export**, which downloads the plugin's package as a zip; an admin also sees **Delete** on a plugin installed on the server. See [Import and export plugins](#import-and-export-plugins).
 
 The buttons on the right of a card:
 
 | Button | When it appears | What it does |
 | --- | --- | --- |
-| **Manage installs** | The plugin has Skills or hooks | Installs the plugin on an agent, or uninstalls it. |
+| **Manage installs** | The plugin has Skills, hooks or MCP servers | Installs the plugin on an agent, or uninstalls it. |
 | **Quick start** | The plugin ships at least one Skill | Opens a new chat draft with the plugin's demo. On an agent that does not have the plugin yet, it offers to install it first. |
 | Update | An agent's install is behind the library | Updates those installs. See [Update installed plugins](#update-installed-plugins). |
 | **Install** / **Remove** | A server plugin, for an admin | Installs the plugin on the server, or removes it. See [Server plugins](#server-plugins). |
@@ -48,9 +48,15 @@ The buttons on the right of a card:
 1. On the **Plugins** page, select **Manage installs** on the plugin's card. The dialog lists every agent in the current Project.
 2. Next to the agent, select **Install**.
 
-The whole plugin is installed: all of its Skills and its hook package. New conversations pick it up right away. In a conversation already open, the hook package applies from the next turn and the Skills after the next compaction.
+The whole plugin is installed: all of its Skills, its hook package and its MCP servers. New conversations pick it up right away. In a conversation already open, the hook package and the MCP servers apply from the next turn, and the Skills after the next compaction.
 
-To uninstall a plugin, point at **Installed** next to the agent, select **Uninstall**, and confirm. Uninstalling deletes the installed Skill and hook files, including any local edits.
+A plugin with a stdio MCP server asks before it installs on an agent that does not have it yet: the dialog shows the command that the PenguinHarness server will run whenever a session of the agent starts.
+
+An MCP server may need values before it can connect, such as an API token. The plugin names them, and they live in the agent's [vault](/agents#vault-tab), never in the plugin or in the agent's configuration. While one is missing, the agent's row shows a key icon; point at it for the missing keys. The Project owner selects **Set up** on that row and fills in one field per key; a key the vault already holds shows as set and asks for nothing. Other members see which keys are missing and that the owner sets them. The keys can also be added on the agent's **Vault** tab. A server that signs in with OAuth shows a sign-in icon instead: this version cannot sign in yet, so the server stays unconnected. Either way the plugin counts as installed, and the server is skipped when a conversation connects.
+
+When the agent already has an MCP server of the same name that this plugin did not install, the install is refused with the server's name and nothing is written. Rename or remove that server on the agent's **Tools** tab first.
+
+To uninstall a plugin, point at **Installed** next to the agent, select **Uninstall**, and confirm. Uninstalling deletes the installed Skill and hook files, including any local edits, and removes the plugin's MCP servers from the agent.
 
 Any Project member can install, update and uninstall plugins.
 
@@ -74,10 +80,10 @@ To update:
    - To update every outdated plugin, select **Update now** in the notice.
    - To update one plugin on every agent, select the update button on its card.
    - To update one plugin on one agent, select **Update** next to the agent in **Manage installs**.
-2. Review what the update will touch, then select **Update**. For each agent, the dialog lists the Skills and the hook package whose installed version differs from the library's, with both versions.
+2. Review what the update will touch, then select **Update**. For each agent, the dialog lists the Skills and the hook package whose installed version differs from the library's, with both versions. The plugin's MCP servers are listed as replaced: they carry no version, and a change to them alone never shows an update.
 
 > [!WARNING]
-> Updating reinstalls the library copy over each agent's installed Skill and hook files. Any local edits are lost, so export a backup first if you need them. See [Manage an agent's Skills](#manage-an-agents-skills).
+> Updating reinstalls the library copy over each agent's installed Skill and hook files, and replaces the plugin's MCP servers on the agent. Any local edits are lost, so export a backup first if you need them. See [Manage an agent's Skills](#manage-an-agents-skills).
 
 **Dismiss** hides the notice and the sidebar dot until the library version changes again. The update buttons on the cards stay.
 
@@ -184,13 +190,13 @@ To import a plugin, select **Import plugin** in the page header. Only admins see
 - **Upload a zip**: choose a zip of a plugin's package directory, such as an exported plugin. `package.json` sits at its root or in its one top-level directory, and it holds no `node_modules`. When the server has another version of the package, the dialog asks before replacing it. Upload only what you trust.
 - **Ask an agent**: for a web page, a repository, a folder in a repository, a Codex or Claude Code plugin, or a description, type the source. The dialog builds a prompt for the Project's default agent. The agent reviews the package and installs it with [`penguin plugin install`](/cli#penguin-plugin). When the source is not a PenguinHarness package yet, the agent first ports it into one by the `plugin-porting` Skill of the `skill-porting` plugin, then installs the folder it built. Select **Copy prompt**, or **Open a new chat** to start a draft with it; nothing is sent until you send it.
 
-Porting keeps what a PenguinHarness plugin can carry and lists the rest. The upstream skills become the package's skills, with their frontmatter reduced to `name`, `description` and a date `version`. The display name, the short description, the category, the SVG icon and the first default prompt go into the `penguin` block. Commands that only point at a skill, subagents, another tool's hooks, MCP servers, hosted apps and images are not carried; the package's README names each of them under "Not carried". MCP servers are listed there with their URL, for you to add on the **Tools** tab of an agent's settings.
+Porting keeps what a PenguinHarness plugin can carry and lists the rest. The upstream skills become the package's skills, with their frontmatter reduced to `name`, `description` and a date `version`. The display name, the short description, the category, the SVG icon and the first default prompt go into the `penguin` block. MCP servers are carried too: the Skill's `port-mcp.mjs` script turns a Codex `.mcp.json` or a Claude Code `mcpServers` map into [`penguin.mcp_servers`](#mcp-servers-in-a-plugin). A placeholder such as `<GMAIL_PUBLIC_CLIENT_ID>` and an environment variable the upstream server reads become `${KEY}` references to the vault, each listed as a key to set up; a client secret published upstream is not carried and becomes a key to set up as well; a stdio command that ships with the plugin is rooted at `${PLUGIN_ROOT}`. Commands that only point at a skill, subagents, another tool's hooks, hosted apps and images are not carried; the package's README names each of them under "Not carried". A hosted app (`.app.json`) is a ChatGPT connector id, which resolves only inside ChatGPT.
 
-However it arrives, the package's install scripts run on the server as the server's user, as when a package is installed from npm. A package under the name of a server plugin that ships with PenguinHarness is refused, and so is a package that turns out not to be a plugin; by the time a link is refused, its install scripts have already run.
+However it arrives, the package's install scripts run on the server as the server's user, as when a package is installed from npm. A stdio MCP server in the package is a command the server runs whenever a session of an agent that has it starts, under that session's [sandbox](/settings#sandbox) when one is set, and a remote MCP server is an address the server connects to; the plugin's details show both. A package under the name of a server plugin that ships with PenguinHarness is refused, and so is a package that turns out not to be a plugin; by the time a link is refused, its install scripts have already run.
 
-What happens next depends on the plugin. A plugin of Skills or hooks joins the library, tagged **installed on server**; install it on an agent with **Manage installs**. A plugin of server modules is also added to the Project and loaded, which stops the agent runs in progress, as [installing a server plugin](#server-plugins) does. A plugin from a link or a zip is added for this server only, because another machine would fetch the package's name from the npm registry and could get a different package. To run it on another machine, import it there.
+What happens next depends on the plugin. A plugin of Skills, hooks or MCP servers joins the library, tagged **installed on server**; install it on an agent with **Manage installs**. A plugin of server modules is also added to the Project and loaded, which stops the agent runs in progress, as [installing a server plugin](#server-plugins) does. A plugin from a link or a zip is added for this server only, because another machine would fetch the package's name from the npm registry and could get a different package. To run it on another machine, import it there.
 
-To delete a plugin of Skills or hooks that an admin installed, open its details and select **Delete**. The package leaves the server and the library; the copies of its Skills and hooks installed on agents stay. A server plugin is removed with **Remove**.
+To delete a plugin of Skills, hooks or MCP servers that an admin installed, open its details and select **Delete**. The package leaves the server and the library; the copies of its Skills and hooks and its MCP servers installed on agents stay, though a stdio server whose command shipped in the package can no longer start. A server plugin is removed with **Remove**.
 
 ## Write a Skill
 
@@ -261,6 +267,8 @@ A plugin is an npm package. Its `package.json` is the manifest: npm's own fields
 └── hooks/*.mjs                # at most one hook package: plain Node scripts
 ```
 
+MCP servers have no files: the package declares them in `penguin.mcp_servers` (see [MCP servers in a plugin](#mcp-servers-in-a-plugin)). A package with `skills/`, `hooks/` or at least one entry in `penguin.mcp_servers` is a plugin of the library; one with `ifaces.json` is a [server plugin](#server-plugins).
+
 ```json
 {
   "name": "@penguinharness/goal",
@@ -307,8 +315,51 @@ npm's fields:
 | `quick_start` | The demo the Plugins page pre-fills into a new-chat draft: `{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }` — a prompt that shows the plugin working once sent, the plugin's own skills to pre-select, and whether the draft opens in goal mode. The page never sends it; without it, quick start pre-selects the first skill |
 | `hooks.version` | The hook package's date version, `YYYY.MM.DD.N`; required when the plugin ships `hooks/` (without it no hook package is listed), and written into the installed `hooks.json` |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds. A `user_prompt` command may add `"trigger"`: `"prompt"` (the default) runs it on every prompt the user submits, `"host"` only when a host starts the package's flow by name |
+| `mcp_servers` | The MCP servers installing the plugin adds to an agent; see [MCP servers in a plugin](#mcp-servers-in-a-plugin) |
 
 Missing means missing. Only a package without a valid `name` or `version` is refused. Any other field the package lacks shows as missing, and a field of the wrong type is dropped with a warning in the server log. A skill directory whose name does not match `^[A-Za-z0-9_-]+$` is left out with a warning, since no agent could install it, and a file in a skill directory that is not text, such as a PNG, is neither read nor installed. A plugin's `package.json` is the only manifest: a `plugin.json` that an older package still carries is not read.
+
+### MCP servers in a plugin
+
+`penguin.mcp_servers` lists the MCP servers that installing the plugin adds to an agent. Each entry has the shape of a `tools.mcpServers` entry in `system_config.yaml` (see [MCP Servers](/tools#mcp-servers)), plus an optional `setup`:
+
+```json
+"penguin": {
+  "mcp_servers": [
+    {
+      "name": "cloudflare-api",
+      "config": {
+        "transport": "http",
+        "url": "https://mcp.cloudflare.com/mcp",
+        "headers": { "Authorization": "Bearer ${CLOUDFLARE_API_TOKEN}" }
+      },
+      "setup": [
+        {
+          "key": "CLOUDFLARE_API_TOKEN",
+          "label": "Cloudflare API token",
+          "label_zh": "Cloudflare API 令牌",
+          "help": "https://dash.cloudflare.com/profile/api-tokens"
+        }
+      ]
+    },
+    {
+      "name": "notes",
+      "config": { "command": "node", "args": ["${PLUGIN_ROOT}/server/index.mjs"] }
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `name` | Required. The server's name, which prefixes its tools as `mcp__<name>__<tool>`: a letter or digit, then letters, digits, `_` and `-`, unique in the package |
+| `config` | Required. The server's configuration exactly as `system_config.yaml` writes it: the transport and its fields, and the optional `connectTimeoutMs`, `timeoutMs`, `maxOutputLength`, `permission` and `oauth` |
+| `setup` | Optional. The vault keys a user sets before the server can connect: `[{ "key": "…", "label": "…", "label_zh": "…", "help": "…" }]`, where `help` is a URL or one sentence. A key the config references without a `setup` entry is asked for under its own name |
+
+- `${KEY}` in any string value of `config`, where `KEY` is a vault variable name, is read from the agent's vault when the server connects and stays a reference in the agent's configuration. Write every secret this way: a package never carries one. A reference cannot sit in the host of `url`. See [Vault references](/tools#vault-references).
+- `${PLUGIN_ROOT}` is not a vault key. Installing the plugin on an agent replaces it with the directory of the plugin's package on the server, for a stdio server whose command ships in the package.
+- `config.oauth`, `{ "scopes": […], "client_id": "…", "client_secret": "${…}" }` with every field optional, says the server signs in with OAuth. This version cannot sign in yet: such a server installs, and it connects only when its `headers` carry an `Authorization` of their own, such as a token from the vault; otherwise it is skipped as sign-in required.
+- An entry that is not a valid server, has a bad name or repeats a name is left out with a warning, and so is a `setup` key that nothing in the config references.
 
 ### Plugin naming and versioning
 
@@ -381,5 +432,7 @@ Installed Skills live under `agent_state/skills/<name>/`, and hook packages unde
 - Installing a hook package writes `hooks.json`, the plugin's `icon.svg`, and every file under the plugin's `hooks/`.
 - Each install replaces the whole directory, so reinstalling drops files a newer version no longer ships. Reinstalling is how an installed copy is updated.
 - Uninstalling deletes the whole `skills/<name>/` or `hooks/<name>/` directory.
+- A plugin's MCP servers are entries, not directories: installing appends them at the end of `tools.mcpServers` in the agent's `system_config.yaml`, keeping the file's comments, each with `plugin: <plugin name>` and with `${PLUGIN_ROOT}` resolved. Reinstalling first removes every entry carrying the plugin's name, so a server a newer version dropped goes too, and uninstalling removes them. An entry of the same name that the plugin does not own refuses the whole install before anything is written. The servers connect from the agent's next model context. Restoring the agent's default configuration drops them with the rest of `tools`; **Manage installs** puts them back.
+- A plugin counts as installed on an agent when each of its Skills, its hook package and each of its MCP servers are there. A server still waiting for vault keys or a sign-in does not change that.
 - A running Session keeps the hook packages its current model context opened with; the next context, after a compaction or on resume, reads them again. After a hook package is installed, imported or removed through the Web App or the API, or the **Enable hooks** switch changes, the server rebuilds the agent's cached runtimes the next time they are idle, so open conversations pick up the change from their next turn.
 - Besides the Web App, plugins can be installed through the SDK.

@@ -235,8 +235,10 @@ type ErrorCode =
   | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "unsupported"             // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input"           // the input failed to assemble into a request
-  // MCP connect failures
-  | "connect_failed";
+  // MCP connect failures (per-server results of mcp_connect_end)
+  | "connect_failed"          // the server could not connect or list its tools
+  | "mcp_needs_setup"         // not contacted: the vault lacks a key the entry references
+  | "mcp_sign_in_required";   // not contacted: the entry needs an OAuth sign-in
 
 interface ToolListReadyPayload {
   type: "tool_list_ready";
@@ -380,6 +382,8 @@ interface HookPayload {
                               // here: it is the user message that follows
 }
 ```
+
+因条目引用了 Agent 的 Vault 中没有的键、或需要 OAuth 登录而被跳过、没有连接的 MCP Server，在 `results` 中记为 `fatal`，错误码为 `mcp_needs_setup` 或 `mcp_sign_in_required`；其 `error_message` 列出缺少的键名，从不包含值。见 [Vault 引用](/tools#vault-引用)。
 
 `compaction_end` 从不携带 `retry_in_ms`：压缩的重试由压缩请求自己的 `request_end` 宣告，而这条记录只写入 Trace。旧 Trace 可能仍把 MCP 连接失败或被放弃的压缩记为 `failed`，逐个 Server 的结果里也可能是 `error` 字段，而不是这对错误字段。
 

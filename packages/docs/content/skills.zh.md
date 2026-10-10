@@ -3,7 +3,7 @@ title: 技能与插件
 description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project 添加服务端插件，在对话中使用 Skill，编写自己的 Skill。
 ---
 
-**Skill** 是一组可复用的指令，Agent 在任务用得上时才去读取。**钩子包**是一组脚本，由 harness 在 Agent 循环的固定节点运行。**插件**可以包含 Skill、钩子包，或两者都有。全部内置插件组成插件库，列在 Web App 的**插件市场**页面上；同一页面还列出[服务端插件](#服务端插件)，这类插件扩展的是服务器，而不是 Agent。
+**Skill** 是一组可复用的指令，Agent 在任务用得上时才去读取。**钩子包**是一组脚本，由 harness 在 Agent 循环的固定节点运行。**插件**可以包含 Skill、钩子包、MCP Server，或其中几样。全部内置插件组成插件库，列在 Web App 的**插件市场**页面上；同一页面还列出[服务端插件](#服务端插件)，这类插件扩展的是服务器，而不是 Agent。
 
 - **想给 Agent 添加新能力？** 见[浏览插件](#浏览插件)和[在 Agent 上安装插件](#在-agent-上安装插件)。
 - **有更新可装？** 见[更新已安装的插件](#更新已安装的插件)。
@@ -21,9 +21,9 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 4. 要缩小范围，在搜索框中输入。有搜索词时，所有分组都会展开。
 5. 点击卡片打开详情。
 
-每张卡片显示插件的图标、名称和简短描述，一行形如 `v<版本> · <状态> · N 个 Agent 在用` 的信息，以及**内置**等标签（管理员安装的插件标为**服务端安装**）；按其他方式分组时，还会标出分类。版本就是插件的 npm 版本。Agent 数量只对含 Skill 或钩子的插件显示，统计的是当前 Project 里完整装有这个插件、或已装副本被更新检查列为落后的 Agent。状态是一个图标加一个词，指向它可以看到它对这个插件意味着什么：
+每张卡片显示插件的图标、名称和简短描述，一行形如 `v<版本> · <状态> · N 个 Agent 在用` 的信息，以及**内置**等标签（管理员安装的插件标为**服务端安装**）；按其他方式分组时，还会标出分类。版本就是插件的 npm 版本。Agent 数量只对含 Skill、钩子或 MCP Server 的插件显示，统计的是当前 Project 里完整装有这个插件、或已装副本被更新检查列为落后的 Agent。状态是一个图标加一个词，指向它可以看到它对这个插件意味着什么：
 
-| 状态 | 含 Skill 或钩子的插件 | 服务端插件 |
+| 状态 | 含 Skill、钩子或 MCP Server 的插件 | 服务端插件 |
 | --- | --- | --- |
 | **已安装** | Project 里至少有一个 Agent 装有它 | 服务端已安装并载入它 |
 | **可更新** | 有 Agent 的已装副本落后于插件库 | — |
@@ -32,13 +32,13 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 | **不在本机** | — | 只在其他机器上运行 |
 | **可安装** | Project 里还没有 Agent 装它 | Project 还没有添加它 |
 
-详情在弹窗中打开：先是版本、状态和标签，然后是**说明**——完整描述，以及插件包自带 README 时的 README。每个服务端插件都有 README；包还不在本服务器上时，弹窗会说明安装后可查看 README。含 Skill 或钩子的插件还有**文件**一节，是一个文件浏览器：左侧目录树中，每个 Skill 对应一个文件夹，`SKILL.md` 排在最前，参考文件跟在后面；另有一个**钩子**文件夹存放钩子脚本。右侧预览区显示选中的文件。弹窗底部的按钮与卡片上的相同，最前面另有**导出**，把插件的包下载为 zip；管理员还会在服务端安装的插件上看到**删除**。见[导入与导出插件](#导入与导出插件)。
+详情在弹窗中打开：先是版本、状态和标签，然后是**说明**——完整描述，以及插件包自带 README 时的 README。每个服务端插件都有 README；包还不在本服务器上时，弹窗会说明安装后可查看 README。含 Skill 或钩子的插件还有**文件**一节，是一个文件浏览器：左侧目录树中，每个 Skill 对应一个文件夹，`SKILL.md` 排在最前，参考文件跟在后面；另有一个**钩子**文件夹存放钩子脚本。右侧预览区显示选中的文件。声明了 MCP Server 的插件在**说明**之后另有 **MCP 服务器**一节：每个 Server 一行，列出名称、传输方式和目标（URL 或命令），行尾的图标指向即可查看说明——钥匙表示 Server 需要 Vault 中的键，登录图标表示它用 OAuth 登录（本版本尚不支持），终端图标表示 stdio Server，并给出它在服务器上运行的命令。弹窗底部的按钮与卡片上的相同，最前面另有**导出**，把插件的包下载为 zip；管理员还会在服务端安装的插件上看到**删除**。见[导入与导出插件](#导入与导出插件)。
 
 卡片右侧的按钮：
 
 | 按钮 | 出现时机 | 作用 |
 | --- | --- | --- |
-| **管理安装** | 插件含 Skill 或钩子 | 把插件安装到 Agent 上，或者卸载。 |
+| **管理安装** | 插件含 Skill、钩子或 MCP Server | 把插件安装到 Agent 上，或者卸载。 |
 | **快速开始** | 插件至少包含一个 Skill | 打开一个带插件演示的新对话草稿。当前 Agent 还没装这个插件时，会先询问是否安装。 |
 | 更新 | 有 Agent 上的安装落后于插件库 | 更新这些安装，见[更新已安装的插件](#更新已安装的插件)。 |
 | **安装** / **移除** | 服务端插件，仅管理员可见 | 把插件安装到服务端，或者移除，见[服务端插件](#服务端插件)。 |
@@ -48,9 +48,15 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 1. 在**插件市场**页面，点击插件卡片上的**管理安装**。对话框会列出当前 Project 里的所有 Agent。
 2. 在 Agent 旁边点击**安装**。
 
-安装的是整个插件：包括全部 Skill 和钩子包。新对话立即生效。已经打开的对话里，钩子包从下一轮起生效，Skill 在下一次压缩后生效。
+安装的是整个插件：包括全部 Skill、钩子包和 MCP Server。新对话立即生效。已经打开的对话里，钩子包和 MCP Server 从下一轮起生效，Skill 在下一次压缩后生效。
 
-卸载插件：把鼠标移到 Agent 旁的**已安装**上，点击**卸载**并确认。卸载会删除已安装的 Skill 和钩子文件，包括本地做过的修改。
+带 stdio MCP Server 的插件，装到还没有它的 Agent 上之前会先询问：对话框给出该 Server 在这个 Agent 每次开启会话时于本服务器上运行的命令。
+
+MCP Server 可能要先有一些值才能连接，例如 API token。插件会列出这些键，值存放在 Agent 的 [Vault](/agents#密钥保险柜标签页) 里，从不写进插件或 Agent 的配置。缺键时，Agent 那一行显示钥匙图标，指向它可以看到缺少哪些键。Project owner 点击该行的**设置**，为每个键填一个值；Vault 中已有的键显示为已设置，不再要值。其他成员能看到缺少哪些键，以及由 owner 填写。也可以在 Agent 的**密钥保险柜**标签页添加这些键。用 OAuth 登录的 Server 改为显示登录图标：本版本还不能登录，这个 Server 保持未连接。两种情况下插件都算已安装，对话连接时跳过这个 Server。
+
+Agent 上已有同名、但不是这个插件装的 MCP Server 时，安装会被拒绝并给出该 Server 的名称，什么都不写入。请先在 Agent 的**工具**标签页把那个 Server 改名或移除。
+
+卸载插件：把鼠标移到 Agent 旁的**已安装**上，点击**卸载**并确认。卸载会删除已安装的 Skill 和钩子文件，包括本地做过的修改，并从 Agent 上移除这个插件的 MCP Server。
 
 任何 Project 成员都可以安装、更新和卸载插件。
 
@@ -74,10 +80,10 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
    - 更新所有落后的插件：点击提示里的**现在升级**。
    - 更新某个插件在所有 Agent 上的安装：点击它卡片上的更新按钮。
    - 更新某个插件在某个 Agent 上的安装：在**管理安装**里点击 Agent 旁的**更新**。
-2. 确认更新会涉及的范围，然后点击**更新**。对话框为每个 Agent 列出已装版本与插件库不同的 Skill 和钩子包，并标出前后两个版本。
+2. 确认更新会涉及的范围，然后点击**更新**。对话框为每个 Agent 列出已装版本与插件库不同的 Skill 和钩子包，并标出前后两个版本。插件的 MCP Server 列为「替换」：它们没有版本，只改了 MCP Server 不会出现更新提示。
 
 > [!WARNING]
-> 更新会用插件库里的副本重装每个 Agent 上已安装的 Skill 和钩子文件，本地修改会全部丢失。需要保留的话，先导出备份，见[管理 Agent 的 Skill](#管理-agent-的-skill)。
+> 更新会用插件库里的副本重装每个 Agent 上已安装的 Skill 和钩子文件，并替换该插件在 Agent 上的 MCP Server，本地修改会全部丢失。需要保留的话，先导出备份，见[管理 Agent 的 Skill](#管理-agent-的-skill)。
 
 **忽略**会隐藏提示和侧边栏红点，直到插件库版本再次变化。卡片上的更新按钮仍然保留。
 
@@ -184,13 +190,13 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 - **上传 zip 包**：选择一个插件包目录的 zip，例如导出得到的文件。`package.json` 位于 zip 根目录或唯一的顶层目录内，且不含 `node_modules`。服务端已装有这个包的其他版本时，弹窗会先询问是否替换。只上传你信任的来源。
 - **让 Agent 安装**：来源是网页、仓库、仓库中的文件夹、Codex 或 Claude Code 插件，或一段描述时，把它填进来源一栏。弹窗会为 Project 的默认 Agent 生成一段 Prompt。Agent 审阅插件包后用 [`penguin plugin install`](/cli#penguin-plugin) 安装；来源还不是 PenguinHarness 插件包时，Agent 先按 `skill-porting` 插件中的 `plugin-porting` Skill 把它转成插件包，再安装自己构建的文件夹。点击**复制 Prompt**，或点击**打开新对话**用它新建一份草稿；在你发送之前什么都不会发生。
 
-转换时保留 PenguinHarness 插件能承载的部分，其余的列出来。上游的 Skill 成为插件包的 Skill，frontmatter 精简为 `name`、`description` 和日期 `version`。显示名、短描述、分类、SVG 图标和第一条默认 Prompt 写进 `penguin` 块。只是转向某个 Skill 的命令、子 Agent、其他工具的钩子、MCP 服务器、托管应用和图片都不带入，插件包的 README 在「未带入」一节逐项列出。MCP 服务器连同 URL 列在那里，由你在 Agent 设置的**工具**标签页中添加。
+转换时保留 PenguinHarness 插件能承载的部分，其余的列出来。上游的 Skill 成为插件包的 Skill，frontmatter 精简为 `name`、`description` 和日期 `version`。显示名、短描述、分类、SVG 图标和第一条默认 Prompt 写进 `penguin` 块。MCP Server 同样带入：该 Skill 的 `port-mcp.mjs` 脚本把 Codex 的 `.mcp.json` 或 Claude Code 的 `mcpServers` 映射转成 [`penguin.mcp_servers`](#插件中的-mcp-server)。`<GMAIL_PUBLIC_CLIENT_ID>` 这类占位符和上游 Server 读取的环境变量都转成指向 Vault 的 `${KEY}` 引用，并逐个列为待设置的键；上游公开的 client secret 不带入，同样改为待设置的键；随插件分发的 stdio 命令改写为以 `${PLUGIN_ROOT}` 开头。只是转向某个 Skill 的命令、子 Agent、其他工具的钩子、托管应用和图片都不带入，插件包的 README 在「未带入」一节逐项列出。托管应用（`.app.json`）是 ChatGPT 的连接器 id，只在 ChatGPT 内部有效。
 
-无论从哪种方式安装，这个包的安装脚本都会以服务端用户的身份在服务器上运行，与从 npm 安装时相同。与 PenguinHarness 自带的服务端插件同名的包会被拒绝，安装后发现不是插件的包也会被拒绝；从链接安装时，被拒绝之前它的安装脚本已经运行过。
+无论从哪种方式安装，这个包的安装脚本都会以服务端用户的身份在服务器上运行，与从 npm 安装时相同。包里的 stdio MCP Server 是一条命令：装有它的 Agent 每次开启会话，服务器都会运行它，会话设置了[沙盒](/settings#沙盒)时在沙盒内运行；远程 MCP Server 则是服务器要连接的地址。插件详情会把两者都列出来。与 PenguinHarness 自带的服务端插件同名的包会被拒绝，安装后发现不是插件的包也会被拒绝；从链接安装时，被拒绝之前它的安装脚本已经运行过。
 
-之后的效果取决于插件本身。只含 Skill 或钩子的插件进入插件库，标为**服务端安装**，再用**管理安装**把它装到 Agent 上。带服务端模块的插件还会为该 Project 启用并载入，与[安装服务端插件](#服务端插件)一样，正在进行的 Agent 运行会被中止。从链接或 zip 安装的插件只为本服务端启用：其他机器会按包名从 npm 仓库获取，可能拿到另一个同名的包。要在其他机器上运行，请在那台机器上导入。
+之后的效果取决于插件本身。只含 Skill、钩子或 MCP Server 的插件进入插件库，标为**服务端安装**，再用**管理安装**把它装到 Agent 上。带服务端模块的插件还会为该 Project 启用并载入，与[安装服务端插件](#服务端插件)一样，正在进行的 Agent 运行会被中止。从链接或 zip 安装的插件只为本服务端启用：其他机器会按包名从 npm 仓库获取，可能拿到另一个同名的包。要在其他机器上运行，请在那台机器上导入。
 
-要删除管理员安装的 Skill 或钩子插件，打开它的详情，点击**删除**。插件包会从服务端和插件库中移除，各 Agent 上已安装的 Skill 与钩子副本保持不变。服务端插件用**移除**来移除。
+要删除管理员安装的 Skill、钩子或 MCP Server 插件，打开它的详情，点击**删除**。插件包会从服务端和插件库中移除，各 Agent 上已安装的 Skill 与钩子副本以及 MCP Server 保持不变，但命令随包分发的 stdio Server 从此无法启动。服务端插件用**移除**来移除。
 
 ## 编写 Skill
 
@@ -261,6 +267,8 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 └── hooks/*.mjs                # at most one hook package: plain Node scripts
 ```
 
+MCP Server 没有文件：包在 `penguin.mcp_servers` 中声明它们（见[插件中的 MCP Server](#插件中的-mcp-server)）。带 `skills/`、`hooks/` 或 `penguin.mcp_servers` 中至少一个条目的包是插件库插件；带 `ifaces.json` 的是[服务端插件](#服务端插件)。
+
 ```json
 {
   "name": "@penguinharness/goal",
@@ -307,8 +315,51 @@ npm 标准字段：
 | `quick_start` | 插件页「快速开始」预填进新对话草稿的演示：`{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
 | `hooks.version` | 钩子包的日期版本 `YYYY.MM.DD.N`；插件带 `hooks/` 时必填（没有就不列出钩子包），安装时写进 `hooks.json` |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各个[钩子点](/agent-loop#stop-hook)运行的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径以 `hooks/` 为起点，timeout 单位为秒。`user_prompt` 命令可以另加 `"trigger"`：`"prompt"`（缺省）表示用户每次提交 Prompt 时运行，`"host"` 表示只在宿主按包名启动该包的流程时运行 |
+| `mcp_servers` | 安装插件时加到 Agent 上的 MCP Server，见[插件中的 MCP Server](#插件中的-mcp-server) |
 
 缺失就是缺失。只有没有合法 `name` 或 `version` 的包才会被拒绝；其他字段缺失时只是显示为缺失，类型不对的字段会被丢弃，并在服务端日志中告警。名称不符合 `^[A-Za-z0-9_-]+$` 的 Skill 目录会被略过并告警，因为任何 Agent 都装不了它；Skill 目录中不是文本的文件（如 PNG）既不读取也不安装。插件的清单只有 `package.json`：旧包里仍带着的 `plugin.json` 不会被读取。
+
+### 插件中的 MCP Server
+
+`penguin.mcp_servers` 列出安装插件时加到 Agent 上的 MCP Server。每个条目的形态与 `system_config.yaml` 中 `tools.mcpServers` 的条目相同（见 [MCP Server](/tools#mcp-server)），另可带一个 `setup`：
+
+```json
+"penguin": {
+  "mcp_servers": [
+    {
+      "name": "cloudflare-api",
+      "config": {
+        "transport": "http",
+        "url": "https://mcp.cloudflare.com/mcp",
+        "headers": { "Authorization": "Bearer ${CLOUDFLARE_API_TOKEN}" }
+      },
+      "setup": [
+        {
+          "key": "CLOUDFLARE_API_TOKEN",
+          "label": "Cloudflare API token",
+          "label_zh": "Cloudflare API 令牌",
+          "help": "https://dash.cloudflare.com/profile/api-tokens"
+        }
+      ]
+    },
+    {
+      "name": "notes",
+      "config": { "command": "node", "args": ["${PLUGIN_ROOT}/server/index.mjs"] }
+    }
+  ]
+}
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `name` | 必填。Server 的名称，也是它的工具名前缀 `mcp__<name>__<tool>`：以字母或数字开头，其后只能是字母、数字、`_` 和 `-`，在包内唯一 |
+| `config` | 必填。Server 的配置，与 `system_config.yaml` 中的写法完全相同：传输方式及其字段，以及可选的 `connectTimeoutMs`、`timeoutMs`、`maxOutputLength`、`permission` 和 `oauth` |
+| `setup` | 可选。连接之前须由用户设置的 Vault 键：`[{ "key": "…", "label": "…", "label_zh": "…", "help": "…" }]`，`help` 是一个 URL 或一句话。配置引用了、却没有 `setup` 条目的键，按键名本身提示设置 |
+
+- `config` 中任意字符串值里的 `${KEY}`（`KEY` 为 Vault 变量名）在 Server 连接时从 Agent 的 Vault 读取，Agent 的配置里保留的始终是引用。每个机密都应这样写：包里从不携带机密。`url` 的主机部分不能使用引用。见 [Vault 引用](/tools#vault-引用)。
+- `${PLUGIN_ROOT}` 不是 Vault 键。把插件安装到 Agent 时，它会替换为插件包在服务器上的目录，供命令随包分发的 stdio Server 使用。
+- `config.oauth`（`{ "scopes": […], "client_id": "…", "client_secret": "${…}" }`，各字段均可选）表示该 Server 用 OAuth 登录。本版本还不能登录：这样的 Server 照常安装，只有当它的 `headers` 自带 `Authorization`（例如来自 Vault 的 token）时才会连接，否则按「需登录」跳过。
+- 不是有效 Server 的条目、名称不合规或重名的条目会被略过并告警；配置中没有任何地方引用的 `setup` 键同样如此。
 
 ### 插件命名与版本
 
@@ -381,5 +432,7 @@ Skill 分两步加载：先加载索引，正文按需读取。
 - 安装钩子包时，会写入 `hooks.json`、插件的 `icon.svg`，以及插件 `hooks/` 目录下的所有文件。
 - 每次安装都会整体替换目录，所以重新安装会清掉新版本不再包含的文件。已安装的副本就是靠重新安装来更新的。
 - 卸载会删除整个 `skills/<name>/` 或 `hooks/<name>/` 目录。
+- 插件的 MCP Server 是配置条目，不是目录：安装时追加到 Agent 的 `system_config.yaml` 中 `tools.mcpServers` 的末尾，文件中的注释保持不变；每个条目带 `plugin: <插件名>`，`${PLUGIN_ROOT}` 已替换。重新安装先删除带这个插件名的全部条目，因此新版本不再携带的 Server 也随之移除；卸载则删除这些条目。存在不属于这个插件的同名条目时，整次安装在写入任何内容之前就被拒绝。这些 Server 从 Agent 的下一个模型上下文起连接。还原 Agent 的默认配置时，它们随 `tools` 一起被覆盖；**管理安装**可以把它们装回来。
+- 插件的每个 Skill、钩子包和每个 MCP Server 都在某个 Agent 上时，插件才算装在这个 Agent 上。还在等待 Vault 键或登录的 Server 不影响这一点。
 - 运行中的 Session 沿用当前模型上下文开启时读到的钩子包；下一个上下文（压缩之后或恢复时）会重新读取。经 Web App 或 API 安装、导入或卸载钩子包，或者**启用钩子**开关变动之后，服务端会在 Agent 缓存的运行时下次空闲时重建它们，因此已经打开的对话从下一轮起生效。
 - 除 Web App 外，插件也可以通过 SDK 安装。

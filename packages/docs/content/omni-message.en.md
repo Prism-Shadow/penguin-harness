@@ -235,8 +235,10 @@ type ErrorCode =
   | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "unsupported"             // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input"           // the input failed to assemble into a request
-  // MCP connect failures
-  | "connect_failed";
+  // MCP connect failures (per-server results of mcp_connect_end)
+  | "connect_failed"          // the server could not connect or list its tools
+  | "mcp_needs_setup"         // not contacted: the vault lacks a key the entry references
+  | "mcp_sign_in_required";   // not contacted: the entry needs an OAuth sign-in
 
 interface ToolListReadyPayload {
   type: "tool_list_ready";
@@ -380,6 +382,8 @@ interface HookPayload {
                               // here: it is the user message that follows
 }
 ```
+
+A server that is skipped rather than contacted, because its entry references a vault key the agent lacks or because it needs an OAuth sign-in, appears in `results` as `fatal` with `mcp_needs_setup` or `mcp_sign_in_required`; its `error_message` names the missing keys, never a value. See [Vault references](/tools#vault-references).
 
 `compaction_end` never carries `retry_in_ms`: compaction retries are announced on the compaction request's own `request_end`, which stays in the Trace. Older Traces may still spell an MCP connect failure or an abandoned compaction as `failed`, and carry a per-server `error` field instead of the error pair.
 

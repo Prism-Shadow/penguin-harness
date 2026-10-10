@@ -18,13 +18,14 @@
  * never reads a path of its own disk.
  *
  * Installing and removing are an admin's: the CLI calls with the server's local API token, which
- * is the admin's — the authority an Agent's other `penguin` commands carry. A package of Skills
- * or hooks joins the plugin library (it is installed on Agents from there); a package of server
- * modules is also listed in the Project's plugins and loaded, which stops the agent runs in
- * progress on that server.
+ * is the admin's — the authority an Agent's other `penguin` commands carry. A package of Skills,
+ * hooks or MCP servers joins the plugin library (it is installed on Agents from there); a package
+ * of server modules is also listed in the Project's plugins and loaded, which stops the agent runs
+ * in progress on that server. After a directory install, each MCP server the package carries is
+ * printed with its transport and its target — a URL the server connects to, or a command it runs.
  *
  * `list` shows both: the server modules the Project lists, with their state on this server, and
- * the packages of Skills or hooks installed on the server.
+ * the packages of Skills, hooks or MCP servers installed on the server.
  * Docs: /docs/cli § "penguin plugin".
  */
 import fs from "node:fs";
@@ -32,7 +33,13 @@ import os from "node:os";
 import path from "node:path";
 import type { Command } from "commander";
 import { zipSync } from "fflate";
-import { readLibraryPackage, readPluginPackage } from "@prismshadow/penguin-core";
+import {
+  libraryParts,
+  readLibraryPackage,
+  readPluginPackage,
+  resolveMCPServer,
+} from "@prismshadow/penguin-core";
+import type { PluginMcpServer } from "@prismshadow/penguin-core";
 import type {
   InstalledPlugin,
   InstalledPluginsResponse,
@@ -115,10 +122,20 @@ function zipPackage(dir: string, rootName: string): { zip: Uint8Array; files: nu
   return zip.byteLength > MAX_ZIP_BYTES ? null : { zip, files };
 }
 
+/** An MCP server's line after an install: its name, its transport and what it reaches — a URL, or the command it runs. */
+function mcpServerLine(t: Messages, server: PluginMcpServer): string {
+  // The library's reader resolved every server it lists, so this does not throw.
+  const transport = resolveMCPServer({ name: server.name, config: server.config }).transport;
+  const target =
+    transport.kind === "stdio" ? [transport.command, ...transport.args].join(" ") : transport.url;
+  return t.plugin.mcpServerLine(server.name, transport.kind, target);
+}
+
 /**
  * Checks a local package directory the way the server's library will read it and uploads it as a
  * zip. Throws (nothing sent) for a package the library would refuse, one that is no plugin at all,
- * or one past the caps; a 409 `plugin_exists` comes back with the way to replace it.
+ * or one past the caps; a 409 `plugin_exists` comes back with the way to replace it. Answers the
+ * server's response and the MCP servers the package carries, as the library read them.
  */
 async function uploadDirectory(
   client: ServerClient,
@@ -126,19 +143,19 @@ async function uploadDirectory(
   projectId: string,
   dir: string,
   overwrite: boolean,
-): Promise<InstalledPluginsResponse> {
+): Promise<{ res: InstalledPluginsResponse; mcpServers: PluginMcpServer[] }> {
   let name: string;
   let pluginName: string;
   let version: string;
+  let mcpServers: PluginMcpServer[] = [];
+  const parts = libraryParts(dir);
+  const library = parts.skills || parts.hooks || parts.mcp;
   try {
     ({ name, pluginName, version } = readPluginPackage(dir).manifest);
-    if (["skills", "hooks"].some((sub) => fs.existsSync(path.join(dir, sub)))) {
-      readLibraryPackage(dir);
-    }
+    if (library) mcpServers = readLibraryPackage(dir).mcpServers;
   } catch (err) {
     throw new Error(t.plugin.dirRefused(dir, err instanceof Error ? err.message : String(err)));
   }
-  const library = ["skills", "hooks"].some((sub) => fs.existsSync(path.join(dir, sub)));
   if (!library && !fs.existsSync(path.join(dir, "ifaces.json"))) {
     throw new Error(t.plugin.dirNotPlugin(dir));
   }
@@ -146,7 +163,7 @@ async function uploadDirectory(
   if (packed === null) throw new Error(t.plugin.dirTooLarge(dir));
   process.stderr.write(`${t.plugin.uploading(name, version, packed.files)}\n`);
   try {
-    return await client.request<InstalledPluginsResponse>(
+    const res = await client.request<InstalledPluginsResponse>(
       "POST",
       `${installedPath(projectId)}/archive`,
       {
@@ -154,6 +171,7 @@ async function uploadDirectory(
         ...(overwrite ? { overwrite: true } : {}),
       },
     );
+    return { res, mcpServers };
   } catch (err) {
     if (err instanceof ApiError && err.code === "plugin_exists") {
       throw new Error(`${err.message}\n${t.plugin.overwriteHint()}`);
@@ -216,12 +234,17 @@ export function registerPluginCommand(program: Command, t: Messages): void {
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
       const dir = packageDirectory(specifier);
-      const res =
+      const { res, mcpServers } =
         dir !== null
           ? await uploadDirectory(client, t, projectId, dir, opts.overwrite === true)
-          : await client.request<InstalledPluginsResponse>("POST", installedPath(projectId), {
-              specifier,
-            });
+          : {
+              res: await client.request<InstalledPluginsResponse>(
+                "POST",
+                installedPath(projectId),
+                { specifier },
+              ),
+              mcpServers: [],
+            };
       if (opts.json === true) {
         process.stdout.write(`${JSON.stringify(res)}\n`);
         return;
@@ -238,6 +261,7 @@ export function registerPluginCommand(program: Command, t: Messages): void {
           : t.plugin.installed(done.name, done.version),
       ];
       if (done.library) lines.push(t.plugin.libraryNext());
+      for (const server of mcpServers) lines.push(mcpServerLine(t, server));
       if (done.modules && done.unchanged !== true) {
         lines.push(res.restartPending ? t.plugin.restartNext() : t.plugin.modulesLoaded(projectId));
       }

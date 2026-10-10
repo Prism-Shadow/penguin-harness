@@ -11,7 +11,8 @@
  * - The Agent's prompt names the source, asks for a review before anything is installed, and
  *   installs with `penguin plugin install` in this Project — a package from npm, a link or a
  *   local folder; a GitHub folder is ported into a package first with the `plugin-porting`
- *   skill, then installed as a folder, in either language.
+ *   skill, then installed as a folder, in either language — its MCP servers carried as
+ *   `penguin.mcp_servers`.
  * - The server's 409 is read as the question the replace confirm asks; any other message is
  *   not one.
  */
@@ -109,6 +110,7 @@ describe("the prompt for an agent", () => {
       expect(prompt).toMatch(
         /`penguin plugin install <[^>`]*(folder|文件夹)> --project-id proj-1`/,
       );
+      expect(prompt).toContain("`penguin.mcp_servers`");
     }
   });
 

@@ -8,6 +8,8 @@
  *   state, and the packages of Skills or hooks installed on the server.
  * - A local package directory is read with the plugin library's reader, zipped under one
  *   top-level directory without node_modules or .git, and posted to the zip route.
+ * - A package of MCP servers alone is a plugin too: it is posted, and the summary names each
+ *   server with its transport and target — the URL it reaches, or the command it runs.
  * - A directory the library would refuse, one that is no plugin at all, or one past the server's
  *   caps is reported and nothing is posted.
  * - Another version on the server answers 409: the CLI says how to replace it, and
@@ -152,6 +154,40 @@ describe("penguin plugin install <directory>", () => {
     });
     expect(out()).toContain(t.plugin.installed("@acme/notes", "1.0.0"));
     expect(out()).toContain(t.plugin.libraryNext());
+  });
+
+  it("posts a package of MCP servers alone, and names each server with its transport and target", async () => {
+    const dir = await packageDir({
+      "package.json": JSON.stringify({
+        name: "@ported/mail",
+        version: "0.1.9",
+        penguin: {
+          mcp_servers: [
+            {
+              name: "gmail",
+              config: {
+                transport: "http",
+                url: "https://gmailmcp.googleapis.com/mcp/v1",
+                oauth: { client_id: "${GMAIL_CLIENT_ID}" },
+              },
+            },
+            {
+              name: "mail-local",
+              config: { command: "node", args: ["${PLUGIN_ROOT}/server.mjs", "--stdio"] },
+            },
+          ],
+        },
+      }),
+      "server.mjs": "export {};\n",
+    });
+    expect(await cli(["plugin", "install", dir, "--project-id", "proj-1"])).toBe(0);
+    expect(uploaded()).toEqual(["mail/package.json", "mail/server.mjs"]);
+    expect(out()).toContain(
+      t.plugin.mcpServerLine("gmail", "http", "https://gmailmcp.googleapis.com/mcp/v1"),
+    );
+    expect(out()).toContain(
+      t.plugin.mcpServerLine("mail-local", "stdio", "node ${PLUGIN_ROOT}/server.mjs --stdio"),
+    );
   });
 
   it("reports a directory the library would refuse, or one that is no plugin, and posts nothing", async () => {

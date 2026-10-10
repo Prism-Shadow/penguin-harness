@@ -161,7 +161,7 @@ Tabs you have not customized are updated to the current built-in defaults. A tab
 > [!WARNING]
 > Restoring the default configuration cannot be undone.
 
-The agent's configuration is overwritten with the current defaults: the custom system prompt, tool list, model and compaction settings, and MCP servers are all replaced. Only the name, the description and the Agent State version are kept.
+The agent's configuration is overwritten with the current defaults: the custom system prompt, tool list, model and compaction settings, and MCP servers are all replaced. Only the name, the description and the Agent State version are kept. The MCP servers a plugin installed go too; **Manage installs** on the **Plugins** page puts them back.
 
 ## System Prompt tab
 
@@ -231,8 +231,8 @@ MCP servers add external tools to the agent. Their tools are named `mcp__<name>_
    - `sse`: the legacy HTTP+SSE transport, for servers that have not migrated.
 3. In **name**, enter the tool-name prefix. Use letters, digits, `_` and `-`, starting with a letter or digit.
 4. Fill in the connection fields:
-   - For `stdio`: **command**; **args**, one argument per line; **env**, one `KEY=value` per line; and **cwd**, which defaults to the Session's Workspace. The agent's vault variables are not passed to MCP server processes.
-   - For `http` and `sse`: **url**, and **headers**, one `Header-Name: value` per line, for example an `Authorization` header.
+   - For `stdio`: **command**; **args**, one argument per line; **env**, one `KEY=value` per line; and **cwd**, which defaults to the Session's Workspace. The agent's vault is not passed to MCP server processes as a whole; give a server a secret as a `${KEY}` reference, described below.
+   - For `http` and `sse`: **url**, and **headers**, one `Header-Name: value` per line, for example `Authorization: Bearer ${LINEAR_API_KEY}`.
 5. Choose **permission**:
    - **Auto (readOnlyHint)**: each tool is read-only if it declares the `readOnlyHint` annotation, and read & write otherwise.
    - **Read-only**: every tool of the server is treated as read-only.
@@ -244,14 +244,23 @@ MCP servers add external tools to the agent. Their tools are named `mcp__<name>_
 > [!NOTE]
 > The permission level matters only in the read-only approval mode; the other approval modes ignore it. It does not restrict what the server can do: marking a server read-only only skips the confirmation that mode would ask for.
 
+A value written as `${KEY}`, where `KEY` names a variable on the agent's [Vault tab](#vault-tab), is filled in from the vault when the server connects. The configuration keeps only the reference, so the secret never sits in `system_config.yaml`. A reference works in every field except the host of the URL; see [Vault references](/tools#vault-references).
+
 To change a server, select **Edit** on its row. To remove it, select **Remove** and confirm; its tools stop being available from the next Session. For more about MCP servers, see [MCP Servers](/tools#mcp-servers).
+
+Installing a plugin that carries MCP servers adds them to this list too; see [Install a plugin on an agent](/skills#install-a-plugin-on-an-agent). Such a row shows a puzzle icon after the name, and pointing at it tells which plugin installed the server. **Edit** keeps the entry tied to its plugin and notes that reinstalling the plugin replaces it. **Remove** asks first and says that **Manage installs** on the **Plugins** page can put the server back.
+
+A row may also show an icon for a server that cannot connect yet. A conversation skips that server, and its MCP connect row says why:
+
+- A key icon: the server needs setup, because the vault lacks keys its entry references. Point at it for their names. The Project owner adds them on the **Vault** tab, or with **Set up** in the plugin's **Manage installs** dialog.
+- A sign-in icon: the server signs in with OAuth, which this version does not support yet.
 
 ### Test MCP servers
 
 1. In the **MCP Servers** section, select **Test connection**.
 2. Select **Start test**.
 
-PenguinHarness connects to each server in turn and discovers its tools. Nothing is saved. Each row shows the number of tools and the time taken, or **Connection failed** with the reason.
+PenguinHarness connects to each server in turn and discovers its tools. Nothing is saved. Each row shows the number of tools and the time taken, or **Connection failed** with the reason. References to the vault are filled in first; a server whose keys the vault lacks fails with their names, without a connection attempt.
 
 ## Skills tab
 
@@ -314,7 +323,7 @@ The memory count on the agent's card opens this tab.
 
 ## Vault tab
 
-The vault holds environment variables for the agent, such as API keys. PenguinHarness passes them to the agent's shell commands. The model sees the variable names, never their values. Subagents use their own vaults and do not inherit this one. Changes take effect from the next Task; a Task that is already running is not affected.
+The vault holds environment variables for the agent, such as API keys. PenguinHarness passes them to the agent's shell commands, and gives an MCP server only the ones its entry references as `${KEY}`. The model sees the variable names, never their values. Subagents use their own vaults and do not inherit this one. Changes take effect from the next Task; a Task that is already running is not affected.
 
 Only the Project owner can change the vault. Members see the variable names with masked values.
 
