@@ -278,7 +278,7 @@ describe("sandbox settings group", () => {
       ],
       [
         "attention",
-        "This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command and hook script. other-platform is installed, but for another platform.",
+        "This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Full access refuses every agent command and hook script. other-platform is installed, but for another platform.",
       ],
       ["attention", "wrong-backend is not in use: 'bwrap' is missing"],
     ]);

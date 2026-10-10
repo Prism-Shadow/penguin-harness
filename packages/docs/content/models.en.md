@@ -21,6 +21,7 @@ In the sidebar, select **Models**. Models are listed in groups, one per provider
 - **Open and close groups.** Select a group's header to open or close it. On your first visit only the TokenDance group is open. The browser remembers which groups you opened, per Project.
 - **Reorder groups.** Drag a group's header to move it. The order is saved in this browser, per Project, and the model picker in the chat uses the same order. Dragging is not available on touch screens or while searching.
 - **Search.** Type in **Search models: id / name / provider** to show only the matching models. While you search, every matching group is open.
+- **Order within a group.** A group lists its models by price, low to high. The price compared is the one billed right now, after a running promotion or off-peak rate, with input weighed three times as much as output: (cache write × 3 + output) ÷ 4. Free models come first, models without a price come last, and equal prices are ordered by name. To change it, select the gear at the end of the group's header and choose **Price (low to high)**, **Price (high to low)** or **Name (A→Z)**; the current choice is checked. Each group keeps its own order, saved in this browser. Search results follow it; the order of the groups and the model picker in the chat do not change.
 
 Each model card shows the model's display name, tags, context window, prices, key status, and the Tokens the model has used so far.
 
@@ -42,13 +43,13 @@ A group's header shows the provider's logo, the group's name, its model count an
 - the group's balance, for TokenDance and DeepSeek once the group has a key; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
 - the connection, for TokenDance, Penguin Go and ModelScope: **Not connected**, which you select to connect, or **Connected**, a menu with **Sync models** (Penguin Go only), **Reconnect** and **Disconnect**; see [Connect an account](#connect-an-account);
 - **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow** and groups you created; see [Add a model](#add-a-model);
-- the speed test and **Settings** (a gear), which end every group, **Custom** included, so the two stand at the same right edge on every group; see [Measure speed](#measure-speed) and [Group settings](#group-settings).
+- the speed test and **Settings** (a gear), which end every group, **Custom** included, so the two stand at the same right edge on every group; see [Measure speed](#measure-speed). The gear opens a menu: the group's sort, then **Group settings…**; see [Group settings](#group-settings).
 
 While the TokenDance group has no key, a banner above the groups offers to connect your TokenDance wallet, so the models there need no key set by hand. Its **Connect** runs the same flow as the group's. Select × to hide the banner in this browser.
 
 The header has no button for entering a key: the group key is set in [Group settings](#group-settings) or written when the group connects.
 
-Only the Project owner can change models and credentials. Members can search, open and close groups, reorder them and mark favorites in their own browser, see, pin and refresh balances, see the connection status as plain text, and open **Model settings** read-only.
+Only the Project owner can change models and credentials. Members can search, open and close groups, reorder them, mark favorites and sort a group's models in their own browser (their gear menu holds the sort alone), see, pin and refresh balances, see the connection status as plain text, and open **Model settings** read-only.
 
 ## Add a model group
 
@@ -178,7 +179,7 @@ Detection tolerates common base URL mistakes:
 
 It probes the cleaned-up base first, then its neighbouring form: the trailing `/v1` is removed if the URL has one, added if it does not. Each form is tried against the three protocols in order, six short probes at most. The base URL field is then rewritten to the form that answered: "Detected {protocol}; base URL normalized to {url}".
 
-To set the protocol by hand, select the suffix. The menu lists **OpenAI Responses** (`/responses`), **Anthropic Messages** (`/v1/messages`), and **OpenAI Chat Completions** (`/chat/completions`), each with the path the client appends to your URL. A protocol you pick wins over detection, so an endpoint whose protocol you know never has to be probed.
+To set the protocol by hand, select the suffix. The menu lists **OpenAI Responses** (`/responses`), **Anthropic Messages** (`/v1/messages`), **OpenAI Chat Completions** (`/chat/completions`), **Google GenAI (generateContent)** (`/v1beta/models`) and **MMSP** (`/stream`, an MMSP server), each with the path the client appends to your URL. Detection never picks the last two: choose them here. A protocol you pick wins over detection, so an endpoint whose protocol you know never has to be probed.
 
 If detection finds nothing, the suffix turns amber and a message says "Could not detect the protocol. Please check the API key and the base URL." This happens when the endpoint is unreachable, timed out, answered with something that is not an API, or serves none of the three paths. The endpoint still reports each probe's outcome for debugging.
 
@@ -271,7 +272,7 @@ The balance is read with `GET /api/projects/:id/models/balance?provider=<group>`
 
 ## Group settings
 
-Every group's header ends with **Settings** (a gear), **Custom** included; only the Project owner sees it. It opens "{group} group settings", which edits the connection the group's models share: an API key, a base URL and a protocol, stored in the group's `[providers.<group>]` table.
+Every group's header ends with **Settings** (a gear), **Custom** included. Its menu ends with **Group settings…**, which only the Project owner sees. It opens "{group} group settings", which edits the connection the group's models share: an API key, a base URL and a protocol, stored in the group's `[providers.<group>]` table.
 
 The Project config file is the only source of these values. Each field resolves on its own, and the first value found wins: the model's own, then the group's, then none, which leaves it to the client: its default endpoint, routing by model id, and the environment key where [Set API keys](#set-api-keys) allows it. The built-in catalog is a reference, not a layer: a new Project's file already stores each gateway's endpoint and protocol in these settings, and the catalog is never read when a request is built. A model that leaves a field empty therefore follows the group, and a value set on the model applies to that model only. The group key goes only to the models on the group's endpoint; see [Set API keys](#set-api-keys).
 
@@ -405,10 +406,11 @@ Whether a fast tier exists depends on the MMSP client a model routes to, not on 
 
 | Routed client | Fast mode |
 | --- | --- |
-| OpenAI protocol (`openai-official`, `openai-responses`, `openai-chat`, `openai-chat-vllm-adapter`), `minimax-official`, `gemini-official` (Interactions API) | sent as `service_tier: "priority"` |
+| OpenAI protocol (`openai-official`, `openai-responses`, `openai-chat`, `openai-chat-vllm-adapter`), `minimax-official`, `google-official` (Interactions API) | sent as `service_tier: "priority"` |
 | Anthropic protocol (`anthropic-official`, `ant-messages`) | sent as `speed: "fast"` plus the beta header |
 | `zai-official`, `moonshot-official`, `deepseek-official`, `google-genai`, OpenAI embeddings | rejected — no toggle |
-| `anthropic-official` on Bedrock, or a Claude 4.6, Sonnet 5.5 or Fable 5.1 id | rejected — no toggle |
+| `mmsp` | forwarded to the MMSP server, whose upstream client decides — no toggle |
+| `anthropic-official` on Bedrock, or a Claude 4.6, Sonnet 5.5, Haiku 5.5 or Fable 5.1 id | rejected — no toggle |
 
 Routing follows the entry's `client_type`; when none is set, the vendor family its `model_id` begins with (`gpt-`, `text-embedding-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`) names the vendor's official client. The same upstream id can therefore land in different places. A Kimi model added under a gateway group (`client_type = "openai-chat"`) can use fast mode, while the same id routed to Moonshot's official client cannot. A custom model behind your own base URL keeps the switch: it speaks the OpenAI protocol and may well be OpenAI, but a third-party server is free to accept the parameter and serve the standard tier anyway.
 
@@ -539,12 +541,14 @@ The preset catalog includes, among others:
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3`
 - `gemini-3.8-flash`
+- `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
-- `gpt-6-astra` / `gpt-5.6` / `gpt-5.5`
+- `gpt-6.1-sol` / `gpt-6-astra` / `gpt-5.6` / `gpt-5.5`
 - `glm-5.3` / `glm-5.3-flash`
 - `kimi-k3`
 - `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
+- `mimo-v2.6-pro` / `mimo-v2.6-flash` / `step-5-preview` / `ling-3.1-flash` (TokenDance)
 - `dots-3-note-preview` (free on TokenDance, 512K context)
 - `deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`, `Qwen/Qwen3.8-Flash-Next` (ModelScope's api-inference; preset rows with no price)
 
@@ -553,24 +557,26 @@ The list is not exhaustive.
 - **DeepSeek images.** `deepseek-flash` is V4.1 Flash and reads images; `deepseek-v4-pro` is the V4 Pro 0813 release and is text-only. To send an image, use `deepseek-flash`.
 - **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, and **Restore defaults** resets its price to the catalog's. A retired row is never added to a Project that does not have it, and a new Project never gets one.
 - **OpenAI twice.** The whole OpenAI line-up is listed twice: directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions).
-- **GLM-5.3 Flash six times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance and OpenCode Go, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: MMSP's Z.AI client (`zai-official`) forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
+- **GLM-5.3 Flash seven times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance and OpenCode Go, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash`, SiliconFlow's `zai-org/GLM-5.3-Flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: MMSP's Z.AI client (`zai-official`) forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
 - **OpenRouter free tier.** The catalog carries the `:free` model variant `nvidia/nemotron-3-ultra-550b-a55b:free` and the `openrouter/free` unified Free Models Router. They cost nothing, but OpenRouter's free-tier rate limits and data policy apply.
 
 ### Prices and promotions
 
 - **Three price buckets.** Each model records `cache_read`, `cache_write` and `output` prices in USD per million Tokens. The cost center bills usage against them.
 - **Rows with no price.** The pricing block can be absent altogether, which records "nobody has looked this vendor's price up" rather than "free": such a row shows no price badge on the **Models** page, and the cost center reports its usage as uncosted. ModelScope's preset rows are the catalog's only ones — ModelScope bills for api-inference, but its model pages are client-rendered and carry no read-able rate. Three zeros would be worse than absent: they would read as the free tier and badge a billed gateway "Free".
-- **Base tier only.** Where a vendor's prices step up with input size, the catalog records the base tier. MiniMax M3 records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; above that, every rate doubles, and the priority tier is 1.5x, so long-context and priority usage is underestimated. OpenAI (above 272K) and Gemini 3.1 Pro (above 200K) follow the same convention.
+- **Base tier only.** Where a vendor's prices step up with input size, the catalog records the base tier. MiniMax M3 records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; above that, every rate doubles, and the priority tier is 1.5x, so long-context and priority usage is underestimated. OpenAI (above 272K), Gemini 3.1 Pro (above 200K) and Claude Haiku 5.5 (above 100K, where every rate is 5x) follow the same convention.
 - **DeepSeek off-peak.** The direct DeepSeek rows record the official peak prices and declare DeepSeek's off-peak schedule: outside Beijing time 9:00–12:00 and 14:00–18:00 on weekdays, every bucket is halved. The **Models** page shows a `50% off` tag during those hours, and the cost center bills at that rate.
-  - Eight resold rows follow the same schedule because their sellers pass DeepSeek's windows through: TokenDance's `deepseek-v4.1-flash`, OpenRouter's `deepseek/deepseek-v4.1-flash`, Penguin Go's `deepseek-flash` and `deepseek-v4-pro`, and OpenCode Go's `deepseek-v4.1-flash`, `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp` and `deepseek-v4-pro`.
+  - Ten resold rows follow the same schedule because their sellers pass DeepSeek's windows through: TokenDance's `deepseek-v4.1-flash`, `deepseek-v4-flash-0731` and `deepseek-v4-pro-0813`, OpenRouter's `deepseek/deepseek-v4.1-flash`, Penguin Go's `deepseek-flash` and `deepseek-v4-pro`, and OpenCode Go's `deepseek-v4.1-flash`, `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp` and `deepseek-v4-pro`.
+  - TokenDance also takes 20% off those three at peak, and off-peak too on `deepseek-v4.1-flash`. A row cannot carry a flat promotion beside a schedule, so those hours are priced at the list rate, 25% above what TokenDance bills.
   - Qwen bills the DeepSeek models it resells on a schedule of its own, half price from 22:00 to 8:00 Beijing time every day. `deepseek-v4.1-flash` in both Qwen groups, and the Token Plan's `deepseek-v4-pro-0813`, declare that one instead, and the tag's tooltip names the windows of whichever schedule the row follows.
   - The stored price is always the peak price, so what is on disk does not depend on the hour a Project was created or synced.
-- **Flat promotions.** Nine TokenDance models are discounted today:
-  - `kimi-k3` at 40% off
-  - `deepseek-v4-flash-0731`, `deepseek-v4-pro-0813`, `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
+- **Flat promotions.** Eight TokenDance models are discounted today:
+  - `ling-3.0-flash` at 65% off
   - the three Doubao Seed rows (`seed-2.1-pro`, `seed-2.1-turbo`, `seed-evolving`) at 50%
+  - `glm-5.2` at 20%
+  - `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
 
-  Gemini 3.8 Flash, 3.7 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.7-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model card shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
+  Gemini 3.8 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model card shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
 - **Your own prices.** Editing a row's price cancels its promotion and takes the discount tag off the card: the figure is then yours, not the seller's.
 
 ## The per-Project model table
@@ -588,7 +594,7 @@ Each `ModelEntry` has these fields:
 | `model_id` | Upstream request id |
 | `context_window` | Context window (tokens). Load-bearing, not just display: each request's effective output cap and the compaction threshold are derived from it, so requests never ask for more output than the window still fits. Unset (or implausibly small, under 4096): the output clamp turns off and compaction derives from an assumed 128000 — set the real value for models with smaller windows. The Web dialog writes 1,000,000 when a model that is not in the catalog leaves the field blank (a hand-added entry is a known model, not an unknown window); narrow it when the endpoint serves less. `penguin config model add` writes no default at all when `--context-window` is omitted |
 | `max_tokens` | Optional per-model output cap (max output tokens per request). When set it overrides the agent's `model.max_tokens`; unset inherits it. The cap is a ceiling, not the literal wire value: each request sends `min(max_tokens, context_window − estimated input − safety margin)`, so small-window models work without hand-tuning it. Omitting the field on a Web full-table save clears it |
-| `client_type` | MMSP client type: a generic protocol client (`openai-chat` for Chat Completions, `openai-responses` for the Responses API, `ant-messages` for Anthropic Messages, …) or a vendor's official client (`deepseek-official`, `anthropic-official`, …). When omitted, the model follows its group's; with neither, MMSP routes the model id by the vendor family it begins with (`gpt-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`). Custom endpoints use one of those three generic protocol clients, and the Web dialog can detect which one a base URL serves. The pre-0.4.2 spelling `openai` is a deprecated alias and is normalized to `openai-chat` when the config is read |
+| `client_type` | MMSP client type: a generic protocol client (`openai-chat` for Chat Completions, `openai-responses` for the Responses API, `ant-messages` for Anthropic Messages, …) or a vendor's official client (`deepseek-official`, `anthropic-official`, …). When omitted, the model follows its group's; with neither, MMSP routes the model id by the vendor family it begins with (`gpt-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`). Custom endpoints use one of the generic protocol clients the Web dialog offers: those three, `google-genai` (Google's generateContent) or `mmsp` (an MMSP server); it can detect which of the three a base URL serves. The pre-0.4.2 spelling `openai` is a deprecated alias and is normalized to `openai-chat` when the config is read |
 | `display_name` | Display name |
 | `vision` | Whether image input is supported, default true |
 | `fast_mode` | Optional fast mode (off by default): opts the model's Session requests into the provider's faster serving tier at premium pricing. Only `true` is ever persisted — omitting the field on a Web full-table save clears it. Models without a fast tier reject requests carrying it (see [Fast mode](#fast-mode)) |
