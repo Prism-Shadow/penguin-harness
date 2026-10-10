@@ -38,16 +38,22 @@ import type {
   ProxyProbeTargetDto,
   ServerSettings,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Input,
+  PrefRow,
+  SettingsGroup,
+  SettingsSection,
+  ToggleRow,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Switch } from "../../components/ui/switch";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { SectionShell } from "./section-shell";
 
 /** Brand names: identical in every locale, so they are keyed off the server's provider id rather than doubled into both dictionaries. */
 const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {
@@ -185,7 +191,7 @@ export function ProxySection() {
 
   return (
     <>
-      <SectionShell
+      <SettingsSection
         actions={
           <Button
             size="sm"
@@ -197,39 +203,52 @@ export function ProxySection() {
           </Button>
         }
       >
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium">{S.settings.proxyForApp}</span>
-          <Switch checked={proxyForApp} onChange={setProxyForApp} disabled={!hydrated} />
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium">{S.settings.proxyForAgent}</span>
-          <Switch checked={proxyForAgent} onChange={setProxyForAgent} disabled={!hydrated} />
-        </div>
-        <Input
-          label={S.settings.proxyAddress}
-          size="sm"
-          value={proxyUrl}
-          placeholder={S.settings.proxyAddressPlaceholder}
-          disabled={!hydrated}
-          {...(addressError !== null ? { error: addressError } : {})}
-          onChange={(e) => {
-            setProxyUrl(e.target.value);
-            if (addressError !== null) setAddressError(null);
-          }}
-        />
-      </SectionShell>
+        <SettingsGroup>
+          <ToggleRow
+            label={S.settings.proxyForApp}
+            checked={proxyForApp}
+            onChange={setProxyForApp}
+            disabled={!hydrated}
+          />
+          <ToggleRow
+            label={S.settings.proxyForAgent}
+            checked={proxyForAgent}
+            onChange={setProxyForAgent}
+            disabled={!hydrated}
+          />
+          {/* The error stands under the box, inside the control's column; the row keeps its
+              title on the first line. */}
+          <PrefRow label={S.settings.proxyAddress}>
+            <div className="w-64 min-w-0">
+              <Input
+                aria-label={S.settings.proxyAddress}
+                size="sm"
+                value={proxyUrl}
+                placeholder={S.settings.proxyAddressPlaceholder}
+                disabled={!hydrated}
+                {...(addressError !== null ? { error: addressError } : {})}
+                onChange={(e) => {
+                  setProxyUrl(e.target.value);
+                  if (addressError !== null) setAddressError(null);
+                }}
+              />
+            </div>
+          </PrefRow>
+        </SettingsGroup>
+      </SettingsSection>
       <section className="mt-6">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 text-sm font-medium">{S.settings.proxyProbe}</div>
-          <Button
-            size="sm"
-            disabled={!hydrated || targets === null || probing}
-            aria-busy={probing}
-            onClick={runProbe}
-          >
-            {probing ? S.settings.proxyProbeRunning : S.settings.proxyProbeRun}
-          </Button>
-        </div>
+        <SettingsGroup>
+          <PrefRow label={S.settings.proxyProbe}>
+            <Button
+              size="sm"
+              disabled={!hydrated || targets === null || probing}
+              aria-busy={probing}
+              onClick={runProbe}
+            >
+              {probing ? S.settings.proxyProbeRunning : S.settings.proxyProbeRun}
+            </Button>
+          </PrefRow>
+        </SettingsGroup>
         <ul className="mt-3 space-y-3">
           {(targets ?? []).map((t) => {
             // This row's own answer, shown the moment it exists — the rows still waiting keep
@@ -270,7 +289,7 @@ export function ProxySection() {
                     )}
                   </span>
                 </div>
-                <div className="truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                <div className="truncate font-mono text-xs text-gray-400 dark:text-gray-500">
                   {t.url}
                 </div>
               </li>

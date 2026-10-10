@@ -38,16 +38,27 @@ interface OmniMessage<P extends OmniPayload = OmniPayload> {
 interface SessionMetaPayload {
   session_id: string;
   provider: string;                       // one half of the model-identity pair
-  model_id: string;                       // the upstream request id sent to AgentHub
+  model_id: string;                       // the upstream request id sent to MMSP
   model_context_window: number | string;
   system_prompt: string;                  // fully assembled, placeholders substituted
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
-  source?: "subagent" | "schedule" | "benchmark"; // spawned by a subagent / a scheduled task / a Benchmark run; absent = user-created
+  source: "user" | "api" | "schedule" | "subagent" | "cli" | "company"; // what kind of conversation this is
 }
 ```
 
-模型与 Workspace 在整个 Session 生命周期内不变，系统提示词则按上下文固定。
+Workspace 在整个 Session 生命周期内不变，模型与系统提示词则按上下文固定：会话内切换模型时，新上下文开在另一个模型上，所用模型只记在这条记录里。
+
+`source` 表示这个 Session 是哪一类会话，同样在整个生命周期内不变：
+
+- `user`：人发起的对话，包括 Web App 的输入框、`penguin chat`，以及分叉出的会话；
+- `api`：外部程序经 Agent API 开出的会话；
+- `schedule`：定时任务的一次运行；
+- `subagent`：`run_subagent` 派生的子会话；
+- `cli`：`penguin run` 创建的会话；
+- `company`：[公司模式](/company-mode)开出的工位会话与工单会话。
+
+旧版本写下的 Trace 可能没有 `source`，读作 `user`；若服务器的索引行表明它由公司模式开出，则读作 `company`。也可能是已停用的 `benchmark`，读作 `cli`。文件本身从不改写。
 
 每个 Trace 文件都以一条 `session_meta` 开头。压缩开启新上下文时，新文件的 `session_meta` 记录的系统提示词，按当时的 Agent State 为这个上下文重新装配（见[上下文压缩](/agent-loop#上下文压缩)）。恢复 Session 时，引擎以最新文件里的 `session_meta` 作为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。
 
@@ -129,7 +140,7 @@ interface InlineDataPayload {
 }
 ```
 
-`sender` 区分 user 角色文本的来源：真人用户（`user`）、驱动子 Agent 的父 Agent（`parent_agent`）、harness 的自动注入（`harness`，例如后台任务的完成回报和钩子 `continue` 注入的输入），以及 Server 自己的触发（`server`，例如定时任务）。这个字段不会发给供应商。
+`sender` 区分 user 角色文本的来源：真人用户（`user`）、驱动子 Agent 的父 Agent（`parent_agent`）、harness 的自动注入（`harness`，例如后台任务的完成回报、stop 钩子 `continue` 注入的输入，以及 `user_prompt` 钩子补充的 context），以及 Server 自己的触发（`server`，例如定时任务）。这个字段不会发给供应商。
 
 `tool_call` 与 `tool_call_output` 通过 `tool_call_id` 严格配对。一轮内的调用构成一个批次，输出按原始调用顺序回填（见 [Agent 运行循环](/agent-loop)）。
 
@@ -187,7 +198,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
                           (truncation applies to both alike)
 ```
 
-因此渲染层可以边收 delta 边绘制，收到完整消息后原地替换。Trace 只记录完整消息，不存分片。接口实现在内部把结构闭合好，从不向上层泄漏未闭合的分片。`PartialAggregator`（`aggregate.ts`）提供了现成的分片聚合器。
+因此渲染层可以边收 delta 边绘制，收到完整消息后原地替换。Trace 只记录完整消息，不存分片。接口实现在内部把结构闭合好，从不向上层泄漏未闭合的分片。每组分片在 `stop` 之后都紧跟一条完整消息，使用方无需自己拼接分片。
 
 ## event_msg
 
@@ -356,7 +367,8 @@ interface SubagentPayload {
 
 interface HookPayload {
   type: "hook";
-  hook: "stop" | "pre_tool_use";    // the hook point that fired (see the agent loop's hooks)
+  hook: "stop" | "pre_tool_use"     // the hook point that fired (see the agent loop's hooks)
+    | "user_prompt";                // user_prompt: only for a hook that failed
   name: string;               // the hook's name: "goal", "continual-learning", …
   decision?: "continue" | "stop"    // stop point
     | "allow" | "deny";             // pre_tool_use point; absent when the hook only left a record
@@ -435,6 +447,8 @@ type StopReason = "completed" | "aborted" | "retryable" | "fatal";
 | SDK 边界（`session.run` 的输出） | 完整 `model_msg` + 流式 `partial_*` + 全部 `event_msg` |
 | 落盘的 Trace | `session_meta` + 完整 `model_msg` + 全部 `event_msg`（不存分片，也不存带 `origin` 的消息） |
 | Server 的 SSE 推送 | 与 SDK 边界相同，原样的单行 JSON，见 [Server API](/server-api) |
+
+[Agent API](/agent-api) 不推送 OmniMessage，它的事件流是 [AMSP](/amsp)：服务器为 PenguinHarness 之外的程序，对同一条实时流所做的投影。OmniMessage 不因此改变，没有新增任何字段、类型或取值。
 
 消息沿这些通道传递的机制与各项顺序保证，见[消息流转与时序](/message-flow)。
 

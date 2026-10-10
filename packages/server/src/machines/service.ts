@@ -464,20 +464,27 @@ export class MachinesService {
    * The subdirectories of `dir` on a machine, over the HELD connection — so picking a
    * workspace on it costs one command and no round trip to its API. Null when the machine is
    * not connected: a read must not open ssh on its own, or a disconnected machine would be
-   * reconnected by whoever browsed it.
+   * reconnected by whoever browsed it. `"denied"` when the directory is there and may not be
+   * read — told apart from absence so the picker can say which it is.
    */
   async listDirs(
     machineId: string,
     dir: string,
-  ): Promise<{
-    path: string;
-    parent: string | null;
-    entries: { name: string; path: string }[];
-  } | null> {
+  ): Promise<
+    | {
+        path: string;
+        parent: string | null;
+        entries: { name: string; path: string }[];
+      }
+    | "denied"
+    | null
+  > {
     const row = this.#rowFor(machineId);
     if (row === null || this.#liveSession(row.address) === null) return null;
     const target = this.#targetOf(row.address.slice("ssh:".length));
     const result = await this.#effects.runOn(target, listDirsCommand(dir));
+    // listDirsCommand's exit 4: the directory exists and refused the listing.
+    if (result.code === 4) return "denied";
     if (result.code !== 0) return null;
     const [head, rest] = result.stdout.split(DIR_LIST_MARK);
     const path = (head ?? "").trim().split("\n").pop()?.trim() ?? "";
@@ -1212,9 +1219,11 @@ export class MachinesService {
   }
 
   /**
-   * This side's model table for a Project, narrowed to the entries worth carrying: an entry
-   * with an inline key or its own base URL is something the machine cannot already have.
-   * Bare catalog entries are skipped — every server seeds the same presets.
+   * This side's model table for a Project, whole: every group connection (`[providers.<id>]`)
+   * and every entry, a bare one included. The file is the only truth, here as over there: a
+   * bare row runs on its group's table, which travels beside it, and the machine's own copy of
+   * a preset may have been seeded by another release or edited since — so nothing is skipped
+   * on the guess that the far side already holds the same.
    */
   async #localModels(projectId: string): Promise<LocalModels | null> {
     let config: ProjectConfig;
@@ -1223,11 +1232,9 @@ export class MachinesService {
     } catch {
       return null;
     }
-    const models = config.models.filter(
-      (entry) => (entry.api_key ?? "") !== "" || (entry.base_url ?? "") !== "",
-    );
     return {
-      models,
+      models: config.models,
+      ...(config.providers !== undefined ? { providers: config.providers } : {}),
       ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
       ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
       ...(config.name !== undefined ? { name: config.name } : {}),

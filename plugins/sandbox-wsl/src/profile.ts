@@ -14,6 +14,7 @@
  *   [confining modes]    --tmpfs /mnt                 every Windows drive hidden …
  *   [exposeWindowsDrives]  --ro-bind /mnt/<d> …       … or shown read-only
  *   [workspace]          --bind | --ro-bind <ws>      the Workspace, at its own /mnt path
+ *   [writable roots]     --bind <root> <root>…         the policy's further roots (the scratchpad)
  *   --ro-bind-try /mnt/wsl/resolv.conf …              the file /etc/resolv.conf points at
  *   --remount-ro /mnt                                 the covering tmpfs itself is read-only
  *   [mask-paths]         --tmpfs <dir> | --ro-bind /dev/null <file>
@@ -126,8 +127,17 @@ export function bwrapArgs(policy: SandboxPolicy, host: ProfileHost): string[] {
         args.push("--ro-bind", `${MOUNT_ROOT}/${d}`, `${MOUNT_ROOT}/${d}`);
     }
     args.push(policy.mode === "workspace-write" ? "--bind" : "--ro-bind", workspace, workspace);
-    // Last over /mnt, and only now: the bind above needs a writable tmpfs to create its
-    // mountpoint in, and the remount is what stops a write outside the Workspace from
+    // The policy's further writable roots (the Session's scratchpad), where the distro can
+    // reach them: one that cannot be reached is left out, which confines more narrowly
+    // rather than more widely.
+    if (policy.mode === "workspace-write") {
+      for (const root of policy.writableRoots ?? []) {
+        const linux = toLinuxPath(root, host.distro);
+        if (linux !== null && !within(linux, [workspace])) args.push("--bind", linux, linux);
+      }
+    }
+    // Last over /mnt, and only now: the binds above need a writable tmpfs to create their
+    // mountpoints in, and the remount is what stops a write outside the Workspace from
     // "succeeding" into a tmpfs nobody ever reads.
     args.push(...RESOLV_MNT, "--remount-ro", MOUNT_ROOT);
   }

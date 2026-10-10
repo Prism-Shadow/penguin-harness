@@ -7,7 +7,7 @@
  * placeholders) is never written to Trace — replay reconstructs from the original messages
  * (unanswered input is resent as-is, pairing placeholders are resynthesized as needed). History is
  * guaranteed to be **structurally valid** (turns complete, tool_call pairs matched), not a
- * byte-for-byte match of what AgentHub actually received; incomplete model output (thinking/text)
+ * byte-for-byte match of what MMSP actually received; incomplete model output (thinking/text)
  * is allowed to be lost.
  *
  * Messages are attributed to a Request by **position**, not by content inspection:
@@ -49,7 +49,12 @@ import type {
   TokenUsagePayload,
   ToolCallPayload,
 } from "../omnimessage/index.js";
-import { buildContextSummaryText, extractSummary } from "../omnimessage/markers/index.js";
+import {
+  buildContextSummaryText,
+  extractSummary,
+  MARKER_TAGS,
+  startsWithMarker,
+} from "../omnimessage/markers/index.js";
 
 /** Replay result: all the state needed to resume a Session. */
 export interface ResumeResult {
@@ -65,6 +70,12 @@ export interface ResumeResult {
   contextClosed: boolean;
   /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
   pendingSummary?: OmniMessage;
+  /**
+   * The `[context_summary]` this file's context opened with, while no turn has completed on
+   * it: its first pending input (so it is in `carryOver` too). A model switch away from such
+   * a context writes it at the head of the next file (see ContextEngine's `openingSummary`).
+   */
+  openingSummary?: OmniMessage;
   /** Session-level cumulative Token carry-over (the session value from the last token_usage). */
   sessionTokens: TokenCounts;
   /** The request.total from the last token_usage (context usage figure). */
@@ -259,6 +270,20 @@ function isCompactionEnd(msg: OmniMessage): msg is OmniMessage<CompactionEndPayl
   return isEventMessage(msg) && (msg.payload as { type?: string }).type === "compaction_end";
 }
 
+/**
+ * Whether the message is a `[context_summary]` user text: the first input of a context a
+ * summarize compaction opened. Read off the text because no field marks the record (see the
+ * markers module's consumption boundary for why that is safe here).
+ */
+function isContextSummary(msg: OmniMessage): boolean {
+  const p = msg.payload as { type?: string; role?: string; text?: string };
+  return (
+    p.type === "text" &&
+    p.role === "user" &&
+    startsWithMarker(p.text ?? "", MARKER_TAGS.contextSummary)
+  );
+}
+
 function toolCallOutputId(msg: OmniMessage): string | null {
   const p = msg.payload as { type?: string; tool_call_id?: string };
   return p.type === "tool_call_output" ? (p.tool_call_id ?? null) : null;
@@ -393,7 +418,7 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
             committedCallIds.add(p.tool_call_id);
           }
         }
-        // A committed request inside a compaction span enters history as usual (AgentHub
+        // A committed request inside a compaction span enters history as usual (MMSP
         // committed it — e.g. an invalid-summary attempt of a compaction that then failed),
         // but does not count as a Session turn: in-process only runTurn increments the
         // counter, never runCompactionRequest.
@@ -466,10 +491,13 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
     pairingBackfill.push(placeholderFor(id));
   }
 
+  const opening = sessionTurns === 0 ? pending[0] : undefined;
+
   return {
     history,
     carryOver: [...pending, ...pairingBackfill],
     contextClosed: false,
+    ...(opening !== undefined && isContextSummary(opening) ? { openingSummary: opening } : {}),
     sessionTokens,
     lastRequestTotal,
     sessionTurns,

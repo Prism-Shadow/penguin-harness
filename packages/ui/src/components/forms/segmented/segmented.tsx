@@ -1,0 +1,114 @@
+/**
+ * Segmented control, for 2- to 5-way choices (theme, language, messaging channel): the options sit
+ * in a well, and the chosen one is a raised chip in the surface colour — lighter than the well in
+ * a light theme, the page's own darker surface in a dark one.
+ *
+ * An option may carry a `badge`: a mini tag pinned at the top-right of its label, for a mark that
+ * qualifies the choice itself rather than reporting a state (a beta tag on a work-mode choice). It
+ * is positioned out of flow, so neither an option's height nor the control's overall size moves
+ * when one appears, and it is hidden from the accessible name; the badge's `name` is what the
+ * option's name gains instead, as ` · <name>`.
+ *
+ * The well is a pressable control's shape (`rounded-control`), and a chip's corner is concentric
+ * with it: the well's radius less the well's inset (`p-1`, one space unit), so the chip follows the
+ * well's curve at an even distance — a pill in a pill where controls are pills, a small corner in
+ * a small one, square in a square. Below zero it is zero.
+ *
+ * Every option is a button, and a button keeps its label on one line: the chips share the width
+ * evenly while it allows, and a narrower well gives each chip its own label's width rather than
+ * breaking a label in two. Narrower than that, it is the row around the control that has to
+ * make room.
+ */
+import type { ReactNode } from "react";
+
+/** The chip's corner: the well's `rounded-control` less its `p-1` inset. */
+const SEGMENTED_CHIP_RADIUS =
+  "rounded-[max(0px,calc(var(--ui-radius-control)_-_var(--ui-space-unit)))]";
+
+/**
+ * Equal columns that never go narrower than their chip's label: a bare `1fr` is
+ * `minmax(auto, 1fr)`, where Tailwind's `grid-cols-N` is `minmax(0, 1fr)` and would let a column
+ * squeeze its label. Spelled whole, since Tailwind only emits the class names it finds.
+ */
+const COLUMNS: Record<2 | 3 | 4 | 5, string> = {
+  2: "grid-cols-[repeat(2,1fr)]",
+  3: "grid-cols-[repeat(3,1fr)]",
+  4: "grid-cols-[repeat(4,1fr)]",
+  5: "grid-cols-[repeat(5,1fr)]",
+};
+
+export interface SegmentedOption<T extends string> {
+  value: T;
+  label: string;
+  /**
+   * A shorter label for a phone-width screen (below `sm`), where the full one would not fit
+   * beside the other options: shown there instead, while `label` stays the option's accessible
+   * name. The full label shows from `sm` up.
+   */
+  shortLabel?: string;
+  badge?: { node: ReactNode; name: string };
+}
+
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  cols = 3,
+}: {
+  options: ReadonlyArray<SegmentedOption<T>>;
+  value: T;
+  onChange: (v: T) => void;
+  cols?: 2 | 3 | 4 | 5;
+}) {
+  return (
+    <div className={`grid ${COLUMNS[cols]} gap-1 rounded-control bg-line-muted p-1`}>
+      {options.map((opt) => {
+        const text =
+          opt.shortLabel === undefined ? (
+            opt.label
+          ) : (
+            <>
+              <span className="sm:hidden">{opt.shortLabel}</span>
+              <span className="hidden sm:inline">{opt.label}</span>
+            </>
+          );
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            // An aria-label replaces every descendant in the accessible name, so it is only set
+            // where there is a badge to fold in or a short label standing in for the full one —
+            // otherwise the label's own text is the name.
+            aria-label={
+              opt.badge
+                ? `${opt.label} · ${opt.badge.name}`
+                : opt.shortLabel !== undefined
+                  ? opt.label
+                  : undefined
+            }
+            aria-pressed={value === opt.value}
+            className={`${SEGMENTED_CHIP_RADIUS} whitespace-nowrap px-1 py-1 text-xs transition-colors duration-150 ${
+              value === opt.value
+                ? "bg-surface font-medium text-fg shadow-sm"
+                : "text-fg-muted hover:text-fg"
+            }`}
+          >
+            {opt.badge ? (
+              <span className="relative inline-block">
+                {text}
+                {/* `left-full` rather than a negative right offset: the tag hangs off the label's
+                  right edge whatever it is wide, and never overlaps the word. */}
+                <span aria-hidden className="absolute -top-1.5 left-full">
+                  {opt.badge.node}
+                </span>
+              </span>
+            ) : (
+              text
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

@@ -7,7 +7,6 @@ import {
   ConsoleLog,
   RuntimeAuthState,
   RuntimeChannels,
-  RuntimeLifecycle,
   RuntimeConfig,
   RuntimeDb,
   RuntimeDesktop,
@@ -23,7 +22,6 @@ import {
   Config,
   Db,
   Desktop,
-  Lifecycle,
   Hmr,
   Reassembly,
   HmrControl,
@@ -33,6 +31,7 @@ import {
   ResourceGroups,
 } from "./hmr/capabilities.js";
 import { ScryptHasher, PasswordHasher } from "./auth/password.js";
+import { LiveStreamRegistry, LiveStreams } from "./auth/live-streams.js";
 import {
   DefaultMessagingTuning,
   Messaging,
@@ -46,12 +45,8 @@ import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
 import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
 import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
-import {
-  PluginConfig,
-  PluginConfigAdmin,
-  PluginConfigPage,
-  PluginConfigProvider,
-} from "./plugin/config.js";
+import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
+import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -85,6 +80,7 @@ import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { OrgCacheRepo } from "./db/repos/organizations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { SessionSources } from "./runtime/session-sources.js";
+import { SessionDriverRegistry } from "./runtime/session-drivers.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "./services/usage-service.js";
@@ -110,7 +106,8 @@ import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
-import { SandboxSettings, SandboxSettingsStatus } from "./sandbox/settings-store.js";
+import { SandboxSettings } from "./sandbox/settings-store.js";
+import { SandboxSettingsStatus } from "./sandbox/settings-status.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { Machines, MachinesModule } from "./machines/service.js";
 import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organization/service.js";
@@ -121,13 +118,20 @@ import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
 import { AuthRoutes } from "./http/routes/auth.js";
-import { DesktopRoutes, DesktopTrayRoutes, DesktopUpdateRoutes } from "./http/routes/desktop.js";
+import {
+  DesktopPrivacySettingsRoutes,
+  DesktopRoutes,
+  DesktopTrayRoutes,
+  DesktopUpdateRoutes,
+} from "./http/routes/desktop.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
+import { LanguageRoutes } from "./http/routes/languages.js";
+import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
 import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
@@ -142,7 +146,13 @@ import {
   ProjectLifecycle,
   Projects,
 } from "./mechanisms/projects.js";
-import { Schedules, Scheduling, SessionIndex, SessionOrigins } from "./mechanisms/sessions.js";
+import {
+  Schedules,
+  Scheduling,
+  SessionDrivers,
+  SessionIndex,
+  SessionOrigins,
+} from "./mechanisms/sessions.js";
 import { Workflows } from "./mechanisms/workflows.js";
 import { WorkflowService } from "./workflows/service.js";
 import { WorkflowRoutes } from "./workflows/routes.js";
@@ -162,6 +172,8 @@ import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
+import { BuiltinBrowserModule } from "./builtin-browser/module.js";
+import { AgentApiModule } from "./amsp/module.js";
 
 /**
  * The platform's module tree: the root module and its children, in one place.
@@ -227,7 +239,6 @@ export class Startup {
     AppReassembly,
     RuntimeDesktop,
     RuntimeAuthState,
-    RuntimeLifecycle,
     RuntimeResourceGroups,
     ConsoleLog,
     SystemClock,
@@ -243,7 +254,6 @@ export class Startup {
     Reassembly,
     Desktop,
     AuthState,
-    Lifecycle,
     ResourceGroups,
     Log,
     Clock,
@@ -257,13 +267,14 @@ export class RuntimeModule {}
     UsersRepo,
     AuthSessionsRepo,
     ScryptHasher,
+    LiveStreamRegistry,
     AuthService,
     AdminService,
     AdminRoutes,
     MeRoutes,
     AuthRoutes,
   ],
-  exports: [Users, AuthSessions, Auth, Admin, PasswordHasher],
+  exports: [Users, AuthSessions, Auth, Admin, PasswordHasher, LiveStreams],
 })
 export class IdentityModule {}
 
@@ -305,6 +316,7 @@ export class ProjectsModule {}
   children: [
     SessionsRepo,
     SessionSources,
+    SessionDriverRegistry,
     SchedulesRepo,
     Scheduler,
     CoreSessionLoaders,
@@ -317,6 +329,7 @@ export class ProjectsModule {}
   exports: [
     SessionIndex,
     SessionOrigins,
+    SessionDrivers,
     Schedules,
     Scheduling,
     Sessions,
@@ -432,10 +445,13 @@ export class CompanyModule {}
     DesktopRoutes,
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
+    DesktopPrivacySettingsRoutes,
     PluginRoutes,
     PluginRegistryRoutes,
     InstalledPluginRoutes,
     SuggestIdRoutes,
+    LanguagesModule,
+    LanguageRoutes,
   ],
   exports: [Http, WebShell, UpdateCheck],
 })
@@ -469,6 +485,8 @@ export class WorkflowsModule {}
     MachinesModule,
     TerminalRelay,
     WorkflowsModule,
+    BuiltinBrowserModule,
+    AgentApiModule,
     Startup,
   ],
 })
@@ -500,7 +518,6 @@ export function platformDef(
     [AppReassembly, new AppReassembly(reassemble)],
     [RuntimeDesktop, new RuntimeDesktop(caps)],
     [RuntimeAuthState, new RuntimeAuthState(caps)],
-    [RuntimeLifecycle, new RuntimeLifecycle(caps)],
     [RuntimeResourceGroups, new RuntimeResourceGroups(adoptable)],
   ]);
   for (const [cls, instance] of caps.replacements) instances.set(cls, instance);

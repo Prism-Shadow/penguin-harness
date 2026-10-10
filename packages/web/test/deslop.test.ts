@@ -1,0 +1,164 @@
+/**
+ * The de-slop rules (K-redesign §3) over `packages/web/src`.
+ *
+ * The same checks the package holds itself to (`packages/ui/src/testing/deslop.ts`, run over
+ * `packages/ui/src` by `packages/ui/test/deslop.test.ts`), run over the web app, where the tells
+ * K-redesign §1.5 counts still stand: size and transform tweens off their homes, a hover scale,
+ * pulses on things that are not live, one-hue notice boxes, 10–11 px text, uppercase
+ * micro-titles. Each of those is in {@link ALLOWLIST} — per file, per rule, how many and the wave
+ * that removes them — and nothing else may appear. The counts are exact both ways: a new hit fails
+ * as new slop, and a hit that goes away fails until its entry shrinks, so the list only tightens and
+ * every wave's PR shows its share of it leaving.
+ *
+ * Only the web root is judged here. A file a wave moves into the package leaves its entries behind
+ * (they fail as stale) and is judged by the package suite, which allows nothing — which is how a
+ * component is de-slopped when it moves, and not after.
+ *
+ * Rule 20 (palette classes, `dark:`, hex) is the package's: the web app speaks the palette until
+ * each wave moves it to tokens, so here it runs only over the files a wave has already moved
+ * ({@link TOKENS_ONLY}), which keeps them there. Rule 22 reads a `PageHeader`, and the one the
+ * app renders is the package's (W4), whose suite runs the rule; here it runs only if the web app
+ * declares its own.
+ */
+import { describe, expect, it } from "vitest";
+import {
+  DESLOP_RULE_NUMBERS,
+  DESLOP_RULES,
+  PAGE_HEADER_COMPONENTS,
+  allowlistProblems,
+  analyzeFile,
+  deslopHits,
+} from "../../ui/src/testing/deslop";
+import type { DeslopAllowlist, DeslopPolicy } from "../../ui/src/testing/deslop";
+import { expectEveryRootScanned, scanSources } from "./helpers/roots";
+
+const SCAN = scanSources();
+const WEB = SCAN.files.filter((file) => file.root === "web");
+
+/**
+ * The homes §3 names, as the web app spells them today. It has no Spinner of its own (the
+ * package's is the one), the chevron's rotation left with the chevron, the sheet's and the
+ * drawer's motion with them (W6), the streaming caret's pulse with the reply body (W6), and the
+ * launcher fan's with the launcher (W7).
+ */
+const POLICY: DeslopPolicy = {
+  transformMotion: [],
+  entranceMotion: [],
+  pulseHomes: ["dot.tsx"],
+  spinnerHomes: [],
+  tokensOnly: false,
+  hexHomes: [],
+};
+
+/**
+ * What the web app still holds, seeded from K-redesign §1.5, by path under `packages/web/src`:
+ * `{ rule: [count, wave] }`. The wave is the one whose PR rewrites those lines — where §1.5 names
+ * it (the hover scale → W2's SwatchPicker; one-hue boxes → W4's Notice), that wave; otherwise the
+ * wave that moves or rebuilds the file (A-architecture §7: W1 marks and actions, W2 forms, W3
+ * overlays, W4 layout, navigation, notices and data display, W5 content, W6 chat, W7 files, shell
+ * and dock, W8 charts). `Wn+Wm` splits an entry between two.
+ * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight.
+ */
+const ALLOWLIST: DeslopAllowlist = {
+  "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
+};
+
+/**
+ * Web files that are on the tokens, by path under `packages/web/src`: rule 20 holds each to the
+ * package's standard — no palette class, no `dark:` variant, no hex — so a file a wave moved off
+ * the palette cannot drift back onto it. A file joins when its wave rewrites it. These are W10's,
+ * the code that landed on main while the waves were in flight, and the transcript's harness rows
+ * (the cards and notes on the work group's anatomy, and the item dispatch around them); the
+ * terminal's appearance module is not among them by design, since the terminal resolves its own
+ * palette outside the token system, while the key bar that reads it is. A new file written on the
+ * tokens joins as it lands (the find bar).
+ */
+const TOKENS_ONLY: readonly string[] = [
+  "components/find/find-bar.tsx",
+  "features/builtin-browser/backend-menu.tsx",
+  "features/builtin-browser/browser-tab-strip.tsx",
+  "features/builtin-browser/browser-toolbar.tsx",
+  "features/builtin-browser/chrome-surface.tsx",
+  "features/builtin-browser/pairing-dialog.tsx",
+  "features/chat/attached-files-banner.tsx",
+  "features/chat/background-done-banner.tsx",
+  "features/chat/compaction-banner.tsx",
+  "features/chat/goal-banner.tsx",
+  "features/chat/handoff-banner.tsx",
+  "features/chat/harness-banner.tsx",
+  "features/chat/mcp-connect-banner.tsx",
+  "features/chat/message-item.tsx",
+  "features/chat/model-picker-modal.tsx",
+  "features/chat/org-trigger-banner.tsx",
+  "features/chat/scheduled-banner.tsx",
+  "features/chat/skills-banner.tsx",
+  "features/chat/task-stats-line.tsx",
+  "features/chat/workspace-finder.tsx",
+  "features/chat/workspace-finder-model.ts",
+  "features/chat/workspace-select.tsx",
+  "features/settings/browser-section.tsx",
+  "features/settings/chrome-extension-section.tsx",
+  "features/settings/shortcut-recorder.tsx",
+  "features/settings/shortcuts-section.tsx",
+  "features/settings/trace-import-row.tsx",
+  "features/terminal/terminal-keybar.tsx",
+];
+
+const WAVES = /^W(?:1a?|1b|10|[2-9])(?:\+W(?:1a?|1b|10|[2-9]))*$/;
+const relOf = (id: string) => id.slice("packages/web/src/".length);
+
+describe("de-slop rules over packages/web/src", () => {
+  it("scans every source root, and every listed file is still in the web app", () => {
+    expectEveryRootScanned(SCAN);
+    const gone = [...Object.keys(ALLOWLIST), ...TOKENS_ONLY].filter(
+      (rel) => !WEB.some((file) => file.rel === rel),
+    );
+    expect(
+      gone,
+      "A listed file that left packages/web/src moved into the package (whose suite allows " +
+        "nothing) or was deleted: remove its entry.",
+    ).toEqual([]);
+  });
+
+  it("names a planned wave in every entry", () => {
+    const unplanned = Object.entries(ALLOWLIST).flatMap(([rel, rules]) =>
+      Object.entries(rules).flatMap(([rule, entry]) =>
+        entry !== undefined && WAVES.test(entry[1]) && entry[0] > 0 ? [] : [`${rel} rule ${rule}`],
+      ),
+    );
+    expect(unplanned).toEqual([]);
+  });
+
+  for (const rule of DESLOP_RULE_NUMBERS) {
+    const title = `rule ${rule}: ${DESLOP_RULES[rule]}`;
+    if (rule === 20) {
+      it(`${title} — over the tokens-only files`, () => {
+        const files = WEB.filter((file) => TOKENS_ONLY.includes(file.rel));
+        expect(
+          deslopHits(files, rule, { ...POLICY, tokensOnly: true }).map(
+            (hit) => `${relOf(hit.file)}:${hit.line}  ${hit.found}`,
+          ),
+          "A tokens-only file spells a palette class, a dark: variant or a hex colour: use the " +
+            "package's token classes (bg-surface, text-fg-muted, border-line, …) instead.",
+        ).toEqual([]);
+      });
+      continue;
+    }
+    if (
+      rule === 22 &&
+      !WEB.some((file) =>
+        analyzeFile(file).components.some((c) => PAGE_HEADER_COMPONENTS.includes(c.name)),
+      )
+    ) {
+      it.skip(`${title} — the PageHeader is the package's, whose suite runs this rule`, () => {});
+      continue;
+    }
+    it(title, () => {
+      expect(
+        allowlistProblems(deslopHits(WEB, rule, POLICY), rule, ALLOWLIST, (hit) => relOf(hit.file)),
+        `K-redesign §3 rule ${rule}: ${DESLOP_RULES[rule]}. Fix a new hit rather than allowlisting ` +
+          "it; when a hit goes away, shrink its entry.",
+      ).toEqual([]);
+    });
+  }
+});

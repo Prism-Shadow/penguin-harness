@@ -1,7 +1,7 @@
 /**
  * Session-level uniqueness for tool_call_id.
  *
- * Some providers don't produce a real call id: e.g. Gemini's functionCall has no id, so AgentHub
+ * Some providers don't produce a real call id: e.g. Gemini's functionCall has no id, so MMSP
  * uses the **function name** as the `tool_call_id` — consecutive/parallel calls to the same tool then
  * all share one id. But the OmniMessage world (engine dispatch/pairing, approval routing, frontend
  * tool-card attribution) keys on `tool_call_id`, and a collision lets a later call overwrite the

@@ -32,6 +32,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { app, dialog } from "electron";
 import type { BrowserWindow } from "electron";
+import { logLine } from "./desktop-log.js";
 import {
   adminSymlinkAppleScript,
   appImageWrapperScript,
@@ -54,7 +55,7 @@ const execFileAsync = promisify(execFile);
 const MAC_LINK_DIR = "/usr/local/bin";
 
 function log(line: string): void {
-  process.stdout.write(`[cli] ${line}\n`);
+  logLine(`[cli] ${line}`);
 }
 
 /** The launcher directory inside the packaged app. */

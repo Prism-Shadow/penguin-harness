@@ -113,10 +113,11 @@ describe("installed plugins", () => {
     ).toBe(400);
   });
 
-  it("a rewrite is gated like an add: a new name must be a shipped package's", async () => {
+  it("a rewrite is gated like an add: a new name must be on this machine", async () => {
     // What a single add refuses, a list rewrite refuses too — otherwise PUT would be the
-    // way to name a path or an unshipped package. A name already on the list was consented
-    // to when it was written and stays writable, so removing another name beside it works.
+    // way to name a path, or a package that is not on disk. A name already on the list was
+    // consented to when it was written and stays writable, so removing another name beside
+    // it works.
     await fs.writeFile(listFile(), 'models = []\n[plugins]\n"@acme/by-hand" = "*"\n');
     for (const bad of ["/tmp/anything.js", "../x", "@acme/tools/sandbox", "pkg@1.0.0"]) {
       const res = await admin.put("/api/projects/default_project/plugins/installed", {
@@ -125,34 +126,29 @@ describe("installed plugins", () => {
       expect(res.status, bad).toBe(400);
       expect(await res.json(), bad).toMatchObject({ error: { code: "bad_request" } });
     }
-    const unshipped = await admin.put("/api/projects/default_project/plugins/installed", {
-      plugins: ["@acme/by-hand", "@acme/not-shipped"],
+    const absent = await admin.put("/api/projects/default_project/plugins/installed", {
+      plugins: ["@acme/by-hand", "@acme/not-installed"],
     });
-    expect(unshipped.status).toBe(400);
-    expect(await unshipped.json()).toMatchObject({ error: { code: "plugin_not_shipped" } });
+    expect(absent.status).toBe(400);
+    expect(await absent.json()).toMatchObject({ error: { code: "plugin_not_installed" } });
     expect(await fs.readFile(listFile(), "utf8")).toContain('"@acme/by-hand" = "*"');
-    expect(await fs.readFile(listFile(), "utf8")).not.toContain("not-shipped");
+    expect(await fs.readFile(listFile(), "utf8")).not.toContain("not-installed");
     const kept = await admin.put("/api/projects/default_project/plugins/installed", {
       plugins: ["@acme/by-hand"],
     });
     expect(kept.status).toBe(200);
   });
 
-  it("refuses a specifier that is not a package name, or one the build does not ship", async () => {
-    for (const bad of ["../evil", "https://example.com/x.tgz", "", "Has Spaces", "pkg@1.0.0"]) {
+  it("installs a package before listing it, and refuses a specifier that is not a package name", async () => {
+    // npm is not driven in a unit test: what is pinned here is that the route validates the
+    // specifier and does not write the list when nothing was installed.
+    for (const bad of ["../evil", "https://example.com/x.tgz", "", "Has Spaces"]) {
       expect(
         (await admin.post("/api/projects/default_project/plugins/installed", { specifier: bad }))
           .status,
         bad,
       ).toBe(400);
     }
-    // A well-formed name the build does not ship is fetched from nowhere: refused, and the
-    // list is left as it was rather than naming a package that is not on the machine.
-    const res = await admin.post("/api/projects/default_project/plugins/installed", {
-      specifier: "@acme/not-shipped",
-    });
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ error: { code: "plugin_not_shipped" } });
     expect(await view()).toMatchObject({ plugins: [] });
   });
 
@@ -176,17 +172,12 @@ describe("installed plugins", () => {
 
   it("a plugin asked of another machine only is listed there, and neither installed nor loaded here", async () => {
     const other = "Other00000000000";
-    // Of any machine, only what the build ships can be asked for.
-    const refused = await admin.post("/api/projects/default_project/plugins/installed", {
-      specifier: "@acme/not-shipped",
-      machineId: other,
-    });
-    expect(refused.status).toBe(400);
-    await ship({ name: "@acme/elsewhere", module: "Elsewhere" });
     const res = await admin.post("/api/projects/default_project/plugins/installed", {
-      specifier: "@acme/elsewhere",
+      specifier: "@acme/elsewhere@1.2.3",
       machineId: other,
     });
+    // Nothing fetched it here — a local npm install of a package that does not exist would
+    // have answered plugin_install_failed.
     expect(res.status).toBe(200);
     const body = (await res.json()) as InstalledPluginsResponse;
     expect(body.plugins).toEqual([
@@ -201,7 +192,7 @@ describe("installed plugins", () => {
     expect(body.plugins[0]!.error).toBeUndefined();
     expect(body.restartPending).toBe(false);
     expect(await fs.readFile(listFile(), "utf8")).toContain(
-      `[plugins.${other}]\n"@acme/elsewhere" = "*"`,
+      `[plugins.${other}]\n"@acme/elsewhere" = "1.2.3"`,
     );
 
     // Removing it from that machine's table leaves the shared table alone.

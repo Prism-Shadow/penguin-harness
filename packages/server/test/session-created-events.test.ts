@@ -1,14 +1,18 @@
 /**
  * `session_created` on the user channel: the list learns about rows it did not make.
  *
- * A Session created by the CLI, by another tab, by a schedule or by an agent spawning a
- * child went through the same route as one created from the list — and the list never
- * heard about it, because nothing announced it. `session_state` and `session_title` cannot
- * stand in: both act on a row the list already holds and ignore an unknown id. So this
- * event is the one thing that makes a Session appear without a reload, and the audience
- * rule is the same as for the state events: the Project's owner and members, nobody else.
+ * A Session created by the CLI, another tab, a schedule or an agent spawning a child goes
+ * through the same route as one created from the list, and the list never heard about it.
+ * `session_state` and `session_title` cannot stand in: both act on a row the list already
+ * holds. So this event is what makes a Session appear without a reload.
+ *
+ * - A new Session reaches the Project's owner and members with its ids and its source (`user`
+ *   for one a person opens), and nobody else.
+ * - The event is published after the row is in place, so a reader who reloads on it finds it.
+ * - A title set by PATCH (the CLI's --title, another tab's rename) is announced to the same
+ *   audience.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type {
   ProjectCreateResponse,
   ServerEvent,
@@ -36,7 +40,7 @@ describe("session_created on the user channel", () => {
   let projectId: string;
   let boxes: { owner: ServerEvent[]; member: ServerEvent[]; stranger: ServerEvent[] };
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner");
     await provisionUser(t.app, "member");
@@ -51,6 +55,11 @@ describe("session_created on the user channel", () => {
       defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
       models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 128000 }],
     });
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(() => {
     boxes = {
       owner: inbox(t, "owner"),
       member: inbox(t, "member"),
@@ -58,11 +67,7 @@ describe("session_created on the user channel", () => {
     };
   });
 
-  afterEach(async () => {
-    await t.cleanup();
-  });
-
-  it("reaches the Project's owner and members with the new row's ids, and nobody else", async () => {
+  it("reaches the Project's owner and members with the new row's ids and source, and nobody else", async () => {
     const res = (await (
       await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
     ).json()) as SessionCreateResponse;
@@ -71,9 +76,14 @@ describe("session_created on the user channel", () => {
     for (const who of ["owner", "member"] as const) {
       const got = created(boxes[who]);
       expect(got, who).toHaveLength(1);
-      expect(got[0]).toMatchObject({ projectId, agentId: "default_agent", sessionId });
-      // A user-created Session has no source marker, on the row or in the event.
-      expect(got[0]).not.toHaveProperty("source");
+      // The event names the Session's source as its meta records it, the same as the row.
+      expect(got[0]).toMatchObject({
+        projectId,
+        agentId: "default_agent",
+        sessionId,
+        source: res.session.source,
+      });
+      expect(res.session.source).toBe("user");
     }
     expect(created(boxes.stranger)).toHaveLength(0);
   });

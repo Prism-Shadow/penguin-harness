@@ -185,6 +185,7 @@ export const META: SessionMetaPayload = {
   system_prompt: SYSTEM_PROMPT,
   agent_state: "/tmp/penguin-prompt-cache/state",
   workspace: "/tmp/penguin-prompt-cache/workspace",
+  source: "user",
 };
 
 export const modelConfig = (over: Partial<GenerativeModelConfig> = {}): GenerativeModelConfig => ({

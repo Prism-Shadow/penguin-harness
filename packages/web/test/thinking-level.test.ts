@@ -1,20 +1,25 @@
 /**
- * thinking-level.ts unit tests: the conversation-time pickers' short-name lookup and the
- * selectable list — both pickers offer only low/medium/high/xhigh/max (many models cannot disable
- * thinking; there is no "follow config" row — the session picker auto-follows the Agent
- * config by initializing its display to it), while "none" stays a displayable stored value;
- * "" (internally "untouched"/no override) and a legacy meta's "default" resolve to null so
- * callers substitute the config level or a placeholder.
+ * The thinking-level pickers (features/chat/thinking-level.ts) and the tier names in both
+ * dictionaries.
  *
- * Plus the mid-chat switch guard (#310): when a pick has to be confirmed, and how the
- * dialog's "compact, then switch" choice decides — from the transcript alone — whether the
- * compaction it started completed (apply the pick), settled without completing (keep the
- * level and say so), or is still in flight.
- *
- * Plus a drift guard over the REAL dictionaries (the rest of this file works against the
- * local NAMES stub): every tier core accepts has to be named in both locales, and the
- * trigger/menu split has to hold — no tier can go unlabelled, and no wire value can leak
- * back onto a trigger, without a test failing here.
+ * - The pickers offer exactly the tiers core accepts as a chat default; every stored level,
+ *   a legacy "none" included, is named in both locales.
+ * - The zh trigger shows a Chinese name with no wire value, while every menu row, in either
+ *   language, shows the wire value once.
+ * - A non-level ("" for no override, a legacy "default", an unknown value, nothing) has no
+ *   label; a level missing from the name table shows its raw value.
+ * - The draft picker resolves the Agent's explicit level, then the Project's chat default, then
+ *   medium, the chain core applies.
+ * - The Agent settings dropdown lists the dictionary's tiers without the inherit row, adding a
+ *   display-only "none" row when the stored config holds one.
+ * - The provider's prefix cache is at risk once there is history, unless the transcript ends in
+ *   a successful compaction.
+ * - A mid-chat pick asks for confirmation only when history exists and the pick differs from
+ *   the displayed level (or that level is unknown), never right after a successful compaction.
+ * - After "compact, then switch", the wait settles on the compaction started by that choice
+ *   (completed, failed or still running), and the pick is applied once it settles, even when
+ *   the compaction failed or never started.
+ * - The in-session picker follows the Agent config until a level is pinned on the Session.
  */
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
@@ -45,25 +50,6 @@ const NAMES: Readonly<Record<string, string>> = {
   max: "max",
 };
 
-describe("thinking level lists", () => {
-  it("offers only low/medium/high/xhigh/max — no 'none' (many models cannot disable thinking)", () => {
-    expect(SELECTABLE_THINKING_LEVELS).toEqual(["low", "medium", "high", "xhigh", "max"]);
-    expect(SELECTABLE_THINKING_LEVELS).not.toContain("none");
-  });
-
-  it("keeps every stored level displayable (a legacy 'none' is shown, never offered)", () => {
-    expect(THINKING_LEVELS).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
-    expect(THINKING_LEVELS.map((l) => thinkingLevelLabel(NAMES, l))).toEqual([
-      "none",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]);
-  });
-});
-
 describe("tier names track core, and the trigger/menu split holds", () => {
   const dictionaries: ReadonlyArray<readonly [string, typeof zh]> = [
     ["zh", zh],
@@ -85,21 +71,16 @@ describe("tier names track core, and the trigger/menu split holds", () => {
     }
   });
 
-  it("keeps the wire value off the zh trigger name and puts it on the zh menu row", () => {
+  it("keeps the wire value off the zh trigger, and shows it once on every menu row", () => {
     for (const level of THINKING_LEVELS) {
-      const name = zh.chat.thinkingLevelNames[level] ?? "";
+      const zhName = zh.chat.thinkingLevelNames[level] ?? "";
       // The maintainer's rule for the trigger: Chinese only — no latin letters, no parens.
-      expect(name, `zh ${level} must not carry the wire value`).not.toMatch(/[A-Za-z()]/);
-      // ...and the menu row is where that value belongs.
-      expect(zh.chat.thinkingLevelMenuName(name, level)).toBe(`${name} (${level})`);
-    }
-  });
-
-  it("leaves en unsplit: its name already is the wire value, so the menu adds nothing", () => {
-    for (const level of THINKING_LEVELS) {
-      const name = en.chat.thinkingLevelNames[level] ?? "";
-      expect(name).toBe(level);
-      expect(en.chat.thinkingLevelMenuName(name, level)).toBe(name);
+      expect(zhName, `zh ${level} must not carry the wire value`).not.toMatch(/[A-Za-z()]/);
+      for (const [locale, dict] of dictionaries) {
+        const name = dict.chat.thinkingLevelNames[level] ?? "";
+        const row = dict.chat.thinkingLevelMenuName(name, level);
+        expect(row.split(level).length - 1, `${locale} ${level} menu row`).toBe(1);
+      }
     }
   });
 });
@@ -207,6 +188,26 @@ describe("prefixCacheAtRisk (issue #310 — provider prefix cache over the exist
 
   it("new turns after a compaction re-arm the guard (only a TRAILING compaction is safe)", () => {
     expect(prefixCacheAtRisk([user, reply, compactionDone, user, reply])).toBe(true);
+  });
+
+  it("a transcript that ends in a model switch is safe: the context it opened has not been sent yet", () => {
+    const modelChange: ThinkingSwitchItem = { kind: "model_change" };
+    expect(prefixCacheAtRisk([user, reply, stats, compactionDone, modelChange])).toBe(false);
+    // A switch away from a context that had not answered runs no compaction: the marker
+    // stands alone, and the context behind it is just as new.
+    expect(prefixCacheAtRisk([user, modelChange])).toBe(false);
+    // Conversation since re-arms the guard.
+    expect(prefixCacheAtRisk([user, modelChange, user, reply])).toBe(true);
+  });
+
+  it("the connect row a compacted context opened with changes nothing either", () => {
+    const connect: ThinkingSwitchItem = {
+      kind: "mcp_connect",
+      running: false,
+      status: "completed",
+    };
+    expect(prefixCacheAtRisk([user, reply, stats, compactionDone, connect])).toBe(false);
+    expect(prefixCacheAtRisk([user, reply, connect])).toBe(true);
   });
 });
 

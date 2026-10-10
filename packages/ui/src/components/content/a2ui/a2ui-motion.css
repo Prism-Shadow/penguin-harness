@@ -1,0 +1,179 @@
+/*
+ * The A2UI widgets' motion. Every loop depicts the condition it belongs to, the same in every
+ * theme because the motion is the picture:
+ *
+ * - rays turn slowly and breathe: the sun is shining;
+ * - stars twinkle: a clear night;
+ * - clouds drift a little to and fro: the sky moves;
+ * - fog layers slide past each other, every other one the other way;
+ * - rain falls, the heavier the faster (`--a2ui-fall`, set by the drawing), and snow drifts down;
+ * - the bolt flashes twice and rests: a storm;
+ * - wind streams along its lines as travelling dashes.
+ *
+ * The hourly forecast's line draws in once, left to right, because it is a trace through time.
+ *
+ * What a theme owns is the timing: the loops run on `--ui-live-timing`, so Console's steps make
+ * them jump the way its other live signals do while Frost and Primer glide. A repeated part
+ * starts at its own point of the loop (`--a2ui-delay`, set by the drawing) so a shower never
+ * falls in step.
+ *
+ * Still: the gallery's switch on the root, then the system preference, then anything scrolled
+ * away (a widget's surface carries `data-offscreen`). Every keyframe changes transform, opacity
+ * or the dashes only, and every part is drawn at rest in full, so a still widget is the whole
+ * picture: the wind's dashes and the line's draw-in exist only while they run.
+ */
+[data-art] [data-anim] {
+  animation-timing-function: var(--ui-live-timing, linear);
+  animation-iteration-count: infinite;
+  animation-delay: var(--a2ui-delay, 0s);
+}
+[data-art] [data-anim="rays"] {
+  animation:
+    a2ui-rays-turn 60s linear infinite,
+    a2ui-breathe 3s var(--ui-ease-in-out, ease-in-out) infinite;
+  transform-origin: 32px 32px;
+}
+[data-art] [data-anim="stars"] {
+  animation-name: a2ui-breathe;
+  animation-duration: 2.5s;
+}
+[data-art] [data-anim="cloud"] {
+  animation-name: a2ui-drift;
+  animation-duration: 6s;
+  animation-direction: alternate;
+}
+[data-art] [data-anim="fog"] {
+  animation-name: a2ui-drift;
+  animation-duration: 5s;
+  animation-direction: alternate;
+}
+[data-art] [data-anim="fog"]:nth-of-type(even) {
+  animation-direction: alternate-reverse;
+}
+[data-art] [data-anim="rain"] {
+  animation-name: a2ui-fall;
+  animation-duration: var(--a2ui-fall, 1.1s);
+}
+[data-art] [data-anim="snow"] {
+  animation-name: a2ui-snow;
+  animation-duration: 2.4s;
+}
+[data-art] [data-anim="flash"] {
+  animation-name: a2ui-flash;
+  animation-duration: 4s;
+}
+[data-art] [data-anim="wind"] {
+  animation-name: a2ui-stream;
+  animation-duration: 1.6s;
+}
+
+/* The line's length is measured once it is drawn (`--a2ui-len` on the group); until then, and
+   wherever it is missing, the dashes compute to nothing and the line simply shows. */
+.ui-chart [data-anim="line"] path {
+  animation: a2ui-draw 900ms var(--ui-ease-out, ease-out) backwards;
+}
+
+@keyframes a2ui-rays-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes a2ui-breathe {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes a2ui-drift {
+  from {
+    transform: translateX(-2px);
+  }
+  to {
+    transform: translateX(2px);
+  }
+}
+@keyframes a2ui-fall {
+  from {
+    transform: translateY(-2px);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  to {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+@keyframes a2ui-snow {
+  from {
+    transform: translate(0, -2px);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(1.5px, 4px);
+  }
+  to {
+    transform: translate(-1px, 10px);
+    opacity: 0;
+  }
+}
+/* Between flashes the bolt stays half lit, so a storm still reads as one. */
+@keyframes a2ui-flash {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  6% {
+    opacity: 1;
+  }
+  9% {
+    opacity: 0.6;
+  }
+  12% {
+    opacity: 1;
+  }
+  20% {
+    opacity: 0.45;
+  }
+}
+/* Long dashes with short gaps keep each streamline's curl legible as the gaps travel along it;
+   the dashes belong to the loop, so a still streamline is whole. */
+@keyframes a2ui-stream {
+  from {
+    stroke-dasharray: 18 6;
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dasharray: 18 6;
+    stroke-dashoffset: -24;
+  }
+}
+@keyframes a2ui-draw {
+  from {
+    stroke-dasharray: var(--a2ui-len) var(--a2ui-len);
+    stroke-dashoffset: var(--a2ui-len);
+  }
+  to {
+    stroke-dasharray: var(--a2ui-len) var(--a2ui-len);
+    stroke-dashoffset: 0;
+  }
+}
+
+:root[data-motion="reduced"] :is([data-art] [data-anim], .ui-chart [data-anim] path) {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is([data-art] [data-anim], .ui-chart [data-anim] path) {
+    animation: none;
+  }
+}
+[data-offscreen] :is([data-art] [data-anim], .ui-chart [data-anim] path) {
+  animation-play-state: paused;
+}

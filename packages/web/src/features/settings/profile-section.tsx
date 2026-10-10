@@ -11,7 +11,8 @@
  * is the kind of edit people set and then lose by closing the dialog. Typed text is the one
  * thing here that still needs an explicit commit, so the nickname keeps a Save — beside the
  * field, not under the page. Restore default is a write like any other on both rows, so the
- * two buttons next to one control never disagree about when they act.
+ * two buttons next to one control never disagree about when they act. The avatar's asks first:
+ * it deletes the uploaded picture, which only a fresh upload brings back.
  *
  * Both control rows are rigid and the field is what gives: the buttons carry `shrink-0` and the
  * nickname field `min-w-0`, so a narrow dialog takes width from the field rather than from the
@@ -28,27 +29,33 @@
 import { useState } from "react";
 import type { ChangeEvent } from "react";
 import type { UpdateProfileRequest } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ConfirmModal,
+  HiddenFileInput,
+  Input,
+  PrefRow,
+  SettingsGroup,
+  USER_AVATAR_SIZE,
+  UserAvatar,
+  buttonClass,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { avatarDataUrlFromFile } from "../../lib/avatar-image";
 import { profileControls } from "../../lib/profile-form";
 import { useAuth } from "../../state/auth";
-import { Button, labelButtonClass } from "../../components/ui/button";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { Input } from "../../components/ui/input";
-import { UserAvatar, USER_AVATAR_SIZE } from "../../components/ui/user-avatar";
-import { toastSuccess } from "../../components/ui/toast";
-import { PrefRow } from "./setting-row";
 
 /** What the picker offers — the three formats the server stores, spelled the way `accept` wants. */
 const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";
 
-const CHANGE_AVATAR_CLASS = labelButtonClass("secondary", "sm");
+const CHANGE_AVATAR_CLASS = buttonClass("secondary", "sm");
 
 /**
  * The same control while a write is running. `Button`'s `disabled:` rules cannot help here — a
- * `<label>` takes no disabled state — and a `cursor-not-allowed` beside `labelButtonClass`'s
+ * `<label>` takes no disabled state — and a `cursor-not-allowed` beside `buttonClass`'s
  * `cursor-pointer` would be decided by the order the stylesheet was generated in rather than by
  * this string. `pointer-events-none` has no counterpart to lose to, and it removes the hover
  * colour and the pointer cursor together; the input inside is `disabled`, so Tab skips it too.
@@ -64,6 +71,7 @@ export function ProfileSection() {
   const [draftName, setDraftName] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingWrite | null>(null);
+  const [confirmAvatarReset, setConfirmAvatarReset] = useState(false);
 
   /**
    * One patch out, and the row that comes back becomes the auth state: the sidebar's user row,
@@ -124,9 +132,11 @@ export function ProfileSection() {
 
   return (
     <section>
-      <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
+      <SettingsGroup>
+        {/* The avatar's controls wrap, right-aligned, where a phone-width column cannot hold
+            them on one line: a button keeps its label whole and does not shrink. */}
         <PrefRow label={S.profile.avatar} info={S.profile.avatarInfo}>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <UserAvatar
               userId={user.userId}
               {...(user.displayName !== undefined ? { displayName: user.displayName } : {})}
@@ -146,13 +156,13 @@ export function ProfileSection() {
               className="shrink-0"
               aria-label={S.profile.restoreDefaultOf(S.profile.avatar)}
               disabled={busy || !controls.canRestoreAvatar}
-              onClick={() => void run("avatar", () => send({ avatar: null }))}
+              onClick={() => setConfirmAvatarReset(true)}
             >
               {S.profile.restoreDefault}
             </Button>
           </div>
         </PrefRow>
-        <PrefRow label={S.profile.displayName} hint={S.profile.displayNameHint}>
+        <PrefRow label={S.profile.displayName} info={S.profile.displayNameInfo}>
           <div className="flex items-center gap-2">
             <Input
               size="sm"
@@ -200,12 +210,25 @@ export function ProfileSection() {
             </Button>
           </div>
         </PrefRow>
-      </div>
+      </SettingsGroup>
       {/* Busy and failed, in the one place both rows can say it: a write here changes the
           sidebar as well as this page, so "it did not happen" has to be stated rather than
           left to the preview looking unchanged. */}
       {busy && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.common.saving}</p>}
       {error !== null && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      <ConfirmModal
+        open={confirmAvatarReset}
+        title={S.profile.restoreDefaultOf(S.profile.avatar)}
+        onClose={() => setConfirmAvatarReset(false)}
+        onConfirm={() => {
+          setConfirmAvatarReset(false);
+          void run("avatar", () => send({ avatar: null }));
+        }}
+        confirmLabel={S.profile.restoreDefault}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.profile.avatarResetConfirm}</p>
+      </ConfirmModal>
     </section>
   );
 }

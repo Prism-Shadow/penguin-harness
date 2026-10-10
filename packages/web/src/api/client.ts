@@ -67,6 +67,61 @@ export interface ApiFetchMeta {
    * is readable cross-origin too.
    */
   serverNowMs: number | null;
+  /**
+   * The response's `ETag`, or null when it carries none. A Workspace file write answers with the
+   * version it wrote there — the precondition the editor's next save of that file carries.
+   */
+  etag: string | null;
+}
+
+/** The request half every call shares: the method, the session cookie, a JSON body when there is one. */
+function requestInit(options: {
+  method?: string;
+  body?: unknown;
+  signal?: AbortSignal;
+}): RequestInit {
+  return {
+    method: options.method ?? "GET",
+    credentials: "same-origin",
+    ...(options.body !== undefined
+      ? {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(options.body),
+        }
+      : {}),
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+  };
+}
+
+/**
+ * The ApiError a non-2xx response stands for: the server's envelope code and message (or the
+ * generic ones for a body that is not the envelope) and its Retry-After. A 401 from this server
+ * outside the auth endpoints also signs the window out.
+ */
+async function failureOf(
+  response: Response,
+  path: string,
+  target: string | null,
+): Promise<ApiError> {
+  let code = "http_error";
+  let message: string = S.common.unknownError;
+  try {
+    const body = (await response.json()) as { error?: { code?: string; message?: string } };
+    if (body.error?.code) code = body.error.code;
+    if (body.error?.message) message = body.error.message;
+  } catch {
+    // Non-JSON error body: fall back to the default message.
+  }
+  // A 401 from ANOTHER machine is that machine's answer, not this server's: it means we
+  // are not signed in over there, which says nothing about the session here. Treating it
+  // as a local logout is how clicking a remote host in a picker bounced the window to the
+  // login page of a server it was still perfectly signed in to.
+  const fromThisServer = target === null;
+  if (response.status === 401 && fromThisServer && !isAuthEndpoint(path)) onUnauthorized?.();
+  const retryAfter = response.headers.get("retry-after");
+  const retryAfterSeconds =
+    retryAfter !== null && /^\d+$/.test(retryAfter) ? Number(retryAfter) : undefined;
+  return new ApiError(response.status, code, message, retryAfterSeconds);
 }
 
 /** Makes an API request; non-2xx responses uniformly throw ApiError; 204/empty body returns undefined. */
@@ -94,47 +149,50 @@ export async function apiFetchWithMeta<T>(
 
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: options.method ?? "GET",
-      credentials: "same-origin",
-      ...(options.body !== undefined
-        ? {
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(options.body),
-          }
-        : {}),
-    });
+    response = await fetch(url, requestInit(options));
   } catch {
     throw new ApiError(0, "network_error", S.errors.networkError);
   }
 
-  if (!response.ok) {
-    let code = "http_error";
-    let message: string = S.common.unknownError;
-    try {
-      const body = (await response.json()) as { error?: { code?: string; message?: string } };
-      if (body.error?.code) code = body.error.code;
-      if (body.error?.message) message = body.error.message;
-    } catch {
-      // Non-JSON error body: fall back to the default message.
-    }
-    // A 401 from ANOTHER machine is that machine's answer, not this server's: it means we
-    // are not signed in over there, which says nothing about the session here. Treating it
-    // as a local logout is how clicking a remote host in a picker bounced the window to the
-    // login page of a server it was still perfectly signed in to.
-    const fromThisServer = target === null;
-    if (response.status === 401 && fromThisServer && !isAuthEndpoint(path)) onUnauthorized?.();
-    const retryAfter = response.headers.get("retry-after");
-    const retryAfterSeconds =
-      retryAfter !== null && /^\d+$/.test(retryAfter) ? Number(retryAfter) : undefined;
-    throw new ApiError(response.status, code, message, retryAfterSeconds);
-  }
+  if (!response.ok) throw await failureOf(response, path, target);
 
   const headerDate = Date.parse(response.headers.get("date") ?? "");
   const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
+  const etag = response.headers.get("etag");
 
-  if (response.status === 204) return { data: undefined as T, serverNowMs };
+  if (response.status === 204) return { data: undefined as T, serverNowMs, etag };
   const text = await response.text();
-  if (!text) return { data: undefined as T, serverNowMs };
-  return { data: JSON.parse(text) as T, serverNowMs };
+  if (!text) return { data: undefined as T, serverNowMs, etag };
+  return { data: JSON.parse(text) as T, serverNowMs, etag };
+}
+
+export interface ApiFetchStreamOptions {
+  method?: "GET" | "POST";
+  /** JSON request body (auto-serialized with Content-Type: application/json). */
+  body?: unknown;
+  /** Aborting it closes the connection; the call then rejects with the abort's reason. */
+  signal?: AbortSignal;
+}
+
+/**
+ * {@link apiFetch} for an answer read as it arrives (a `text/event-stream`): the same URL and
+ * routing, cookie, JSON body and non-2xx → ApiError mapping, but a 2xx response is handed back
+ * with its body unread. A failed connection is the `network_error` ApiError, except when
+ * `signal` was aborted: that rejects as `fetch` raised it, so the caller can tell a stop from a
+ * failure.
+ */
+export async function apiFetchStream(
+  path: string,
+  options: ApiFetchStreamOptions = {},
+): Promise<Response> {
+  const target = machineForPath(path);
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path, target), requestInit(options));
+  } catch (err) {
+    if (options.signal?.aborted) throw err;
+    throw new ApiError(0, "network_error", S.errors.networkError);
+  }
+  if (!response.ok) throw await failureOf(response, path, target);
+  return response;
 }

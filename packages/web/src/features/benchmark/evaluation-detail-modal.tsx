@@ -10,27 +10,48 @@
  */
 import { useState } from "react";
 import type { BenchmarkCaseScore, BenchmarkEvaluation } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Button,
+  Chevron,
+  CopyButton,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Modal,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { MAGIC_WAND_ICON } from "../../components/ui/icons";
-import { Modal } from "../../components/ui/modal";
 import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
 import { askEvaluationExamples, askEvaluationTail } from "./benchmark-prompts";
 import type { AskEvaluationParams } from "./benchmark-prompts";
 
-/** Session id, for correlating a Run with what the side panel shows: identification only, reading a Trace is the side panel's job. */
-function SessionCell({ sessionId }: { sessionId?: string }) {
+/** How agent-evaluation records a Harbor trial in a run's `session_id`: it is no Session. */
+const TRIAL_PREFIX = "harbor:";
+
+/** The trial a run's id names, or null for a Session id. */
+export function harborTrialName(sessionId: string): string | null {
+  return sessionId.startsWith(TRIAL_PREFIX) ? sessionId.slice(TRIAL_PREFIX.length) : null;
+}
+
+/**
+ * A run's Session id, for correlating it with what the side panel shows: identification only,
+ * reading a Trace is the side panel's job. A run recorded as a Harbor trial is no Session the
+ * app can open, so its id comes with a button that copies the trial's name — the directory to
+ * look for under the Benchmark's `.jobs/`. It keys off the recorded id alone.
+ */
+export function RunSessionId({ sessionId }: { sessionId?: string }) {
   if (!sessionId) return <span className="text-gray-400">—</span>;
+  const id = <span className="font-mono text-gray-600 dark:text-gray-300">{sessionId}</span>;
+  const trial = harborTrialName(sessionId);
+  if (trial === null) return id;
   return (
-    <span className="font-mono text-gray-600 dark:text-gray-300" title={sessionId}>
-      {sessionId}
+    <span className="inline-flex items-center gap-1">
+      {id}
+      <CopyButton text={trial} label={S.benchmark.copyTrialName} size="sm" className="shrink-0" />
     </span>
   );
 }
@@ -79,7 +100,7 @@ function CaseRow({
                 </span>
               )}
               {title && title !== c.case && (
-                <span className="block font-mono text-[11px] text-gray-400">{c.case}</span>
+                <span className="block font-mono text-xs text-gray-400">{c.case}</span>
               )}
             </span>
           </span>
@@ -108,7 +129,7 @@ function CaseRow({
               {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
             </td>
             <td className="px-2 py-1">
-              <SessionCell {...(run.sessionId ? { sessionId: run.sessionId } : {})} />
+              <RunSessionId {...(run.sessionId ? { sessionId: run.sessionId } : {})} />
             </td>
           </tr>
         ))}
@@ -120,7 +141,7 @@ function CaseRow({
 function Metric({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <span className="min-w-0">
-      <span className="block text-[11px] text-gray-500 dark:text-gray-400">{label}</span>
+      <span className="block text-xs text-gray-500 dark:text-gray-400">{label}</span>
       <span
         className={`block font-mono text-xs tabular-nums ${strong ? "font-semibold" : "text-gray-600 dark:text-gray-300"}`}
       >
@@ -195,7 +216,7 @@ export function EvaluationDetailModal({
               {S.common.close}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => setAsking(true)}>
-              <GlyphIcon d={MAGIC_WAND_ICON} />
+              <GlyphIcon d={ICONS.wand} />
               {S.benchmark.askAi}
             </Button>
           </>

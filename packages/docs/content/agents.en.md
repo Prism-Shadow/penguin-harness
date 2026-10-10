@@ -1,6 +1,6 @@
 ---
 title: Agents
-description: Create agents, and configure their prompts, tools, Skills, hooks, memory, vault and scheduled tasks.
+description: Create agents, and configure their prompts, tools, Skills, hooks, memory, vault, scheduled tasks and API.
 ---
 
 An agent is a configured assistant in a Project. Each agent has its own instructions, runtime settings, tools, Skills, hook packages, memory, vault variables and scheduled tasks, stored together as its Agent State. You create agents and change their settings on the **Agents** page.
@@ -19,7 +19,7 @@ Every Project starts with the built-in agent `default_agent`. While it is the on
 
 Each agent card shows:
 
-- the agent's name, its id, its Agent State version (for example `v3`) and its description;
+- the agent's name, its id, its Agent State version (for example `v3`) and its description; an agent whose API is on carries an API icon after its name (**API access on**);
 - a row of counts: Sessions, tools, Skills, hook packages, memories, vault variables and scheduled tasks, plus when the agent was last modified. Select a count to open the matching settings tab;
 - the agent's Session activity over the last 30 days;
 - **New chat**, which starts a conversation with the agent; **Settings**, which opens its settings; an icon that opens its costs in **Cost Center**; and a delete button.
@@ -101,8 +101,9 @@ To open an agent's settings, select **Settings** on its card, select one of its 
 | **Memory** | The agent's memories and the memory prompts |
 | **Vault** | Environment variables for the agent's commands |
 | **Schedules** | Scheduled tasks |
+| **API** | Whether programs may call the agent over the Agent API, the approval mode of their conversations, and the keys |
 
-Each tab has its own address, `/agents/<agentId>?tab=<tab>`, where `<tab>` is `overview`, `prompt`, `runtime`, `tools`, `skills`, `hooks`, `memory`, `vault` or `schedules`.
+Each tab has its own address, `/agents/<agentId>?tab=<tab>`, where `<tab>` is `overview`, `prompt`, `runtime`, `tools`, `skills`, `hooks`, `memory`, `vault`, `schedules` or `api`.
 
 ### Save changes
 
@@ -122,7 +123,8 @@ Any Project member can change most settings. These actions are for the Project o
 - turning **Enable hooks** on or off;
 - editing vault variables, the **Enable vault** switch and the **Vault prompt**;
 - creating, editing, enabling, disabling and deleting scheduled tasks, and editing the **Enable schedules** switch and the **Schedules prompt** (members can still use **Create with AI**);
-- importing memories.
+- importing memories;
+- everything on the **API** tab: the switch, the approval mode, keyless access and the keys.
 
 ## Overview tab
 
@@ -355,7 +357,7 @@ Only the Project owner can create a task manually.
 3. In **Period**, enter how often the task runs, such as `30m`, `12h` or `7d`. Leave it empty for a one-off task. The shortest period is 5 minutes.
 4. Set **Start at**, and optionally **End at**.
 5. Under **Target**, choose where the prompt goes:
-   - **New session each time**: every run starts a new Session. Optionally choose a **Model** (the Project default if you choose none) and a **Workspace** (a temporary Workspace if you leave it empty).
+   - **New session each time**: every run starts a new Session. Optionally choose a **Model** (the Project default if you choose none) and a **Workspace** (a temporary Workspace if you choose none).
    - **Bound Session**: every run goes to one existing Session. Choose it in **Session**.
 6. In **Prompt**, enter what to send.
 7. Leave **Enabled** selected to activate the task, then select **Create**.
@@ -372,6 +374,10 @@ On each row, the owner can select **Disable** or **Enable**, **Edit**, or **Dele
 
 - **Enable schedules** controls whether the scheduled tasks section enters the system prompt. With it off, tasks still run.
 - **Schedules prompt** is the text that the `{{SCHEDULES}}` placeholder expands to. It teaches the model to manage scheduled tasks with its file tools, and its `{{SCHEDULE_LIST}}` placeholder lists the task names.
+
+## API tab
+
+The **API** tab lets programs outside PenguinHarness talk to the agent over HTTP: **Enable API access**, the **Approval mode for API conversations**, the **Base URL** and **Agent ID** under **Connection**, the **Keys**, **Allow keyless access**, **Examples** of a call, and, for the Project's owner, **Try it**, which runs the agent once through the API and shows the stream a program would receive. There is no **Save** button: the switches and the approval mode apply when you change them, and turning the API off or deleting a key asks first. To set it up and call the agent, see [Agent API](/agent-api).
 
 ## How it works
 

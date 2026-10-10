@@ -1,5 +1,5 @@
 /**
- * @prismshadow/penguin-plugin-sandbox-bwrap — a bubblewrap sandbox backend.
+ * @penguinharness/sandbox-bwrap — a bubblewrap sandbox backend.
  *
  * A PLUGIN PACKAGE, not part of the platform: a Project asks for it on the Plugins page
  * and the harness resolves it from the installation (see the server's plugin/loader.ts).
@@ -14,7 +14,7 @@
  *
  *   --ro-bind / /  --dev /dev  --proc /proc  --die-with-parent   the read-only world
  *   [writable temp]    --tmpfs /tmp  --bind <tmpdir> <same>         a private, writable /tmp
- *   [workspace-write]  --bind <workspaceRoot> <same>
+ *   [workspace-write]  --bind <workspaceRoot> <same>  --bind <writableRoot> <same>…
  *   [network: none]    --unshare-net                             no network namespace
  *   [mask-paths]       --tmpfs <dir> | --ro-bind /dev/null <file>  shadowing the above
  *   --  <the caller's argv>
@@ -124,12 +124,15 @@ export abstract class BwrapConfigReader {
 export const BWRAP_GROUP = "sandbox-bwrap";
 
 /**
- * The writable roots a policy grants, canonical and deduplicated: the workspace under
- * `workspace-write`, and the temp areas whenever the policy makes temp writable (either mode).
+ * The writable roots a policy grants, canonical and deduplicated: the workspace and the
+ * policy's further roots (the Session's scratchpad) under `workspace-write`, and the temp
+ * areas whenever the policy makes temp writable (either mode).
  */
 export function writableRoots(policy: SandboxPolicy): string[] {
   const roots = [
-    ...(policy.mode === "workspace-write" ? [policy.workspaceRoot] : []),
+    ...(policy.mode === "workspace-write"
+      ? [policy.workspaceRoot, ...(policy.writableRoots ?? [])]
+      : []),
     ...(policy.writableTemp === true ? ["/tmp", tmpdir()] : []),
   ].map((root) => path.resolve(root));
   return [...new Set(roots)];
@@ -189,10 +192,17 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
   return probe.status === 0;
 }
 
-/** The base-profile probe, without blocking the process: what the load-time check runs. */
-function probeAsync(timeoutMs: number, runner: string): Promise<boolean> {
+/**
+ * The base-profile probe, without blocking the process: what the load-time check runs. Null when
+ * bwrap accepted the profile, else what it said (`setting up uid map: Permission denied` where
+ * user namespaces are refused), or the spawn error when it did not start.
+ */
+function probeAsync(timeoutMs: number, runner: string): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile(runner, BASE_PROFILE_PROBE, { timeout: timeoutMs }, (err) => resolve(err === null));
+    execFile(runner, BASE_PROFILE_PROBE, { timeout: timeoutMs }, (err, _stdout, stderr) => {
+      if (err === null) resolve(null);
+      else resolve(String(stderr).trim().split("\n")[0] || err.message);
+    });
   });
 }
 
@@ -215,12 +225,17 @@ export async function loadPenguinBwrapProvider(
     runner: internals.runner ?? (vendoredRunner() || "bwrap"),
     probeTimeoutMs: PROBE_TIMEOUT_MS,
   };
-  const usable = internals.probe
+  const refusal = internals.probe
     ? internals.probe(probeTimeoutMs, runner)
+      ? null
+      : "the probe failed"
     : await probeAsync(probeTimeoutMs, runner);
-  if (!usable) {
+  if (refusal !== null) {
+    // Two distributions, two switches: Debian gates unprivileged user namespaces with a sysctl,
+    // Ubuntu 23.10 and later lets only AppArmor-profiled programs create them (24.04's default).
+    // Neither is needed for the sandbox to work: sandbox-dsh confines files through Landlock.
     throw new Error(
-      `'${runner}' is missing or refuses the base profile (are unprivileged user namespaces enabled on this host? \`sysctl kernel.unprivileged_userns_clone\`)`,
+      `'${runner}' is missing or refuses the base profile (${refusal}). Are unprivileged user namespaces allowed on this host? Debian: \`sysctl kernel.unprivileged_userns_clone\`; Ubuntu 23.10 and later: \`sysctl kernel.apparmor_restrict_unprivileged_userns\`. @penguinharness/sandbox-dsh confines file writes without them, through Landlock. Optional: a one-time root step lets bubblewrap run here, adding network isolation and masked paths — see "Sandbox on Ubuntu" in the CLI quickstart`,
     );
   }
   return createPenguinBwrapProvider(internals);
@@ -242,7 +257,8 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
     }));
   const usable = new Map<string, boolean>();
   return {
-    dimensions: ["fs-write", "network", "mask-paths"],
+    dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
+    mechanism: "bubblewrap",
     confine(argv, policy): ConfinedArgv {
       const { runner, probeTimeoutMs } = settings();
       if (!usable.has(runner)) usable.set(runner, probe(probeTimeoutMs, runner));
@@ -279,7 +295,7 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
       {
         id: "sandbox-bwrap.provider",
         name: "penguin-bwrap",
-        dimensions: ["fs-write", "network", "mask-paths"],
+        dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
       },
     ],
     "PluginConfigProvider.groups": [

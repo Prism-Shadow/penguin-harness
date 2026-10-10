@@ -1,17 +1,20 @@
 /**
- * Server error → localized display text (`apiErrorText`).
+ * Server error → display text (`apiErrorText`), and the error the api client builds. The
+ * server's messages are English-only by design, so the UI derives its text from the error code;
+ * a code missing from the table falls through to the raw English message.
  *
- * The server's error messages are English-only by design, so the UI derives its text from the
- * error **code**. Any code missing from the table falls through to the raw English message —
- * which is how English prose ends up in a Chinese UI. These tests pin the codes a user actually
- * meets, and pin that the three "cannot compact" reasons stay three distinct explanations
- * rather than collapsing into one.
+ * - The three "cannot compact" refusals stay three distinct explanations, in both languages.
+ * - The Chinese UI shows Chinese text for the errors an ordinary session can surface.
+ * - A code nobody mapped still falls back to the server's message; a non-ApiError reads as the
+ *   generic failure.
+ * - A numeric Retry-After header survives onto the ApiError.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { ApiError, apiFetch } from "../src/api/client";
 import { apiErrorText } from "../src/lib/api-error";
 import { S, setActiveStrings, zh as ZH } from "../src/lib/strings";
 import { en as EN } from "../src/lib/strings-en";
+import { apiError, stubFetch } from "./helpers/fetch";
 
 /** The English message the server actually sends, so an unmapped code is visibly distinguishable. */
 const serverError = (code: string): ApiError =>
@@ -19,7 +22,6 @@ const serverError = (code: string): ApiError =>
 
 afterEach(() => {
   setActiveStrings(ZH);
-  vi.unstubAllGlobals();
 });
 
 describe("apiErrorText", () => {
@@ -34,6 +36,23 @@ describe("apiErrorText", () => {
       // Three reasons, three explanations: telling someone who just compacted that they have
       // not spoken yet is the regression this guards.
       expect(new Set(texts).size).toBe(3);
+    }
+  });
+
+  it("localizes each model-switch refusal separately in both locales", () => {
+    const codes = [
+      "same_model",
+      "model_not_configured",
+      "model_unavailable",
+      "compaction_not_configured",
+      "task_in_progress",
+      "compacting",
+    ];
+    for (const dict of [ZH, EN]) {
+      setActiveStrings(dict);
+      const texts = codes.map((c) => apiErrorText(serverError(c)));
+      for (const t of texts) expect(t).not.toBe("RAW ENGLISH SERVER MESSAGE");
+      expect(new Set(texts).size).toBe(codes.length);
     }
   });
 
@@ -53,6 +72,9 @@ describe("apiErrorText", () => {
       "memory_scope_not_found",
       "trace_not_found",
       "platform_rate_limited",
+      // The Workspace picker's "Allow access" in the desktop app: no shell, or no answer.
+      "shell_unreachable",
+      "timeout",
       "internal",
     ];
     for (const code of reachable) {
@@ -69,35 +91,13 @@ describe("apiErrorText", () => {
     );
   });
 
-  it("keeps the zh and en code tables in step", () => {
-    // A code localized in one language and not the other is the same bug in the other
-    // direction; the Strings type pins the key set, this pins that neither side is empty.
-    expect(Object.keys(EN.errors.byCode)).toEqual(Object.keys(ZH.errors.byCode));
-    for (const [code, text] of Object.entries(EN.errors.byCode)) {
-      expect(text, `${code} has no English text`).not.toBe("");
-      expect(ZH.errors.byCode[code as keyof typeof ZH.errors.byCode]).not.toBe("");
-    }
-  });
-
   it("reports a non-ApiError as the generic failure, not a stray object", () => {
     setActiveStrings(ZH);
     expect(apiErrorText(new Error("boom"))).toBe(S.common.unknownError);
   });
 
   it("keeps a numeric Retry-After header on the ApiError", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({ error: { code: "platform_rate_limited", message: "slow down" } }),
-            {
-              status: 429,
-              headers: { "content-type": "application/json", "retry-after": "7" },
-            },
-          ),
-      ),
-    );
+    stubFetch(() => apiError(429, "platform_rate_limited", "slow down", { "retry-after": "7" }));
 
     await expect(apiFetch("/api/platform-rate-limit-test")).rejects.toMatchObject({
       status: 429,

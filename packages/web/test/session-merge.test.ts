@@ -1,10 +1,10 @@
 /**
  * Merging what several machines answered (lib/session-merge.ts): counts are summed across the
- * sources that answered, never zeroed by one that did not; the order is total, so equal
- * timestamps do not reshuffle between refreshes.
+ * sources that answered, never zeroed by one that did not; the merged rows are in activity
+ * order, total, so equal timestamps do not reshuffle between refreshes.
  */
 import { describe, expect, it } from "vitest";
-import { mergeCounts, newestFirst } from "../src/lib/session-merge";
+import { mergeCounts, mostRecentFirst } from "../src/lib/session-merge";
 
 describe("mergeCounts", () => {
   it("sums each category across the sources that reported", () => {
@@ -22,20 +22,33 @@ describe("mergeCounts", () => {
   });
 });
 
-describe("newestFirst", () => {
-  it("orders by createdAt descending, then by id, so the order is total", () => {
+describe("mostRecentFirst", () => {
+  it("orders by last activity, not creation, then by id, so the order is total", () => {
     const rows = [
-      { sessionId: "b", createdAt: "2026-01-01T00:00:00.000Z" },
-      { sessionId: "a", createdAt: "2026-01-01T00:00:00.000Z" },
-      { sessionId: "c", createdAt: "2026-01-02T00:00:00.000Z" },
+      {
+        sessionId: "b",
+        createdAt: "2026-01-03T00:00:00.000Z",
+        lastActiveAt: "2026-01-04T00:00:00.000Z",
+      },
+      {
+        sessionId: "a",
+        createdAt: "2026-01-02T00:00:00.000Z",
+        lastActiveAt: "2026-01-04T00:00:00.000Z",
+      },
+      // Created first, used last: it leads.
+      {
+        sessionId: "c",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        lastActiveAt: "2026-01-05T00:00:00.000Z",
+      },
     ];
-    expect([...rows].sort(newestFirst).map((r) => r.sessionId)).toEqual(["c", "b", "a"]);
+    expect([...rows].sort(mostRecentFirst).map((r) => r.sessionId)).toEqual(["c", "b", "a"]);
     // The same input in another order lands the same way: equal stamps are not "stable
     // by source", they are decided.
     expect(
       [...rows]
         .reverse()
-        .sort(newestFirst)
+        .sort(mostRecentFirst)
         .map((r) => r.sessionId),
     ).toEqual(["c", "b", "a"]);
   });

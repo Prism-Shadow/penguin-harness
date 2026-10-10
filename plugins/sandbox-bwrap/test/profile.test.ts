@@ -59,6 +59,28 @@ describe("penguin-bwrap profile", () => {
     },
   );
 
+  // skipIf(win32): as above, host path resolution would rewrite the POSIX literals.
+  it.skipIf(process.platform === "win32")(
+    "workspace-write binds the policy's further roots (the Session's scratchpad) writable; read-only ignores them",
+    () => {
+      const scratchpad = "/data/agent/scratchpad/session-1";
+      const args = bwrapProfileArgs({
+        mode: "workspace-write",
+        workspaceRoot: WS,
+        writableRoots: [scratchpad],
+      });
+      expect(args.join(" ")).toContain(`--bind ${WS} ${WS}`);
+      expect(args.join(" ")).toContain(`--bind ${scratchpad} ${scratchpad}`);
+
+      const readOnly = bwrapProfileArgs({
+        mode: "read-only",
+        workspaceRoot: WS,
+        writableRoots: [scratchpad],
+      });
+      expect(readOnly).toEqual(bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS }));
+    },
+  );
+
   it("read-only with writable temp: a tmpfs /tmp is the only writable place", () => {
     const args = bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS, writableTemp: true });
     expect(args.join(" ")).toContain("--tmpfs /tmp");
@@ -140,6 +162,7 @@ describe("penguin-bwrap provider", () => {
       "fs-write",
       "network",
       "mask-paths",
+      "closed-temp",
     ]);
   });
 
@@ -209,6 +232,28 @@ describe("bwrap on another platform", () => {
     await expect(
       loadPenguinBwrapProvider({ platform: "linux", probe: () => true }),
     ).resolves.toBeDefined();
+  });
+
+  it("names the switch of each distribution that gates user namespaces, Ubuntu's included", async () => {
+    const rejection = loadPenguinBwrapProvider({ platform: "linux", probe: () => false });
+    await expect(rejection).rejects.toThrow(/kernel\.unprivileged_userns_clone/);
+    await expect(rejection).rejects.toThrow(/kernel\.apparmor_restrict_unprivileged_userns/);
+    // The root step is optional: sandbox-dsh confines files without it.
+    await expect(rejection).rejects.toThrow(/sandbox-dsh confines file writes without them/);
+    await expect(rejection).rejects.toThrow(/Optional: a one-time root step lets bubblewrap run/);
+  });
+
+  it("carries what the runner said, and that it did not start at all", async () => {
+    await expect(
+      loadPenguinBwrapProvider({
+        platform: "linux",
+        settings: () => ({ runner: "/nonexistent/bwrap", probeTimeoutMs: 5000 }),
+      }),
+    ).rejects.toThrow(/'\/nonexistent\/bwrap' is missing or refuses the base profile \(.*ENOENT/);
+  });
+
+  it("names itself bubblewrap on the settings card", () => {
+    expect(createPenguinBwrapProvider({ probe: () => true }).mechanism).toBe("bubblewrap");
   });
 });
 

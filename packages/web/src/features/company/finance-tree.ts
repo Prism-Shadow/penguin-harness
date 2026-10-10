@@ -158,8 +158,14 @@ export function shiftPeriod(period: string, delta: number): string | null {
   return `${String(y).padStart(4, "0")}-${String(mo + 1).padStart(2, "0")}`;
 }
 
+/**
+ * The four tones a budget reading takes. Narrower than `Tone`, so a reading with a budget is
+ * also a package `ToneName` (a `StatTile`'s or a `ProgressBar`'s tone) once `muted` is ruled out.
+ */
+export type BudgetTone = Extract<Tone, "muted" | "success" | "attention" | "danger">;
+
 /** The tone a spend-against-budget ratio takes: attention from 80%, danger from 100%, success below; muted without a budget. */
-export function budgetTone(ratio: number | undefined): Tone {
+export function budgetTone(ratio: number | undefined): BudgetTone {
   if (ratio === undefined || !Number.isFinite(ratio)) return "muted";
   if (ratio >= 1) return "danger";
   if (ratio >= 0.8) return "attention";

@@ -879,6 +879,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         system_prompt: "sys",
         agent_state: "/root/p/worker/agent_state",
         workspace: "/tmp/w",
+        source: "user",
       });
     // Custom Environment: on execution, first forwards origin-tagged child session messages
     // (child meta / child text / grandchild meta), then yields the complete output (simulates
@@ -1444,7 +1445,7 @@ describe("ContextEngine abort during execution", () => {
             toolCallId: "slow",
             stopReason: "completed",
           });
-          // Model output completed (outcome=completed) -> AgentHub has committed this turn
+          // Model output completed (outcome=completed) -> MMSP has committed this turn
           // including the tool_call.
           yield tokenUsage(emptyTokenCounts(), {
             cache_read: 0,
@@ -1511,7 +1512,7 @@ describe("ContextEngine abort during execution", () => {
         received.push(params.newMessages);
         call += 1;
         if (call === 1) {
-          // Two real tool_calls + token_usage: AgentHub commits this turn including both
+          // Two real tool_calls + token_usage: MMSP commits this turn including both
           // a1 and a2 tool_calls.
           yield toolCall({
             name: "exec_command",
@@ -1549,7 +1550,7 @@ describe("ContextEngine abort during execution", () => {
     });
     const engine = new ContextEngine({ llm, environment });
     // Interrupted immediately while approving the first tool: after a1's approval, signal is
-    // already aborted -> neither a1 nor a2 is dispatched, but both have been committed by AgentHub.
+    // already aborted -> neither a1 nor a2 is dispatched, but both have been committed by MMSP.
     let approvals = 0;
     const approve: ApproveFn = async () => {
       approvals += 1;
@@ -1640,7 +1641,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("skips a malformed (never-committed) tool_call: no dispatch, no paired output", async () => {
     // A tool_call produced by an interrupted finish (stop_reason not completed) is never
-    // committed into history by AgentHub: the engine does not dispatch it for execution, does
+    // committed into history by MMSP: the engine does not dispatch it for execution, does
     // not add it to this turn's ledger, and does not backfill a paired output; the malformed
     // turn is cleaned up by reconnect.
     let calls = 0;
@@ -1740,7 +1741,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const all = await collectRun(engine, [userText("go")], allowAll);
 
     expect(calls).toBe(2);
-    // The malformed attempt never entered AgentHub history: the original input is resent,
+    // The malformed attempt never entered MMSP history: the original input is resent,
     // plus [turn_retried] carrying the partial products already produced.
     expect(inputs[1]).toHaveLength(2);
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
@@ -1953,7 +1954,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
   it("a fast-mode rejection (fatal) stops the run without burning the ladder", async () => {
     let calls = 0;
     const llm: LLMInterface = {
-      // GenerativeModel classifies AgentHub's fast_mode UnsupportedParameterError as fatal
+      // GenerativeModel classifies MMSP's fast_mode UnsupportedParameterError as fatal
       // (see llm.test.ts): thrown before any network I/O, deterministic for the session's
       // frozen config, so retrying the identical request can never succeed. The engine
       // must abort with the actionable message instead of costing the ladder.

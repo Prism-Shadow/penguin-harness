@@ -12,6 +12,7 @@
  *   tab cannot see (a shell exiting on its own, terminals opened from another window).
  */
 import type { TerminalInfo } from "./terminal-view";
+import { probeSession } from "../../api/session-probe";
 import { pruneTerminalTabs } from "../dock/dock-state";
 import { apiUrl } from "../../lib/server-context";
 import {
@@ -121,7 +122,15 @@ export function refreshTerminals(): Promise<void> {
         for (const listener of [...listeners]) listener();
         return;
       }
-      if (here === null || !here.ok) return; // signed out or unreachable: keep the last list
+      // This poll is often the only request an idle window still makes, so it is the
+      // first thing to see a session that was revoked meanwhile. It goes through the raw
+      // fetch rather than the api client, so nothing has told the app yet — the probe
+      // does, and the window lands on the sign-in page (api/session-probe.ts).
+      if (here?.status === 401) {
+        void probeSession();
+        return;
+      }
+      if (here === null || !here.ok) return; // server unreachable or refusing: keep the last list
       unsupported = false;
       const terminals: TerminalInfo[] = [];
       for (const { source, res } of answers) {

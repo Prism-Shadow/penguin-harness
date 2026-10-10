@@ -1,5 +1,12 @@
 /**
- * The form-control size scale (src/components/ui/input.tsx's `sizeTextClass`).
+ * Guard: the form-control size scale (the UI package's `sizeTextClass`, in
+ * packages/ui/src/components/forms/input/input.tsx).
+ *
+ * - No control call site spells a font size in its own className (checked on known shapes too,
+ *   so the check itself cannot go blind).
+ * - A Modal footer's Buttons, and the Buttons of a module that is only ever dialog content, sit
+ *   on the fields' sm rung.
+ * - The control family spells a font size in its two records and nowhere else.
  *
  * A control's font size comes from its `size` prop and nowhere else. A `text-*` in a caller's
  * `className` does not reliably override the component's own — both are single-class font-size
@@ -15,12 +22,12 @@
  * element owns the attribute, and a regex over the file cannot tell those apart.
  */
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+import type { SourceFile } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
+/** Web and the shared UI package: a control that moves keeps its call sites under this check. */
+const SCAN = scanSources();
 
 /** The controls that carry a `size` tier. A `className` on one of these may not set a font size. */
 const CONTROLS = new Set([
@@ -30,7 +37,23 @@ const CONTROLS = new Set([
   "OptionMenu",
   "PasswordInput",
   "FormPicker",
+  "SearchInput",
+  "Checkbox",
+  "Radio",
+  "RadioGroup",
 ]);
+
+/**
+ * The control family's modules by file name, each at the repo-relative id of its home. A module
+ * that moves changes its own entry here and nothing else in this file.
+ */
+const FAMILY: Record<string, string> = {
+  "input.tsx": "packages/ui/src/components/forms/input/input.tsx",
+  "select.tsx": "packages/ui/src/components/forms/select/select.tsx",
+  "option-menu.tsx": "packages/ui/src/components/forms/select/option-menu.tsx",
+  "form-picker.tsx": "packages/ui/src/components/forms/select/form-picker.tsx",
+  "search-input.tsx": "packages/ui/src/components/forms/search-input/search-input.tsx",
+};
 
 /**
  * Font-size utilities only. `text-gray-500`, `text-left` and `text-red-600` are colour and
@@ -39,14 +62,25 @@ const CONTROLS = new Set([
  */
 const FONT_SIZE_CLASS = /\btext-(?:xs|sm|base|lg|xl|\d?xl|\[[^\]]+])(?![\w-])/;
 
-function tsxFiles(dir = SRC, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) tsxFiles(path, out);
-    else if (name.endsWith(".tsx")) out.push(path);
+const tsxFiles = (): SourceFile[] => SCAN.files.filter((file) => file.name.endsWith(".tsx"));
+
+const parsed = new Map<string, ts.SourceFile>();
+
+/** A file's syntax tree, parsed once however many checks walk it. */
+const parse = (file: SourceFile): ts.SourceFile => {
+  let tree = parsed.get(file.id);
+  if (tree === undefined) {
+    tree = ts.createSourceFile(
+      file.path,
+      file.text,
+      ts.ScriptTarget.Latest,
+      /* setParentNodes */ true,
+      ts.ScriptKind.TSX,
+    );
+    parsed.set(file.id, tree);
   }
-  return out;
-}
+  return tree;
+};
 
 const jsxTag = (node: ts.Node): string | null => {
   if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText();
@@ -86,14 +120,8 @@ function literalChunks(node: ts.Node, out: string[] = []): string[] {
  */
 function findLooseFooterButtons(): string[] {
   const loose: string[] = [];
-  for (const path of tsxFiles()) {
-    const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
-      ts.ScriptTarget.Latest,
-      /* setParentNodes */ true,
-      ts.ScriptKind.TSX,
-    );
+  for (const file of tsxFiles()) {
+    const source = parse(file);
     const visit = (node: ts.Node): void => {
       if (ts.isJsxAttribute(node) && node.name.getText() === "footer" && node.initializer) {
         const walk = (inner: ts.Node): void => {
@@ -111,7 +139,7 @@ function findLooseFooterButtons(): string[] {
                 : "<none>";
             if (rung !== '"sm"') {
               const line = source.getLineAndCharacterOfPosition(inner.getStart(source)).line + 1;
-              loose.push(`${path.slice(SRC.length + 1).replaceAll(sep, "/")}:${line} ${rung}`);
+              loose.push(`${file.id}:${line} ${rung}`);
             }
           }
           ts.forEachChild(inner, walk);
@@ -127,19 +155,26 @@ function findLooseFooterButtons(): string[] {
 
 /**
  * Modules that are only ever rendered as a dialog's body. The settings dialog is a `PagedDialog`,
- * which is a `Modal`, and each of these is one of its pages — so every Button in them belongs with
- * the fields beside it on the `sm` rung, exactly as a footer button does. A parser cannot infer
- * that from the file alone (nothing in a section module says it renders in a dialog), so the fact
- * is declared here. Add a module when it becomes settings-dialog content; drop one when it stops.
+ * which is a `Modal`, and most of these are its pages; the App info dialog's body and the lists it
+ * folds open (release notes, credits) are the rest — so every Button in them belongs with the
+ * fields beside it on the `sm` rung, exactly as a footer button does. A parser cannot infer that
+ * from the file alone (nothing in a section module says it renders in a dialog), so the fact is
+ * declared here. Add a module when it becomes dialog content; drop one when it stops.
  */
 const DIALOG_BODY_MODULES = new Set([
+  "components/account/app-info-dialog.tsx",
+  "components/account/credits-list.tsx",
+  "components/account/release-notes-list.tsx",
   "features/settings/account-section.tsx",
+  "features/settings/agent-api-section.tsx",
   "features/settings/profile-section.tsx",
   "features/settings/appearance-section.tsx",
+  "features/settings/browser-section.tsx",
+  "features/settings/chrome-extension-section.tsx",
   "features/settings/general-section.tsx",
   "features/settings/proxy-section.tsx",
-  "features/settings/section-shell.tsx",
-  "features/settings/setting-row.tsx",
+  "features/settings/shortcut-recorder.tsx",
+  "features/settings/shortcuts-section.tsx",
   "features/settings/trace-import-row.tsx",
   "features/settings/uploads-section.tsx",
   "features/admin/admin-users-page.tsx",
@@ -151,16 +186,9 @@ const DIALOG_BODY_MODULES = new Set([
  */
 function findLooseDialogBodyButtons(): string[] {
   const loose: string[] = [];
-  for (const path of tsxFiles()) {
-    const rel = path.slice(SRC.length + 1).replaceAll(sep, "/");
-    if (!DIALOG_BODY_MODULES.has(rel)) continue;
-    const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
-      ts.ScriptTarget.Latest,
-      /* setParentNodes */ true,
-      ts.ScriptKind.TSX,
-    );
+  for (const file of tsxFiles()) {
+    if (file.root !== "web" || !DIALOG_BODY_MODULES.has(file.rel)) continue;
+    const source = parse(file);
     const visit = (node: ts.Node): void => {
       if (jsxTag(node) === "Button") {
         const attrs = (node as ts.JsxSelfClosingElement | ts.JsxOpeningElement).attributes
@@ -174,7 +202,7 @@ function findLooseDialogBodyButtons(): string[] {
             : "<none>";
         if (rung !== '"sm"' && rung !== '"icon"') {
           const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-          loose.push(`${rel}:${line} ${rung}`);
+          loose.push(`${file.rel}:${line} ${rung}`);
         }
       }
       ts.forEachChild(node, visit);
@@ -187,14 +215,8 @@ function findLooseDialogBodyButtons(): string[] {
 /** Control call sites whose own `className` spells a font size, as "relative/path:line — class". */
 function findSpelledSizes(): string[] {
   const strays: string[] = [];
-  for (const path of tsxFiles()) {
-    const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
-      ts.ScriptTarget.Latest,
-      /* setParentNodes */ true,
-      ts.ScriptKind.TSX,
-    );
+  for (const file of tsxFiles()) {
+    const source = parse(file);
     const visit = (node: ts.Node): void => {
       const tag = jsxTag(node);
       if (tag !== null && CONTROLS.has(tag)) {
@@ -207,9 +229,7 @@ function findSpelledSizes(): string[] {
             const hit = FONT_SIZE_CLASS.exec(chunk);
             if (hit === null) continue;
             const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-            strays.push(
-              `${path.slice(SRC.length + 1).replaceAll(sep, "/")}:${line} <${tag}> ${hit[0]}`,
-            );
+            strays.push(`${file.id}:${line} <${tag}> ${hit[0]}`);
           }
         }
       }
@@ -221,12 +241,19 @@ function findSpelledSizes(): string[] {
 }
 
 describe("control font size", () => {
+  it("scans every source root, and finds the control family and its dialog bodies", () => {
+    expectEveryRootScanned(SCAN);
+    for (const id of Object.values(FAMILY)) expectSingleHome(SCAN, id);
+    // A listed module that was renamed or moved would silently drop out of the dialog-body rule.
+    for (const rel of DIALOG_BODY_MODULES) sourceFile(SCAN, `packages/web/src/${rel}`);
+  });
+
   it("is never spelled on a call site's className", () => {
     expect(
       findSpelledSizes(),
       "A control's font size comes from its `size` prop (sm for a form field, base for a " +
         "standalone page like login). A text-* class beside it either does nothing or freezes " +
-        "the control against the user's font-size setting — see components/ui/input.tsx.",
+        "the control against the user's font-size setting — see the UI package's forms/input/input.tsx.",
     ).toEqual([]);
   });
 
@@ -278,7 +305,7 @@ describe("control font size", () => {
     expect(
       findLooseFooterButtons(),
       'A Button in a Modal footer passes size="sm", so the dialog\'s buttons read at the same ' +
-        "size as its fields (compare components/ui/confirm-modal.tsx).",
+        "size as its fields (compare the UI package's ConfirmModal).",
     ).toEqual([]);
   });
 
@@ -301,19 +328,12 @@ describe("control font size", () => {
     // same two rungs, which is how they drifted.
     //
     // text-[Npx] is fixed px: it ignores the root font size theme.tsx sets per tier, so a control
-    // carrying one stops responding to the user's font-size setting. `rowDescClass.sm` is the sole
-    // exception — an OptionMenu row's description has to sit one step under a text-xs title, and
-    // there is no rung below text-xs to step down to.
+    // carrying one stops responding to the user's font-size setting. There is no exception: an
+    // OptionMenu row's description at the sm tier shares the text-xs rung with its title (there is
+    // no rung below it) and stands apart by its muted ink.
     // String literals only: a comment naming the shape it forbids must not trip its own guard.
     const spelled = (name: string): string[] => {
-      const path = join(SRC, "components/ui", name);
-      const source = ts.createSourceFile(
-        path,
-        readFileSync(path, "utf8"),
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TSX,
-      );
+      const source = parse(sourceFile(SCAN, FAMILY[name]!));
       const found = new Set<string>();
       for (const chunk of literalChunks(source)) {
         for (const hit of chunk.matchAll(new RegExp(FONT_SIZE_CLASS, "g"))) found.add(hit[0]);
@@ -321,19 +341,15 @@ describe("control font size", () => {
       return [...found].sort();
     };
     expect(
-      Object.fromEntries(
-        ["input.tsx", "select.tsx", "option-menu.tsx", "form-picker.tsx"].map((name) => [
-          name,
-          spelled(name),
-        ]),
-      ),
+      Object.fromEntries(Object.keys(FAMILY).map((name) => [name, spelled(name)])),
       "A font size inside the control family lives in input.tsx's `sizeTextClass` or " +
         "option-menu.tsx's `rowDescClass`; a third copy is how the rungs drifted apart before.",
     ).toEqual({
       "input.tsx": ["text-base", "text-xs"], // sizeTextClass
-      "option-menu.tsx": ["text-[11px]", "text-xs"], // rowDescClass
+      "option-menu.tsx": ["text-xs"], // rowDescClass
       "select.tsx": [],
       "form-picker.tsx": [],
+      "search-input.tsx": [],
     });
   });
 });

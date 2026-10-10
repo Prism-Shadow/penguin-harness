@@ -1,12 +1,12 @@
 ---
 title: Settings
-description: Manage your profile, preferences and password, and, as an admin, users, the proxy, upload limits, company mode and plugins.
+description: Manage your profile, preferences and password, and, as an admin, users, the proxy, upload limits, company mode, the Agent API and plugins.
 ---
 
-**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences and password, and, for an admin, the server's users, proxy, upload limits, company mode and plugins, the sandbox among them.
+**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences and password, and, for an admin, the server's users, proxy, upload limits, company mode, Agent API and plugins, the sandbox among them.
 
-- Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance) and [Account](#account).
-- Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Upload limits](#upload-limits), [Company mode](#company-mode) and [Plugins](#plugins).
+- Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance), [Keyboard shortcuts](#keyboard-shortcuts) and [Account](#account).
+- Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Upload limits](#upload-limits), [Company mode](#company-mode), [Agent API](#agent-api) and [Plugins](#plugins).
 
 ## Open Settings
 
@@ -24,11 +24,13 @@ The rail is grouped into **Personal** and **Server**:
 | [Profile](#profile) | Personal | Everyone |
 | [General](#general) | Personal | Everyone |
 | [Appearance](#appearance) | Personal | Everyone |
+| [Keyboard shortcuts](#keyboard-shortcuts) | Personal | Everyone |
 | [Account](#account) | Personal | Only where a password exists to change |
 | [Users](#users) | Server | Admin only, and not in the desktop app |
 | [Proxy options](#proxy-options) | Server | Admin only |
 | [Upload limits](#upload-limits) | Server | Admin only |
 | [Company mode](#company-mode) | Server | Admin only |
+| [Agent API](#agent-api) | Server | Admin only |
 | [Plugins](#plugins) | Server | Admin only |
 
 Personal preferences apply the moment they are touched. There is no Save button and nothing to lose by closing the dialog. The nickname on the Profile page is the one exception: typed text needs a commit, and its **Save** sits beside the field rather than under the page.
@@ -36,13 +38,13 @@ Personal preferences apply the moment they are touched. There is no Save button 
 Where your personal preferences are stored:
 
 - In this browser: language, currency, notifications, theme, terminal theme, font size, accent, the shortcuts launcher, and tool short names.
-- With your account on the server: your profile and your personal Company mode switch.
+- With your account on the server: your profile, your keyboard shortcuts and your personal Company mode switch.
 
 The Server pages are admin-only and server-global. A non-admin sees neither those entries nor any hint that they exist: they are left with the Personal pages alone, and the rail draws no group headings at all.
 
 In the desktop app the **Users** page is absent, because the server runs single-user. The desktop app's own window also has no **Account** page: it signs in through the shell's token and holds no password to change. A browser signed into the same server with a password keeps the page.
 
-A "?" beside a row's title opens that row's explanation. A "?" beside a page heading explains the whole page.
+Rest the pointer on the "?" beside a row's title to see that row's explanation; a "?" beside a page heading explains the whole page. Select the "?" to keep the explanation open, or tap it on a touch screen.
 
 Checking for updates is not a page here. See [Updates](/updates).
 
@@ -129,6 +131,24 @@ The **Appearance** page is personal.
 About **Tray icon**: the desktop app keeps an icon in the system tray: the Windows notification area, the macOS menu bar, or the Linux tray. It stays there for as long as the app runs. Click the icon to come back to the window. Right-click it to start a new Session or quit.
 
 Turning it off removes the icon at once, with no restart. Closing the window then no longer hides it there: the app stays in the Dock on macOS, and quits on Windows and Linux.
+
+## Keyboard shortcuts
+
+The **Keyboard shortcuts** page is personal. It lists every command you can rebind, by group, each with its current key combination as your platform writes it: ⌥⌘S on a Mac, Ctrl+Alt+S elsewhere. The defaults are listed under [Keyboard shortcuts](/chat#keyboard-shortcuts) in Chat.
+
+1. Select the combination on a row. The button waits for a new one.
+2. Press the new combination. Esc cancels, and Backspace or Delete clears the binding. A combination needs Ctrl or Alt (⌘ or ⌃ on a Mac) unless it is an F key: Shift alone, and Option alone on a Mac, is typing.
+
+A changed row gets a **Restore default** button, and **Reset all** restores every row at once. A change applies at once in every tab of this browser; your other browsers and the desktop app pick it up the next time they load. Bindings are kept per platform, so a Mac and a Windows machine each have their own.
+
+As soon as a binding is set, the line under its row says what stands in its way:
+
+- Another command on the same combination: which of the two fires.
+- A combination the browser keeps for itself, such as Ctrl+W or ⌘W: it only works in the desktop app. This note is amber.
+- In the desktop app, a combination its menu also carries: the binding overrides that menu item.
+- A combination the browser also uses, such as Ctrl+P or ⌘P for printing: in a browser tab, the binding takes over that browser function.
+
+Bindings are shared by your browsers and the desktop app, so the browser's notes show in the desktop app too. No default sits on a combination the browser keeps. Save keeps Ctrl+S / ⌘S and takes over the browser's Save Page while an editor has focus, so its row carries a note; on a Mac so do the two rows whose defaults Chrome also uses, ⌥⌘P and ⌥⌘N.
 
 ## Account
 
@@ -242,20 +262,31 @@ Turning it off stops the organization scheduler and every organization route, an
 > [!NOTE]
 > Company mode is a beta. See [Company mode](/company-mode).
 
+## Agent API
+
+The **Agent API** page (**Settings › Server › Agent API**) is admin-only and server-global. It holds the **Allow the Agent API** switch, on by default, over every agent's API: the HTTP API through which programs outside PenguinHarness talk to an agent (see [Agent API](/agent-api)).
+
+The switch applies the moment it is flipped. There is no Save button.
+
+Turning it off asks first, because every program calling an agent fails from then on. Once it is off, every Agent API request is refused with `403` `agent_api_disabled`. Each agent's own switch, approval mode and keys are kept, and work again when the switch is back on. Meanwhile each agent's **API** tab shows its switch disabled, with a note saying why, to every member.
+
 ## Plugins
 
 The **Plugins** page is admin-only and server-global. It shows the options each loaded plugin declares, as a form drawn from the plugin's own schema. A plugin that declares no options has no card here. A save reaches the plugin at once, with no restart.
 
 ### Sandbox
 
-The sandbox is the first card on the page. It sets the confinement every agent command is spawned under:
+The sandbox is the first card on the page. It sets the policy a new Session is confined under. One policy governs the commands the agent runs, the hook scripts its Session runs, the MCP Servers it starts over `stdio`, and the file tools (`read_file`, `edit_file`, `write_file`):
 
-- **Confinement mode**: off (full access), workspace write only, or read-only.
-- **Network**: full access, local network (localhost only), or no network. The local level needs a backend that can enforce it.
-- **Temporary directory**: whether it stays writable. On by default, in either confining mode, because shells and most tools cannot start without one.
-- **Masked paths**: paths hidden from a confined command, one absolute path per line, at most 64.
+- **Enable**: the switch at the top. Off (a fresh install), a new Session has full file and network access and is held only by its approval mode, and the composer's permission menu lists the approval modes alone. While it is off, the card shows the switch alone: the presets, the Advanced fold, the backends' own settings and the card's notices come back when it is turned on, as they were.
+- **Presets**: the table of what the permission menu offers, one row per preset: its name, file mode (off, workspace, read-only), network (full, localhost, none) and approval mode, and an **Action** group: a pin for whether the menu lists it, a drag handle, and a "…" menu with **Set as default** and, on presets you added, **Delete**. The default row reads "(Default)" after its name, and each name's "?" says what the row is for — for a preset you added, or a built-in one whose values you changed, what each of its values does. Each header's "?" says what the column (or each icon) means. Drag a row's handle (or press the arrow keys on it) to reorder; the order is the menu's. **Add preset** adds a row; only added rows can be deleted, and not while they are the default. Workspace allows writes to the Session's Workspace, its scratchpad (the plan file, a goal's state file, attachments) and the temporary directory; read-only allows the temporary directory only. The network level applies to the image URLs `read_file` fetches too, and localhost needs a backend that can enforce it. The default row is the one a new Session starts from while the switch is on — its file mode, network and approval mode; Workspace Write until changed. Settings saved before the presets table keep their own file mode and network until you set a default: the card marks as default the row that starts Sessions exactly where they do, and saving pins it. When no row does (a cut or localhost-only network, or masked paths with the file mode off), no row is marked, a notice at the top of the card says what is in effect, and saving other settings keeps it; set a row as default, or add a preset with those values and set it.
+- Under **Advanced**, folded by default:
+  - **Temporary directory**: whether it stays writable. On by default, in either confining mode, because shells and most tools cannot start without one. Turning it off needs a backend that can close it: with only DSH in use the switch is held on and says why (on Landlock the temporary directory is the host's shared `/tmp`).
+  - **Masked paths**: paths hidden from the agent's commands, hook scripts, `stdio` MCP Servers and file tools, reads included; one absolute path per line, at most 64.
 
-A sandbox backend installed as a plugin (bwrap, Seatbelt, DSH) enforces the mode. The card lists the mounted backends and the isolation each one implements, and says so when there is none. Without a backend, every mode but off refuses every agent command.
+Neither confining mode lets the agent write its Agent State: `AGENTS.md`, `system_config.yaml`, Skills, hook packages, memory, the vault and scheduled tasks. To let an agent write memory, write its own Skills or hook packages, or change its configuration, switch that conversation to full access with its **Permissions** button. An MCP Server started over `stdio` is confined the same way when it starts — at a context open or a reconnect — so a Server that must write outside those directories, or reach a network the level cuts, fails to connect in a confining Session; MCP Servers reached over `http` or `sse` are not processes of this machine and are not confined.
+
+A sandbox backend installed as a plugin (bwrap, Seatbelt, WSL, DSH) enforces the policy on all of them: the file tools work through a helper process the same backend wraps (see [File tools](/tools#file-tools)). The card's first line says what this machine enforces and by what — on a default Ubuntu, `Enforced here: file writes, by Landlock (dsh-local)` — and what it does not, with **More info** under it naming each installed backend that is not in use and why ([Sandbox on Ubuntu](/quickstart-cli#sandbox-on-ubuntu)); it says so when there is no backend. A network level or masked paths no backend here enforces are greyed out or refused rather than enforced in part. Without a backend, every mode but off refuses every agent command and file operation, fails every hook and connects no `stdio` MCP Server. Two backends need a word: DSH does not make the scratchpad writable and cannot close the temporary directory — **More info** lists what its rung leaves open, and what `(partial)` means on an older Landlock; WSL runs hook scripts and the file tools' helper on the `nodejs` the distro's initialization now installs — a distro initialized before that has to be initialized again, and until then hooks and file operations fail under it rather than running unconfined — and a `stdio` MCP Server runs there only if its command exists inside the distro.
 
 A backend's own options, such as bwrap's program and its probe timeout of 1–30 seconds, or Seatbelt's program, are drawn inside the same card, and the card's one **Save** stores both. A backend that failed its check, for example on a wrong program path, is loaded again by that save, with no restart.
 

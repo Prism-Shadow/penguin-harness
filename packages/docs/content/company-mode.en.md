@@ -35,7 +35,7 @@ An organization lives inside a Project, at `<project>/organizations/<org_id>/`, 
 1. In company mode, open the organization switcher and select **New organization**.
 2. Enter a **Display name**.
 3. Next to **Organization id**, select **Generate with AI** to derive an id from the name, or type one yourself.
-4. Enter the **Mission**, or select one of the four examples below the field to fill it in.
+4. Enter the **Mission**. With no organization yet, the company-mode landing lists four examples; selecting one opens this dialog with the name and the full mission filled in.
 5. Optional: choose a **Model**, a **Company workspace** and a **CEO budget**.
 6. Select **Create**. The CEO's desk session opens.
 
@@ -85,6 +85,13 @@ The handbook, the employee briefs (`AGENTS.md`), the CEO's initialization run an
 ### Desk sessions
 
 Each employee gets one standing desk session the moment it is hired. Calendar events, channel mentions and people all arrive there. A desk schedules work and opens ticket sessions rather than doing the work itself. The server opens a desk for any employee that has none: one added to `org_chart.yaml` by hand, or one whose Session was deleted.
+
+**An employee's model is the model its desk session runs on.** The `model` of its entry in `org_chart.yaml` only says which model a desk is opened on, at hire or when the desk is renewed. There are two ways to change it:
+
+- Switch the model inside the desk conversation, with the model picker in the composer's toolbar or `/switch-model` in `penguin chat` (see [Switch the model](/chat#switch-the-model)). The desk keeps its conversation, the server writes the new model to the chart entry, and a desk renewed later opens on it.
+- Use `/model` in the desk conversation. It writes the chart entry first and then opens a new desk on that model.
+
+Ticket sessions open on the model the employee's desk runs on at that moment. Editing the chart entry alone (`penguin org employee set --model-id <id> --provider <p>`) leaves the open desk and its ticket sessions where they are; it takes effect when the desk is renewed.
 
 ### Tickets
 
@@ -266,6 +273,7 @@ In company mode, the sidebar lists the organization's pages: **Overview**, **Org
 
 - **Overview** is where an organization opens. It shows the mission folded to one line, this period's spend against the CEO's budget, and a KPI strip, followed by three full-width sections: the **Inbox** (all-hands messages that mention you or `@all`, every blocked ticket whoever it waits on, and the tickets closed this period), today's calendar, and the budget alerts. No card is a link; each has one corner button that names the page it summarizes.
 - **Org Chart** shows the reporting tree. Each employee's menu offers **Hire a subordinate**, **Set budget**, **Change reporting line**, **New desk session** and **Leave the organization**.
+- **Tickets** is the board. Clicking a card opens its ticket in place, and dragging the card to another column moves the ticket; on a touch screen, hold the card until it lifts before dragging it, since a finger that moves straight away scrolls the page. The move control inside the ticket moves it without dragging. Inside a ticket, the parent, a child ticket and a ticket session each open by clicking their title. A ticket session opens as its full conversation and goes to the top of the sidebar's **Temporary** group, below **Desks**. It stays listed, in this browser, until you remove it with its ✕ or empty the whole group with **Close all** in its header; going elsewhere or reloading the page keeps it. Both only take entries off the list: the sessions themselves are kept. Ticket sessions are never listed in the sidebar otherwise.
 - **Handbook** shows the knowledge base as an explorer tree beside the rendered document. At every level, folders come before documents; folders stay collapsed until opened, and the arrow keys move through the tree.
 - **Finance** shows the period in three rows: the KPI panel beside the daily trend, then the spend tree and the ticket table side by side, then the period's warnings and pauses.
 - **Calendar** and **Tickets** each show a single create button while they are empty, under a hint you can dismiss for good.
@@ -294,7 +302,7 @@ The organization scheduler runs a pass every 30 seconds, and immediately after e
 
 ### Session marks
 
-A desk or ticket session is marked as the organization's on the Session row itself when it is opened. It is therefore listed in company mode and never in development mode's session list, even after the organization's directory is removed by hand or the server switch is turned off, when nothing else could tell whose it was. Organizations that already existed get their Sessions marked on the runtime's next pass over their files.
+A desk or ticket session is a company Session: its Trace records `source: "company"` (see [session_meta](/omni-message#sessionmeta)), and the Session row itself is marked as the organization's when it is opened. It is therefore listed in company mode and never in the session list, in either mode, even after the organization's directory is removed by hand or the server switch is turned off, when nothing else could tell whose it was. Organizations that already existed get their Sessions marked on the runtime's next pass over their files, and their older desk and ticket sessions, whose Traces record no source, read as company Sessions by that mark.
 
 ### Skill updates
 

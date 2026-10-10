@@ -1,13 +1,30 @@
 /**
- * Files panel logic (lib/workspace-tree.ts): the tree's rows from lazily loaded listings,
- * the rows a whole-Workspace search draws, where a drop lands, the narrow-layout
- * decision and the tree pane's width bounds, how much of a path the
- * toolbar can show, which files count as text (by name, or by their bytes when the name says
- * nothing), the preferences' tolerant parses, when leaving the editor has to ask, and what
- * the panel's "add to conversation" puts in the composer.
+ * The Files panel's logic (lib/workspace-tree.ts).
+ *
+ * - A path names its parent and the directories above it; expanding to a file opens the way
+ *   down without treating the file as a directory, and collapsing closes only that directory.
+ * - Listings sort directories before files by name; an entry upserts into sorted position,
+ *   replacing a same-named one, starting a listing where there was none, never mutating.
+ * - The tree's rows walk open directories depth first, number each row within its directory,
+ *   and mark an open directory still loading or empty; a whole-Workspace search draws a flat
+ *   list of hits named by their whole path, carrying size and time.
+ * - A drop lands on a folder row, in a file row's directory, or in the current directory.
+ * - Below the width threshold the panel is one column (two panes while unmeasured); an
+ *   undragged tree takes about a third within readable bounds, and a dragged width is clamped.
+ * - A file's kind comes from its name, or from its bytes when the name says nothing (UTF-8 text
+ *   cut mid-character is still text; NUL, control-heavy or non-UTF-8 bytes are not); the
+ *   read-only browser reads HTML as source and an unknown name as unsupported; only whole
+ *   text-like previews offer the editor, and leaving typed changes asks first.
+ * - The tree width, soft wrap and tree visibility preferences parse tolerantly, keep a stored
+ *   explicit answer over a new default, round-trip, and fall back when storage throws.
+ * - A line range is written as an editor writes it; a directory reference carries a trailing
+ *   slash.
+ * - "Add to conversation" hands the composer a reference (the text it will send and its file),
+ *   still fenced as a quotation, never text for the draft.
  */
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 import {
   type ComposerReference,
   type Listings,
@@ -33,16 +50,15 @@ import {
   parseTreeWidth,
   pathReference,
   previewKindFor,
+  previewKindOf,
   readWrapLines,
   readTreeVisible,
   readTreeWidth,
   selectionBlock,
-  splitFileName,
   lineSuffix,
   sortEntries,
   upsertEntry,
   utf8Complete,
-  visibleCrumbSegments,
   withExpanded,
   writeWrapLines,
   writeTreeVisible,
@@ -213,41 +229,6 @@ describe("searchRows", () => {
   });
 });
 
-describe("visibleCrumbSegments", () => {
-  /** A fixed advance per character, so the fit is arithmetic rather than a font. */
-  const measure = (text: string): number => text.length * 10;
-
-  it("shows the whole path when it fits", () => {
-    expect(visibleCrumbSegments(["root", "aa", "bb"], 1000, measure)).toEqual({
-      visible: ["root", "aa", "bb"],
-      collapsed: false,
-    });
-    expect(visibleCrumbSegments([], 1000, measure)).toEqual({ visible: [], collapsed: false });
-  });
-
-  it("drops leading segments until the rest fit, pricing in the ellipsis they become", () => {
-    // "cc" 20 + "bb" 20 + the ellipsis still ahead of them 10 = 50, within 60; "aa" would
-    // make it 70.
-    expect(visibleCrumbSegments(["root", "aa", "bb", "cc"], 60, measure)).toEqual({
-      visible: ["bb", "cc"],
-      collapsed: true,
-    });
-    // At 100 the first segment fits too, and with nothing left ahead of it there is no
-    // ellipsis to pay for.
-    expect(visibleCrumbSegments(["root", "aa", "bb", "cc"], 100, measure)).toEqual({
-      visible: ["root", "aa", "bb", "cc"],
-      collapsed: false,
-    });
-  });
-
-  it("always keeps the current directory, however little room there is", () => {
-    expect(visibleCrumbSegments(["root", "aa", "bb"], 0, measure)).toEqual({
-      visible: ["bb"],
-      collapsed: true,
-    });
-  });
-});
-
 describe("file kinds", () => {
   it("decides the preview kind from the name, leaving an unknown name to be sniffed", () => {
     expect(previewKindFor("README.md")).toBe("md");
@@ -257,6 +238,12 @@ describe("file kinds", () => {
     expect(previewKindFor("paper.pdf")).toBe("pdf");
     expect(previewKindFor("Makefile")).toBe("unknown");
     expect(previewKindFor("archive.tar.gz")).toBe("unknown");
+  });
+
+  it("reads HTML as source and an unknown name as unsupported in the read-only browser", () => {
+    expect(previewKindOf("index.html")).toBe("text");
+    expect(previewKindOf("Makefile")).toBe("unsupported");
+    expect(previewKindOf("README.md")).toBe("md");
   });
 
   it("takes UTF-8 text for text, including a chunk cut inside a multi-byte character", () => {
@@ -305,27 +292,6 @@ describe("editing", () => {
   });
 });
 
-/** In-memory stand-in for localStorage, and one that throws the way blocked site data does. */
-function memPreferences(): {
-  getItem: (k: string) => string | null;
-  setItem: (k: string, v: string) => void;
-} {
-  const store = new Map<string, string>();
-  return {
-    getItem: (key: string) => store.get(key) ?? null,
-    setItem: (key: string, value: string) => void store.set(key, value),
-  };
-}
-
-const brokenPreferences = {
-  getItem: (): string | null => {
-    throw new Error("blocked");
-  },
-  setItem: (): void => {
-    throw new Error("blocked");
-  },
-};
-
 describe("tree width preference", () => {
   it("takes a positive integer and treats everything else as unset", () => {
     expect(parseTreeWidth(null)).toBeNull();
@@ -337,12 +303,12 @@ describe("tree width preference", () => {
   });
 
   it("round-trips through storage and reads as unset when storage throws", () => {
-    const storage = memPreferences();
+    const storage = memoryStorage();
     expect(readTreeWidth(storage)).toBeNull();
     writeTreeWidth(233.4, storage);
     expect(readTreeWidth(storage)).toBe(233);
-    expect(readTreeWidth(brokenPreferences)).toBeNull();
-    expect(() => writeTreeWidth(200, brokenPreferences)).not.toThrow();
+    expect(readTreeWidth(blockedStorage())).toBeNull();
+    expect(() => writeTreeWidth(200, blockedStorage())).not.toThrow();
   });
 });
 
@@ -356,14 +322,14 @@ describe("soft wrap preference", () => {
   });
 
   it("round-trips through storage and reads as on when storage throws", () => {
-    const storage = memPreferences();
+    const storage = memoryStorage();
     expect(readWrapLines(storage)).toBe(true);
     writeWrapLines(false, storage);
     expect(readWrapLines(storage)).toBe(false);
     writeWrapLines(true, storage);
     expect(readWrapLines(storage)).toBe(true);
-    expect(readWrapLines(brokenPreferences)).toBe(true);
-    expect(() => writeWrapLines(false, brokenPreferences)).not.toThrow();
+    expect(readWrapLines(blockedStorage())).toBe(true);
+    expect(() => writeWrapLines(false, blockedStorage())).not.toThrow();
   });
 });
 
@@ -377,32 +343,14 @@ describe("tree visibility preference", () => {
   });
 
   it("round-trips through storage and defaults to shown when storage throws", () => {
-    const storage = memPreferences();
+    const storage = memoryStorage();
     expect(readTreeVisible(storage)).toBe(true);
     writeTreeVisible(false, storage);
     expect(readTreeVisible(storage)).toBe(false);
     writeTreeVisible(true, storage);
     expect(readTreeVisible(storage)).toBe(true);
-    expect(readTreeVisible(brokenPreferences)).toBe(true);
-    expect(() => writeTreeVisible(false, brokenPreferences)).not.toThrow();
-  });
-});
-
-describe("splitFileName", () => {
-  it("keeps the extension whole so it can outlive a truncated stem", () => {
-    expect(splitFileName("workspace-browser.tsx")).toEqual({
-      stem: "workspace-browser",
-      ext: ".tsx",
-    });
-    expect(splitFileName("archive.tar.gz")).toEqual({ stem: "archive.tar", ext: ".gz" });
-  });
-
-  it("treats a leading dot as part of the name, and a name with no dot as all stem", () => {
-    // `.gitignore` is not an extension on an empty name: splitting it there would ellipsize to
-    // nothing and leave the row showing only a dot.
-    expect(splitFileName(".gitignore")).toEqual({ stem: ".gitignore", ext: "" });
-    expect(splitFileName("Makefile")).toEqual({ stem: "Makefile", ext: "" });
-    expect(splitFileName("src")).toEqual({ stem: "src", ext: "" });
+    expect(readTreeVisible(blockedStorage())).toBe(true);
+    expect(() => writeTreeVisible(false, blockedStorage())).not.toThrow();
   });
 });
 

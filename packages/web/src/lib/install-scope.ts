@@ -84,8 +84,8 @@ export interface KeyRule {
  *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
- *   - `penguin.ooo` (lib/remark-autolink-boundary.ts) is the product's domain inside an
- *     example URL in a doc comment. It is not a storage key.
+ *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's
+ *     domain inside an example URL in a doc comment. It is not a storage key.
  */
 export const KEY_RULES: readonly KeyRule[] = [
   // ---------------------------------------------------------------- browser preferences
@@ -97,9 +97,33 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.themeId",
+    scope: "browser",
+    why: "Which theme renders the app (the key lives in @prismshadow/penguin-ui/boot); pure appearance.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.textSize",
+    scope: "browser",
+    why: "Root text size (five steps) — a readability preference of this display.",
+  },
+  {
+    kind: "exact",
     key: "penguin.fontScale",
     scope: "browser",
-    why: "Root font size — a readability preference of this display.",
+    why: "The three-step text size of earlier releases; read once, migrated to penguin.textSize and removed.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.fontLatin",
+    scope: "browser",
+    why: "Latin font face chosen over the theme's own; pure appearance.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.fontCjk",
+    scope: "browser",
+    why: "CJK font face chosen over the theme's own; pure appearance.",
   },
   {
     kind: "exact",
@@ -193,6 +217,30 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.sidebarNavPinned",
+    scope: "browser",
+    why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelsGroupsFolded",
+    scope: "browser",
+    why: "Whether the models page's collapsible groups are folded; one flag, names nothing on the server.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelsPinnedGroups",
+    scope: "browser",
+    why: "Which model groups stay out of the fold, as differences from the built-in default set; a view preference, and a pinned user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelsGroupSort",
+    scope: "browser",
+    why: "How each model group orders its models, as differences from price low to high; a view preference, and a user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
     key: "penguin.steerMode",
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",
@@ -225,6 +273,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.finderQuickAccess.",
+    scope: "install",
+    why: "Folders added to and removed from the Workspace finder's Quick access, keyed by machine id and holding paths on the machines of this root — the same kind of state as the registered Workspace paths.",
+  },
+  {
+    kind: "family",
     key: "penguin.pinnedSessions.",
     scope: "install",
     why: "Pinned Session ids.",
@@ -234,6 +288,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.machineSessions.",
     scope: "install",
     why: "The Sessions each machine was last seen holding, shown until its connection is held again. Project id and machine id in the key, Session ids in the value — a new root knows none of them.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.sandboxBackendPromptDismissed",
+    scope: "install",
+    why: "The machines whose Sandbox card no longer offers to install a backend — machine ids of this root.",
   },
   {
     kind: "family",
@@ -278,6 +338,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "Pinned sidebar groups, same key space.",
   },
   {
+    kind: "family",
+    key: "penguin.a2uiDraft.",
+    scope: "install",
+    why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
+  },
+  {
     kind: "exact",
     key: "penguin.lastProjectId",
     scope: "install",
@@ -291,9 +357,21 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.keybindings",
+    scope: "browser",
+    why: "The account's shortcut overrides, mirrored from ui_prefs for the first keystroke and for cross-tab sync; names nothing on the server, and the server copy is the truth.",
+  },
+  {
+    kind: "exact",
     key: "penguin.companyBetaNoticeShown",
     scope: "browser",
     why: "That company mode's beta notice has been shown in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.tokenDanceBannerDismissed",
+    scope: "browser",
+    why: "That the models page's TokenDance banner was dismissed in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
   },
   {
     kind: "exact",
@@ -312,6 +390,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.orgPageHint.",
     scope: "install",
     why: "A dismissed empty-page note, keyed by user, Project and organization id of this root.",
+  },
+  {
+    kind: "family",
+    key: "penguin.orgTempSessions.",
+    scope: "install",
+    why: "The company sidebar's Temporary group of ticket sessions, keyed by user, Project and organization id and naming Sessions and Agents of this root.",
   },
   {
     kind: "family",

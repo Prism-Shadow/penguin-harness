@@ -14,6 +14,7 @@ SDK 唯一的执行入口是 `session.run(newMessages, opts?)`：输入是本次
 ```text
 session.run(newMessages, { approve, signal })
   │  carry-over from a previous interrupt? → prepend to this run's input
+  │  the user's own Prompt? → user_prompt hooks; each context follows it
   ▼
 ┌── turn loop (≤ max_turns; default -1 = no cap) ───────────────┐
 │                                                               │
@@ -68,10 +69,11 @@ interface RunOptions {
   signal?: AbortSignal;       // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;        // per-tool approval; denies everything when omitted (conservative default)
   preToolUse?: PreToolUseFn;  // pre-tool-use hook consult, called before approve for each complete tool_call
+  userPrompt?: UserPromptFn;  // user-prompt hook consult, called once with the Prompt before the first request
 }
 ```
 
-`preToolUse` 由 Session 根据 Agent 已安装的钩子包自行填入（见 [Pre-tool-use hook](#pre-tool-use-hook)）。
+`preToolUse` 与 `userPrompt` 由 Session 根据 Agent 已安装的钩子包自行填入（见 [Pre-tool-use hook](#pre-tool-use-hook) 与 [User-prompt hook](#user-prompt-hook)）。
 
 生成器的返回值说明本次运行如何结束：正常跑完为 `null`，否则是一个 `RunCutoff`：
 
@@ -127,11 +129,11 @@ Task 由若干连续的 Request（轮）组成。每一轮：
 | --- | --- | --- |
 | `stop` | 一个 Task 结束的那一刻：模型给出不含工具调用的最终答复，或被掐断（用户中断、LLM 失败、达到 `max_turns` 上限） | [Stop hook](#stop-hook) |
 | `pre_tool_use` | 每个工具调用审批之前 | [Pre-tool-use hook](#pre-tool-use-hook) |
-| `user_prompt` | 用户提交 Prompt 时 | [User-prompt hook](#user-prompt-hook) |
+| `user_prompt` | 用户每次提交 Prompt 时，在 Task 的首个请求之前 | [User-prompt hook](#user-prompt-hook) |
 
-Session 咨询的钩子，就是安装在 Agent 的 `agent_state/hooks/` 目录里的钩子包，由[插件](/skills#钩子包)携带，像 Skill 一样每个 Session 都重新读取。SDK 嵌入方也可以经 `SessionConfig.hooks.stop` / `.preToolUse` / `.userPrompt` 注册进程内函数。
+Session 咨询的钩子，就是安装在 Agent 的 `agent_state/hooks/` 目录里的钩子包，无论是[插件](/skills#钩子包)携带的，还是有人（包括 Agent 自己）手写进去的。它们像 Skill 一样，连同 `hooks.enabled` 开关，在每个模型上下文开启时从磁盘读取：创建 Session 时、每次压缩之后，以及恢复时。新上下文的钩子整体替换旧的，因此对话中写入的钩子包从下一个上下文起生效。SDK 嵌入方也可以经 `SessionConfig.hooks.stop` / `.preToolUse` / `.userPrompt` 注册进程内函数。
 
-已安装的钩子是纯 Node 脚本，像 Claude Code 运行 command hook 那样以子进程运行。它只被告知去哪里看，其余一切都由它从 Trace 推导：Token 用量、轮数、Task 的结束方式，以及它自己的状态文件。退出码非零即为失败，stderr 的末尾成为 reason；超时的脚本会被终止，超时时长取清单里的 `timeout`，缺省 60 秒。
+已安装的钩子是纯 Node 脚本，像 Claude Code 运行 command hook 那样以子进程运行。这个子进程与命令完全一样，在 Session 的[沙盒](/settings#沙盒)下运行：同一份策略，同一个后端。沙盒无法封禁它时，该次钩子失败，reason 以 `hook failed: sandbox:` 开头，脚本绝不会脱离封禁运行。它只被告知去哪里看，其余一切都由它从 Trace 推导：Token 用量、轮数、Task 的结束方式，以及它自己的状态文件。退出码非零即为失败，stderr 的末尾成为 reason；超时的脚本会被终止，超时时长取清单里的 `timeout`，缺省 60 秒。
 
 ### Stop hook
 
@@ -187,16 +189,24 @@ stdout  nothing = no opinion; otherwise
 
 ### User-prompt hook
 
-第三个钩子点 `user_prompt` 用来扩展提交的 Prompt。钩子只在 core 里运行：宿主接受某个包所负责流程的用户 Prompt 时，经 `Session.runUserPromptHook(name, prompt, extras)` 触发它，Session 自己补上 id 与 scratchpad 目录。
+第三个钩子点 `user_prompt` 在**用户每次提交 Prompt 时**运行：`run` 的输入含用户本人的文本（`sender` 缺省或为 `"user"` 的 user 文本）即触发。别人写下的输入不触发：定时任务、公司模式触发这类 `server` 输入，子 Agent 收到的 `parent_agent` 输入，stop hook 的续跑输入，后台任务的完成回报，以及运行中插话。引擎在 Prompt 写入 Trace 之后、Task 的首个请求之前咨询一次，钩子包按包名顺序执行，同一个包的命令按清单顺序执行。
 
 ```text
-stdin   { "hook": "user_prompt", "session_id", "scratchpad_dir", "prompt", …host extras (goal: "budget") }
-stdout  { "context": "<text appended after the user's message>" }
+stdin   { "hook": "user_prompt", "session_id", "trace_path", "scratchpad_dir", "prompt" }
+stdout  nothing = nothing to add; otherwise
+        { "context": "<text sent right behind the user's message>" }
+exit    non-zero = failure (stderr's tail becomes the reason); a timeout (default 60 s) kills it
 ```
 
-回答里的 `context` 紧随用户自己的消息之后、以 harness 标记发出，渲染为紧凑的折叠卡片。包未安装、或没有声明 `user_prompt` 命令时，调用返回 `null`。这个钩子点不记 `hook` 事件，扩展出的那条消息本身就是记录。
+`prompt` 是用户的文本，开头的标记块（例如 `[use_skills]`）已剥离，多条文本以换行相连。没有 Trace 的 Session 不带 `trace_path`。
 
-[目标模式](/goal-mode)的启动是唯一的内置用途：goal 插件的 `start.mjs` 就是它的 `user_prompt` 命令。服务端收到 `goal: { budget }` 时请 Session 运行它，它写下 `GOAL.json`，并以第 1 轮的协议消息作答。
+每个非空的 `context` 成为一条带 [`sender: "harness"`](/omni-message#modelmsg完整消息) 标记的 user 文本，按钩子顺序紧随用户自己的消息：推到流上，紧随 Prompt 写入 Trace，并与 Prompt 一起在 Task 的首个请求中发出；宿主把它渲染为紧凑的折叠卡片。这条消息本身就是记录，成功的钩子不留 `hook` 事件。钩子失败（退出码非零、打印的不是 JSON、超时或抛错）时，在同一位置记为一条 `hook: "user_prompt"` 的 `hook` 事件，以错误信息为 `reason`，并按无意见处理，永远不会拖垮运行。
+
+脚本跑在每条 Prompt 的热路径上：要轻快，在清单里设置较小的 `timeout`，context 也要简短，因为每条 Prompt 模型都要读它。
+
+**宿主触发的命令。** `user_prompt` 命令可以在 `hooks.json` 里带 `"trigger": "host"`，缺省为 `"prompt"`。这样的命令不参与上述咨询，只在宿主按包名启动该包自己的流程时，经 `Session.runUserPromptHook(name, prompt, extras)` 运行：Session 自己补上 id、Trace 路径与 scratchpad 目录，宿主的 `extras` 并入 stdin 字段。调用返回钩子的回答（空回答为 `{}`）；包未安装、或没有宿主触发的命令时返回 `null`。随后由宿主自己把 `context` 以 `sender: "harness"` 标记紧随用户消息、作为普通的 Task 输入发出；这条路径同样不记 `hook` 事件。进程内的 `UserPromptHook` 也有同一个可选字段 `trigger`。
+
+[目标模式](/goal-mode)是 `host` 的唯一内置用途：goal 插件的 `start.mjs` 标记为 `"trigger": "host"`。服务端收到 `goal: { budget }` 时经 `runUserPromptHook` 运行它，并在 stdin 里附上 `budget`；脚本写下 `GOAL.json`，并以第 1 轮的协议消息作答。启动目标的那条 Prompt 仍是用户提交的 Prompt，因此其他钩子包的 `user_prompt` 钩子照常运行，它们的 context 排在 goal 的协议消息之后。
 
 ## 运行中插话
 
@@ -336,7 +346,7 @@ interface CompactionSettings {
 | --- | --- |
 | `context` | 上一轮的 `token_usage.request.total` ≥ 生效的上下文阈值 |
 | `turns` | Session 轮数 ≥ `maxSessionTurns`（默认 -1，即不限） |
-| `manual` | 用户运行 `/compact` 或调用 `session.compact()` |
+| `manual` | 用户运行 `/compact` 或调用 `session.compact()`，或在会话内切换模型（切换先用当前模型压缩） |
 
 `context` 触发的生效阈值取 `maxContextLength`（默认 256000）与模型 `context_window` − 2048 中的较小者：32k 的本地 vLLM 因此在约 30.7k 处压缩，而不是先撞上窗口上限；1M 窗口的模型则在配置的 256000 处触发。条目没有可用的 `context_window`（未配置或小于 4096）时，按 128000 的假定窗口推导，即约 126k。
 
@@ -365,6 +375,7 @@ interface CompactionSettings {
 - `AGENTS.md`；
 - vault；
 - 已装 Skill 的元数据；
+- 已装钩子包，连同 `hooks.enabled` 开关；
 - Memory 索引；
 - 定时任务名单；
 - 环境字段中的日期。
@@ -396,7 +407,7 @@ interface CompactionSettings {
 
 轮转出的新 Trace 文件以记录本上下文所用提示词的 `session_meta` 开头，随后是连接事件对（如有）与工具集记录。
 
-整个 Session 生命周期内固定的只有 Session 自身：id、Workspace、模型条目（含凭据、窗口与逐模型标注）与来源。
+整个 Session 生命周期内固定的只有 Session 自身：id、Workspace 与来源。模型条目（含凭据、窗口与逐模型标注）按上下文固定：普通轮换沿用当前条目，会话内切换模型时按磁盘上的 Project 配置解析目标条目（见 [Session 与 Trace](/sessions-and-traces#会话内切换模型)）。
 
 Agent State 无法装配（例如配置文件已无法解析）时，本次运行以该错误结束，引擎保持旧上下文，与新建 Session 遇到的是同一个错误。恢复时发现上下文已被完成的压缩关闭，同样按此规则开启新上下文（见 [Session 与 Trace](/sessions-and-traces)）。
 

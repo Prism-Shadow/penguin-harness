@@ -1,9 +1,17 @@
 {
-  "name": "@prismshadow/penguin-plugin-sandbox-wsl",
-  "version": "0.2.2",
-  "private": true,
+  "name": "@penguinharness/sandbox-wsl",
+  "version": "0.2.3",
   "type": "module",
   "description": "WSL sandbox backend for PenguinHarness on Windows: commands run in a dedicated WSL2 distro under bubblewrap, with Windows interop switched off.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/sandbox-wsl"
+  },
+  "engines": {
+    "node": ">=24"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -12,13 +20,16 @@
       "import": "./dist/index.js"
     }
   },
-  "license": "Apache-2.0",
   "files": [
     "dist",
     "setup",
     "README.md",
-    "ifaces.json"
+    "ifaces.json",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",

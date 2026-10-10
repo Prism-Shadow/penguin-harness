@@ -172,7 +172,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   ).json();
   const meta = replay.messages.find((m) => m.type === "session_meta");
   expect(meta?.payload?.thinking_level).toBeUndefined();
-  await expect(page.getByTitle("思考等级：高 (high)")).toBeVisible();
+  await expect(page.locator('[data-tooltip="思考等级：高 (high)"]')).toBeVisible();
 
   // On a successful send the cache clears — except the model selection, which carries over as
   // the next conversation's default (switch-becomes-default, like the thinking level above).
@@ -210,18 +210,16 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // Regression (review): the route-state prefill applies once per navigation only — after the
   // user picks a different directory and reloads, the restored cached choice must win; the
   // prefill must NOT re-apply (location.state survives a reload inside history.state, so the
-  // consumed marker lives in sessionStorage rather than a ref). Browse one level up and select
-  // it; the path row mirrors the loaded directory, which orders the two clicks deterministically.
+  // consumed marker lives in sessionStorage rather than a ref). The finder opens revealing the
+  // current Workspace, selected, in its parent; climb one level and choose that parent.
   await page.getByRole("button", { name: "Workspace", exact: true }).click();
-  // Match by trailing basename: the server realpaths the browsed directory, so the prefix may differ from the raw mkdtemp path.
-  await expect(page.getByRole("textbox", { name: "Workspace" })).toHaveValue(
-    new RegExp(`${wsLabel}$`),
-  );
-  // Regression (workspace picker race): while a /dirs request is in flight the picker's rows
-  // are disabled, so a rapid double-click on "parent dir" must issue exactly ONE request and
-  // ascend exactly one level — previously both clicks fired an un-sequenced load and could
-  // relocate the browsing position. The response is gated on an explicit release (not a
-  // timeout) so the second click deterministically lands inside the loading window.
+  const finder = page.getByRole("dialog", { name: "Workspace" });
+  await expect(finder.getByRole("option", { name: wsLabel, selected: true })).toBeVisible();
+  // Regression (workspace picker race): a relative move waits for the folder on screen to be
+  // the loaded one, so a rapid double "parent" (⌘↑ / Ctrl+↑) must issue exactly ONE request and
+  // climb exactly one level — two un-sequenced loads from the same position used to resend the
+  // same parent. The response is gated on an explicit release (not a timeout) so the second
+  // press deterministically lands inside the loading window.
   let releaseDirs;
   const dirsGate = new Promise((resolve) => {
     releaseDirs = resolve;
@@ -234,22 +232,17 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
     await route.continue();
   };
   await page.route(dirsRoute, gateDirs);
-  const upRow = page.getByRole("button", { name: "上级目录" });
-  await upRow.click();
-  // force: the row is disabled while loading, and a plain click would stall on Playwright's
-  // actionability wait instead of exercising the double-click; the disabled button swallows it.
-  await upRow.click({ force: true });
+  await finder.getByRole("listbox").focus();
+  await page.keyboard.press("ControlOrMeta+ArrowUp");
+  await page.keyboard.press("ControlOrMeta+ArrowUp");
   releaseDirs();
+  // Climbing selects the folder it came from, so one level up shows the parent selected.
   const parentLabel = basename(dirname(namedWs));
-  await expect(page.getByRole("textbox", { name: "Workspace" })).toHaveValue(
-    new RegExp(`${parentLabel}$`),
-  );
-  await expect(page.getByRole("textbox", { name: "Workspace" })).not.toHaveValue(
-    new RegExp(`${wsLabel}$`),
-  );
-  expect(dirsRequests, "double-click while loading fires a single /dirs request").toBe(1);
+  await expect(finder.getByRole("option", { name: parentLabel, selected: true })).toBeVisible();
+  expect(dirsRequests, "double parent while loading fires a single /dirs request").toBe(1);
   await page.unroute(dirsRoute, gateDirs);
-  await page.getByRole("button", { name: "使用此目录" }).click();
+  await finder.getByRole("button", { name: "选择", exact: true }).click();
+  await expect(finder).toBeHidden();
   await expect(page.getByLabel("Workspace")).toContainText(parentLabel);
   await page.reload();
   await expect(page.getByLabel("Workspace")).toContainText(parentLabel);
@@ -300,7 +293,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // —— Switch the sidebar to agent mode via the header's list-settings menu (persists in
   // localStorage; the grouping radios moved from the inline toggle into this menu) ——
   await page.getByRole("button", { name: "列表选项" }).click();
-  await page.getByRole("button", { name: "按 Agent 分组" }).click();
+  await page.getByRole("menuitemradio", { name: "按 Agent 分组" }).click();
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("penguin.sidebarGroupMode")))
     .toBe("agent");
@@ -351,7 +344,8 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
 
   await ta.fill("/model");
   await ta.press("Enter");
-  await expect(page.getByText("切换模型", { exact: true })).toBeVisible(); // picker title bar
+  // The model-picker dialog, named for what /model does (it has no visible title bar).
+  await expect(page.getByRole("dialog", { name: "换模型开新会话" })).toBeVisible();
   await expect(ta).toHaveValue(""); // the command consumed its own token
   await page.getByPlaceholder(/搜索模型/).fill("claude-4-8");
   // Both models match the query (one id is the other's prefix); pick the non-mini one, i.e. not
@@ -364,7 +358,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // Nothing was sent: we are still in the same Session, with the pick pinned as a chip — which
   // is why the body can be typed AFTER the pick and still ride along.
   await expect(page).toHaveURL(new RegExp(`/chat/${secondSessionId}$`));
-  await expect(page.getByLabel("移除切换模型")).toBeVisible();
+  await expect(page.getByLabel("移除换模型目标")).toBeVisible();
   await ta.fill("Fork body typed after the pick");
 
   // The chip is draft content, cached in the SAME entry as the text (poll on the text: it is
@@ -377,7 +371,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(await page.evaluate((k) => localStorage.getItem(k), sessionKey)).toContain("claude-4-8");
   await page.reload();
   await expect(ta).toHaveValue("Fork body typed after the pick");
-  await expect(page.getByLabel("移除切换模型")).toBeVisible();
+  await expect(page.getByLabel("移除换模型目标")).toBeVisible();
 
   // Enter performs the fork: a NEW Session on the picked model, same Agent, carrying the body.
   await ta.press("Enter");
@@ -388,8 +382,9 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   const third = await (await page.request.get(`${BASE}/api/sessions/${thirdSessionId}`)).json();
   expect(third.session.modelId).toBe("claude-4-8");
   expect(third.session.agentId).toBe("agent_helper");
-  // The source block collapses into the "switched model" banner, and the typed body follows it.
-  await expect(page.getByText(/已切换模型（原为 claude-4-8-mini）/)).toBeVisible();
+  // The source block collapses into the "new conversation on another model" banner, and the
+  // typed body follows it.
+  await expect(page.getByText(/换模型新开的会话（原模型 claude-4-8-mini）/)).toBeVisible();
   await expect(page.getByText("Fork body typed after the pick")).toBeVisible();
 
   // —— /agent stages the handoff; Enter is what performs it ——

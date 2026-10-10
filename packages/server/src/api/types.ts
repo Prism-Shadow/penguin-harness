@@ -16,6 +16,7 @@
 import type {
   CompactionMode,
   OmniMessage,
+  SessionSource,
   ToolCallPayload,
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
@@ -43,8 +44,11 @@ export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask"
 /** Session run status: idle / Task in progress / compacting. */
 export type SessionStatus = "idle" | "running" | "compacting";
 
-/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session / created by a Benchmark evaluation or optimization. */
-export type SessionSource = "schedule" | "subagent" | "benchmark";
+/**
+ * What kind of conversation a Session is (`user` / `api` / `schedule` / `subagent` / `cli`):
+ * core's type, the one definition, re-exported for the DTOs below.
+ */
+export type { SessionSource };
 
 // ---------------------------------------------------------------------------
 // Authentication and users
@@ -256,6 +260,19 @@ export interface ServerSettings {
    * reports it so clients hide the mode switch. Organizations on disk are untouched.
    */
   companyMode: boolean;
+  /**
+   * Whether users may drive their own Chrome through the PenguinHarness Browser extension
+   * (default on). Off closes every connected extension (close code 4009), refuses new
+   * connections, and makes the chrome backend unavailable (`extension_disabled`); pairings are
+   * kept, so turning it on again lets the extensions reconnect.
+   */
+  browserExtensionsEnabled: boolean;
+  /**
+   * Whether external programs may talk to Agents through the Agent API (default on). Off answers
+   * every `/api/amsp/v1` request 403 `agent_api_disabled` (a CORS preflight excepted); every
+   * Agent's API switch, approval mode and keys are kept, so turning it on again restores them.
+   */
+  agentApiEnabled: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -268,6 +285,10 @@ export interface ServerSettingsUpdateRequest {
   proxyForAgent?: boolean;
   /** Company mode master switch; see `ServerSettings.companyMode`. */
   companyMode?: boolean;
+  /** Chrome extension switch; see `ServerSettings.browserExtensionsEnabled`. */
+  browserExtensionsEnabled?: boolean;
+  /** Agent API switch; see `ServerSettings.agentApiEnabled`. */
+  agentApiEnabled?: boolean;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -358,6 +379,20 @@ export interface DraftShortcut {
   prompt: string;
 }
 
+/**
+ * The account's keyboard shortcut overrides, one section per platform (the Web App's `Mod` token
+ * is ⌘ on macOS and Ctrl elsewhere, so a deliberate macOS-only binding must not leak to Windows).
+ * Each section maps a command id to a chord string ("Mod+Shift+KeyW") or null (explicitly
+ * unbound); only rows that differ from the Web App's default are present. Bounded on write by
+ * services/keybindings.ts.
+ */
+export interface StoredKeybindings {
+  v: 1;
+  mac?: Record<string, string | null>;
+  windows?: Record<string, string | null>;
+  linux?: Record<string, string | null>;
+}
+
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
 export interface UiPrefs {
   theme?: "light" | "dark";
@@ -381,13 +416,29 @@ export interface UiPrefs {
    * known key holding user-authored text rather than a flag or an id.
    */
   draftShortcuts?: DraftShortcut[];
+  /** Keyboard shortcut overrides, replaced whole on every write and validated by services/keybindings.ts. */
+  keybindings?: StoredKeybindings;
   /** Personal company-mode switch (default on): off only hides this user's mode switch; organizations keep running. */
   companyMode?: boolean;
   /** The work mode the user last chose in the shell: development (default) or company. */
   workMode?: "dev" | "company";
   /** The organization last opened in company mode, as `<projectId>/<orgId>`. */
   lastOrgKey?: string;
+  /** The one group balance shown beside the user name (pinned on the models page); null when unpinned. */
+  pinnedBalance?: PinnedBalance | null;
+  /**
+   * The browser this user's agents drive. Written only through PUT /api/builtin-browser/backend
+   * (PUT /api/me/prefs refuses it): absent means built-in for an admin on the desktop, chrome
+   * everywhere else.
+   */
+  browserBackend?: BrowserBackend;
   [key: string]: unknown;
+}
+
+/** A group balance pinned beside the user name: which Project's key reads which group's balance. */
+export interface PinnedBalance {
+  projectId: string;
+  provider: string;
 }
 
 export interface PrefsResponse {
@@ -458,12 +509,13 @@ export interface MemberAddResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Model and credential config (single .project_config.toml file; credentials are inlined on model entries)
+// Model and credential config (single .project_config.toml file; credentials are inlined in it:
+// once per group in [providers.<id>], and on a model entry where that model overrides its group)
 // ---------------------------------------------------------------------------
 
 /**
  * Model reference DTO: `(provider, modelId)` pair.
- * `modelId` is the upstream request id, sent to AgentHub as-is — `<provider>/<id>` string
+ * `modelId` is the upstream request id, sent to MMSP as-is — `<provider>/<id>` string
  * concatenation is forbidden throughout the pipeline.
  */
 export interface ModelRefDto {
@@ -478,6 +530,40 @@ export interface ModelPricingDto {
   output: number;
 }
 
+/**
+ * One group's `[providers.<id>]` connection as the page reads it: the values the GROUP stores
+ * (never the catalog's), the key masked. An absent field is unset: a row with no value of its
+ * own then gets the client's default.
+ */
+export interface ProviderConnectionDto {
+  baseUrl?: string;
+  clientType?: string;
+  apiKeyMasked?: string;
+  /** When the group key was written (ISO 8601). */
+  createdAt?: string;
+}
+
+/** Where an effective connection value comes from: the row itself, its group, or nowhere (the client's default). */
+export type ConnectionSourceDto = "model" | "provider" | "none";
+
+/**
+ * What a row is actually used with, after core's effectiveConnection (row -> group -> none,
+ * per field; the file's values only — the catalog is not consulted), and where each value
+ * came from. The group's key counts only where it reaches the row (core's groupKeyReaches).
+ * The row's own values stay in `clientType` / `credential` (what the form edits); this is for
+ * display.
+ */
+export interface ModelEffectiveConnection {
+  baseUrl?: string;
+  baseUrlSource: ConnectionSourceDto;
+  clientType?: string;
+  clientTypeSource: ConnectionSourceDto;
+  /** `env` = no row or group key, and the environment lends one on the effective endpoint (modelEnvFallback). */
+  apiKeySource: "model" | "provider" | "env" | "none";
+  /** Mask of the key the row would use, whichever source; absent when none. */
+  apiKeyMasked?: string;
+}
+
 /** Read-only credential display: masked key and creation time; plaintext is never sent. */
 export interface CredentialInfo {
   apiKeyMasked?: string;
@@ -488,7 +574,7 @@ export interface CredentialInfo {
 export interface ModelInfo {
   /** Provider group id (anthropic / openai / …, see core's MODEL_PROVIDERS; custom models use `custom`). */
   provider: string;
-  /** Upstream model id (the request id actually sent to AgentHub); paired with `provider` forms the entry's unique key. */
+  /** Upstream model id (the request id actually sent to MMSP); paired with `provider` forms the entry's unique key. */
   modelId: string;
   /**
    * Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog;
@@ -498,12 +584,15 @@ export interface ModelInfo {
    */
   displayName?: string;
   contextWindow?: number;
-  /** AgentHub client protocol (`openai-chat`, `openai-responses`, etc.); defaults to AgentHub inferring it from modelId. */
+  /**
+   * The row's OWN MMSP client type (`openai-chat`, `openai-responses`, etc.) — an override of
+   * its group's; absent = the row follows its group (see `effective`).
+   */
   clientType?: string;
   /**
-   * Whether image input (vision/multimodal) is supported: the TOML `vision` annotation takes
-   * priority, falling back to the built-in catalog annotation; if neither exists, defaults to
-   * unset (= treated as supported).
+   * Whether image input (vision/multimodal) is supported: the TOML `vision` annotation only
+   * (a new Project writes `false` where the catalog says so); absent = unset, treated as
+   * supported. The catalog is not consulted.
    */
   vision?: boolean;
   /**
@@ -516,24 +605,36 @@ export interface ModelInfo {
   /**
    * Per-model fast mode (TOML `fast_mode` annotation; user-only, never preset by the
    * built-in catalog): when true, session requests opt into the provider's faster serving
-   * tier at premium pricing (AgentHub UniConfig `fast_mode`). Only `true` is reported;
+   * tier at premium pricing (MMSP UniConfig `fast_mode`). Only `true` is reported;
    * unset = off. Models without a fast tier reject requests carrying it.
    */
   fastMode?: boolean;
   pricing?: ModelPricingDto;
   /** Running promotion for this row — a fraction in (0, 1) off `pricing`, which is the list price — read from web.db. Absent when the row has none. */
   discount?: number;
-  /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
+  /**
+   * Environment variable name the entry falls back to when api_key is empty (e.g.
+   * ANTHROPIC_API_KEY); unset when it gets no fallback — an id nothing routes, or an entry
+   * whose base URL is not the vendor's own official endpoint (a gateway preset, a custom /
+   * vLLM / user-created row with its own endpoint, a vendor row re-pointed at a proxy).
+   */
   envKey?: string;
   /**
    * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
-   * currently holds for `envKey` — the plaintext is never serialized. Reported only for
-   * first-party official entries (vendor group, catalog shape unmodified); gateway, custom
-   * and user-defined groups never carry it. Absent = the variable is unset or empty, or the
-   * entry is not first-party.
+   * currently holds for `envKey` — the plaintext is never serialized. Reported only where the
+   * fallback may be presented as covering the entry (core's modelEnvPreviewKey): a row whose
+   * effective base URL is a vendor endpoint (or the Penguin Go relay), or a row with no base URL
+   * in a built-in group other than custom, on the client its id's family names. Gateway rows
+   * never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
+   * although those do fall back. Absent = the variable is unset or empty, or the entry is not
+   * previewable. Computed on the effective shape, and only when no row or group key reaches
+   * the row.
    */
   envKeyMasked?: string;
+  /** The row's OWN key (masked) and base URL — overrides of its group's; see `effective`. */
   credential?: CredentialInfo;
+  /** The connection the row is actually used with, and where each value comes from. */
+  effective: ModelEffectiveConnection;
   isDefault: boolean;
 }
 
@@ -549,14 +650,34 @@ export interface ModelsResponse {
    * (the key was fixed since). Absent when the Project has no config file yet.
    */
   updatedAt?: string;
+  /** Every group's stored connection (`[providers.<id>]`), keyed by provider id; a group with none is absent. */
+  providers: Record<string, ProviderConnectionDto>;
   models: ModelInfo[];
+}
+
+/**
+ * A change to one group's connection (`PUT /models/providers/:provider`, or a member of
+ * `ModelsUpdateRequest.providers`). Omitted fields are kept.
+ */
+export interface ProviderConnectionUpdate {
+  /** `null` clears it; omitted keeps it. */
+  baseUrl?: string | null;
+  /**
+   * `null` or `""` clears it; omitted keeps it. Any group takes one: a row that stores its own
+   * protocol keeps it.
+   */
+  clientType?: string | null;
+  /** A non-empty key; sets `createdAt`. Rows with their own key keep it. */
+  apiKey?: string;
+  /** When true, clears the group key (rows with their own key keep it). */
+  clearApiKey?: boolean;
 }
 
 /** PUT full-table replace semantics: models not present are deleted; omitting apiKey = keep existing value. Key = (provider, modelId). */
 export interface ModelUpdateEntry {
   /** Provider group (an independent entry field, always submitted with the request). */
   provider: string;
-  /** Upstream model id (sent to AgentHub as-is). */
+  /** Upstream model id (sent to MMSP as-is). */
   modelId: string;
   /**
    * Display name; the server does not persist it when it matches the built-in catalog (keeps
@@ -572,7 +693,10 @@ export interface ModelUpdateEntry {
    */
   renamedFrom?: ModelRefDto;
   contextWindow?: number;
-  /** Empty string/omitted = unspecified (AgentHub infers it from modelId). */
+  /**
+   * Empty string/omitted = the row stores none: it follows its group's protocol, else MMSP
+   * routes by the vendor family the modelId begins with.
+   */
   clientType?: string;
   /** Whether image input (vision/multimodal) is supported; omitted = supported (not persisted). */
   vision?: boolean;
@@ -600,7 +724,31 @@ export interface ModelsUpdateRequest {
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
   visionModel?: ModelRefDto;
+  /** Group connection changes, merged per provider; a provider absent here keeps its table. */
+  providers?: Record<string, ProviderConnectionUpdate>;
   models: ModelUpdateEntry[];
+}
+
+/**
+ * `POST /models/sync-presets` (owner): `add` adds the catalog's presets the Project lacks
+ * (retired rows never), as a new Project stores them, writes the catalog's
+ * `[providers.<id>]` table for a group that has neither rows nor a table yet, and seeds the
+ * added rows' promotions, touching nothing else; `restore` puts every built-in row and
+ * built-in group table back to the catalog (facts reset, base URLs and protocols set on models
+ * or groups return to the catalog's, keys and the user's own rows and groups kept, promotions
+ * reset, deleted presets added back).
+ */
+export type PresetSyncMode = "add" | "restore";
+
+export interface PresetSyncRequest {
+  mode: PresetSyncMode;
+}
+
+export interface PresetSyncResponse extends ModelsResponse {
+  /** Preset rows added (both modes). */
+  added: number;
+  /** Built-in rows reset to the catalog (`restore`; 0 for `add`). */
+  restored: number;
 }
 
 /**
@@ -612,7 +760,7 @@ export interface ModelsUpdateRequest {
 export interface ModelTestRequest {
   /** Provider group of the model under test (paired with modelId). */
   provider: string;
-  /** Upstream id of the model under test (sent to AgentHub as-is). */
+  /** Upstream id of the model under test (sent to MMSP as-is). */
   modelId: string;
   /** Newly entered API key (plaintext); used for the test if provided. */
   apiKey?: string;
@@ -626,7 +774,7 @@ export interface ModelTestRequest {
    * `undefined` means fall back to the stored value only when not provided.
    */
   baseUrl?: string | null;
-  /** AgentHub client protocol; required for unsaved custom models (otherwise the id can't be auto-routed). */
+  /** MMSP client type; required for an unsaved custom model whose id begins with no known vendor family (otherwise it can't be routed). */
   clientType?: string;
   /**
    * Test with fast mode (the frontend always sends the form's current value, so an unsaved
@@ -694,7 +842,7 @@ export interface ModelTestResponse {
 
 /**
  * Protocol auto-detection (POST /api/projects/:p/models/detect, owner): probes which of
- * AgentHub's generic protocol clients a custom base URL serves — `openai-responses` first,
+ * MMSP's generic protocol clients a custom base URL serves — `openai-responses` first,
  * then `ant-messages`, then `openai-chat` — and reports the first hit. Used by the custom
  * model dialog to fill `clientType` from the endpoint itself; costs no tokens (each probe
  * is a minimal invalid request whose error reveals the protocol shape).
@@ -706,7 +854,12 @@ export interface ModelProtocolDetectRequest {
   apiKey?: string;
   /** "Clear saved API key" is checked: do not fall back to the stored key (probe the current draft). */
   clearApiKey?: boolean;
-  /** Optional paired reference: when it names a stored entry and no apiKey is given, that entry's saved key backs the probes (mirrors the connectivity test). */
+  /**
+   * Optional paired reference: when it names a stored entry and no apiKey is given, that
+   * entry's saved key backs the probes (mirrors the connectivity test), else its group's.
+   * `provider` may be sent without `modelId` (the group settings dialog has no model): the
+   * group key backs the probes.
+   */
   provider?: string;
   modelId?: string;
 }
@@ -723,7 +876,7 @@ export type ProtocolProbeOutcome =
 
 /** One probe, for debugging display: the probed URL derives from baseUrl only (never contains the key). */
 export interface ModelProtocolProbeDto {
-  /** AgentHub client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
+  /** MMSP client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
   clientType: string;
   /** Full URL probed (base URL + the protocol's path). */
   url: string;
@@ -738,7 +891,7 @@ export interface ModelProtocolProbeDto {
  * ones actually run, in order.
  */
 export interface ModelProtocolDetectResponse {
-  /** The first protocol an endpoint serves (an AgentHub client type); absent when none of the three matched. */
+  /** The first protocol an endpoint serves (an MMSP client type); absent when none of the three matched. */
   detected?: string;
   /**
    * The base URL the detected protocol answered at — the typed URL normalized (endpoint
@@ -753,14 +906,14 @@ export interface ModelProtocolDetectResponse {
 
 /**
  * Endpoint model listing (POST /api/projects/:p/models/list, owner): given a base URL and
- * the protocol `/detect` reported, returns every model id the endpoint serves (AgentHub's
+ * the protocol `/detect` reported, returns every model id the endpoint serves (MMSP's
  * `listModels()` on the routed client). Used by the add-group dialog to import a provider's
  * whole listing in one go; the ids come back in the endpoint's own order.
  */
 export interface EndpointModelListRequest {
   /** Endpoint base URL (as typed in the add-group dialog). */
   baseUrl: string;
-  /** AgentHub client type to speak (normally a detected generic protocol; whole-endpoint listings need one). */
+  /** MMSP client type to speak (normally a detected generic protocol; whole-endpoint listings need one). */
   clientType: string;
   /** Newly entered API key (plaintext); omitted = the SDK's environment fallback for the protocol. */
   apiKey?: string;
@@ -771,7 +924,7 @@ export interface EndpointModelListResponse {
   ok: boolean;
   /** The model ids the endpoint serves, in the order the endpoint returned them (ok only). */
   models?: string[];
-  /** The routed client has no models endpoint (AgentHub UnsupportedOperationError) — callers offer the manual path. */
+  /** The routed client has no models endpoint (MMSP UnsupportedOperationError) — callers offer the manual path. */
   unsupported?: boolean;
   message?: string;
 }
@@ -790,6 +943,59 @@ export interface DefaultModelUpdateRequest {
 /** Response mirrors what GET models reports as `defaultModel`. */
 export interface DefaultModelResponse {
   defaultModel: ModelRefDto;
+}
+
+/** One balance in one currency. */
+export interface ModelBalanceAmount {
+  /** Decimal string in `currency`'s major unit, as the vendor states it (TokenDance's micro-yuan are converted to yuan). */
+  amount: string;
+  /** ISO 4217 code: `CNY`, `USD`, … */
+  currency: string;
+}
+
+/**
+ * Why a group's balance could not be read:
+ * - `unsupported`: the group publishes no balance endpoint (no `balance` descriptor in the catalog);
+ * - `no_key`: the group has no API key to ask with — none stored, and no environment variable
+ *   the credential rule lends its rows for the balance endpoint's host;
+ * - `upstream_failed`: the vendor could not be reached in time, refused the request, or answered
+ *   without a readable balance.
+ */
+export type ModelBalanceErrorCode = "unsupported" | "no_key" | "upstream_failed";
+
+/**
+ * GET /api/projects/:p/models/balance?provider=<group>[&force=1] (Project member): the account
+ * balance behind the group's API key — the stored one, or else the environment key its rows
+ * fall back to under the credential rule (DeepSeek's DEEPSEEK_API_KEY) — read server-side from
+ * the endpoint the catalog's `balance` descriptor names. The key never reaches the browser, and
+ * neither does the vendor's own text. Like the connectivity test, a balance that cannot be read is an answer
+ * (`ok: false` with a code), not a failed request. Readings and vendor failures are cached for
+ * 60 s per Project and group, for as long as the group's key is the same; `force=1` skips the
+ * cache and refreshes it.
+ */
+export type ModelBalanceResponse = ModelBalanceReading | ModelBalanceFailure;
+
+export interface ModelBalanceReading extends ModelBalanceAmount {
+  ok: true;
+  provider: string;
+  /** Whether the account can make requests right now (DeepSeek's `is_available`); absent when the vendor does not say. */
+  available?: boolean;
+  /** Further currencies the account holds, after the one in `amount` / `currency`; absent when there is only one. */
+  others?: ModelBalanceAmount[];
+  /** When the server read it from the vendor (ISO 8601); a cached answer keeps its original time. */
+  fetchedAt: string;
+}
+
+export interface ModelBalanceFailure {
+  ok: false;
+  provider: string;
+  error: ModelBalanceErrorCode;
+  /** The vendor's HTTP status, when it answered with an error. */
+  status?: number;
+  /** English detail for logs and bug reports; the Web App words each code itself. */
+  message: string;
+  /** When the answer was settled (ISO 8601). */
+  fetchedAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1050,6 +1256,8 @@ export interface AgentSummary {
   pluginUpdates: PluginUpdateRef[];
   /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
   memoryCount: number;
+  /** Whether the Agent's API tab switch is on (this server's web.db, see AgentApiSettings.enabled): the list card's API mark. */
+  apiEnabled: boolean;
 }
 
 export interface AgentsResponse {
@@ -1245,6 +1453,72 @@ export interface AgentConfigUpdateRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Agent API (/api/projects/:projectId/agents/:agentId/api; the stream itself is AMSP,
+// /api/amsp/v1, whose snake_case wire types live in @prismshadow/amsp)
+// ---------------------------------------------------------------------------
+
+/** One API key of an Agent, as listed: the secret itself is shown once, at creation, and never again. */
+export interface AgentApiKeyInfo {
+  keyId: string;
+  /** 1-64 characters, given by whoever created it. */
+  name: string;
+  /** The key's first 16 characters (`penguin_` + 8), enough to tell keys apart. */
+  prefix: string;
+  /** user_id of the Project owner who created it. */
+  createdBy: string;
+  createdAt: string;
+  /** Last run request that authenticated with it; null = never used. */
+  lastUsedAt: string | null;
+}
+
+/**
+ * One Agent's public API settings — this server's, kept in web.db, never in the Agent State or
+ * the Project file, so the Agent cannot expose itself or loosen its own approvals. An Agent
+ * never configured reads as disabled, keyed, allow-all, with no keys.
+ */
+export interface AgentApiSettings {
+  /** The API tab's switch; off = every AMSP request for this Agent is 404 `agent_not_found`. */
+  enabled: boolean;
+  /** Keyless access: a request without `Authorization` is accepted; off = 401 `unauthorized`. */
+  open: boolean;
+  /**
+   * The approval mode an API Session is created with. It is copied onto each API Session when
+   * that Session is created, and the Session's own mode is what every decision reads, so a
+   * change here applies to API Sessions created afterwards.
+   */
+  approvalMode: ApprovalMode;
+  keys: AgentApiKeyInfo[];
+}
+
+export interface AgentApiResponse {
+  api: AgentApiSettings;
+  /**
+   * The admin's server-wide switch (`ServerSettings.agentApiEnabled`), which only an admin can
+   * read through /api/admin/settings: off, every Agent's API is refused (403) whatever `api` says.
+   */
+  serverEnabled: boolean;
+}
+
+/** PUT body (owner only): every field optional, omitted fields keep their current value. */
+export interface AgentApiUpdateRequest {
+  enabled?: boolean;
+  open?: boolean;
+  approvalMode?: ApprovalMode;
+}
+
+/** POST …/api/keys body (owner only). */
+export interface AgentApiKeyCreateRequest {
+  /** 1-64 characters. */
+  name: string;
+}
+
+/** The one response that carries the secret (`penguin_` + 43 base64url characters); only its hash is stored. */
+export interface AgentApiKeyCreateResponse {
+  key: AgentApiKeyInfo;
+  secret: string;
+}
+
+// ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------
 
@@ -1386,10 +1660,89 @@ export interface SessionSandbox {
   network: SessionSandboxNetwork;
   /**
    * Response only, ignored in requests: whether a sandbox backend on this server can enforce
+   * the `read-only` and `workspace-write` modes. False on a deployment with no backend
+   * installed, where either mode would refuse every command: the composer shows them greyed
+   * out, saying no backend is installed.
+   */
+  confinementSupported?: boolean;
+  /** Response only, ignored in requests: the same for the `none` network level. */
+  noNetworkSupported?: boolean;
+  /**
+   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
    * the `local` level. When false the composer shows it greyed out, and picking it is refused
    * (400 `sandbox_unsupported`).
    */
   localNetworkSupported?: boolean;
+  /** Response only, ignored in requests: whether a backend here can enforce `masksPaths`. */
+  maskPathsSupported?: boolean;
+  /**
+   * Response only, ignored in requests: true when this policy hides paths (the Sandbox card's
+   * masked paths, kept by every pick). Where `maskPathsSupported` is false, every level then
+   * refuses every command, and the composer says so.
+   */
+  masksPaths?: boolean;
+  /**
+   * Response only, ignored in requests: the names of the sandbox backends in use here, which the
+   * composer names when a level is beyond what they enforce. Absent with none in use.
+   */
+  backendsInUse?: string[];
+  /**
+   * Response only, ignored in requests: the sandbox backends that are enabled here but failed
+   * to load or failed their check (a WSL distro not set up, a wrong program path), each with
+   * why. A backend for another platform is not listed. With none mounted and one listed, the
+   * composer marks the confining levels unavailable and gives the first one's reason.
+   */
+  unavailableBackends?: UnavailableSandboxBackend[];
+  /**
+   * Response only, ignored in requests: the server's sandbox presets (the Sandbox card's table),
+   * in table order, disabled rows included. The composer lists the enabled ones and names the
+   * Session's level by the first row matching its mode, network and approval mode. A server
+   * that does not report it gets the composer's built-in table.
+   */
+  presets?: SessionSandboxPreset[];
+  /**
+   * Response only, ignored in requests: true when this Session's policy holds something the
+   * presets do not show — masked paths, or the temp directory not writable.
+   */
+  advanced?: boolean;
+  /**
+   * Response only, chat defaults only: the approval mode a new Session starts with when its
+   * request names none — the Sandbox card's default preset's, while the switch is on. Absent:
+   * the server's own fallback (`allow-all`).
+   */
+  defaultApprovalMode?: ApprovalMode;
+  /**
+   * Response only, ignored in requests: the Sandbox card's switch on this server — whether new
+   * Sessions start confined. Off, the composer offers the approval modes alone (a Session keeps
+   * its own policy either way). A server that does not report it is read as on.
+   */
+  switchOn?: boolean;
+}
+
+/** One sandbox preset: a named mode, network level and approval mode. */
+export interface SessionSandboxPreset {
+  id: string;
+  /** The name an administrator gave it, or its declared English name. */
+  name: string;
+  /** Its declared Chinese name, while it has not been renamed. */
+  nameZh?: string;
+  /** Whether the composer's menu lists it. */
+  enabled: boolean;
+  mode: SessionSandboxMode;
+  network: SessionSandboxNetwork;
+  approvalMode: ApprovalMode;
+  /**
+   * Response-only: its file mode or network is wider than the server's sandbox settings (the
+   * ceiling for non-admins), so a non-admin's pick of it is refused with `403 sandbox_forbidden`.
+   * The same comparison as that refusal; absent when it is within them.
+   */
+  aboveCeiling?: true;
+}
+
+/** An enabled sandbox backend that is not in use on this server, and why. */
+export interface UnavailableSandboxBackend {
+  name: string;
+  reason: string;
 }
 
 /** The network levels, widest first. */
@@ -1399,9 +1752,12 @@ export interface SessionInfo {
   sessionId: string;
   projectId: string;
   agentId: string;
-  /** Provider group of the session's model (paired with `modelId` to form a model reference). */
+  /**
+   * Provider group of the session's **current** model (paired with `modelId` to form a model
+   * reference). It moves with each in-session switch (`POST /api/sessions/:id/switch-model`).
+   */
   provider: string;
-  /** Upstream model_id of the session's model (the request id sent to AgentHub). */
+  /** Upstream model_id of the session's current model (the request id sent to MMSP). */
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;
@@ -1419,7 +1775,16 @@ export interface SessionInfo {
   thinkingLevel?: ThinkingLevelName;
   /** Short title auto-generated by the model after the first turn; unset until generated (frontend shows "New Chat"). */
   title?: string;
-  /** Session source (for list badges/folders), derived from core session_meta — the single source of truth (not stored in the DB); unset for user-created sessions. */
+  /**
+   * What kind of conversation this is, read from core session_meta — the single source of
+   * truth (the DB stores no source). A `user` Session is an active row of the sidebar; `api`,
+   * `schedule`, `subagent` and `cli` file the row under its Background folder, marked with its
+   * source; a `company` Session is in no folder of the list at all — company mode's own views
+   * list it. A Trace head that records no source (written before it was required) reads as
+   * `company` for a row the organization runtime opened (`client: "org"`), else as `user`; so
+   * does such a row before its first run. Absent only while any other row is not yet
+   * classified (its Trace head has not been read yet), which renders as `user`.
+   */
   source?: SessionSource;
   createdAt: string;
   /**
@@ -1469,14 +1834,14 @@ export interface SessionInfo {
   /**
    * Which client opened the Session, as stored on the index row: "cli" from the CLI (a
    * Session adopted from a legacy CLI-direct Trace included), "org" from the organization
-   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "web"
-   * otherwise. Absent only on a row that
-   * predates the column, which reads as "web". Unlike {@link SessionInfo.orgId} — projected
-   * from the organization caches, so it disappears with the organization and is not read
-   * while company mode is off — this is a durable stamp on the row: development mode's list
-   * hides an "org" Session either way.
+   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "api"
+   * from an Agent API run (the only Sessions the API may continue), "web" otherwise. Absent
+   * only on a row that predates the column, which reads as "web". Unlike
+   * {@link SessionInfo.orgId} — projected from the organization caches, so it disappears with
+   * the organization and is not read while company mode is off — this is a durable stamp on
+   * the row: development mode's list hides an "org" Session either way.
    */
-  client?: "web" | "cli" | "org";
+  client?: "web" | "cli" | "org" | "api";
   /**
    * Background work the Session's loaded runtime still owns: command sessions running past
    * their yield window (`exec_command` promotions and `run_in_background` launches) and
@@ -1498,15 +1863,37 @@ export interface SessionBackgroundTasks {
 }
 
 /**
- * Session list category, the sidebar's five-way split applied server-side: archived wins
- * regardless of origin (archiving is an explicit user action), then the origin's bucket,
- * and a Session with no (or an unknown) source is `active` — user-created rows.
+ * Session list category, the sidebar's three-way split applied server-side: archived wins
+ * regardless of source (archiving is an explicit user action); otherwise a `user` Session (or
+ * one not yet classified) is `active`, and every other source is `background` — the one
+ * folder that holds what programs opened (API, scheduled, subagent and CLI Sessions). A
+ * `company` Session belongs to none of the three, archived or not: the list leaves it out of
+ * every category and every total.
  */
-export type SessionCategory = "active" | SessionSource | "archived";
+export type SessionCategory = "active" | "background" | "archived";
 
 /** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
 export type SessionCategoryCounts = Record<SessionCategory, number>;
 
+/**
+ * GET /api/projects/:projectId/agents/:agentId/sessions. Every query parameter is optional:
+ *
+ * - `order`: `created` (the default) lists newest creation first; `activity` lists most recent
+ *   `lastActiveAt` first, ties broken by `sessionId` descending, both compared as plain strings
+ *   (code points, never locale collation) so a client can compute the same order.
+ * - `limit` (1–1000) with `offset` (≥ 0): an offset page, in either order. Offsets suit only the
+ *   `created` order, which activity never reshuffles.
+ * - `before=<lastActiveAt>,<sessionId>` with `limit`: under `order=activity` only, the rows
+ *   strictly below that cursor — the key of the last row the client holds. A row that becomes
+ *   active between pages moves above the cursor and is not served again, and no other row is
+ *   skipped (`session_state` tells the client about the moved one). 400 without
+ *   `order=activity`, beside `offset`, without `limit`, or when not a parseable stamp and a
+ *   valid id split at the first comma.
+ * - `category`, `workspaceGroup`, `excludeOrg=1` filter before paging; `counts=1` adds the
+ *   whole-list totals below, which no cursor or offset narrows. A request with `category`,
+ *   `workspaceGroup` or `counts=1` leaves every `company` Session out of the page and the
+ *   totals (it is in no category); one with none of them serves every row.
+ */
 export interface SessionsResponse {
   /**
    * The page. With `excludeOrg=1` on the request, the rows an organization owns — its desk
@@ -1534,19 +1921,49 @@ export interface SessionsResponse {
   workspaceLatest?: Record<string, string>;
 }
 
-/** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
+/** Server directory browsing (the Workspace picker): starts from the home directory by default, can navigate up to the root. */
 export interface DirEntryInfo {
   name: string;
-  /** Absolute path of this subdirectory (can be submitted directly as a Workspace). */
+  /** Absolute path of this entry (a folder's can be submitted directly as a Workspace). */
   path: string;
+  /**
+   * `file` for anything that is not a folder (a symlink counts as what it points to). Absent
+   * means a folder: a machine listed over ssh reports folders only.
+   */
+  kind?: "dir" | "file";
+  /** Last modification, epoch milliseconds; absent when unknown (listings over ssh, an entry stat could not reach). */
+  mtime?: number;
+  /** Hidden by the machine's own rules beyond the dot-name convention (Windows hidden/system attribute). */
+  hidden?: true;
+}
+/** A storage location the machine offers beside its folders: a Windows drive, a macOS volume, a Linux root or mount. */
+export interface DirLocation {
+  /** Absolute path it opens (`C:\`, `/`, `/Volumes/USB`, `/media/me/USB`, `/mnt/c`). */
+  path: string;
+  kind: "drive" | "removable" | "network" | "optical" | "volume" | "root";
+  /** The machine's own name for it (volume label, volume name, share `\\nas\media`, WSL `C:`); absent when none. */
+  label?: string;
+}
+/** The platform's standard folders as that machine resolves them; only those that exist. */
+export interface DirStandardFolders {
+  desktop?: string;
+  documents?: string;
+  downloads?: string;
+  pictures?: string;
 }
 export interface DirListResponse {
   /** Absolute path of the current directory (realpath). */
   path: string;
   /** Absolute path of the parent directory; null when already at the root. */
   parent: string | null;
-  /** Subdirectory list (sorted by name, files excluded). */
+  /** Entries sorted by name, hidden ones included (the picker drops them). */
   entries: DirEntryInfo[];
+  /** The listed machine's `process.platform`; absent for a machine listed over ssh. */
+  platform?: string;
+  /** Home request with `places=1` only. */
+  standardFolders?: DirStandardFolders;
+  /** Home request with `places=1` only, in the order the sidebar lists them. */
+  locations?: DirLocation[];
 }
 
 /** One Skill found in a picked directory: metadata plus which of the two layouts it came from. */
@@ -1592,12 +2009,12 @@ export interface SessionCreateRequest {
    */
   client?: "web" | "cli" | "org";
   /**
-   * Marks the Session as created by a Benchmark evaluation or optimization (the Evaluation
-   * Center's Use flows, and the Test Sessions agent-evaluation launches through the CLI). Only
-   * this value is accepted from a client: `subagent` and `schedule` are written by the server
-   * itself. The Web App files such Sessions into the Evaluations folder of the session list.
+   * The Session's source, when it is not a person's conversation: only `cli` is accepted from
+   * a client (`penguin run` sends it); every other source is the server's own to write, and
+   * absent means `user`. The retired `benchmark` is still accepted, as `cli`, until 0.3.0, for
+   * an older CLI or Web App that still sends it.
    */
-  source?: "benchmark";
+  source?: "cli";
 }
 
 export interface SessionCreateResponse {
@@ -1681,7 +2098,10 @@ export interface MessagesLiveTail {
  * only; the parameterless full read never carries it). A window is a run of whole
  * message-bearing units — one unit = one Task in the Web reducer's sense, opened by a
  * main-session user prompt — cut so that no pairing (tool_call/output), compaction span
- * or steering group ever splits across windows.
+ * or steering group ever splits across windows. Besides the unit count, a window stops
+ * before the unit that would take its serialized messages past 4 MiB, but always holds at
+ * least one unit; such a window carries `before` like any other, with fewer units than
+ * asked for.
  */
 export interface MessagesPageInfo {
   /**
@@ -1717,10 +2137,27 @@ export interface MessagesPageInfo {
     sessionTokens: number;
     contextTokens: number;
   };
+  /**
+   * The model of the context this window starts in — what the `session_meta` heading that
+   * context's Trace file names. A Session can switch models between contexts, and a window
+   * that starts partway into one does not hold that record: the client seeds it, so the Tasks
+   * ahead of the window's first `session_meta` have their model, and a switch further down the
+   * window is told from a plain rotation. Absent when the Session has no Trace yet.
+   */
+  contextModel?: ModelRefDto;
 }
 
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
+  /**
+   * On windowed requests, images are served by reference: in every record that carries a
+   * `tracePosition`, an inline PNG / JPEG / GIF / WebP `data:` URL — a user `image_url`, or
+   * an entry of a tool output's `images` — is replaced by
+   * `/api/sessions/<sessionId>/trace-image?file=<fileIndex>&ordinal=<ordinal>[&i=<k>]`
+   * (`i` = the index into `images`), an immutable, access-checked image response. Expanded
+   * subagent messages, held inputs not yet in the Trace, other image types and the
+   * parameterless full read keep their data URLs.
+   */
   messages: HistoryMessage[];
   /**
    * Present only while the Session is running/compacting: the in-progress stream tail
@@ -1799,6 +2236,33 @@ export interface GoalStateView {
 export interface GoalResponse {
   /** The Session's most recent goal run; null if it never ran one. */
   goal: GoalStateView | null;
+}
+
+/**
+ * `POST /api/sessions/:sessionId/switch-model`: switch this Session to another model in place.
+ * The running context is closed on the model it ran on, then the next one opens on the target.
+ *
+ * - **202** {@link TaskCreateResponse} — the switch streams, the Session status `compacting`.
+ *   A context with a completed turn is closed by an ordinary `manual` compaction pair (always
+ *   summarize); one without — just compacted, or its first request never finished — has
+ *   nothing to summarize and streams no pair. Then come the new context's opener records
+ *   and, last, its `session_meta`: its `provider` / `model_id` name the model the Session now
+ *   runs on, the Session reads report that pair from this record on, and `task_state` turns
+ *   idle after it.
+ *   A compaction that ends other than `completed` means no switch — no `session_meta` follows
+ *   and the Session keeps its model.
+ * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it
+ *   switched inside the request, and nothing is streamed.
+ * - **409**, one code per refusal, before any event: `task_in_progress` / `compacting` (busy),
+ *   `same_model`, `model_not_configured` (the target is not in the Project config),
+ *   `model_unavailable` (its client cannot be constructed, e.g. no credential), and
+ *   `compaction_not_configured`.
+ */
+export interface SessionSwitchModelRequest {
+  /** Provider group of the target model. */
+  provider: string;
+  /** Upstream model_id of the target model. */
+  modelId: string;
 }
 
 export interface TaskCreateResponse {
@@ -2541,11 +3005,17 @@ export type ServerEvent =
    * that has now run from one that never has — a first run would otherwise settle back into the
    * blank "never ran" row the client still believes in.
    *
+   * `projectId` names the Session's Project: a list showing one Project ignores another's flips
+   * without a request, and a flip for a Session of its own Project that it holds no row for is a
+   * row it is missing — one that became active below its activity cursor (see SessionsResponse) —
+   * which it fetches by id.
+   *
    * Published only to the user channels of the Project's owner and members.
    */
   | {
       type: "session_state";
       sessionId: string;
+      projectId: string;
       state: SessionStatus;
       lastActiveAt: string;
       hasTrace: boolean;
@@ -2558,6 +3028,15 @@ export type ServerEvent =
    * the user channels of the Project's owner and members, like `session_state`.
    */
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
+  /**
+   * A Session's count of tool calls waiting for a person's approval changed: a call was
+   * escalated (every call under always-ask, rw/unknown calls under read-only), answered, or
+   * denied by an interrupt. The count is the row's `pendingApprovalCount` as it stands after
+   * the change, zeros included, so a list moves its mark without refetching; the calls
+   * themselves are on the Session's own stream (`approval_request`, replayed on subscribe).
+   * Published to the user channels of the Project's owner and members, like `session_state`.
+   */
+  | { type: "session_approvals"; sessionId: string; count: number }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
   /**
@@ -2576,18 +3055,19 @@ export type ServerEvent =
    * A Session now exists. On the user channel for every creation — the CLI, another tab,
    * a schedule, an agent spawning a child — so the list learns about rows it did not make;
    * and on the parent Session's channel for a subagent, so a tab watching the parent run
-   * refreshes in place. `source` is absent for a user-created Session, as it is on the row.
+   * refreshes in place. `source` is what the new Session's meta records.
    */
   | {
       type: "session_created";
       projectId: string;
       agentId: string;
       sessionId: string;
-      source?: SessionSource;
+      source: SessionSource;
     }
   | ScheduleServerEvent
   | GoalServerEvent
-  | CompanyServerEvent;
+  | CompanyServerEvent
+  | BuiltinBrowserServerEvent;
 
 /** Goal-mode progress on the session channel (the chat page drives its goal banner from these). */
 export type GoalServerEvent =
@@ -2708,7 +3188,10 @@ export interface TraceEventsResponse {
   events: OmniMessage[];
   offset: number;
   limit: number;
-  /** Total line count of the file (basis for pagination). */
+  /**
+   * Record count of the file (basis for pagination), in the ordinals `tracePosition` and the
+   * analysis' `messageFrom` / `messageTo` use: malformed lines are not records.
+   */
   total: number;
 }
 
@@ -2858,7 +3341,11 @@ export interface WorkspaceFilesResponse {
   entries: WorkspaceFileEntry[];
 }
 
-/** Write one Workspace file whole (the Upload button, a drop, and the Files panel's editor). */
+/**
+ * Write one Workspace file whole (the Upload button, a drop, and the Files panel's editor). A
+ * write answers 204 with the written file's version in `ETag` — the marker the next conditional
+ * write of the same file carries, so an editor can keep editing after a save.
+ */
 export interface FilesWriteRequest {
   /** The entire file, base64-encoded (≤14MB decoded). */
   dataBase64: string;
@@ -2874,7 +3361,7 @@ export interface FilesWriteRequest {
   ifVersion?: string;
 }
 
-/** Move or rename one Workspace file (the Files panel's context menu). */
+/** Move or rename one Workspace file or folder (the Files panel's context menu). */
 export interface FilesMoveRequest {
   /** Source path, relative to the Workspace root. */
   from: string;
@@ -2887,11 +3374,23 @@ export interface FilesMoveRequest {
    * has none, because the caller never read it, which is why an occupied destination is
    * refused with 409 `target_exists` rather than overwritten.
    *
-   * A directory `from` is a 400 whatever this field says: a directory carries no single
-   * version marker, so the precondition that protects this operation cannot be expressed for
-   * one, and silently moving a tree without that protection is worse than refusing to move it.
+   * A directory `from` takes none, and one sent with it is a 400: a directory carries no
+   * single version marker, so no precondition can be stated for it. A folder moves whole and
+   * unconditionally — nothing is lost that way, since whatever the Agent wrote into it meanwhile
+   * moves with it — and is refused only when the destination is occupied or lies inside it.
    */
   ifVersion?: string;
+}
+
+/**
+ * Create one empty text file or one folder in a Workspace (the Files panel's New menu). Missing
+ * parent directories are created as a write creates them. Anything already at `path` — a file,
+ * a folder or a link — is refused with 409 `target_exists` and nothing is written.
+ */
+export interface FilesCreateRequest {
+  /** The new entry's path, relative to the Workspace root. */
+  path: string;
+  kind: "file" | "dir";
 }
 
 /**
@@ -3012,6 +3511,13 @@ export interface TraceAnalysisResponse {
    * scope every total here shares). Absent exactly when the turns carry no `cost`.
    */
   cost?: number;
+  /**
+   * The model's context window as the file's head `session_meta` records it
+   * (`model_context_window`), for the context ring. The panel no longer reads every event, so the
+   * analysis carries it; absent when the head records none (an older server, or a file without
+   * one), and the panel then falls back as it always has.
+   */
+  modelContextWindow?: number | string;
   requests: RequestSpan[];
   /** Token / duration aggregated per Task (used directly by the Trace page's context ring and per-turn TPS). */
   tasks: TraceTaskStats[];
@@ -3222,13 +3728,22 @@ export interface UsageErrorCount {
   count: number;
 }
 
-/** A single error summary (one row in the stats center's error panel table). */
+/**
+ * One row of the stats center's error panel table: the records of one calendar day that share
+ * a source, code, kind and message. The day is the viewer's when the request carried
+ * `utcOffsetMinutes`, and the server's own otherwise.
+ */
 export interface UsageErrorItem {
+  /** The latest of the records this row stands for. */
   ts: string;
   source: string;
   code: string;
   kind: string;
   message: string;
+  /** How many records this row stands for (the panel's "×N"). */
+  count: number;
+  /** The earliest of them; equal to `ts` for a single record. */
+  firstTs: string;
 }
 
 /**
@@ -3240,14 +3755,16 @@ export interface UsageErrorItem {
  * items.
  */
 export interface UsageErrors {
-  /** Filtered row count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
+  /** Filtered record count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
   total: number;
   /** Count of unexpected ones (500 / runtime exceptions) among them — the part the frontend highlights. */
   unexpected: number;
   /** The most frequent source · code (null when there are no errors). */
   topCode: UsageErrorCount | null;
-  /** Most recent N items (reverse chronological) — the first page; older ones come from `GET /usage/errors`. */
+  /** Most recent N rows (reverse chronological) — the first page; older ones come from `GET /usage/errors`. */
   recent: UsageErrorItem[];
+  /** How many rows the table has for this filter (records folded per {@link UsageErrorItem}) — what the pager counts. */
+  rows: number;
 }
 
 /**
@@ -3258,12 +3775,15 @@ export interface UsageErrors {
  * or neither), so a page never widens what the summary counted, plus an optional `kind`
  * ({@link UsageErrorKind}) narrowing to one of the two categories — which
  * is how the cost-center badge asks "are there unexpected errors, and how new is the newest"
- * with `limit=1` instead of pulling the whole dashboard aggregate.
+ * with `limit=1` instead of pulling the whole dashboard aggregate. `utcOffsetMinutes` (minutes
+ * east of UTC, the dashboard takes it too) says whose calendar day a row's records share.
  */
 export interface UsageErrorsPage {
   items: UsageErrorItem[];
-  /** Filtered row count, so the caller knows when it has reached the end. */
+  /** Filtered record count — the occurrences, which is what the cost-center badge counts. */
   total: number;
+  /** Filtered row count (records folded per {@link UsageErrorItem}), so the caller knows when it has reached the end. */
+  rows: number;
 }
 
 /**
@@ -3601,6 +4121,18 @@ export interface PluginItem {
   hooks: string[];
   /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
+  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`); absent = pre-select its first skill. */
+  quickStart?: QuickStartItem;
+}
+
+/** A quick start: a prompt pre-filled into a new-chat draft — never sent by the page. */
+export interface QuickStartItem {
+  prompt: string;
+  promptZh?: string;
+  /** Skills to pre-select (a library plugin's own). */
+  skills?: string[];
+  /** Open the draft in goal mode. */
+  goal?: boolean;
 }
 
 export interface PluginGroupItem {
@@ -3713,6 +4245,12 @@ export interface PluginIndexEntry {
 /** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
 export interface PluginIndexResponse {
   plugins: PluginIndexEntry[];
+  /**
+   * Sources that could not be read, by `source` and reason. Present and empty when every
+   * source answered. A remote index that is down shortens the listing rather than emptying
+   * it, so the page needs to be able to say so instead of silently showing less.
+   */
+  failures: { source: string; error: string }[];
 }
 
 /** GET /api/plugins/registry/readme — long-form docs for one entry; `readme` is null when none exists. */
@@ -3720,6 +4258,30 @@ export interface PluginReadmeResponse {
   name: string;
   /** Markdown, rendered by the Web App. Null when this entry has no readme. */
   readme: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Plugin-contributed languages
+// ---------------------------------------------------------------------------
+
+/**
+ * One language a plugin contributes, as the listing reports it. The grammar itself is not
+ * here: it is tens to hundreds of kilobytes, and only the languages a conversation actually
+ * shows are worth fetching (`GET /api/languages/:id/grammar`).
+ */
+export interface LanguageSummary {
+  /** Canonical id: the fence info string, and the id both endpoints address. */
+  id: string;
+  displayName: string;
+  /** Alternative fence info strings, needed BEFORE the grammar loads (it is what decides to load it). */
+  aliases?: string[];
+  /** File extensions without the dot, for the Workspace file viewer. */
+  extensions?: string[];
+}
+
+/** GET /api/languages: every language this App's plugins contributed, by id. */
+export interface LanguageIndexResponse {
+  languages: LanguageSummary[];
 }
 
 // ---------------------------------------------------------------------------
@@ -3908,6 +4470,62 @@ export interface DesktopTrayCommandMessage {
   type: "desktop-tray-command";
   showTrayIcon?: boolean;
   locale?: DesktopTrayLocale;
+}
+
+// Desktop folder access (desktop mode, macOS)
+//
+// macOS privacy protection (TCC) guards Desktop, Documents, Downloads and removable and network
+// volumes. It asks the user only on behalf of an app it holds responsible for a read, and lists
+// under Files and Folders only the apps it has asked about; any other read gets a silent EPERM.
+// The Workspace picker's "Allow access" therefore goes to the shell, over the same
+// utilityProcess message channel as the updater and tray above: its main process reads the
+// folder once in the app's own name and says whether it could, and once the app is allowed its
+// children (this server, the agents' shells) read too. The page can also have the shell open
+// the Privacy & Security pane to change it. What either outcome means for the user is the
+// page's to say; the shell only reports.
+
+/** What the shell's read of one folder came to. */
+export interface DesktopFolderAccessResult {
+  /** The folder could be read. Always true off macOS, where the shell reads nothing. */
+  granted: boolean;
+  /** The failed read's errno code (`EPERM`, `EACCES`, `ENOENT`, …); `EINVAL` for a path that is not absolute. */
+  code?: string;
+  /**
+   * Whether the app is a packaged build (Electron's `app.isPackaged`). An unpackaged one is a
+   * development instance started from a terminal, and macOS holds that terminal responsible
+   * for its reads rather than the app.
+   */
+  packaged: boolean;
+}
+
+/** Server → shell request over the utilityProcess message channel (relayed from POST /api/projects/:projectId/dirs/access). */
+export interface DesktopFolderAccessMessage {
+  type: "desktop-folder-access";
+  /** Pairs the reply with its request. */
+  id: string;
+  /** The folder to read, as an absolute path. */
+  path: string;
+}
+
+/** Shell → server reply to one {@link DesktopFolderAccessMessage}, carrying its `id`. */
+export interface DesktopFolderAccessResultMessage extends DesktopFolderAccessResult {
+  type: "desktop-folder-access-result";
+  id: string;
+}
+
+/** POST /api/projects/:projectId/dirs/access: the shell's answer, for the picker to act on. */
+export interface DirAccessResponse {
+  granted: boolean;
+  packaged: boolean;
+}
+
+/** The Privacy & Security panes the page may open: Files and Folders, and Full Disk Access. */
+export type DesktopPrivacyPane = "files" | "fullDisk";
+
+/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/privacy-settings). No reply. */
+export interface DesktopOpenPrivacySettingsMessage {
+  type: "desktop-open-privacy-settings";
+  pane: DesktopPrivacyPane;
 }
 
 /**
@@ -4951,17 +5569,30 @@ export interface ContributionsResponse {
  * One field of a settings group a module declares (its `PluginConfigProvider.groups`
  * contribution's `properties.<name>`): what the Settings dialog draws for it. `secret` is
  * drawn as a password field and masked on the way out; `enum` is a choice among `options`;
- * `list` is a list of strings, drawn one per line.
+ * `list` is a list of strings, drawn one per line; `table` is a fixed set of `rows`, each a
+ * value per one of its `columns`, drawn as a table.
  */
 export interface PluginConfigField {
-  type: "string" | "secret" | "boolean" | "number" | "enum" | "list";
+  type: "string" | "secret" | "boolean" | "number" | "enum" | "list" | "table";
   title: string;
   titleZh?: string;
+  /** What the field means: disclosed behind a "?" beside its title. */
   description?: string;
   descriptionZh?: string;
+  /**
+   * The shape a value must take ("one absolute path per line"): shown under the field at all
+   * times, since it is read while typing.
+   */
+  hint?: string;
+  hintZh?: string;
   placeholder?: string;
   /** The value a package with nothing stored reads; also what an empty field falls back to. */
   default?: string | number | boolean | string[];
+  /**
+   * Drawn in the card's Advanced fold, collapsed by default, rather than among the basic
+   * fields. Presentation only: it is stored, validated and read like any other field.
+   */
+  advanced?: boolean;
   /** A save that would leave this field empty is refused. */
   required?: boolean;
   /** `enum` only: the values it may take, in display order. */
@@ -4975,6 +5606,114 @@ export interface PluginConfigField {
   pattern?: string;
   /** What a save refused by `pattern` says, after the field's name (e.g. "must be an absolute path"). */
   patternErrorMessage?: string;
+  /**
+   * `table` only: its columns, in display order, and its rows, in display order. The table
+   * has no `default`: the rows' declared cells are its defaults, and what is stored is only
+   * the cells that differ from them — `{ [row id]: { [column]: value } }`.
+   */
+  columns?: PluginConfigTableColumn[];
+  rows?: PluginConfigTableRow[];
+  /**
+   * `table` only: a single choice of one row — the sandbox's default preset. The choice is
+   * stored in `field`, an `enum` field of the same group whose options are the row ids (plus,
+   * in an `extensible` table, the ids of the rows added to it); the page draws that field only
+   * as its title in brackets after the chosen row's name ("(Default)"), and picks it from a
+   * row's "…" menu.
+   */
+  rowChoice?: PluginConfigRowChoice;
+  /**
+   * `table` only: rows may be added (and only those deleted, from the row's "…" menu) and every
+   * row reordered. A new row
+   * starts from these values. What is stored, beside the declared rows' changed cells, is the
+   * added rows under `"$added"` (`{ [row id]: { [column]: value } }`, every column present) and
+   * the row order under `"$order"` (row ids); neither key can be a row id. A save sends either
+   * key whole; a document without them reads as the declared rows in declared order.
+   */
+  extensible?: PluginConfigNewRow;
+  /**
+   * `table` only: a header drawn over adjacent columns that belong together (the sandbox's
+   * Pin, under "Action"). `columns` names them. When the group ends the columns, the row's drag
+   * handle and "…" menu join it.
+   */
+  columnGroup?: PluginConfigColumnGroup;
+  /**
+   * `table` only: a `boolean` column drawn as a pin toggle rather than a switch — a row pinned
+   * to a list (the sandbox presets in the composer's menu). The texts are its tooltip in each
+   * state. Declared on the table, not the column, so every column keeps one shape.
+   */
+  pin?: PluginConfigPinColumn;
+}
+
+/** A table's pin column: which boolean column, and its tooltip pinned and not. */
+export interface PluginConfigPinColumn {
+  column: string;
+  on: string;
+  onZh?: string;
+  off: string;
+  offZh?: string;
+}
+
+/**
+ * A table's single choice of a row: the `enum` field it stores into, and its title, drawn in
+ * brackets after the chosen row's name. The choice may name no row (nothing stored, and the
+ * group's `derive` gives none): no row is marked and a save is not refused for it. A save that
+ * leaves it naming a row the table no longer has is refused.
+ */
+export interface PluginConfigRowChoice {
+  field: string;
+  title: string;
+  titleZh?: string;
+}
+
+/** One column of a `table` field: a scalar field type (`string`, `boolean`, or an `enum` with `options`). */
+export interface PluginConfigTableColumn {
+  name: string;
+  type: "string" | "boolean" | "enum";
+  title: string;
+  titleZh?: string;
+  /** What the column means: disclosed behind a "?" beside its header. */
+  description?: string;
+  descriptionZh?: string;
+  options?: PluginConfigOption[];
+}
+
+/** One row of a `table` field: its id and its declared cells. */
+export interface PluginConfigTableRow {
+  id: string;
+  /** Every column's declared value. */
+  values: Record<string, string | boolean>;
+  /** A string cell's declared value in Chinese, shown until a save changes the cell. */
+  valuesZh?: Record<string, string>;
+  /** Columns whose cell in this row a save may not change. */
+  locked?: string[];
+  /** A row added to an `extensible` table (not declared): the only kind that may be deleted. */
+  added?: boolean;
+  /**
+   * What the row is for, disclosed behind a "?" beside its name while its `enum` cells hold
+   * their declared values. A row without one, or whose choices changed, gets a "?" listing its
+   * `enum` cells' values and what each does (the options' `description`s).
+   */
+  description?: string;
+  descriptionZh?: string;
+}
+
+/** A header over adjacent table columns, with its own "?". */
+export interface PluginConfigColumnGroup {
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  columns: string[];
+}
+
+/** The values a row added to an `extensible` table starts from. */
+export interface PluginConfigNewRow {
+  /** The add button's text ("Add preset"). */
+  add?: string;
+  addZh?: string;
+  values: Record<string, string | boolean>;
+  /** A string column's starting text in Chinese. */
+  valuesZh?: Record<string, string>;
 }
 
 /** One choice of an `enum` field. */
@@ -4982,6 +5721,9 @@ export interface PluginConfigOption {
   value: string;
   title: string;
   titleZh?: string;
+  /** What picking it does: listed, for a table column's option, in a row's "?" (see the row's `description`). */
+  description?: string;
+  descriptionZh?: string;
 }
 
 /** A declared configuration: a titled group of fields, in declaration order. */
@@ -4990,6 +5732,13 @@ export interface PluginConfiguration {
   titleZh?: string;
   description?: string;
   descriptionZh?: string;
+  /**
+   * A `boolean` field that turns the group on (the sandbox's `enabled`). While it is off, as
+   * drafted, the card draws that field alone: no other field, notice or action, and none of the
+   * groups drawn inside it. Turning it on in a group that reports a `backend` it lacks offers
+   * to install one.
+   */
+  switch?: string;
   properties: Record<string, PluginConfigField>;
 }
 
@@ -5003,6 +5752,9 @@ export interface PluginConfigNotice {
   tone: "attention" | "muted" | "progress";
   text: string;
   textZh?: string;
+  /** More about the notice, disclosed under it on request; lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
 }
 
 /** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
@@ -5020,11 +5772,33 @@ export interface PluginConfigEntry {
   actions?: PluginConfigActionDecl[];
   /** Enum options this machine cannot honour now: drawn greyed out with the reason; a save choosing one is refused. */
   unavailable?: PluginConfigUnavailableDecl[];
+  /**
+   * For a group whose settings a backend plugin enforces (the sandbox): whether one that
+   * applies to this machine's OS is installed, and which packages this OS defaults to. The card
+   * offers to install `recommended` when the group's switch is turned on and none is installed.
+   * Asked per read, like the notices; the client never guesses the OS.
+   */
+  backend?: PluginConfigBackend;
 }
 
-/** One enum option a settings group cannot honour on this machine, and why. */
+/** Whether a backend that applies to this machine is installed, and this OS's default ones. */
+export interface PluginConfigBackend {
+  /** A backend for this OS is installed: loaded, or installed and failing its check. */
+  installed: boolean;
+  /**
+   * The npm packages this OS defaults to, installed together; absent on an OS with no default
+   * backend. Linux names two: bubblewrap, and sandbox-dsh, which confines files through
+   * Landlock where bubblewrap is refused.
+   */
+  recommended?: string[];
+}
+
+/** One enum option (or boolean position) a settings group cannot honour on this machine, and why. */
 export interface PluginConfigUnavailableDecl {
   field: string;
+  /** A `table` field's column: the option is unavailable in every cell of that column. */
+  column?: string;
+  /** An enum option, or a boolean field's position: "true" or "false". */
   value: string;
   reason: string;
   reasonZh?: string;
@@ -5111,4 +5885,496 @@ export interface InstalledPluginsResponse {
   machineId: string;
   /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// The agent browser, two backends behind one link (see builtin-browser/): the desktop's
+// built-in browser — Electron <webview> guests in the persist:penguin-browser partition,
+// driven over CDP by the shell on the server's behalf — and the user's own Chrome, driven
+// through the PenguinHarness Browser extension over a WebSocket the extension opens.
+// ---------------------------------------------------------------------------
+
+/** The browser an agent drives: the desktop's built-in one, or the user's own Chrome. */
+export type BrowserBackend = "builtin" | "chrome";
+
+/**
+ * What a backend's link can do. The shell cannot create tabs (the Web App's <webview> does) and
+ * throttles and measures its guests; the extension creates, closes and focuses tabs itself and
+ * has no cookie store the server may touch.
+ */
+export interface BrowserLinkCapabilities {
+  /** `open-tab`, `close-tab` and `activate-tab` are answered (chrome). */
+  createsTabs: boolean;
+  /** `throttle` and the `metrics` events (builtin). */
+  throttles: boolean;
+  /** `set-cookies` and `clear-data` (builtin). */
+  cookieStore: boolean;
+}
+
+/**
+ * One tab of the agent browser. Built-in: a guest page, `id` its webContents id. Chrome: a tab
+ * the extension drives (one it created in the Penguin tab group, or one the user added), `id`
+ * Chrome's tab id; `canGoBack`/`canGoForward` are always false there (the tabs API cannot read
+ * them).
+ */
+export interface BuiltinBrowserTab {
+  id: number;
+  url: string;
+  title: string;
+  loading: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  favicon?: string;
+  /**
+   * Present while the page's renderer is gone, with Electron's reason (`crashed`, `oom`,
+   * `killed`, …): the panel shows the crash until the page is reloaded, and an agent action on
+   * the tab answers 409 `tab_crashed`.
+   */
+  crashed?: string;
+}
+
+/**
+ * Why the agent browser cannot be driven. Built-in: not under the desktop shell, a shell too old
+ * to host it, or no app window to host a new tab. Chrome: this user has no paired extension, it
+ * is paired but not connected now, or an admin switched Chrome connections off server-wide.
+ */
+export type BuiltinBrowserUnavailableReason =
+  | "not_desktop"
+  | "shell_unsupported"
+  | "no_window"
+  | "extension_not_paired"
+  | "extension_disconnected"
+  | "extension_disabled";
+
+/** One backend as GET /status lists it for the caller. */
+export interface BrowserBackendInfo {
+  backend: BrowserBackend;
+  available: boolean;
+  reason?: BuiltinBrowserUnavailableReason;
+  /** chrome: the caller's connected extension, else the one seen most recently; absent when none is paired. */
+  extension?: {
+    id: string;
+    name: string;
+    version: string;
+    connected: boolean;
+    lastSeenAt: string | null;
+  };
+}
+
+/**
+ * GET /api/builtin-browser/status: the caller's effective backend (`backend`) — whether it can
+ * be driven now, its tabs — and every backend this server offers the caller (`backends`).
+ */
+export interface BuiltinBrowserStatus {
+  /** Whether the effective backend can be driven now. */
+  available: boolean;
+  reason?: BuiltinBrowserUnavailableReason;
+  backend: BrowserBackend;
+  backends: BrowserBackendInfo[];
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+  /** The shell's latest measurement of the built-in browser's load; absent before its first one, and on chrome. */
+  metrics?: BuiltinBrowserMetrics;
+}
+
+/** GET / PUT /api/builtin-browser/backend: the caller's backend and the ones they may choose. */
+export interface BrowserBackendResponse {
+  backend: BrowserBackend;
+  choices: BrowserBackend[];
+}
+
+/** One Chrome paired to the caller's account (a row of `browser_extensions`). */
+export interface BrowserExtensionRecord {
+  id: string;
+  /** As the extension names itself, e.g. "Chrome 130 on macOS". */
+  name: string;
+  version: string;
+  createdAt: string;
+  lastSeenAt: string | null;
+  /** Whether this one holds the caller's connection now (one at a time per user). */
+  connected: boolean;
+}
+
+/** GET /api/builtin-browser/extension. */
+export interface BrowserExtensionsResponse {
+  paired: BrowserExtensionRecord[];
+  /** The id of the connected one, when one is. */
+  connected?: string;
+  /** The admin's server-wide switch (`ServerSettings.browserExtensionsEnabled`). */
+  enabled: boolean;
+}
+
+/**
+ * POST /api/builtin-browser/extension/pairings: a one-time code for the signed-in user, valid
+ * for ten minutes, used once; the dialog shows it beside the server address.
+ */
+export interface BrowserExtensionPairingResponse {
+  /** 43 base64url characters. */
+  code: string;
+  /** ISO time the code stops working. */
+  expiresAt: string;
+  /** The request's Origin, when it carried one: the address the browser reaches this server at. */
+  origin: string | null;
+}
+
+/** POST /api/builtin-browser/extension/pair (no cookie: the extension's own request). */
+export interface BrowserExtensionPairRequest {
+  code: string;
+  /** How the extension names this Chrome, e.g. "Chrome 130 on macOS" (1–80 characters). */
+  name: string;
+  /** The extension's own version (manifest.version). */
+  version: string;
+}
+
+/** What /extension/pair answers: the long-lived token, shown once and stored only hashed here. */
+export interface BrowserExtensionPairResponse {
+  extensionId: string;
+  /** Rides the WebSocket's subprotocol list as `token.<token>`; never a URL. */
+  token: string;
+  /** This server's install id (a stable name for the data root); null when it is unknown. */
+  installId: string | null;
+  user: { userId: string; displayName: string | null };
+  serverVersion: string;
+}
+
+/**
+ * The extension WebSocket's close codes (`/api/builtin-browser/extension/ws`). Besides these the
+ * server closes with 1012 when it restarts or hot-swaps (reconnect with the usual backoff).
+ *
+ * - 4001 replaced: another extension of the same user connected (last connected wins); do not
+ *   auto-retry.
+ * - 4003 revoked: the pairing was revoked (or the token was); forget this server.
+ * - 4005 protocol_mismatch: no `penguin-browser.1` subprotocol, or a hello the server does not
+ *   speak; the extension needs updating.
+ * - 4008 ping_timeout: two pings (or the hello) went unanswered.
+ * - 4009 disabled: an admin switched Chrome connections off; retry hourly.
+ */
+export type BrowserExtensionCloseCode = 4001 | 4003 | 4005 | 4008 | 4009;
+
+/** One tab's share of the built-in browser's load, as the shell last measured it. */
+export interface BuiltinBrowserTabMetrics {
+  tabId: number;
+  /** The memory held by the processes behind the page (its own and its cross-site frames'), KB. */
+  memoryKB: number;
+  /** Their CPU use since the previous measurement, in percent of one core. */
+  cpuPercent: number;
+}
+
+/** Why the built-in browser should be lighter. */
+export type BuiltinBrowserLoadWarning =
+  /** Its pages together hold more memory than they should. */
+  | "memory"
+  /** This computer is running out of memory. */
+  | "low_system_memory"
+  /** More tabs are open than the browser should hold. */
+  | "many_tabs";
+
+/**
+ * The built-in browser's load: GET /status's `metrics`, and the `builtin_browser_metrics` event
+ * after each of the shell's measurements (every ~10 s while tabs are open, and soon after one
+ * closes). The thresholds are the server's; the UI and the CLI only word what it concluded.
+ */
+export interface BuiltinBrowserMetrics {
+  /** When the server received the measurement (epoch ms). */
+  at: number;
+  tabs: BuiltinBrowserTabMetrics[];
+  /** All the pages' memory, a process two tabs share counted once, KB. */
+  totalKB: number;
+  /**
+   * This computer's memory, KB. Absent on macOS, whose free count leaves out the memory it would
+   * readily hand back, so that "free" there reads as nearly none on a healthy machine.
+   */
+  system?: { freeKB: number; totalKB: number };
+  /** What to warn about now; empty when all is well. */
+  warnings: BuiltinBrowserLoadWarning[];
+  /** While a memory warning stands: the tabs holding the most memory, heaviest first. */
+  heavyTabIds: number[];
+}
+
+/** GET /api/builtin-browser/tabs. */
+export interface BuiltinBrowserTabsResponse {
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/scan — GenericAgent's web_scan. */
+export interface BuiltinBrowserScanResult {
+  tab: BuiltinBrowserTab;
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+  /** Simplified HTML, or plain text with `textOnly`. */
+  content?: string;
+  truncated?: boolean;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/exec (and click / type) — GenericAgent's web_execute_js. */
+export interface BuiltinBrowserExecResult {
+  status: "success" | "failed";
+  tabId: number;
+  /** The script's JSON-safe return value. */
+  value?: unknown;
+  error?: string;
+  /** The page navigated or reloaded while the script ran. */
+  reloaded?: boolean;
+  /** Tabs opened while the call ran (popups, target=_blank). */
+  newTabs?: { id: number; url: string }[];
+  /** Text that appeared during the call and may be gone again (toasts, flashes). */
+  transients?: string[];
+  diff?: { changed: number; topChange?: string };
+  suggestion?: string;
+  /** click only: where the trusted click landed. */
+  clicked?: { x: number; y: number; tag?: string; text?: string };
+  /** The page's dialogs the call answered, in order (see BuiltinBrowserDialog). */
+  dialogs?: BuiltinBrowserDialog[];
+}
+
+/**
+ * A dialog the page opened during an exec, click or type, which the call answered so the page
+ * would not block: an alert is accepted, and a confirm, prompt or leave-page dialog dismissed
+ * unless the request said `acceptDialogs`.
+ */
+export interface BuiltinBrowserDialog {
+  type: "alert" | "confirm" | "prompt" | "beforeunload";
+  message: string;
+  accepted: boolean;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/screenshot. */
+export interface BuiltinBrowserScreenshot {
+  mime: "image/png";
+  /** Base64. */
+  data: string;
+}
+
+export type BuiltinBrowserImportBrowser =
+  "chrome" | "edge" | "brave" | "chromium" | "vivaldi" | "opera" | "arc" | "firefox";
+
+/** One profile of a system browser that can be imported from. */
+export interface BuiltinBrowserImportSource {
+  /** `<browser>:<profile dir>`, e.g. `chrome:Default`. */
+  id: string;
+  browser: BuiltinBrowserImportBrowser;
+  browserName: string;
+  /** The profile's directory name. */
+  profile: string;
+  /** The profile's display name. */
+  profileName: string;
+  hasCookies: boolean;
+  hasHistory: boolean;
+}
+
+export interface BuiltinBrowserImportSourcesResponse {
+  sources: BuiltinBrowserImportSource[];
+}
+
+/** POST /api/builtin-browser/import. */
+export interface BuiltinBrowserImportRequest {
+  sourceId: string;
+  cookies?: boolean;
+  history?: boolean;
+  /** Only cookies of these sites (a domain matches itself and its subdomains). */
+  domains?: string[];
+}
+
+export interface BuiltinBrowserImportResult {
+  sourceId: string;
+  cookies?: { found: number; imported: number; skipped: number; failed: number };
+  history?: { found: number; imported: number };
+  warnings: string[];
+}
+
+export interface BuiltinBrowserHistoryEntry {
+  url: string;
+  title: string;
+  visitCount: number;
+  /** Epoch ms. */
+  lastVisitAt: number;
+  /** `builtin` for pages visited in the built-in browser, else the browser it was imported from. */
+  source: string;
+}
+
+export interface BuiltinBrowserHistoryResponse {
+  entries: BuiltinBrowserHistoryEntry[];
+}
+
+/**
+ * GET / PUT /api/builtin-browser/settings: the browser's own settings, a file of the server's
+ * that is read and written without the desktop shell. PUT takes the whole object.
+ */
+export interface BuiltinBrowserSettings {
+  /**
+   * The page a new tab opens when it is given no address — the panel's "+", an agent's new tab
+   * — and the toolbar's Home button goes to: an http(s) address, or null for none (a new tab is
+   * then blank). PUT takes a bare host too and answers the address as stored.
+   */
+  homepage: string | null;
+}
+
+export type BuiltinBrowserAction =
+  "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
+
+/**
+ * User-channel events of the agent browser. The built-in backend's go to every admin; a chrome
+ * backend's go to the user whose Chrome it is, as do `builtin_browser_backend` and
+ * `builtin_browser_extension`.
+ */
+export type BuiltinBrowserServerEvent =
+  /**
+   * A backend's whole tab list. `backend` names whose: a desktop admin hears both the built-in
+   * browser's and their own Chrome's, and the two lists must not overwrite each other.
+   */
+  | {
+      type: "builtin_browser_tabs";
+      tabs: BuiltinBrowserTab[];
+      activeTabId: number | null;
+      backend: BrowserBackend;
+    }
+  /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
+  | {
+      type: "builtin_browser_open";
+      requestId: string;
+      url: string;
+      activate: boolean;
+      openerTabId?: number;
+      sessionId?: string;
+    }
+  | { type: "builtin_browser_close"; tabId: number }
+  | {
+      type: "builtin_browser_activity";
+      tabId: number;
+      busy: boolean;
+      action: BuiltinBrowserAction;
+      sessionId?: string;
+    }
+  /** The shell measured the browser's load (see BuiltinBrowserMetrics). */
+  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics }
+  /** The user switched backend (PUT /backend); every window of theirs follows. */
+  | { type: "builtin_browser_backend"; backend: BrowserBackend }
+  /** The user's Chrome connected, went away, was replaced by another Chrome of theirs, or was revoked. */
+  | {
+      type: "builtin_browser_extension";
+      state: "connected" | "disconnected" | "replaced" | "revoked";
+      extension?: BrowserExtensionRecord;
+    };
+
+/** A cookie as the shell writes it (Electron's CookiesSetDetails). */
+export interface DesktopBrowserCookie {
+  url: string;
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  /** Unix seconds; absent = session cookie. */
+  expirationDate?: number;
+  sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
+}
+
+/**
+ * Server → browser link: what the shell (built-in) or the extension (chrome) does with its tabs.
+ * Mechanism only — the product logic stays on the server. The names are historical: the same
+ * envelopes travel the extension's WebSocket as JSON text frames.
+ */
+export type DesktopBrowserCommand =
+  /** Reply: a BrowserHello. An older shell never answers. */
+  | { op: "hello" }
+  /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
+  | { op: "tabs" }
+  /**
+   * Reply: the CDP method's result object. `events` names the tab's CDP events the shell relays
+   * from then on, as `cdp-event`s: it replaces the list before (empty relays none), and is set
+   * before the command runs, so an event the command itself causes is not missed. Without it
+   * the list stays as it is.
+   */
+  | {
+      op: "cdp";
+      tabId: number;
+      method: string;
+      params?: Record<string, unknown>;
+      events?: string[];
+    }
+  /** Reply: `{ set: number; failed: number; errors: string[] }` (at most 10 errors). */
+  | { op: "set-cookies"; cookies: DesktopBrowserCookie[] }
+  /** Reply: `{}`. */
+  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[] }
+  /**
+   * Reply: `{}`. The tabs whose pages may be throttled while out of sight (Electron's background
+   * throttling, applied at once); every other tab runs at full speed. It replaces the list
+   * before. A tab is unthrottled until a command lists it, so a server that never sends one
+   * changes nothing. A shell older than this command answers `unknown_op`.
+   */
+  | { op: "throttle"; tabIds: number[] }
+  /**
+   * Chrome only (the shell answers `unknown_op`). Reply: `{ tab: BuiltinBrowserTab }`. A tab at
+   * `url` (http(s) or about:blank, checked by the server) in the extension's Penguin tab group;
+   * `activate` asks for it to be the selected tab of its window.
+   */
+  | { op: "open-tab"; url: string; activate: boolean }
+  /** Chrome only. Reply: `{}`. Closes a tab the extension drives. */
+  | { op: "close-tab"; tabId: number }
+  /** Chrome only. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
+  | { op: "activate-tab"; tabId: number }
+  /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
+  | { op: "ping" };
+
+/**
+ * The `hello` reply. Built-in: `{ version: 1, partition }` (an older shell sends no `backend`).
+ * Chrome: `{ version: 1, backend: "chrome", extension }`; any other version is closed 4005.
+ */
+export interface BrowserHello {
+  version: 1;
+  backend?: BrowserBackend;
+  partition?: string;
+  extension?: { version: string; chrome: string; name: string };
+}
+
+export interface DesktopBrowserCommandMessage {
+  type: "desktop-browser-command";
+  id: string;
+  command: DesktopBrowserCommand;
+}
+
+export interface DesktopBrowserReplyMessage {
+  type: "desktop-browser-reply";
+  id: string;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+export type DesktopBrowserEvent =
+  | { kind: "tab"; tab: BuiltinBrowserTab }
+  | { kind: "tab-closed"; tabId: number }
+  /**
+   * window.open / target=_blank inside a guest (the shell denied it and asks for a tab instead),
+   * or the context menu's "Open link in new tab". `background`: the tab should open behind the
+   * current one, as a middle-click or that menu entry does in Chrome.
+   */
+  | { kind: "open-request"; url: string; openerTabId: number; background?: boolean }
+  /** One of the tab's CDP events a `cdp` command's `events` asked for. */
+  | { kind: "cdp-event"; tabId: number; method: string; params: Record<string, unknown> }
+  /**
+   * The tab's renderer went away (Electron's render-process-gone reason and exit code). The tab
+   * stays; its `tab` events carry `crashed` until the page is reloaded, and the shell refuses
+   * CDP commands for it meanwhile (`tab_crashed`).
+   */
+  | { kind: "tab-crashed"; tabId: number; reason: string; exitCode: number }
+  /**
+   * The shell's measurement of its guests (every ~10 s while there are any, and once more
+   * shortly after one closes, empty after the last): each tab's memory and CPU, and the pages'
+   * memory together, a process shared by two tabs counted once.
+   */
+  | { kind: "metrics"; tabs: BuiltinBrowserTabMetrics[]; totalKB: number }
+  /**
+   * Chrome only: the tab still exists in Chrome but the agent may no longer drive it — the user
+   * pressed Cancel on Chrome's debugging bar (`user`), the debugger went away otherwise
+   * (`detached`), or the page is one Chrome lets no extension attach to (`restricted`). The
+   * extension fails that tab's pending commands with the error `tab_released`.
+   */
+  | { kind: "tab-released"; tabId: number; reason: "user" | "detached" | "restricted" };
+
+export interface DesktopBrowserEventMessage {
+  type: "desktop-browser-event";
+  event: DesktopBrowserEvent;
 }

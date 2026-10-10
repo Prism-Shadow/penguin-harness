@@ -39,7 +39,33 @@ A Benchmark that is not finished is masked. Its card is dimmed under a notice, *
 
 ### The example Benchmark
 
-Every Project comes with `example-benchmark`, whose sample evaluations test `default_agent`, so the page has data from the start. If you delete it, it comes back the next time `default_agent` loads.
+Every Project comes with `example-benchmark`, whose sample evaluations test `default_agent`, so the page has data from the start. It is written when the Project is created: if you delete it, it stays deleted.
+
+### Built-in Benchmarks
+
+A new Project also comes with five Benchmarks built from public evaluation sets, **PenguinHarness Benchmark Sec A** to **Sec E**, each a subset chosen to run on CPU-only Docker. Each one's description names the original benchmark:
+
+| Benchmark | Original benchmark: what it measures |
+| --- | --- |
+| `penguinharness-benchmark-sec-a` | rag-bench-essential (Data Analysis Bench): analysis over reports, spreadsheets, document libraries, survey microdata and a SQL database |
+| `penguinharness-benchmark-sec-b` | DeepSWE v1.1: features and fixes in real open-source repositories |
+| `penguinharness-benchmark-sec-c` | AutomationBench: business workflows across simulated SaaS apps |
+| `penguinharness-benchmark-sec-d` | Terminal-Bench-Science 0.1: research-grade scientific computing |
+| `penguinharness-benchmark-sec-e` | Terminal-Bench 4.0: hard, realistic tasks done in a terminal |
+
+Each case runs as a [Harbor](https://github.com/harbor-framework/harbor) task in Docker. The task files are not part of PenguinHarness: they are in the public repository [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark), which also holds the rules for running them. A case's statement holds a short description of the task and the link to its folder in that repository at a pinned commit, and its **How this case is run** section links those rules and gives the command that launches the task. The task's own verifier decides the score: a pass scores 100 and a fail 0.
+
+**Before you evaluate**
+
+- The machine the evaluator agent runs on has Docker with Compose v2 and [uv](https://docs.astral.sh/uv/), and can reach GitHub, Docker Hub, nodejs.org, the npm registry and the model provider.
+- The model the evaluation runs on, the evaluation conversation's, has its API key saved on the **Models** page. The evaluation copies that one model entry into each task container; it needs no Vault entry.
+- The evaluator agent's `agent-evaluation` Skill comes from `agent-tuning` 2026.10.09.1 or later. An agent created before that keeps its older copy until you update the plugin from the **Agents** page.
+
+You evaluate them like any other Benchmark; see [Evaluate an agent](#evaluate-an-agent). The evaluator agent's `agent-evaluation` Skill recognizes such a case from its statement and follows the repository's rules: the evaluation fetches the repository once, at the statement's commit, then runs one Harbor trial per case and run, at most four at a time because every trial takes Docker networks from a limited supply. The tested agent runs inside the task's container with its own Agent State, and a trial takes from a few minutes to about an hour, image builds included. Each trial's files, the agent's Traces and the verifier's output, stay under the Benchmark's `.jobs/` directory. Its run is recorded under the Session id `harbor:<trial name>`, which the evaluation dialog lets you copy.
+
+What a run costs and how PenguinHarness scores on these tasks — accuracy over three attempts, cost, tokens and time — is measured in the repository's [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md). The task sets were calibrated on the model measured there, so the scores describe these 50 tasks, not the full upstream benchmarks.
+
+They ship with no evaluations. Like the example, they are written when the Project is created and never again: if you delete one, it stays deleted. A Project that existed before your PenguinHarness shipped them does not get them when you upgrade; every Project created afterwards does.
 
 ## Create a Benchmark with AI
 
@@ -53,7 +79,7 @@ AI writes the cases for an agent, trial-runs each case to calibrate its difficul
 
 The dialog's "Done by … in a new conversation" line names the agent that does the writing: the Project's default agent, not the Test Agent.
 
-The Builder runs the Test Agent on the model of this new conversation, for the trial runs and for the baseline. Evaluations started later from the **Evaluate** tab run the agent on the model it is configured with, and the chart gives each model its own line. To keep the baseline on the same line as later scores, pick the Test Agent's configured model in the composer before you send.
+The Builder runs the Test Agent on the model of this new conversation, for the trial runs and for the baseline. Evaluations started later from the **Evaluate** tab do the same with their own conversation's model, and the chart gives each model its own line. To keep later scores on the baseline's line, evaluate on the model the baseline used.
 
 While the cases are being written, the Benchmark's card shows **Being built**. The Benchmark opens once the baseline is recorded. If calibration fails, the card shows **Creation failed**; the owner then deletes the Benchmark and creates it again.
 
@@ -140,9 +166,9 @@ An evaluation runs an agent on every case of a Benchmark and adds one labelled s
 4. Optional: change **Model of the evaluation conversation** (preset to the Project's default model) or **Runs per case** (preset to the Benchmark's configured count), and add a **Note**.
 5. Select **Edit in a new conversation**, review the prompt, and send it.
 
-The dialog has no field for the model or thinking level the tested agent runs on. **Model of the evaluation conversation** only sets the model of the conversation that dispatches and totals the runs.
+The tested agent runs on the model of the evaluation conversation: the one set in **Model of the evaluation conversation**, or the one you pick in the composer before you send. Its thinking level is the one it is configured with; the dialog does not change it.
 
-The evaluation conversation, and every Test Session it starts, is filed under the **Evaluations** folder of the session list. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
+The evaluation conversation is an ordinary conversation of yours. Every Test Session it starts is a CLI Session, filed under the **Background** folder of the session list. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
 
 ## Optimize an agent
 
@@ -183,7 +209,7 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 3. Select **Delete**.
 
 > [!NOTE]
-> Deleting `example-benchmark` does not last: it is written again the next time `default_agent` loads.
+> Deleting `example-benchmark` or a [built-in Benchmark](#built-in-benchmarks) is final too: they are written only when the Project is created, never again.
 
 ## How it works
 
@@ -191,6 +217,7 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 - **Status.** `status` in `benchmark_config.toml` drives the mask: `draft` shows **Being built**, `failed` shows **Creation failed**, and `published` lifts the mask.
 - **Creating with AI.** The prompt's fixed ending hands the `benchmark-design` Skill the Test Agent's id, a desired baseline score and a pilot-iteration limit, and asks for the baseline to be taken.
 - **Creating manually.** The server writes the form to disk in the layout the Skills read (`POST …/benchmarks`, owner only), with the status `published`.
-- **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
+- **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents, on the conversation's own model, which the evaluator agent reads from the `Provider` and `Model ID` lines of its system prompt. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
 - **Deleting.** The server removes the directory whole (`DELETE …/benchmarks/:id`). Deleting a Benchmark while an evaluation is still running can leave a directory behind, because the evaluation keeps writing into it. That directory has no `benchmark_config.toml`, so it is not listed, and you can delete it by hand.
-- **The example Benchmark.** `example-benchmark` is written whenever `benchmarks/example-benchmark/` is missing and `default_agent` loads.
+- **The example and the built-in Benchmarks.** Written when the Project is created; never written again. A Project from an earlier release keeps what it has and is not given the built-in Benchmarks.
+- **Built-in Benchmarks.** Their configs are ordinary; each statement names the task's folder in the repository at a pinned commit and links the repository's run rules, which the `agent-evaluation` Skill follows. Its `reference/harbor.md` adds only what PenguinHarness needs: where the checkout lives, which Agent State runs, and how a trial becomes a score.

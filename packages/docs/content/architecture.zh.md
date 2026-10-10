@@ -23,7 +23,7 @@ Web App 和 CLI 经 HTTP 与 SSE 访问 Server，桌面应用则把 Server 和 W
                        │ session.run(...)   ← Human boundary
 ┌──────────────────────┴───────────────────────┐
 │  core: context_engine (ReAct loop)           │
-│    ├── LLMInterface ──→ AgentHub ──→ models  │
+│    ├── LLMInterface ──→ MMSP ──→ models      │
 │    ├── EnvironmentInterface ──→ builtin tools│
 │    ├── Agent State (editable files)          │
 │    └── Trace (append-only JSONL)             │
@@ -36,6 +36,7 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 | --- | --- |
 | `packages/core` | SDK 与引擎：`context_engine`、OmniMessage、LLM 与 Environment 接口、钩子、状态和 Trace |
 | `packages/server` | Human 实现：通过 core 运行 Task，经 HTTP 接收输入和审批，用 SSE 流式输出结果 |
+| `packages/amsp` | [Agent API](/agent-api) 的协议包：[AMSP](/amsp) 传输类型（Server 也引用）和零依赖的客户端，适用于 Node 与浏览器 |
 | `packages/cli` | Server 的终端客户端：REPL 与单次运行都经 HTTP 和 SSE 完成；本地没有运行中的 Server 时会自动启动一个。只有 `penguin config` 直接经 SDK 读写配置文件 |
 | `packages/web` | 纯渲染的 SPA：渲染 OmniMessage 流，不含任何引擎逻辑 |
 | `packages/desktop` | 桌面应用：一个 Electron 外壳，把 Server 作为 `utilityProcess` 运行，并在本地 HTTP 地址上打开窗口 |
@@ -47,7 +48,7 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 `context_engine` 是整个系统的核心，只做两件事：维护线性消息历史，以及在三个接口之间编排事件流。它只认识 [OmniMessage](/omni-message)，不做任何协议转换。
 
 - **Human**：用户侧边界。它刻意不是一个接口类：SDK 的唯一入口 `session.run(newMessages, { approve, signal })` *就是* Human 边界。输入是一组新增的 OmniMessage 和一个审批回调，输出是 OmniMessage 流。Server 是随产品交付的实现；CLI 和 Web App 经 HTTP 与 SSE 访问它，SDK 嵌入方则自己调用 `session.run`。
-- **LLM**：模型侧接口 `LLMInterface`。它把 OmniMessage 转成发往 AgentHub 模型网关的请求，再把流式事件转回 OmniMessage。供应商协议适配全部在 AgentHub 内完成，core 不引入任何厂商 SDK。
+- **LLM**：模型侧接口 `LLMInterface`。它把 OmniMessage 转成发往 MMSP 模型网关的请求，再把流式事件转回 OmniMessage。供应商协议适配全部在 MMSP 内完成，core 不引入任何厂商 SDK。
 - **Environment**：工具执行接口 `EnvironmentInterface`。它执行通过审批的工具调用，并把结果流式送回。
 
 内核不含任何供应商、工具或 UI 的细节，三侧都能按配置替换而不必改动 core：今天是本地 shell，明天可以换成别的沙箱；调用方可以是 CLI、Web App，也可以是程序化调用。接口签名见[核心接口](/interfaces)。
@@ -81,7 +82,7 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 | ReAct 循环、补发、重连、压缩 | SDK | `core/src/engine/context-engine.ts`，见 [Agent 运行循环](/agent-loop) |
 | 审批机制（每个 `tool_call` 一次决策） | SDK | `ApproveFn`（`core/src/interfaces/shared.ts`）；具体模式由 Server 或 SDK 宿主注入 |
 | 工具执行与集中收尾 | SDK | `core/src/environment/`，见[工具与审批](/tools) |
-| 模型访问（供应商协议适配） | SDK → AgentHub | `core/src/llm/` + `@prismshadow/agenthub`，见[模型与 Provider](/models) |
+| 模型访问（供应商协议适配） | SDK → MMSP | `core/src/llm/` + `@prismshadow/mmsp`，见[模型与 Provider](/models) |
 | Trace 写入与 Session 恢复逻辑 | SDK | `core/src/trace/`（记录本身存放在文件层） |
 | 子 Agent 派生与消息回流 | SDK | `run_subagent` 工具 + 注入的 `SubagentRunner` |
 | 多用户认证与 Project 授权 | Server | `server/src/auth/`、`server/src/services/project-service.ts` |
@@ -122,9 +123,9 @@ packages/
 ├── core/src
 │   ├── agent.ts / session.ts       # the createAgent composition layer and Session (run / compact / generateTitle)
 │   ├── engine/context-engine.ts    # ReAct loop orchestration: turn lifecycle, approvals, carry-over, reconnect, compaction
-│   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · aggregate.ts partial aggregation · markers/
+│   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · markers/
 │   ├── interfaces/                 # llm.ts · environment.ts · shared.ts (ApproveFn and the vocabulary both sides share)
-│   ├── llm/                        # generative-model.ts AgentHub adapter · tool-call-ids.ts id uniqueness · context-limits.ts
+│   ├── llm/                        # generative-model.ts MMSP adapter · tool-call-ids.ts id uniqueness · context-limits.ts
 │   ├── environment/                # environment.ts execution close-out · tools/ registry, 7 builtin tools, background sessions · mcp/
 │   ├── hooks/                      # the stop / pre_tool_use / user_prompt hook points and the hook-script runner
 │   ├── plugins/                    # the built-in plugin library and its loader
@@ -175,6 +176,6 @@ LLM 与 Environment 从不向引擎抛异常。它们的结果携带四值 `stop
 
 ### 薄模型层
 
-core 只定义 `LLMInterface`，供应商适配全部下沉到 AgentHub（`@prismshadow/agenthub`），因此任意 OpenAI 兼容端点都能接入。见[模型与 Provider](/models)。
+core 只定义 `LLMInterface`，供应商适配全部下沉到 MMSP（[`@prismshadow/mmsp`](https://www.npmjs.com/package/@prismshadow/mmsp)），因此任意 OpenAI 兼容端点都能接入。见[模型与 Provider](/models)。
 
 源码入口：`packages/core/src/engine/context-engine.ts`、`packages/core/src/interfaces/`。

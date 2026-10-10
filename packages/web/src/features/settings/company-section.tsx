@@ -5,22 +5,28 @@
  * rather than on; it stays disabled until the stored value arrives and again while a write is in
  * flight, so a second flip cannot race the first. Off stops the organization scheduler, 404s
  * every organization route and hides the mode switch for everyone; on again resumes without
- * backfilling what was missed. A write that fails puts the switch back on the stored value and
- * names the reason on a line under it (a toast would leave the switch and the message on
- * separate surfaces). The auth context is refreshed afterwards because the shell reads the flag
- * from /api/me, not from this page. The mode is a beta; the line under the switch says so
- * wherever the switch stands.
+ * backfilling what was missed, and only brings the mode switch back — nobody's shell moves into
+ * company mode by it (state/company.tsx). A write that fails puts the switch back on the stored
+ * value and names the reason on a line under it (a toast would leave the switch and the message
+ * on separate surfaces). The auth context is refreshed afterwards because the shell reads the
+ * flag from /api/me, not from this page. The mode is a beta; the line under the switch says so
+ * wherever the switch stands. Turning it off asks first — it stops every organization on the
+ * server at once — and the knob stays on until the answer is yes; turning it on does not ask.
  */
 import { useEffect, useState } from "react";
+import {
+  ConfirmModal,
+  SettingsGroup,
+  SettingsSection,
+  ToggleRow,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { Switch } from "../../components/ui/switch";
-import { toastError } from "../../components/ui/toast";
 import { writeCompanyMode } from "./company-mode-write";
-import { SectionShell } from "./section-shell";
 
 export function CompanySection() {
   const { refresh } = useAuth();
@@ -30,6 +36,7 @@ export function CompanySection() {
   const [companyMode, setCompanyMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [confirmOff, setConfirmOff] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,24 +80,39 @@ export function CompanySection() {
 
   const hydrated = stored !== null;
   return (
-    <SectionShell>
+    <SettingsSection>
       <div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium">{S.settings.companyModeServer}</span>
-          <Switch
+        <SettingsGroup>
+          {/* The mode is a beta, and this switch signs a whole server up for it: the warning
+              stands under it unconditionally, as the row's hint, rather than behind the page's
+              "?", which is a click away and is read once. */}
+          <ToggleRow
+            label={S.settings.companyModeServer}
+            hint={S.company.betaNotice}
             checked={companyMode}
-            onChange={(next) => void toggle(next)}
+            onChange={(next) => {
+              if (next) void toggle(true);
+              else setConfirmOff(true);
+            }}
             disabled={!hydrated || busy}
-            aria-label={S.settings.companyModeServer}
           />
-        </div>
-        {/* The reason the switch went back, under the switch it went back on. */}
+        </SettingsGroup>
+        {/* The reason the switch went back, under the row it went back on. */}
         {error !== undefined && <p className={`mt-2 text-xs ${toneInk.danger}`}>{error}</p>}
-        {/* The mode is a beta, and this switch signs a whole server up for it: the warning
-            stands under it unconditionally rather than behind the page's "?", which is a
-            click away and is read once. */}
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.company.betaNotice}</p>
       </div>
-    </SectionShell>
+      <ConfirmModal
+        open={confirmOff}
+        title={S.settings.companyModeOffTitle}
+        onClose={() => setConfirmOff(false)}
+        onConfirm={() => {
+          setConfirmOff(false);
+          void toggle(false);
+        }}
+        confirmLabel={S.settings.companyModeOff}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.settings.companyModeOffBody}</p>
+      </ConfirmModal>
+    </SettingsSection>
   );
 }

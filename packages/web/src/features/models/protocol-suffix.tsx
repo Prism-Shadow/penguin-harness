@@ -3,12 +3,13 @@
  * field — it is the grey protocol-path suffix that field always had, promoted from a
  * passive label into the protocol picker itself.
  *
- * The suffix already displayed the very thing this control selects: the path the AgentHub
- * client appends to the base URL (`/responses` / `/v1/messages` / `/chat/completions`),
- * which is one-to-one with the three generic protocol clients. So protocol selection
- * reuses that component rather than occupying a form row of their own: the trigger keeps
- * showing the live path, and clicking it opens a menu of the three protocols (name as the
- * row title, the appended path as its description) — the manual override.
+ * The suffix already displayed the very thing this control selects: the path the MMSP
+ * client appends to the base URL (`/responses` / `/v1/messages` / `/chat/completions` /
+ * `/v1beta/models` / `/stream`), which is one-to-one with the protocol clients it offers. So
+ * protocol selection reuses that component rather than occupying a form row of their own: the
+ * trigger keeps showing the live path, and clicking it opens a menu of the protocols
+ * (PROTOCOL_CLIENT_TYPES; name as the row title, the appended path as its description) — the
+ * manual override.
  *
  * Selection only. The detect ACTION lives at the base URL field's top-right, next to its
  * label (per maintainer: same placement idiom as the API key field's "get API key" link),
@@ -30,47 +31,72 @@
  * the call site — so no extra row appears in the happy path.
  */
 import { useState } from "react";
-import { Dropdown } from "../../components/ui/dropdown";
-import { CheckIcon, ChevronDown } from "../../components/ui/icons";
-import { menuRowClass } from "../../components/ui/field";
+import { ChevronDown, Dropdown, Menu, MenuRadioItem, Spinner } from "@prismshadow/penguin-ui";
 // This menu is an OptionMenu by hand (its trigger lives inside the base URL field, which
-// OptionMenu cannot do), so it takes its row typography from OptionMenu's own records rather
-// than re-spelling them — a change to the family reaches it.
-import { rowDescClass } from "../../components/ui/option-menu";
-import { sizeTextClass } from "../../components/ui/input";
+// OptionMenu cannot do), so it takes its rows from the Menu family rather than re-spelling
+// them — a change to the family reaches it.
 import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
 import { PROTOCOL_CLIENT_TYPES } from "./protocol-types";
 import type { ProtocolClientType } from "./protocol-types";
 import { toneInk } from "../../lib/tone";
 
+/** Whether a value is one of the protocols the menu always lists. */
+function isPickerProtocol(value: string): value is ProtocolClientType {
+  return (PROTOCOL_CLIENT_TYPES as readonly string[]).includes(value);
+}
+
 /** Whether the last detection run left something to warn about (drives the amber trigger). */
 export type ProtocolDetectTone = "ok" | "warn" | null;
+
+/**
+ * The menu's optional first row, which sets no protocol of its own: "Not set" in the group
+ * settings (each model then decides, by its own protocol or its id), "Follow group" in a model
+ * dialog whose group decides a protocol. It is the checked row while the value is null.
+ */
+export interface ProtocolFollowOption {
+  label: string;
+  /** What following resolves to, as the row's second line (a protocol's name, say). */
+  description?: string;
+  onPick: () => void;
+}
 
 export function ProtocolSuffixMenu({
   value,
   path,
   detecting,
   tone,
+  follow,
   onPick,
 }: {
   /**
-   * Protocol the selector currently represents, or null when none has been chosen yet
-   * (a fresh custom model). Null renders the placeholder label and leaves every menu row
-   * unchecked — nothing may look selected that the user did not select.
+   * Protocol the selector currently represents, or null when none is set. With no `follow` row
+   * that means none has been chosen yet (a fresh custom model): null renders the placeholder
+   * label and leaves every menu row unchecked — nothing may look selected that the user did not
+   * select. With one, null is that row's choice, and it is the row shown checked.
+   *
+   * A stored protocol outside the menu's (a group's `client_type` set from the CLI, say) gets a
+   * row of its own, checked, under the follow row: the menu shows what is stored rather than
+   * misstating it, and picking that row changes nothing.
    */
-  value: ProtocolClientType | null;
+  value: ProtocolClientType | string | null;
   /** Trigger text: the live protocol path, or the "pick one" placeholder while unset. */
   path: string;
   /** A detection run is in flight (started from the field's top-right button). */
   detecting: boolean;
   /** `warn` paints the trigger amber (nothing matched / detection failed); the wording lives below the field. */
   tone: ProtocolDetectTone;
+  follow?: ProtocolFollowOption | undefined;
   onPick: (clientType: ProtocolClientType) => void;
 }) {
   const [open, setOpen] = useState(false);
-  // Unset reads as "not selected" everywhere it is announced, not as a default.
-  const name = value === null ? S.models.protocolUnset : (S.models.protocolNames[value] ?? value);
+  const stored = value !== null && !isPickerProtocol(value) ? value : null;
+  // Unset reads as "not selected" everywhere it is announced, not as a default — unless there
+  // is something to follow, which is then what null chose.
+  const name =
+    value === null
+      ? (follow?.label ?? S.models.protocolUnset)
+      : (S.models.protocolNames[value] ?? value);
   return (
     <Dropdown
       open={open}
@@ -86,7 +112,7 @@ export function ProtocolSuffixMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label={`${S.models.protocol}: ${name}`}
-          title={S.models.protocolTriggerTitle(name)}
+          data-tooltip={S.models.protocolTriggerTitle(name)}
           onClick={() => setOpen((v) => !v)}
           className={
             "flex items-center gap-1 rounded px-1 py-0.5 font-mono text-xs transition-colors duration-150 " +
@@ -99,57 +125,47 @@ export function ProtocolSuffixMenu({
           <span className="truncate">{path}</span>
           {/* Same 10px box as the chevron it replaces: switching to the busy state must not
               resize the trigger, or the input's reserved padding would jump mid-detection. */}
-          {detecting ? (
-            <span
-              aria-hidden
-              className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-            />
-          ) : (
-            <ChevronDown size={10} />
-          )}
+          {detecting ? <Spinner size="xs" label={S.models.detecting} /> : <ChevronDown size={10} />}
         </button>
       }
     >
-      <div role="menu">
-        {PROTOCOL_CLIENT_TYPES.map((t) => {
-          const selected = t === value;
-          return (
-            <button
-              key={t}
-              type="button"
-              role="menuitemradio"
-              aria-checked={selected}
-              onClick={() => {
-                setOpen(false);
-                onPick(t);
-              }}
-              className={`block ${menuRowClass} hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                selected ? "bg-gray-100 dark:bg-gray-800" : ""
-              }`}
-            >
-              <span className="flex items-center justify-between gap-2">
-                <span
-                  className={`min-w-0 truncate ${sizeTextClass.sm} ${
-                    selected
-                      ? "font-medium text-gray-900 dark:text-gray-100"
-                      : "text-gray-700 dark:text-gray-300"
-                  }`}
-                >
-                  {S.models.protocolNames[t] ?? t}
-                </span>
-                {selected && <CheckIcon className="text-gray-500 dark:text-gray-400" />}
-              </span>
-              {/* The path this protocol appends: the same string the trigger shows, so the
-                  menu explains what the suffix in the field means. */}
-              <span
-                className={`mt-0.5 block font-mono ${rowDescClass.sm} text-gray-500 dark:text-gray-500`}
-              >
-                {protocolPathForModel("custom", t)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <Menu density="sm">
+        {follow !== undefined && (
+          <MenuRadioItem
+            checked={value === null}
+            onSelect={() => {
+              setOpen(false);
+              follow.onPick();
+            }}
+            label={follow.label}
+            description={follow.description}
+          />
+        )}
+        {stored !== null && (
+          <MenuRadioItem
+            checked
+            onSelect={() => setOpen(false)}
+            label={S.models.protocolNames[stored] ?? stored}
+            description={
+              <span className="font-mono">{protocolPathForModel("custom", stored)}</span>
+            }
+          />
+        )}
+        {PROTOCOL_CLIENT_TYPES.map((t) => (
+          <MenuRadioItem
+            key={t}
+            checked={t === value}
+            onSelect={() => {
+              setOpen(false);
+              onPick(t);
+            }}
+            label={S.models.protocolNames[t] ?? t}
+            // The path this protocol appends: the same string the trigger shows, so the menu
+            // explains what the suffix in the field means.
+            description={<span className="font-mono">{protocolPathForModel("custom", t)}</span>}
+          />
+        ))}
+      </Menu>
     </Dropdown>
   );
 }

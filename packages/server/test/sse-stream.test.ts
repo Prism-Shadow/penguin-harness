@@ -1,19 +1,21 @@
 /**
- * Integration tests for the SSE endpoint (FD-1 / FD-2):
- *   - Subscribing immediately delivers the current task_state snapshot (first
- *     frame, ahead of any pending-approval replay);
- *   - A Last-Event-ID with a mismatched/unknown epoch → sends resync_required
- *     first; a buffer hit → replays events after it.
+ * The Session SSE endpoint (FD-1 / FD-2) and the user event stream.
+ *
+ * - A new subscription's first frame is always the task_state snapshot: idle when idle; when
+ *   running, `running` followed by the replay of pending approvals.
+ * - A Last-Event-ID from another epoch gets resync_required first, then the snapshot; one that
+ *   hits the replay buffer gets the later events, then the snapshot.
+ * - An admin resetting a user's password ends that user's open event streams at once, and the
+ *   old session cannot reopen one.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
-const SID = "session-2026-07-06-10-00-00-aabb0001";
 
 interface SseFrame {
   event?: string;
@@ -58,50 +60,35 @@ async function readSseFrames(res: Response, count: number, timeoutMs = 3000): Pr
 
 /** Fake Session that requests one approval (for the running state and approval-replay scenarios). */
 function approvalFakeSession(sessionId: string): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-sse" });
       yield tc;
-      const decision = await opts.approve(tc);
-      yield approvalDecision(decision, "tc-sse");
+      yield approvalDecision(await opts.approve(tc), "tc-sse");
       yield assistantText("done");
     },
-    async *compact() {},
-  };
+  });
 }
 
 describe("sse-stream", () => {
   let t: TestApp;
   let cookie: string;
+  let SID: string;
   let row: SessionRow;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     ({ cookie } = await provisionUser(t.app, "streamer"));
-    row = {
-      sessionId: SID,
-      // streamer's own initial Project (default_project belongs to admin; others
-      // get 404 via the index lookup).
-      projectId: "streamer-default_project",
-      agentId: "default_agent",
-      modelId: "m1",
-      provider: "custom",
-      workspace: "/tmp/w",
-      approvalMode: "always-ask",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    };
-    t.deps.sessionsRepo.insert(row);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    // streamer's own initial Project (default_project belongs to admin; others get 404 via
+    // the index lookup).
+    row = sessionRow(SID, { projectId: "streamer-default_project", approvalMode: "always-ask" });
+    t.deps.sessionsRepo.insert(row);
   });
 
   const getStream = (headers: Record<string, string> = {}) =>
@@ -144,6 +131,29 @@ describe("sse-stream", () => {
     );
     expect(JSON.parse(frames[0]!.data)).toEqual({ type: "resync_required" });
     expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle", queued: 0 });
+  });
+
+  it("an admin resetting the password ends the streams that user had open", async () => {
+    // Its own user: the reset retires the session it is about.
+    const { cookie: own } = await provisionUser(t.app, "reset_streamer");
+    const res = await t.app.request("/api/events", { headers: { cookie: own } });
+    expect(res.status).toBe(200);
+    const reader = res.body!.getReader();
+    // The hello frame proves the subscription is live — and therefore registered — before
+    // the reset lands.
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain("hello");
+
+    const admin = await loginAdmin(t.app);
+    const reset = await apiClient(t.app, admin.cookie).post(
+      "/api/admin/users/reset_streamer/password",
+      { password: "password-456" },
+    );
+    expect(reset.status).toBe(204);
+
+    // Ended by the reset itself, within the same request: no heartbeat has passed, and the
+    // reader has made no request of its own that could have noticed.
+    expect((await reader.read()).done).toBe(true);
+    expect((await t.app.request("/api/events", { headers: { cookie: own } })).status).toBe(401);
   });
 
   it("FD-2: same-epoch Last-Event-ID hitting the buffer → replays later events, then the task_state snapshot", async () => {

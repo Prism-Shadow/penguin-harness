@@ -2,10 +2,38 @@
  * Integration tests for the Session index: creation (default model / workspace
  * guard), listing (DB union Trace directory discovery), PATCH approval mode and
  * thinking level, and createdAt parsing.
+ *
+ * One app and one Project serve the file; each case works in an Agent of its own, which it
+ * deletes on the way out.
+ *
+ * Scenarios:
+ * - Given no default model, or a model with no usable credential, creating a Session is a 400
+ *   with its own code; half a model reference is a 400, never completed for the caller.
+ * - Given a configured model, a created Session gets a temporary Workspace inside its Agent,
+ *   allow-all, a lastActiveAt equal to its creation stored on the row, and shows in the list;
+ *   an explicit Workspace only has to exist.
+ * - Given many rows, the list pages newest first, filters by Workspace group and by
+ *   organization, and its counts stay whole-Agent; junk parameters are 400s. (A Session's
+ *   source and the category filter built on it: session-source.test.ts.)
+ * - Given order=activity, the list runs by last activity (equal stamps by id, code points), and
+ *   a client that asks for no order keeps the creation order and its offsets.
+ * - Given a before cursor, pages cover every row once; a row that runs mid-paging moves above
+ *   the cursor and is neither repeated nor makes another row go missing; the cursor composes
+ *   with the filters and leaves the totals whole-list; a cursor in the wrong form is a 400.
+ * - Given an unmanaged Trace, the startup sweep adopts it once as a client:'cli' row.
+ * - Given a client hint, 'cli' or 'web' is stored and listed; 'org' cannot be claimed.
+ * - Given a PATCH, the answer is the row after the write; approval mode and thinking level
+ *   persist; bad values are 400s. A title has its runs of whitespace stored as one space; a
+ *   control or bidi-override character in it is a 400 that leaves the stored title as it
+ *   was, while an emoji held together by a zero-width joiner is kept.
+ * - Given a DELETE, the row and every Trace shard go and the list does not resurrect it; the
+ *   Workspace directory stays.
+ * - Given a Trace, the single GET names its latest shard; list rows do not.
+ * - Given a goal, a malformed budget, an image-only objective or a file attachment is a 400.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
@@ -22,9 +50,12 @@ describe("session-index", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let projectId: string;
-  const base = () => `/api/projects/${projectId}/agents/default_agent/sessions`;
+  /** The case's own Agent: every list here is one Agent's, so no case sees another's rows. */
+  let agentId: string;
+  let cases = 0;
+  const base = () => `/api/projects/${projectId}/agents/${agentId}/sessions`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "alice");
     api = apiClient(t.app, cookie);
@@ -33,8 +64,17 @@ describe("session-index", () => {
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(async () => {
+    agentId = `case_${++cases}`;
+    expect((await api.post(`/api/projects/${projectId}/agents`, { agentId })).status).toBe(201);
+  });
+  afterEach(async () => {
+    // Deleting the Agent takes its index rows and Traces with it, so a retried case starts
+    // from nothing, the fixed session ids below included.
+    await api.delete(`/api/projects/${projectId}/agents/${agentId}`);
   });
 
   async function configureModels(): Promise<void> {
@@ -95,9 +135,7 @@ describe("session-index", () => {
     expect(session.status).toBe("idle");
     expect(session.hasTrace).toBe(false);
     // The temporary Workspace lives inside this Agent's workspaces directory.
-    expect(session.workspace).toContain(
-      path.join(projectId, "agents", "default_agent", "workspaces"),
-    );
+    expect(session.workspace).toContain(path.join(projectId, "agents", agentId, "workspaces"));
 
     const list = (await (await api.get(base())).json()) as SessionsResponse;
     expect(list.sessions.map((s) => s.sessionId)).toContain(session.sessionId);
@@ -144,109 +182,13 @@ describe("session-index", () => {
     expect(patched.session.lastActiveAt).toBe(advanced);
   });
 
-  it("schedule-created Session: source derives from session_meta (registry), never from the DB row; user sessions carry none", async () => {
-    await configureModels();
-    // The scheduler goes through SessionService.createSession directly (no HTTP route exposes source).
-    const info = await t.deps.sessionService.createSession({
-      projectId,
-      agentId: "default_agent",
-      source: "schedule",
-    });
-    expect(info.source).toBe("schedule");
-    // The index row stores no origin: session_meta is the single source of truth.
-    const row = t.deps.sessionsRepo.findById(info.sessionId);
-    expect(row && "source" in row).toBe(false);
-    expect(t.deps.sessionSources.get(info.sessionId)).toBe("schedule");
-
-    // A user-created session (HTTP) has no source, and the list surfaces both accordingly.
-    const res = await api.post(base(), {});
-    expect(res.status).toBe(201);
-    const { session: plain } = (await res.json()) as SessionCreateResponse;
-    const list = (await (await api.get(base())).json()) as SessionsResponse;
-    expect(list.sessions.find((s) => s.sessionId === info.sessionId)?.source).toBe("schedule");
-    expect(list.sessions.find((s) => s.sessionId === plain.sessionId)?.source).toBeUndefined();
-  });
-
-  it("source survives a restart via the Trace head: an indexed row unknown to this process derives it lazily from session_meta", async () => {
-    await configureModels();
-    // Simulate a Session created by a previous process: the index row exists, but the
-    // in-process registry has never seen it — only its Trace's session_meta knows the origin.
-    const sid = "session-2026-07-02-09-00-00-feedc0de";
-    t.deps.sessionsRepo.insert({
-      sessionId: sid,
-      projectId,
-      agentId: "default_agent",
-      provider: "custom",
-      modelId: "m-x",
-      workspace: "/tmp/w-restart",
-      approvalMode: "allow-all",
-      title: null,
-      createdAt: "2026-07-02T09:00:00.000Z",
-      lastActiveAt: "2026-07-02T09:00:00.000Z",
-    });
-    const meta: SessionMetaPayload = {
-      session_id: sid,
-      model_id: "m-x",
-      provider: "custom",
-      model_context_window: 1000,
-      system_prompt: "",
-      agent_state: "/tmp/a",
-      workspace: "/tmp/w-restart",
-      source: "subagent",
-    };
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-02", sid, 1, [
-      sessionMeta(meta),
-      userText("child work"),
-    ]);
-    const list = (await (await api.get(base())).json()) as SessionsResponse;
-    expect(list.sessions.find((s) => s.sessionId === sid)?.source).toBe("subagent");
-    // The single-session endpoint derives it the same way (and the second read hits the registry).
-    const single = (await (await api.get(`/api/sessions/${sid}`)).json()) as SessionResponse;
-    expect(single.session.source).toBe("subagent");
-  });
-
-  it("adoption derives source from the Trace meta, narrowing junk values to user-created", async () => {
-    await configureModels();
-    // Discovered (no index row) with a valid origin: adoption records it.
-    const adopted = "session-2026-07-03-10-00-00-0badf00d";
-    const sourced: SessionMetaPayload = {
-      session_id: adopted,
-      model_id: "m-cli",
-      provider: "custom",
-      model_context_window: 1000,
-      system_prompt: "",
-      agent_state: "/tmp/a",
-      workspace: "/tmp/w-cli",
-      source: "schedule",
-    };
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-03", adopted, 1, [
-      sessionMeta(sourced),
-      userText("adopted"),
-    ]);
-    // Discovered with a junk source (untrusted on-disk data): narrowed to user-created.
-    const junk = "session-2026-07-03-11-00-00-0badf00e";
-    const junkMeta = {
-      ...sourced,
-      session_id: junk,
-      source: "weird-origin",
-    } as unknown as SessionMetaPayload;
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-03", junk, 1, [
-      sessionMeta(junkMeta),
-      userText("junk"),
-    ]);
-    await t.deps.sessionService.adoptUnmanagedTraceSessions();
-    const list = (await (await api.get(base())).json()) as SessionsResponse;
-    expect(list.sessions.find((s) => s.sessionId === adopted)?.source).toBe("schedule");
-    expect(list.sessions.find((s) => s.sessionId === junk)?.source).toBeUndefined();
-  });
-
   it("list paging: limit/offset slice the newest-first list; absent params keep the full list; invalid values 400", async () => {
     await configureModels();
     // Three sessions with distinct createdAt ordering (insert directly for deterministic times).
     const mk = (n: number) => ({
       sessionId: `session-2026-07-0${n}-08-00-00-aaaa000${n}`,
       projectId,
-      agentId: "default_agent",
+      agentId,
       provider: "custom",
       modelId: "m-page",
       workspace: `/tmp/w-${n}`,
@@ -277,155 +219,15 @@ describe("session-index", () => {
     expect((await api.get(`${base()}?limit=2&offset=-1`)).status).toBe(400);
   });
 
-  it("category filter: each sidebar bucket lists only its rows, paging applies within the category, counts return full totals", async () => {
-    await configureModels();
-    // Two active user Sessions + one archived (HTTP), two schedule-created (service, one
-    // then archived — archived must win over the origin), and one subagent Session whose
-    // source only exists in its Trace head (cold-registry derivation during the walk).
-    const mkUser = async () =>
-      ((await (await api.post(base(), {})).json()) as SessionCreateResponse).session.sessionId;
-    const activeA = await mkUser();
-    const activeB = await mkUser();
-    const archivedC = await mkUser();
-    expect((await api.patch(`/api/sessions/${archivedC}`, { archived: true })).status).toBe(200);
-    const mkSchedule = async () =>
-      (
-        await t.deps.sessionService.createSession({
-          projectId,
-          agentId: "default_agent",
-          source: "schedule",
-        })
-      ).sessionId;
-    const scheduleD = await mkSchedule();
-    const archivedScheduleF = await mkSchedule();
-    expect((await api.patch(`/api/sessions/${archivedScheduleF}`, { archived: true })).status).toBe(
-      200,
-    );
-    const subagentE = "session-2026-07-02-09-30-00-cafe0001";
-    t.deps.sessionsRepo.insert({
-      sessionId: subagentE,
-      projectId,
-      agentId: "default_agent",
-      provider: "custom",
-      modelId: "m-x",
-      workspace: "/tmp/w-sub",
-      approvalMode: "allow-all",
-      title: null,
-      createdAt: "2026-07-02T09:30:00.000Z",
-      lastActiveAt: "2026-07-02T09:30:00.000Z",
-    });
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-02", subagentE, 1, [
-      sessionMeta({
-        session_id: subagentE,
-        model_id: "m-x",
-        provider: "custom",
-        model_context_window: 1000,
-        system_prompt: "",
-        agent_state: "/tmp/a",
-        workspace: "/tmp/w-sub",
-        source: "subagent",
-      }),
-      userText("child work"),
-    ]);
-
-    const list = async (qs: string) => {
-      const res = await api.get(`${base()}${qs}`);
-      expect(res.status, qs).toBe(200);
-      return (await res.json()) as SessionsResponse;
-    };
-    const idSet = (body: SessionsResponse) => new Set(body.sessions.map((s) => s.sessionId));
-
-    expect(idSet(await list("?category=active"))).toEqual(new Set([activeA, activeB]));
-    expect(idSet(await list("?category=schedule"))).toEqual(new Set([scheduleD]));
-    expect(idSet(await list("?category=subagent"))).toEqual(new Set([subagentE]));
-    expect(idSet(await list("?category=archived"))).toEqual(
-      new Set([archivedC, archivedScheduleF]),
-    );
-
-    // Paging applies within the category: the two archived rows page one at a time.
-    const page1 = await list("?category=archived&limit=1&offset=0");
-    const page2 = await list("?category=archived&limit=1&offset=1");
-    expect(page1.sessions).toHaveLength(1);
-    expect(page2.sessions).toHaveLength(1);
-    expect(new Set([...idSet(page1), ...idSet(page2)])).toEqual(
-      new Set([archivedC, archivedScheduleF]),
-    );
-    expect((await list("?category=archived&limit=1&offset=2")).sessions).toEqual([]);
-
-    // counts=1 returns totals over the whole list, not the returned page — with or without a filter.
-    const counted = await list("?category=active&counts=1&limit=1");
-    expect(counted.sessions).toHaveLength(1);
-    expect(counted.counts).toEqual({
-      active: 2,
-      subagent: 1,
-      schedule: 1,
-      benchmark: 0,
-      archived: 2,
-    });
-    const full = await list("?counts=1");
-    expect(full.sessions).toHaveLength(6);
-    expect(full.counts).toEqual({
-      active: 2,
-      subagent: 1,
-      schedule: 1,
-      benchmark: 0,
-      archived: 2,
-    });
-    expect((await list("")).counts).toBeUndefined();
-    expect((await list("")).workspaceCounts).toBeUndefined();
-    expect((await list("")).workspaceLatest).toBeUndefined();
-
-    // The per-Workspace breakdown accompanies the totals and sums back to them: the
-    // subagent Session sits alone in its path; every other row lives in its own
-    // temporary workspace.
-    const byWorkspace = full.workspaceCounts!;
-    expect(byWorkspace["/tmp/w-sub"]).toEqual({
-      active: 0,
-      subagent: 1,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    });
-    const summed = { active: 0, subagent: 0, schedule: 0, benchmark: 0, archived: 0 };
-    for (const ws of Object.values(byWorkspace)) {
-      for (const key of Object.keys(summed) as (keyof typeof summed)[]) summed[key] += ws[key];
-    }
-    expect(summed).toEqual(full.counts);
-
-    // Junk values are rejected, never silently unfiltered.
-    expect((await api.get(`${base()}?category=weird`)).status).toBe(400);
-    expect((await api.get(`${base()}?counts=yes`)).status).toBe(400);
-  });
-
-  it("a Session created with source benchmark lists under the benchmark category", async () => {
-    await configureModels();
-    const res = await api.post(base(), { source: "benchmark" });
-    expect(res.status).toBe(201);
-    const { session } = (await res.json()) as SessionCreateResponse;
-    // The origin is read back from the just-created core Session's session_meta, so the
-    // create response already carries it.
-    expect(session.source).toBe("benchmark");
-
-    const counted = (await (await api.get(`${base()}?counts=1`)).json()) as SessionsResponse;
-    expect(counted.counts?.benchmark).toBe(1);
-    const filtered = (await (
-      await api.get(`${base()}?category=benchmark`)
-    ).json()) as SessionsResponse;
-    expect(filtered.sessions.map((s) => s.sessionId)).toEqual([session.sessionId]);
-
-    // Only `benchmark` may be set by a client: the server writes the other origins itself.
-    expect((await api.post(base(), { source: "schedule" })).status).toBe(400);
-  });
-
   it("workspaceGroup pages one Workspace group's own stream, temporary workspaces as one group", async () => {
     // Rows are inserted straight into the index: the group filter reads the stored path, and
     // going through create() would only add realpath validation this has nothing to say about.
-    const agentDir = `${t.root}/${projectId}/agents/default_agent`;
+    const agentDir = `${t.root}/${projectId}/agents/${agentId}`;
     const seed = async (sessionId: string, workspace: string, createdAt: string) =>
       t.deps.sessionsRepo.insert({
         sessionId,
         projectId,
-        agentId: "default_agent",
+        agentId,
         provider: "custom",
         modelId: "m-x",
         workspace,
@@ -524,6 +326,169 @@ describe("session-index", () => {
     expect((await api.get(`${base()}?workspaceGroup=`)).status).toBe(400);
   });
 
+  describe("order=activity and the before cursor", () => {
+    /** Inserted straight into the index: the order reads only the stored stamps. */
+    const seed = (
+      sessionId: string,
+      createdAt: string,
+      lastActiveAt: string,
+      workspace = "/tmp/ws-activity",
+    ) =>
+      t.deps.sessionsRepo.insert({
+        sessionId,
+        projectId,
+        agentId,
+        provider: "custom",
+        modelId: "m-x",
+        workspace,
+        approvalMode: "allow-all",
+        title: null,
+        createdAt,
+        lastActiveAt,
+      });
+    /** `n` rows whose stamps repeat in fours, so a page of ten ends inside a run of equal stamps. */
+    const seedMany = (n: number) => {
+      for (let i = 0; i < n; i++) {
+        const stamp = `2026-08-0${1 + Math.floor(i / 4)}T10:00:00.000Z`;
+        seed(`session-act-${String(i).padStart(2, "0")}`, stamp, stamp);
+      }
+    };
+    const list = async (qs: string) => {
+      const res = await api.get(`${base()}${qs}`);
+      expect(res.status, qs).toBe(200);
+      return (await res.json()) as SessionsResponse;
+    };
+    const ids = async (qs: string) => (await list(qs)).sessions.map((s) => s.sessionId);
+    const cursor = (row: { lastActiveAt: string; sessionId: string }) =>
+      encodeURIComponent(`${row.lastActiveAt},${row.sessionId}`);
+    /**
+     * The sidebar's walk: pages of `shown + 1` rows, each next page asked for below the last
+     * SHOWN row (the overflow row only says there is more). Starts below `from` when given.
+     */
+    const pageThrough = async (
+      shown: number,
+      scope = "",
+      from?: { lastActiveAt: string; sessionId: string },
+    ) => {
+      const pages: string[][] = [];
+      let below = from;
+      for (;;) {
+        const qs = `?order=activity&limit=${shown + 1}${below ? `&before=${cursor(below)}` : ""}${scope}`;
+        const rows = (await list(qs)).sessions;
+        pages.push(rows.slice(0, shown).map((s) => s.sessionId));
+        if (rows.length <= shown) return pages;
+        below = rows[shown - 1];
+      }
+    };
+
+    it("lists by last activity, equal stamps by id descending in code-point order, while no order keeps the creation order and its offsets", async () => {
+      // Created first but run last: leads the activity order, trails the creation order.
+      seed("session-act-old", "2026-07-01T08:00:00.000Z", "2026-07-09T08:00:00.000Z");
+      // Equal stamps, ids differing only in case: code points put "a" (0x61) above "B" (0x42)
+      // where locale collation puts B first. The client sorts the same rows itself, so the
+      // server must not collate.
+      seed("session-act-tie-B", "2026-07-02T08:00:00.000Z", "2026-07-06T08:00:00.000Z");
+      seed("session-act-tie-a", "2026-07-03T08:00:00.000Z", "2026-07-06T08:00:00.000Z");
+      seed("session-act-new", "2026-07-05T08:00:00.000Z", "2026-07-05T08:00:00.000Z");
+
+      expect(await ids("?order=activity")).toEqual([
+        "session-act-old",
+        "session-act-tie-a",
+        "session-act-tie-B",
+        "session-act-new",
+      ]);
+      // A client that sends no order (every client before this one) gets the creation order and
+      // its offset pages, unchanged.
+      const created = [
+        "session-act-new",
+        "session-act-tie-a",
+        "session-act-tie-B",
+        "session-act-old",
+      ];
+      expect(await ids("")).toEqual(created);
+      expect(await ids("?order=created")).toEqual(created);
+      expect(await ids("?limit=2&offset=1")).toEqual(created.slice(1, 3));
+      expect((await api.get(`${base()}?order=recent`)).status).toBe(400);
+    });
+
+    it("pages below the last shown row cover every row exactly once, the overflow row opening the next page", async () => {
+      seedMany(25);
+      const pages = await pageThrough(10);
+      expect(pages.map((p) => p.length)).toEqual([10, 10, 5]);
+      expect(pages.flat()).toEqual(await ids("?order=activity"));
+    });
+
+    it("a row that runs mid-paging moves above the cursor: the later pages neither repeat it nor skip another row", async () => {
+      seedMany(25);
+      const whole = await ids("?order=activity");
+      const first = (await list("?order=activity&limit=11")).sessions.slice(0, 10);
+      // A row on the third page runs now and rises above everything already shown.
+      const moved = whole[20]!;
+      t.deps.sessionsRepo.touchLastActive(moved, "2026-09-01T10:00:00.000Z");
+      expect(await ids("?order=activity&limit=1")).toEqual([moved]);
+
+      const later = await pageThrough(10, "", first.at(-1));
+      expect([...first.map((s) => s.sessionId), ...later.flat()]).toEqual(
+        whole.filter((id) => id !== moved),
+      );
+    });
+
+    it("a cursor composes with category and workspaceGroup, while counts stay whole-list and each path keeps its newest creation", async () => {
+      const alpha = "/tmp/ws-act-alpha";
+      const beta = "/tmp/ws-act-beta";
+      // alpha: four active rows and an archived one; beta: one row, created and run last.
+      seed("session-act-a1", "2026-07-01T08:00:00.000Z", "2026-07-08T08:00:00.000Z", alpha);
+      seed("session-act-a2", "2026-07-02T08:00:00.000Z", "2026-07-07T08:00:00.000Z", alpha);
+      seed("session-act-a3", "2026-07-03T08:00:00.000Z", "2026-07-03T08:00:00.000Z", alpha);
+      seed("session-act-a4", "2026-07-04T08:00:00.000Z", "2026-07-06T08:00:00.000Z", alpha);
+      seed("session-act-a5", "2026-07-05T08:00:00.000Z", "2026-07-05T08:00:00.000Z", alpha);
+      t.deps.sessionsRepo.setArchived("session-act-a5", "2026-07-10T08:00:00.000Z");
+      seed("session-act-b1", "2026-07-06T08:00:00.000Z", "2026-07-09T08:00:00.000Z", beta);
+
+      const scope = `&category=active&workspaceGroup=${encodeURIComponent(alpha)}`;
+      expect(await pageThrough(2, scope)).toEqual([
+        ["session-act-a1", "session-act-a2"],
+        ["session-act-a4", "session-act-a3"],
+      ]);
+
+      const below = cursor({
+        lastActiveAt: "2026-07-07T08:00:00.000Z",
+        sessionId: "session-act-a2",
+      });
+      const counted = await list(`?order=activity&limit=1&before=${below}&counts=1${scope}`);
+      expect(counted.sessions.map((s) => s.sessionId)).toEqual(["session-act-a4"]);
+      expect(counted.counts).toEqual({ active: 5, background: 0, archived: 1 });
+      expect(counted.workspaceCounts?.[alpha]).toEqual({ active: 4, background: 0, archived: 1 });
+      // Groups are still placed by their newest CREATION, not by the walk's first row.
+      expect(counted.workspaceLatest).toEqual({
+        [alpha]: "2026-07-05T08:00:00.000Z",
+        [beta]: "2026-07-06T08:00:00.000Z",
+      });
+    });
+
+    it("a cursor outside order=activity, beside an offset, without a limit, or malformed is a 400", async () => {
+      const ok = cursor({ lastActiveAt: "2026-07-01T08:00:00.000Z", sessionId: "session-x" });
+      const stamp = encodeURIComponent("2026-07-01T08:00:00.000Z");
+      for (const qs of [
+        `?before=${ok}&limit=2`,
+        `?order=created&before=${ok}&limit=2`,
+        `?order=activity&before=${ok}&limit=2&offset=0`,
+        `?order=activity&before=${ok}`,
+        "?order=activity&limit=2&before=",
+        `?order=activity&limit=2&before=${stamp}`,
+        `?order=activity&limit=2&before=${stamp}%2C`,
+        "?order=activity&limit=2&before=yesterday%2Csession-x",
+        `?order=activity&limit=2&before=${stamp}%2C..%2Fsession-x`,
+      ]) {
+        const res = await api.get(`${base()}${qs}`);
+        expect(res.status, qs).toBe(400);
+        expect(((await res.json()) as { error: { code: string } }).error.code, qs).toBe(
+          "bad_request",
+        );
+      }
+    });
+  });
+
   it("half a model reference is 400: the missing half is never inferred", async () => {
     await configureModels();
     // Only modelId: even though it names the one configured model, the provider is never
@@ -571,8 +536,9 @@ describe("session-index", () => {
       system_prompt: "",
       agent_state: "/tmp/a",
       workspace: "/tmp/cli-workspace",
+      source: "user",
     };
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-01", discovered, 1, [
+    await writeTraceFile(t.root, projectId, agentId, "2026-07-01", discovered, 1, [
       sessionMeta(meta),
       userText("cli session"),
     ]);
@@ -631,7 +597,7 @@ describe("session-index", () => {
     t.deps.sessionsRepo.insert({
       sessionId: deskSession,
       projectId,
-      agentId: "default_agent",
+      agentId,
       provider: "custom",
       modelId: "m-desk",
       workspace: "/tmp/w-desk",
@@ -650,7 +616,7 @@ describe("session-index", () => {
     t.deps.sessionsRepo.insert({
       sessionId: legacyId,
       projectId,
-      agentId: "default_agent",
+      agentId,
       provider: "custom",
       modelId: "m-legacy",
       workspace: "/tmp/w-legacy",
@@ -668,7 +634,7 @@ describe("session-index", () => {
     t.deps.sessionsRepo.insert({
       sessionId: legacy,
       projectId,
-      agentId: "default_agent",
+      agentId,
       provider: "custom",
       modelId: "m-legacy",
       workspace: "/tmp/w-legacy",
@@ -695,25 +661,16 @@ describe("session-index", () => {
       system_prompt: "",
       agent_state: "/tmp/a",
       workspace: session.workspace,
+      source: "user",
     };
-    const f1 = await writeTraceFile(
-      t.root,
-      projectId,
-      "default_agent",
-      "2026-07-01",
-      sessionId,
-      1,
-      [sessionMeta(meta), userText("round one")],
-    );
-    const f2 = await writeTraceFile(
-      t.root,
-      projectId,
-      "default_agent",
-      "2026-07-02",
-      sessionId,
-      2,
-      [sessionMeta(meta), userText("round two")],
-    );
+    const f1 = await writeTraceFile(t.root, projectId, agentId, "2026-07-01", sessionId, 1, [
+      sessionMeta(meta),
+      userText("round one"),
+    ]);
+    const f2 = await writeTraceFile(t.root, projectId, agentId, "2026-07-02", sessionId, 2, [
+      sessionMeta(meta),
+      userText("round two"),
+    ]);
 
     const del = await api.delete(`/api/sessions/${sessionId}`);
     expect(del.status).toBe(204);
@@ -742,7 +699,7 @@ describe("session-index", () => {
   it("the list is sorted by createdAt descending", async () => {
     await configureModels();
     const older = "session-2020-01-01-00-00-00-00000001";
-    await writeTraceFile(t.root, projectId, "default_agent", "2020-01-01", older, 1, [
+    await writeTraceFile(t.root, projectId, agentId, "2020-01-01", older, 1, [
       sessionMeta({
         session_id: older,
         model_id: "m",
@@ -751,6 +708,7 @@ describe("session-index", () => {
         system_prompt: "",
         agent_state: "/a",
         workspace: "/w",
+        source: "user",
       }),
     ]);
     const created = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
@@ -813,7 +771,7 @@ describe("session-index", () => {
       t.deps.sessionsRepo.insert({
         sessionId,
         projectId,
-        agentId: "default_agent",
+        agentId,
         provider: "custom",
         modelId: "m-org",
         workspace: "/tmp/w-org",
@@ -824,13 +782,7 @@ describe("session-index", () => {
         lastActiveAt: createdAt,
       });
     }
-    t.deps.orgCacheRepo.addTicketSession(
-      projectId,
-      "acme",
-      "2026-09-02-site",
-      ticket,
-      "default_agent",
-    );
+    t.deps.orgCacheRepo.addTicketSession(projectId, "acme", "2026-09-02-site", ticket, agentId);
     const list = async (qs: string) => {
       const res = await api.get(`${base()}${qs}`);
       expect(res.status, qs).toBe(200);
@@ -838,11 +790,14 @@ describe("session-index", () => {
     };
     const ids = (body: SessionsResponse) => body.sessions.map((s) => s.sessionId);
 
-    // Without the flag the list keeps its whole-stream contract: every row, every total.
+    // Without the flag the plain list serves every row. A counted list already leaves the desk
+    // out — a Session the organization runtime opened is a company Session, in no category —
+    // but not the ticket session the stamp has not reached: that one is the flag's to drop.
+    expect(ids(await list(""))).toEqual([ticket, desk, own]);
     const full = await list("?counts=1");
-    expect(ids(full)).toEqual([ticket, desk, own]);
-    expect(full.counts!.active).toBe(3);
-    expect(full.workspaceCounts!["/tmp/w-org"]!.active).toBe(2);
+    expect(ids(full)).toEqual([ticket, own]);
+    expect(full.counts!.active).toBe(2);
+    expect(full.workspaceCounts!["/tmp/w-org"]!.active).toBe(1);
     expect(full.workspaceLatest!["/tmp/w-org"]).toBe("2027-01-01T09:30:00.000Z");
 
     // With it, the organization's rows are gone from every part of the answer at once — a
@@ -901,12 +856,54 @@ describe("session-index", () => {
     expect((await api.patch(`/api/sessions/${session.sessionId}`, {})).status).toBe(400);
   });
 
+  describe("PATCH title", () => {
+    async function namedSession(): Promise<string> {
+      await configureModels();
+      const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
+      const res = await api.patch(`/api/sessions/${session.sessionId}`, { title: "Before" });
+      expect(res.status).toBe(200);
+      return session.sessionId;
+    }
+    const storedTitle = async (sessionId: string) =>
+      ((await (await api.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse).session
+        .title;
+
+    it("stores runs of whitespace, newlines and tabs included, as one space", async () => {
+      const sessionId = await namedSession();
+      const res = await api.patch(`/api/sessions/${sessionId}`, {
+        title: "  Q3\n\trelease   prep  ",
+      });
+      expect(res.status).toBe(200);
+      expect(await storedTitle(sessionId)).toBe("Q3 release prep");
+    });
+
+    it.each([
+      ["an ANSI escape", "\x1b[2Jfake prompt"],
+      ["a bell", "ding\x07"],
+      ["a right-to-left override", "invoice\u202Etxt.exe"],
+      ["a directional isolate", "\u2066isolated\u2069"],
+    ])("refuses %s with 400 invalid_title and keeps the stored title", async (_case, title) => {
+      const sessionId = await namedSession();
+      const res = await api.patch(`/api/sessions/${sessionId}`, { title });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("invalid_title");
+      expect(await storedTitle(sessionId)).toBe("Before");
+    });
+
+    it("keeps an emoji sequence held together by a zero-width joiner", async () => {
+      const sessionId = await namedSession();
+      const title = "Pairing \u{1F469}\u200D\u{1F4BB}";
+      expect((await api.patch(`/api/sessions/${sessionId}`, { title })).status).toBe(200);
+      expect(await storedTitle(sessionId)).toBe(title);
+    });
+  });
+
   it("insertOrIgnore is idempotent: concurrent first discovery of one Session doesn't throw on the UNIQUE constraint", async () => {
     const createdAt = new Date().toISOString();
     const row = {
       sessionId: "session-2026-07-02-00-00-00-11223344",
       projectId,
-      agentId: "default_agent",
+      agentId,
       modelId: "cli-model",
       provider: "custom",
       workspace: "/tmp/w",
@@ -948,12 +945,13 @@ describe("session-index", () => {
       system_prompt: "",
       agent_state: "/tmp/a",
       workspace: session.workspace,
+      source: "user",
     };
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-02", session.sessionId, 1, [
+    await writeTraceFile(t.root, projectId, agentId, "2026-07-02", session.sessionId, 1, [
       sessionMeta(meta),
       userText("a"),
     ]);
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-03", session.sessionId, 2, [
+    await writeTraceFile(t.root, projectId, agentId, "2026-07-03", session.sessionId, 2, [
       sessionMeta(meta),
       userText("b"),
     ]);
@@ -989,10 +987,10 @@ describe("session-index", () => {
     // the assertion is about validation alone — a real goal loop would still be settling
     // after the test closed its database.
     const started: OmniMessage[][] = [];
-    t.deps.manager.startGoal = async (sessionId, args) => {
+    vi.spyOn(t.deps.manager, "startGoal").mockImplementation(async (sessionId, args) => {
       started.push(args.messages);
       return { sessionId };
-    };
+    });
     const withText = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
       input: [
         { type: "text", text: "objective" },

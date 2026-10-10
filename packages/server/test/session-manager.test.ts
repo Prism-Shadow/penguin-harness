@@ -1,15 +1,47 @@
 /**
- * Unit tests for the Session runtime (a fake Session / Loader is injected; no
- * real LLM requests are made): driving and state transitions, 409 mutual
- * exclusion, the four approval modes and taking effect immediately on change,
- * an organization's session denying rather than waiting for a person who is not there,
- * abort collapsing to deny, self-healing id swaps, vault invalidation re-resuming
- * stale runtimes, and LLM / tool errors in the message stream being persisted
- * (core doesn't throw, so try/catch can't catch them).
+ * The Session runtime (SessionManager) over scripted runtime Sessions. No model is ever
+ * called; one case drives a real core Session, with a scripted LLM, and a real OS process.
+ *
+ * Driving:
+ * - An unknown Session is a 404. A Task publishes its input first, runs, returns to idle and
+ *   pushes task_state; the row's last-active stamp moves at the start and the end of each run
+ *   (a failing stamp write strands nothing); outputs reach the recorder with their context.
+ * - The thinking level is runtime state the manager assigns, reaching a live child and a
+ *   runtime still loading.
+ * - Background notices arriving while idle auto-start a Task carrying them (adopted Sessions
+ *   included); live subagent messages are published and their usage recorded; end to end, a
+ *   real background command finishing after idle reaches the channel as a harness message.
+ * - LLM and tool failures folded into the stream are recorded with the Session's context.
+ * - A second Task or a compaction while running is a 409; each compact refusal has its own code.
+ * - Steering reaches the running Session (idle or a lost race is a 409), with a mirror that is
+ *   broadcast, shifted at delivery and dropped at the run's end; follow-ups queue while running
+ *   or compacting and start in order afterwards, surviving an abort.
+ *
+ * Approvals:
+ * - always-ask parks the call and pushes approval_request; deny-all and read-only decide
+ *   without a person; an organization's Session denies what would wait for a person, while a
+ *   development Session under the same mode still waits; a mode PATCHed mid-run applies to the
+ *   next decision; an abort collapses pending approvals to deny before the signal fires.
+ * - A sub-session inherits its parent's organization stamp and persists its session_meta.
+ *
+ * Lifecycle:
+ * - Session deletion interrupts and blocks new Tasks until it ends; a loader answering a new id
+ *   heals the index; a swept channel is re-read before every publish; a Project abort hands
+ *   back its in-flight runs; a loader's HttpError passes through; shutdown disposes every
+ *   environment and refuses new Tasks, and a run parked on an approval is denied, winds down,
+ *   and is disposed only after it has, even once the database has closed under it.
+ * - Idle entries are evicted (running ones, pending approvals and working subagents pin them);
+ *   invalidating an Agent's or a Project's runtimes rebuilds them at next access, never
+ *   mid-run, and publishes a discarded runtime's background count as cleared.
+ *
+ * Titles:
+ * - Title generation fires at Task start, before any model output, from the user's input
+ *   alone (never from a compaction); a subagent's fires at registration from its spawning
+ *   prompt.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -53,6 +85,7 @@ import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manag
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
 import type { UsageContext } from "../src/runtime/usage-recorder.js";
+import { fakeSession } from "./fixtures/session.js";
 import { waitFor } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 
@@ -71,13 +104,8 @@ const ROW: SessionRow = {
 
 /** A simple, scriptable fake Session: run yields one tool_call and requests approval for it. */
 function approvalFakeSession(sessionId: string, toolName = "write_file"): RuntimeSession {
-  return {
-    sessionId,
+  return fakeSession(sessionId, {
     toolPermission: (name) => (name === "read_tool" ? "r" : "rw"),
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: toolName, arguments: "{}", toolCallId: "tc-1" });
       yield tc;
@@ -93,7 +121,30 @@ function approvalFakeSession(sessionId: string, toolName = "write_file"): Runtim
       yield compactionBegin({ reason: "manual", mode: "summarize", context: 1, turns: 1 });
       yield compactionEnd({ reason: "manual", mode: "summarize", status: "completed" });
     },
+  });
+}
+
+/**
+ * A run that parks one call on a person, logging into `order` how the call was decided, whether
+ * the run was aborted by then, when it ended, and when its environment was disposed.
+ */
+function parkedRunSession(order: string[]): RuntimeSession {
+  const fake = fakeSession("session-1", {
+    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+      try {
+        const tc = toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
+        yield tc;
+        order.push(`decided ${await opts.approve(tc)}`);
+        order.push(`aborted ${String(opts.signal.aborted)}`);
+      } finally {
+        order.push("run ended");
+      }
+    },
+  });
+  (fake as { dispose?: () => void }).dispose = () => {
+    order.push("disposed");
   };
+  return fake;
 }
 
 /**
@@ -168,7 +219,7 @@ describe("session-manager", () => {
   });
   afterEach(() => {
     channels.dispose();
-    db.close();
+    if (db.isOpen) db.close();
   });
 
   it("unknown Session → 404", async () => {
@@ -281,20 +332,13 @@ describe("session-manager", () => {
   it("startTask carries no thinking level: the manager assigns runtime state instead", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     const runOpts: Record<string, unknown>[] = [];
-    const fake: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
+    const fake: RuntimeSession = fakeSession("session-1", {
       thinkingLevel: undefined,
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
       async *run(_input: OmniMessage[], opts: Record<string, unknown>) {
         runOpts.push(opts);
         yield assistantText("ok");
       },
-      async *compact(): AsyncGenerator<OmniMessage> {},
-    };
+    });
     const manager = makeManager(loaderOf(fake));
     await manager.startTask("session-1", [userText("a")]);
     await waitFor(() => manager.statusOf("session-1") === "idle" && runOpts.length === 1);
@@ -358,21 +402,14 @@ describe("session-manager", () => {
     let noticeCb: (() => void) | null = null;
     const queue: OmniMessage[] = [];
     const runInputs: OmniMessage[][] = [];
-    const fake: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const fake: RuntimeSession = fakeSession("session-1", {
       onBackgroundNotice: (cb) => (noticeCb = cb),
       takeBackgroundNotices: () => queue.splice(0),
       async *run(input: OmniMessage[]) {
         runInputs.push(input);
         yield assistantText("ok");
       },
-      async *compact(): AsyncGenerator<OmniMessage> {},
-    };
+    });
     const manager = makeManager(loaderOf(fake));
     // First task loads the entry (which registers the notice listener) and finishes.
     await manager.startTask("session-1", [userText("hi")]);
@@ -398,17 +435,10 @@ describe("session-manager", () => {
 
   it("live-forwarded background-subagent messages publish to the channel and record usage", async () => {
     let forward: ((msg: OmniMessage) => void) | null = null;
-    const fake: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const fake: RuntimeSession = fakeSession("session-1", {
       onBackgroundMessage: (cb) => (forward = cb),
       async *run() {},
-      async *compact(): AsyncGenerator<OmniMessage> {},
-    };
+    });
     const manager = makeManager(loaderOf(fake));
     manager.adopt(sessions.findById("session-1")!, fake);
     expect(forward).not.toBeNull();
@@ -428,21 +458,14 @@ describe("session-manager", () => {
     let noticeCb: (() => void) | null = null;
     const queue: OmniMessage[] = [];
     const runInputs: OmniMessage[][] = [];
-    const fake: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const fake: RuntimeSession = fakeSession("session-1", {
       onBackgroundNotice: (cb) => (noticeCb = cb),
       takeBackgroundNotices: () => queue.splice(0),
       async *run(input: OmniMessage[]) {
         runInputs.push(input);
         yield assistantText("ok");
       },
-      async *compact(): AsyncGenerator<OmniMessage> {},
-    };
+    });
     const manager = makeManager(loaderOf(fake));
     const row = sessions.findById("session-1")!;
     manager.adopt(row, fake);
@@ -476,7 +499,9 @@ describe("session-manager", () => {
       },
     });
     // Turn 1: launch a command that outlives the task; turn 2: final reply (task ends,
-    // session idle, process still running); turn 3 is the auto-started notice task.
+    // session idle, process still running); turn 3 is the auto-started notice task. The
+    // command waits for a file the test writes once the Session is idle, so "finishing after
+    // idle" is an ordering the test makes rather than a race against a sleep.
     const llm = new (class implements LLMInterface {
       calls = 0;
       inputs: OmniMessage[][] = [];
@@ -489,7 +514,7 @@ describe("session-manager", () => {
           yield toolCall({
             name: "exec_command",
             arguments: JSON.stringify({
-              cmd: "printf 'serving'; sleep 1",
+              cmd: "printf 'serving'; while [ ! -f release ]; do sleep 0.05; done",
               run_in_background: true,
             }),
             toolCallId: "tc_bg",
@@ -516,6 +541,7 @@ describe("session-manager", () => {
         system_prompt: "sp",
         agent_state: dir,
         workspace: dir,
+        source: "user",
       },
       bootstrap: async () => ({ llm }),
       environment,
@@ -531,8 +557,9 @@ describe("session-manager", () => {
       // what follows is genuinely the idle-arrival path.
       expect(events.some((e) => e.data.includes("background_task_done"))).toBe(false);
 
-      // The process exits ~1s in: the completion report must land on the channel as a
-      // harness user message and auto-start a task the model answers.
+      // Let the command finish: its completion report must land on the channel as a harness
+      // user message and auto-start a task the model answers.
+      await writeFile(path.join(dir, "release"), "");
       await waitFor(() => events.some((e) => e.data.includes("background_task_done")), 8000);
       const notice = events.find((e) => e.data.includes("background_task_done"))!;
       expect(notice.data).toContain('"sender":"harness"');
@@ -559,13 +586,7 @@ describe("session-manager", () => {
     // core folds LLM / tool failures into the message stream (no throw): a tool
     // failure produces one tool_call_output(failed), an LLM failure produces one
     // request_end(failed) + an abort carrying the real reason.
-    const failing: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const failing: RuntimeSession = fakeSession("session-1", {
       async *run(): AsyncGenerator<OmniMessage> {
         yield requestBegin();
         yield toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
@@ -582,8 +603,7 @@ describe("session-manager", () => {
           errorMessage: "500 upstream",
         });
       },
-      async *compact(): AsyncGenerator<OmniMessage> {},
-    };
+    });
     const manager = makeManager(loaderOf(failing), { record: (args) => captured.push(args) });
     await manager.startTask("session-1", [userText("run")]);
     await waitFor(() => manager.statusOf("session-1") === "idle" && captured.length >= 2);
@@ -830,13 +850,7 @@ describe("session-manager", () => {
   it("queueIfBusy during compaction: the queue drains once the compaction ends", async () => {
     const runInputs: string[][] = [];
     let releaseCompact: (() => void) | null = null;
-    const fake: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const fake: RuntimeSession = fakeSession("session-1", {
       // eslint-disable-next-line require-yield
       async *run(input: OmniMessage[]): AsyncGenerator<OmniMessage> {
         runInputs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
@@ -848,7 +862,7 @@ describe("session-manager", () => {
         yield compactionBegin({ reason: "manual", mode: "summarize", context: 1, turns: 1 });
         yield compactionEnd({ reason: "manual", mode: "summarize", status: "completed" });
       },
-    };
+    });
     const manager = makeManager(loaderOf(fake));
     await manager.startCompact("session-1");
     await waitFor(() => releaseCompact !== null);
@@ -967,32 +981,26 @@ describe("session-manager", () => {
   it("a sub-session registered under an organization's Session inherits its org stamp; one under an ordinary Session stays unmarked", async () => {
     // A desk session: the organization runtime stamped it at creation.
     sessions.insert({ ...ROW, sessionId: "session-org", client: "org" });
-    const spawning = (sessionId: string, childId: string): RuntimeSession => ({
-      sessionId,
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
-      async *run() {
-        yield withOrigin(
-          sessionMeta({
-            session_id: childId,
-            model_id: "m-child",
-            provider: "custom",
-            model_context_window: 1000,
-            system_prompt: "sys",
-            agent_state: "/root/p1/child_agent/agent_state",
-            workspace: "/tmp/w-child",
-            source: "subagent",
-          }),
-          childId,
-        );
-        yield withOrigin(assistantText("child done"), childId);
-        yield assistantText("done");
-      },
-      async *compact() {},
-    });
+    const spawning = (sessionId: string, childId: string): RuntimeSession =>
+      fakeSession(sessionId, {
+        async *run() {
+          yield withOrigin(
+            sessionMeta({
+              session_id: childId,
+              model_id: "m-child",
+              provider: "custom",
+              model_context_window: 1000,
+              system_prompt: "sys",
+              agent_state: "/root/p1/child_agent/agent_state",
+              workspace: "/tmp/w-child",
+              source: "subagent",
+            }),
+            childId,
+          );
+          yield withOrigin(assistantText("child done"), childId);
+          yield assistantText("done");
+        },
+      });
     const manager = makeManager({
       load: async (row) =>
         spawning(row.sessionId, row.sessionId === "session-org" ? "child-org" : "child-plain"),
@@ -1009,13 +1017,7 @@ describe("session-manager", () => {
   });
 
   it("sub-session (origin) registration: session_meta persists; the title is generated from the spawning prompt", async () => {
-    const fake: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const fake: RuntimeSession = fakeSession("session-1", {
       async *run() {
         // The parent-level run_subagent call (no origin): its prompt becomes the sub-session title.
         yield toolCall({
@@ -1033,14 +1035,14 @@ describe("session-manager", () => {
             system_prompt: "sys",
             agent_state: "/root/p1/child_agent/agent_state",
             workspace: "/tmp/w-child",
+            source: "subagent",
           }),
           hop,
         );
         yield withOrigin(assistantText("child done"), hop);
         yield assistantText("done");
       },
-      async *compact() {},
-    };
+    });
     const notified: Array<{ ctx: UsageContext; req: TitleRequest }> = [];
     const manager = new SessionManager({
       sessions,
@@ -1060,9 +1062,8 @@ describe("session-manager", () => {
     expect(child?.agentId).toBe("child_agent");
     expect(child?.modelId).toBe("m-child");
     expect(child?.workspace).toBe("/tmp/w-child");
-    // The origin lands in the in-process registry (session_meta is the single source of
-    // truth; the row stores no source column) — "subagent" even when the forwarded meta
-    // predates the source field (this fake omits it): the registration path is the fallback.
+    // The source lands in the in-process registry (session_meta is the single source of
+    // truth; the row stores no source column).
     expect(sources.get("child-1")).toBe("subagent");
     expect(child && "source" in child).toBe(false);
     // The row itself is inserted with a blank title: the title generator (faked here) is
@@ -1086,13 +1087,7 @@ describe("session-manager", () => {
 
   it("approval mode takes effect immediately: after a mid-run PATCH, the next decision uses the new mode", async () => {
     // A fake Session that requests approval twice.
-    const fake: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const fake: RuntimeSession = fakeSession("session-1", {
       async *run(_input, opts) {
         const tc1 = toolCall({ name: "t1", arguments: "{}", toolCallId: "tc-1" });
         yield tc1;
@@ -1101,8 +1096,7 @@ describe("session-manager", () => {
         yield tc2;
         yield approvalDecision(await opts.approve(tc2), "tc-2");
       },
-      async *compact() {},
-    };
+    });
     const manager = makeManager(loaderOf(fake));
     await manager.startTask("session-1", [userText("go")]);
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
@@ -1158,6 +1152,39 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-2-healed") === "idle");
     // Usage is attributed under the new id.
     expect(recordedCtx[0]!.sessionId).toBe("session-2-healed");
+  });
+
+  it("load reconciles the row's model with the runtime's: a Session that switched and crashed before the row update resumes on the new model, and the row follows", async () => {
+    // The Trace is the durable record of a switch (the file it opens is headed by the new
+    // context's session_meta); the row is a cache of it that a crash in between leaves stale.
+    // The loader resumes on the Trace's model, so what it reports wins — for the entry (usage
+    // attribution) and for the row (what GET /sessions/:id shows).
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const resumed: RuntimeSession = {
+      ...approvalFakeSession("session-1"),
+      provider: "other",
+      modelId: "m-switched",
+    };
+    const manager = makeManager(loaderOf(resumed));
+    await manager.startTask("session-1", [userText("go")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && recorded.length >= 3);
+    expect(sessions.findById("session-1")).toMatchObject({
+      provider: "other",
+      modelId: "m-switched",
+    });
+    expect(recordedCtx[0]).toMatchObject({ provider: "other", modelId: "m-switched" });
+
+    // A runtime that reports no model (test fakes) keeps the row's pair.
+    db.close();
+    db = openDatabase(":memory:");
+    sessions = wire(SessionsRepo, { db });
+    sessions.insert({ ...ROW, approvalMode: "allow-all" });
+    recordedCtx = [];
+    const plain = makeManager(loaderOf(approvalFakeSession("session-1")));
+    await plain.startTask("session-1", [userText("go")]);
+    await waitFor(() => plain.statusOf("session-1") === "idle" && recordedCtx.length >= 1);
+    expect(sessions.findById("session-1")).toMatchObject({ provider: "custom", modelId: "m1" });
+    expect(recordedCtx[0]).toMatchObject({ provider: "custom", modelId: "m1" });
   });
 
   it("after the channel is swept and rebuilt, drive still sends to the current channel (re-get before every publish)", async () => {
@@ -1222,6 +1249,48 @@ describe("session-manager", () => {
     manager.adopt(ROW, fake);
     await manager.shutdown();
     expect(disposed).toBe(1);
+  });
+
+  it("shutdown denies a call parked on a person, lets the run wind down, and disposes after it", async () => {
+    // What a hot swap or an exit meets mid-conversation: a run waiting on an approval nobody
+    // in this process will ever give.
+    const order: string[] = [];
+    const fake = parkedRunSession(order);
+    const manager = makeManager(loaderOf(fake));
+    await manager.startTask("session-1", [userText("write it")]);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+
+    await manager.shutdown();
+    // The environment goes only once the run has let go of it.
+    expect(order).toEqual(["decided deny", "aborted true", "run ended", "disposed"]);
+  });
+
+  it("shutdown still denies, winds down and disposes once the database has closed", async () => {
+    // The approvals count reaches the Project's users through a notifier that reads the
+    // database first (who owns and shares the Project). A handle closed under a run that
+    // outlived its drain window must not stop the shutdown that denies the call.
+    const order: string[] = [];
+    const fake = parkedRunSession(order);
+    const counts: number[] = [];
+    const manager = new SessionManager({
+      sessions,
+      channels,
+      sources,
+      loader: loaderOf(fake),
+      recorder: { record: async () => undefined },
+      notifyProjectUsers: (_projectId, event) => {
+        sessions.findById(ROW.sessionId); // the audience lookup: a database read
+        if (event.type === "session_approvals") counts.push(event.count);
+      },
+      log: () => {},
+    });
+    await manager.startTask("session-1", [userText("write it")]);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    expect(counts).toEqual([1]);
+
+    db.close();
+    await manager.shutdown();
+    expect(order).toEqual(["decided deny", "aborted true", "run ended", "disposed"]);
   });
 
   it("rejects new Tasks once shutdown is set (503 shutting_down)", async () => {
@@ -1408,18 +1477,12 @@ describe("session-manager", () => {
     let running = true;
     let loads = 0;
     let forward: ((msg: OmniMessage) => void) | null = null;
-    const fake = (): RuntimeSession => ({
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
-      hasRunningBackgroundSubagents: () => running,
-      onBackgroundMessage: (cb) => (forward = cb),
-      async *run() {},
-      async *compact(): AsyncGenerator<OmniMessage> {},
-    });
+    const fake = (): RuntimeSession =>
+      fakeSession("session-1", {
+        hasRunningBackgroundSubagents: () => running,
+        onBackgroundMessage: (cb) => (forward = cb),
+        async *run() {},
+      });
     const manager = makeManager({
       load: async () => {
         loads++;
@@ -1468,13 +1531,7 @@ describe("session-manager", () => {
 
   it("notifies title generation at Task start: fallback and generation material are the user input alone; compaction doesn't notify", async () => {
     const notified: { ctx: UsageContext; session: unknown; req: TitleRequest }[] = [];
-    const plainSession: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const plainSession: RuntimeSession = fakeSession("session-1", {
       async *run() {
         yield thinkingMessage("thinking");
         yield assistantText("answer A");
@@ -1485,7 +1542,7 @@ describe("session-manager", () => {
         yield compactionBegin({ reason: "manual", mode: "summarize", context: 1, turns: 1 });
         yield compactionEnd({ reason: "manual", mode: "summarize", status: "completed" });
       },
-    };
+    });
     const manager = new SessionManager({
       sessions,
       channels,
@@ -1531,19 +1588,12 @@ describe("session-manager", () => {
     // generation starts without waiting on any model output.
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    const gatedRun: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const gatedRun: RuntimeSession = fakeSession("session-1", {
       async *run() {
         await gate;
         yield assistantText("answer");
       },
-      async *compact() {},
-    };
+    });
     const manager = new SessionManager({
       sessions,
       channels,
@@ -1577,13 +1627,7 @@ describe("session-manager", () => {
     // be in by then, proving neither waited for the run to complete.
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    const delegating: RuntimeSession = {
-      sessionId: "session-1",
-      toolPermission: () => "rw",
-      generateTitle: async () => ({ title: null, usage: null }),
-      compactability: () => "ok" as const,
-      steer: () => false,
-      skipReconnectWait: () => false,
+    const delegating: RuntimeSession = fakeSession("session-1", {
       async *run() {
         yield toolCall({
           name: "run_subagent",
@@ -1600,6 +1644,7 @@ describe("session-manager", () => {
             system_prompt: "sys",
             agent_state: "/root/p1/child_agent/agent_state",
             workspace: "/tmp/w-child",
+            source: "subagent",
           }),
           hop,
         );
@@ -1607,8 +1652,7 @@ describe("session-manager", () => {
         await gate;
         yield assistantText("short answer");
       },
-      async *compact() {},
-    };
+    });
     const manager = new SessionManager({
       sessions,
       channels,
