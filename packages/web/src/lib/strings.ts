@@ -150,10 +150,8 @@ export const zh = {
     queued: "排队中，等前面的机器处理完。",
     working: "处理中…",
     failedAt: (step: string) => `失败于「${step}」。`,
-    /** The forced install a failed job may offer. */
+    /** The forced install a failed job may offer; its confirmation says what it does. */
     replaceProgram: "强制安装",
-    replaceProgramWhy:
-      "无论那台机器上现在是什么，都把这个构建的程序装上去并重启它的服务——正在用它的人会被打断。",
     replaceProgramConfirm: (alias: string) =>
       `在 ${alias} 上强制安装？无论那台机器上现在是什么，都会装上本服务端的构建并重启它的服务，正在用它的人会被打断。`,
     /** Refusals answered by machine id when a batch is queued. */
@@ -231,33 +229,35 @@ export const zh = {
         retry: "重试",
         retryWhy: "从头再跑一遍整个流程。",
       },
-      /** The captions of the two rows of Actions: the single steps, and the ways out. */
+      /** The captions of the two groups of Actions: the single steps, and the ways out. */
       maintenance: "维护",
       leave: "退出",
       configureSsh: "配置 ssh",
-      configureSshWhy: "修改这台机器在 ~/.ssh/config 里的地址、用户、端口和密钥。",
-      /** Why a verb is held right now. */
+      configureSshWhy: "修改连接这台机器用的地址、用户、端口和密钥",
+      /**
+       * Why a verb waits on the machine, said in its row in place of what it does. A request in
+       * flight holds every verb too, for a moment, and has no line of its own.
+       */
       hold: {
-        busy: "正在处理上一个请求。",
-        moving: "这台机器有任务在处理，请稍候。",
-        noImage: "本服务端没有可推送的安装镜像。",
-        noConnection: "当前没有连接。",
-        unreachable: "上次检查时连不上这台机器，先试试「重试连接」。",
+        moving: "这台机器正在处理任务，完成后可用",
+        noImage: "本服务端没有可安装的版本",
+        noConnection: "当前没有连接，无需断开",
+        unreachable: "上次检查时连不上这台机器",
       },
     },
-    /** The single steps and the ways out the dialog offers, each with what it does. */
+    /** The single steps and the ways out the dialog offers, each with what it does in one line. */
     verbs: {
       install: "安装程序",
-      installWhy: "把程序装到那台机器上，或更新到本服务端的版本；版本已一致时跳过。",
+      installWhy: "把本服务端的版本装到这台机器上",
       connect: "重新连接",
-      connectWhy: "重新建立通往那台机器的连接；服务没在运行就先启动它。",
+      connectWhy: "重新连上这台机器，必要时先启动它的服务",
       restart: "重启服务",
-      restartWhy: "重启那台机器上的服务，让运行中的程序与磁盘上的一致。",
-      stopUsingWhy: "断开连接并把它从本 Project 移除；程序留在那台机器上，之后可以重新启用。",
+      restartWhy: "重启这台机器上的服务",
+      stopUsingWhy: "断开连接并移出本 Project，程序仍留在这台机器上",
       disconnect: "断开",
-      disconnectWhy: "只断开连接；那边的服务继续运行。",
+      disconnectWhy: "只断开连接，这台机器上的服务继续运行",
       release: "移出 Project",
-      releaseWhy: "本 Project 不再使用它；连接和程序都保持不变。",
+      releaseWhy: "本 Project 不再列出它，连接和程序都不变",
       disconnectConfirm: (alias: string) =>
         `断开与 ${alias} 的连接？这条连接由使用它的所有 Project 共用，正在经它进行的工作会中断；那台机器上的服务继续运行，之后可以重新连接。`,
       releaseConfirm: (alias: string) =>

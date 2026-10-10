@@ -1,7 +1,7 @@
 /**
  * What the Machine dialog says about one machine, derived without a DOM: the status chip under
- * its title, the facts with their glyphs, the job's steps, the one thing to do next, and why a
- * verb is held.
+ * its title, the facts with their glyphs, the job's steps, the one thing to do next, the verbs
+ * Actions lists, and why a verb is held.
  *
  * Every derivation reads the reading the card reads (`readMachine`), so the dialog and the card
  * never disagree about a machine's state: the dialog only says more of it.
@@ -13,7 +13,7 @@ import type {
   SshHostResponse,
 } from "@prismshadow/penguin-server/api";
 import { ICONS } from "@prismshadow/penguin-ui";
-import { formatDateTime, formatRelativeLong } from "../../lib/format";
+import { formatDateTime, formatRelativeLong, formatShortDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
 import { reasonText } from "./machine-card";
@@ -92,15 +92,20 @@ export type FactKey =
   | "installedAt"
   | "machineId";
 
-/** One fact of the Details section: its glyph and label, and its value in words. */
+/**
+ * One fact of the Details section: its glyph and label, and its value in words — with whatever
+ * stands behind the value said beside it or under it, never on a hover the reader has to find.
+ */
 export interface Fact {
   key: FactKey;
   /** The label's glyph, from `ICONS`. */
   icon: string;
   label: string;
   value: string;
-  /** Hover text: the absolute time behind a relative one, ssh's own words behind 「连不上」. */
-  tooltip?: string;
+  /** Said after the value in the muted ink: the time itself, beside how long ago it was. */
+  aside?: string;
+  /** A muted line under the value: ssh's own words under "Unreachable". */
+  note?: string;
   /** The value is an identifier: an alias, an address, a path, an id. */
   mono?: boolean;
   /** The id row: muted like its label, a copy button beside it. */
@@ -122,8 +127,11 @@ export function installedText(
   return { version, note: version === imageVersion ? "latest" : "behind" };
 }
 
-/** The server over there, in words: running on its port, not running, or out of reach. */
-function serviceValue(status: NonNullable<MachineInfo["status"]>): Pick<Fact, "value" | "tooltip"> {
+/**
+ * The server over there, in words: running on its port, not running, or out of reach — with
+ * ssh's own words under it when there are any.
+ */
+function serviceValue(status: NonNullable<MachineInfo["status"]>): Pick<Fact, "value" | "note"> {
   const f = S.machines.detail.fact;
   if (status.state === "running") {
     return {
@@ -133,7 +141,21 @@ function serviceValue(status: NonNullable<MachineInfo["status"]>): Pick<Fact, "v
   if (status.state === "stopped") return { value: f.stopped };
   return status.detail === undefined
     ? { value: f.unreachable }
-    : { value: f.unreachable, tooltip: status.detail };
+    : { value: f.unreachable, note: status.detail };
+}
+
+/**
+ * The last check: how long ago, and beside it the time itself — unless how long ago is already
+ * said as a time (a week or more, or a clock running ahead), or the stamp cannot be read.
+ */
+function checkedValue(
+  checkedAt: string,
+  locale: "zh" | "en",
+  now: number,
+): Pick<Fact, "value" | "aside"> {
+  const ago = formatRelativeLong(checkedAt, locale, now);
+  if (ago === "" || ago === formatDateTime(checkedAt)) return { value: ago };
+  return { value: ago, aside: formatShortDateTime(checkedAt) };
 }
 
 /**
@@ -181,8 +203,7 @@ export function machineFacts(
       key: "checked",
       icon: ICONS.clock,
       label: f.checked,
-      value: formatRelativeLong(status.checkedAt, locale, now),
-      tooltip: formatDateTime(status.checkedAt),
+      ...checkedValue(status.checkedAt, locale, now),
     });
   }
   const installed = machine.installed;
@@ -344,8 +365,64 @@ export function primaryAction(
 /** The single steps and the ways out; `use` and `replaceProgram` are the primary's. */
 export type DialogVerb = Exclude<MachineVerb, "use" | "replaceProgram">;
 
-/** Why a verb waits: a request in flight, a job on its way, no build, no connection, no answer. */
-export type Hold = "busy" | "moving" | "noImage" | "noConnection" | "unreachable";
+/** One single step or way out as Actions lists it: its glyph, its word, and what it does. */
+export interface VerbRow {
+  verb: DialogVerb;
+  glyph: string;
+  label: string;
+  /** What the verb does, in one line beside its button. */
+  why: string;
+}
+
+/** A group of Actions: its caption, and its verbs in order. */
+export interface VerbGroup {
+  caption: string;
+  rows: VerbRow[];
+}
+
+/**
+ * Actions' two groups, in order: the single steps, then the ways out. Reconnect stays out where
+ * the one thing to do already connects — Connect and Try again run the whole pipeline, which
+ * connects and more — so the same act is never offered twice.
+ */
+export function verbGroups(primary: PrimaryKind | null): VerbGroup[] {
+  const m = S.machines;
+  const connects = primary === "connect" || primary === "tryAgain";
+  const maintenance: VerbRow[] = [
+    { verb: "install", glyph: ICONS.download, label: m.verbs.install, why: m.verbs.installWhy },
+    { verb: "connect", glyph: ICONS.chainLink, label: m.verbs.connect, why: m.verbs.connectWhy },
+    { verb: "restart", glyph: ICONS.rotateCw, label: m.verbs.restart, why: m.verbs.restartWhy },
+    {
+      verb: "configure",
+      glyph: ICONS.gear,
+      label: m.detail.configureSsh,
+      why: m.detail.configureSshWhy,
+    },
+  ];
+  const leave: VerbRow[] = [
+    { verb: "stopUsing", glyph: ICONS.plugLifted, label: m.stopUsing, why: m.verbs.stopUsingWhy },
+    {
+      verb: "disconnect",
+      glyph: ICONS.signOut,
+      label: m.verbs.disconnect,
+      why: m.verbs.disconnectWhy,
+    },
+    { verb: "release", glyph: ICONS.boxArrowOut, label: m.verbs.release, why: m.verbs.releaseWhy },
+  ];
+  return [
+    {
+      caption: m.detail.maintenance,
+      rows: maintenance.filter((row) => !(connects && row.verb === "connect")),
+    },
+    { caption: m.detail.leave, rows: leave },
+  ];
+}
+
+/** Why a verb waits on the machine: a job on its way, no build, no connection, no answer. */
+export type HoldReason = "moving" | "noImage" | "noConnection" | "unreachable";
+
+/** Why a verb waits: a request in flight, or a reason of the machine's own. */
+export type Hold = "busy" | HoldReason;
 
 export interface VerbContext {
   /** A request from the page is in flight. */
@@ -360,21 +437,19 @@ export interface VerbContext {
   unreachable: boolean;
 }
 
-/** What can hold each verb, in the order the reasons are told. */
-const HOLDS: Record<DialogVerb, readonly Hold[]> = {
-  install: ["busy", "moving", "noImage"],
-  connect: ["busy", "moving"],
-  restart: ["busy", "moving", "unreachable"],
-  configure: ["busy"],
-  stopUsing: ["busy"],
-  disconnect: ["busy", "noConnection"],
-  release: ["busy"],
+/** What of the machine's own can hold each verb, in the order the reasons are told. */
+const HOLDS: Record<DialogVerb, readonly HoldReason[]> = {
+  install: ["moving", "noImage"],
+  connect: ["moving"],
+  restart: ["moving", "unreachable"],
+  configure: [],
+  stopUsing: [],
+  disconnect: ["noConnection"],
+  release: [],
 };
 
-const holds = (hold: Hold, ctx: VerbContext): boolean => {
+const holds = (hold: HoldReason, ctx: VerbContext): boolean => {
   switch (hold) {
-    case "busy":
-      return ctx.busy;
     case "moving":
       return ctx.moving;
     case "noImage":
@@ -386,7 +461,19 @@ const holds = (hold: Hold, ctx: VerbContext): boolean => {
   }
 };
 
-/** Why a verb is held right now, or null when it may be pressed. The first reason wins. */
-export function verbHold(verb: DialogVerb, ctx: VerbContext): Hold | null {
+/**
+ * Why a verb waits on the machine, or null when nothing of the machine's holds it; the first
+ * reason wins. A request in flight is not among them: it holds every verb for the moment the
+ * request takes, which is no reason to rewrite what each one says.
+ */
+export function holdReason(verb: DialogVerb, ctx: VerbContext): HoldReason | null {
   return HOLDS[verb].find((hold) => holds(hold, ctx)) ?? null;
+}
+
+/**
+ * Why a verb is held right now, or null when it may be pressed: a request in flight holds every
+ * verb and is told before any other reason.
+ */
+export function verbHold(verb: DialogVerb, ctx: VerbContext): Hold | null {
+  return ctx.busy ? "busy" : holdReason(verb, ctx);
 }

@@ -17,19 +17,23 @@
  *   names outside the pipeline is told as it was named.
  * - A verb is held for the first reason that applies: a request in flight holds every verb; a job
  *   on its way holds the single steps but never the ways out or the ssh form; no build holds
- *   Install; nothing connected holds Disconnect; a machine out of reach holds Restart alone.
+ *   Install; nothing connected holds Disconnect; a machine out of reach holds Restart alone. The
+ *   reason a row tells leaves the request in flight out — it holds every verb for a moment — and
+ *   still tells the machine's own.
  * - The installed version says whether it is the one this server would install, and is bare when
  *   there is nothing to compare it against or it is this server's own.
  * - The facts: a remote machine is reached over ssh, with the address its alias names once the
  *   host block is read — said the way ssh would be told it — the server over there in words with
- *   ssh's own words behind them, the last check measured from now, the build against this
- *   server's, and its id last; one never checked has no server or last-check row, and one with
- *   nothing installed no build rows. This server's own entry is reached here, without ssh, and
- *   says its version and when it started.
+ *   ssh's own words under them, the last check measured from now with the time itself beside it,
+ *   the build against this server's, and its id last; a check a week old or more is the time
+ *   alone, and a stamp that cannot be read has no time beside it; one never checked has no
+ *   server or last-check row, and one with nothing installed no build rows. This server's own
+ *   entry is reached here, without ssh, and says its version and when it started.
  */
 import { describe, expect, it } from "vitest";
 import type { MachineInfo, MachineJob } from "@prismshadow/penguin-server/api";
 import {
+  holdReason,
   installedText,
   jobSteps,
   jobView,
@@ -41,6 +45,7 @@ import {
 import type { DialogVerb, Fact, VerbContext } from "../src/features/machines/machine-detail-view";
 import { readingTone } from "../src/features/machines/machines-view";
 import type { MachineReading } from "../src/features/machines/machines-view";
+import { formatDateTime, formatShortDateTime } from "../src/lib/format";
 import { S } from "../src/lib/strings";
 
 const IMAGE = "0.2.13";
@@ -265,6 +270,21 @@ describe("a held verb", () => {
     expect(held({ ...idle, unreachable: true })).toEqual(["restart"]);
     expect(verbHold("restart", { ...idle, unreachable: true })).toBe("unreachable");
   });
+
+  it("tells in its row the machine's own reason, never the request in flight, which holds every verb for a moment", () => {
+    const busy = { ...idle, busy: true };
+    for (const verb of VERBS) expect(holdReason(verb, busy), verb).toBeNull();
+    const waiting = { ...busy, moving: true, connected: false };
+    expect(VERBS.map((verb) => holdReason(verb, waiting))).toEqual([
+      "moving",
+      "moving",
+      "moving",
+      null,
+      null,
+      "noConnection",
+      null,
+    ]);
+  });
 });
 
 describe("the installed version", () => {
@@ -332,14 +352,29 @@ describe("the facts", () => {
     expect(fact.get("connection")!.value).toContain(edge.alias);
     expect(fact.get("host")!.value).toBe("ubuntu@10.0.0.12:2222");
     expect(fact.get("root")!.value).toBe(edge.root);
-    // A plain word, with ssh's own words behind it.
+    // A plain word, with ssh's own words under it.
     expect(fact.get("service")).toMatchObject({
       value: S.machines.detail.fact.unreachable,
-      tooltip: unreachable.detail,
+      note: unreachable.detail,
     });
-    expect(fact.get("checked")!.value).toBe("3 minutes ago");
+    // How long ago, and the time itself beside it.
+    expect(fact.get("checked")).toMatchObject({
+      value: "3 minutes ago",
+      aside: formatShortDateTime(edge.status!.checkedAt),
+    });
     expect(fact.get("installed")!.value).toBe(S.machines.detail.fact.behind("0.2.12", IMAGE));
     expect(facts.id).toMatchObject({ value: edge.machineId, quiet: true });
+  });
+
+  it("say a check a week old or more as the time alone, never the time twice, and put nothing beside a stamp they cannot read", () => {
+    const checked = (checkedAt: string) =>
+      byKey(
+        machineFacts({ ...edge, status: { state: "stopped", checkedAt } }, null, IMAGE, "en", NOW),
+      ).get("checked")!;
+    const old = checked("2026-10-01T08:00:00.000Z");
+    expect(old.value).toBe(formatDateTime("2026-10-01T08:00:00.000Z"));
+    expect(old.aside).toBeUndefined();
+    expect(checked("not-a-date").aside).toBeUndefined();
   });
 
   it("name no address until the host block is read, no server or last check before a first probe, and no build where none is installed", () => {
@@ -389,10 +424,10 @@ describe("the facts", () => {
     const checkedAt = edge.status!.checkedAt;
     const stopped = service({ state: "stopped", checkedAt });
     expect(stopped.value).toBe(S.machines.detail.fact.stopped);
-    expect(stopped.tooltip).toBeUndefined();
+    expect(stopped.note).toBeUndefined();
     const away = service({ state: "unreachable", checkedAt });
     expect(away.value).toBe(S.machines.detail.fact.unreachable);
-    expect(away.tooltip).toBeUndefined();
+    expect(away.note).toBeUndefined();
     expect(service({ state: "running", checkedAt }).value).toBe(S.machines.state.serving);
   });
 });

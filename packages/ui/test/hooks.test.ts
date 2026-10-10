@@ -145,6 +145,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "EmptyState",
     // A Machine dialog fact's label (2026-10-10): its glyph says what the label's words say.
     "FactLabel",
+    // A Machine dialog verb's line while the verb waits (2026-10-10): its mark says the line is
+    // a reason, which the words say.
+    "VerbItem",
   ],
   "ui-tree": ["FileTree", "ActivityGroup"],
   "ui-field": ["Field", "PrefRow", "SettingRow"],

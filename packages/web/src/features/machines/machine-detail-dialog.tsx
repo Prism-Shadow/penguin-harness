@@ -6,24 +6,30 @@
  *   word, the reason behind it on the glyph's hover — the installed version, and one line saying
  *   how this server reaches the machine.
  * - Details: the facts, each label led by its glyph — how the machine is reached, the address its
- *   ssh alias names, the data directory; the server over there, the last check, the build it
+ *   ssh alias names, the data directory; the server over there (with ssh's own words under it
+ *   when it is out of reach), the last check (how long ago, and the time itself), the build it
  *   carries — and last, quiet, the machine's own id with a copy button.
  * - Progress, while a job is queued or running and after one: its steps one per line, each marked
  *   done, current, failed or still to come; a job that finished well is a single quiet line. The
  *   log is folded underneath, open while the job runs. A failed job says at which step and in the
  *   far side's own words, with Retry — and Force install when the failure offers it — under it.
- * - Actions: the one thing to do next, with what it does beside it; then the single steps
- *   (Maintain) and the ways out (Leave), each with its glyph. A verb that cannot run now stays in
- *   place, disabled.
+ * - Actions: the one thing to do next, with what it does beside it; then the single steps and the
+ *   ways out, two groups under small ruled captions, each verb on a line of its own: its button,
+ *   and beside it what it does. A verb that cannot run now stays in place, disabled, and says why
+ *   instead.
  *
  * The one thing to do has exactly one home: under the failure when the last job failed, else the
  * first row of Actions. This server's own entry has the header and Details alone: it runs no jobs
  * and takes no verbs.
  *
+ * No hint sits on words already on screen: the tooltip layer opens one only on an element that
+ * shows no text of its own, so there it would never open. The hints here sit on marks without
+ * words — the chip's glyph and the id's copy button — and everything else is said in text.
+ *
  * `MachineDetailBody` is a pure function of its props. The dialog around it adds one read, the
  * host block, which the machines list does not carry: the list is the ssh config's aliases only.
  */
-import { useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 import type { MachineInfo, MachineJob, SshHostResponse } from "@prismshadow/penguin-server/api";
 import {
@@ -49,14 +55,23 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { DOT_TONE, jobMoving } from "./machine-card";
-import { jobView, machineChip, machineFacts, primaryAction, verbHold } from "./machine-detail-view";
+import {
+  holdReason,
+  jobView,
+  machineChip,
+  machineFacts,
+  primaryAction,
+  verbGroups,
+  verbHold,
+} from "./machine-detail-view";
 import type {
-  DialogVerb,
   Fact,
   JobStep,
   MachineChip,
   StepState,
   VerbContext,
+  VerbGroup,
+  VerbRow,
 } from "./machine-detail-view";
 import { outOfDate, readMachine } from "./machines-view";
 
@@ -173,7 +188,9 @@ function breakAtSeparators(path: string): ReactNode[] {
 
 /**
  * One fact: the label muted, the value semibold — the part that is read — or muted when quiet;
- * `after` stands beside the value (the id's copy button).
+ * `after` stands beside the value (the id's copy button). What stands behind the value is said in
+ * the muted ink: the aside after it, kept whole so a line too short for it moves it down in one
+ * piece, and the note on a line of its own under it, its own line breaks kept.
  */
 function FactRow({
   fact,
@@ -185,12 +202,7 @@ function FactRow({
   after?: ReactNode;
 }) {
   const value = (
-    <span
-      className={fact.quiet ? "text-fg-muted" : "font-semibold"}
-      {...(fact.tooltip === undefined
-        ? {}
-        : { "data-tooltip": fact.tooltip, "data-tooltip-content": "text" })}
-    >
+    <span className={fact.quiet ? "text-fg-muted" : "font-semibold"}>
       {fact.key === "root" ? breakAtSeparators(fact.value) : fact.value}
     </span>
   );
@@ -206,6 +218,15 @@ function FactRow({
           {value}
           {after}
         </span>
+      )}
+      {fact.aside !== undefined && (
+        <>
+          {" "}
+          <span className="whitespace-nowrap text-fg-muted">· {fact.aside}</span>
+        </>
+      )}
+      {fact.note !== undefined && (
+        <span className="block whitespace-pre-line text-fg-muted">{fact.note}</span>
       )}
     </KeyValueRow>
   );
@@ -291,59 +312,116 @@ export function LogFold({ job }: { job: MachineJob }) {
 }
 
 /**
- * One verb: a button with its glyph before its word. Why it is held — or, at rest, what it does —
- * is its hint, on a wrapper either way, since a disabled button gets no hover of its own; `why`
- * is null where those words already stand beside the button. `data-verb` names the verb for
- * whatever reads the markup.
+ * One verb's button: its glyph before its word, `data-verb` naming the verb for whatever reads
+ * the markup. No hint rides on it — the tooltip layer would never open one on a button that shows
+ * its word — so what it does, or why it waits, stands beside it as text.
  */
 function Verb({
   verb,
   glyph,
   label,
-  why,
-  hold,
+  held,
   variant = "ghost",
   onClick,
 }: {
   verb: MachineVerb;
   glyph: string;
   label: string;
-  why: string | null;
-  /** Why the verb cannot run now; null when it can. */
-  hold: string | null;
+  /** The verb cannot run now. */
+  held: boolean;
   variant?: ButtonVariant;
   onClick: () => void;
 }) {
-  const hint = hold ?? why;
   return (
-    <span
-      className="inline-flex"
-      {...(hint === null ? {} : { "data-tooltip": hint, "data-tooltip-content": "text" })}
+    <Button size="sm" variant={variant} disabled={held} onClick={onClick} data-verb={verb}>
+      <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
+      {label}
+    </Button>
+  );
+}
+
+/** A group's caption: its name, then a hairline to the end of the row — a ruled section in small. */
+function GroupCaption({ caption, first }: { caption: string; first: boolean }) {
+  return (
+    <h4
+      className={`flex items-center gap-3 justify-self-stretch text-xs text-fg-muted sm:col-span-2 ${first ? "" : "mt-3"}`}
     >
-      <Button
-        size="sm"
-        variant={variant}
-        disabled={hold !== null}
-        onClick={onClick}
-        data-verb={verb}
-      >
-        <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
-        {label}
-      </Button>
-    </span>
+      {caption}
+      <span aria-hidden className="h-px flex-1 bg-line" />
+    </h4>
   );
 }
 
 /**
- * A row of verbs and its caption: the caption on a line of its own above them on a phone; from
- * `sm` the pair joins the Actions grid, whose first column is as wide as the longest caption, so
- * the two rows' buttons line up in any language.
+ * One verb of a group: its button, and beside it what the verb does — or, while something of the
+ * machine's holds it, why, after a mark that says the line is a reason. In the muted ink either
+ * way: a held verb is waiting, not failing. On a phone the line sits under its button, indented by
+ * the button's own padding so it starts under the glyph; from `sm` the pair joins the list's grid.
  */
-function VerbRow({ caption, children }: { caption: string; children: ReactNode }) {
+function VerbItem({
+  row,
+  held,
+  reason,
+  onClick,
+}: {
+  row: VerbRow;
+  held: boolean;
+  /** Why the verb waits on the machine; null when nothing of the machine's holds it. */
+  reason: string | null;
+  onClick: () => void;
+}) {
   return (
-    <div className="flex flex-col gap-1.5 sm:contents">
-      <span className="text-xs text-fg-muted">{caption}</span>
-      <div className="flex flex-wrap items-center gap-2">{children}</div>
+    <div className="flex flex-col items-start gap-1 sm:contents">
+      <Verb verb={row.verb} glyph={row.glyph} label={row.label} held={held} onClick={onClick} />
+      <p className="flex items-start gap-1.5 pl-2.5 text-sm text-fg-muted sm:pl-0">
+        {reason !== null && (
+          <GlyphIcon
+            d={ICONS.info}
+            size={ICON_SIZE.inlineGlyph}
+            className="ui-icon-decor mt-1 text-fg-subtle"
+          />
+        )}
+        <span>{reason ?? row.why}</span>
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Actions' groups as one list, each group under its caption and each verb on a line of its own.
+ * One grid holds both groups, so every button sits in one column as wide as the widest of them
+ * and every line starts at one edge, in either language. A request in flight holds every verb
+ * without rewriting a line: it lasts a moment, and every row would flicker.
+ */
+function VerbList({
+  groups,
+  ctx,
+  onAct,
+}: {
+  groups: readonly VerbGroup[];
+  ctx: VerbContext;
+  onAct: (verb: MachineVerb) => void;
+}) {
+  const hold = S.machines.detail.hold;
+  return (
+    <div className="grid justify-items-start gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-x-4 sm:gap-y-1.5">
+      {groups.map((group, index) => (
+        <Fragment key={group.caption}>
+          <GroupCaption caption={group.caption} first={index === 0} />
+          {group.rows.map((row) => {
+            const reason = holdReason(row.verb, ctx);
+            return (
+              <VerbItem
+                key={row.verb}
+                row={row}
+                held={verbHold(row.verb, ctx) !== null}
+                reason={reason === null ? null : hold[reason]}
+                onClick={() => onAct(row.verb)}
+              />
+            );
+          })}
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -368,27 +446,12 @@ export function MachineDetailBody({
   const view = !machine.local && job !== null ? jobView(job) : null;
   const primary = reading === null ? null : primaryAction(reading, behind, imageVersion);
   const labelWidth = FACT_LABEL_WIDTH[locale];
-  const busyHold = busy ? d.hold.busy : null;
   const ctx: VerbContext = {
     busy,
     moving: jobMoving(job),
     noImage,
     connected: machine.connection !== null,
     unreachable: machine.status?.state === "unreachable",
-  };
-  const single = (verb: DialogVerb, glyph: string, label: string, why: string) => {
-    const hold = verbHold(verb, ctx);
-    return (
-      <Verb
-        key={verb}
-        verb={verb}
-        glyph={glyph}
-        label={label}
-        why={why}
-        hold={hold === null ? null : d.hold[hold]}
-        onClick={() => onAct(verb)}
-      />
-    );
   };
   return (
     <div className="space-y-6">
@@ -403,14 +466,9 @@ export function MachineDetailBody({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <StatusChip chip={chip} />
+            {/* The version on offer is Details' to say, beside the installed one. */}
             {machine.installed !== null && (
-              <Badge
-                variant="soft"
-                tone={behind ? "attention" : "neutral"}
-                tooltip={
-                  behind && imageVersion !== null ? d.newerAvailable(imageVersion) : undefined
-                }
-              >
+              <Badge variant="soft" tone={behind ? "attention" : "neutral"}>
                 v{machine.installed.version}
               </Badge>
             )}
@@ -481,19 +539,18 @@ export function MachineDetailBody({
                 variant="primary"
                 glyph={primary.glyph}
                 label={primary.label}
-                why={null}
-                hold={busyHold}
+                held={busy}
                 onClick={() => onAct("use")}
               />
               {view.canReplaceProgram && (
                 <Verb
                   verb="replaceProgram"
-                  // Secondary: the confirmation that follows carries the danger tone.
+                  // Secondary: the confirmation that follows carries the danger tone, and says
+                  // what a forced install does before anything runs.
                   variant="secondary"
                   glyph={ICONS.download}
                   label={m.replaceProgram}
-                  why={m.replaceProgramWhy}
-                  hold={busyHold}
+                  held={busy}
                   onClick={() => onAct("replaceProgram")}
                 />
               )}
@@ -506,35 +563,22 @@ export function MachineDetailBody({
 
       {!machine.local && (
         <RuledSection level={3} title={d.actions}>
-          <div className="grid items-center gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-x-3">
-            {primary !== null && primary.kind !== "retry" && (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:col-span-2">
-                <Verb
-                  verb="use"
-                  variant="primary"
-                  glyph={primary.glyph}
-                  label={primary.label}
-                  why={null}
-                  hold={busyHold}
-                  onClick={() => onAct("use")}
-                />
-                <span className="text-xs text-fg-muted">{primary.why}</span>
-              </div>
-            )}
-            {/* The single steps answer 409 while a job runs for the machine, so they wait for
-                it; letting go of the machine does not. */}
-            <VerbRow caption={d.maintenance}>
-              {single("install", ICONS.download, m.verbs.install, m.verbs.installWhy)}
-              {single("connect", ICONS.chainLink, m.verbs.connect, m.verbs.connectWhy)}
-              {single("restart", ICONS.rotateCw, m.verbs.restart, m.verbs.restartWhy)}
-              {single("configure", ICONS.gear, d.configureSsh, d.configureSshWhy)}
-            </VerbRow>
-            <VerbRow caption={d.leave}>
-              {single("stopUsing", ICONS.plugLifted, m.stopUsing, m.verbs.stopUsingWhy)}
-              {single("disconnect", ICONS.signOut, m.verbs.disconnect, m.verbs.disconnectWhy)}
-              {single("release", ICONS.boxArrowOut, m.verbs.release, m.verbs.releaseWhy)}
-            </VerbRow>
-          </div>
+          {primary !== null && primary.kind !== "retry" && (
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Verb
+                verb="use"
+                variant="primary"
+                glyph={primary.glyph}
+                label={primary.label}
+                held={busy}
+                onClick={() => onAct("use")}
+              />
+              <span className="text-xs text-fg-muted">{primary.why}</span>
+            </div>
+          )}
+          {/* The single steps answer 409 while a job runs for the machine, so they wait for
+              it; letting go of the machine does not. */}
+          <VerbList groups={verbGroups(primary?.kind ?? null)} ctx={ctx} onAct={onAct} />
         </RuledSection>
       )}
     </div>

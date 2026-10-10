@@ -182,6 +182,17 @@ export function formatDateTime(iso: string): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+/**
+ * ISO timestamp → local `MM-dd HH:mm`: `formatDateTime` without the year, for a time said beside
+ * how long ago it was (a week at most), where the year goes without saying. Returns the input
+ * unchanged if parsing fails.
+ */
+export function formatShortDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 /** English month abbreviations for the date formatters below (Intl-free — see formatMonthDay). */
 const EN_MONTHS = [
   "Jan",

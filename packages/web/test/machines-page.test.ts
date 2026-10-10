@@ -21,10 +21,15 @@
  *   out — each asking its page for its own verb;
  * - explains a failure: the step it stopped at, in the far side's own words, with Force install
  *   only when the failure offers it;
- * - holds the single steps while a job is on its way, and says why, but never the ways out; says
- *   why Install, Disconnect and Restart wait when there is no build to push, nothing connected, or
- *   a machine out of reach; offers Disconnect while a connection is held;
- * - holds every verb while a request is in flight;
+ * - says beside each single step and way out what it does;
+ * - holds the single steps while a job is on its way and says why in their place, but never the
+ *   ways out; says why Install, Disconnect and Restart wait when there is no build to push,
+ *   nothing connected, or a machine out of reach; offers Disconnect while a connection is held;
+ * - holds every verb while a request is in flight, and rewrites no line for it;
+ * - offers Reconnect only where the one thing to do does not already connect;
+ * - says in Details, as text, ssh's own words for a machine out of reach and the time of the last
+ *   check beside how long ago it was;
+ * - carries no hint that cannot open: none sits on words already on screen, in any state;
  * - repeats the page's last error, since it covers the notice that says it;
  * - is this server's record alone for its own entry: no verb, no steps, no Actions;
  * - folds a job that finished well into one line with its log closed, and opens a running job's
@@ -37,15 +42,20 @@
  * the same machines are behind and comes back when another falls behind or the build moves.
  *
  * vitest runs node-only here, so components are called as functions and their handlers handed
- * clicks as a browser delivers them (test/helpers/dom.ts); a few are rendered to static markup.
- * The dialog's verbs are found by their `data-verb`, its steps by their `data-step`, never by
- * their words.
+ * clicks as a browser delivers them (test/helpers/dom.ts); a few are rendered to static markup and
+ * read back as a tree (test/helpers/markup.ts). The dialog's verbs are found by their `data-verb`,
+ * its steps by their `data-step`, never by their words.
  */
 import { createElement, isValidElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import type {
+  MachineInfo,
+  MachineJob,
+  MachinesResponse,
+  SshHostResponse,
+} from "@prismshadow/penguin-server/api";
 import * as ui from "@prismshadow/penguin-ui";
 import { Button, RuledSection } from "@prismshadow/penguin-ui";
 import { Stepper, MachineCard, machineMark } from "../src/features/machines/machine-card";
@@ -61,8 +71,10 @@ import type {
 } from "../src/features/machines/machine-detail-dialog";
 import { machineChip } from "../src/features/machines/machine-detail-view";
 import { readMachine, updateNotice } from "../src/features/machines/machines-view";
+import { formatShortDateTime } from "../src/lib/format";
 import { S } from "../src/lib/strings";
 import { clickOn, fakeElement } from "./helpers/dom";
+import { elementsOf, readMarkup, seenText } from "./helpers/markup";
 
 const IMAGE = "0.2.13";
 const CHECKED = "2026-10-09T08:00:00.000Z";
@@ -97,8 +109,10 @@ const notConnected = remote("office-2", {
   status: { state: "running", checkedAt: CHECKED, port: 7364 },
 });
 const linkedStopped = remote("mini", { connection: { pid: 2 } });
+/** ssh's own words for a machine it could not reach. */
+const TIMED_OUT = "ssh: connect to host 10.0.0.12 port 22: Connection timed out";
 const unreachable = remote("edge-1", {
-  status: { state: "unreachable", checkedAt: CHECKED, detail: "Connection timed out" },
+  status: { state: "unreachable", checkedAt: CHECKED, detail: TIMED_OUT },
 });
 const winBox = remote("win-box");
 const fresh = remote("fresh", { status: null });
@@ -107,6 +121,14 @@ const here: MachineInfo = {
   id: "local",
   local: true,
   status: { state: "running", checkedAt: CHECKED, port: 7364 },
+};
+/** The host block an alias names, once the dialog has read it. */
+const HOST: SshHostResponse = {
+  alias: "edge-1",
+  hostName: "10.0.0.12",
+  user: "ubuntu",
+  port: 22,
+  editable: true,
 };
 
 const job = (machine: MachineInfo, over: Partial<MachineJob>): MachineJob => ({
@@ -204,33 +226,41 @@ const words = (tree: AnyElement[]) =>
     .filter((child) => typeof child === "string" || typeof child === "number")
     .join(" ");
 
-/** A verb's button as the dialog draws it: its look, whether it waits, its hint, and its press. */
+/** A verb's button as the dialog draws it: its look, whether it waits, and its press. */
 interface VerbButton {
   variant: unknown;
   disabled: boolean;
-  /** The hint on the wrapper the button sits in: why it waits, or what it does. */
-  hint: unknown;
   press: () => void;
 }
 
 /** The verb buttons of a drawn tree, by `data-verb`. */
 function verbsOf(tree: AnyElement[]): Map<string, VerbButton> {
   const verbs = new Map<string, VerbButton>();
-  for (const wrapper of tree) {
-    for (const child of nodes(wrapper.props.children as ReactNode)) {
-      if (!isValidElement(child) || child.type !== Button) continue;
-      const button = child as AnyElement;
-      const verb = button.props["data-verb"];
-      if (typeof verb !== "string") continue;
-      verbs.set(verb, {
-        variant: button.props.variant,
-        disabled: button.props.disabled === true,
-        hint: wrapper.props["data-tooltip"],
-        press: button.props.onClick as () => void,
-      });
-    }
+  for (const el of tree) {
+    const verb = el.props["data-verb"];
+    if (el.type !== Button || typeof verb !== "string") continue;
+    verbs.set(verb, {
+      variant: el.props.variant,
+      disabled: el.props.disabled === true,
+      press: el.props.onClick as () => void,
+    });
   }
   return verbs;
+}
+
+/**
+ * What a reader sees beside each verb's button, by `data-verb`: the rest of the button's row —
+ * what the verb does, or why it waits — read off the markup.
+ */
+function linesOf(html: string): Map<string, string> {
+  const lines = new Map<string, string>();
+  for (const el of elementsOf(readMarkup(html))) {
+    const verb = el.attrs["data-verb"];
+    if (verb === undefined || el.parent === null) continue;
+    const rest = el.parent.children.filter((node) => node !== el);
+    lines.set(verb, rest.map(seenText).join("").trim());
+  }
+  return lines;
 }
 
 const isPrimary = (el: AnyElement) => el.type === Button && el.props.variant === "primary";
@@ -300,7 +330,8 @@ function dialog(
     ...over,
   };
   const tree = drawn(MachineDetailBody(props));
-  return { props, tree, verbs: verbsOf(tree), onAct };
+  const html = renderToStaticMarkup(createElement(MachineDetailBody, props));
+  return { props, tree, html, verbs: verbsOf(tree), lines: linesOf(html), onAct };
 }
 
 describe("a machine's card", () => {
@@ -440,48 +471,115 @@ describe("the Machine dialog", () => {
     expect(dialog(stopped, failedJob(stopped, false)).verbs.has("replaceProgram")).toBe(false);
   });
 
-  it("holds the single steps while a job is on its way, saying why, and never the ways out", () => {
-    const { verbs } = dialog(ready, runningJob(ready));
-    for (const verb of ["install", "connect", "restart"]) {
-      expect(verbs.get(verb), verb).toMatchObject({
+  /** Whether a verb waits, and what a reader sees beside its button. */
+  const row = (shown: ReturnType<typeof dialog>, verb: MachineVerb) => ({
+    disabled: shown.verbs.get(verb)?.disabled,
+    line: shown.lines.get(verb),
+  });
+
+  it("says beside each single step and way out what it does", () => {
+    const shown = dialog(ready, null);
+    const does: [MachineVerb, string][] = [
+      ["install", S.machines.verbs.installWhy],
+      ["connect", S.machines.verbs.connectWhy],
+      ["restart", S.machines.verbs.restartWhy],
+      ["configure", S.machines.detail.configureSshWhy],
+      ["stopUsing", S.machines.verbs.stopUsingWhy],
+      ["disconnect", S.machines.verbs.disconnectWhy],
+      ["release", S.machines.verbs.releaseWhy],
+    ];
+    for (const [verb, line] of does) {
+      expect(row(shown, verb), verb).toEqual({ disabled: false, line });
+    }
+  });
+
+  it("holds the single steps while a job is on its way, saying why in their place, and never the ways out", () => {
+    const shown = dialog(ready, runningJob(ready));
+    for (const verb of ["install", "connect", "restart"] as const) {
+      expect(row(shown, verb), verb).toEqual({
         disabled: true,
-        hint: S.machines.detail.hold.moving,
+        line: S.machines.detail.hold.moving,
       });
     }
-    for (const verb of ["stopUsing", "disconnect", "release", "configure"]) {
-      expect(verbs.get(verb)?.disabled, verb).toBe(false);
+    for (const verb of ["stopUsing", "disconnect", "release", "configure"] as const) {
+      expect(shown.verbs.get(verb)?.disabled, verb).toBe(false);
     }
   });
 
   it("says why Install, Disconnect and Restart wait — no build to push, nothing connected, a machine out of reach — and offers Disconnect while a connection is held", () => {
     const hold = S.machines.detail.hold;
-    expect(dialog(ready, null, { noImage: true }).verbs.get("install")).toMatchObject({
+    expect(row(dialog(ready, null, { noImage: true }), "install")).toEqual({
       disabled: true,
-      hint: hold.noImage,
+      line: hold.noImage,
     });
-    expect(dialog(stopped, null).verbs.get("disconnect")).toMatchObject({
+    expect(row(dialog(stopped, null), "disconnect")).toEqual({
       disabled: true,
-      hint: hold.noConnection,
+      line: hold.noConnection,
     });
-    expect(dialog(unreachable, null).verbs.get("restart")).toMatchObject({
+    expect(row(dialog(unreachable, null), "restart")).toEqual({
       disabled: true,
-      hint: hold.unreachable,
+      line: hold.unreachable,
     });
     const connected = dialog(ready, null);
     connected.verbs.get("disconnect")!.press();
     expect(connected.onAct).toHaveBeenCalledWith("disconnect");
   });
 
-  it("holds every verb while a request is in flight", () => {
+  it("holds every verb while a request is in flight, and rewrites no line for it", () => {
     for (const [machine, job] of [
       [stopped, failedJob(stopped, true)],
       [behind, null],
+      [ready, runningJob(ready)],
     ] as const) {
-      const { verbs } = dialog(machine, job, { busy: true });
+      const { verbs, lines } = dialog(machine, job, { busy: true });
       expect(verbs.size, machine.alias).toBeGreaterThan(0);
       for (const [verb, button] of verbs) expect(button.disabled, verb).toBe(true);
+      // The request lasts a moment: what each row says stays as it was.
+      expect(lines, machine.alias).toEqual(dialog(machine, job).lines);
     }
   });
+
+  it("offers Reconnect only where the one thing to do does not already connect", () => {
+    // Connect and Try again run the whole pipeline, which connects and more.
+    for (const machine of [notConnected, fresh, unreachable]) {
+      const { verbs } = dialog(machine, null);
+      expect(verbs.get("use")?.variant, machine.alias).toBe("primary");
+      expect(verbs.has("connect"), machine.alias).toBe(false);
+    }
+    for (const [machine, job] of [
+      [ready, null],
+      [stopped, null],
+      [behind, null],
+      [stopped, failedJob(stopped, true)],
+      [ready, runningJob(ready)],
+    ] as const) {
+      expect(dialog(machine, job).verbs.has("connect"), machine.alias).toBe(true);
+    }
+  });
+
+  it("says in Details, as text, ssh's own words for a machine out of reach and the time of the last check beside how long ago it was", () => {
+    const checkedAt = new Date(Date.now() - 4 * 60_000).toISOString();
+    const away = remote("edge-2", {
+      status: { state: "unreachable", checkedAt, detail: TIMED_OUT },
+    });
+    const seen = seenText(readMarkup(dialog(away, null).html));
+    expect(seen).toContain(TIMED_OUT);
+    expect(seen).toContain(formatShortDateTime(checkedAt));
+  });
+
+  it.each(HOMES)(
+    "%s: carries no hint that cannot open — none sits on words already on screen",
+    (_, machine, job) => {
+      const { html } = dialog(machine, job, { host: HOST, noImage: true });
+      const hints = elementsOf(readMarkup(html)).filter((el) => "data-tooltip" in el.attrs);
+      // Each fixture has a machine id, whose copy button carries a hint: the markup was read.
+      expect(hints.length).toBeGreaterThan(0);
+      const onWords = hints
+        .filter((el) => seenText(el).trim() !== "")
+        .map((el) => `${el.attrs["data-tooltip"]} — on "${seenText(el).trim()}"`);
+      expect(onWords).toEqual([]);
+    },
+  );
 
   it("repeats the page's last error, since it covers the notice that says it", () => {
     const refused = "This server could not reach its ssh agent.";

@@ -16,6 +16,7 @@ import {
   formatRelativeLong,
   formatRelativeShort,
   formatScore,
+  formatShortDateTime,
   formatTps,
   formatYearMonthDay,
   humanizeDuration,
@@ -378,6 +379,23 @@ describe("formatRelativeLong (a fact in a dialog: when a machine was last checke
     it("measures from the present", () => {
       expect(formatRelativeLong(at(6, 15, 11, 57), "en")).toBe("3 minutes ago");
     });
+  });
+});
+
+describe("formatShortDateTime (the time beside how long ago a machine was last checked)", () => {
+  it("is the reader's own month, day and time, zero-padded, without the year", () => {
+    // One instant, two readers: its UTC day (the 5th) is the Shanghai reader's 6th.
+    const iso = "2026-06-05T23:04:00.000Z";
+    withTimeZone("Asia/Shanghai", () => {
+      expect(formatShortDateTime(iso)).toBe("06-06 07:04");
+    });
+    withTimeZone("America/New_York", () => {
+      expect(formatShortDateTime(iso)).toBe("06-05 19:04");
+    });
+  });
+
+  it("unparsable input comes back unchanged", () => {
+    expect(formatShortDateTime("not-a-date")).toBe("not-a-date");
   });
 });
 
