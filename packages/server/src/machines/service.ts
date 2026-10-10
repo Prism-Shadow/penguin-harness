@@ -35,6 +35,8 @@ import {
 } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type {
+  MachineCheck,
+  MachineDiagnosis,
   MachineInfo,
   MachineJob,
   MachinePhase,
@@ -66,8 +68,12 @@ import {
 import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
-import { installOnRemote, resolvePushPlan } from "./install-server.js";
-import type { PushPlan } from "./install-server.js";
+import { detectRemote, installOnRemote, resolvePushPlan, sameBuild } from "./install-server.js";
+import { parseProbeOutput, posixProbe } from "./detect.js";
+import { explainSshFailure, sshRefusal } from "./ssh-failure.js";
+import { diagnoseCommand, parseDiagnosis, sshFailureChecks } from "./diagnose.js";
+import type { CarryRelease, PushPlan } from "./install-server.js";
+import { releaseCache } from "./release-cache.js";
 import { CheckoutImage, deployPacker, findCheckout, imageAssets } from "./checkout-image.js";
 import type { CheckoutBuild, CheckoutPacker } from "./checkout-image.js";
 import { probeServerState } from "./server-state.js";
@@ -132,6 +138,13 @@ export interface MachinesEffects {
   writeConfig: typeof writeSshConfig;
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
+  /** What a machine is, asked in either shell's dialect (install-server.ts). */
+  detect: typeof detectRemote;
+  /**
+   * The release package for a machine that cannot download it itself, fetched on this side
+   * (release-cache.ts) to be carried over the session.
+   */
+  carryRelease: CarryRelease;
   probe: typeof probeServerState;
   /** One command on a machine, over its shared shell. */
   runOn: (target: RemoteTarget, command: string) => Promise<ExecResult>;
@@ -239,6 +252,8 @@ export class MachinesService {
       writeConfig: writeSshConfig,
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
+      detect: (target, layout) => detectRemote(target, layout),
+      carryRelease: releaseCache(path.join(dataRoot, "machines", "releases")),
       probe: probeServerState,
       runOn: (target, command) => connectionTo(target).exec(command),
       startServer: (target, port) => startRemoteServer(target, port, layout, this.#effects.runOn),
@@ -497,6 +512,59 @@ export class MachinesService {
     };
   }
 
+  /**
+   * Checks a machine without writing anything there (machines/diagnose.ts): can this server
+   * sign in, is it a platform a release exists for, does it have what the installer runs,
+   * can it download the release itself, is there room, is the port free. Refused while a job
+   * works on that machine — the checks would queue behind the job's commands on its session.
+   */
+  async diagnose(address: string): Promise<MachineDiagnosis | "unknown-machine" | "self" | "busy"> {
+    const machine = this.#allMachines().find((entry) => entry.id === address);
+    if (machine === undefined) return "unknown-machine";
+    if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
+      return "self";
+    }
+    if (this.#busy.has(address)) return "busy";
+    const target = this.#targetOf(machine.alias);
+    const checkedAt = this.#effects.now().toISOString();
+    const done = (checks: MachineCheck[]): MachineDiagnosis => ({
+      machineId: address,
+      checkedAt,
+      checks,
+    });
+    const skipped = (["tools", "download", "disk", "port"] as const).map(
+      (id): MachineCheck => ({ id, state: "skip" }),
+    );
+    const probe = await this.#effects.runOn(target, posixProbe(this.#layout));
+    let identity = probe.code === 0 ? parseProbeOutput(probe.stdout) : null;
+    if (identity === null) {
+      if (probe.code !== 0 && explainSshFailure(probe.stdout, target.alias) !== null) {
+        return done(sshFailureChecks(probe.stdout, target.alias));
+      }
+      // No POSIX answer and no ssh refusal: a Windows shell, or a platform with no release.
+      const detected = await this.#effects.detect(target, this.#layout);
+      if ("error" in detected) {
+        if (explainSshFailure(detected.error, target.alias) !== null) {
+          return done(sshFailureChecks(detected.error, target.alias));
+        }
+        return done([
+          { id: "ssh", state: "pass", user: "", host: "" },
+          { id: "platform", state: "fail", said: probe.stdout.trim().slice(0, 600) },
+          ...skipped,
+        ]);
+      }
+      identity = detected.identity;
+    }
+    // The release the image stands on: this install's own, or a checkout's VERSION.
+    const version =
+      this.#effects.resolvePlan(this.dataRoot)?.baseVersion ??
+      (this.#checkout === null ? null : VERSION);
+    const port = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
+    if (identity.platform === "win32") return done(parseDiagnosis(identity, "", { version, port }));
+    const answer = await this.#effects.runOn(target, diagnoseCommand(this.#layout, version, port));
+    return done(parseDiagnosis(identity, answer.stdout, { version, port }));
+  }
+
   /** The running or last job; null before the first one. */
   job(): MachineJob | null {
     return this.#job;
@@ -678,6 +746,45 @@ export class MachinesService {
     );
   }
 
+  /**
+   * Withholds the offer to install the program anyway (`canReplaceProgram`) from a failure
+   * ssh itself caused — a host key, a key, a name, a route. An install reaches the machine
+   * through the same ssh and would stop at the same door, so the offer would be a second
+   * way to fail rather than a way out.
+   */
+  #noProgramCure(target: RemoteTarget, message: string): { canReplaceProgram?: false } {
+    return explainSshFailure(message, target.alias) === null ? {} : { canReplaceProgram: false };
+  }
+
+  /**
+   * Whether ssh lets this server in at all, asked before anything else a job does — before a
+   * checkout spends a minute building its image for a machine that refuses the key. One `:`
+   * over the session, which the work after it reuses. Null when it gets in, or when the
+   * answer is the far side's own (a Windows shell has no `sh`: the work finds that out); the
+   * job's failure when ssh itself refused.
+   */
+  async #refusedAtTheDoor(machine: MachineInfo): Promise<MachineJob["result"] | null> {
+    const target = this.#targetOf(machine.alias);
+    const answer = await this.#effects.runOn(target, ":");
+    const refused = answer.code === 0 ? null : sshRefusal(answer.stdout, target.alias);
+    return refused === null
+      ? null
+      : { ok: false, step: "connect", message: refused, canReplaceProgram: false };
+  }
+
+  /**
+   * Whether the machine already carries the build `plan` names, asked of the machine: the
+   * version names the platform bundle only, so an image whose web, CLI or assets changed reads
+   * as the version the machine is recorded at. One probe over the session. Unknown — no answer,
+   * a Windows shell — reads as current, which is what the record said.
+   */
+  async #carries(target: RemoteTarget, plan: PushPlan): Promise<boolean> {
+    if (plan.harness === null) return true;
+    const answer = await this.#effects.runOn(target, posixProbe(this.#layout));
+    const identity = answer.code === 0 ? parseProbeOutput(answer.stdout) : null;
+    return identity === null || sameBuild(identity.harness, plan.harness);
+  }
+
   // --- jobs ---------------------------------------------------------------------------------
 
   /**
@@ -809,8 +916,13 @@ export class MachinesService {
     const withImage = this.#imageForBatch();
     if (withImage === null) return { ok: false, why: "no-image" };
 
-    this.#startJob("install", machine, { offerReplaceProgram: !replaceProgram }, (say) =>
-      withImage(say, (image) => this.#installWork(projectId, machine, image, replaceProgram, say)),
+    this.#startJob(
+      "install",
+      machine,
+      { offerReplaceProgram: !replaceProgram },
+      async (say) =>
+        (await this.#refusedAtTheDoor(machine)) ??
+        withImage(say, (image) => this.#installWork(projectId, machine, image, replaceProgram, say)),
     );
     return { ok: true };
   }
@@ -846,10 +958,16 @@ export class MachinesService {
       onProgress: say,
       assets,
       layout: this.#layout,
+      carryRelease: this.#effects.carryRelease,
       ...(replaceProgram ? { forceInstaller: true } : {}),
     });
     if (outcome.kind === "failed") {
-      return { ok: false, step: outcome.step, message: outcome.detail };
+      return {
+        ok: false,
+        step: outcome.step,
+        message: outcome.detail,
+        ...this.#noProgramCure(target, outcome.detail),
+      };
     }
     // What the machine is, before anything below asks it again: the hand-over and the
     // restart both probe, and they should already speak its dialect.
@@ -1012,8 +1130,13 @@ export class MachinesService {
         refused.push({ machineId: address, why: "no-image" });
         continue;
       }
-      this.#startJob("use", machine, { offerReplaceProgram: !replaceProgram }, (say) =>
-        withImage(say, (image) => this.#useWork(projectId, address, image, replaceProgram, say)),
+      this.#startJob(
+        "use",
+        machine,
+        { offerReplaceProgram: !replaceProgram },
+        async (say) =>
+          (await this.#refusedAtTheDoor(machine)) ??
+          withImage(say, (image) => this.#useWork(projectId, address, image, replaceProgram, say)),
       );
     }
     return { refused };
@@ -1033,8 +1156,12 @@ export class MachinesService {
     if (machine === undefined) {
       return { ok: false, step: "use", message: "that host is no longer in the ssh config." };
     }
-    const needsInstall =
+    let needsInstall =
       replaceProgram || machine.installed === null || machine.installed.version !== plan.version;
+    if (!needsInstall && this.repo.get(address)?.platform !== "win32") {
+      // Same version, maybe not the same build: a web, CLI or asset change keeps the version.
+      needsInstall = !(await this.#carries(this.#targetOf(machine.alias), plan));
+    }
     if (needsInstall) {
       const installed = await this.#installWork(projectId, machine, image, replaceProgram, say);
       if (installed !== null && !installed.ok) return installed;
@@ -1104,7 +1231,13 @@ export class MachinesService {
       // The same dead end an install reaches, and the same way out — installing anyway,
       // which every failed job offers (#startJob): the machine cannot answer because the
       // CLI in its store is not one this server can talk to, and the installer replaces it.
-      return { ok: false, step: "connect", message: probed.state.detail };
+      // Unless ssh itself got nowhere: then an install would stop at the same door.
+      return {
+        ok: false,
+        step: "connect",
+        message: probed.state.detail,
+        ...this.#noProgramCure(target, probed.state.detail),
+      };
     }
     // The refusal startConnect made from the record, made again from what was just heard: an
     // alias never probed before, or one repointed here since, answers this server's own id
@@ -1125,7 +1258,15 @@ export class MachinesService {
       remotePort = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
       say(`Starting its server on port ${remotePort}…`);
       const started = await this.#effects.startServer(target, remotePort);
-      if (!started.ok) return { ok: false, step: "start its server", message: started.detail };
+      if (!started.ok) {
+        return {
+          ok: false,
+          step: "start its server",
+          message: started.detail,
+          // Another program's port is not something installing the program frees.
+          ...(started.portTaken === true ? { canReplaceProgram: false as const } : {}),
+        };
+      }
       // A machine mints its id when its server starts, so one that was down had none — and
       // its port and pid are now the freshest fact about it. The port is taken from what the
       // machine says, not from what was asked for: the two differ when an earlier, slower
@@ -1137,7 +1278,14 @@ export class MachinesService {
 
     say("Opening the connection…", "connect");
     const connection = await this.#connection(address, target);
-    if (!connection.ok) return { ok: false, step: "connect", message: connection.detail };
+    if (!connection.ok) {
+      return {
+        ok: false,
+        step: "connect",
+        message: connection.detail,
+        ...this.#noProgramCure(target, connection.detail),
+      };
+    }
     this.repo.patch(address, { remotePort });
     say(`Connected; its server is on port ${remotePort} over there.`);
     // An Agent started over there resolves its model against THAT machine's config, so a
@@ -1600,6 +1748,7 @@ export abstract class Machines extends Interface<
     | "addSshHost"
     | "sshHost"
     | "updateSshHost"
+    | "diagnose"
   >
 >() {}
 

@@ -11,7 +11,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { installOnRemote } from "../src/machines/install-server.js";
+import * as tar from "tar";
+import { installOnRemote, packHmrState } from "../src/machines/install-server.js";
 import { remoteLayoutFor } from "../src/machines/layout.js";
 import type { PushPlan } from "../src/machines/install-server.js";
 import type { ExecResult, MachineChannel } from "../src/machines/transport/index.js";
@@ -37,6 +38,10 @@ interface Script {
   /** A cmd.exe host: no `sh` to hold a session on, so the session dies unopened. */
   windows?: boolean;
   installExit?: number;
+  /** What the installer prints, line by line as the session relays it; a success line by default. */
+  installSays?: string[];
+  /** How the machine reaches the two release sources (releaseReachCommand's answer); both by default. */
+  reach?: string;
 }
 
 const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "", timedOut: false });
@@ -49,6 +54,10 @@ function scripted(script: Script): MachineChannel & { calls: Call[] } {
   const answer = (call: Call, onLine?: (line: string) => void): ExecResult => {
     calls.push(call);
     const { command } = call;
+    if (command.includes("tar.gz.sha256")) {
+      return ok(script.reach ?? "@@oss 206 0\n@@github 206 0\n");
+    }
+    if (command.startsWith("mktemp -d")) return ok("/tmp/penguin-release.Ab12Cd\n");
     if (command.includes("uname")) {
       return script.windows
         ? {
@@ -63,8 +72,9 @@ function scripted(script: Script): MachineChannel & { calls: Call[] } {
     if (command.includes("PROCESSOR_ARCHITECTURE")) return ok(identity());
     if (command.includes("sh -s") || command.includes("powershell")) {
       ran = true;
-      onLine?.("PenguinHarness 0.2.4 installed");
-      return { ...ok("PenguinHarness 0.2.4 installed\n"), code: script.installExit ?? 0 };
+      const says = script.installSays ?? ["PenguinHarness 0.2.4 installed"];
+      for (const line of says) onLine?.(line);
+      return { ...ok(`${says.join("\n")}\n`), code: script.installExit ?? 0 };
     }
     return ok("");
   };
@@ -269,6 +279,114 @@ describe("installOnRemote", () => {
     expect(channel.calls).toHaveLength(1); // the probe, and nothing else
   });
 
+  it("packs the replicated state in this process: the state's own files, the helper still executable", async () => {
+    const p = plan();
+    const helper = path.join(p.hmrDir!, "store", "assets", "a1", "spawn-helper");
+    fs.mkdirSync(path.dirname(helper), { recursive: true });
+    fs.writeFileSync(helper, "#!");
+    fs.chmodSync(helper, 0o755);
+    const file = path.join(work, "state.tgz");
+    fs.writeFileSync(file, await packHmrState(p.hmrDir!));
+    const files = new Map<string, number>();
+    await tar.t({
+      file,
+      onReadEntry: (entry) => {
+        if (entry.type === "File") files.set(entry.path, entry.mode ?? 0);
+      },
+    });
+    expect([...files.keys()].sort()).toEqual([
+      "harness.json",
+      "store/assets/a1/spawn-helper",
+      "store/x.mjs",
+    ]);
+    if (process.platform !== "win32") {
+      expect(files.get("store/assets/a1/spawn-helper")! & 0o111).not.toBe(0);
+    }
+  });
+
+  describe("a machine that cannot download the release itself", () => {
+    const fresh = "Linux x86_64\\n---penguin---\\n---penguin---\\n";
+    const after = `Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n${HARNESS}`;
+
+    it("gets the package from this side: sent into a scratch directory, installed from it, the scratch removed", async () => {
+      const pkg = path.join(work, "penguin-linux-x64.tar.gz");
+      fs.writeFileSync(pkg, "the package");
+      const asked: string[] = [];
+      const channel = scripted({ probe: fresh, afterInstall: after, reach: "@@oss 000 7\n@@github 000 28\n" });
+      const outcome = await installOnRemote({
+        target,
+        plan: plan(),
+        assets,
+        channel,
+        layout: RELEASE,
+        carryRelease: async (version, platform) => {
+          asked.push(`${version} ${platform}`);
+          return { ok: true, file: pkg };
+        },
+      });
+      expect(outcome).toMatchObject({ kind: "installed" });
+      expect(asked).toEqual(["0.2.4 linux-x64"]);
+      const archive = "/tmp/penguin-release.Ab12Cd/penguin-linux-x64.tar.gz";
+      const sent = channel.calls.find((c) => c.command.startsWith("cat > "));
+      expect(sent?.command).toBe(`cat > "${archive}"`);
+      expect(sent?.input?.toString()).toBe("the package");
+      const install = channel.calls.find((c) => c.command.includes("sh -s"));
+      expect(install?.command).toContain(`PENGUIN_ARCHIVE='${archive}'`);
+      expect(install?.command).not.toContain("PENGUIN_VERSION");
+      expect(channel.calls.at(-1)?.command).toBe('rm -rf "/tmp/penguin-release.Ab12Cd"');
+    });
+
+    it("downloads it there after all when one source answers", async () => {
+      let carried = 0;
+      const channel = scripted({ probe: fresh, afterInstall: after, reach: "@@oss 000 7\n@@github 206 0\n" });
+      await installOnRemote({
+        target,
+        plan: plan(),
+        assets,
+        channel,
+        layout: RELEASE,
+        carryRelease: async () => {
+          carried += 1;
+          return { ok: false, detail: "unused" };
+        },
+      });
+      expect(carried).toBe(0);
+      expect(channel.calls.find((c) => c.command.includes("sh -s"))?.command).toContain(
+        "PENGUIN_VERSION='v0.2.4'",
+      );
+    });
+
+    it("stops before sending anything when both sources answer and neither has the release", async () => {
+      const channel = scripted({ probe: fresh, reach: "@@oss 404 0\n@@github 404 0\n" });
+      const outcome = await installOnRemote({
+        target,
+        plan: plan(),
+        assets,
+        channel,
+        layout: RELEASE,
+        carryRelease: async () => ({ ok: false, detail: "unused" }),
+      });
+      expect(outcome).toMatchObject({ kind: "failed", step: "download the release" });
+      expect((outcome as { detail: string }).detail).toContain("v0.2.4");
+      expect(channel.calls.some((c) => c.command.includes("sh -s"))).toBe(false);
+    });
+
+    it("says so when this side cannot fetch the package either", async () => {
+      const channel = scripted({ probe: fresh, reach: "@@nocurl\n" });
+      const outcome = await installOnRemote({
+        target,
+        plan: plan(),
+        assets,
+        channel,
+        layout: RELEASE,
+        carryRelease: async () => ({ ok: false, detail: "the mirror: fetch failed; GitHub: 403" }),
+      });
+      expect(outcome).toMatchObject({ kind: "failed", step: "download the release" });
+      expect((outcome as { detail: string }).detail).toContain("GitHub: 403");
+      expect(channel.calls.some((c) => c.command.includes("sh -s"))).toBe(false);
+    });
+  });
+
   it("a bare release plan streams nothing", async () => {
     const channel = scripted({
       probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
@@ -301,15 +419,18 @@ describe("installOnRemote", () => {
     expect((outcome as { detail: string }).detail).toContain("PenguinHarness 0.2.4 installed");
   });
 
-  it("reports ssh's own words when the session cannot be opened", async () => {
+  it("leads ssh's own words with what to do when the session cannot be opened, and asks no second connection", async () => {
     const channel = scripted({ probe: "" });
-    channel.exec = async () => ({
-      code: 255,
-      stdout:
-        "the connection to this machine ended: deploy@build-box: Permission denied (publickey).",
-      stderr: "",
-      timedOut: false,
-    });
+    channel.exec = async (command) => {
+      channel.calls.push({ verb: "exec", command });
+      return {
+        code: 255,
+        stdout:
+          "the connection to this machine ended: deploy@build-box: Permission denied (publickey).",
+        stderr: "",
+        timedOut: false,
+      };
+    };
     const outcome = await installOnRemote({
       target,
       plan: plan(),
@@ -318,8 +439,73 @@ describe("installOnRemote", () => {
       layout: RELEASE,
     });
     expect(outcome).toMatchObject({ kind: "failed", step: "connect" });
-    expect((outcome as { detail: string }).detail).toContain("Permission denied");
-    expect((outcome as { detail: string }).detail).toContain("BatchMode");
+    const { detail } = outcome as { detail: string };
+    expect(detail).toMatch(/^build-box did not accept any key/);
+    expect(detail).toContain("authorized_keys");
+    expect(detail).toContain("Permission denied (publickey)");
+    // ssh refused before any shell: the Windows dialect is not tried on a second connection.
+    expect(channel.calls.map((c) => c.verb)).toEqual(["exec"]);
+  });
+
+  it("an unknown host key says to connect once by hand, not to set up a key", async () => {
+    const channel = scripted({ probe: "" });
+    channel.exec = async () => ({
+      code: 255,
+      stdout:
+        "No ED25519 host key is known for box.example.net and you have requested strict checking.\nHost key verification failed.",
+      stderr: "",
+      timedOut: false,
+    });
+    const outcome = await installOnRemote({ target, plan: plan(), assets, channel, layout: RELEASE });
+    const { detail } = outcome as { detail: string };
+    expect(detail).toContain("ssh build-box");
+    expect(detail).toContain("Host key verification failed.");
+    expect(detail).not.toContain("authorized_keys");
+  });
+
+  it("a machine that took this build through its own update channel already carries it", async () => {
+    // Its HMR layer wrote harness.json itself on commit — its own pushedAt, its own spacing —
+    // around the same content-named files. Read as text, that is a different build, and every
+    // install would hand the same build over again.
+    const theirs = JSON.stringify(
+      { platform: { bundle: "store/platform/cafe0123456789ab.mjs" }, pushedAt: "2026-10-10T00:00:00Z" },
+      null,
+      2,
+    ).replaceAll("\n", "\\n");
+    const channel = scripted({
+      probe: `Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n${theirs}`,
+    });
+    const outcome = await installOnRemote({ target, plan: plan(), assets, channel, layout: RELEASE });
+    expect(outcome).toMatchObject({ kind: "already-installed" });
+  });
+
+  it("keeps curl's progress bar out of the log and quotes the installer's error as the failure", async () => {
+    const channel = scripted({
+      probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
+      installSays: [
+        "Downloading penguin-linux-x64.tar.gz from GitHub ...",
+        "##########                    14.2%\r######################### 100.0%",
+        "error: download failed from both the primary source and its fallback. Check your network, then retry.",
+      ],
+      installExit: 1,
+    });
+    const progress: string[] = [];
+    const outcome = await installOnRemote({
+      target,
+      plan: plan(),
+      assets,
+      channel,
+      layout: RELEASE,
+      onProgress: (line) => progress.push(line),
+    });
+    expect(progress.some((line) => line.includes("%"))).toBe(false);
+    expect(progress).toContain("Downloading penguin-linux-x64.tar.gz from GitHub ...");
+    expect(outcome).toMatchObject({
+      kind: "failed",
+      step: "install",
+      detail:
+        "error: download failed from both the primary source and its fallback. Check your network, then retry.",
+    });
   });
 
   it("refuses a base that cannot name a release", async () => {

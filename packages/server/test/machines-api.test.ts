@@ -358,17 +358,17 @@ describe("machines API", () => {
       await boot({
         install: async () => ({
           kind: "failed",
-          step: "connect",
-          detail: "Permission denied (publickey).",
+          step: "install",
+          detail: "error: could not move the existing lib directory aside",
         }),
       });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(t.deps.machines.job()?.result).toEqual({
         ok: false,
-        step: "connect",
-        message: "Permission denied (publickey).",
-        // Every failed install offers installing the program anyway.
+        step: "install",
+        message: "error: could not move the existing lib directory aside",
+        // A failed install offers installing the program anyway, unless ssh itself refused.
         canReplaceProgram: true,
       });
     });
@@ -875,6 +875,25 @@ describe("machines API", () => {
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(calls).toEqual([]);
+    });
+
+    it("a port another program holds over there ends the job saying so, with no install offered", async () => {
+      await boot({
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        startServer: async () => ({
+          ok: false,
+          portTaken: true,
+          detail: "Port 7364 on that machine is taken by another program, so its server could not start there.",
+        }),
+      });
+      machinesRepo.patch("ssh:nas", { version: "9.9.9", installedAt: "2026-08-01T00:00:00.000Z" });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "start its server",
+        canReplaceProgram: false,
+      });
     });
 
     it("a restart that fails is the job's outcome, not a line in its log", async () => {
@@ -1608,7 +1627,7 @@ describe("machines API", () => {
       await boot({
         install: async (opts) =>
           opts.target.alias === "build-box"
-            ? { kind: "failed", step: "connect", detail: "Permission denied (publickey)." }
+            ? { kind: "failed", step: "install", detail: "error: checksum mismatch for Bundle." }
             : { kind: "installed", output: "done", identity: IDENTITY },
       });
       await useBody(["ssh:build-box", "ssh:nas"]);
@@ -1616,12 +1635,54 @@ describe("machines API", () => {
       const [box, nas] = jobsOf();
       expect(box?.result).toEqual({
         ok: false,
-        step: "connect",
-        message: "Permission denied (publickey).",
+        step: "install",
+        message: "error: checksum mismatch for Bundle.",
         canReplaceProgram: true,
       });
       expect(nas?.result).toEqual({ ok: true, connected: true });
       expect(connected).toEqual(new Set(["ssh:nas"]));
+    });
+
+    it("a failure ssh itself caused does not offer installing anyway, which would stop at the same door", async () => {
+      await boot({
+        install: async () => ({
+          kind: "failed",
+          step: "connect",
+          detail: "nas did not accept any key this computer offered. (ssh: Permission denied (publickey).)",
+        }),
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toMatchObject({ ok: false, step: "connect", canReplaceProgram: false });
+    });
+
+    it("a machine on this image's version whose web, CLI or assets differ is handed the build, not skipped", async () => {
+      let installs = 0;
+      await boot({
+        resolvePlan: () => PUSHED_PLAN,
+        install: async () => {
+          installs += 1;
+          return { kind: "already-installed", version: PUSHED_PLAN.version, identity: IDENTITY };
+        },
+        runOn: async (_target, command) => ({
+          code: 0,
+          // The machine's probe: same release, a harness naming another CLI bundle.
+          stdout: command.includes("uname -s -m")
+            ? 'Linux x86_64\n---penguin---\n{"version":"9.9.9"}\n---penguin---\n{"platform":{"bundle":"store/platform/cafe.mjs"},"cli":{"bundle":"store/cli/beef.mjs"}}\n'
+            : "---penguin-auth-token---\nremote-token\n",
+          stderr: "",
+          timedOut: false,
+        }),
+      });
+      machinesRepo.patch("ssh:nas", {
+        version: PUSHED_PLAN.version,
+        installedAt: "2026-08-01T00:00:00.000Z",
+      });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(installs).toBe(1);
+      expect(jobsOf()[0]?.log).not.toContain(`Already on ${PUSHED_PLAN.version}.`);
     });
 
     it("refusals that need no ssh come back by id, and the rest of the batch is still queued", async () => {
@@ -1718,6 +1779,7 @@ describe("machines API", () => {
           "  HostName 10.0.0.9",
           "  User k",
           "  Port 2222",
+          "  StrictHostKeyChecking accept-new",
           "",
         ].join("\n"),
       ]);
@@ -1766,11 +1828,12 @@ describe("machines API", () => {
       });
       expect(ok.status).toBe(200);
       expect(written).toHaveLength(1);
-      expect(written[0]!.split("\n").slice(0, 5)).toEqual([
+      expect(written[0]!.split("\n").slice(0, 6)).toEqual([
         "# Added by PenguinHarness on 2026-08-24T12:00:00.000Z",
         "Host nas",
         "  HostName 10.0.0.3",
         "  User deploy",
+        "  StrictHostKeyChecking accept-new",
         "",
       ]);
       expect(written[0]!.endsWith("  ProxyJump bastion")).toBe(true);
@@ -1887,6 +1950,27 @@ describe("machines API", () => {
       const body = await listed();
       expect(body.imageVersion).toBe(version);
       expect(body.checkoutImage).toEqual({ state: "built" });
+    });
+
+    it("a machine whose ssh refuses this computer fails at once, and no image is built for it", async () => {
+      await checkout({
+        runOn: async () => ({
+          code: 255,
+          stdout:
+            "This computer has never connected to nas, and connections here cannot answer ssh's question about a new host key. (ssh: Host key verification failed.)",
+          stderr: "",
+          timedOut: false,
+        }),
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toMatchObject({
+        ok: false,
+        step: "connect",
+        canReplaceProgram: false,
+      });
+      expect((jobsOf()[0]?.result as { message: string }).message).toContain("ssh nas");
+      expect(packs).toEqual([]);
     });
 
     it("a batch builds once, and every machine in it gets that image", async () => {

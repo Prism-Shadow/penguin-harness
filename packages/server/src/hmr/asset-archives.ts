@@ -35,9 +35,12 @@ export function unpackedAssetsDir(dir: string): string {
   const archivesDir = path.join(dir, ARCHIVES_DIR);
   let archives: string[];
   try {
+    // Not `._*`: macOS's AppleDouble companions of a file with extended attributes, which a
+    // store copied off a Mac with its `tar` carries beside every member — `._node-pty.tgz` is
+    // no archive, and unpacking it would fail the whole directory.
     archives = fs
       .readdirSync(archivesDir)
-      .filter((name) => name.endsWith(".tgz"))
+      .filter((name) => name.endsWith(".tgz") && !name.startsWith("._"))
       .sort();
   } catch {
     return dir;

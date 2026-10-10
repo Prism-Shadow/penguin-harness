@@ -4802,6 +4802,69 @@ export interface MachinesUseRequest {
 /** Why one machine of a batch was not queued; the rest were. */
 export type MachineUseRefusal = "unknown-machine" | "self" | "no-image";
 
+/**
+ * Why ssh could not get a session to a machine, read from its own diagnostic
+ * (machines/ssh-failure.ts); `other` when it printed none of the ones with a fixed meaning.
+ */
+export type MachineSshFailure =
+  | "host-key-unknown"
+  | "host-key-changed"
+  | "key-file"
+  | "auth"
+  | "host-not-found"
+  | "refused"
+  | "timeout"
+  | "closed"
+  | "ssh-config"
+  | "other";
+
+/** Whether a machine reaches one release source: the package is there, the source answered without it, or no answer. */
+export type MachineSourceReach = "ok" | "missing" | "unreachable";
+
+/**
+ * One check of a machine (machines/diagnose.ts), as facts for the page to word. `pass` is
+ * fine, `warn` works with a caveat, `fail` stops an install or a connect, `skip` could not be
+ * asked (an earlier check failed, or it does not apply).
+ */
+export type MachineCheck =
+  /** A BatchMode session came up, as this account on that host. */
+  | { id: "ssh"; state: "pass"; user: string; host: string }
+  /** It did not; `said` is ssh's own words, led by what they mean. */
+  | { id: "ssh"; state: "fail"; reason: MachineSshFailure; said: string }
+  /** `warn` for Windows: installable, not connectable yet. */
+  | { id: "platform"; state: "pass" | "warn"; os: string; arch: string }
+  /** An OS or architecture no release is published for; `said` is what the machine answered. */
+  | { id: "platform"; state: "fail"; said: string }
+  /** What the release installer needs and the machine lacks. */
+  | { id: "tools"; state: "pass" | "fail"; missing: string[] }
+  /**
+   * Whether the machine itself reaches release `version` for its platform. `warn`: out of
+   * reach, so an install cannot download it there; `fail`: both sources answered and neither
+   * has it (not published).
+   */
+  | {
+      id: "download";
+      state: "pass" | "warn" | "fail";
+      version: string;
+      github: MachineSourceReach;
+      oss: MachineSourceReach;
+    }
+  /** Free space in the machine's home against what an install needs, in MB. */
+  | { id: "disk"; state: "pass" | "warn" | "fail"; freeMb: number; needMb: number }
+  /** The port its server would start on: free, already its PenguinHarness server's, or taken by something else. */
+  | { id: "port"; state: "pass" | "fail"; port: number; holder: "free" | "penguin" | "other" }
+  | { id: "platform" | "tools" | "download" | "disk" | "port"; state: "skip" };
+
+/**
+ * `POST /api/projects/:projectId/machines/:machineId/diagnose`: the checks, in order. Nothing
+ * is written on the machine; 409 `job_running` while a job works on it.
+ */
+export interface MachineDiagnosis {
+  machineId: string;
+  checkedAt: string;
+  checks: MachineCheck[];
+}
+
 export interface MachinesUseResponse extends MachinesResponse {
   refused: { machineId: string; why: MachineUseRefusal }[];
 }

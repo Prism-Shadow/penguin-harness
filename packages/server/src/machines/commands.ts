@@ -134,14 +134,18 @@ export function scpArgs(target: RemoteTarget, localFiles: string[], remoteDir: s
  * the command at all. Its delete is chained on rather than costing another handshake, and
  * `-ExecutionPolicy Bypass` covers client Windows defaulting to Restricted.
  *
- * `versionTag` is a release tag (`v` + semver); the caller validated the spelling, and the
- * quoting here keeps it one word regardless.
+ * `release` names what the installer installs: a release tag (`v` + semver; the caller
+ * validated the spelling, and the quoting here keeps it one word regardless), which it then
+ * downloads itself, or — POSIX only — a package already on that machine (`archive`, a path
+ * there), which this server carried over because the machine cannot reach the release
+ * sources. install.sh takes one or the other, never both.
  */
 export function runInstallScriptCommand(
-  versionTag: string,
+  release: string | { archive: string },
   where: { platform: "linux" | "darwin" } | { platform: "win32"; scriptPath: string },
   layout: RemoteLayout,
 ): { command: string; scriptOnStdin: boolean } {
+  const versionTag = typeof release === "string" ? release : null;
   // The program directory is named on every install, release profile included: the
   // installer's default happens to match that profile, but the far side's own override of
   // PENGUIN_INSTALL_DIR would not be visible here, and the rest of these commands assume
@@ -152,6 +156,7 @@ export function runInstallScriptCommand(
   // this program directory, and a person typing `penguin` there would run the dev program
   // against the release data root.
   if (where.platform === "win32") {
+    if (versionTag === null) throw new Error("a carried package installs on POSIX machines only");
     const script = cmdQuote(where.scriptPath);
     return {
       command:
@@ -162,9 +167,13 @@ export function runInstallScriptCommand(
       scriptOnStdin: false,
     };
   }
+  const source =
+    versionTag === null
+      ? `PENGUIN_ARCHIVE=${shQuote((release as { archive: string }).archive)}`
+      : `PENGUIN_VERSION=${shQuote(versionTag)}`;
   return {
     command:
-      `PENGUIN_INSTALL_DIR="${layout.programDir.posix}" PENGUIN_VERSION=${shQuote(versionTag)} sh -s` +
+      `PENGUIN_INSTALL_DIR="${layout.programDir.posix}" ${source} sh -s` +
       (layout.ownsCommand ? "" : " -- --no-modify-path"),
     scriptOnStdin: true,
   };

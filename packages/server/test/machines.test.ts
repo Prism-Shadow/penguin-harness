@@ -78,6 +78,18 @@ describe("parseHostAliases", () => {
     expect(aliases).toEqual(["build-box", "shared", "laptop", "nas"]);
   });
 
+  it("reads every file one Include line names, in order", () => {
+    const files: Record<string, string> = {
+      "config.d/*": "Host gpu-1",
+      "~/.orbstack/ssh/config": "Host orb",
+    };
+    const aliases = parseHostAliases(
+      "Include config.d/*   ~/.orbstack/ssh/config\nHost laptop",
+      (pattern) => (files[pattern] === undefined ? [] : [files[pattern]]),
+    );
+    expect(aliases).toEqual(["gpu-1", "orb", "laptop"]);
+  });
+
   it("survives an include cycle instead of spinning", () => {
     const aliases = parseHostAliases("Include self\nHost top", () => ["Include self\nHost deep"]);
     expect(aliases).toContain("top");
@@ -591,8 +603,32 @@ describe("startRemoteServer", () => {
         return said("Error: listen EADDRINUSE: address already in use 127.0.0.1:7376\n");
       }),
     );
-    expect(result).toEqual({ ok: false, detail: expect.stringContaining("EADDRINUSE") });
+    expect(result).toMatchObject({ ok: false, detail: expect.stringContaining("EADDRINUSE") });
     expect(asked.filter((c) => c.includes("server status"))).toHaveLength(1);
+  });
+
+  it("a start that dies on a taken port says so plainly, and a crash's stack becomes its error line", async () => {
+    vi.useFakeTimers();
+    const crash = [
+      "node:events:487",
+      "      throw er; // Unhandled 'error' event",
+      "Error: listen EADDRINUSE: address already in use 127.0.0.1:7371",
+      "    at Server.setupListenHandle [as _listen2] (node:net:2009:16)",
+      "Node.js v24.18.0",
+    ].join("\n");
+    const result = await settled(
+      startRemoteServer(target, 7371, DEV, async (_t, command) => {
+        if (command.includes("server --host")) return said("4242\n");
+        if (command.includes("server status")) return status({ running: false });
+        if (command === isAliveCommand(4242)) return said("gone\n");
+        return said(`${crash}\n`);
+      }),
+    );
+    expect(result).toMatchObject({ ok: false, portTaken: true });
+    const { detail } = result as { detail: string };
+    expect(detail).toMatch(/^Port 7371 on that machine is taken by another program/);
+    expect(detail).toContain("Error: listen EADDRINUSE");
+    expect(detail).not.toContain("setupListenHandle");
   });
 
   it("keeps waiting while the process is alive, and succeeds when a server answers", async () => {

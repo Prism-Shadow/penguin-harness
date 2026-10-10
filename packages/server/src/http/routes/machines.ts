@@ -16,6 +16,8 @@
  * GET  /ssh-hosts/:alias        — that block read back, and whether this app wrote it.
  * PUT  /ssh-hosts/:alias        — rewrite a block this app wrote; 404 none, 409 hand-written.
  * POST /:machineId/restart      — stop that machine's server and start it again; 202, or 409.
+ * POST /:machineId/diagnose     — check what would stop an install or a connect there, writing
+ *                                 nothing on it; 200, or 409 while a job works on it.
  * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh.
  *
  * Under a Project because the page is, and because this Project's Model credentials go to
@@ -30,6 +32,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type {
   DirListResponse,
+  MachineDiagnosis,
   MachinesResponse,
   MachinesUseResponse,
   SshHostResponse,
@@ -319,6 +322,25 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       throw new HttpError(409, "not_installed", "Nothing is installed on that machine yet.");
     }
     return c.json(state(c), 202);
+  });
+
+  /**
+   * The connection check: ssh, platform, the installer's tools, the release download, disk and
+   * port, asked of the machine without writing anything there (machines/diagnose.ts). A POST
+   * because it spends ssh round trips and a few seconds of the machine's network.
+   */
+  app.post("/:machineId/diagnose", async (c) => {
+    const result = await deps.machines.diagnose(c.req.param("machineId"));
+    if (result === "unknown-machine") {
+      throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
+    }
+    if (result === "self") {
+      throw new HttpError(409, "self_diagnose", "That is the machine this server runs on.");
+    }
+    if (result === "busy") {
+      throw new HttpError(409, "job_running", "A job is working on that machine; check it after.");
+    }
+    return c.json(result satisfies MachineDiagnosis);
   });
 
   app.post("/:machineId/disconnect", (c) => {

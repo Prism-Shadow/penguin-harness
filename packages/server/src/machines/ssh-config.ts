@@ -40,8 +40,12 @@ export function parseHostAliases(
     if (line === "" || line.startsWith("#")) continue;
     const include = INCLUDE_KEYWORD.exec(line);
     if (include && depth < 8) {
-      for (const included of readInclude(include[1]!.trim())) {
-        out.push(...parseHostAliases(included, readInclude, depth + 1));
+      // One Include may name several files or globs, as ssh_config(5) allows
+      // (`Include config.d/* ~/.orbstack/ssh/config`): each is read in turn.
+      for (const pattern of include[1]!.trim().split(/\s+/)) {
+        for (const included of readInclude(pattern)) {
+          out.push(...parseHostAliases(included, readInclude, depth + 1));
+        }
       }
       continue;
     }
@@ -120,6 +124,13 @@ export function validateHostEntry(entry: SshHostEntry): SshHostProblem | null {
  * The block as ssh reads it, led by a comment naming who wrote it and when — so a person
  * reading their config later knows the lines are not theirs and may edit or drop them.
  * Options ssh would ignore for being empty are left out rather than written blank.
+ *
+ * It ends with `StrictHostKeyChecking accept-new`. A host added here is usually one this
+ * computer has never connected to, and every connection this app makes runs in BatchMode,
+ * which cannot answer ssh's "are you sure you want to continue connecting?" — so without it
+ * the first install would stop at "Host key verification failed." `accept-new` records the
+ * key on first use, which is what answering yes at that prompt does, and still refuses a
+ * host whose key later differs from the one recorded.
  */
 export function renderHostBlock(entry: SshHostEntry, at: Date): string {
   const lines = [
@@ -132,6 +143,7 @@ export function renderHostBlock(entry: SshHostEntry, at: Date): string {
   if (entry.identityFile !== undefined && entry.identityFile !== "") {
     lines.push(`  IdentityFile ${entry.identityFile.trim()}`);
   }
+  lines.push("  StrictHostKeyChecking accept-new");
   return lines.join("\n") + "\n";
 }
 
