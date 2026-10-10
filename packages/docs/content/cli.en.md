@@ -93,11 +93,13 @@ penguin chat [options]
 
 With `--resume`, the original Session fixes the Workspace and model, so `--workspace`, `--model-id` and `--provider` cannot override them; to change the model, use `/switch-model` inside the resumed chat. `--thinking` is still accepted: it re-pins the existing Session from its next LLM request. Changing the level mid-context costs the provider's cached context, so compact first. On exit, if the Session has any history, the REPL prints a copy-pastable `penguin chat --resume <sessionId>` command.
 
+On a terminal, the REPL marks its prompts with OSC 133 semantic prompt sequences, the ones shells emit for shell integration: `A` and `B` around the `> ` prompt, `C` when a submitted prompt's turn starts, and `D;0` when it ends (`D;1` after an error). A terminal that supports them can jump between prompts and select one turn's output, and a program that runs the chat in a terminal of its own can tell when it is back at its prompt. Other terminals ignore them, and none are written unless both stdin and stdout are a terminal and `TERM` is not `dumb`. The marks are advisory: model output reaches the terminal unfiltered and can contain the same sequences.
+
 ### In-REPL commands
 
 | Input | Behavior |
 | --- | --- |
-| Any text while a Task runs | Mid-run steering. The line is queued and reaches the model between turns as a `[user_steering]` user message, and a `»` acknowledgment echoes the text. Rendering pauses while you type, so streamed output does not overwrite the line. If the Task finishes first, the line is sent as the next normal prompt. |
+| Any text while a Task runs, typed or pasted | Mid-run steering. Enter sends it, a multi-line paste as one message; the text is queued and reaches the model between turns as a `[user_steering]` user message, and a `»` acknowledgment echoes the text. Rendering pauses while you type, so streamed output does not overwrite the line. If the Task finishes first, the text is sent as the next normal prompt: a line already entered at once, a paste not yet entered by the next Enter. |
 | `/goal[:<budget>] <objective>` | Runs goal mode on the objective. The optional budget is a token budget, such as `/goal:500k`. Ctrl-C aborts the whole goal. See [Goal mode](/goal-mode). |
 | `/compact` | Compacts the current context now. |
 | `/clear` | Starts a fresh blank Session in place, on the same Workspace and model. The old Session stays on the server and can be resumed with `--resume`. |

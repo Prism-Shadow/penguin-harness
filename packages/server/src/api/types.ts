@@ -3028,6 +3028,15 @@ export type ServerEvent =
    * the user channels of the Project's owner and members, like `session_state`.
    */
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
+  /**
+   * A Session's count of tool calls waiting for a person's approval changed: a call was
+   * escalated (every call under always-ask, rw/unknown calls under read-only), answered, or
+   * denied by an interrupt. The count is the row's `pendingApprovalCount` as it stands after
+   * the change, zeros included, so a list moves its mark without refetching; the calls
+   * themselves are on the Session's own stream (`approval_request`, replayed on subscribe).
+   * Published to the user channels of the Project's owner and members, like `session_state`.
+   */
+  | { type: "session_approvals"; sessionId: string; count: number }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
   /**
