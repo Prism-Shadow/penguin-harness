@@ -46,7 +46,7 @@ export function RoadmapLines({
   if (roadmaps === undefined || roadmaps.length === 0) return null;
   const t = S.company.proposals.roadmaps;
   return (
-    <ul aria-label={t.label} className="mt-2 space-y-0.5 text-xs text-gray-500 dark:text-gray-400">
+    <ul aria-label={t.label} className="mt-2 space-y-1 text-xs text-gray-500 dark:text-gray-400">
       {roadmaps.map((r) => (
         <li
           key={`${r.number}/${r.itemKey}`}
