@@ -557,6 +557,9 @@ export function checkLine(check: MachineCheck, alias: string): CheckLine {
         if (check.reason === "musl") return line(c.platformMusl);
         return line(c.platformUnsupported, check.said || null);
       }
+      if (check.state === "warn" && check.terminalsNeed !== undefined) {
+        return line(c.platformTerminals(check.arch, check.glibc ?? "?", check.terminalsNeed));
+      }
       return check.state === "warn"
         ? line(c.platformWindows)
         : line(c.platform(OS_NAME[check.os] ?? check.os, check.arch));

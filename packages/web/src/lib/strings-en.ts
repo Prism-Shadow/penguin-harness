@@ -266,6 +266,8 @@ export const en: Strings = {
       platformUnsupported: "No release is published for this system or architecture.",
       platformOldGlibc: (glibc: string, need: string) =>
         `This machine has glibc ${glibc}; the Node that PenguinHarness ships needs ${need} or newer. Use a newer Linux system.`,
+      platformTerminals: (arch: string, glibc: string, need: string) =>
+        `System: Linux ${arch}, glibc ${glibc}. PenguinHarness runs, but terminals need glibc ${need} or newer and will not open on this machine.`,
       platformMusl:
         "This machine uses musl libc (Alpine, for example); the Node that PenguinHarness ships needs glibc. Use a glibc-based Linux system.",
       toolsPass: "It has the tools the installer needs.",

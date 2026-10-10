@@ -18,7 +18,8 @@
  *   not two, it warns.
  * - Given the port taken by another program it fails; held by its own server it passes.
  * - Given a Linux machine whose glibc is older than the release's Node needs, the platform check
- *   fails naming both versions; given a musl system (Alpine), it fails as musl.
+ *   fails naming both versions; given a musl system (Alpine), it fails as musl; given a glibc
+ *   the release runs on but its terminal binding does not load on, it warns.
  * - Given a Windows machine, it is installable but the POSIX checks are skipped.
  * - Given a job working on the machine, the check is refused rather than queued behind it.
  * - The release sources it asks are the installer's own.
@@ -41,6 +42,7 @@ import {
   INSTALL_NEEDS_MB,
   MIN_GLIBC,
   RELEASE_SOURCES,
+  TERMINAL_GLIBC,
   diagnoseCommand,
   parseDiagnosis,
 } from "../src/machines/diagnose.js";
@@ -218,7 +220,7 @@ describe("the connection check", () => {
     expect(ours.byId.port).toMatchObject({ state: "pass", holder: "penguin" });
   });
 
-  it("fails a glibc older than the release's Node needs, naming both, and a musl system", async () => {
+  it("fails a glibc older than the release's Node needs and a musl system, and warns about terminals on one in between", async () => {
     const old = await checksOf((command) =>
       command.includes("@@who") ? said(answer({ libc: "ldd (GNU libc) 2.17" })) : said(LINUX_PROBE),
     );
@@ -232,6 +234,16 @@ describe("the connection check", () => {
       command.includes("@@who") ? said(answer({ libc: "musl libc (x86_64)" })) : said(LINUX_PROBE),
     );
     expect(alpine.byId.platform).toMatchObject({ state: "fail", reason: "musl" });
+    const focal = await checksOf((command) =>
+      command.includes("@@who")
+        ? said(answer({ libc: "ldd (Ubuntu GLIBC 2.31-0ubuntu9.17) 2.31" }))
+        : said(LINUX_PROBE),
+    );
+    expect(focal.byId.platform).toMatchObject({
+      state: "warn",
+      glibc: "2.31",
+      terminalsNeed: TERMINAL_GLIBC,
+    });
     const ubuntu = await checksOf((command) =>
       command.includes("@@who")
         ? said(answer({ libc: "ldd (Ubuntu GLIBC 2.35-0ubuntu3.8) 2.35" }))

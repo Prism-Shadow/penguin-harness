@@ -509,7 +509,7 @@ describe("the connection check", () => {
     ).toBe(S.machines.check.downloadFrom("0.2.13", "oss"));
   });
 
-  it("names the glibc a machine has against the one the release needs, and a musl system", () => {
+  it("names the glibc a machine has against the one the release needs, a musl system, and terminals that will not open", () => {
     const old = line({
       id: "platform",
       state: "fail",
@@ -527,6 +527,19 @@ describe("the connection check", () => {
     expect(
       line({ id: "platform", state: "fail", reason: "musl", os: "linux", arch: "arm64" }).text,
     ).toBe(S.machines.check.platformMusl);
+    expect(
+      line({
+        id: "platform",
+        state: "warn",
+        os: "linux",
+        arch: "x64",
+        glibc: "2.31",
+        terminalsNeed: "2.34",
+      }),
+    ).toMatchObject({
+      text: S.machines.check.platformTerminals("x64", "2.31", "2.34"),
+      tone: "attention",
+    });
     expect(
       line({ id: "platform", state: "fail", reason: "unsupported", said: "FreeBSD amd64" }),
     ).toMatchObject({ text: S.machines.check.platformUnsupported, detail: "FreeBSD amd64" });

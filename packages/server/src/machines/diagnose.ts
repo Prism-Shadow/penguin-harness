@@ -50,6 +50,13 @@ const ROOM_MB = 2 * INSTALL_NEEDS_MB;
  */
 export const MIN_GLIBC = "2.28";
 
+/**
+ * The oldest glibc the release's terminal binding loads on: node-pty is compiled for Linux
+ * against glibc 2.34 or newer (the release runner, and Debian 12 for arm64), which binds its
+ * forkpty and openpty at GLIBC_2.34. Below it the server runs and terminals do not open.
+ */
+export const TERMINAL_GLIBC = "2.34";
+
 /** The tools install.sh runs besides the shell's own; one sha256 tool of the two it accepts. */
 const TOOLS = ["curl", "tar", "gzip", "mktemp"];
 
@@ -168,9 +175,9 @@ function older(version: string, floor: string): boolean {
 }
 
 /**
- * The platform as the release's Node sees it: a POSIX system and architecture a release is
- * published for, on Linux with a glibc new enough — `ldd --version`'s first line names it, and
- * a musl system says musl there.
+ * The platform as the release sees it: a POSIX system and architecture a release is published
+ * for, on Linux with a glibc new enough for its Node, and for its terminals — `ldd --version`'s
+ * first line names the glibc, and a musl system says musl there.
  */
 function platformCheck(identity: RemoteIdentity, libc: string | undefined): MachineCheck {
   const { platform: os, arch } = identity;
@@ -179,6 +186,9 @@ function platformCheck(identity: RemoteIdentity, libc: string | undefined): Mach
     const glibc = /(\d+\.\d+)\S*\s*$/.exec(libc)?.[1];
     if (glibc !== undefined && older(glibc, MIN_GLIBC)) {
       return { id: "platform", state: "fail", reason: "glibc", os, arch, glibc, need: MIN_GLIBC };
+    }
+    if (glibc !== undefined && older(glibc, TERMINAL_GLIBC)) {
+      return { id: "platform", state: "warn", os, arch, glibc, terminalsNeed: TERMINAL_GLIBC };
     }
   }
   return { id: "platform", state: "pass", os, arch };

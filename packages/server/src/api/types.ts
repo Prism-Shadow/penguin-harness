@@ -4916,8 +4916,18 @@ export type MachineCheck =
   | { id: "ssh"; state: "pass"; user: string; host: string }
   /** It did not; `said` is ssh's own words, led by what they mean. */
   | { id: "ssh"; state: "fail"; reason: MachineSshFailure; said: string }
-  /** `warn` for Windows: installable, not connectable yet. */
-  | { id: "platform"; state: "pass" | "warn"; os: string; arch: string }
+  /**
+   * `warn` for Windows (installable, not connectable yet), and for a Linux whose glibc runs the
+   * release but is older than `terminalsNeed`, the one its terminal binding loads on.
+   */
+  | {
+      id: "platform";
+      state: "pass" | "warn";
+      os: string;
+      arch: string;
+      glibc?: string;
+      terminalsNeed?: string;
+    }
   /**
    * What the release's Node cannot run on: an OS or architecture no release is published for
    * (`unsupported`, `said` what the machine answered), a glibc older than `need` (`glibc`), or

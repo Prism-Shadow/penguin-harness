@@ -303,6 +303,8 @@ export const zh = {
       platformUnsupported: "这个系统或架构没有发布版。",
       platformOldGlibc: (glibc: string, need: string) =>
         `这台机器的 glibc 是 ${glibc}，PenguinHarness 自带的 Node 需要 ${need} 或更新：请换一台较新的 Linux 系统。`,
+      platformTerminals: (arch: string, glibc: string, need: string) =>
+        `系统：Linux ${arch}，glibc ${glibc}。PenguinHarness 可以运行，但终端需要 glibc ${need} 或更新，在这台机器上打不开。`,
       platformMusl:
         "这台机器用的是 musl libc（如 Alpine），PenguinHarness 自带的 Node 需要 glibc：请换一台基于 glibc 的 Linux 系统。",
       toolsPass: "安装所需的工具齐全。",
