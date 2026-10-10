@@ -13,8 +13,10 @@ import {
   formatPercent,
   formatRelativeDate,
   formatRelativeDays,
+  formatRelativeLong,
   formatRelativeShort,
   formatScore,
+  formatShortDateTime,
   formatTps,
   formatYearMonthDay,
   humanizeDuration,
@@ -329,6 +331,71 @@ describe("formatRelativeShort", () => {
   it("unparsable input yields the empty string (the row hides the slot instead of showing garbage)", () => {
     expect(formatRelativeShort("not-a-date", "zh")).toBe("");
     expect(formatRelativeShort("", "en")).toBe("");
+  });
+});
+
+describe("formatRelativeLong (a fact in a dialog: when a machine was last checked)", () => {
+  // Local wall-clock times, each read when its case runs: the clock and the times it measures
+  // must share one time zone, and a case may run under another than the file was loaded in
+  // (on Windows, the zone `withTimeZone` set can outlive it).
+  const at = (mo: number, d: number, h: number, mi: number, s = 0) =>
+    new Date(2026, mo, d, h, mi, s).toISOString();
+  const noon = () => new Date(2026, 6, 15, 12, 0, 0).getTime();
+
+  it("under a minute reads as just now", () => {
+    expect(formatRelativeLong(at(6, 15, 11, 59, 30), "zh", noon())).toBe("刚刚");
+    expect(formatRelativeLong(at(6, 15, 12, 0), "en", noon())).toBe("just now");
+  });
+
+  it("minutes, hours and days in words, floored, one of a unit said in the singular", () => {
+    expect(formatRelativeLong(at(6, 15, 11, 57), "zh", noon())).toBe("3 分钟前");
+    expect(formatRelativeLong(at(6, 15, 11, 59), "en", noon())).toBe("1 minute ago");
+    expect(formatRelativeLong(at(6, 15, 11, 1), "en", noon())).toBe("59 minutes ago");
+    expect(formatRelativeLong(at(6, 15, 9, 30), "zh", noon())).toBe("2 小时前");
+    expect(formatRelativeLong(at(6, 15, 11, 0), "en", noon())).toBe("1 hour ago");
+    expect(formatRelativeLong(at(6, 14, 11, 0), "zh", noon())).toBe("1 天前");
+    expect(formatRelativeLong(at(6, 9, 12, 0), "en", noon())).toBe("6 days ago");
+  });
+
+  it("a week or older — and a future time (clock skew) — is the absolute date and time", () => {
+    expect(formatRelativeLong(at(6, 8, 12, 0), "zh", noon())).toBe("2026-07-08 12:00");
+    expect(formatRelativeLong(at(6, 15, 12, 5), "en", noon())).toBe("2026-07-15 12:05");
+  });
+
+  it("unparsable input yields the empty string", () => {
+    expect(formatRelativeLong("not-a-date", "zh", noon())).toBe("");
+    expect(formatRelativeLong("", "en", noon())).toBe("");
+  });
+
+  describe("with no clock given", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(noon());
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("measures from the present", () => {
+      expect(formatRelativeLong(at(6, 15, 11, 57), "en")).toBe("3 minutes ago");
+    });
+  });
+});
+
+describe("formatShortDateTime (the time beside how long ago a machine was last checked)", () => {
+  it("is the reader's own month, day and time, zero-padded, without the year", () => {
+    // One instant, two readers: its UTC day (the 5th) is the Shanghai reader's 6th.
+    const iso = "2026-06-05T23:04:00.000Z";
+    withTimeZone("Asia/Shanghai", () => {
+      expect(formatShortDateTime(iso)).toBe("06-06 07:04");
+    });
+    withTimeZone("America/New_York", () => {
+      expect(formatShortDateTime(iso)).toBe("06-05 19:04");
+    });
+  });
+
+  it("unparsable input comes back unchanged", () => {
+    expect(formatShortDateTime("not-a-date")).toBe("not-a-date");
   });
 });
 
