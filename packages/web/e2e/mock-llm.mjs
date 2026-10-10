@@ -109,7 +109,11 @@ const server = http.createServer((req, res) => {
     } catch {}
     const messages = json.messages || [];
     const flat = JSON.stringify(messages);
-    const isTitle = flat.includes("concise title");
+    // The title request is one out-of-band one-shot whose material is the run's own user text,
+    // so it is identified by the wording of core's title Prompt (buildTitlePrompt), not by the
+    // conversation content — probing for user text would let a title request read as a normal
+    // turn and hand the mock's answer back as the Session's title.
+    const isTitle = flat.includes("You are a title generator.");
     // After compaction the new context has only the summary left, so the message count drops
     // sharply -> reported usage drops along with it, letting compaction converge.
     const msgCount = messages.length;
@@ -235,6 +239,17 @@ const server = http.createServer((req, res) => {
         },
       ]);
       messageStop(res, "end_turn", 8);
+      return;
+    }
+
+    // Find-bar fixture (find.spec): one settled reply whose body repeats a token nobody else in
+    // the app writes, so the hit count is exact without depending on the app's own copy.
+    if (flat.includes("find marker test")) {
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "findmarker one, findmarker two, and findmarker three.\n\n" },
+        { type: "text_delta", text: "A second paragraph also says findmarker.\n" },
+      ]);
+      messageStop(res, "end_turn", 30);
       return;
     }
 

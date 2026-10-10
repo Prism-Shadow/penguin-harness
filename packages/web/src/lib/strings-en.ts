@@ -156,6 +156,8 @@ export const en: Strings = {
       "palette.toggle": "Command palette",
       "sessions.search": "Search sessions",
       "chat.new": "New chat",
+      "find.open": "Find in page",
+      "find.all": "Find in all areas",
       "sidebar.toggle": "Show or hide the sidebar",
       "dock.toggleRight": "Show or hide the right sidebar",
       "dock.toggleBottom": "Show or hide the bottom panel",
@@ -951,6 +953,31 @@ export const en: Strings = {
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
+  },
+
+  find: {
+    placeholder: "Find in this area…",
+    next: "Next match",
+    prev: "Previous match",
+    close: "Close",
+    caseSensitive: "Match case",
+    /** Counter line when the query matches nothing. */
+    noResults: "No results",
+    regionConversation: "Conversation",
+    regionSubagent: "Subagent",
+    regionSessions: "Sessions",
+    regionFiles: "Files",
+    /** Scope button while the search is limited to one region: widen it to everything on screen. */
+    scopeAll: "All areas",
+    /** Scope button while searching everything: narrow it back to `region`. */
+    scopeThisRegion: (region: string): string => `${region} only`,
+    /** The region's own notice that it holds content this search could not reach. */
+    loadMore: "Earlier content is not loaded",
+    loadMoreAction: "Load and keep searching",
+    /** `count` hits past the rows the result list shows. */
+    moreRows: (count: number): string => `${count} more not shown`,
+    /** Name of the aggregated result list (read out when it is announced). */
+    resultsLabel: "Find results",
   },
 
   common: {
