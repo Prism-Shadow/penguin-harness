@@ -101,7 +101,7 @@ Builder 试测题目和记录基线分时，都用这个新对话的模型来运
 
 点 Benchmark 卡片或**查看**，打开这个 Benchmark 的页面（`/benchmark/<benchmark>`）。**返回列表**回到列表页。
 
-页头在标题旁边写出 Benchmark 的目录 `benchmarks/<benchmark>`，附带**复制目录路径**按钮与 Benchmark 的版本（例如 `v2026.10.09.1`），另有它自己的**使用**按钮。Agent 从仓库文件夹导入的 Benchmark 另在**来源**处链接那个文件夹。
+页头在标题旁边写出 Benchmark 的目录 `benchmarks/<benchmark>`，附带**复制目录路径**按钮；清单带版本时还写出 Benchmark 的版本（例如 `v2026.10.09.1`），另有它自己的**使用**按钮。Agent 从仓库文件夹导入的 Benchmark 另在**来源**处链接那个文件夹。
 
 ### 题目
 
@@ -213,11 +213,11 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 
 ## 工作原理
 
-- **存储。** Benchmark 就是 Project 里与 `agents/` 平级的 `benchmarks/<benchmark>/` 目录，以 Benchmark id 命名。它的清单是带日期版本的 `benchmark.json`；每道题都有 `statement/README.md` 和 `rubric/README.md`，分数记在 `scoreboard.yaml` 里。见 [Benchmark 存储](/self-improvement#benchmark-存储)。
-- **状态。** `benchmark.json` 中的 `status` 决定遮罩：`draft` 显示**构建中**，`failed` 显示**创建失败**，`published` 解除遮罩。清单读不了的 Benchmark 同样遮罩，显示**清单无法读取**，旁边图标的悬停提示说明原因。
+- **存储。** Benchmark 就是 Project 里与 `agents/` 平级的 `benchmarks/<benchmark>/` 目录，以 Benchmark id 命名。它的清单是 `benchmark_config.toml`，其中还记有日期版本和这份副本的来源（早先版本建的 Benchmark 两者都没有）；每道题都有 `statement/README.md` 和 `rubric/README.md`，分数记在 `scoreboard.yaml` 里。见 [Benchmark 存储](/self-improvement#benchmark-存储)。
+- **状态。** `benchmark_config.toml` 中的 `status` 决定遮罩：`draft` 显示**构建中**，`failed` 显示**创建失败**，`published` 解除遮罩。清单读不了的 Benchmark 同样遮罩，显示**清单无法读取**，旁边图标的悬停提示说明原因。
 - **用 AI 创建。** 提示词的固定结尾把被测智能体的 id、期望的基线分和 Pilot 迭代上限交给 `benchmark-design` Skill，并要求取得基线分。
 - **手动创建。** 服务端按 Skill 读取的目录结构，把表单内容写入磁盘（`POST …/benchmarks`，仅 owner），状态为 `published`。
 - **评估。** 提示词要求通过自行派生的 `agent-evaluation` 子 Agent，在本会话自己的模型上跑完完整的 Case × runs 矩阵；执行评估的 Agent 从系统提示词的 `Provider` 与 `Model ID` 两行读出这个模型。每条结果报告的 Agent、模型和思考等级都必须一致，最后只向 `scoreboard.yaml` 追加一条带标签的评估。被测的 Agent 和 Benchmark 都保持不变。
-- **删除。** 服务端整目录删除（`DELETE …/benchmarks/:id`）。评估还在运行时删除 Benchmark，可能留下一个目录，因为运行中的评估还在往里写。这个目录没有 `benchmark.json`，不会出现在列表里，可以手动删除。
+- **删除。** 服务端整目录删除（`DELETE …/benchmarks/:id`）。评估还在运行时删除 Benchmark，可能留下一个目录，因为运行中的评估还在往里写。这个目录没有 `benchmark_config.toml`，不会出现在列表里，可以手动删除。
 - **示例与内置 Benchmark。** 在 Project 创建时写入，此后不再写入。早先版本的 Project 保留已有的内容，不会得到内置 Benchmark。
 - **内置 Benchmark。** 它们的清单与普通 Benchmark 无异，来源为 `builtin`；每道题的题干写明任务在仓库固定提交下的文件夹，并链接仓库里的运行规则，`agent-evaluation` Skill 照此运行。它的 `reference/harbor.md` 只补充 PenguinHarness 需要的部分：检出放在哪里、运行哪份 Agent State、trial 如何折算成分数。

@@ -115,8 +115,8 @@ describe("mergeBenchmarks", () => {
         machineId: null,
         benchmarks: [benchmark("here", { version: "2026.10.09.2", origin: { kind: "manual" } })],
       },
-      // A machine whose server predates benchmark.json names no version at all; the copy of
-      // "broken" there cannot be read, which is a fact about it, not an absence.
+      // A machine whose server predates versions names no version at all; the copy of "broken"
+      // there cannot be read, which is a fact about it, not an absence.
       {
         machineId: OLDER,
         benchmarks: [

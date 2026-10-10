@@ -23,9 +23,10 @@
  * - **First source wins the description.** The caller lists this server first, so a title, a
  *   `runs` count, a status, a version or an origin read here is the one displayed. They describe
  *   the same Benchmark; where two disks disagree, the one the person is looking at is the honest
- *   choice. A source that names no version because its server predates the manifest has nothing
- *   to disagree with, so the next source that names one supplies the version and the origin
- *   together; a copy whose manifest cannot be read says so, and keeps its own.
+ *   choice. A source that names no version — its manifest was written before versions, or its
+ *   server predates them — has nothing to disagree with, so the next source that names one
+ *   supplies the version and the origin together; a copy whose manifest cannot be read says so,
+ *   and keeps its own.
  */
 import type {
   AgentSummary,

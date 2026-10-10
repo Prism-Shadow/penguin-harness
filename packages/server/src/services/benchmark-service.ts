@@ -1,21 +1,21 @@
 /**
  * Benchmark score reading: walks the Project's `benchmarks/<id>/`, reads the manifest
- * `benchmark.json` (core's readBenchmarkManifest: title, description, per-case run count `runs`,
- * the build `status` — `draft` while the Benchmark is still being written, `failed` when its
- * calibration never produced a result to freeze, `published` otherwise — the date `version` and
- * the `origin`) and `scoreboard.yaml` (evaluations[], each carrying the Agent it tested, each
- * case its model-written averages and a runs array).
+ * `benchmark_config.toml` (core's readBenchmarkManifest: title, description, per-case run count
+ * `runs`, the build `status` — `draft` while the Benchmark is still being written, `failed` when
+ * its calibration never produced a result to freeze, `published` otherwise — and, when the file
+ * has them, the date `version` and the `origin`) and `scoreboard.yaml` (evaluations[], each
+ * carrying the Agent it tested, each case its model-written averages and a runs array).
  * Content is normally created and refined by the benchmark-design Skill; the server also
  * writes the same layout for a Benchmark created by hand (`create`) and removes a Benchmark
  * directory whole (`remove`), and never touches a scoreboard. A built-in Benchmark is read like
  * any other: its cases run elsewhere (their statements say how), and the service does not know
  * or care.
- * A manifest is what makes a directory a Benchmark: `list` skips one without it. A Benchmark
- * from before benchmark.json has `benchmark_config.toml` instead, which the read converts
- * (compat(0.3.0), in core). A manifest that is there but says something unusable lists the
- * Benchmark as failed, under its directory name, with `manifestError` saying why, so nothing
- * offers to use it; a corrupt scoreboard degrades to no scores. A filesystem error reading a
- * manifest is not a fact about the Benchmark and fails the request.
+ * A manifest is what makes a directory a Benchmark: `list` skips one without it. A manifest
+ * written before `id`, `version` and `origin` existed is read as it is, unversioned and of
+ * unknown origin; reading never rewrites one. A manifest that is there but says something
+ * unusable lists the Benchmark as failed, under its directory name, with `manifestError` saying
+ * why, so nothing offers to use it; a corrupt scoreboard degrades to no scores. A filesystem error
+ * reading a manifest is not a fact about the Benchmark and fails the request.
  *
  * Case and Evaluation averages are authoritative file values. The server validates
  * the current shape but never recomputes aggregates and does not migrate or backfill
@@ -77,7 +77,7 @@ function asRecord(v: unknown): Record<string, unknown> {
 }
 
 /** The manifest's origin as the API carries it: camelCase, like every other DTO field. */
-function originDto(origin: BenchmarkManifest["origin"]): BenchmarkOrigin {
+function originDto(origin: NonNullable<BenchmarkManifest["origin"]>): BenchmarkOrigin {
   return {
     kind: origin.kind,
     ...(origin.url !== undefined ? { url: origin.url } : {}),
@@ -290,8 +290,8 @@ export class BenchmarkService implements Benchmarks {
   }
 
   /**
-   * Creates `benchmarks/<id>/` in the layout the evaluation Skills read: `benchmark.json` (title,
-   * description, runs, status `published`, the day's first version, origin `manual`),
+   * Creates `benchmarks/<id>/` in the layout the evaluation Skills read: `benchmark_config.toml`
+   * (id, title, description, runs, status `published`, the day's first version, origin `manual`),
    * `scoreboard.yaml` with an empty evaluations list, and per case `statement/README.md`
    * (`# <title>`, then the statement) and `rubric/README.md` (the rubric verbatim). An existing
    * directory is a 409, never merged into: a Benchmark's scores stay comparable only while its
@@ -467,11 +467,11 @@ export class BenchmarkService implements Benchmarks {
   }
 
   /**
-   * The manifest of `benchDir` (a legacy TOML is converted on the way, in core): null when the
-   * directory is not a Benchmark, the BenchmarkManifestError when it is one whose manifest says
-   * something unusable — not JSON, a field out of shape, an id that is not its directory's, a
-   * TOML that does not parse. Such a Benchmark is listed as broken rather than hidden. Any other
-   * error (the file cannot be read at all) is thrown.
+   * The manifest of `benchDir`: null when the directory is not a Benchmark, the
+   * BenchmarkManifestError when it is one whose manifest says something unusable — not TOML, an
+   * `id` that is not its directory's, a `version` or an `[origin]` out of shape. Such a Benchmark
+   * is listed as broken rather than hidden. Any other error (the file cannot be read at all) is
+   * thrown.
    */
   private async manifestOf(
     benchDir: string,
@@ -489,10 +489,11 @@ export class BenchmarkService implements Benchmarks {
     id: string,
     manifest: BenchmarkManifest | BenchmarkManifestError,
   ): Promise<BenchmarkSummary> {
-    // The manifest: title, description, per-case run count, build status, version and origin.
-    // The model isn't part of it — each evaluation carries the Model actually used for that
-    // run. One that cannot be read lists under the directory name as failed — unusable until
-    // the file is fixed — with the reason, and neither a version nor an origin.
+    // The manifest: title, description, per-case run count, build status, and the version and
+    // origin when it has them (a file written before they existed has neither). The model isn't
+    // part of it — each evaluation carries the Model actually used for that run. One that cannot
+    // be read lists under the directory name as failed — unusable until the file is fixed — with
+    // the reason, and neither a version nor an origin.
     const described: Pick<
       BenchmarkSummary,
       "title" | "description" | "runs" | "status" | "version" | "origin" | "manifestError"
@@ -506,10 +507,10 @@ export class BenchmarkService implements Benchmarks {
         : {
             title: manifest.title,
             ...(manifest.description !== undefined ? { description: manifest.description } : {}),
-            runs: manifest.runs,
+            ...(manifest.runs !== undefined ? { runs: manifest.runs } : {}),
             status: manifest.status,
-            version: manifest.version,
-            origin: originDto(manifest.origin),
+            ...(manifest.version !== undefined ? { version: manifest.version } : {}),
+            ...(manifest.origin !== undefined ? { origin: originDto(manifest.origin) } : {}),
           };
 
     // scoreboard.yaml: evaluations[] is appended over time; bad entries are dropped one by one.

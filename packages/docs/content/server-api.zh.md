@@ -550,8 +550,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files` | 浏览一道题的 `rubric/` 目录 |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content` | 读取评分标准中的一个文件，参数与上一条相同 |
 
-- `GET /benchmarks` 只列出含有 `benchmark.json` 的目录；早先版本只含 `benchmark_config.toml` 的目录在第一次列出时转换。两者都没有的目录（评估过程中删除 Benchmark 留下的就是这种）不会出现在列表里。每个条目都带 `status`（Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`）、日期版本 `version` 与来源 `origin`（`{kind, url?, ref?, path?, importedAt?}`，`kind` 取 `builtin`、`manual`、`agent`、`git`、`zip` 之一）。清单不可用的 Benchmark 以目录名列出，按 `failed` 处理，带 `manifestError`（`{code, message}`，`code` 为 `benchmark_manifest_invalid`、`benchmark_id_mismatch` 或 `benchmark_config_invalid`），不带 `version` 与 `origin`。文件系统层面读不了清单时，请求失败。
-- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark.json`（`status` 为 `published`、当天的第一个版本、来源 `manual`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
+- `GET /benchmarks` 只列出含有 `benchmark_config.toml` 的目录；评估过程中删除 Benchmark 留下的目录没有这个文件，因此不会出现在列表里。每个条目都带 `status`（Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`），清单里有的话还带日期版本 `version` 与来源 `origin`（`{kind, url?, ref?, path?, importedAt?}`，`kind` 取 `builtin`、`manual`、`agent`、`git`、`zip` 之一）；早先版本写下的清单两者都没有。清单不可用的 Benchmark 以目录名列出，按 `failed` 处理，带 `manifestError`（`{code, message}`，`code` 为 `benchmark_manifest_invalid` 或 `benchmark_id_mismatch`），不带 `version` 与 `origin`。文件系统层面读不了清单时，请求失败。
+- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark_config.toml`（含 `id`、`status = "published"`、当天的第一个版本与来源 `manual`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
 - 这些读取文件内容的路由采用与 Workspace 文件相同的内联加固；参见 [Workspace 文件响应](#workspace-文件响应)。
 
 ## 组织（公司模式）

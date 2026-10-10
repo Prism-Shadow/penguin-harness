@@ -112,9 +112,8 @@ export function UseBenchmarkModal({
   // The conversation's model, preset to the Project's default; null only while the model list
   // has not arrived yet (the dialog usually opens after the page fetched it).
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(models?.defaultModel ?? null);
-  // Clamped: a machine whose server predates benchmark.json reads `runs` from a hand-editable
-  // file with no upper bound, and a larger count there would open the dialog on a field its own
-  // bound rejects, with Send disabled until the number is retyped.
+  // Clamped: benchmark_config.toml is hand-editable, and a larger count there would open the
+  // dialog on a field its own bound rejects, with Send disabled until the number is retyped.
   const [runs, setRuns] = useState(String(Math.min(benchmark.runs ?? 1, MAX_RUNS)));
   const [note, setNote] = useState("");
   const [roundLimit, setRoundLimit] = useState("3");

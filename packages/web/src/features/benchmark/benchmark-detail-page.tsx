@@ -85,9 +85,9 @@ function webLink(url: string | undefined): string | null {
 /**
  * What the header says under the Benchmark's title: the directory its files live in, with a copy
  * button, and the version its manifest is at; under them, for a copy an Agent imported from a
- * repository folder, a link to that folder. A Benchmark whose manifest could not be read, or one
- * a machine running an older server answered for, has no version or origin, and the header names
- * its directory alone.
+ * repository folder, a link to that folder. A Benchmark whose manifest was written before
+ * versions or could not be read, or one a machine running an older server answered for, has no
+ * version, and the header names its directory alone.
  */
 export function BenchmarkHeaderFacts({
   benchmark,

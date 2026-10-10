@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * Writes the built-in Benchmarks, PenguinHarness Benchmark Sec A to Sec E, as packages: for each,
- * `<out>/<id>/` holding its benchmark.json and every case's statement and rubric. That is what a
- * new Project is seeded with, minus the scoreboard, which is a copy's own record of its
- * evaluations and never part of a package. The benchmark repository
+ * `<out>/<id>/` holding its manifest, benchmark_config.toml, and every case's statement and
+ * rubric. That is what a new Project is seeded with, minus the scoreboard, which is a copy's own
+ * record of its evaluations and never part of a package. The benchmark repository
  * (Prism-Shadow/penguin-harness-benchmark) commits the output under `packages/`, where the
  * Evaluation Center's import takes a Benchmark by its folder link; Project creation keeps
  * seeding from core's own data, offline. The example Benchmark is not written: it demonstrates

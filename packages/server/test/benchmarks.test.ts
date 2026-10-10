@@ -1,20 +1,22 @@
 /**
  * The Benchmark API.
  *
- * - The list reads each benchmark.json's title, description, status (draft, published and
- *   failed are themselves), version and origin, lists a Benchmark that never ran but not a
- *   directory without a manifest, and is empty when nothing is configured. A staging copy an
- *   interrupted seeding left and the Harbor checkouts are never listed. A Benchmark whose
- *   manifest says something unusable (not JSON, a field out of shape, another directory's id)
- *   is listed under its directory name as failed, with the reason and no version, never as
- *   usable; a manifest the filesystem cannot read fails the request instead.
- * - compat(0.3.0): a Benchmark with only the legacy benchmark_config.toml lists once, as its
- *   config says, and has a benchmark.json from then on; the TOML stays.
+ * - The list reads each benchmark_config.toml's title, description, status (only a literal draft
+ *   locks a Benchmark; draft and failed are themselves, anything else is published), version and
+ *   origin, lists a Benchmark that never ran but not a directory without a manifest, and is empty
+ *   when nothing is configured. A staging copy an interrupted seeding left and the Harbor
+ *   checkouts are never listed.
+ * - A Benchmark whose manifest predates `id`, `version` and `origin` lists as its file says,
+ *   unversioned and of unknown origin, and listing it writes nothing.
+ * - A Benchmark whose manifest says something unusable (not TOML, another directory's id, an
+ *   origin ref that is not a commit) is listed under its directory name as failed, with the
+ *   reason and no version, never as usable; a manifest the filesystem cannot read fails the
+ *   request instead.
  * - scoreboard.yaml v2's evaluations pass through: the summary, the Agent each tested, the
  *   model-written Case and Evaluation averages and the per-case runs; legacy Scoreboard entries
  *   are neither migrated nor backfilled; the case count is reported.
  * - Members read and outsiders get 404; only the owner creates (the server writes the layout
- *   the Skills read — a benchmark.json with the day's first version and origin manual —
+ *   the Skills read — a manifest with its id, the day's first version and origin manual —
  *   refusing malformed requests without writing) and deletes a Benchmark whole.
  *
  * Benchmarks are Project-level, so a new Project arrives with its Benchmarks (the example and
@@ -25,6 +27,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkCasesResponse,
@@ -41,7 +44,7 @@ import type { TestApp } from "./helpers.js";
 // probes once and caches, so these cases still run where the capability exists.
 const itWithSymlinks = it.skipIf(!canCreateSymlink());
 
-/** A benchmark.json for the Benchmark in `dir`, as benchmark-design writes one. */
+/** A benchmark_config.toml for the Benchmark in `dir`, as benchmark-design writes one now. */
 async function writeManifest(dir: string, over: Record<string, unknown> = {}): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   const manifest = {
@@ -53,7 +56,13 @@ async function writeManifest(dir: string, over: Record<string, unknown> = {}): P
     origin: { kind: "agent" },
     ...over,
   };
-  await fs.writeFile(path.join(dir, "benchmark.json"), JSON.stringify(manifest, null, 2));
+  await fs.writeFile(path.join(dir, "benchmark_config.toml"), stringifyToml(manifest));
+}
+
+/** A benchmark_config.toml written as `text`, the way earlier releases and people wrote them. */
+async function writeRawManifest(dir: string, text: string): Promise<void> {
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, "benchmark_config.toml"), text, "utf8");
 }
 
 /** Today's date as a version's date part, `YYYY.MM.DD`, on the local calendar. */
@@ -419,7 +428,7 @@ describe("benchmarks api", () => {
   it("does not migrate or backfill legacy Scoreboard entries", async () => {
     const dir = path.join(benchmarksDir(t.root, projectId), "swe-bench-v1");
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
-    await writeManifest(dir, { title: "SWE Bench v1" });
+    await writeRawManifest(dir, `title = "SWE Bench v1"\n`);
     await fs.writeFile(
       path.join(dir, "scoreboard.yaml"),
       [
@@ -446,6 +455,7 @@ describe("benchmarks api", () => {
     expect(res.benchmarks.map((b) => b.id)).toEqual(["swe-bench-v1"]);
     const bench = res.benchmarks[0]!;
     expect(bench).toMatchObject({ title: "SWE Bench v1", caseCount: 1 });
+    expect("runs" in bench).toBe(false);
     expect(bench.evaluations).toEqual([]);
 
     expect((await outsider.get(base)).status).toBe(404);
@@ -485,84 +495,91 @@ describe("benchmarks api", () => {
     });
   });
 
-  it("reads status from the manifest: draft, published and failed are themselves", async () => {
+  it("reads status from the manifest: literal draft and failed are themselves, everything else is published", async () => {
     const dir = benchmarksDir(t.root, projectId);
     // Still being written by benchmark-design: the Benchmark is not usable yet.
     await writeManifest(path.join(dir, "draft-bench"), { status: "draft" });
     // Calibration never produced a Pilot result to freeze: the Benchmark is unusable.
     await writeManifest(path.join(dir, "failed-bench"), { status: "failed" });
-    await writeManifest(path.join(dir, "frozen-bench"), { status: "published" });
+    // Written before the key existed: no status at all is not a lock.
+    await writeRawManifest(path.join(dir, "legacy-bench"), 'title = "Legacy"\nruns = 1\n');
+    // Neither is a value nobody defined.
+    await writeRawManifest(
+      path.join(dir, "unknown-bench"),
+      'title = "Unknown"\nruns = 1\nstatus = "someday"\n',
+    );
 
     const res = (await (await member.get(base)).json()) as BenchmarksResponse;
     expect(res.benchmarks.map((b) => [b.id, b.status])).toEqual([
       ["draft-bench", "draft"],
       ["failed-bench", "failed"],
-      ["frozen-bench", "published"],
+      ["legacy-bench", "published"],
+      ["unknown-bench", "published"],
     ]);
+  });
+
+  it("lists a Benchmark whose manifest predates id, version and origin as its file says, unversioned and of unknown origin, and writes nothing", async () => {
+    const dir = path.join(benchmarksDir(t.root, projectId), "report-writing-v1");
+    await fs.mkdir(path.join(dir, "CASE-001-report", "statement"), { recursive: true });
+    // As an earlier release's create form wrote it.
+    const toml =
+      'title = "Report writing"\ndescription = "Old"\nruns = 2\nstatus = "published"\n\n';
+    await writeRawManifest(dir, toml);
+
+    const first = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(first.benchmarks).toEqual([
+      {
+        id: "report-writing-v1",
+        title: "Report writing",
+        description: "Old",
+        runs: 2,
+        status: "published",
+        caseCount: 1,
+        evaluations: [],
+        agentIds: [],
+      },
+    ]);
+    expect(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8")).toBe(toml);
+    expect((await fs.readdir(dir)).sort()).toEqual(["CASE-001-report", "benchmark_config.toml"]);
+
+    const second = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(second.benchmarks).toEqual(first.benchmarks);
   });
 
   it("lists a Benchmark whose manifest cannot be used as broken, saying why, never as usable", async () => {
     const dir = benchmarksDir(t.root, projectId);
-    await fs.mkdir(path.join(dir, "broken-json"), { recursive: true });
-    await fs.writeFile(path.join(dir, "broken-json", "benchmark.json"), "{ title: nope");
+    await writeRawManifest(path.join(dir, "broken-toml"), 'title = "Broken\n');
     // Copied from another Benchmark's folder: the manifest names the original.
     await writeManifest(path.join(dir, "copied-bench"), { id: "report-writing-v1", title: "Copy" });
-    // A draft whose status was mistyped is not a usable Benchmark either, but it is a Benchmark.
-    await writeManifest(path.join(dir, "mistyped-bench"), { status: "drafted", title: "Mistyped" });
+    // An import that recorded a branch, which moves, where its commit belongs.
+    await writeManifest(path.join(dir, "moving-bench"), {
+      title: "Moving",
+      origin: { kind: "git", url: "https://github.com/o/r/tree/main/x", ref: "main" },
+    });
 
     const res = (await (await member.get(base)).json()) as BenchmarksResponse;
     expect(
       res.benchmarks.map((b) => [b.id, b.title, b.status, b.version, b.manifestError?.code]),
     ).toEqual([
-      ["broken-json", "broken-json", "failed", undefined, "benchmark_manifest_invalid"],
+      ["broken-toml", "broken-toml", "failed", undefined, "benchmark_manifest_invalid"],
       ["copied-bench", "copied-bench", "failed", undefined, "benchmark_id_mismatch"],
-      ["mistyped-bench", "mistyped-bench", "failed", undefined, "benchmark_manifest_invalid"],
+      ["moving-bench", "moving-bench", "failed", undefined, "benchmark_manifest_invalid"],
     ]);
     // The reason names what is wrong, for the person who has to fix the file.
     expect(res.benchmarks[1]!.manifestError?.message).toContain("report-writing-v1");
-    expect(res.benchmarks[2]!.manifestError?.message).toContain("status");
+    expect(res.benchmarks[2]!.manifestError?.message).toContain("origin.ref");
   });
 
   it("fails the request when a manifest cannot be read from disk at all, rather than listing it as healthy", async () => {
     const dir = benchmarksDir(t.root, projectId);
     // A directory where the file should be: no content to judge, only a filesystem error.
-    await fs.mkdir(path.join(dir, "odd-bench", "benchmark.json"), { recursive: true });
+    await fs.mkdir(path.join(dir, "odd-bench", "benchmark_config.toml"), { recursive: true });
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       expect((await member.get(base)).status).toBe(500);
     } finally {
       quiet.mockRestore();
     }
-  });
-
-  it("compat(0.3.0): a Benchmark with only the legacy config lists once, as its config says, and has a benchmark.json from then on", async () => {
-    const dir = path.join(benchmarksDir(t.root, projectId), "report-writing-v1");
-    await fs.mkdir(path.join(dir, "CASE-001-report", "statement"), { recursive: true });
-    // Written before the status field existed: no status is published.
-    const toml = 'title = "Report writing"\ndescription = "Old"\nruns = 2\n';
-    await fs.writeFile(path.join(dir, "benchmark_config.toml"), toml, "utf8");
-
-    const first = (await (await member.get(base)).json()) as BenchmarksResponse;
-    expect(first.benchmarks).toHaveLength(1);
-    expect(first.benchmarks[0]).toMatchObject({
-      id: "report-writing-v1",
-      title: "Report writing",
-      description: "Old",
-      runs: 2,
-      status: "published",
-      origin: { kind: "agent" },
-      caseCount: 1,
-    });
-    expect(first.benchmarks[0]!.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.1$/);
-    expect(JSON.parse(await fs.readFile(path.join(dir, "benchmark.json"), "utf8"))).toMatchObject({
-      id: "report-writing-v1",
-      title: "Report writing",
-      version: first.benchmarks[0]!.version,
-    });
-    expect(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8")).toBe(toml);
-
-    const second = (await (await member.get(base)).json()) as BenchmarksResponse;
-    expect(second.benchmarks).toEqual(first.benchmarks);
   });
 
   /** A well-formed create request; the tests below vary one field at a time. */
@@ -611,7 +628,7 @@ describe("benchmarks api", () => {
     });
 
     const dir = path.join(benchmarksDir(t.root, projectId), "report-writing-v1");
-    expect(JSON.parse(await fs.readFile(path.join(dir, "benchmark.json"), "utf8"))).toEqual({
+    expect(parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8"))).toEqual({
       id: "report-writing-v1",
       title: "Report writing",
       description: "Hard cases for the report writer",
@@ -620,8 +637,6 @@ describe("benchmarks api", () => {
       runs: 2,
       origin: { kind: "manual" },
     });
-    // The package format only: no legacy config is written.
-    await expect(fs.access(path.join(dir, "benchmark_config.toml"))).rejects.toThrow();
     expect(await fs.readFile(path.join(dir, "scoreboard.yaml"), "utf8")).toBe("evaluations: []\n");
     // The statement README opens with the title as its heading (what the case list reads
     // back); the rubric is written verbatim, trimmed to one trailing newline.
@@ -651,9 +666,9 @@ describe("benchmarks api", () => {
     expect(((await again.json()) as { error: { code: string } }).error.code).toBe(
       "benchmark_exists",
     );
-    expect(JSON.parse(await fs.readFile(path.join(dir, "benchmark.json"), "utf8"))).toMatchObject({
-      title: "Report writing",
-    });
+    expect(
+      parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8")),
+    ).toMatchObject({ title: "Report writing" });
   });
 
   it("rejects malformed create requests and non-owners without writing anything", async () => {

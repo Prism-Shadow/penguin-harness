@@ -6,7 +6,7 @@ The repository's README section *Running a task (for agents)*, which the stateme
 
 **The model, and no credentials.** Every cell runs the request's `provider` / `model_id`, which the caller fixes as `SKILL.md`'s "For the caller" says: the pair its own instructions name, else its own Session's model from its Environment. When it cannot determine the model, the caller stops and asks the user. Neither the caller nor a cell ever reads the server's `api-token` file, a Project's `.project_config.toml` (it holds the model keys) or the server's auth database `web.db`, and neither calls the server's HTTP API with a token read from disk — not to find the model, and not to check its key. The adapter reads the saved model entry itself, and the repository's helper prints the one host a cell needs (§B.3).
 
-**What the statement gives.** Nothing in `benchmark.json` marks such a Benchmark or names its repository; every value below is read from the Case's statement:
+**What the statement gives.** Nothing in `benchmark_config.toml` marks such a Benchmark or names its repository; every value below is read from the Case's statement:
 
 | Value | In the statement |
 | --- | --- |

@@ -8,9 +8,9 @@
  * is text only — a statement that summarises the task, links its folder in the repository at
  * the pinned commit and the repository's rules for running a task, and gives the exact Harbor
  * launch with its caps; and a rubric that is the verifier's reward out of 100.
- * `benchmark.json` is a plain Benchmark manifest (origin `builtin`, the built-in's own version)
- * that marks nothing: how a case is run is its statement's to say, and the agent-evaluation Skill
- * reads it there. Case directories are `CASE-NNN-<task>`, so the Harbor task name is the case id
+ * `benchmark_config.toml` is a plain Benchmark manifest (origin `builtin`, the built-in's own
+ * version) that marks nothing: how a case is run is its statement's to say, and the
+ * agent-evaluation Skill reads it there. Case directories are `CASE-NNN-<task>`, so the Harbor task name is the case id
  * without its `CASE-NNN-` prefix. The same files, minus the scoreboard, are the Benchmark's
  * package (scripts/benchmark-packages.mjs writes them for the benchmark repository).
  *

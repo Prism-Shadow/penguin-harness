@@ -6,8 +6,8 @@
  * - A copy an Agent imported from a repository folder links that folder; a copy from anywhere
  *   else links nothing.
  * - A link that is not http(s) is never rendered as one, whatever the manifest says.
- * - A Benchmark with no version — its manifest could not be read, or a machine running an older
- *   server answered for it — names its directory alone.
+ * - A Benchmark with no version — its manifest was written before versions or could not be read,
+ *   or a machine running an older server answered for it — names its directory alone.
  *
  * vitest runs node-only here, so the header is rendered to static markup.
  */
