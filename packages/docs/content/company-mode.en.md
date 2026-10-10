@@ -278,7 +278,7 @@ In company mode, the sidebar lists the organization's pages: **Overview**, **Org
 - **Finance** shows the period in three rows: the KPI panel beside the daily trend, then the spend tree and the ticket table side by side, then the period's warnings and pauses.
 - **Calendar** and **Tickets** each show a single create button while they are empty, under a hint you can dismiss for good.
 
-The organization settings include **Working language**, **Approval mode** and **Pause organization**.
+The organization settings include **Working language**, **Approval mode**, **Pause organization** and **Delete organization**.
 
 ## Switches and lifecycle
 
@@ -288,9 +288,13 @@ The organization settings include **Working language**, **Approval mode** and **
 | Personal | **Settings** › Personal › **General** › **Company mode** (shown only while the server switch is on) | Hides the mode switch for you only. Organizations keep running. |
 | Organization | **Pause organization** in the organization settings | Stops all of the organization's automatic triggers. People can still open any desk and talk to it. |
 
-**There is no delete.** An organization is either running or paused, and that is its whole lifecycle. Deleting one would throw away the only way back to its conversations, employees, desks and tickets, while a paused organization costs nothing to keep: it fires nothing, and every desk is still there to talk to.
+**Pause an organization to stop it without losing anything.** A paused organization costs nothing to keep: it fires nothing, and every desk is still there to talk to.
 
-The only way to remove an organization is to delete its directory by hand. The runtime stops seeing it on its next pass, and the Web App says so and offers to create another in its place. Employees are ordinary agents, and their desk and ticket sessions are ordinary Sessions, so both survive. The Sessions keep the mark that says they belonged to the organization, so they never reappear in development mode's session list.
+**Delete organization**, at the end of the organization settings, removes an organization from company mode. Only the Project's owner can delete one, and the confirmation is armed by typing the organization's id. Only the organization itself goes. Its directory moves whole to the Project's trash, `organizations/.trash/<orgId>-<timestamp>/`, so moving the directory back undoes the deletion. The caches the server derived from it go with it, so a new organization under the same id inherits nothing.
+
+What it had stays. Employees are ordinary agents and remain in the Project, and their desk and ticket sessions are ordinary Sessions and are kept. The Sessions keep the mark that says they belonged to the organization, so they never reappear in development mode's session list; with the organization gone, no page lists them. The old CEO's agent, `<orgId>_ceo`, is kept like every employee, so the id can be reused for a new organization only after that agent is deleted.
+
+Deleting an organization's directory by hand also removes it, without the trash. The runtime stops seeing it on its next pass, and the Web App says so and offers to create another in its place.
 
 ## How it works
 
@@ -302,7 +306,7 @@ The organization scheduler runs a pass every 30 seconds, and immediately after e
 
 ### Session marks
 
-A desk or ticket session is marked as the organization's on the Session row itself when it is opened. It is therefore listed in company mode and never in development mode's session list, even after the organization's directory is removed by hand or the server switch is turned off, when nothing else could tell whose it was. Organizations that already existed get their Sessions marked on the runtime's next pass over their files.
+A desk or ticket session is marked as the organization's on the Session row itself when it is opened. It is therefore listed in company mode and never in development mode's session list, even after the organization is deleted or the server switch is turned off, when nothing else could tell whose it was. Organizations that already existed get their Sessions marked on the runtime's next pass over their files.
 
 ### Skill updates
 

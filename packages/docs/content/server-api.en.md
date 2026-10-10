@@ -540,12 +540,12 @@ Benchmarks belong to the Project, not to an agent: one Benchmark can evaluate an
 
 ## Organizations (company mode)
 
-All paths below are under `/api/projects/:projectId/organizations`. While the server's company-mode switch is off, every route answers `404` `company_mode_off` (see [Company mode switch](#company-mode-switch)). Any Project member can read and write. No route deletes an organization: `status` (`active` / `paused`) is the off switch, and a paused organization keeps its conversations, employees, desks and tickets. For the files behind these routes, see [Company Mode](/company-mode).
+All paths below are under `/api/projects/:projectId/organizations`. While the server's company-mode switch is off, every route answers `404` `company_mode_off` (see [Company mode switch](#company-mode-switch)). Any Project member can read and write, except that only the Project owner can delete an organization. `status` (`active` / `paused`) is the off switch, and a paused organization keeps its conversations, employees, desks and tickets. For the files behind these routes, see [Company Mode](/company-mode).
 
 | Method | Path | Description |
 | --- | --- | --- |
 | GET / POST | `/` | Lists organizations / creates one |
-| GET / PATCH | `/:orgId` | The organization's overview / changes its settings |
+| GET / PATCH / DELETE | `/:orgId` | The organization's overview / changes its settings / deletes it |
 | GET | `/:orgId/chart` | The employee tree, with each employee's live state, desk and spend for the period |
 | POST | `/:orgId/employees` | Hires an employee: an existing agent or a new one |
 | PATCH / DELETE | `/:orgId/employees/:agentId` | Changes an employee / removes the employee from the organization |
@@ -583,6 +583,7 @@ Write bodies may carry `agentId` and `sessionId`, the calling employee and the c
 - `language` is `zh` or `en`, the working language of everything the organization writes. If omitted, it is detected from the mission.
 - `GET /:orgId` returns the overview: settings, board counts, today's calendar, pending items, the all-hands channel's recent messages, `inbox` and alerts. The settings always carry the effective `language`, read from the mission when the file has none.
 - `PATCH /:orgId` changes the name, mission, `status` (`active` / `paused`; pausing stops every automatic trigger), `approvalMode`, `timezone`, `language` and thresholds.
+- `DELETE /:orgId` is owner only (a member gets `403`) and answers `204`, or `404` for an organization that does not exist. It moves the organization's directory whole to `organizations/.trash/<orgId>-<timestamp>/` and drops the caches derived from it. Employees stay Agents and the desk and ticket Sessions are kept; the old CEO's Agent, `<orgId>_ceo`, blocks creating a new organization under the same id (`409` `agent_exists`) until it is deleted. See [Switches and lifecycle](/company-mode#switches-and-lifecycle).
 
 An organization's and a channel's id proposals come from the Project-level route, `POST /api/projects/:projectId/suggest-id` with `kind: org` or `kind: channel`; see [Semantic id proposals](#semantic-id-proposals).
 

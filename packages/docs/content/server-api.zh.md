@@ -540,12 +540,12 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 ## 组织（公司模式）
 
-以下所有路径都位于 `/api/projects/:projectId/organizations` 之下。服务器的公司模式开关关闭时，每条路由都返回 `404` `company_mode_off`（参见[公司模式开关](#公司模式开关)）。任何 Project 成员都可以读写。没有任何路由会删除组织：`status`（`active` / `paused`）就是关闭开关，暂停的组织会保留自己的对话、员工、工位和工单。这些路由背后的文件见[公司模式](/company-mode)。
+以下所有路径都位于 `/api/projects/:projectId/organizations` 之下。服务器的公司模式开关关闭时，每条路由都返回 `404` `company_mode_off`（参见[公司模式开关](#公司模式开关)）。任何 Project 成员都可以读写，唯有删除组织仅限 Project owner。`status`（`active` / `paused`）就是关闭开关，暂停的组织会保留自己的对话、员工、工位和工单。这些路由背后的文件见[公司模式](/company-mode)。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET / POST | `/` | 列出组织 / 创建组织 |
-| GET / PATCH | `/:orgId` | 组织概览 / 修改组织设置 |
+| GET / PATCH / DELETE | `/:orgId` | 组织概览 / 修改组织设置 / 删除组织 |
 | GET | `/:orgId/chart` | 员工树，含每名员工的实时状态、工位和本期花费 |
 | POST | `/:orgId/employees` | 招聘员工：已有 Agent 或新建 Agent |
 | PATCH / DELETE | `/:orgId/employees/:agentId` | 修改员工 / 将员工移出组织 |
@@ -583,6 +583,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `language` 取 `zh` 或 `en`，是组织所有产出内容的工作语言。省略时根据使命判断。
 - `GET /:orgId` 返回概览：设置、看板计数、今日日程、待办事项、全员频道的最近消息、`inbox` 和告警。设置里始终带有生效的 `language`；文件里没有记录时，从使命推断得出。
 - `PATCH /:orgId` 修改名称、使命、`status`（`active` / `paused`；暂停会停止所有自动触发器）、`approvalMode`、`timezone`、`language` 和各项阈值。
+- `DELETE /:orgId` 仅限 owner（成员得到 `403`），成功返回 `204`，组织不存在返回 `404`。它把组织目录整个移入 `organizations/.trash/<orgId>-<时间戳>/`，并删除由它派生的缓存。员工仍是 Agent，工位与工单会话保留；旧 CEO 的 Agent（`<orgId>_ceo`）删除之前，同 id 的新组织无法创建（`409` `agent_exists`）。见[开关与生命周期](/company-mode#开关与生命周期)。
 
 组织和频道的 id 提议由 Project 级路由给出，即带 `kind: org` 或 `kind: channel` 的 `POST /api/projects/:projectId/suggest-id`，见[语义化 id 提议](#语义化-id-提议)。
 
