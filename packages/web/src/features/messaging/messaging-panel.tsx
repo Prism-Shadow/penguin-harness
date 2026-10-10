@@ -36,7 +36,13 @@ export function MessagingPanel({ sessionId, active }: { sessionId: string; activ
           <MessagingBindingBody b={b} />
           {/* The dialog places Save in its footer; the panel keeps it under the form. */}
           <div className="flex items-center justify-end gap-2">
-            <Button variant="primary" size="sm" disabled={b.busy} onClick={() => void b.save()}>
+            <Button
+              id={b.saveButtonId}
+              variant="primary"
+              size="sm"
+              disabled={b.busy}
+              onClick={() => void b.save()}
+            >
               {b.busy ? S.common.saving : S.common.save}
             </Button>
           </div>
