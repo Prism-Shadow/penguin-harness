@@ -7,7 +7,7 @@ description: 所有 penguin 命令和子命令的选项、默认值、输出结�
 
 CLI 以 npm 包 `@prismshadow/penguin-cli` 发布，命令名为 `penguin`。直接运行 `penguin` 会打印帮助。`-v, --version` 打印当前构建的一行标识信息，`penguin version --json` 则打印完整信息。启动时，CLI 会从工作目录加载 `.env` 文件。
 
-CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`ls`、`input`、`logs`、`agent`、`project`、`cost`、`schedule`、`org`、`browser`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
+CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`session`、`agent`、`project`、`cost`、`schedule`、`org`、`browser`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
 
 ## 服务器连接
 
@@ -26,12 +26,12 @@ CLI 使用本地 API token 认证。服务器每次启动都会把一个新 toke
 
 - 模型引用：模型的标识始终是 `(provider, model_id)` 这一对。`--model-id` 接收上游模型 id，`--provider` 接收模型所属的分组。CLI 从不推断、猜测或默认指定供应商。在 `run` 和 `chat` 上，这一对参数整体可选：两个都传即可选择模型，两个都不传则使用 Project 的默认模型；只传一个是错误。
 - Project 与 Agent 默认值：`--project-id` 依次回退到 `PENGUIN_PROJECT_ID`，再回退到 `default_project`；`--agent-id` 依次回退到 `PENGUIN_AGENT_ID`，再回退到 `default_agent`。在服务器驱动的会话里，这些环境变量指向会话所属的 Project 和 Agent。
-- Session 引用：凡是接受 session id 的命令（`input`、`logs`、`run --session`、`chat --resume`），完整 id 或任何唯一的片段都有效。`penguin ls` 打印的 8 位十六进制尾部就是为此准备的简写。片段有歧义时报错，并列出所有候选。
-- 默认使用最近的 Session：session id 可选的命令（`input [session_id]`、`logs [session_id]`、`chat --resume`）在省略 id 时，指向 Agent 最近的一个 Session，由 `--agent-id` 指定是哪个 Agent。`input` 和 `logs` 会在 stderr 上用一行暗色的 `[latest]` 标注选中的 Session，目标始终明确，stdout 上的 `--json` 输出也保持可解析。如果这个 Agent 一个 Session 都没有，命令会打印一行提示指向 `penguin run` / `penguin chat`，然后以非零码退出。
+- Session 引用：凡是接受 session id 的命令（`session log`、`session input`、`session rename`、`run --session`、`chat --resume`），完整 id 或任何唯一的片段都有效。`penguin session ls` 打印的 8 位十六进制尾部就是为此准备的简写。片段有歧义时报错，并列出所有候选。
+- 默认使用最近的 Session：session id 可选的命令（`session log`、`session input`、`chat --resume`）在省略 id 时，指向 Agent 最近的一个 Session，由 `--agent-id` 指定是哪个 Agent（`session rename` 先取调用它的 Session，见 [penguin session rename](#penguin-session-rename)）。`session log` 和 `session input` 会在 stderr 上用一行暗色的 `[latest]` 标注选中的 Session，目标始终明确，stdout 上的 `--json` 输出也保持可解析。如果这个 Agent 一个 Session 都没有，命令会打印一行提示指向 `penguin run` / `penguin chat`，然后以非零码退出。
 - JSON 输出：`--json` 打印原始 JSON，取代渲染后的或表格形式的输出。
 - 目标服务器：`--server <url>` 指定要连接的服务器。参见[服务器连接](#服务器连接)。
 - 调用方上下文默认值：在 harness Agent 内部（`PENGUIN_SESSION_ID` 已设置）时，`run` 或 `chat` 创建的 Session 会从调用方 Session 的实时取值继承每一个未指定的字段：Workspace、模型对、审批模式和思考等级。`run_subagent` 对它派生的子 Agent 采用同样的继承，两个入口遵循同一条约定。对每个字段，显式传入的选项优先于调用方的值，调用方的值又优先于普通回退值。查找失败时打印一条暗色警告，并改用普通回退值。在 Agent 之外，行为不变：`--project-id` / `--agent-id` 仍按环境变量取默认值。
-- 超时：`run`、`input` 和 `logs -f` 上的 `--timeout <duration>` 限制等待时长，语义为软让出——相当于把 `exec_command` 的让出窗口模型搬到 CLI 上。到时后命令干净地脱离并退出，退出码为 0。Task 在服务器上继续运行，之后可以用 `penguin input` 或 `penguin logs` 接上。可接受的值有 `30s`、`5m`、`2h`，或一个表示秒数的纯整数；其他值一律拒绝。`--timeout 0` 在消息送达后立即返回（`--json` 下为 `{sessionId, status: "running"}`），所以这个选项也覆盖「不等」的场景。不带此选项时，命令无限等待。对新建 Task 而言，惯常做法仍是 `run --background`：提交后不再等待，打印裸 session id 供脚本使用，Task 一创建就脱离。
+- 超时：`run`、`session input` 和 `session log -f` 上的 `--timeout <duration>` 限制等待时长，语义为软让出——相当于把 `exec_command` 的让出窗口模型搬到 CLI 上。到时后命令干净地脱离并退出，退出码为 0。Task 在服务器上继续运行，之后可以用 `penguin session input` 或 `penguin session log` 接上。可接受的值有 `30s`、`5m`、`2h`，或一个表示秒数的纯整数；其他值一律拒绝。`--timeout 0` 在消息送达后立即返回（`--json` 下为 `{sessionId, status: "running"}`），所以这个选项也覆盖「不等」的场景。不带此选项时，命令无限等待。对新建 Task 而言，惯常做法仍是 `run --background`：提交后不再等待，打印裸 session id 供脚本使用，Task 一创建就脱离。
 - 参数错误：缺少参数、缺少必填选项、选项未知或命令拼错时，CLI 用界面语言打印一行错误、命令自身的用法，并提示查看 `--help`，然后以非零码退出。
 - 数据根目录：`--root <dir>` 为直接读取数据根目录的命令指定根目录，涉及 `config`、`auth`、`version`、`server status` 和 `server stop`。相对路径相对工作目录解析。优先级：`--root`，然后是 `PENGUIN_HOME` 环境变量，最后是 `~/.penguin/data`。
 
@@ -54,7 +54,8 @@ penguin run -m <message> [options]
 | `--approve <mode>` | 审批模式；见[审批模式（--approve）](#审批模式--approve)。配合 `--session` 时，以 PATCH 请求更新 Session 固定的审批模式。 | `allow-all` |
 | `--thinking <level>` | 在 Task 开始前固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）。从 Session 的下一次 LLM 请求起生效。 | Session 已固定的等级，否则用 Agent 配置 |
 | `--session <sessionId>` | 复用已有的 Session（完整 id 或唯一片段），而不是新建。不能与 `--workspace` 或模型对同时使用。 | — |
-| `--background` | 以 POST 提交 Task 后立即退出，打印 session id（`--json` 下为 `{"sessionId"}`）。Task 在服务器上继续运行；可用 `penguin logs -f` 跟踪。 | — |
+| `--title <title>` | 为 Session 命名（手动重命名；自动生成的标题不会覆盖它）。配合 `--session` 时重命名被复用的 Session。标题规则同 [penguin session rename](#penguin-session-rename)。 | — |
+| `--background` | 以 POST 提交 Task 后立即退出，打印 session id（`--json` 下为 `{"sessionId"}`）。Task 在服务器上继续运行；可用 `penguin session log -f` 跟踪。 | — |
 | `--timeout <duration>` | 软让出的等待预算；见[全局约定](#全局约定)。不能与 `--background` 同时使用。 | 无限等待 |
 | `--goal [budget]` | 目标模式：消息就是目标，服务器循环执行，直到目标达到终态。可选值是 Token 预算，例如 `500k`。 | — |
 | `--json` | 打印最终的 `{sessionId, status, text}` 对象，取代渲染后的流。`text` 拼接主 Session 的 助手文本消息。 | — |
@@ -129,12 +130,23 @@ Ctrl-C 的行为取决于 REPL 当时的状态：
 | 输入缓冲区非空 | 清空当前输入。 |
 | 空闲且缓冲区为空 | 显示退出确认（y/N）。 |
 
-## penguin ls
+## penguin session
+
+在终端里操作 Project 的会话：`ls` 列出会话，`log` 渲染一个会话的历史，`input` 向会话发送消息或轮询它最后的回答，`rename` 设置会话标题。
+
+```bash
+penguin session ls [options]
+penguin session log [session_id] [options]
+penguin session input [session_id] [options]
+penguin session rename [session_id] -t <title> [options]
+```
+
+### penguin session ls
 
 列出 Project 的 Session，默认覆盖所有 Agent，用 `--agent-id` 可只看一个。各列依次为：短 id（即 8 位十六进制尾部，其他命令可以把它当作片段使用）、Agent、标题、运行中/空闲、最近活跃时间和 Workspace 路径的末段。已归档的 Session 只有加 `-a` 才显示。
 
 ```bash
-penguin ls [options]
+penguin session ls [options]
 ```
 
 | 选项 | 说明 | 默认值 |
@@ -145,17 +157,40 @@ penguin ls [options]
 | `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
 
 ```bash
-penguin ls
-penguin ls --agent-id default_agent -a
-penguin ls --json
+penguin session ls
+penguin session ls --agent-id default_agent -a
+penguin session ls --json
 ```
 
-## penguin input
+### penguin session log
 
-向一个 Session 发送消息；不带 `-m` 时，则轮询它最后一次的回答。session id 可省略：省略时命令使用 Agent 最近的 Session（见[全局约定](#全局约定)），所以直接运行 `penguin input` 就能回答「我的 Agent 最后说了什么」。
+用与 REPL 相同的渲染器渲染一个 Session 的历史。session id 可省略：省略时命令使用 Agent 最近的 Session（见[全局约定](#全局约定)），所以直接运行 `penguin session log` 就能看到刚才发生的事。
 
 ```bash
-penguin input [session_id] [options]
+penguin session log [session_id] [options]
+```
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--tail <n>` | 只显示最后 n 条记录。 | 全部记录 |
+| `-f, --follow` | 历史播完后继续跟踪实时流。只读：Ctrl-C 脱离，不改动 Session。 | — |
+| `--timeout <duration>` | 跟踪这么长时间后停止（软让出，退出 0）。只在配合 `-f` 时有意义。 | — |
+| `--project-id <id>` | 片段搜索的范围。 | `PENGUIN_PROJECT_ID`，否则 `default_project` |
+| `--agent-id <id>` | 省略 session id 时，取这个 Agent 最近的 Session。 | `PENGUIN_AGENT_ID`，否则 `default_agent` |
+| `--json` / `--server <url>` | `--json` 打印原始消息数组；配合 `-f` 时，消息一到就以每行一条 JSON 打印。 | — |
+
+```bash
+penguin session log                    # the agent's most recent session
+penguin session log 402a2e24 --tail 20
+penguin session log 402a2e24 -f
+```
+
+### penguin session input
+
+向一个 Session 发送消息；不带 `-m` 时，则轮询它最后一次的回答。session id 可省略：省略时命令使用 Agent 最近的 Session（见[全局约定](#全局约定)），所以直接运行 `penguin session input` 就能回答「我的 Agent 最后说了什么」。
+
+```bash
+penguin session input [session_id] [options]
 ```
 
 | 选项 | 说明 | 默认值 |
@@ -176,34 +211,35 @@ penguin input [session_id] [options]
 - 轮询形式打印 `{sessionId, status, text}`，`status` 取 `idle` 或 `running`，还没有回复时 `text` 为 `""`。
 
 ```bash
-penguin input 402a2e24 -m "also check the tests"
-penguin input 402a2e24 -m "queue this" --timeout 0    # deliver and return immediately
-penguin input 402a2e24                    # poll: print the last assistant reply
-penguin input                             # poll the agent's most recent session
-penguin input 402a2e24 --timeout 5m       # poll, waiting out a running turn up to 5 minutes
+penguin session input 402a2e24 -m "also check the tests"
+penguin session input 402a2e24 -m "queue this" --timeout 0    # deliver and return immediately
+penguin session input 402a2e24                    # poll: print the last assistant reply
+penguin session input                             # poll the agent's most recent session
+penguin session input 402a2e24 --timeout 5m       # poll, waiting out a running turn up to 5 minutes
 ```
 
-## penguin logs
+### penguin session rename
 
-用与 REPL 相同的渲染器渲染一个 Session 的历史。session id 可省略：省略时命令使用 Agent 最近的 Session（见[全局约定](#全局约定)），所以直接运行 `penguin logs` 就能看到刚才发生的事。
+设置 Session 的标题。这与 Web App 的「重命名对话」是同一种手动重命名，自动生成的标题不会覆盖它。命令发送 `PATCH /api/sessions/<id>`，由 API 既有的 Project 访问检查把关。CLI 以本机 API token 或 `penguin auth login` 的登录认证，不另加任何鉴权，所以这条命令能重命名该凭据可达的任何 Session。
 
 ```bash
-penguin logs [session_id] [options]
+penguin session rename [session_id] -t <title> [options]
 ```
 
 | 选项 | 说明 | 默认值 |
 | --- | --- | --- |
-| `--tail <n>` | 只显示最后 n 条记录。 | 全部记录 |
-| `-f, --follow` | 历史播完后继续跟踪实时流。只读：Ctrl-C 脱离，不改动 Session。 | — |
-| `--timeout <duration>` | 跟踪这么长时间后停止（软让出，退出 0）。只在配合 `-f` 时有意义。 | — |
-| `--project-id <id>` | 片段搜索的范围。 | `PENGUIN_PROJECT_ID`，否则 `default_project` |
-| `--agent-id <id>` | 省略 session id 时，取这个 Agent 最近的 Session。 | `PENGUIN_AGENT_ID`，否则 `default_agent` |
-| `--json` / `--server <url>` | `--json` 打印原始消息数组；配合 `-f` 时，消息一到就以每行一条 JSON 打印。 | — |
+| `-t, --title <title>` | 新标题，必填。连续空白折叠为一个空格，结果须为 1–120 个字符。服务器拒绝控制字符与双向覆盖字符。 | — |
+| `--project-id <id>` | 片段搜索的范围。完整 session id 不需要。 | `PENGUIN_PROJECT_ID`，否则 `default_project` |
+| `--agent-id <id>` | 省略 session id 时，取哪个 Agent 的最近一次会话。 | `PENGUIN_AGENT_ID`，否则 `default_agent` |
+| `--json` | 打印 `{sessionId, title}`，取代完成提示行。 | — |
+| `--server <url>` | 见[服务器连接](#服务器连接)。 | — |
+
+显式给出的 `session_id` 总是优先。在 Session 内省略它时，命令重命名调用它的 Session（`PENGUIN_SESSION_ID`），所以被要求「重命名这个对话」的 Agent 改的是自己的对话。只有 `PENGUIN_SESSION_ID` 未设置时，才回退到该 Agent 最近一次会话，那可能是另一个并行的会话。
 
 ```bash
-penguin logs                    # the agent's most recent session
-penguin logs 402a2e24 --tail 20
-penguin logs 402a2e24 -f
+penguin session rename -t "Q3 发布准备"              # 会话内：重命名当前会话
+penguin session rename 402a2e24 -t "Q3 发布准备"     # 会话外：按片段重命名
+penguin session rename 402a2e24 -t "Q3 发布准备" --json
 ```
 
 ## penguin agent
@@ -449,7 +485,7 @@ penguin org finance [--period <YYYY-MM>] [--json]
 - `ls` 拉取整个看板后在本地过滤。`--status` 接受一列：`proposed`、`in_progress`、`review`、`done` 或 `rejected`。`--json` 下，`ls` 以 `{ tickets, invalidFiles }` 打印过滤后的列表。
 - `show` 先打印派生数据（所在列、运行状态、成本和汇总成本、贡献会话、子工单），然后是工单自身字段、正文各节，以及 `History:` 下的操作历史。
 - `create` 接受 `--goal`（配合 `--criteria`），或从 `--body-file` 读取完整的 Markdown 正文。两种方式都会生成 frontmatter。
-- `start` 打印裸 session id，与 `run --background` 一样，供 `penguin logs` 和 `penguin input` 接手。
+- `start` 打印裸 session id，与 `run --background` 一样，供 `penguin session log` 和 `penguin session input` 接手。
 - `--owner <principal>` 指定唯一的负责主体：员工（Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`）。默认取调用方。未指定 `--notify` 时，负责人会成为完整的 `notify` 列表，但前提是负责人是员工：人不会就自己名下的工单收到通知，想收到通知需要用 `--notify` 把自己加进去。
 - 谁提交的工单不由选项指定：它就是工单历史里的 `created` 条目，取自命令运行时所处的环境。
 - 工单 id 的格式是 `<yyyy-mm-dd>-<slug>`，slug 是小写英文单词，用连字符连接。`--slug <words>` 用来设置它。标题里英文太少、服务器又无法用 Project 的模型为它起名时，就需要这个选项（400 `slug_required`）。
