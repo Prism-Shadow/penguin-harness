@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#1028](https://github.com/Prism-Shadow/penguin-harness/pull/1028)
 
 [中文版](2026-10-10-wechat-reply-delivery.zh.md)
 
