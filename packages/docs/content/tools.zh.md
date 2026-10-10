@@ -432,8 +432,9 @@ tools:
 
 条目 `config` 中的任意字符串值（请求头、`env` 的值、参数、`oauth` 字段）都可以写 `${KEY}`，`KEY` 遵循 Vault 的键名规则：以字母或 `_` 开头，其后只能是字母、数字和 `_`。Server 连接时，每个引用都会替换为 Agent 的 Vault 中同名键的值。`system_config.yaml`、配置 API 和 Trace 里始终只有引用；送到 Server 的也只有条目引用的那几个键，Vault 的其余内容不会给它。这条规则对每个条目都成立，无论是你手写的，还是插件安装的。
 
-- `url` 的主机部分不能使用引用：Vault 决定发给 Server 什么，而不决定连接哪个 Server。路径或查询参数中可以使用。
+- `url` 的主机部分不能使用引用：Vault 决定发给 Server 什么，而不决定连接哪个 Server。无论 URL 怎样书写主机，判断都按连接时解析地址的方式进行。路径或查询参数中可以使用。
 - 替换只做一次：本身含有 `${…}` 的 Vault 值不会再被解析。
+- Server 出错时可能复述它收到的内容，例如拒绝请求时引用请求行或请求头，或进程在 stderr 打印自己的环境。这类错误文本出现在警告、Trace 的连接结果或模型读到的工具结果里时，其中的 Vault 值会换回对应的引用。不足六个字符的值保持原样：它们算不上机密，替换反而会打乱错误文本。
 - `${PLUGIN_ROOT}` 不是 Vault 键。安装插件的 Server 时，它会替换为插件包所在的目录。
 - Vault 补不全引用的 Server 不会被连接，而是按「待设置」跳过；它的警告和连接结果会列出缺少的键名，从不包含值。这些键写进 Vault 后，该 Server 在 Agent 的下一个模型上下文连接。
 - 带 `config.oauth` 的条目表示该 Server 用 OAuth 登录；替换之后仍没有 `Authorization` 请求头时，它按「需登录」跳过：本版本还不能登录。同时接受 token 的 Server，可以写成 `Authorization: Bearer ${KEY}`。

@@ -2,7 +2,8 @@
  * MCP server entries as Environment reads them from system_config.yaml.
  *
  * - Each transport resolves from its fields; an invalid entry, a duplicate name and a vault
- *   reference in the server's host are warnings that drop the entry, never the Agent.
+ *   reference in the server's host — however the URL spells the host — are warnings that drop
+ *   the entry, never the Agent.
  * - `${KEY}` in a header, `env` or `args` is filled in from the Agent's vault: the resolved
  *   server carries the value, while a key the vault lacks skips the server as needing setup,
  *   naming the key and never a value.
@@ -208,15 +209,38 @@ describe("resolveMCPServers — vault references and sign-in", () => {
     expect(mcpSkipMessage(skipped[0]!.skip)).toBe("needs setup: vault key API_TOKEN is not set");
   });
 
-  it("never reads a vault value into the server's address: a reference in the host is an invalid entry", () => {
-    const { servers, skipped, warnings } = resolveMCPServers(
-      [{ name: "moving", config: { url: "https://${HOST}/mcp" } }],
-      { HOST: "elsewhere.example" },
+  it("never reads a vault value into the server's address: a reference in the host is an invalid entry, however the URL spells it", () => {
+    // Every spelling here is one the URL parser reads with `${HOST}` (or `${USER}`) in the
+    // authority — without "//", with one slash, with backslashes, with a tab or a leading space
+    // the parser drops, in the user info, glued to the host.
+    for (const url of [
+      "https://${HOST}/mcp",
+      "https:${HOST}/mcp",
+      "https:/${HOST}/mcp",
+      "https:\\\\${HOST}/mcp",
+      "https:/\t/${HOST}/mcp",
+      " https://${HOST}/mcp",
+      "https://${USER}@mcp.example.com/mcp",
+      "https://mcp.example.com${HOST}/mcp",
+    ]) {
+      const { servers, skipped, warnings } = resolveMCPServers(
+        [{ name: "moving", config: { url } }],
+        { HOST: "elsewhere.example", USER: "someone" },
+      );
+      expect(servers, url).toEqual([]);
+      expect(skipped, url).toEqual([]);
+      expect(warnings, url).toEqual([
+        'MCP server "moving" skipped: "url" cannot take a ${KEY} vault reference in its host',
+      ]);
+    }
+    // A path or a query may still take one.
+    const fixed = resolveMCPServers(
+      [{ name: "fixed", config: { url: "https://mcp.example.com/${TEAM}/mcp?team=${TEAM}" } }],
+      { TEAM: "blue" },
     );
-    expect(servers).toEqual([]);
-    expect(skipped).toEqual([]);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/"moving" skipped: .*(host|valid URL)/);
+    expect(fixed.servers.map((s) => s.transport)).toEqual([
+      { kind: "http", url: "https://mcp.example.com/blue/mcp?team=blue" },
+    ]);
   });
 
   it("skips an entry that declares OAuth sign-in without an Authorization header, and connects it once a bearer header is filled in", () => {

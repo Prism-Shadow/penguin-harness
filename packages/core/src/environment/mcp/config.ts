@@ -76,6 +76,13 @@ export interface ResolvedMCPServer {
    * the permission its own `readOnlyHint` annotation implies.
    */
   permission?: ToolPermission;
+  /**
+   * The vault keys whose values were filled into this server's fields (names only). A failure
+   * the server answers with can repeat what it was sent — a request line, a header, its own
+   * environment on stderr — so the provider puts these references back in place of the values
+   * in every error text it reports for the server.
+   */
+  vaultKeys?: string[];
 }
 
 /**
@@ -194,6 +201,24 @@ export function mcpSkipMessage(skip: MCPServerSkip): string {
     : `needs setup: vault keys ${skip.keys.join(", ")} are not set`;
 }
 
+/**
+ * Whether a URL's `${KEY}` references reach its authority — the user info, the host or the
+ * port — rather than its path, query or fragment. Decided the way the connection reads the
+ * address: by the URL parser, given two different stand-ins for every reference, so no spelling
+ * slips past (`https:${KEY}` without slashes, backslashes, a tab or a space the parser drops).
+ */
+function referencesReachAuthority(url: string): boolean {
+  const authority = (standIn: string): string | null => {
+    try {
+      const parsed = new URL(url.replace(VAULT_REF_PATTERN, standIn));
+      return `${parsed.username}:${parsed.password}@${parsed.host}`;
+    } catch {
+      return null;
+    }
+  };
+  return authority("a") !== authority("b");
+}
+
 /** Reads an optional string-to-string map field (env / headers); null = invalid. */
 function readStringMap(value: unknown): Record<string, string> | undefined | null {
   if (value === undefined) return undefined;
@@ -301,7 +326,7 @@ export function resolveMCPServer(entry: MCPServerConfig): ResolvedMCPServer {
     }
     // A vault reference decides a value sent to the server, never which server is contacted:
     // the address stays as written (a path or a query may still take one).
-    if (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*\$\{/i.test(url)) {
+    if (referencesReachAuthority(url)) {
       throw new Error(`"url" cannot take a \${KEY} vault reference in its host`);
     }
     const headers = readStringMap(config["headers"]);
@@ -385,7 +410,10 @@ export function resolveMCPServers(
     }
     if (config !== entry.config) {
       try {
-        resolved = resolveMCPServer({ ...entry, config });
+        resolved = {
+          ...resolveMCPServer({ ...entry, config }),
+          vaultKeys: collectVaultRefs(entry.config),
+        };
       } catch {
         // The resolver's reason would quote the value it refused, a vault value among them.
         warnings.push(
