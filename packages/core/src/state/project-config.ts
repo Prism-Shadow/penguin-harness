@@ -114,6 +114,15 @@ export interface ModelEntry {
    */
   vision?: boolean;
   /**
+   * Per-model image-input pixel cap as a longest side (px): read_file refuses to attach a
+   * tool-result image whose longer side exceeds it and says so in its own output, instead of
+   * letting the endpoint 400 the whole request over it (a fatal tool result is replayed with
+   * every later run, so the Session could never recover — DeepSeek refuses a longest side
+   * above 8192 px, issue #944). Unset = the builtin catalog row's value when it names one,
+   * else read_file's conservative default (8192 px).
+   */
+  max_image_side?: number;
+  /**
    * Per-model max output tokens (the request's output cap, i.e. GenerativeModelConfig.maxTokens):
    * when set it wins over the Agent's `system_config.model.max_tokens` — the fit is a model trait
    * (the seeded per-Agent default of 32000 cannot fit into e.g. a 32768-token context window

@@ -596,6 +596,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 | `client_type` | MMSP 客户端类型：通用协议客户端（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等），或厂商的官方客户端（`deepseek-official`、`anthropic-official` 等）。省略时，模型跟随分组的协议；两者都没有时，MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。自定义端点使用 Web 弹窗提供的通用协议客户端之一：上述三种、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）；弹窗可以检测一个 base URL 对应前三种中的哪一种。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
 | `display_name` | 展示名称 |
 | `vision` | 是否支持图像输入，默认 true |
+| `max_image_side` | 可选的单模型图像输入像素上限（长边，px）：`read_file` 读到的工具产物图片长边超过它时会被拒绝附加（见[工具与审批](/tools)）。未设置时取内置目录行的值（若该行给出），否则 8192 px |
 | `fast_mode` | 可选的快速模式（默认关闭）：开启后，这个模型的 Session 请求会改走供应商更快的服务层级，价格更高。持久化保存的值只有 `true`；在 Web 端整表保存时省略这个字段会把它清空。没有快速层级的模型会拒绝携带这个设置的请求（参见[快速模式](#快速模式)） |
 | `pricing` | 三档价格（单位 `usd_per_mtok`，即每百万 Token 的美元价格）：`cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | 该模型自己的 key 与端点，两项都可选；留空时使用分组的值（key 仅在能借给该模型的端点时），最后回退到供应商的环境变量，其中 key 仅在[设置 API key](#设置-api-key) 允许的范围内回退 |

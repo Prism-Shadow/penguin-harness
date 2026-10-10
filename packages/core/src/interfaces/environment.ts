@@ -229,6 +229,16 @@ export interface EnvironmentServices {
   subagentRunner?: SubagentRunner;
   /** Injected when (and only when) the running context's model doesn't support images: read_file then describes an image through it instead of returning image content. Follows the model across an in-session switch (`Environment.reconfigure` re-injects or removes it as each context opens). */
   visionDescriber?: VisionDescriberService;
+  /**
+   * The running context's model image-input pixel cap as a longest side (px): read_file
+   * refuses to attach a tool-result image over it and says so in its own output, instead of
+   * letting the provider 400 the whole request over an image it cannot take (the fatal tool
+   * result is replayed with every later run, so the Session could never recover — issue
+   * #944). Absent: read_file applies its own conservative default (MAX_IMAGE_SIDE, 8192 px).
+   * Follows the model across an in-session switch (`Environment.reconfigure` re-injects or
+   * removes it as each context opens).
+   */
+  maxImageSide?: number;
   /** Registry of long-running command sessions (shared by `exec_command` / `input_command`); constructed and injected internally by Environment. */
   commandSessions?: CommandSessionManager;
   /** Registry of background subagent sessions (shared by `run_subagent` / `input_subagent`); constructed and injected internally by Environment. */

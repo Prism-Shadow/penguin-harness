@@ -25,6 +25,7 @@ import {
   selectBuiltinToolsForModel,
   DEFAULT_COMPACTION_PROMPT,
   formatModelRef,
+  catalogEntryFor,
   getModel,
   listInstalledSkills,
   listScheduleNames,
@@ -1290,6 +1291,14 @@ export class Agent {
     };
     const visionDescriber = visionDescriberFor(initial.modelEntry);
 
+    // The image-input pixel cap read_file guards tool-result images with (issue #944): the
+    // entry's own `max_image_side` pin, else its catalog row's, else undefined — the tool
+    // then applies its conservative default (MAX_IMAGE_SIDE). Decided per context like the
+    // vision answer above: a model switch can move to a model with a different cap.
+    const maxImageSideFor = (entry: ModelEntry): number | undefined =>
+      entry.max_image_side ?? catalogEntryFor(entry.provider, entry.model_id)?.maxImageSide;
+    const maxImageSide = maxImageSideFor(initial.modelEntry);
+
     // Environment binds the Workspace for the Session's lifetime and is equipped with the
     // initial context's tool config and vault (a later context re-equips it, see
     // openNextContext). The toolset is resolved lazily by the bootstrap below (Session's first
@@ -1309,7 +1318,11 @@ export class Agent {
         this.state.agentId,
         sessionId,
       ),
-      services: { subagentRunner, ...(visionDescriber ? { visionDescriber } : {}) },
+      services: {
+        subagentRunner,
+        ...(visionDescriber ? { visionDescriber } : {}),
+        ...(maxImageSide !== undefined ? { maxImageSide } : {}),
+      },
       ...(Object.keys(initial.vault).length > 0 ? { vault: initial.vault } : {}),
       ...(this.proxyEnv ? { proxyEnv: this.proxyEnv } : {}),
       // The control-env policy is bound to THIS Session's coordinates here (sessionId is
@@ -1400,12 +1413,13 @@ export class Agent {
       openAssembled(current, opts.emit);
 
     // Equips the Environment for a context: its toolset (selected for its model's type), its
-    // vault, and the vision answer read_file needs.
+    // vault, and the vision answer and image cap read_file needs.
     const equip = (context: AssembledContext): void =>
       environment.reconfigure({
         toolConfig: context.toolConfig,
         vault: context.vault,
         visionDescriber: visionDescriberFor(context.modelEntry) ?? null,
+        maxImageSide: maxImageSideFor(context.modelEntry) ?? null,
       });
     // What an assembled context tells the Session and its engine beyond its LLM (see
     // SessionOpenedContext): its meta and engine settings, its vision answer, and the hooks

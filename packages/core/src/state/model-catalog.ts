@@ -256,6 +256,14 @@ export interface ModelCatalogEntry {
   offPeakDiscount?: OffPeakDiscount;
   /** Whether image input (vision modality) is supported. */
   supportsVision: boolean;
+  /**
+   * Longest image side (px) the row accepts on input: read_file refuses to attach a
+   * tool-result image over it (issue #944 — DeepSeek refuses a longest side above 8192 px
+   * and reports it as a format error). Absent = the tool's conservative default (8192 px).
+   * Flows to a Project's entry as `max_image_side` (catalogModelEntry); a Project's own
+   * `max_image_side` pin wins over it.
+   */
+  maxImageSide?: number;
   /** MMSP client type: required when an id cannot be auto-routed or a shared protocol must be pinned. */
   clientType?: string;
   /**
@@ -4080,6 +4088,7 @@ function catalogModelEntry(
     // explicitly persist false (drives read_file's hand-off of images to the vision model and input
     // image hand-off, see project-config.ts).
     ...(m.supportsVision ? {} : { vision: false }),
+    ...(m.maxImageSide !== undefined ? { max_image_side: m.maxImageSide } : {}),
     ...(ownBaseUrl !== undefined ? { base_url: ownBaseUrl } : {}),
   };
 }

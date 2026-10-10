@@ -202,6 +202,8 @@ Under the WSL backend the helper runs inside the distro, which the initializatio
 
 `read_file` reads images as well as text. The image branch takes a png, jpeg, gif or webp file up to 5MB, recognized by its magic number and then by its extension, or an http(s) URL in `file_path`. A URL is only ever an image source, and the response's content-type is checked first.
 
+The image must also fit the Session model's pixel cap as a longest side: 8192 px by default, overridable per model with `max_image_side` (see [Models & Providers](/models)). An image over the cap is refused instead of attached, and the output says so with the dimensions and the limit — `Image too large for this model: 750×8618 px exceeds the 8192 px longest-side limit, so it is not attached. … Downscale the image first (e.g. with a shell command) and read the smaller copy.` Endpoints reject such an image for the whole request (DeepSeek reports it as an unsupported *format*), and a failed tool result is replayed with every later message, so the refusal happens at the tool, where the model can still recover.
+
 What comes back depends on the Session model's vision flag:
 
 - A model that accepts images gets the image itself as image content, and the text output is one line such as `image/png, 123.4 kB`.

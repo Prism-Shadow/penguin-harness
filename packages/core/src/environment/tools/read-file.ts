@@ -8,7 +8,9 @@
  * optional 1-based `offset` and a `limit` (default 2000 lines) form a window for paging
  * through long files.
  *
- * Images (png/jpeg/gif/webp, ≤5MB; `file_path` may also be an http(s) URL, which is only ever
+ * Images (png/jpeg/gif/webp, ≤5MB and within the session model's longest-side pixel cap —
+ * an image over either bound is refused with an explanatory note instead of being attached
+ * for the endpoint to 400; `file_path` may also be an http(s) URL, which is only ever
  * an image source) are recognized by magic number, then — for a URL — the response
  * content-type, then the extension, and loaded through image-source.ts. What happens next is
  * decided by the injected `services.visionDescriber`, present exactly when the session model
@@ -287,7 +289,8 @@ function configuredDescriber(describer: VisionDescriberService): ConfiguredDescr
 }
 
 /**
- * The image branch: loads and validates the image, then either returns it as image content
+ * The image branch: loads and validates the image (size cap, supported type, and the
+ * session model's longest-side pixel cap), then either returns it as image content
  * (no describer: the session model views images) or streams the vision model's answer to
  * `prompt` as text (describer present: the session model is text-only).
  */
@@ -296,6 +299,7 @@ async function* readImageSource(
   args: Record<string, unknown>,
   ctx: ToolExecutionContext,
   describer: VisionDescriberService | undefined,
+  maxImageSide: number | undefined,
   delta: (output: string) => OmniMessage,
 ): AsyncGenerator<OmniMessage, ToolResult | void> {
   const { signal } = ctx;
@@ -311,7 +315,7 @@ async function* readImageSource(
   }
 
   const fs = ctx.fs ?? localFsPort;
-  const res = await loadImage(source, ctx.workspaceDir, signal, fs, fs.sandboxed);
+  const res = await loadImage(source, ctx.workspaceDir, signal, fs, fs.sandboxed, maxImageSide);
   if (!res.ok) {
     if (res.reason === "aborted") return { stopReason: "aborted" };
     yield delta(res.message);
@@ -384,6 +388,7 @@ export function createReadFileTool(
   services?: EnvironmentServices,
 ): BuiltinTool {
   const describer = services?.visionDescriber;
+  const maxImageSide = services?.maxImageSide;
   return {
     name: definition.name,
     definition,
@@ -430,7 +435,7 @@ export function createReadFileTool(
       // A URL is only ever an image source: no path resolution, no text window. It is
       // fetched through the Session's port, so a confined Session's network level holds.
       if (isHttpUrl(filePath)) {
-        return yield* readImageSource(filePath, args, ctx, describer, delta);
+        return yield* readImageSource(filePath, args, ctx, describer, maxImageSide, delta);
       }
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
@@ -484,7 +489,7 @@ export function createReadFileTool(
 
       // Images take the image branch whatever offset/limit say; everything else is text.
       if (await looksLikeImageFile(resolved, fs)) {
-        return yield* readImageSource(filePath, args, ctx, describer, delta);
+        return yield* readImageSource(filePath, args, ctx, describer, maxImageSide, delta);
       }
 
       let scan: ScanOutcome;

@@ -202,6 +202,8 @@ WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进
 
 `read_file` 除文本外还能读取图片。图片分支接受不超过 5MB 的 png、jpeg、gif 或 webp 文件（先按魔数识别，再按扩展名识别），也接受 `file_path` 中给出的 http(s) URL。URL 只能用作图片来源，且会先检查响应的 content-type。
 
+图片还需满足 Session 模型的最长边像素上限：默认 8192 px，可用 `max_image_side` 按模型覆盖（见[模型与供应商](/models)）。超限的图片会被拒绝而不是附加，输出会如实给出尺寸与上限——`Image too large for this model: 750×8618 px exceeds the 8192 px longest-side limit, so it is not attached. … Downscale the image first (e.g. with a shell command) and read the smaller copy.` 端点拒绝这类图片时整个请求都会失败（DeepSeek 还会把它报成不支持的*格式*），而失败的工具结果会随之后每条消息重放，因此拒绝发生在工具这里——模型仍能自行恢复。
+
 返回什么取决于 Session 模型的 vision 标志：
 
 - 支持图片的模型会直接拿到图片内容，文字输出只有一行，例如 `image/png, 123.4 kB`。
