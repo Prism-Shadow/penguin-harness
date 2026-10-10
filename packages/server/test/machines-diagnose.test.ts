@@ -10,7 +10,8 @@
  * - Given a Linux machine that has everything, every check passes and names who signed in.
  * - Given a host whose key this computer has never seen, the ssh check fails with that reason,
  *   every other check is skipped, and no second command is sent.
- * - Given a machine without curl, the tools check names it and the download is not asked.
+ * - Given a machine without curl, the tools check names it as a caveat (the release is carried
+ *   over ssh) and the download is not asked; without tar it fails.
  * - Given a machine that reaches neither GitHub nor the mirror, the download is a warning;
  *   given both answering without the release, it fails (not published).
  * - Given too little room in its home, the disk check fails; given room for one install but
@@ -45,12 +46,20 @@ import { makeTempRoot, waitFor } from "./helpers.js";
 
 const DEV = remoteLayoutFor("dev");
 const LINUX_PROBE = "Linux x86_64\n---penguin---\n---penguin---\n";
-const said = (stdout: string, code = 0): ExecResult => ({ code, stdout, stderr: "", timedOut: false });
+const said = (stdout: string, code = 0): ExecResult => ({
+  code,
+  stdout,
+  stderr: "",
+  timedOut: false,
+});
 
 /** A check command's answer: everything in place unless a test says otherwise. */
-function answer(over: Partial<Record<"missing" | "disk" | "oss" | "github" | "lock" | "port", string>> = {}) {
+function answer(
+  over: Partial<Record<"missing" | "disk" | "oss" | "github" | "lock" | "port", string>> = {},
+) {
   const lines = ["@@who penguin box-1"];
-  if (over.missing !== undefined) lines.push(...over.missing.split(" ").map((t) => `@@missing ${t}`));
+  if (over.missing !== undefined)
+    lines.push(...over.missing.split(" ").map((t) => `@@missing ${t}`));
   lines.push(`@@disk ${over.disk ?? String(50 * 1024 * 1024)}`);
   lines.push(`@@oss ${over.oss ?? "206 0"}`, `@@github ${over.github ?? "206 0"}`);
   if (over.lock !== undefined) lines.push(`@@lock ${over.lock}`);
@@ -64,7 +73,10 @@ afterEach(() => {
 });
 
 /** A service whose machine answers through `runOn`; the commands it was sent are returned. */
-async function serviceFor(runOn: (command: string) => ExecResult, over: Partial<MachinesEffects> = {}) {
+async function serviceFor(
+  runOn: (command: string) => ExecResult,
+  over: Partial<MachinesEffects> = {},
+) {
   const root = await makeTempRoot();
   roots.push(root);
   const sent: string[] = [];
@@ -74,7 +86,12 @@ async function serviceFor(runOn: (command: string) => ExecResult, over: Partial<
     new MachinesRepo(openDatabase(":memory:")),
     {
       listAliases: () => ["box"],
-      resolvePlan: () => ({ baseVersion: "0.2.13", harness: null, hmrDir: null, version: "0.2.13" }),
+      resolvePlan: () => ({
+        baseVersion: "0.2.13",
+        harness: null,
+        hmrDir: null,
+        version: "0.2.13",
+      }),
       now: () => new Date("2026-10-10T12:00:00.000Z"),
       runOn: async (_target, command) => {
         sent.push(command);
@@ -89,7 +106,10 @@ async function serviceFor(runOn: (command: string) => ExecResult, over: Partial<
 }
 
 /** The checks of a diagnosis by id, for reading one at a time. */
-async function checksOf(runOn: (command: string) => ExecResult, over: Partial<MachinesEffects> = {}) {
+async function checksOf(
+  runOn: (command: string) => ExecResult,
+  over: Partial<MachinesEffects> = {},
+) {
   const { service, sent } = await serviceFor(runOn, over);
   const result = await service.diagnose("ssh:box");
   if (typeof result === "string") throw new Error(`refused: ${result}`);
@@ -130,12 +150,16 @@ describe("the connection check", () => {
     expect(sent).toHaveLength(1);
   });
 
-  it("names a missing curl and does not ask about the download", async () => {
+  it("names a missing curl as a caveat and does not ask about the download; a missing tar fails", async () => {
     const { byId } = await checksOf((command) =>
       command.includes("@@who") ? said(answer({ missing: "curl" })) : said(LINUX_PROBE),
     );
-    expect(byId.tools).toMatchObject({ state: "fail", missing: ["curl"] });
+    expect(byId.tools).toMatchObject({ state: "warn", missing: ["curl"] });
     expect(byId.download.state).toBe("skip");
+    const noTar = await checksOf((command) =>
+      command.includes("@@who") ? said(answer({ missing: "tar" })) : said(LINUX_PROBE),
+    );
+    expect(noTar.byId.tools).toMatchObject({ state: "fail", missing: ["tar"] });
   });
 
   it("warns when neither source is in reach, and fails when both answer without the release", async () => {
@@ -151,9 +175,15 @@ describe("the connection check", () => {
       github: "unreachable",
     });
     const missing = await checksOf((command) =>
-      command.includes("@@who") ? said(answer({ oss: "404 0", github: "404 0" })) : said(LINUX_PROBE),
+      command.includes("@@who")
+        ? said(answer({ oss: "404 0", github: "404 0" }))
+        : said(LINUX_PROBE),
     );
-    expect(missing.byId.download).toMatchObject({ state: "fail", oss: "missing", github: "missing" });
+    expect(missing.byId.download).toMatchObject({
+      state: "fail",
+      oss: "missing",
+      github: "missing",
+    });
   });
 
   it("fails the disk below what an install needs, and warns with room for one install only", async () => {
@@ -193,9 +223,9 @@ describe("the connection check", () => {
     );
     expect(byId.ssh.state).toBe("pass");
     expect(byId.platform).toMatchObject({ state: "warn", os: "win32" });
-    expect(["tools", "download", "disk", "port"].map((id) => byId[id as MachineCheck["id"]].state)).toEqual(
-      ["skip", "skip", "skip", "skip"],
-    );
+    expect(
+      ["tools", "download", "disk", "port"].map((id) => byId[id as MachineCheck["id"]].state),
+    ).toEqual(["skip", "skip", "skip", "skip"]);
     expect(sent).toHaveLength(1);
   });
 
@@ -219,7 +249,10 @@ describe("the connection check", () => {
     const script = fs.readFileSync(path.join(here, "..", "..", "..", "install.sh"), "utf8");
     const vars = new Map<string, string>();
     for (const match of script.matchAll(/^(\w+)="([^"]*)"$/gm)) {
-      vars.set(match[1]!, match[2]!.replace(/\$(\w+)/g, (_, name: string) => vars.get(name) ?? ""));
+      vars.set(
+        match[1]!,
+        match[2]!.replace(/\$(\w+)/g, (_, name: string) => vars.get(name) ?? ""),
+      );
     }
     expect(RELEASE_SOURCES).toEqual({
       oss: vars.get("OSS_RELEASE_ROOT"),
@@ -247,7 +280,12 @@ describe("the connection check", () => {
         );
       });
       const checks = parseDiagnosis(
-        { platform: os.platform() === "darwin" ? "darwin" : "linux", arch: "x64", installedVersion: null, harness: null },
+        {
+          platform: os.platform() === "darwin" ? "darwin" : "linux",
+          arch: "x64",
+          installedVersion: null,
+          harness: null,
+        },
         output,
         { version: null, port },
       );

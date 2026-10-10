@@ -4668,6 +4668,14 @@ export interface MachineInfo {
    */
   elsewhere?: { version: string; at: string };
   /**
+   * In this Project's list: the Machines page shows a card for it. A machine joins the list when
+   * it is added (`POST …/machines/add`, which installs nothing) or when an install or a use for
+   * this Project runs on it, and leaves it with stop-using or release. Absent for a host that is
+   * only in the ssh config, or only in another Project's list; never set on `local`, which is
+   * always shown.
+   */
+  member?: true;
+  /**
    * The machine's OWN id — 16 base64url characters minted by the server that runs there,
    * stable across renames, re-aliasing and reinstalls. Null until a server has started on
    * that machine, since nothing has minted one yet.
@@ -4842,6 +4850,32 @@ export interface SshHostResponse extends SshHostRequest {
   editable: boolean;
 }
 
+/**
+ * `GET /api/projects/:projectId/machines/ssh-hosts`: every host this server's ssh config declares,
+ * its included files' too, with what each one's own block says about reaching it — the literal
+ * lines, not what ssh resolves (no `ssh -G`): a `Host *` default or a `Match` block is not
+ * applied. For the add dialog's rows; an option the block leaves out is absent.
+ */
+export interface SshHostSummary {
+  alias: string;
+  hostName?: string;
+  user?: string;
+  port?: number;
+}
+
+export interface SshHostsResponse {
+  hosts: SshHostSummary[];
+}
+
+/**
+ * `POST /api/projects/:projectId/machines/add`: put these machines in this Project's list without
+ * installing anything there — each then has a card whose one thing to do is enabling it. Answers
+ * like `…/use`, refusals by id (`unknown-machine`, `self`).
+ */
+export interface MachinesAddRequest {
+  machines: string[];
+}
+
 /** `POST /api/projects/:projectId/machines/use`: bring these machines into use, as one queued batch. */
 export interface MachinesUseRequest {
   /** Machine ids (`ssh:<alias>`). Every one is queued; refusals come back by id. */
@@ -4886,8 +4920,11 @@ export type MachineCheck =
   | { id: "platform"; state: "pass" | "warn"; os: string; arch: string }
   /** An OS or architecture no release is published for; `said` is what the machine answered. */
   | { id: "platform"; state: "fail"; said: string }
-  /** What the release installer needs and the machine lacks. */
-  | { id: "tools"; state: "pass" | "fail"; missing: string[] }
+  /**
+   * What the release installer needs and the machine lacks. `warn` when curl alone is missing:
+   * the release is then sent over ssh rather than downloaded there.
+   */
+  | { id: "tools"; state: "pass" | "warn" | "fail"; missing: string[] }
   /**
    * Whether the machine itself reaches release `version` for its platform. `warn`: out of
    * reach, so an install cannot download it there; `fail`: both sources answered and neither

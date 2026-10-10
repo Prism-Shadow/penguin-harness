@@ -30,7 +30,10 @@ afterEach(() => {
 function fakeNodePty(dir: string, copy: string, loads: boolean): void {
   const pkg = path.join(dir, "node_modules", "node-pty");
   fs.mkdirSync(pkg, { recursive: true });
-  fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "node-pty", main: "index.js" }));
+  fs.writeFileSync(
+    path.join(pkg, "package.json"),
+    JSON.stringify({ name: "node-pty", main: "index.js" }),
+  );
   fs.writeFileSync(
     path.join(pkg, "index.js"),
     loads

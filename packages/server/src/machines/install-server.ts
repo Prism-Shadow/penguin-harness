@@ -72,7 +72,11 @@ export function transferTimeoutMs(payload: Buffer): number {
  * bare bar says nothing the next line ("Bundle checksum OK.") does not.
  */
 export function installerLine(raw: string): string | null {
-  const shown = raw.split("\r").map((part) => part.trim()).filter((part) => part !== "").pop();
+  const shown = raw
+    .split("\r")
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .pop();
   if (shown === undefined) return null;
   if (/^[#=O\-\s]*\d+(?:\.\d+)?%$/.test(shown) || /^[#=O\-\s]+$/.test(shown)) return null;
   return shown;
@@ -424,7 +428,14 @@ export async function installOnRemote(opts: {
       // installer installs that file (`--archive`) with no network at all.
       let release: string | { archive: string } = `v${plan.baseVersion}`;
       if (identity.platform !== "win32" && opts.carryRelease !== undefined) {
-        const carried = await carryOver(conn, target, plan.baseVersion, identity, opts.carryRelease, say);
+        const carried = await carryOver(
+          conn,
+          target,
+          plan.baseVersion,
+          identity,
+          opts.carryRelease,
+          say,
+        );
         if ("failed" in carried) return { kind: "failed", ...carried.failed };
         if (carried.archive !== null) {
           scratch = carried.scratch;

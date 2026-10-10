@@ -312,7 +312,11 @@ describe("installOnRemote", () => {
       const pkg = path.join(work, "penguin-linux-x64.tar.gz");
       fs.writeFileSync(pkg, "the package");
       const asked: string[] = [];
-      const channel = scripted({ probe: fresh, afterInstall: after, reach: "@@oss 000 7\n@@github 000 28\n" });
+      const channel = scripted({
+        probe: fresh,
+        afterInstall: after,
+        reach: "@@oss 000 7\n@@github 000 28\n",
+      });
       const outcome = await installOnRemote({
         target,
         plan: plan(),
@@ -338,7 +342,11 @@ describe("installOnRemote", () => {
 
     it("downloads it there after all when one source answers", async () => {
       let carried = 0;
-      const channel = scripted({ probe: fresh, afterInstall: after, reach: "@@oss 000 7\n@@github 206 0\n" });
+      const channel = scripted({
+        probe: fresh,
+        afterInstall: after,
+        reach: "@@oss 000 7\n@@github 206 0\n",
+      });
       await installOnRemote({
         target,
         plan: plan(),
@@ -456,7 +464,13 @@ describe("installOnRemote", () => {
       stderr: "",
       timedOut: false,
     });
-    const outcome = await installOnRemote({ target, plan: plan(), assets, channel, layout: RELEASE });
+    const outcome = await installOnRemote({
+      target,
+      plan: plan(),
+      assets,
+      channel,
+      layout: RELEASE,
+    });
     const { detail } = outcome as { detail: string };
     expect(detail).toContain("ssh build-box");
     expect(detail).toContain("Host key verification failed.");
@@ -468,14 +482,23 @@ describe("installOnRemote", () => {
     // around the same content-named files. Read as text, that is a different build, and every
     // install would hand the same build over again.
     const theirs = JSON.stringify(
-      { platform: { bundle: "store/platform/cafe0123456789ab.mjs" }, pushedAt: "2026-10-10T00:00:00Z" },
+      {
+        platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
+        pushedAt: "2026-10-10T00:00:00Z",
+      },
       null,
       2,
     ).replaceAll("\n", "\\n");
     const channel = scripted({
       probe: `Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n${theirs}`,
     });
-    const outcome = await installOnRemote({ target, plan: plan(), assets, channel, layout: RELEASE });
+    const outcome = await installOnRemote({
+      target,
+      plan: plan(),
+      assets,
+      channel,
+      layout: RELEASE,
+    });
     expect(outcome).toMatchObject({ kind: "already-installed" });
   });
 

@@ -78,7 +78,10 @@ export function releaseReachCommand(version: string): string {
  * The machine's reach to the two sources from releaseReachCommand's output; both
  * `unreachable` when it has no curl to ask with (the installer needs curl to download, too).
  */
-export function parseReleaseReach(output: string): { oss: MachineSourceReach; github: MachineSourceReach } {
+export function parseReleaseReach(output: string): {
+  oss: MachineSourceReach;
+  github: MachineSourceReach;
+} {
   const facts = tagged(output);
   if (facts.has("nocurl")) return { oss: "unreachable", github: "unreachable" };
   return { oss: reach(facts.get("oss")?.[0]), github: reach(facts.get("github")?.[0]) };
@@ -88,7 +91,11 @@ export function parseReleaseReach(output: string): { oss: MachineSourceReach; gi
  * The POSIX command: one tagged line per fact. `version` is the release the image stands on
  * (no `v`); `port` the port the machine's server would be started on.
  */
-export function diagnoseCommand(layout: RemoteLayout, version: string | null, port: number): string {
+export function diagnoseCommand(
+  layout: RemoteLayout,
+  version: string | null,
+  port: number,
+): string {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
   const lock = `${layout.dataRoot.posix}/server.lock`;
   return [
@@ -139,9 +146,10 @@ export function sshFailureChecks(said: string, alias: string): MachineCheck[] {
       reason: explainSshFailure(said, alias)?.reason ?? "other",
       said: said.trim().slice(0, 600),
     },
-    ...(["platform", "tools", "download", "disk", "port"] as const).map(
-      (id): MachineCheck => ({ id, state: "skip" }),
-    ),
+    ...(["platform", "tools", "download", "disk", "port"] as const).map((id): MachineCheck => ({
+      id,
+      state: "skip",
+    })),
   ];
 }
 
@@ -167,8 +175,14 @@ export function parseDiagnosis(
   }
   checks.push({ id: "platform", state: "pass", os: identity.platform, arch: identity.arch });
 
+  // curl only downloads the release, and a machine without it is sent the release over ssh
+  // (install-server.ts): a caveat. The rest the installer cannot do without.
   const missing = facts.get("missing") ?? [];
-  checks.push({ id: "tools", state: missing.length === 0 ? "pass" : "fail", missing });
+  checks.push({
+    id: "tools",
+    state: missing.some((tool) => tool !== "curl") ? "fail" : missing.length > 0 ? "warn" : "pass",
+    missing,
+  });
 
   if (opts.version === null || missing.includes("curl")) {
     checks.push({ id: "download", state: "skip" });

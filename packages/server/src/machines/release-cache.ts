@@ -65,7 +65,9 @@ async function fetchPackage(
     ["GitHub", RELEASE_SOURCES.github],
   ] as const) {
     try {
-      const sum = (await (await get(fetchImpl, `${base}/${rel}.sha256`, CHECKSUM_TIMEOUT_MS)).text())
+      const sum = (
+        await (await get(fetchImpl, `${base}/${rel}.sha256`, CHECKSUM_TIMEOUT_MS)).text()
+      )
         .trim()
         .split(/\s+/)[0]
         ?.toLowerCase();
@@ -75,7 +77,8 @@ async function fetchPackage(
       const bytes = Buffer.from(
         await (await get(fetchImpl, `${base}/${rel}`, PACKAGE_TIMEOUT_MS)).arrayBuffer(),
       );
-      if (sha256(bytes) !== sum) throw new Error("the package does not match its published checksum");
+      if (sha256(bytes) !== sum)
+        throw new Error("the package does not match its published checksum");
       await fsp.mkdir(path.dirname(file), { recursive: true });
       const tmp = `${file}.${process.pid}.tmp`;
       await fsp.writeFile(tmp, bytes);

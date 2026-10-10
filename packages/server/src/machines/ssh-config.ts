@@ -59,6 +59,67 @@ export function parseHostAliases(
   return [...new Set(out)];
 }
 
+/** What one host's own block says about reaching it, for the add dialog's rows. */
+export interface SshHostLines {
+  alias: string;
+  hostName?: string;
+  user?: string;
+  port?: number;
+}
+
+/**
+ * Every host a config declares, with the `HostName`, `User` and `Port` its own block gives —
+ * literally: no `Host *` default and no `Match` is applied, which is what resolving an alias
+ * would take, and resolving is ssh's (see the module doc). A `Host a b` block speaks for both
+ * aliases; an alias in two blocks takes each option from the first that sets it, as ssh does.
+ * Follows `Include` like parseHostAliases, in file order.
+ */
+export function parseHostEntries(
+  text: string,
+  readInclude: (pattern: string) => string[],
+  depth = 0,
+  into: Map<string, SshHostLines> = new Map(),
+): SshHostLines[] {
+  let current: string[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const include = INCLUDE_KEYWORD.exec(line);
+    if (include && depth < 8) {
+      for (const pattern of include[1]!.trim().split(/\s+/)) {
+        for (const included of readInclude(pattern)) {
+          parseHostEntries(included, readInclude, depth + 1, into);
+        }
+      }
+      continue;
+    }
+    const host = HOST_KEYWORD.exec(line);
+    if (host) {
+      current = host[1]!.split(/\s+/).filter((alias) => alias !== "" && !isPattern(alias));
+      for (const alias of current) if (!into.has(alias)) into.set(alias, { alias });
+      continue;
+    }
+    if (/^match\s/i.test(line)) {
+      current = [];
+      continue;
+    }
+    const option = /^(\S+?)\s*(?:=|\s)\s*(.*)$/.exec(line);
+    if (option === null || current.length === 0) continue;
+    const key = option[1]!.toLowerCase();
+    const value = option[2]!.trim();
+    for (const alias of current) {
+      const entry = into.get(alias)!;
+      if (key === "hostname" && entry.hostName === undefined) entry.hostName = value;
+      else if (key === "user" && entry.user === undefined) entry.user = value;
+      else if (key === "port" && entry.port === undefined) {
+        const port = Number(value);
+        if (Number.isInteger(port)) entry.port = port;
+      }
+    }
+  }
+  return [...into.values()];
+}
+
 /**
  * A remote target's stable name: the SSH identity, `<user>@<alias>`. The Linux account is
  * part of it because each account has its own `~/.penguin` — hence its own server, its own

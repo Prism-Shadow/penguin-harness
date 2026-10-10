@@ -49,7 +49,8 @@ const at = (base: string, version: string, file: string) => `${base}/v${version}
 describe("release packages fetched for a machine", () => {
   it("fetches from the mirror once, checks the checksum, and serves later asks from the cache", async () => {
     const net = network({
-      [at(RELEASE_SOURCES.oss, "0.2.13", "penguin-linux-x64.tar.gz.sha256")]: `${SUM}  penguin-linux-x64.tar.gz\n`,
+      [at(RELEASE_SOURCES.oss, "0.2.13", "penguin-linux-x64.tar.gz.sha256")]:
+        `${SUM}  penguin-linux-x64.tar.gz\n`,
       [at(RELEASE_SOURCES.oss, "0.2.13", "penguin-linux-x64.tar.gz")]: PACKAGE,
     });
     const carry = releaseCache(dir, net.fetchImpl);
@@ -67,7 +68,10 @@ describe("release packages fetched for a machine", () => {
       [at(RELEASE_SOURCES.oss, "0.2.13", "penguin-linux-arm64.tar.gz")]: PACKAGE,
     });
     const carry = releaseCache(dir, net.fetchImpl);
-    const [a, b] = await Promise.all([carry("0.2.13", "linux-arm64"), carry("0.2.13", "linux-arm64")]);
+    const [a, b] = await Promise.all([
+      carry("0.2.13", "linux-arm64"),
+      carry("0.2.13", "linux-arm64"),
+    ]);
     expect(a).toEqual(b);
     expect(net.asked.filter((url) => url.endsWith(".tar.gz"))).toHaveLength(1);
   });

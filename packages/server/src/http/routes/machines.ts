@@ -12,6 +12,8 @@
  * POST /:machineId/connect      — bring that machine's server up and hold a tunnel to it; 202,
  *                                 or 409 when a connect already runs.
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
+ * POST /add                     — put machines in this Project's list, installing nothing.
+ * GET  /ssh-hosts               — every host in the ssh config, with its block's user, host, port.
  * POST /ssh-hosts               — append a host block to this server's ~/.ssh/config; 201.
  * GET  /ssh-hosts/:alias        — that block read back, and whether this app wrote it.
  * PUT  /ssh-hosts/:alias        — rewrite a block this app wrote; 404 none, 409 hand-written.
@@ -36,6 +38,7 @@ import type {
   MachinesResponse,
   MachinesUseResponse,
   SshHostResponse,
+  SshHostsResponse,
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
@@ -126,6 +129,27 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       "ssh_host_invalid",
       `${problem.field}: ${problem.why === "required" ? "required" : "must be one word, with no space or #"}`,
     );
+
+  /** Every host in the ssh config, with what its own block says: the add dialog's rows. */
+  app.get("/ssh-hosts", (c) =>
+    c.json({ hosts: deps.machines.sshHosts() } satisfies SshHostsResponse),
+  );
+
+  /**
+   * Add machines to this Project's list without installing anything: each gets a card whose one
+   * thing to do is enabling it. Refusals by id, as `/use` answers them.
+   */
+  app.post("/add", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const machines = Array.isArray(body.machines)
+      ? body.machines.filter((m): m is string => typeof m === "string")
+      : [];
+    if (machines.length === 0) {
+      throw new HttpError(400, "bad_request", "Name at least one machine to add.");
+    }
+    const { refused } = deps.machines.addToProject(requireValidId(c, "projectId"), machines);
+    return c.json({ ...state(c), refused } satisfies MachinesUseResponse);
+  });
 
   app.post("/ssh-hosts", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;

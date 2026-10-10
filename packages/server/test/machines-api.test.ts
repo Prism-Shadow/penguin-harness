@@ -883,7 +883,8 @@ describe("machines API", () => {
         startServer: async () => ({
           ok: false,
           portTaken: true,
-          detail: "Port 7364 on that machine is taken by another program, so its server could not start there.",
+          detail:
+            "Port 7364 on that machine is taken by another program, so its server could not start there.",
         }),
       });
       machinesRepo.patch("ssh:nas", { version: "9.9.9", installedAt: "2026-08-01T00:00:00.000Z" });
@@ -1648,12 +1649,17 @@ describe("machines API", () => {
         install: async () => ({
           kind: "failed",
           step: "connect",
-          detail: "nas did not accept any key this computer offered. (ssh: Permission denied (publickey).)",
+          detail:
+            "nas did not accept any key this computer offered. (ssh: Permission denied (publickey).)",
         }),
       });
       await useBody(["ssh:nas"]);
       await waitFor(settled);
-      expect(jobsOf()[0]?.result).toMatchObject({ ok: false, step: "connect", canReplaceProgram: false });
+      expect(jobsOf()[0]?.result).toMatchObject({
+        ok: false,
+        step: "connect",
+        canReplaceProgram: false,
+      });
     });
 
     it("a machine on this image's version whose web, CLI or assets differ is handed the build, not skipped", async () => {
@@ -1701,6 +1707,54 @@ describe("machines API", () => {
     it("an empty batch is a bad request", async () => {
       await boot();
       expect((await useBody([])).status).toBe(400);
+    });
+
+    it("adding puts machines on this Project's list without reaching them, and stop using takes them off", async () => {
+      let reached = 0;
+      await boot({
+        install: async () => {
+          reached += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+        runOn: async () => {
+          reached += 1;
+          return { code: 0, stdout: "", stderr: "", timedOut: false };
+        },
+      });
+      const added = await admin.post("/api/projects/default_project/machines/add", {
+        machines: ["ssh:nas", "local", "ssh:nope"],
+      });
+      expect(added.status).toBe(200);
+      const body = (await added.json()) as MachinesUseResponse;
+      expect(body.refused).toEqual([
+        { machineId: "local", why: "self" },
+        { machineId: "ssh:nope", why: "unknown-machine" },
+      ]);
+      const nas = body.machines.find((machine) => machine.id === "ssh:nas");
+      expect(nas).toMatchObject({ member: true, installed: null });
+      expect(body.jobs).toEqual([]);
+      expect(reached).toBe(0);
+
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:nas"],
+      });
+      const after = (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+      expect(after.machines.find((machine) => machine.id === "ssh:nas")?.member).toBeUndefined();
+    });
+
+    it("stop using a machine whose first enable failed lets its job go too", async () => {
+      await boot({
+        install: async () => ({ kind: "failed", step: "install", detail: "error: no space left" }),
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobsOf().map((job) => job.machineId)).toEqual(["ssh:nas"]);
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:nas"],
+      });
+      expect(jobsOf()).toEqual([]);
     });
 
     it("stop using drops the connection and the membership, and keeps the install", async () => {
@@ -1757,6 +1811,23 @@ describe("machines API", () => {
   });
 
   describe("adding a host to the ssh config", () => {
+    it("lists every host with what its own block says, for the add dialog's rows", async () => {
+      await boot({
+        listHosts: () => [
+          { alias: "build-box", hostName: "box.example.net", user: "deploy", port: 2222 },
+          { alias: "nas" },
+        ],
+      });
+      const res = await admin.get("/api/projects/default_project/machines/ssh-hosts");
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        hosts: [
+          { alias: "build-box", hostName: "box.example.net", user: "deploy", port: 2222 },
+          { alias: "nas" },
+        ],
+      });
+    });
+
     const post = (body: Record<string, unknown>) =>
       admin.post("/api/projects/default_project/machines/ssh-hosts", body);
 

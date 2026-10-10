@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyUpgradeAnswer, readPushedBuild, refusalDetail } from "../src/machines/upgrade.js";
-import { machineIdentity, parseHostAliases } from "../src/machines/ssh-config.js";
+import { machineIdentity, parseHostAliases, parseHostEntries } from "../src/machines/ssh-config.js";
 import {
   parseProbe,
   probeServerState,
@@ -94,6 +94,37 @@ describe("parseHostAliases", () => {
     const aliases = parseHostAliases("Include self\nHost top", () => ["Include self\nHost deep"]);
     expect(aliases).toContain("top");
     expect(aliases).toContain("deep");
+  });
+});
+
+describe("parseHostEntries", () => {
+  it("reads each host's own HostName, User and Port, a shared block for both its aliases, through Include", () => {
+    const files: Record<string, string> = {
+      "config.d/*": ["Host jump", "  HostName 203.0.113.5", "  Port=2222"].join("\n"),
+    };
+    const entries = parseHostEntries(
+      [
+        "Include config.d/*",
+        "Host *",
+        "  User everyone",
+        "Host gpu-1 gpu-2",
+        "  HostName gpu.lan",
+        "  User root",
+        "Match host gpu-1",
+        "  Port 2200",
+        "Host gpu-1",
+        "  Port 2201",
+        "  User nobody",
+        "Host bare",
+      ].join("\n"),
+      (pattern) => (files[pattern] === undefined ? [] : [files[pattern]]),
+    );
+    expect(entries).toEqual([
+      { alias: "jump", hostName: "203.0.113.5", port: 2222 },
+      { alias: "gpu-1", hostName: "gpu.lan", user: "root", port: 2201 },
+      { alias: "gpu-2", hostName: "gpu.lan", user: "root" },
+      { alias: "bare" },
+    ]);
   });
 });
 

@@ -35,6 +35,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type {
+  SshHostSummary,
   MachineCheck,
   MachineDiagnosis,
   MachineInfo,
@@ -53,6 +54,7 @@ import {
   closeConnectionTo,
   connectionTo,
   listHostAliases,
+  listHostEntries,
   readSshConfig,
   sessionOf,
   writeSshConfig,
@@ -132,6 +134,8 @@ type WithImage = (
  */
 export interface MachinesEffects {
   listAliases: typeof listHostAliases;
+  /** The hosts with what each one's own block says (user, host, port): the add dialog's rows. */
+  listHosts: typeof listHostEntries;
   /** The writes to the ssh config: appending a host block a person composed in the page, and rewriting one this app wrote. */
   appendHost: typeof appendHostBlock;
   readConfig: typeof readSshConfig;
@@ -247,6 +251,7 @@ export class MachinesService {
     this.#layout = layout;
     this.#effects = {
       listAliases: listHostAliases,
+      listHosts: listHostEntries,
       appendHost: appendHostBlock,
       readConfig: readSshConfig,
       writeConfig: writeSshConfig,
@@ -426,9 +431,44 @@ export class MachinesService {
       return {
         ...machine,
         installed: mine ? machine.installed : null,
+        ...(mine ? { member: true as const } : {}),
         ...(!mine && machine.installed !== null ? { elsewhere: machine.installed } : {}),
       };
     });
+  }
+
+  /**
+   * The hosts in this server's ssh config with what each one's own block says — for the page's
+   * add dialog, which shows `user@host:port` beside an alias. Read on request, like the list.
+   */
+  sshHosts(): SshHostSummary[] {
+    return this.#effects.listHosts();
+  }
+
+  /**
+   * Puts machines in a Project's list without installing anything there: each then has a card,
+   * whose one thing to do is enabling it. Refusals by id, as `startUse` answers them; nothing
+   * reaches a machine.
+   */
+  addToProject(
+    projectId: string,
+    addresses: readonly string[],
+  ): { refused: { machineId: string; why: MachineUseRefusal }[] } {
+    const refused: { machineId: string; why: MachineUseRefusal }[] = [];
+    for (const address of new Set(addresses)) {
+      const machine = this.#allMachines().find((entry) => entry.id === address);
+      if (machine === undefined) {
+        refused.push({ machineId: address, why: "unknown-machine" });
+      } else if (
+        machine.local ||
+        (machine.machineId !== null && machine.machineId === this.#machineId)
+      ) {
+        refused.push({ machineId: address, why: "self" });
+      } else {
+        this.#setMember(projectId, address, true);
+      }
+    }
+    return { refused };
   }
 
   /** Drops a machine from a Project. The program stays installed; only the membership goes. */
@@ -532,9 +572,10 @@ export class MachinesService {
       checkedAt,
       checks,
     });
-    const skipped = (["tools", "download", "disk", "port"] as const).map(
-      (id): MachineCheck => ({ id, state: "skip" }),
-    );
+    const skipped = (["tools", "download", "disk", "port"] as const).map((id): MachineCheck => ({
+      id,
+      state: "skip",
+    }));
     const probe = await this.#effects.runOn(target, posixProbe(this.#layout));
     let identity = probe.code === 0 ? parseProbeOutput(probe.stdout) : null;
     if (identity === null) {
@@ -922,7 +963,9 @@ export class MachinesService {
       { offerReplaceProgram: !replaceProgram },
       async (say) =>
         (await this.#refusedAtTheDoor(machine)) ??
-        withImage(say, (image) => this.#installWork(projectId, machine, image, replaceProgram, say)),
+        withImage(say, (image) =>
+          this.#installWork(projectId, machine, image, replaceProgram, say),
+        ),
     );
     return { ok: true };
   }
@@ -1188,6 +1231,10 @@ export class MachinesService {
     for (const address of new Set(addresses)) {
       this.disconnect(address);
       this.release(projectId, address);
+      // A finished job is what keeps a card for a machine that never got as far as an install
+      // (the page shows every machine with a job): letting it go lets that card go too.
+      const job = this.#jobs.get(address);
+      if (job !== undefined && !job.queued && !job.running) this.#jobs.delete(address);
     }
   }
 
@@ -1749,6 +1796,8 @@ export abstract class Machines extends Interface<
     | "sshHost"
     | "updateSshHost"
     | "diagnose"
+    | "sshHosts"
+    | "addToProject"
   >
 >() {}
 
