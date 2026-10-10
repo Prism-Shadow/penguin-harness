@@ -53,10 +53,10 @@ import {
   closeAllConnections,
   closeConnectionTo,
   connectionTo,
+  heldSessionOf,
   listHostAliases,
   listHostEntries,
   readSshConfig,
-  sessionOf,
   writeSshConfig,
 } from "./transport/index.js";
 import type { ExecResult, MachineConnection, ShellSession } from "./transport/index.js";
@@ -264,7 +264,7 @@ export class MachinesService {
       runOn: (target, command) => connectionTo(target).exec(command),
       startServer: (target, port) => startRemoteServer(target, port, layout, this.#effects.runOn),
       hold: (target) => connectionTo(target).hold(),
-      session: (address) => sessionOf(address),
+      session: (address) => heldSessionOf(address),
       agent: (target, remotePort) => connectionTo(target).agent(remotePort),
       stopServer: (target) => stopRemoteServer(target, layout, this.#effects.runOn),
       mintToken: (target, runOn) => mintTokenOnRemote(target, layout, runOn),

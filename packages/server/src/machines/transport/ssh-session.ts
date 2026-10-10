@@ -406,9 +406,18 @@ export function closeAllShells(): void {
   sessions.clear();
 }
 
-/** The session held to a machine, while it is up. */
+/** The session to a machine, while it is up — held, or opened by a command and idling out. */
 export function sessionOf(machineAddress: string): ShellSession | null {
   return sessions.get(machineAddress)?.session() ?? null;
+}
+
+/**
+ * The session HELD to a machine, while it is up: what "connected" means. A session a job's
+ * commands opened stays up until its idle timer closes it, and is not a connection — an
+ * install that failed would otherwise read as connected for as long as its session idles.
+ */
+export function heldSessionOf(machineAddress: string): ShellSession | null {
+  return isHeld(machineAddress) ? sessionOf(machineAddress) : null;
 }
 
 /** Lets go of a machine's session — for a disconnect, or a machine that went away. */

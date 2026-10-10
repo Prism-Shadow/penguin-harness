@@ -35,6 +35,7 @@ A server running from a source checkout (`pnpm dev`, `pnpm desktop`) builds its 
 
 - ssh's fixed diagnostics lead with what they mean and what to do: an unknown or changed host key, a refused key, an unusable key file, a host name that does not resolve, a refused or silent port, a connection dropped before sign-in, a broken ssh config. ssh's own words follow. Such a failure no longer tries a second, Windows connection, no longer offers the forced install, and a job checks ssh before it builds its image. A failed job carries the reason (`sshReason`), so the page says it in its own language with ssh's words under it, and a job ssh refuses at the start fails at its first step.
 - A host block the page writes ends with `StrictHostKeyChecking accept-new`: every connection here runs in BatchMode, which cannot answer ssh's first-connection question, so a host added from the page failed with "Host key verification failed".
+- A machine reads as connected only while its connection is held. The ssh session an install or a connection check opened stays up until it idles out, and made a machine whose install had just failed read as connected meanwhile.
 - One `Include` line may name several files.
 - A server start that dies on a port another program holds says so, and offers no forced install; a crash's stack trace becomes its error line.
 - The installer's progress bars stay out of the job log, and an installer failure is quoted by its `error:` lines, led by the program's own error when the installer points at it.

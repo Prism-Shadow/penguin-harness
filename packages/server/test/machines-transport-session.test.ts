@@ -13,12 +13,18 @@
  *   live session; on a held session the corpse is dropped but the hold kept.
  * - A held session that dies comes back on its own after the shortest reconnect wait; a
  *   closed one stays closed; closing lets go, and the next ask opens a new session.
+ * - A session a command opened is up but is not a connection until it is held.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { closeConnectionTo, connectionTo, sessionOf } from "../src/machines/transport/index.js";
+import {
+  closeConnectionTo,
+  connectionTo,
+  heldSessionOf,
+  sessionOf,
+} from "../src/machines/transport/index.js";
 
 // The stub `ssh` below is a shell script, which execFile cannot run on Windows; what stays
 // unmeasured on Windows is listed in ci.yml's test-windows note.
@@ -53,6 +59,16 @@ exit 1
     fs.rmSync(stubBin, { recursive: true, force: true });
   });
   const spawns = () => fs.readFileSync(logFile, "utf8").trim().split("\n");
+
+  it("counts a session a command opened as up, and as a connection only once it is held", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    await conn.exec("true");
+    expect(sessionOf("ssh:nas")).not.toBeNull();
+    expect(heldSessionOf("ssh:nas")).toBeNull();
+    expect((await conn.hold()).ok).toBe(true);
+    expect(heldSessionOf("ssh:nas")).not.toBeNull();
+    expect(heldSessionOf("ssh:nas")).toEqual(sessionOf("ssh:nas"));
+  });
 
   it("runs commands with their exit code, and an `exit` cannot end the session", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
