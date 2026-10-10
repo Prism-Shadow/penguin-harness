@@ -3,6 +3,7 @@
 - **Date:** 2026-10-09
 - **Type:** feature
 - **Scope:** `core`, `server`, `cli`, `web`, `docs`
+- **PR:** [#1013](https://github.com/Prism-Shadow/penguin-harness/pull/1013)
 - **Issue:** [#813](https://github.com/Prism-Shadow/penguin-harness/issues/813)
 
 [English version](2026-10-09-session-rename.md)
