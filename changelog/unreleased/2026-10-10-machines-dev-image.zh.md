@@ -18,5 +18,5 @@
 - `GET /api/projects/:projectId/machines` 新增 `checkoutImage`（`unbuilt`、`building`、`built`，或 `failed` 并附构建输出的最后几行），只在源码检出时出现。`imageVersion` 报告检出最近一次构建的镜像，第一次构建之前仍为 `null`。
 - 构建失败时，任务停在 `build the install image` 这一步，附构建输出的最后几行，不提供强制安装；机器管理页在提示区显示同样的内容，直到某次构建成功。
 - 经机器更新通道的移交（安装时，以及服务端启动时的那轮同步）发送的是正在安装的那份计划的构建，因此源码检出移交的是它的镜像。
-- 现在只有既不是安装版也不是源码检出的服务端才会返回 `no_install_image`，其报错信息与页面提示都照此说明。
+- 现在只有既不是安装版、也不是本仓库源码检出的服务端才会返回 `no_install_image`，其报错信息与页面提示都照此说明。作为依赖装进其他 pnpm 工作区的服务端不算源码检出，也从不运行那个工作区的 `scripts/deploy.mjs`。
 - `deploy.mjs` 在 Windows 上经 shell 调用 `pnpm`，因为那里的 `pnpm` 是一个 `.cmd` 包装脚本。

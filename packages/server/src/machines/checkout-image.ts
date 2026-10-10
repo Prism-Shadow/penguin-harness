@@ -228,22 +228,41 @@ function imageId(harness: string): string {
   return crypto.createHash("sha1").update(JSON.stringify(parts)).digest("hex").slice(0, 16);
 }
 
+/** The root package of this repository, which tells its checkout from any other workspace. */
+const REPOSITORY_PACKAGE = "penguin-harness";
+
 /**
  * The checkout this module runs from, or null when it runs from anything else: the directory
- * holding `pnpm-workspace.yaml`, with the packer beside it. Walked up to rather than counted,
- * because the depth differs between a `tsx` run, a built one and the desktop shell's bundle
- * (the same walk as services/cli-shim.ts). A packaged program, and a platform pushed into a
- * data root's store, have no such directory above them.
+ * holding `pnpm-workspace.yaml`, when that workspace is this repository and has the packer.
+ * Walked up to rather than counted, because the depth differs between a `tsx` run, a built
+ * one and the desktop shell's bundle (the same walk as services/cli-shim.ts). A packaged
+ * program, and a platform pushed into a data root's store, have no such directory above
+ * them. A server installed as a dependency of another pnpm workspace stops at that
+ * workspace, and it is not this repository: its `scripts/deploy.mjs`, if it has one,
+ * deploys something else and must never run.
  */
 export function findCheckout(fromDir: string): string | null {
   let dir = path.resolve(fromDir);
   for (;;) {
     if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
-      return fs.existsSync(path.join(dir, "scripts", "deploy.mjs")) ? dir : null;
+      const ours = rootPackageName(dir) === REPOSITORY_PACKAGE;
+      return ours && fs.existsSync(path.join(dir, "scripts", "deploy.mjs")) ? dir : null;
     }
     const parent = path.dirname(dir);
     if (parent === dir) return null;
     dir = parent;
+  }
+}
+
+/** The `name` in a directory's package.json, or null. */
+function rootPackageName(dir: string): string | null {
+  try {
+    const manifest: { name?: unknown } = JSON.parse(
+      fs.readFileSync(path.join(dir, "package.json"), "utf8"),
+    );
+    return typeof manifest.name === "string" ? manifest.name : null;
+  } catch {
+    return null;
   }
 }
 

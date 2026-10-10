@@ -8,7 +8,9 @@
  *   back, the hmr layer's own reader finds its CLI, and its helper binaries stay executable.
  * - Given a build with no web entry page, or a path that would leave the store, it is refused
  *   before anything is written.
- * - Given a module anywhere inside a checkout, the checkout is found; outside one, nothing is.
+ * - Given a module anywhere inside a checkout, the checkout is found; outside one, nothing is,
+ *   and neither is another pnpm workspace the server was installed into, its own
+ *   `scripts/deploy.mjs` included.
  * - Given the packer, its own narration reaches the caller and its output file is the build;
  *   given a packer that fails, the failure is told in its last lines, as words.
  */
@@ -91,17 +93,43 @@ describe("a build laid down as a store", () => {
 });
 
 describe("finding the checkout", () => {
-  it("is found from any depth inside it, and nothing is found outside one", () => {
+  /** A pnpm workspace with a `scripts/deploy.mjs`, whose root package is named `name`. */
+  const workspace = (name: string) => {
     const repo = temp();
     fs.writeFileSync(path.join(repo, "pnpm-workspace.yaml"), "packages: []\n");
+    fs.writeFileSync(path.join(repo, "package.json"), JSON.stringify({ name, private: true }));
     fs.mkdirSync(path.join(repo, "scripts"));
     fs.writeFileSync(path.join(repo, "scripts", "deploy.mjs"), "");
+    return repo;
+  };
+
+  it("is found from any depth inside it, and nothing is found outside one", () => {
+    const repo = workspace("penguin-harness");
     const deep = path.join(repo, "packages", "server", "src", "machines");
     fs.mkdirSync(deep, { recursive: true });
 
     expect(findCheckout(deep)).toBe(repo);
     expect(findCheckout(path.join(repo, "packages", "desktop", "dist"))).toBe(repo);
     expect(findCheckout(temp())).toBeNull();
+  });
+
+  it("a server installed into another pnpm workspace never takes that workspace's deploy script for its packer", () => {
+    // `pnpm add @prismshadow/penguin-cli` in a project of one's own: the server sits under the
+    // project's node_modules, and the project's own scripts/deploy.mjs deploys something else.
+    const project = workspace("my-app");
+    const installed = path.join(
+      project,
+      "node_modules",
+      ".pnpm",
+      "@prismshadow+penguin-server@0.2.13",
+      "node_modules",
+      "@prismshadow",
+      "penguin-server",
+      "dist",
+    );
+    fs.mkdirSync(installed, { recursive: true });
+
+    expect(findCheckout(installed)).toBeNull();
   });
 });
 
