@@ -275,7 +275,7 @@ export function handleUpdaterCommand(action: DesktopUpdaterCommandMessage["actio
     return;
   }
   // Same path as the dialog's "Restart now": quitAndInstall goes through the normal
-  // quit sequence, so the shell's before-quit hook still stops the embedded server
+  // quit sequence, so the shell's will-quit hook still stops the embedded server
   // gracefully before the files are replaced.
   autoUpdater.quitAndInstall();
 }
@@ -597,7 +597,7 @@ async function promptRestart(version: string, parent: BrowserWindow | null): Pro
     ? await dialog.showMessageBox(parent, options)
     : await dialog.showMessageBox(options);
   if (result.response !== 0) return;
-  // quitAndInstall triggers the normal quit path first, so the shell's before-quit hook
+  // quitAndInstall triggers the normal quit path first, so the shell's will-quit hook
   // still stops the embedded server gracefully before the files are replaced.
   autoUpdater.quitAndInstall();
 }
