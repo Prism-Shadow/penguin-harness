@@ -13,10 +13,11 @@
  *   installs" dialog; the update nudge appears when the server lists some Agent's copy as
  *   behind (`AgentSummary.pluginUpdates` — the page never compares versions itself), and the
  *   notice under the title updates every outdated plugin at once. Installed means the whole
- *   plugin: every one of its skills in the Agent's installed skills and, when it ships a hook
- *   package, that package in the Agent's installed hooks — which is why the page fetches both
- *   lists per Agent. Uninstall takes it apart the same way: one DELETE per skill and one for
- *   the hook package.
+ *   plugin: every one of its skills in the Agent's installed skills, its hook package (when it
+ *   ships one) in the Agent's installed hooks, and each of its MCP servers among the Agent's
+ *   servers as an entry it installed — which is why the page fetches the three lists per Agent.
+ *   Uninstall takes it apart the same way: one DELETE per skill, one for the hook package and
+ *   one per MCP server.
  * - A server module is installed on the whole server for every Project, by an admin only (a
  *   member sees the card read-only). Installing or removing one re-assembles the App, which stops
  *   the agent runs in progress in every Project, so the confirm says what the install does and,
@@ -25,6 +26,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import type {
+  AgentMcpServerItem,
   AgentSummary,
   HookItem,
   InstalledPluginsResponse,
@@ -72,6 +74,7 @@ import { SettingsDialog } from "../settings/settings-dialog";
 import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
+import { StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
 import {
   PLUGIN_GROUP_BYS,
@@ -90,6 +93,7 @@ import {
   type PluginView,
 } from "./plugin-groups";
 import {
+  installNeedsConfirm,
   libraryUsage,
   pluginComplete,
   pluginStatus,
@@ -99,16 +103,18 @@ import {
   type PluginStatus,
 } from "./plugin-status";
 
-const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map() };
+const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
 
-/** The two lists an install response carries, folded into one Agent's snapshot entry. */
+/** The three lists an install response carries, folded into one Agent's snapshot entry. */
 function installsOf(
   skills: readonly SkillMetadataItem[],
   hooks: readonly HookItem[],
+  servers: readonly AgentMcpServerItem[],
 ): AgentInstalls {
   return {
     skills: new Map(skills.map((s) => [s.name, s.version])),
     hooks: new Map(hooks.map((h) => [h.name, h.version])),
+    mcp: new Map(servers.map((server) => [server.name, server])),
   };
 }
 
@@ -177,6 +183,7 @@ export function PluginsPage() {
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
+  const isOwner = currentProject?.role === "owner";
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** The import dialog (admin) is open. */
   const [importOpen, setImportOpen] = useState(false);
@@ -354,9 +361,10 @@ export function PluginsPage() {
     }
   };
 
-  // Installed skills and hook packages for every Agent in the current Project (fetched in
-  // parallel, same convention as the sessions context): a single Agent's failure is silently
-  // treated as "nothing installed" and doesn't break the whole page.
+  // Installed skills, hook packages and MCP servers for every Agent in the current Project
+  // (fetched in parallel, same convention as the sessions context): a single Agent's failure is
+  // silently treated as "nothing installed" and doesn't break the whole page; a server list that
+  // will not read leaves the Agent's skills and hooks standing.
   const agentIdsKey = agents.map((a) => a.agentId).join(",");
   useEffect(() => {
     // Clear the snapshot before fetching: agentId (e.g. default_agent) is
@@ -370,11 +378,12 @@ export function PluginsPage() {
     void Promise.all(
       ids.map(async (agentId) => {
         try {
-          const [skills, hooks] = await Promise.all([
+          const [skills, hooks, servers] = await Promise.all([
             api.getAgentSkills(projectId, agentId),
             api.getAgentHooks(projectId, agentId),
+            api.getAgentMcpServers(projectId, agentId).catch(() => ({ servers: [] })),
           ]);
-          return [agentId, installsOf(skills.skills, hooks.hooks)] as const;
+          return [agentId, installsOf(skills.skills, hooks.hooks, servers.servers)] as const;
         } catch {
           return [agentId, NO_INSTALLS] as const;
         }
@@ -401,13 +410,32 @@ export function PluginsPage() {
   const setAgentInstalls = (agentId: string, installs: AgentInstalls) =>
     setInstalled((prev) => new Map(prev).set(agentId, installs));
 
+  /** Reads one Agent's MCP servers again (Set up wrote its vault): what they wait for moved. */
+  const refreshAgentMcp = (agentId: string) => {
+    if (!projectId) return;
+    api.getAgentMcpServers(projectId, agentId).then(
+      (res) =>
+        setInstalled((prev) => {
+          const current = prev.get(agentId) ?? NO_INSTALLS;
+          return new Map(prev).set(agentId, {
+            ...current,
+            mcp: new Map(res.servers.map((server) => [server.name, server])),
+          });
+        }),
+      () => undefined,
+    );
+  };
+
   /**
    * One Agent's snapshot entry with a plugin marked present — each part at the library's own
-   * version of it — or absent: its skills and, when it ships one, its hook package, all at once.
+   * version of it — or absent: its skills, its hook package when it ships one and its MCP
+   * servers, all at once. A server marked present waits for nothing yet: the install's answer
+   * says what it really waits for.
    */
   const withPlugin = (installs: AgentInstalls, plugin: PluginItem, on: boolean): AgentInstalls => {
     const skills = new Map(installs.skills);
     const hooks = new Map(installs.hooks);
+    const mcp = new Map(installs.mcp);
     for (const skill of plugin.skills) {
       if (on) skills.set(skill.name, skill.version);
       else skills.delete(skill.name);
@@ -416,15 +444,28 @@ export function PluginsPage() {
       if (on) hooks.set(plugin.name, plugin.hookVersion ?? "");
       else hooks.delete(plugin.name);
     }
-    return { skills, hooks };
+    for (const server of plugin.mcpServers) {
+      if (on) {
+        mcp.set(server.name, {
+          name: server.name,
+          transport: server.transport,
+          target: server.target,
+          plugin: plugin.name,
+          missingKeys: [],
+          signIn: server.signIn,
+        });
+      } else if (mcp.get(server.name)?.plugin === plugin.name) mcp.delete(server.name);
+    }
+    return { skills, hooks, mcp };
   };
 
   /**
    * Install / uninstall on one Agent (any member can do this): optimistic update, a
-   * confirmation toast on success, rollback plus a toast on failure. Install is one request for
-   * the whole plugin; uninstall takes it apart — one DELETE per skill and one for the hook
-   * package — since the server offers no plugin-level delete, and a plugin's parts are what an
-   * Agent actually holds. The Agent list is re-read afterwards either way: the card's counts
+   * confirmation toast on success, rollback plus a toast on failure — a server name the Agent
+   * already has from someone else is the server's refusal, named in the toast. Install is one
+   * request for the whole plugin; uninstall takes it apart — one DELETE per skill, one for the
+   * hook package and one per MCP server the plugin installed — since the server offers no
+   * plugin-level delete, and a plugin's parts are what an Agent actually holds. The Agent list is re-read afterwards either way: the card's counts
    * and its `pluginUpdates` moved, and both are read off that list.
    */
   const toggleInstall = async (agentId: string, plugin: PluginItem, on: boolean) => {
@@ -436,7 +477,7 @@ export function PluginsPage() {
     try {
       if (on) {
         const res = await api.installAgentPlugins(projectId, agentId, [plugin.name]);
-        setAgentInstalls(agentId, installsOf(res.skills, res.hooks));
+        setAgentInstalls(agentId, installsOf(res.skills, res.hooks, res.mcpServers));
         toastSuccess(
           `${S.plugins.installedToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
         );
@@ -455,6 +496,13 @@ export function PluginsPage() {
           ...(plugin.hooks.length > 0
             ? [api.uninstallAgentHook(projectId, agentId, plugin.name).catch(gone)]
             : []),
+          // Only the entries the plugin installed: a server the user added under one of its
+          // names is the user's.
+          ...plugin.mcpServers
+            .filter((server) => prev.mcp.get(server.name)?.plugin === plugin.name)
+            .map((server) =>
+              api.uninstallAgentMcpServer(projectId, agentId, server.name).catch(gone),
+            ),
         ]);
         toastSuccess(
           `${S.plugins.uninstalledToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
@@ -479,7 +527,7 @@ export function PluginsPage() {
     const results = await Promise.allSettled(
       agentIds.map(async (agentId) => {
         const res = await api.installAgentPlugins(projectId, agentId, [name]);
-        setAgentInstalls(agentId, installsOf(res.skills, res.hooks));
+        setAgentInstalls(agentId, installsOf(res.skills, res.hooks, res.mcpServers));
       }),
     );
     const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
@@ -514,7 +562,7 @@ export function PluginsPage() {
     const results = await Promise.allSettled(
       plan.perAgent.map(async ({ agentId, names }) => {
         const res = await api.installAgentPlugins(projectId, agentId, names);
-        setAgentInstalls(agentId, installsOf(res.skills, res.hooks));
+        setAgentInstalls(agentId, installsOf(res.skills, res.hooks, res.mcpServers));
       }),
     );
     const outcome = bulkOutcome(labels, results);
@@ -621,6 +669,8 @@ export function PluginsPage() {
       installed={installed}
       canQuickStart={currentAgent !== null}
       isAdmin={isAdmin}
+      isOwner={isOwner}
+      projectId={projectId}
       busy={row.module !== undefined && pendingSpecifier === row.module.specifier}
       blocked={
         row.module !== undefined &&
@@ -636,6 +686,7 @@ export function PluginsPage() {
           setPendingApply({ specifier: row.module.specifier, name: row.name, install });
         }
       }}
+      onMcpChanged={refreshAgentMcp}
     />
   );
 
@@ -801,6 +852,12 @@ export function PluginsPage() {
           onConfirm={() => void confirmQuickStartInstall()}
         >
           <p>{S.plugins.quickStartAfterInstall}</p>
+          {/* The install brings a stdio server: the command it runs here is said before it does. */}
+          {installNeedsConfirm(pendingQuickStart, installed.get(currentAgent.agentId)) && (
+            <div className="mt-3">
+              <StdioInstallBody plugin={pendingQuickStart} />
+            </div>
+          )}
         </ConfirmModal>
       )}
       {/* Bulk update confirmation. Same warning as the per-plugin confirm — an update is an

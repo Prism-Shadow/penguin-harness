@@ -1,10 +1,10 @@
 /**
  * The Plugins page's rows, and how they are grouped and searched (pure decisions, unit tested).
  *
- * Every plugin is one row and one card, whatever it carries: a library plugin (Skills and/or a
- * hook package, installed per Agent), a server module (installed on the server, listed per
- * Project), or a package that is both — a library plugin `x` and the module `@penguinharness/x`
- * are one row.
+ * Every plugin is one row and one card, whatever it carries: a library plugin (Skills, a hook
+ * package and/or MCP servers, installed per Agent), a server module (installed on the server,
+ * listed per Project), or a package that is both — a library plugin `x` and the module
+ * `@penguinharness/x` are one row.
  *
  * Groups default to the plugin's category; the page can group by status or by what a plugin
  * carries instead, or not group at all, and the search box narrows the rows. The grouping and
@@ -222,16 +222,19 @@ export function pluginCategories(
 }
 
 /** What a plugin carries: the payloads the grouping by content names. */
-export const PLUGIN_KINDS = ["skills", "hooks", "modules"] as const;
+export const PLUGIN_KINDS = ["skills", "hooks", "mcp", "modules"] as const;
 export type PluginKind = (typeof PLUGIN_KINDS)[number];
 
-/** The one kind a row is grouped under: a server module first, then Skills, then hooks. */
+/** The one kind a row is grouped under: a server module first, then Skills, then hooks, then MCP servers. */
 export function primaryKind(row: PluginRow): PluginKind {
   if (row.module !== undefined) return "modules";
-  return (row.library?.skills.length ?? 0) > 0 ? "skills" : "hooks";
+  const plugin = row.library;
+  if ((plugin?.skills.length ?? 0) > 0) return "skills";
+  if ((plugin?.hooks.length ?? 0) > 0) return "hooks";
+  return (plugin?.mcpServers.length ?? 0) > 0 ? "mcp" : "hooks";
 }
 
-/** Whether a row passes the search box: its names, display names, descriptions and keywords hold the query. */
+/** Whether a row passes the search box: its names, display names, descriptions, keywords and MCP servers (name and target) hold the query. */
 export function rowMatches(row: PluginRow, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (q === "") return true;
@@ -251,6 +254,7 @@ export function rowMatches(row: PluginRow, query: string): boolean {
     entry?.shortDescription,
     entry?.shortDescriptionZh,
     ...(entry?.keywords ?? []),
+    ...(plugin?.mcpServers ?? []).flatMap((server) => [server.name, server.target]),
   ]
     .filter((t): t is string => t !== undefined)
     .join(" ");
@@ -270,8 +274,8 @@ export interface PluginGroup {
 
 /**
  * The rows in sections: by category in the categories' order, by status in PLUGIN_STATUSES
- * order (what wants a look first), by what a plugin carries (Skills, hooks, server modules), or
- * one untitled section. A section with no rows is left out; rows are in name order.
+ * order (what wants a look first), by what a plugin carries (Skills, hooks, MCP servers, server
+ * modules), or one untitled section. A section with no rows is left out; rows are in name order.
  */
 export function groupRows(
   rows: readonly PluginRow[],

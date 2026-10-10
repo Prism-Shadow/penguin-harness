@@ -10,11 +10,14 @@
  *   package carries none), and the package's own README.md where it ships one (every server
  *   module does). The README is read from the package on this server, never fetched from npm: a
  *   package this server does not have says so instead.
+ * - **MCP servers**, for a plugin that carries any (plugin-mcp.tsx): one row per server — its
+ *   name, transport and target, and marks for the vault keys it needs, the sign-in it needs and,
+ *   for a stdio server, the command it runs on this server.
  * - **Files**, for a plugin of Skills and/or a hook package: the shared read-only file browser
  *   over everything an install writes — one directory per skill and one for the hook package,
  *   any number open at once, a preview on the right (the first SKILL.md opens on arrival). The
  *   files arrive in one request (GET /api/plugins/:plugin/files), so nothing is fetched per
- *   directory.
+ *   directory. A plugin of MCP servers alone has no files to browse, and no such section.
  *
  * A plugin that is both shows About, then Files. The footer holds the card's own actions.
  */
@@ -43,6 +46,7 @@ import { getLibraryPluginReadme, getPluginFiles, getPluginReadme } from "../../a
 import { ApiError } from "../../api/client";
 import { SkillTile } from "../skills/skill-icon-view";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
+import { PluginMcpSection } from "./plugin-mcp";
 import type { ModulePart, PluginRow } from "./plugin-groups";
 import type { PluginStatus } from "./plugin-status";
 import {
@@ -318,6 +322,10 @@ export function PluginDetailSections({
           <p className="mt-2 text-xs text-fg-muted">{S.plugins.readmeAfterInstall}</p>
         )}
       </RuledSection>
+
+      {row.library !== undefined && row.library.mcpServers.length > 0 && (
+        <PluginMcpSection servers={row.library.mcpServers} />
+      )}
 
       {files !== null && (
         <RuledSection title={S.plugins.detailFiles} level={3} className="mt-6">

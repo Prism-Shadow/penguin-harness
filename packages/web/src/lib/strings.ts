@@ -1480,12 +1480,14 @@ export const zh = {
     mcpArgs: "args",
     mcpArgsHint: "每行一个参数",
     mcpEnv: "env",
-    mcpEnvHint: "每行一条 KEY=value；Agent vault 不注入 MCP Server 进程",
+    mcpEnvHint:
+      "每行一条 KEY=value；值中的 ${KEY} 在连接时取自该 Agent 的密钥保险柜，保险柜的其余内容不注入 MCP Server 进程",
     mcpCwd: "cwd",
     mcpCwdHint: "留空则使用本次 Session 的 Workspace",
     mcpUrl: "url",
     mcpHeaders: "headers",
-    mcpHeadersHint: "每行一条 Header-Name: value（如 Authorization 等认证头）",
+    mcpHeadersHint:
+      "每行一条 Header-Name: value（如 Authorization 等认证头）；值中的 ${KEY} 在连接时取自该 Agent 的密钥保险柜",
     mcpPermission: "permission",
     mcpPermissionAuto: "auto",
     mcpPermissionAutoLabel: "Auto（readOnlyHint）",
@@ -1524,6 +1526,11 @@ export const zh = {
     mcpDeleteTitle: "删除 MCP Server",
     mcpDeleteConfirm: (name: string): string =>
       `确认删除 MCP Server「${name}」？其工具自下次 Session 起不再可用。`,
+    /** A server a plugin installed: its row's mark, the edit dialog's line, and its removal's reminder. */
+    mcpInstalledBy: (plugin: string): string => `由插件 ${plugin} 安装`,
+    mcpFromPlugin: (plugin: string): string => `来自插件 ${plugin}：重新安装该插件会覆盖此条目。`,
+    mcpRemoveFromPlugin: (plugin: string): string =>
+      `它由插件 ${plugin} 安装，可在插件页的「管理安装」中重新装回。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
     /** An Agent whose state directory is on a machine: what this server cannot act on, and where it can be. */
@@ -2442,7 +2449,7 @@ export const zh = {
       none: "不分组",
     },
     /** What a plugin carries: the section titles of the grouping by content. */
-    kindLabel: { skills: "技能", hooks: "钩子", modules: "服务端模块" },
+    kindLabel: { skills: "技能", hooks: "钩子", mcp: "MCP 服务器", modules: "服务端模块" },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent 运行沙箱",
     otherCategory: "其他",
@@ -2483,6 +2490,8 @@ export const zh = {
     detailFiles: "文件",
     detailSkills: "技能",
     detailHooks: "钩子",
+    /** The detail dialog's section of the MCP servers a plugin installs into an Agent's tools. */
+    detailMcpServers: "MCP 服务器",
     /** The detail dialog's links to the package's homepage and repository: their names and hover hints. */
     detailHomepage: "主页",
     detailRepository: "代码仓库",
@@ -2573,8 +2582,33 @@ export const zh = {
       `已将 ${plugin} 更新到最新版（${n} 个 Agent）`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
-    uninstallConfirmBody: (plugin: string, agent: string): string =>
-      `确定从 ${agent} 卸载 ${plugin} 吗？其已安装的技能与钩子文件（含本地改动）将被删除。`,
+    uninstallConfirmBody: (plugin: string, agent: string, withMcp: boolean): string =>
+      `确定从 ${agent} 卸载 ${plugin} 吗？其已安装的技能与钩子文件（含本地改动）${withMcp ? "以及它的 MCP 服务器" : ""}将被删除。`,
+    /** An MCP server's marks (the detail dialog, Manage installs): icons whose hover sentence says what stands between the server and its tools. */
+    mcpNeedsSetup: (keys: string[]): string => `待设置：${keys.join("、")}`,
+    /** Appended to the needs-setup sentence: where the values go, and who may write them. */
+    mcpSetUpWhere: "在「密钥保险柜」中填写",
+    mcpSetUpByOwner: "由 Project owner 填写",
+    mcpSignIn: "需要 OAuth 登录——当前版本尚不支持",
+    mcpRunsCommand: (command: string): string => `Agent 会话开始时在本服务器上运行 ${command}`,
+    /** The confirm before installing a plugin with a stdio server (any member): the command the server will run. */
+    installStdioTitle: (plugin: string, agent: string): string => `将 ${plugin} 安装到 ${agent}？`,
+    installStdioBody: (server: string, command: string): string =>
+      `它的 MCP 服务器 ${server} 会在该 Agent 每次开始会话时，在本服务器上运行 ${command}。`,
+    /** The Set up form (Project owner): the vault values a plugin's MCP servers wait for. */
+    setUp: "设置",
+    setUpTitle: (plugin: string, agent: string): string => `为 ${agent} 设置 ${plugin}`,
+    setUpDesc: "填写的值存入该 Agent 的密钥保险柜，MCP 服务器连接时读取。",
+    /** A key the vault already holds: the server receives that value, so it is named, not asked for. */
+    setUpKeySet: "已设置",
+    setUpKeySetHint: "密钥保险柜中已有这个值，MCP 服务器会收到它",
+    setUpHelpLink: "去哪里获取",
+    /** An update's parts: an MCP server entry is rewritten whole (it carries no version). */
+    updatePartMcp: "MCP 服务器",
+    updatePartReplaced: "替换",
+    /** The import dialog: what a plugin's MCP server is, said once under every tab. */
+    importMcpNote:
+      "插件可能带有 MCP 服务器：stdio 服务器是 Agent 会话开始时在本服务器上运行的命令，远程服务器是本服务器会去连接的地址。",
   },
 
   /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
@@ -3514,6 +3548,9 @@ Benchmark：
     /** Per-server group row meta inside the expanded connect row. */
     mcpToolsCount: (n: number): string => `${n} 个工具`,
     mcpServerFailed: "连接失败",
+    /** A server that was not contacted: the vault lacks a key it needs, or it needs an OAuth sign-in. */
+    mcpServerNeedsSetup: "待设置",
+    mcpServerSignIn: "需要登录",
     mcpConnectAborted: "已中断，下次发送时重新连接",
     /** The bare mode word — the Trace view's round badge, the failed row's title, and the stem of the two state titles below — so a `discard` is never announced as compaction: it clears the context rather than compacting it. */
     compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),

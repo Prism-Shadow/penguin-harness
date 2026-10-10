@@ -12,12 +12,22 @@
  *   listed; the module's state decides for a plugin that also ships Skills, whose Agents are
  *   still counted.
  * - The update dialog lists, per Agent, each part whose installed version differs from the
- *   library's — older, or raised by a local edit — and no part the Agent does not carry.
+ *   library's — older, or raised by a local edit — and no part the Agent does not carry; an MCP
+ *   server the Agent carries is listed as replaced (an entry carries no version).
+ * - A plugin of MCP servers alone is installed on an Agent whose server list carries each of
+ *   them under the plugin's name, waiting for setup or not; a server of the same name the user
+ *   added, or another plugin installed, is not the plugin's.
+ * - What the plugin's servers on an Agent wait for: the vault keys they miss, once each, and
+ *   whether one needs a sign-in; installing asks first only where a stdio server is new to the
+ *   Agent.
  */
 import { describe, expect, it } from "vitest";
+import type { AgentMcpServerItem, PluginMcpServerItem } from "@prismshadow/penguin-server/api";
 import {
   changedParts,
+  installNeedsConfirm,
   libraryUsage,
+  pluginMcpState,
   pluginStatus,
   type AgentInstalls,
   type InstalledMap,
@@ -33,13 +43,47 @@ const PAIR: PluginParts & { hookVersion: string } = {
   skills: [skill("plan"), skill("run", "2026.10.09.1")],
   hooks: ["stop"],
   hookVersion: "2026.10.04.1",
+  mcpServers: [],
 };
 
-const installs = (skills: Record<string, string>, hooks: Record<string, string> = {}) =>
+const installs = (
+  skills: Record<string, string>,
+  hooks: Record<string, string> = {},
+  servers: AgentMcpServerItem[] = [],
+) =>
   ({
     skills: new Map(Object.entries(skills)),
     hooks: new Map(Object.entries(hooks)),
+    mcp: new Map(servers.map((server) => [server.name, server])),
   }) satisfies AgentInstalls;
+
+/** A plugin's server as the library lists it. */
+const libraryServer = (
+  name: string,
+  transport: PluginMcpServerItem["transport"] = "http",
+): PluginMcpServerItem => ({
+  name,
+  transport,
+  target: transport === "stdio" ? "node ${PLUGIN_ROOT}/server.mjs" : `https://${name}.example/mcp`,
+  setup: [],
+  oauth: false,
+  signIn: false,
+});
+
+/** One of an Agent's servers, installed by `plugin` (absent: the user's own). */
+const agentServer = (
+  name: string,
+  plugin: string | undefined,
+  missingKeys: string[] = [],
+  signIn = false,
+): AgentMcpServerItem => ({
+  name,
+  transport: "http",
+  target: `https://${name}.example/mcp`,
+  ...(plugin !== undefined ? { plugin } : {}),
+  missingKeys,
+  signIn,
+});
 
 const agent = (agentId: string, ...behindOn: string[]) => ({
   agentId,
@@ -77,7 +121,7 @@ describe("a plugin of Skills and hooks", () => {
   });
 
   it("puts a plugin that ships nothing on no Agent", () => {
-    const empty: PluginParts = { name: "empty", skills: [], hooks: [] };
+    const empty: PluginParts = { name: "empty", skills: [], hooks: [], mcpServers: [] };
     expect(libraryUsage(empty, [agent("a")], new Map([["a", installs({})]])).usedBy).toEqual([]);
   });
 });
@@ -120,5 +164,69 @@ describe("what an update rewrites", () => {
       { kind: "hooks", name: "pair", installed: "2026-09-01.1", library: "2026.10.04.1" },
     ]);
     expect(changedParts(PAIR, undefined)).toEqual([]);
+  });
+
+  it("lists an MCP server the Agent carries as replaced, and none it does not", () => {
+    const tools: PluginParts & { hookVersion?: string } = {
+      ...PAIR,
+      mcpServers: [libraryServer("web"), libraryServer("local", "stdio")],
+    };
+    const copy = installs({ plan: "2026.10.04.1", run: "2026.10.09.1" }, { pair: "2026.10.04.1" }, [
+      agentServer("web", "pair"),
+    ]);
+    expect(changedParts(tools, copy)).toEqual([
+      { kind: "mcp", name: "web", installed: "", library: "" },
+    ]);
+  });
+});
+
+describe("a plugin of MCP servers", () => {
+  const MAIL: PluginParts = {
+    name: "mail",
+    skills: [],
+    hooks: [],
+    mcpServers: [libraryServer("mail"), libraryServer("calendar")],
+  };
+  const usage = (servers: AgentMcpServerItem[]) =>
+    libraryUsage(MAIL, [agent("a")], new Map([["a", installs({}, {}, servers)]]));
+
+  it("is installed on an Agent carrying each of its servers under its name, waiting for setup or not", () => {
+    const both = [
+      agentServer("mail", "mail", ["MAIL_CLIENT_ID"], true),
+      agentServer("calendar", "mail"),
+    ];
+    expect(usage(both).usedBy).toEqual(["a"]);
+    expect(pluginStatus({}, usage(both))).toBe("installed");
+    expect(usage([agentServer("mail", "mail")]).usedBy).toEqual([]);
+  });
+
+  it("is not on an Agent whose server of that name the user added, or another plugin installed", () => {
+    expect(usage([agentServer("mail", undefined), agentServer("calendar", "mail")]).usedBy).toEqual(
+      [],
+    );
+    expect(usage([agentServer("mail", "other"), agentServer("calendar", "mail")]).usedBy).toEqual(
+      [],
+    );
+  });
+
+  it("says what its servers on an Agent wait for: each missing key once, and a sign-in", () => {
+    const state = pluginMcpState(
+      MAIL,
+      installs({}, {}, [
+        agentServer("mail", "mail", ["MAIL_CLIENT_ID", "MAIL_CLIENT_SECRET"], true),
+        agentServer("calendar", "mail", ["MAIL_CLIENT_ID"]),
+      ]),
+    );
+    expect(state).toEqual({ missingKeys: ["MAIL_CLIENT_ID", "MAIL_CLIENT_SECRET"], signIn: true });
+    expect(pluginMcpState(MAIL, installs({}))).toBeNull();
+  });
+
+  it("asks before installing only where a stdio server is new to the Agent", () => {
+    const local: PluginParts = { ...MAIL, mcpServers: [libraryServer("local", "stdio")] };
+    expect(installNeedsConfirm(local, installs({}))).toBe(true);
+    expect(installNeedsConfirm(local, installs({}, {}, [agentServer("local", "mail")]))).toBe(
+      false,
+    );
+    expect(installNeedsConfirm(MAIL, installs({}))).toBe(false);
   });
 });

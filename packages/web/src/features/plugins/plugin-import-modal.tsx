@@ -1,8 +1,10 @@
 /**
  * The Plugins page's import dialog — an admin's: the page shows its button to admins alone, and
  * the server refuses anyone else. A plugin goes on the whole server, shared by every Project, and
- * the dialog says so above its tabs: one per way in, each holding only its own form, its hint and,
- * where installing runs the package's scripts, the line that says so. It opens on npm.
+ * the dialog says so above its tabs: one per way in, each holding only its own form, its hint,
+ * where installing runs the package's scripts, the line that says so, and the line saying what a
+ * plugin's MCP servers are (a command run on this server, or an address it connects to). It
+ * opens on npm.
  *
  * - From npm / From a link: a package name, or an https link to a git repository or a tarball
  *   (each checked here the way the server reads it, plugin-import-prompt.ts), installed by the
@@ -286,6 +288,7 @@ export function ImportPluginTabs({
         </div>
         <p className="mt-1.5 text-xs text-fg-muted">{S.plugins.importCost}</p>
         <p className="mt-1 text-xs text-fg-muted">{S.plugins.importScriptsRun}</p>
+        <p className="mt-1 text-xs text-fg-muted">{S.plugins.importMcpNote}</p>
         {directError !== null && (
           <p className={`mt-1.5 text-xs ${toneInk.danger}`}>{directError}</p>
         )}
@@ -303,6 +306,7 @@ export function ImportPluginTabs({
         {uploading ? S.plugins.installing : S.plugins.importUploadAction}
       </label>
       <p className="mt-1.5 text-xs text-fg-muted">{S.plugins.importScriptsRun}</p>
+      <p className="mt-1 text-xs text-fg-muted">{S.plugins.importMcpNote}</p>
       {uploadError !== null && <p className={`mt-1.5 text-xs ${toneInk.danger}`}>{uploadError}</p>}
     </>
   );
@@ -310,6 +314,7 @@ export function ImportPluginTabs({
   const agentPanel = (
     <>
       <p className="text-xs text-fg-muted">{S.plugins.importAgentWhy}</p>
+      <p className="mt-1 text-xs text-fg-muted">{S.plugins.importMcpNote}</p>
       <div className="mt-2.5 space-y-3">
         <Input
           size="sm"

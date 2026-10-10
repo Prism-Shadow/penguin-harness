@@ -916,10 +916,16 @@ describe("approvals and events", () => {
     expect(row.durationMs).toBe(1200);
     expect(row.toolCount).toBe(2);
     expect(row.failed).toEqual(["bad"]);
-    // Per-server outcomes back the expanded server groups (failure reasons live there).
+    // Per-server outcomes back the expanded server groups (failure reasons and causes live there).
     expect(row.results).toEqual([
       { server: "fx", status: "completed", durationMs: 180, tools: 2 },
-      { server: "bad", status: "fatal", durationMs: 60, error: "spawn nope ENOENT" },
+      {
+        server: "bad",
+        status: "fatal",
+        durationMs: 60,
+        error: "spawn nope ENOENT",
+        errorCode: "connect_failed",
+      },
     ]);
   });
 

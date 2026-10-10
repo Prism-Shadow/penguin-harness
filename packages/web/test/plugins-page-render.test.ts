@@ -31,6 +31,13 @@
  *   and a package carrying none of these links nowhere.
  * - A package's URL as package.json writes it (`git+https://….git`, `github:o/r`) becomes the
  *   page it names; anything not http(s) becomes no link.
+ * - A plugin's MCP servers: the dialog lists each with its transport and target, a mark naming
+ *   the values it needs (by their labels) and one saying it needs a sign-in; a stdio server's
+ *   mark names the command it runs on this server.
+ * - Installing a plugin with a stdio server asks first, and the question shows the command.
+ * - In Manage installs, an Agent whose copy waits for vault values says which; its owner gets
+ *   Set up, a member is told the owner sets them. Saving writes the vault with every existing
+ *   key kept, the new values added, an empty field left out.
  *
  * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
  * its cards. Static markup has no layout, so how the header row wraps on a phone is not here.
@@ -46,11 +53,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { PluginIndexEntry, PluginItem } from "@prismshadow/penguin-server/api";
 import {
+  InstallRow,
   ModuleApplyBody,
   PluginCard,
   pluginArchiveUrl,
   type PluginCardProps,
 } from "../src/features/plugins/plugin-card";
+import { StdioInstallBody, setUpVaultEntries } from "../src/features/plugins/plugin-mcp";
 import {
   PluginDetailSections,
   type PluginDetailHead,
@@ -192,6 +201,9 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
     onToggleInstall: () => Promise.resolve(true),
     onUpdateOutdated: () => Promise.resolve(),
     onModuleApply: () => undefined,
+    isOwner: false,
+    projectId: null,
+    onMcpChanged: () => undefined,
     ...overrides,
   });
 
@@ -504,5 +516,112 @@ describe("the package's own details in the dialog", () => {
     ]) {
       expect(webLink(unsafe), String(unsafe)).toBeNull();
     }
+  });
+});
+
+describe("a plugin's MCP servers", () => {
+  const MAIL: PluginItem = {
+    ...LIBRARY,
+    name: "mail",
+    package: "@acme/mail",
+    source: "installed",
+    skills: [],
+    mcpServers: [
+      {
+        name: "mail",
+        transport: "http",
+        target: "https://mail.example.com/mcp",
+        setup: [{ key: "MAIL_CLIENT_ID", label: "OAuth client ID" }, { key: "MAIL_CLIENT_SECRET" }],
+        oauth: true,
+        signIn: true,
+      },
+      {
+        name: "mail-local",
+        transport: "stdio",
+        target: "node ${PLUGIN_ROOT}/server.mjs",
+        setup: [],
+        oauth: false,
+        signIn: false,
+      },
+    ],
+  };
+  const mailRow: PluginRow = {
+    key: "library:mail",
+    name: "mail",
+    category: "other",
+    library: MAIL,
+  };
+
+  it("lists each in the dialog with its target and marks for the values and the sign-in it needs", () => {
+    const html = inLocale(PluginDetailSections, {
+      row: mailRow,
+      head: HEAD,
+      readme: { kind: "none" },
+      files: null,
+      locale: "en",
+    });
+    expect(text(html)).toContain(en.plugins.detailMcpServers);
+    expect(text(html)).toContain("https://mail.example.com/mcp");
+    expect(html).toContain(
+      `aria-label="${en.plugins.mcpNeedsSetup(["OAuth client ID", "MAIL_CLIENT_SECRET"])}"`,
+    );
+    expect(html).toContain(`aria-label="${en.plugins.mcpSignIn}"`);
+    expect(html).toContain(
+      `aria-label="${en.plugins.mcpRunsCommand("node ${PLUGIN_ROOT}/server.mjs")}"`,
+    );
+    expect(text(html)).not.toContain(en.plugins.detailFiles);
+  });
+
+  it("asks before a stdio server is installed, showing the command it runs here", () => {
+    const html = text(
+      inLocale(StdioInstallBody, {
+        plugin: MAIL,
+        question: en.plugins.installStdioTitle("mail", "General Agent"),
+      }),
+    );
+    expect(html).toContain("Install mail on General Agent?");
+    expect(html).toContain(
+      en.plugins.installStdioBody("mail-local", "node ${PLUGIN_ROOT}/server.mjs"),
+    );
+    expect(html).not.toContain("https://mail.example.com/mcp");
+  });
+
+  it("names the values an Agent's copy waits for, and offers its owner Set up", () => {
+    const row = (isOwner: boolean) =>
+      inLocale(InstallRow, {
+        agentId: "default_agent",
+        name: "General Agent",
+        installed: true,
+        outdated: false,
+        mcp: { missingKeys: ["MAIL_CLIENT_SECRET"], signIn: true },
+        isOwner,
+        onToggle: () => undefined,
+        onUpdate: () => undefined,
+        onSetUp: () => undefined,
+      });
+    const owner = row(true);
+    expect(buttonText(owner, `${en.plugins.setUp} default_agent`)).toBe(en.plugins.setUp);
+    expect(owner).toContain(
+      `${en.plugins.mcpNeedsSetup(["MAIL_CLIENT_SECRET"])} · ${en.plugins.mcpSetUpWhere}`,
+    );
+    const member = row(false);
+    expect(buttonText(member, `${en.plugins.setUp} default_agent`)).toBeUndefined();
+    expect(member).toContain(
+      `${en.plugins.mcpNeedsSetup(["MAIL_CLIENT_SECRET"])} · ${en.plugins.mcpSetUpByOwner}`,
+    );
+  });
+
+  it("saves Set up as the whole vault: every existing key kept, new values added, empty fields left out", () => {
+    expect(
+      setUpVaultEntries(["OPENAI_API_KEY", "MAIL_CLIENT_ID"], {
+        MAIL_CLIENT_ID: "replaced-id",
+        MAIL_CLIENT_SECRET: "new-secret",
+        MAIL_TEAM: "",
+      }),
+    ).toEqual([
+      { key: "OPENAI_API_KEY" },
+      { key: "MAIL_CLIENT_ID", value: "replaced-id" },
+      { key: "MAIL_CLIENT_SECRET", value: "new-secret" },
+    ]);
   });
 });

@@ -18,6 +18,8 @@ import type {
   AgentConfigResponse,
   AgentCreateResponse,
   AgentHooksResponse,
+  AgentMcpServerItem,
+  AgentMcpServersResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
   AgentSchedulesConfigDto,
@@ -527,6 +529,35 @@ const configOf = (ctx: Ctx): AgentConfigResponse => {
   if (!config) notFound("Agent config");
   return config;
 };
+
+/**
+ * An Agent's MCP servers as the server lists them, read off its config: transport and target,
+ * the plugin that installed each. The demo's vault is taken to hold every key a server
+ * references, so none waits for setup.
+ */
+const mcpServerItems = (ctx: Ctx): AgentMcpServerItem[] =>
+  configOf(ctx).config.mcpServers.map((entry) => {
+    const c = entry.config;
+    const named = c["transport"];
+    const transport: AgentMcpServerItem["transport"] =
+      named === "http" || named === "sse" || named === "stdio"
+        ? named
+        : typeof c["command"] === "string"
+          ? "stdio"
+          : "http";
+    const args = Array.isArray(c["args"]) ? c["args"].map(String) : [];
+    return {
+      name: entry.name,
+      transport,
+      target:
+        transport === "stdio"
+          ? [String(c["command"] ?? ""), ...args].join(" ")
+          : String(c["url"] ?? ""),
+      ...(entry.plugin !== undefined ? { plugin: entry.plugin } : {}),
+      missingKeys: [],
+      signIn: false,
+    };
+  });
 
 router
   .get(
@@ -1958,7 +1989,7 @@ router
       {
         skills: installed.skills,
         hooks: installed.hooks,
-        mcpServers: [],
+        mcpServers: mcpServerItems(ctx),
       } satisfies AgentPluginsInstallResponse,
       201,
     );
@@ -1969,6 +2000,16 @@ router
   .get("/api/projects/:projectId/agents/:agentId/hooks", (ctx): AgentHooksResponse => ({
     hooks: installedOf(ctx).hooks,
   }))
+  .get("/api/projects/:projectId/agents/:agentId/mcp-servers", (ctx): AgentMcpServersResponse => ({
+    servers: mcpServerItems(ctx),
+  }))
+  .delete("/api/projects/:projectId/agents/:agentId/mcp-servers/:name", (ctx) => {
+    const config = configOf(ctx).config;
+    const kept = config.mcpServers.filter((entry) => entry.name !== ctx.params.name);
+    if (kept.length === config.mcpServers.length) notFound("MCP server");
+    config.mcpServers = kept;
+    return empty();
+  })
   .delete("/api/projects/:projectId/agents/:agentId/hooks/:name", (ctx) => {
     const installed = installedOf(ctx);
     const before = installed.hooks.length;

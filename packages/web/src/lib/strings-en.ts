@@ -1441,12 +1441,14 @@ export const en: Strings = {
     mcpArgs: "args",
     mcpArgsHint: "One argument per line",
     mcpEnv: "env",
-    mcpEnvHint: "One KEY=value per line; the Agent vault is not injected into MCP Server processes",
+    mcpEnvHint:
+      "One KEY=value per line; a ${KEY} in a value is read from the agent's vault when the server connects, and nothing else from the vault reaches the process",
     mcpCwd: "cwd",
     mcpCwdHint: "Leave empty to use the Session's Workspace",
     mcpUrl: "url",
     mcpHeaders: "headers",
-    mcpHeadersHint: "One Header-Name: value per line (auth headers such as Authorization)",
+    mcpHeadersHint:
+      "One Header-Name: value per line (auth headers such as Authorization); a ${KEY} in a value is read from the agent's vault when the server connects",
     mcpPermission: "permission",
     mcpPermissionAuto: "auto",
     mcpPermissionAutoLabel: "Auto (readOnlyHint)",
@@ -1485,6 +1487,11 @@ export const en: Strings = {
     mcpDeleteTitle: "Delete MCP Server",
     mcpDeleteConfirm: (name: string): string =>
       `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,
+    mcpInstalledBy: (plugin: string): string => `Installed by plugin ${plugin}`,
+    mcpFromPlugin: (plugin: string): string =>
+      `From plugin ${plugin}: reinstalling the plugin replaces this entry.`,
+    mcpRemoveFromPlugin: (plugin: string): string =>
+      `It was installed by plugin ${plugin}; Manage installs on the Plugins page can put it back.`,
     defaultValue: "(default)",
     livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
     deleteAgent: "Delete agent",
@@ -2355,7 +2362,7 @@ export const en: Strings = {
       none: "No grouping",
     },
     /** What a plugin carries: the section titles of the grouping by content. */
-    kindLabel: { skills: "Skills", hooks: "Hooks", modules: "Server modules" },
+    kindLabel: { skills: "Skills", hooks: "Hooks", mcp: "MCP servers", modules: "Server modules" },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent Sandbox",
     otherCategory: "Other",
@@ -2397,6 +2404,7 @@ export const en: Strings = {
     detailFiles: "Files",
     detailSkills: "Skills",
     detailHooks: "Hooks",
+    detailMcpServers: "MCP servers",
     /** The detail dialog's links to the package's homepage and repository: their names and hover hints. */
     detailHomepage: "Homepage",
     detailRepository: "Repository",
@@ -2493,8 +2501,27 @@ export const en: Strings = {
       `Updated ${plugin} to the latest version (${n} agent(s))`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
-    uninstallConfirmBody: (plugin: string, agent: string): string =>
-      `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
+    uninstallConfirmBody: (plugin: string, agent: string, withMcp: boolean): string =>
+      `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included)${withMcp ? " and its MCP servers" : ""} will be deleted.`,
+    mcpNeedsSetup: (keys: string[]): string => `Needs setup: ${keys.join(", ")}`,
+    mcpSetUpWhere: "set it in the Vault tab",
+    mcpSetUpByOwner: "the Project owner sets it",
+    mcpSignIn: "Sign-in (OAuth) required — not available in this version",
+    mcpRunsCommand: (command: string): string =>
+      `Runs ${command} on this server when an agent session starts`,
+    installStdioTitle: (plugin: string, agent: string): string => `Install ${plugin} on ${agent}?`,
+    installStdioBody: (server: string, command: string): string =>
+      `Its MCP server ${server} runs ${command} on this server whenever a session of the agent starts.`,
+    setUp: "Set up",
+    setUpTitle: (plugin: string, agent: string): string => `Set up ${plugin} on ${agent}`,
+    setUpDesc: "The values go into the agent's vault; its MCP servers read them when they connect.",
+    setUpKeySet: "set",
+    setUpKeySetHint: "Already in the vault: the MCP server receives this value",
+    setUpHelpLink: "Where to get it",
+    updatePartMcp: "MCP server",
+    updatePartReplaced: "replaced",
+    importMcpNote:
+      "A plugin may carry MCP servers: a stdio server is a command that runs on this server when an agent session starts, and a remote one is an address this server connects to.",
   },
 
   /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
@@ -3425,6 +3452,8 @@ Scenarios:
     /** Per-server group row meta inside the expanded connect row. */
     mcpToolsCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     mcpServerFailed: "connection failed",
+    mcpServerNeedsSetup: "needs setup",
+    mcpServerSignIn: "sign-in required",
     mcpConnectAborted: "interrupted — reconnects on the next send",
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),

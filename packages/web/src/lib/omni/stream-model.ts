@@ -399,6 +399,8 @@ export interface McpServerOutcome {
   tools?: number;
   /** Failure detail (present on a failed connect). */
   error?: string;
+  /** The failure's cause (`connect_failed`, or `mcp_needs_setup` / `mcp_sign_in_required` for a server that was not contacted). */
+  errorCode?: string;
 }
 
 export interface McpConnectItem {
@@ -1716,6 +1718,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           durationMs: r.duration_ms,
           ...(r.tools !== undefined ? { tools: r.tools } : {}),
           ...(detail !== undefined ? { error: detail.slice(0, 500) } : {}),
+          ...(r.error_code !== undefined ? { errorCode: r.error_code } : {}),
         };
       });
       const failedResults = p.results.filter(

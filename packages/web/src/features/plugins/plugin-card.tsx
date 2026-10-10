@@ -9,9 +9,13 @@
  * a module runs. The card body opens the detail dialog; the actions sit beside it, light icon
  * buttons whose words show once the card is wide enough:
  *
- * - Skills / hooks (any member): the update nudge while an Agent is behind (the plugins trail's
- *   last stop, so it carries the dot), quick start, and "manage installs" — a dialog listing
- *   every Agent of the Project with Install / Installed (Uninstall on hover) / Update.
+ * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
+ *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
+ *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
+ *   Update. Installing a plugin with a stdio MCP server on an Agent that lacks it asks first,
+ *   showing the command it runs on this server. Beside an Agent whose copy of the plugin's MCP
+ *   servers waits for vault values or a sign-in, marks say so, and the Project owner gets Set up,
+ *   which writes those values into the Agent's vault.
  * - A server module: Install, or Remove, for an admin only; a member reads the card and its
  *   dialog, with no way in to change the server.
  *
@@ -43,6 +47,7 @@ import { agentDisplayName } from "../../state/project";
 import { SkillTile } from "../skills/skill-icon-view";
 import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
+import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";
 import {
   PluginTag,
   StatusMark,
@@ -56,6 +61,8 @@ import {
 } from "./plugin-marks";
 import {
   changedParts,
+  installNeedsConfirm,
+  pluginMcpState,
   type InstalledMap,
   type LibraryUsage,
   type PluginStatus,
@@ -106,6 +113,10 @@ export interface PluginCardProps {
   canQuickStart: boolean;
   /** Only an admin changes what the server runs. */
   isAdmin: boolean;
+  /** The reader owns the Project: the vault is theirs to write, so Set up is too. */
+  isOwner: boolean;
+  /** The Project the Set up form writes an Agent's vault in; null before one is chosen. */
+  projectId: string | null;
   /** This row's module install or removal is running. */
   busy: boolean;
   /** Another row's is: one at a time, so this one is held rather than queued. */
@@ -117,6 +128,8 @@ export interface PluginCardProps {
   onUpdateOutdated: (name: string, agentIds: string[]) => Promise<void>;
   /** Asks to install (true) or remove (false) the server module; the page confirms first. */
   onModuleApply: (install: boolean) => void;
+  /** An Agent's vault changed under the plugin's MCP servers (Set up saved): its servers are read again. */
+  onMcpChanged: (agentId: string) => void;
 }
 
 export function PluginCard(props: PluginCardProps) {
@@ -135,6 +148,14 @@ export function PluginCard(props: PluginCardProps) {
   // Delete-from-server waiting for its confirmation, and running.
   const [pendingDelete, setPendingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Agent pending the stdio confirm (null = none): installing runs a command on this server.
+  const [pendingStdio, setPendingStdio] = useState<string | null>(null);
+  // Agent whose Set up form is open (null = none).
+  const [setUpAgent, setSetUpAgent] = useState<string | null>(null);
+  const nameOf = (agentId: string) => {
+    const agent = agents.find((a) => a.agentId === agentId);
+    return agent ? agentDisplayName(agent) : agentId;
+  };
 
   const hint = statusHint(row, status, usage);
   const version = rowVersion(row);
@@ -404,12 +425,19 @@ export function PluginCard(props: PluginCardProps) {
                 name={agentDisplayName(a)}
                 installed={usage?.usedBy.includes(a.agentId) ?? false}
                 outdated={behind.includes(a.agentId)}
+                mcp={pluginMcpState(plugin, installed.get(a.agentId))}
+                isOwner={props.isOwner}
                 onToggle={(on) => {
-                  // Install runs directly; uninstall deletes the installed files, so it confirms first.
-                  if (on) void props.onToggleInstall(a.agentId, plugin, true);
-                  else setPendingUninstall(a.agentId);
+                  // Install runs directly, unless it brings a stdio server: that runs a command on
+                  // this server, so it confirms first. Uninstall deletes the installed files, so it
+                  // confirms too.
+                  if (!on) setPendingUninstall(a.agentId);
+                  else if (installNeedsConfirm(plugin, installed.get(a.agentId))) {
+                    setPendingStdio(a.agentId);
+                  } else void props.onToggleInstall(a.agentId, plugin, true);
                 }}
                 onUpdate={() => setPendingUpdate([a.agentId])}
+                onSetUp={() => setSetUpAgent(a.agentId)}
               />
             ))}
           </div>
@@ -446,12 +474,21 @@ export function PluginCard(props: PluginCardProps) {
                       >
                         {part.kind === "hooks" ? (
                           <span className="min-w-0 truncate">{S.plugins.detailHooks}</span>
+                        ) : part.kind === "mcp" ? (
+                          <span className="min-w-0 truncate">
+                            <span className="font-mono">{part.name}</span> (
+                            {S.plugins.updatePartMcp})
+                          </span>
                         ) : (
                           <span className="min-w-0 truncate font-mono">{part.name}</span>
                         )}
-                        <span className="shrink-0 font-mono">
-                          {part.installed || "?"} → {part.library}
-                        </span>
+                        {part.kind === "mcp" ? (
+                          <span className="shrink-0">{S.plugins.updatePartReplaced}</span>
+                        ) : (
+                          <span className="shrink-0 font-mono">
+                            {part.installed || "?"} → {part.library}
+                          </span>
+                        )}
                       </span>
                     ))}
                   </li>
@@ -500,9 +537,42 @@ export function PluginCard(props: PluginCardProps) {
             {S.plugins.uninstallConfirmBody(
               title,
               uninstallAgent ? agentDisplayName(uninstallAgent) : pendingUninstall,
+              plugin.mcpServers.length > 0,
             )}
           </p>
         </ConfirmModal>
+      )}
+      {plugin !== undefined && pendingStdio !== null && (
+        <ConfirmModal
+          open
+          title={S.plugins.installStdioTitle(title, nameOf(pendingStdio))}
+          tone="primary"
+          glyph={ICONS.terminalPrompt}
+          confirmLabel={S.skills.install}
+          cancelLabel={S.common.cancel}
+          onClose={() => setPendingStdio(null)}
+          onConfirm={() => {
+            const agentId = pendingStdio;
+            setPendingStdio(null);
+            void props.onToggleInstall(agentId, plugin, true);
+          }}
+        >
+          <StdioInstallBody
+            plugin={plugin}
+            question={S.plugins.installStdioTitle(title, nameOf(pendingStdio))}
+          />
+        </ConfirmModal>
+      )}
+      {plugin !== undefined && setUpAgent !== null && props.projectId !== null && (
+        <McpSetUpModal
+          projectId={props.projectId}
+          agentId={setUpAgent}
+          agentName={nameOf(setUpAgent)}
+          title={title}
+          plugin={plugin}
+          onClose={() => setSetUpAgent(null)}
+          onSaved={() => props.onMcpChanged(setUpAgent)}
+        />
       )}
     </div>
   );
@@ -513,22 +583,30 @@ export function PluginCard(props: PluginCardProps) {
  * one with it shows "Installed", switching to "Uninstall" on hover (the same button carries the
  * uninstall); a copy the server lists as behind additionally shows "Update" (reinstall =
  * update). Install and uninstall go through the page's optimistic updates, rolling back on
- * failure.
+ * failure. Where the Agent carries the plugin's MCP servers, marks beside its name say what
+ * they wait for — vault values, a sign-in — and a Project owner gets Set up for the values.
  */
-function InstallRow({
+export function InstallRow({
   agentId,
   name,
   installed,
   outdated,
+  mcp,
+  isOwner,
   onToggle,
   onUpdate,
+  onSetUp,
 }: {
   agentId: string;
   name: string;
   installed: boolean;
   outdated: boolean;
+  /** What the plugin's MCP servers on this Agent wait for; null when it carries none. */
+  mcp: { missingKeys: string[]; signIn: boolean } | null;
+  isOwner: boolean;
   onToggle: (on: boolean) => void;
   onUpdate: () => void;
+  onSetUp: () => void;
 }) {
   return (
     <div className="flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60">
@@ -540,6 +618,24 @@ function InstallRow({
       >
         {name}
       </span>
+      {mcp !== null && (
+        <McpServerMarks
+          keys={mcp.missingKeys}
+          where={isOwner ? S.plugins.mcpSetUpWhere : S.plugins.mcpSetUpByOwner}
+          signIn={mcp.signIn}
+        />
+      )}
+      {mcp !== null && isOwner && mcp.missingKeys.length > 0 && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="shrink-0"
+          aria-label={`${S.plugins.setUp} ${agentId}`}
+          onClick={onSetUp}
+        >
+          {S.plugins.setUp}
+        </Button>
+      )}
       {installed && outdated && (
         <Button
           size="sm"

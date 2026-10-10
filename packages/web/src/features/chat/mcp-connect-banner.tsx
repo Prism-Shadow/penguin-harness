@@ -8,7 +8,9 @@
  * Expanding shows ONE ROW PER SERVER, hung off the banner's head as a work group's steps hang
  * off its header — status icon, tool count / per-server connect time — and expanding a row
  * shows that server's tool list, or the full failure detail for a server that could not
- * connect (non-fatal either way, matching core's warn-and-skip stance).
+ * connect (non-fatal either way, matching core's warn-and-skip stance). A server that was not
+ * contacted at all — the Agent's vault lacks a key it needs, or it needs an OAuth sign-in —
+ * reads as waiting on the user rather than as a failed connection, with the keys in its detail.
  */
 import { ActivityGroup, DisclosureRow, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -38,9 +40,18 @@ function serverOf(toolName: string, servers: string[]): string | null {
  */
 function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: McpToolSummary[] }) {
   const failed = outcome.status === "fatal" || (outcome.status as string) === "failed";
+  // Skipped before any connection: waiting on a vault value or a sign-in, not broken.
+  const skipped =
+    outcome.errorCode === "mcp_needs_setup" || outcome.errorCode === "mcp_sign_in_required";
   // A failed server expands into its error; a connected one into its tools (when any).
   const expandable = failed ? outcome.error !== undefined : tools.length > 0;
-  const meta = failed ? S.chat.mcpServerFailed : S.chat.mcpToolsCount(outcome.tools ?? 0);
+  const meta = !failed
+    ? S.chat.mcpToolsCount(outcome.tools ?? 0)
+    : outcome.errorCode === "mcp_needs_setup"
+      ? S.chat.mcpServerNeedsSetup
+      : outcome.errorCode === "mcp_sign_in_required"
+        ? S.chat.mcpServerSignIn
+        : S.chat.mcpServerFailed;
   const body = !expandable ? undefined : failed ? (
     <p className="anim-fade px-3 pt-0.5 pb-2 pl-8 font-mono text-xs break-all text-fg-muted">
       {outcome.error}
@@ -68,7 +79,7 @@ function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: Mcp
     <DisclosureRow
       sticky
       activity={{ kind: "event", state: failed ? "error" : "done" }}
-      icon={<StatusIcon state={failed ? "failed" : "done"} size="sm" />}
+      icon={<StatusIcon state={skipped ? "waiting" : failed ? "failed" : "done"} size="sm" />}
       // No label: the server's name is a detail, so no theme recases it.
       trailing={
         <>
