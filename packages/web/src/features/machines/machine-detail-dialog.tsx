@@ -156,6 +156,22 @@ function FactLabel({ icon, label, width }: { icon: string; label: string; width:
 }
 
 /**
+ * A path with a break opportunity after each separator, so one too long for its column wraps at a
+ * directory rather than inside a name.
+ */
+function breakAtSeparators(path: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  let start = 0;
+  for (let at = 0; at < path.length; at++) {
+    if (path[at] !== "/" && path[at] !== "\\") continue;
+    parts.push(path.slice(start, at + 1), <wbr key={at} />);
+    start = at + 1;
+  }
+  parts.push(path.slice(start));
+  return parts;
+}
+
+/**
  * One fact: the label muted, the value semibold — the part that is read — or muted when quiet;
  * `after` stands beside the value (the id's copy button).
  */
@@ -175,7 +191,7 @@ function FactRow({
         ? {}
         : { "data-tooltip": fact.tooltip, "data-tooltip-content": "text" })}
     >
-      {fact.value}
+      {fact.key === "root" ? breakAtSeparators(fact.value) : fact.value}
     </span>
   );
   return (

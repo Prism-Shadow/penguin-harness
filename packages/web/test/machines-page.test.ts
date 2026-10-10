@@ -536,7 +536,8 @@ describe("every state", () => {
       const body = renderToStaticMarkup(
         createElement(MachineDetailBody, dialog(machine, job).props),
       );
-      expect(body).toContain(machine.root);
+      // A path may break after any separator: the markup carries those breaks between its parts.
+      expect(body.split("<wbr/>").join("")).toContain(machine.root);
       expect(body).toContain(machineChip(reading, IMAGE).word);
     },
   );
