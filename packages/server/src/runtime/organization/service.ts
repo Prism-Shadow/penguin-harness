@@ -569,53 +569,59 @@ export class OrganizationService {
       ...(req.model !== undefined ? { model: req.model } : {}),
     };
     const dir = this.deps.store.dir(projectId, orgId);
-    await this.deps.store.createLayout(dir, new Date(this.now()).toISOString());
-    try {
-      await this.deps.store.writeConfig(dir, config);
-      await this.deps.store.writeChart(dir, {
-        employees: [
-          {
+    // The layout is written under the organization's lock — the same one a delete holds when
+    // it moves the directory to the trash. Unlocked, a delete landing between the exists
+    // check above and the lock below would move the half-made directory away and leave this
+    // method writing chart and handbook beside a config that is no longer there.
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      await this.deps.store.createLayout(dir, new Date(this.now()).toISOString());
+      try {
+        await this.deps.store.writeConfig(dir, config);
+        await this.deps.store.writeChart(dir, {
+          employees: [
+            {
+              agentId: ceo,
+              title: "CEO",
+              reportsTo: null,
+              duties:
+                language === "zh"
+                  ? "把使命拆成工单、招募、划分公共工作区、审核工单、向董事会汇报"
+                  : "Turn the mission into tickets, hire, partition the shared workspace, review tickets, report to the board",
+              workspace: CEO_WORKSPACE,
+              // Compared on the cumulative line, so this one number is the whole company's cap.
+              budget: req.ceoBudget ?? DEFAULT_CEO_BUDGET,
+            },
+          ],
+        });
+        await this.deps.store.writeHandbook(
+          dir,
+          renderHandbook({ orgId, name, mission, ceoAgentId: ceo, createdBy: userId, language }),
+        );
+        await this.deps.agents.create(
+          projectId,
+          ceo,
+          `${name} CEO`,
+          `CEO of ${name}`,
+          DEFAULT_EMPLOYEE_PLUGINS,
+        );
+        await this.deps.agents.writeAgentsMd(
+          projectId,
+          ceo,
+          employeeBrief({
+            orgId,
+            name,
+            mission,
             agentId: ceo,
             title: "CEO",
             reportsTo: null,
-            duties:
-              language === "zh"
-                ? "把使命拆成工单、招募、划分公共工作区、审核工单、向董事会汇报"
-                : "Turn the mission into tickets, hire, partition the shared workspace, review tickets, report to the board",
-            workspace: CEO_WORKSPACE,
-            // Compared on the cumulative line, so this one number is the whole company's cap.
-            budget: req.ceoBudget ?? DEFAULT_CEO_BUDGET,
-          },
-        ],
-      });
-      await this.deps.store.writeHandbook(
-        dir,
-        renderHandbook({ orgId, name, mission, ceoAgentId: ceo, createdBy: userId, language }),
-      );
-      await this.deps.agents.create(
-        projectId,
-        ceo,
-        `${name} CEO`,
-        `CEO of ${name}`,
-        DEFAULT_EMPLOYEE_PLUGINS,
-      );
-      await this.deps.agents.writeAgentsMd(
-        projectId,
-        ceo,
-        employeeBrief({
-          orgId,
-          name,
-          mission,
-          agentId: ceo,
-          title: "CEO",
-          reportsTo: null,
-          language,
-        }),
-      );
-    } catch (err) {
-      await this.deps.store.remove(dir);
-      throw err;
-    }
+            language,
+          }),
+        );
+      } catch (err) {
+        await this.deps.store.remove(dir);
+        throw err;
+      }
+    });
     await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireValidOrg(projectId, orgId);
       const spend = await computeSpend(this.deps, org, []);
