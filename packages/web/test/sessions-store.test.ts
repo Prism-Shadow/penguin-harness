@@ -1,5 +1,5 @@
 /**
- * The sessions store's list (state/sessions.tsx), driven through the real `listSessions`
+ * The sessions store's list (state/sessions.tsx), driven through the real `batchSessions`
  * wrapper against the fetch fake: each server pages its own rows, counts are summed, and a
  * source that could not answer is never read as a source that answered nothing.
  *
@@ -8,6 +8,8 @@
  * - A refresh over rows already on screen does not raise loading.
  *
  * Several machines:
+ * - A reload asks each server once: every Agent's first page and every open folder's, in one
+ *   request.
  * - Every source is merged newest first, each row remembers the machine it lives on, the
  *   counts are summed, and what a machine answered is cached for the next restart.
  * - A machine is asked about its own Agents too, and this server only about its own.
@@ -60,6 +62,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ServerEvent,
+  SessionBatchPageRequest,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -151,17 +154,14 @@ beforeEach(() => {
   fetch = stubFetch(serve);
 });
 
-/** The page requests the batch calls carried, in order (their params live in the body). */
 /** A batch entry's activity cursor in the list route's `before` param form. */
 const entryCursor = (entry: BatchEntry | undefined): string | undefined =>
   entry?.before === undefined
     ? undefined
     : `${entry.before.lastActiveAt},${entry.before.sessionId}`;
 
-const batchEntries = (): BatchEntry[] =>
-  fetch.requests.flatMap((r) =>
-    r.method === "POST" ? ((r.body as { requests?: BatchEntry[] }).requests ?? []) : [],
-  );
+/** The page requests the batch calls carried, in order (their params live in the body). */
+const batchEntries = (): BatchEntry[] => fetch.requests.flatMap(batchEntriesOf);
 
 /** The server's activity order, written out on its own (plain `<` / `>`, as the route compares). */
 const serverRecent = (
@@ -180,18 +180,8 @@ const serverRecent = (
 
 const zeroCounts = (): SessionCategoryCounts => ({ active: 0, background: 0, archived: 0 });
 
-/** One page of an Agent's rows as the list route answers it: order, cursor, filters, counts. */
 /** One page request as the batch endpoint carries it. */
-type BatchEntry = {
-  agentId: string;
-  limit: number;
-  order?: "created" | "activity";
-  before?: { lastActiveAt: string; sessionId: string };
-  category?: string;
-  workspaceGroup?: string;
-  withCounts?: boolean;
-  excludeOrg?: boolean;
-};
+type BatchEntry = SessionBatchPageRequest;
 
 /** One batch entry → the query the single-Agent list route would have been asked with. */
 function entryQuery(entry: BatchEntry): URLSearchParams {
@@ -208,13 +198,16 @@ function entryQuery(entry: BatchEntry): URLSearchParams {
   return query;
 }
 
+/** One page of an Agent's rows as the list route answers it: order, cursor, filters, counts. */
 function servedPage(rows: readonly SessionInfo[], query: URLSearchParams): Response {
   const page = servedBody(rows, query);
   return "error" in page ? apiError(400, "bad_request") : json(page.body);
 }
 
-/** The page the list route answers with, computed apart from the Response so the batch
- *  endpoint's per-entry answers can reuse it verbatim. */
+/**
+ * The page the list route answers with, computed apart from the Response so the batch
+ * endpoint's per-entry answers can reuse it verbatim.
+ */
 function servedBody(
   rows: readonly SessionInfo[],
   query: URLSearchParams,
@@ -254,7 +247,6 @@ function servedBody(
 
 afterEach(() => forgetSessionMachines());
 
-/** Which servers were asked, and for which Workspace group. */
 /** What the sidebar asked, per request: the machine it went to and each page it wanted. */
 const asked = () =>
   fetch.requests.flatMap((r) =>
@@ -353,6 +345,30 @@ describe("the list across machines", () => {
     expect(loading).toBe(false);
     // What the machine answered is remembered for the next restart.
     expect(cachedMachineSessions("p", "M1").map((s) => s.sessionId)).toEqual(["there"]);
+  });
+
+  it("a reload asks each server once, carrying every Agent's first page and every open folder's", async () => {
+    // One request per (Agent, page) was dozens fired at once on a Project with several Agents
+    // and machines, serialised behind the browser's per-host connection limit — and the open
+    // conversation's own read queued behind them.
+    const withArchived = { sessions: [], counts: { active: 0, background: 0, archived: 2 } };
+    for (const source of [null, "M1"]) {
+      answers.set(key(source, "a1"), withArchived);
+      answers.set(key(source, "a2"), { sessions: [], counts: COUNTS });
+    }
+    const store = boot(["M1"], [], ["a1", "a2"]);
+    await store.getState().reload();
+    await store.getState().loadMoreFor(["a1"], "archived");
+    fetch.requests.length = 0;
+    await store.getState().reload();
+    expect(fetch.requests.map((r) => r.machine)).toEqual([null, "M1"]);
+    for (const request of fetch.requests) {
+      expect(batchEntriesOf(request).map((e) => [e.agentId, e.category])).toEqual([
+        ["a1", "active"],
+        ["a1", "archived"],
+        ["a2", "active"],
+      ]);
+    }
   });
 
   it("asks a machine about ITS Agents too — an Agent that exists only there", async () => {
