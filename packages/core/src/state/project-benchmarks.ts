@@ -34,6 +34,16 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+/** Whether anything is under `p`, a symlink included wherever it points. */
+async function occupied(p: string): Promise<boolean> {
+  try {
+    await fs.lstat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** One Benchmark a new Project starts with, and the writer that fills its directory. */
 interface BenchmarkSeed {
   id: string;
@@ -50,12 +60,13 @@ export interface PlaceBenchmarkOptions {
  * directory under `.seeding/`, which is then renamed to `<dir>/<id>`. A write that fails part-way
  * leaves nothing under the id, and the staging directory goes as soon as it is empty.
  *
- * Without `replace` the id has to be free: a rename onto a directory that holds anything fails
- * (ENOTEMPTY or EEXIST), so a caller that must not overwrite checks first and treats that failure
- * as the id having been taken in between. With `replace`, what is under the id is moved aside,
- * the new copy is renamed in, and only then is the old one removed: the id never holds a
- * half-written copy, and holds nothing only between the two renames. A symlink under the id is
- * moved and removed as a link; what it points to is never touched.
+ * Without `replace` the id has to be free, so a caller that must not overwrite checks first. A copy
+ * that another writer got under the id first — after that check, or between the two renames of a
+ * replacement — fails this one with EEXIST, whatever the platform reported (a rename onto a
+ * directory that holds anything is ENOTEMPTY or EEXIST, and EPERM on Windows). With `replace`,
+ * what is under the id is moved aside, the new copy is renamed in, and only then is the old one
+ * removed: the id never holds a half-written copy, and holds nothing only between the two renames.
+ * A symlink under the id is moved and removed as a link; what it points to is never touched.
  */
 export async function placeBenchmark(
   dir: string,
@@ -71,7 +82,7 @@ export async function placeBenchmark(
       await write(tmp);
       const target = path.join(dir, id);
       if (options.replace === true) await swapIn(tmp, target);
-      else await fs.rename(tmp, target);
+      else await renameInto(tmp, target);
     } catch (error) {
       await fs.rm(tmp, { recursive: true, force: true });
       throw error;
@@ -79,6 +90,21 @@ export async function placeBenchmark(
   } finally {
     // Empty once this Benchmark is out of it, unless another placement is still writing there.
     await fs.rmdir(staging).catch(() => {});
+  }
+}
+
+/**
+ * Renames the staged copy `incoming` to `target`. When that fails with something under `target`
+ * — another writer's copy, renamed in first — the failure is EEXIST on every platform.
+ */
+async function renameInto(incoming: string, target: string): Promise<void> {
+  try {
+    await fs.rename(incoming, target);
+  } catch (error) {
+    if (!(await occupied(target))) throw error;
+    throw Object.assign(new Error(`Already taken: ${target}`, { cause: error }), {
+      code: "EEXIST",
+    });
   }
 }
 
@@ -94,10 +120,17 @@ async function swapIn(incoming: string, target: string): Promise<void> {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   try {
-    await fs.rename(incoming, target);
+    await renameInto(incoming, target);
   } catch (error) {
-    // Put the old copy back rather than leave the id empty.
-    if (moved) await fs.rename(aside, target).catch(() => {});
+    // Put the old copy back rather than leave the id empty — unless another writer's copy took
+    // the id in the meantime, which replaced the old one as surely as this one would have.
+    if (moved) {
+      await fs.rename(aside, target).catch(async () => {
+        if (await occupied(target)) {
+          await fs.rm(aside, { recursive: true, force: true }).catch(() => {});
+        }
+      });
+    }
     throw error;
   }
   // The new copy is in place; an old one that cannot be removed now stays under staging, which

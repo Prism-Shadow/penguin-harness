@@ -443,11 +443,11 @@ export class BenchmarkService implements Benchmarks {
         { replace: options.overwrite },
       );
     } catch (error) {
-      // Taken between the check and the rename, by another import of the same id.
+      // Taken before this copy was renamed in: by another import of the same id after the check
+      // above, or, under `overwrite`, by another overwrite whose copy went in first. Either way the
+      // id now holds someone else's copy, which the person may choose to overwrite in turn.
       const code = (error as NodeJS.ErrnoException).code;
-      if (!options.overwrite && (code === "ENOTEMPTY" || code === "EEXIST")) {
-        throw benchmarkExists(manifest.id);
-      }
+      if (code === "ENOTEMPTY" || code === "EEXIST") throw benchmarkExists(manifest.id);
       throw error;
     }
     return this.summarize(benchDir, manifest.id, manifest);

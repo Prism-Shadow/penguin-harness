@@ -9,6 +9,8 @@
  *   cannot import.
  * - A second import of a taken id is a 409 whose details name the id, and changes nothing; with
  *   `overwrite` the directory is replaced whole, its evaluation records and `.jobs/` gone.
+ *   Overwrites of one id sent at once each land or answer that 409, never a failure, and leave one
+ *   whole copy.
  * - An export carries `benchmark.json` as the file reads and the cases, and none of the copy's
  *   own state (scoreboard, `.jobs/`, dot-entries, symlinks, stray files); it imports back as the
  *   same package with no scores.
@@ -279,6 +281,28 @@ describe("benchmark packages", () => {
       expect(await exists(path.join(benchDir, ".jobs"))).toBe(false);
       expect(await exists(path.join(benchDir, "CASE-003-old"))).toBe(false);
       expect((await fs.readdir(dir)).sort()).toEqual(["report-writing-v1"]);
+    });
+
+    it("overwrites of one id sent at once each land or answer 409 benchmark_exists, and leave one whole copy", async () => {
+      const dataBase64 = zipB64(packageFiles("report-writing-v1"));
+      expect((await member.post(`${base}/archive`, { dataBase64 })).status).toBe(201);
+
+      const answers = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          member.post(`${base}/archive`, { dataBase64, overwrite: true }),
+        ),
+      );
+
+      for (const res of answers) {
+        if (res.status === 201) continue;
+        expect(res.status).toBe(409);
+        expect(((await res.json()) as ErrorBody).error.code).toBe("benchmark_exists");
+      }
+      expect(answers.some((res) => res.status === 201)).toBe(true);
+      expect(await fs.readdir(dir)).toEqual(["report-writing-v1"]);
+      for (const [rel, text] of Object.entries(CASES)) {
+        expect(await fs.readFile(path.join(dir, "report-writing-v1", rel), "utf8"), rel).toBe(text);
+      }
     });
 
     const refusals: Array<[string, () => string, number, string]> = [
