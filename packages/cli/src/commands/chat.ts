@@ -439,6 +439,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
           state = "approving";
           pendingApproval = (decision) => {
             state = "running";
+            // A paste still waiting for Enter holds output again before the screen unlocks
+            // and drains what queued during the question.
+            syncInputHold();
             resolve(decision);
           };
           rl.setPrompt(t.approvePrompt());

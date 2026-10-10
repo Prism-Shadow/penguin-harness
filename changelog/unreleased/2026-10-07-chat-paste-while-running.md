@@ -16,7 +16,7 @@ at its prompt. A paste was made to behave like typed text in every state that ta
 
 - While a Task ran, a paste was echoed through the renderer and waited for Enter, which sent it
   as one steering message, all of its lines together. Streamed output was held while it waited,
-  as for a half-typed line.
+  as for a half-typed line, and stayed held after an approval question was answered meanwhile.
 - When the Task ended before Enter, the paste stayed under the continuation prompt and the next
   Enter sent it as the next prompt; previously the return to the prompt cleared it.
 - A typed line ending in `\` continued the message mid-run as it already did at the prompt.

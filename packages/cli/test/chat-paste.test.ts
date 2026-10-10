@@ -9,10 +9,13 @@
  *   sends the pasted text as the next prompt: a paste landing as a Task ends is not lost.
  * - Given a Task running, when Enter alone is pressed (nothing pasted or typed), then nothing
  *   is steered.
+ * - Given a paste waiting for Enter when an approval question comes and is answered, then the
+ *   output that queued meanwhile stays off the screen until the paste is sent.
  */
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
+import { partialText, toolCall } from "@prismshadow/penguin-core";
 import { registerChatCommand } from "../src/commands/chat.js";
 import { getMessages } from "../src/i18n.js";
 import { FakeServer, type FakeSessionState } from "./fake-server.js";
@@ -39,6 +42,8 @@ interface Tty {
   paste(text: string): void;
   /** Resolves once the chat draws `prompt` after everything it had printed when called. */
   nextPrompt(prompt: string): () => Promise<void>;
+  /** Everything the chat has written to the terminal so far. */
+  printed(): string;
   /** The one Session the chat created. */
   session(): FakeSessionState;
   /** Ends the running Task the way the server does: the Session's stream reports idle. */
@@ -80,6 +85,7 @@ function startChat(): Tty {
       const from = printed.length;
       return () => vi.waitFor(() => expect(printed.slice(from)).toContain(prompt));
     },
+    printed: () => printed,
     session,
     settle: () => {
       const s = session();
@@ -135,6 +141,33 @@ describe("chat: a paste while a Task runs", () => {
     );
     await settleAndExit(tty);
     expect(steerTexts(tty.session())).toEqual([]);
+  });
+
+  it("output queued during an approval question stays held while a paste waits for Enter", async () => {
+    const tty = await chatWithRunningTask();
+    const sessionId = tty.session().sessionId;
+    tty.paste("after the approval");
+    // A reply streams while the paste waits (held), then the Task asks for an approval.
+    server.emit(sessionId, partialText("start"));
+    server.emit(sessionId, partialText("delta", "reply held behind the paste"));
+    server.emit(sessionId, partialText("stop"));
+    const question = tty.nextPrompt("Approve this tool call?");
+    server.emitServerEvent(sessionId, {
+      type: "approval_request",
+      toolCall: toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "c1" }),
+    });
+    await question();
+    // `y` and Enter arrive as two keystrokes, as a person types them.
+    tty.type("y");
+    await new Promise((resolve) => setImmediate(resolve));
+    tty.type(ENTER);
+    await vi.waitFor(() => expect(tty.printed()).toContain("[approved]"));
+    expect(tty.printed()).not.toContain("reply held behind the paste");
+
+    tty.type(ENTER);
+    await vi.waitFor(() => expect(steerTexts(tty.session())).toEqual(["after the approval"]));
+    await vi.waitFor(() => expect(tty.printed()).toContain("reply held behind the paste"));
+    await settleAndExit(tty);
   });
 
   it("Enter alone while a Task runs steers nothing", async () => {
