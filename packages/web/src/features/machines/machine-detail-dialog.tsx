@@ -631,8 +631,11 @@ export function MachineDetailBody({
               {d.lastJobDone}
             </p>
           )}
+          {/* Line by line: an installer's refusal is the program's own error over its own line. */}
           {view.kind === "failed" && (
-            <p className="mt-3 text-sm">{d.failedAtStep(view.stepName, view.message)}</p>
+            <p className="mt-3 text-sm break-words whitespace-pre-line">
+              {d.failedAtStep(view.stepName, view.message)}
+            </p>
           )}
           {view.kind === "failed" && view.detail !== null && (
             <p data-said="ssh" className="mt-1 text-xs break-words text-fg-muted">
