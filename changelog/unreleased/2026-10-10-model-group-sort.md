@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#1022](https://github.com/Prism-Shadow/penguin-harness/pull/1022)
 
 [中文版](2026-10-10-model-group-sort.zh.md)
 
