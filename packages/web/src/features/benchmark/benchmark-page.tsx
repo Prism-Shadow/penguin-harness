@@ -43,6 +43,7 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { OPENS_DETAIL_CLASS, cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
@@ -212,7 +213,13 @@ export function BenchmarkCard({
         ? S.benchmark.creationFailedHint
         : S.benchmark.creationFailedHintMember;
   return (
-    <Card padding="md" className="relative flex flex-wrap items-center gap-x-6 gap-y-2">
+    <Card
+      padding="md"
+      className={`relative flex flex-wrap items-center gap-x-6 gap-y-2 ${masked ? "" : OPENS_DETAIL_CLASS}`}
+      // A click anywhere else on the body enters the page too (lib/card-open.ts); a masked card
+      // enters nothing.
+      {...(masked ? {} : { onClick: cardBodyClick(onOpen) })}
+    >
       <button
         type="button"
         onClick={onOpen}
