@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1031](https://github.com/Prism-Shadow/penguin-harness/pull/1031)
 
 [中文版](2026-10-10-settings-interaction-rest.zh.md)
 

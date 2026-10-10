@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** feature
 - **Scope:** `desktop`
+- **PR:** [#1031](https://github.com/Prism-Shadow/penguin-harness/pull/1031)
 
 [English](2026-10-10-desktop-unload-prompt.md)
 
