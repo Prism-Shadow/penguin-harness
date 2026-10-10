@@ -95,9 +95,9 @@ const QUIET_ICON_BUTTON =
  * button — and, for a published Benchmark, Export beside it, which downloads its package — and
  * the version its manifest is at; under them, for a copy an Agent imported from a repository
  * folder, a link to that folder. A draft, a failed Benchmark and one whose manifest cannot be read
- * have no package, and no Export. A Benchmark whose manifest could not be read, or one a machine
- * running an older server answered for, has no version or origin, and the header names its
- * directory alone.
+ * have no package, and no Export. A Benchmark whose manifest was written before versions or could
+ * not be read, or one a machine running an older server answered for, has no version, and the
+ * header names its directory alone.
  */
 export function BenchmarkHeaderFacts({
   benchmark,

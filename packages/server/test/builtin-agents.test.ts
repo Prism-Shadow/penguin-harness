@@ -200,15 +200,7 @@ describe("built-in Agent provisioning", () => {
       beforeSeed: async (root) => {
         const dir = path.join(benchmarksDir(root, "default_project"), mine);
         await fs.mkdir(dir, { recursive: true });
-        const manifest = {
-          id: mine,
-          title: "Mine",
-          version: "2026.10.09.1",
-          status: "published",
-          runs: 1,
-          origin: { kind: "agent" },
-        };
-        await fs.writeFile(path.join(dir, "benchmark.json"), JSON.stringify(manifest));
+        await fs.writeFile(path.join(dir, "benchmark_config.toml"), 'title = "Mine"\n');
       },
     });
     try {
@@ -221,12 +213,11 @@ describe("built-in Agent provisioning", () => {
       expect(ids.filter((id) => id.startsWith(BUILTIN_PREFIX))).toHaveLength(5);
       expect(body.benchmarks.find((b) => b.id === mine)).toMatchObject({
         title: "Mine",
-        origin: { kind: "agent" },
         caseCount: 0,
       });
       expect(
         await fs.readdir(path.join(benchmarksDir(adopted.root, "default_project"), mine)),
-      ).toEqual(["benchmark.json"]);
+      ).toEqual(["benchmark_config.toml"]);
     } finally {
       await adopted.cleanup();
     }

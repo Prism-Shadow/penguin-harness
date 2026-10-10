@@ -2,10 +2,10 @@
  * The example Benchmark: its content, and the writer that puts it on disk.
  *
  * At the Project level, `benchmarks/example-benchmark/` holds two sample cases (each with
- * statement/ and rubric/ indexed by a README.md), benchmark.json (runs = 2, status = published —
- * the example is a finished Benchmark, not one a Skill is still writing — and origin builtin),
- * and a scoreboard.yaml with three sample evaluations, each labelled with default_agent as the
- * Agent it tested — so the evaluation center has data out of the box. Its description states
+ * statement/ and rubric/ indexed by a README.md), benchmark_config.toml (runs = 2, status =
+ * published — the example is a finished Benchmark, not one a Skill is still writing — and origin
+ * builtin), and a scoreboard.yaml with three sample evaluations, each labelled with default_agent
+ * as the Agent it tested — so the evaluation center has data out of the box. Its description states
  * plainly that this is a built-in example and the whole directory can be deleted or replaced.
  *
  * It is written when the Project is created (project-benchmarks.ts); a deleted example stays
@@ -29,7 +29,7 @@ import { DEFAULT_AGENT_ID } from "./paths.js";
 export const EXAMPLE_BENCHMARK_ID = "example-benchmark";
 
 /**
- * The example's benchmark.json (no model reference here — the model is recorded on each
+ * The example's benchmark_config.toml (no model reference here — the model is recorded on each
  * evaluation instead). Its version names the revision of everything this file writes: move it on
  * whenever any of that changes (scripts/check-plugin-versions.mjs refuses a change without it).
  */

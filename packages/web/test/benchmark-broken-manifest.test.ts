@@ -1,5 +1,5 @@
 /**
- * A Benchmark whose benchmark.json cannot be read, which the server lists as failed with
+ * A Benchmark whose benchmark_config.toml cannot be read, which the server lists as failed with
  * `manifestError`: its card on the Evaluation Center and its own page.
  *
  * - The card is masked like a failed Benchmark: Use and View are disabled, the notice says the
@@ -21,7 +21,8 @@ import { S } from "../src/lib/strings";
 
 const noop = () => {};
 
-const REASON = 'benchmark.json: "id" is "report-writing-v1", but the directory is "copied-bench".';
+const REASON =
+  'benchmark_config.toml: "id" is "report-writing-v1", but the directory is "copied-bench".';
 
 const broken: BenchmarkSummary = {
   id: "copied-bench",
