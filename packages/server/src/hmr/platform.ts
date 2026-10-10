@@ -300,8 +300,8 @@ async function createInner(
   // it: a machine installed before a plugin existed otherwise never offers it, and a feature
   // that seeds an Agent with it (company mode's CEO, `agent-company`) fails on every attempt.
   if (caps !== null) usePushedPluginLibrary(pushedLibraryDir(caps.hmr.assetsDir()));
-  // And it lists what an admin installed on this server: the packages of Skills or hooks in
-  // the data root's plugin prefix, beside the ones the build ships.
+  // And it lists what an admin installed on this server: the packages of Skills, hooks or MCP
+  // servers in the data root's plugin prefix, beside the ones the build ships.
   if (caps !== null) useInstalledPluginPrefix(pluginsPrefix(caps.config.root));
 
   // Plugins are modules (see ../plugin/), and WHICH ones this App runs is configuration it

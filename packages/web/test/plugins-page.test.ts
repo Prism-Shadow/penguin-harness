@@ -140,6 +140,7 @@ const plugin = (name: string, extra: Partial<PluginItem> = {}): PluginItem => ({
   source: "builtin",
   skills: [{ name, description: "", version: "2026.10.04.1" }],
   hooks: [],
+  mcpServers: [],
   ...extra,
 });
 

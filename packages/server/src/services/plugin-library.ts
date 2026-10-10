@@ -8,9 +8,22 @@
  * library types is withheld from the API until someone adds it here on purpose; skill bodies
  * and hook scripts never travel in a listing.
  */
-import { libraryPlugin } from "@prismshadow/penguin-core";
-import type { HookManifest, LibraryPlugin, SkillMetadata } from "@prismshadow/penguin-core";
-import type { HookItem, PluginItem, SkillMetadataItem } from "../api/types.js";
+import { libraryPlugin, needsSignIn } from "@prismshadow/penguin-core";
+import type {
+  HookManifest,
+  InstalledMcpServer,
+  LibraryPlugin,
+  PluginMcpServer,
+  SkillMetadata,
+} from "@prismshadow/penguin-core";
+import type {
+  AgentMcpServerItem,
+  HookItem,
+  McpTransport,
+  PluginItem,
+  PluginMcpServerItem,
+  SkillMetadataItem,
+} from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 
 /**
@@ -63,6 +76,53 @@ export function toHookItem(hook: HookManifest & { icon?: string }): HookItem {
   };
 }
 
+/** An MCP entry's transport: the one it names, else `stdio` for a command and `http` for a URL (core's inference). */
+export function mcpTransport(config: Record<string, unknown>): McpTransport {
+  const named = config["transport"];
+  if (named === "stdio" || named === "http" || named === "sse") return named;
+  return typeof config["command"] === "string" ? "stdio" : "http";
+}
+
+/** What an MCP entry connects to, for display: the URL (http/sse), or the command and its arguments (stdio). Never a header or an env value. */
+export function mcpTarget(config: Record<string, unknown>): string {
+  if (mcpTransport(config) !== "stdio")
+    return typeof config["url"] === "string" ? config["url"] : "";
+  const args = Array.isArray(config["args"])
+    ? config["args"].filter((arg): arg is string => typeof arg === "string")
+    : [];
+  return [typeof config["command"] === "string" ? config["command"] : "", ...args].join(" ");
+}
+
+/** A plugin's MCP server as the library lists it (no config value travels). */
+export function toPluginMcpServerItem(server: PluginMcpServer): PluginMcpServerItem {
+  return {
+    name: server.name,
+    transport: mcpTransport(server.config),
+    target: mcpTarget(server.config),
+    setup: server.setup.map((item) => ({
+      key: item.key,
+      ...(item.label !== undefined ? { label: item.label } : {}),
+      ...(item.labelZh !== undefined ? { labelZh: item.labelZh } : {}),
+      ...(item.help !== undefined ? { help: item.help } : {}),
+    })),
+    oauth: server.oauth,
+    signIn: needsSignIn(server.config),
+  };
+}
+
+/** One of an Agent's MCP servers as the API describes it (no config value travels). */
+export function toAgentMcpServerItem(server: InstalledMcpServer): AgentMcpServerItem {
+  const { entry } = server;
+  return {
+    name: entry.name,
+    transport: mcpTransport(entry.config),
+    target: mcpTarget(entry.config),
+    ...(entry.plugin !== undefined ? { plugin: entry.plugin } : {}),
+    missingKeys: server.missingKeys,
+    signIn: server.signIn,
+  };
+}
+
 /**
  * Everything a plugin ships as files the detail view can open, keyed by path relative to the
  * plugin directory: each skill's installable SKILL.md (frontmatter stamped, what an install
@@ -112,5 +172,6 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
     ...(plugin.hooks !== undefined ? { hookVersion: plugin.hooks.manifest.version } : {}),
     ...(plugin.icon !== undefined ? { icon: plugin.icon } : {}),
     ...(plugin.quickStart !== undefined ? { quickStart: plugin.quickStart } : {}),
+    mcpServers: plugin.mcpServers.map(toPluginMcpServerItem),
   };
 }

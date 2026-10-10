@@ -9,6 +9,9 @@
  * - A zip of Skills whose package.json has only a name and a version installs, and lists with
  *   no description, category, icon or quick start — nothing invented; an unversioned skill
  *   reads as unversioned.
+ * - A package of MCP servers alone (`penguin.mcp_servers`) is a plugin: from a zip and from a
+ *   link alike it installs and lists in the library with its servers — transport, target, the
+ *   vault keys they reference and whether they need a sign-in.
  * - A member is refused every install path; the local API token an Agent's `penguin plugin
  *   install` carries installs as the admin.
  * - A zip holding another version of an installed package asks before replacing it; the same
@@ -259,6 +262,56 @@ describe("plugin import and export", () => {
     ]);
   });
 
+  it("installs a package of MCP servers alone, from a zip and from a link, and lists its servers", async () => {
+    const admin = await boot();
+    const mail = (name: string): Files => ({
+      "package.json": JSON.stringify({
+        name,
+        version: "0.1.9",
+        description: "Mail.",
+        penguin: {
+          mcp_servers: [
+            {
+              name: "mail",
+              config: {
+                url: "https://mail.example.com/mcp",
+                oauth: { client_id: "${MAIL_CLIENT_ID}" },
+              },
+              setup: [{ key: "MAIL_CLIENT_ID", label: "OAuth client ID" }],
+            },
+          ],
+        },
+      }),
+      "README.md": "# Mail\n",
+    });
+    const zipped = await importZip(admin, mail("@acme/mail"));
+    expect(zipped.status).toBe(201);
+    expect(((await zipped.json()) as InstalledPluginsResponse).installed).toMatchObject({
+      library: true,
+      modules: false,
+    });
+    npm.links.set("https://github.com/acme/calendar", mail("@acme/calendar"));
+    const linked = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "https://github.com/acme/calendar",
+    });
+    expect(linked.status).toBe(200);
+    expect(npm.removed).toEqual([]);
+
+    const server = {
+      name: "mail",
+      transport: "http",
+      target: "https://mail.example.com/mcp",
+      setup: [{ key: "MAIL_CLIENT_ID", label: "OAuth client ID" }],
+      oauth: true,
+      signIn: true,
+    };
+    const listed = (await library(admin)).filter((p) => ["mail", "calendar"].includes(p.name));
+    expect(listed.map((p) => [p.name, p.skills, p.hooks, p.mcpServers])).toEqual([
+      ["calendar", [], [], [server]],
+      ["mail", [], [], [server]],
+    ]);
+  });
+
   it("refuses a member every install path, and installs for the local API token an Agent's CLI carries", async () => {
     await boot();
     const member = apiClient(t.app, (await provisionUser(t.app, "member1")).cookie);
@@ -367,7 +420,7 @@ describe("plugin import and export", () => {
       { "package.json": JSON.stringify({ name: "left-pad", version: "1.0.0" }), "index.js": "" },
       400,
       "plugin_archive_invalid",
-      /Not a PenguinHarness plugin/,
+      /Not a PenguinHarness plugin: .*MCP servers/,
     );
     await refused(
       { ...notesPackage(), "skills/notes/SKILL.md": "No frontmatter at all.\n" },

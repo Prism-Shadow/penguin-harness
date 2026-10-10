@@ -16,11 +16,11 @@
  *          [&machineId=…]         `machineId`, from that machine's own table — and apply (admin);
  *                                 the package leaves the disk once nothing lists it here
  *
- * WHAT A TABLE LISTS is server modules: a package of Skills or hooks alone is the library's
- * (core lists every package of the prefix that carries them), installed into Agents rather than
- * loaded, so installing one writes no table. And a package from a link or a zip is listed in
- * THIS machine's own table, never the shared one: another machine handed its name would fetch
- * whatever the registry has under that name.
+ * WHAT A TABLE LISTS is server modules: a package of Skills, hooks or MCP servers alone is the
+ * library's (core lists every package of the prefix that carries them), installed into Agents
+ * rather than loaded, so installing one writes no table. And a package from a link or a zip is
+ * listed in THIS machine's own table, never the shared one: another machine handed its name
+ * would fetch whatever the registry has under that name.
  *
  * WHAT IS REFUSED after the fact: the prefix resolves before the shipped plugins, so a package
  * under the name of a module the build ships would replace it for every Project — a zip saying
@@ -248,7 +248,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
   };
 
-  /** What a package in this server's prefix carries: skills or hooks (the library's), server modules (a table's). */
+  /** What a package in this server's prefix carries: skills, hooks or MCP servers (the library's), server modules (a table's). */
   const kindsOf = (name: string): { library: boolean; modules: boolean } => {
     const dir = installedPackageDir(pluginsPrefix(deps.root), name);
     return { library: isLibraryPackage(dir), modules: existsSync(path.join(dir, "ifaces.json")) };
@@ -371,7 +371,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         installed.name,
         400,
         "not_a_plugin",
-        `${installed.name} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor the ifaces.json of server modules.`,
+        `${installed.name} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor MCP servers (\`penguin.mcp_servers\`) nor the ifaces.json of server modules.`,
       );
     }
     return kinds;
@@ -423,7 +423,8 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       runsHere && !shipped.includes(source.name)
         ? await viaNpm(() => deps.packages.install(deps.root, source.spec))
         : null;
-    // A package of Skills or hooks alone is the library's from here on: no table loads it.
+    // A package of Skills, hooks or MCP servers alone is the library's from here on: no table
+    // loads it.
     const kinds = installed !== null ? await vetInstalled(installed) : null;
     if (kinds === null || kinds.modules) {
       // `pkg@1.2.3` installs that version, and the table records it as what this Project asks

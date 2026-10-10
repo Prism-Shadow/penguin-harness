@@ -1821,7 +1821,12 @@ export class SessionApiRoutes {
       sessionsRepo,
       traceIndex: this.traceIndex,
     });
-    this.agentConfigRoutes = agentConfigRoutes({ agentConfigService, manager, access });
+    this.agentConfigRoutes = agentConfigRoutes({
+      agentConfigService,
+      manager,
+      access,
+      config: this.config,
+    });
     this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
     this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
     this.usageRoutes = usageRoutes({ access, usageService: this.usage });

@@ -165,6 +165,7 @@ const LIBRARY: PluginItem = {
   source: "builtin",
   skills: [{ name: "data-analysis", description: "", version: "2026.10.04.1" }],
   hooks: [],
+  mcpServers: [],
 };
 const libraryRow: PluginRow = {
   key: "library:data-analysis",

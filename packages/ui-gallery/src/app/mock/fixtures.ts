@@ -712,6 +712,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
               skill("docs-sync", "从上游同步文档语料库", "Sync the docs corpus from upstream"),
             ],
             hooks: [],
+            mcpServers: [],
           },
           {
             name: "penguin-sdk",
@@ -726,6 +727,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
               skill("penguin-sdk", "PenguinHarness SDK 用法", "How to use the PenguinHarness SDK"),
             ],
             hooks: [],
+            mcpServers: [],
           },
           {
             name: "web-design",
@@ -736,6 +738,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             source: "builtin",
             skills: [skill("web-design", "网页视觉设计", "Web visual design")],
             hooks: [],
+            mcpServers: [],
           },
         ],
       },
@@ -755,6 +758,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             skills: [],
             hooks: ["stop"],
             hookVersion: "2026.09.02.1",
+            mcpServers: [],
           },
           {
             name: "continual-learning",
@@ -772,6 +776,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             ],
             hooks: ["stop"],
             hookVersion: "2026.09.02.1",
+            mcpServers: [],
           },
           {
             name: "report-writer",
@@ -783,6 +788,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             source: "installed",
             skills: [skill("report-writer", "撰写结构化报告", "Write structured reports")],
             hooks: [],
+            mcpServers: [],
           },
         ],
       },

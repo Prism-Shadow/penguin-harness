@@ -9,10 +9,17 @@
  *   GET    /api/plugins/registry/readme?name=…            # one listed entry's long-form readme
  *   GET    /api/plugins/registry/archive?name=…           # one listed package on this server, as a zip
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
- * Installing a plugin writes each of its skills to agent_state/skills/<name>/ and its hook
- * package to agent_state/hooks/<plugin>/ (hooks.json + scripts); reinstalling overwrites with
- * library content (i.e. an update). Installed skills and hook packages keep their own routes
- * (skills.ts, hooks.ts).
+ *   GET    /api/projects/:p/agents/:a/mcp-servers         # the Agent's MCP servers: target, provenance, what keeps each from connecting (any member)
+ *   DELETE /api/projects/:p/agents/:a/mcp-servers/:name   # remove one MCP server entry, whoever added it (any member)
+ * Installing a plugin writes each of its skills to agent_state/skills/<name>/, its hook
+ * package to agent_state/hooks/<plugin>/ (hooks.json + scripts) and its MCP servers into the
+ * Agent's `tools.mcpServers` (each entry carrying the plugin's name); reinstalling overwrites
+ * with library content (i.e. an update). A server name the Agent already has from someone else
+ * refuses the whole request before anything is written (409 `mcp_server_name_taken`).
+ * Installed skills and hook packages keep their own routes (skills.ts, hooks.ts); MCP servers
+ * are listed and removed here, one by one — a plugin's uninstall from the Plugins page removes
+ * its servers like its skills, and anyone who can edit the Agent's config could already rewrite
+ * the whole list.
  *
  * Library and registry are two views of one kind of thing — a package of skills and/or
  * hooks. The library is what this build carries; the registry is what the deployment can
@@ -28,17 +35,22 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  McpServerNameTakenError,
+  assertPluginMcpServersInstallable,
   installPlugin,
   listInstalledHooks,
+  listInstalledMcpServers,
   listInstalledSkills,
   libraryPlugin,
   libraryPluginPackage,
   libraryPluginReadme,
   loadPluginGroups,
   parsePluginPackage,
+  uninstallMcpServer,
 } from "@prismshadow/penguin-core";
 import type { PluginPackageManifest } from "@prismshadow/penguin-core";
 import type {
+  AgentMcpServersResponse,
   AgentPluginsInstallResponse,
   PluginFilesResponse,
   PluginIndexEntry,
@@ -87,10 +99,23 @@ import { badRequest, optionalStringArray, readJson, requireValidId } from "../va
 import {
   pluginFiles,
   resolveLibraryPlugins,
+  toAgentMcpServerItem,
   toHookItem,
   toPluginItem,
   toSkillItem,
 } from "../../services/plugin-library.js";
+
+/** A server name another owner holds, as the answer: what it is and who has it; nothing was written. */
+async function refusingTakenNames<T>(install: () => Promise<T>): Promise<T> {
+  try {
+    return await install();
+  } catch (err) {
+    if (err instanceof McpServerNameTakenError) {
+      throw new HttpError(409, "mcp_server_name_taken", err.message);
+    }
+    throw err;
+  }
+}
 
 /** Library listing: the files are the source of truth — read fresh on every request (small files, infrequent requests, no caching). */
 function libraryResponse(): PluginLibraryResponse {
@@ -157,27 +182,63 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     await deps.agentConfigService.requireExists(projectId, agentId);
     const names = optionalStringArray(await readJson(c), "names") ?? [];
     if (names.length === 0) throw badRequest("names must be a non-empty array.");
-    // Verify every name up front before writing anything: an unknown name rejects the whole
-    // request rather than leaving a half-installed state.
+    // Verify every name up front before writing anything: an unknown name, or an MCP server
+    // name the Agent already has from someone else, rejects the whole request rather than
+    // leaving a half-installed state.
     const plugins = resolveLibraryPlugins(names);
-    for (const plugin of plugins) {
-      await installPlugin(deps.config.root, projectId, agentId, plugin);
-    }
+    const root = deps.config.root;
+    await refusingTakenNames(async () => {
+      await assertPluginMcpServersInstallable(root, projectId, agentId, plugins);
+      for (const plugin of plugins) await installPlugin(root, projectId, agentId, plugin);
+    });
     // Core reads hook packages when a model context opens: a conversation that is running
     // would keep the old set — or none — until its next compaction. Rebuilding the runtime
-    // re-reads them on its next idle access, so the plugin works from the next Task.
+    // re-reads them on its next idle access, so the plugin works from the next Task. MCP
+    // servers, like the rest of system_config.yaml, join at the next model context.
     deps.manager.invalidateAgentRuntimes(projectId, agentId);
-    const [skills, hooks] = await Promise.all([
-      listInstalledSkills(deps.config.root, projectId, agentId),
-      listInstalledHooks(deps.config.root, projectId, agentId),
+    const [skills, hooks, servers] = await Promise.all([
+      listInstalledSkills(root, projectId, agentId),
+      listInstalledHooks(root, projectId, agentId),
+      listInstalledMcpServers(root, projectId, agentId),
     ]);
     return c.json(
       {
         skills: skills.map(toSkillItem),
         hooks: hooks.map(toHookItem),
+        mcpServers: servers.map(toAgentMcpServerItem),
       } satisfies AgentPluginsInstallResponse,
       201,
     );
+  });
+
+  return app;
+}
+
+/** /api/projects/:p/agents/:a/mcp-servers: an Agent's MCP servers, listed and removed one by one (Project members). */
+export function agentMcpServersRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.get("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    await deps.agentConfigService.requireExists(projectId, agentId);
+    const servers = await listInstalledMcpServers(deps.config.root, projectId, agentId);
+    return c.json({ servers: servers.map(toAgentMcpServerItem) } satisfies AgentMcpServersResponse);
+  });
+
+  app.delete("/:name", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const name = requireValidId(c, "name");
+    await deps.agentConfigService.requireExists(projectId, agentId);
+    if (!(await uninstallMcpServer(deps.config.root, projectId, agentId, name))) {
+      throw new HttpError(404, "unknown_mcp_server", `The agent has no MCP server ${name}.`);
+    }
+    // Like an install: a conversation that is running is rebuilt on its next idle access.
+    deps.manager.invalidateAgentRuntimes(projectId, agentId);
+    return c.body(null, 204);
   });
 
   return app;
@@ -200,6 +261,12 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
         auth: "user",
         order: 224,
       },
+      {
+        id: "PluginRoutes.agent-mcp-servers",
+        prefix: "/api/projects/:projectId/agents/:agentId/mcp-servers",
+        auth: "user",
+        order: 226,
+      },
     ],
   },
 })
@@ -211,6 +278,7 @@ export class PluginRoutes {
   @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;
+  @Bind("PluginRoutes.agent-mcp-servers") mcpServerRoutes!: Hono<AppEnv>;
   setup() {
     const deps = {
       config: this.config,
@@ -221,6 +289,7 @@ export class PluginRoutes {
     this.libraryRoutes = pluginLibraryRoutes();
     this.pluginRoutes = agentPluginsRoutes(deps);
     this.hookRoutes = agentHooksRoutes(deps);
+    this.mcpServerRoutes = agentMcpServersRoutes(deps);
   }
 }
 

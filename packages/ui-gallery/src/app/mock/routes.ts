@@ -1955,7 +1955,11 @@ router
     agent.skillCount = installed.skills.length;
     agent.hookCount = installed.hooks.length;
     return json(
-      { skills: installed.skills, hooks: installed.hooks } satisfies AgentPluginsInstallResponse,
+      {
+        skills: installed.skills,
+        hooks: installed.hooks,
+        mcpServers: [],
+      } satisfies AgentPluginsInstallResponse,
       201,
     );
   })
