@@ -57,3 +57,37 @@ export function heldRouteSession(
   if (held === null || held.sessionId !== routeSessionId) return null;
   return probeSaysGone ? null : held;
 }
+
+/**
+ * What the chat page does about the routed Session once the list has loaded.
+ *
+ * - `show`: a row is on screen.
+ * - `wait`: the route names a Session no source has answered for yet (paged out, just created,
+ *   a machine out of reach) — the skeleton, or the offline note, stays up.
+ * - `redirect`: open the latest conversation, or the draft when there is none. That is what a
+ *   route naming no Session means, what deleting the conversation on screen means (the row is
+ *   gone on purpose), and what a Session of another Project means (a Project switch leaves the
+ *   old route behind).
+ * - `notFound`: the server said the Session does not exist — a stale link, a desk whose Agent
+ *   was deleted, a conversation deleted in another tab. The page says so in place. Opening the
+ *   latest conversation instead put the reader in an unrelated one under the dead link's
+ *   pretence, which is exactly what a click on a deleted employee's desk used to do.
+ */
+export type RouteSessionOutcome = "show" | "wait" | "redirect" | "notFound";
+
+export function routeSessionOutcome(state: {
+  /** A row for the route is on screen (listed, looked up, or held through a refetch). */
+  shown: boolean;
+  /** The route names a Session nobody has answered for yet. */
+  pending: boolean;
+  routeSessionId: string | null;
+  /** The Session was deleted from this page. */
+  deletedHere: boolean;
+  /** The direct lookup answered 404: no such Session, or none this user may see. */
+  missing: boolean;
+}): RouteSessionOutcome {
+  if (state.shown) return "show";
+  if (state.pending) return "wait";
+  if (state.routeSessionId === null || state.deletedHere || !state.missing) return "redirect";
+  return "notFound";
+}
