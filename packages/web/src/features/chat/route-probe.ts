@@ -16,10 +16,12 @@
  *   and since nothing re-runs the effect for it, a deep link to a deleted Session stayed on the
  *   skeleton.
  * - An answer about a Session the page has since left is dropped.
+ * - A row found while the list is still loading is handed over with that fact: the page shows
+ *   it at once, but must not add it to the list until the list has settled (see chat-page.tsx).
  */
 export interface RouteProbeHandlers<T> {
-  /** The lookup found the routed Session. */
-  found(row: T): void;
+  /** The lookup found the routed Session; `listLoading`: the Session list had not settled yet. */
+  found(row: T, listLoading: boolean): void;
   /** The lookup settled it after the list had: the Session is not there. */
   gone(): void;
 }
@@ -50,7 +52,7 @@ export class RouteProbe {
     const settle = (row: T | null) => {
       if (this.inFlight === key) this.inFlight = null;
       if (this.routed !== key) return;
-      if (row !== null) on.found(row);
+      if (row !== null) on.found(row, this.listLoading);
       else if (!this.listLoading) on.gone();
     };
     lookup().then(settle, () => settle(null));

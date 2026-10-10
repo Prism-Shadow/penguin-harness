@@ -5,7 +5,8 @@
  *
  * - Given a lookup in flight, when the effect re-runs (the list churning), no second lookup is
  *   sent for the same Session.
- * - Given the lookup finds the Session, the page receives the row.
+ * - Given the lookup finds the Session, the page receives the row, told whether the list was
+ *   still loading when it arrived (the page then holds the row back from the list).
  * - Given a lookup that fails while the list is still loading, nothing is decided; when the
  *   list settles, the effect asks again, and that failure says the Session is gone.
  * - Given a lookup sent while the list was loading that fails after the list settled, the
@@ -28,7 +29,7 @@ interface Lookup {
 function page() {
   const probe = new RouteProbe();
   const lookups: Lookup[] = [];
-  const found: string[] = [];
+  const found: { row: string; listLoading: boolean }[] = [];
   const gone: string[] = [];
   const effect = (key: string | null, listLoading: boolean) => {
     probe.track(key, listLoading);
@@ -36,7 +37,10 @@ function page() {
     probe.run(
       key,
       () => new Promise<string | null>((resolve, reject) => lookups.push({ key, resolve, reject })),
-      { found: (row) => found.push(row), gone: () => gone.push(key) },
+      {
+        found: (row, listLoading) => found.push({ row, listLoading }),
+        gone: () => gone.push(key),
+      },
     );
   };
   return { effect, lookups, found, gone };
@@ -56,13 +60,19 @@ describe("the routed Session's direct lookup", () => {
     expect(p.lookups.map((l) => l.key)).toEqual(["p:s1"]);
   });
 
-  it("hands the page the row the lookup found", async () => {
+  it("hands the page the row the lookup found, and whether the list was still loading", async () => {
     const p = page();
     p.effect("p:s1", true);
     p.lookups[0]!.resolve("row s1");
     await flush();
-    expect(p.found).toEqual(["row s1"]);
+    expect(p.found).toEqual([{ row: "row s1", listLoading: true }]);
     expect(p.gone).toEqual([]);
+    const q = page();
+    q.effect("p:s1", true);
+    q.effect("p:s1", false);
+    q.lookups[0]!.resolve("row s1");
+    await flush();
+    expect(q.found).toEqual([{ row: "row s1", listLoading: false }]);
   });
 
   it("decides nothing on a failure while the list loads, and asks again once it has settled", async () => {
@@ -108,7 +118,7 @@ describe("the routed Session's direct lookup", () => {
     p.lookups[1]!.resolve("row s2");
     await flush();
     expect(p.gone).toEqual([]);
-    expect(p.found).toEqual(["row s2"]);
+    expect(p.found.map((f) => f.row)).toEqual(["row s2"]);
     // And a found row for the Session left behind is not shown in place of the routed one.
     const q = page();
     q.effect("p:s1", false);
