@@ -80,6 +80,19 @@ interface RlInternals {
 const MAIN_PROMPT = "> ";
 const CONT_PROMPT = "… ";
 
+/**
+ * Semantic prompt marks (OSC 133, the FinalTerm sequences shells emit for shell integration):
+ * `A` where the main prompt starts, `B` where input starts after it, `C` when a submitted
+ * prompt's turn starts, `D;<0|1>` when it ends (1 = it ended in an error). Terminals that know
+ * them can jump between prompts and select a turn's output; a host embedding the chat can tell
+ * that it is back at its prompt and takes input. Zero-width and ignored by terminals that do
+ * not know them; written only when stdin and stdout are both a terminal and `TERM` is not
+ * `dumb`. Advisory: model output reaches the terminal unfiltered and can carry them too.
+ */
+function promptMark(kind: "A" | "B" | "C" | "D", exitCode?: number): string {
+  return `\x1b]133;${kind}${exitCode === undefined ? "" : `;${exitCode}`}\x07`;
+}
+
 export function registerChatCommand(program: Command, t: Messages): void {
   program
     .command("chat")
@@ -236,6 +249,12 @@ export function registerChatCommand(program: Command, t: Messages): void {
 
       let state: ChatState = "idle";
       let closed = false;
+      // The marks are output: a TTY stdin is not enough when stdout is redirected to a file or
+      // a pipe, or the terminal is a dumb one.
+      const marksOn = isTTY && out.isTTY === true && process.env.TERM !== "dumb";
+      const mark = (kind: "A" | "B" | "C" | "D", exitCode?: number): void => {
+        if (marksOn) out.write(promptMark(kind, exitCode));
+      };
       /** Set while a turn runs; SIGINT posts /abort through it exactly once per turn. */
       let abortTurn: (() => void) | null = null;
       let pendingLine: ((line: string | null) => void) | null = null;
@@ -428,8 +447,10 @@ export function registerChatCommand(program: Command, t: Messages): void {
           rli.line = "";
           rli.cursor = 0;
           out.write("\n");
+          mark("A");
           rl.setPrompt(MAIN_PROMPT);
           rl.prompt();
+          mark("B");
         });
 
       // Interactive approval prompt: reuses the persistent readline; the tool call is
@@ -596,6 +617,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
           }
 
           state = "running";
+          mark("C");
+          let failed = false;
           try {
             if (text === "/compact") {
               // Proactive context compaction: POST /compact and render its paired events
@@ -668,9 +691,11 @@ export function registerChatCommand(program: Command, t: Messages): void {
               );
             }
           } catch (err) {
+            failed = true;
             out.write(`\n${t.error(err instanceof Error ? err.message : String(err))}\n`);
           } finally {
             state = "idle";
+            mark("D", failed ? 1 : 0);
           }
         }
       } finally {
