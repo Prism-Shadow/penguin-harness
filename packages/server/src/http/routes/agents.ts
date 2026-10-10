@@ -2,12 +2,23 @@
  * Agent routes:
  * GET|POST /api/projects/:p/agents, DELETE /:agentId (owner only).
  * The list is the union of DB entries and directory scan results, including active
- * Session count, total Session count, config last-modified time, and whether the Agent's API
- * switch is on.
+ * Session count, total Session count, config last-modified time, whether the Agent's API
+ * switch is on, and the organizations of the Project that employ it.
+ * An employed Agent is not deleted: DELETE answers 409 `agent_employed`, naming each
+ * organization and title, until the employee has left every one of them. The guard is here
+ * rather than in the Agent service because the organization runtime already depends on that
+ * service; the route consumes both.
  */
 import { Hono } from "hono";
-import type { AgentCreateResponse, AgentsResponse, AgentSummary } from "../../api/types.js";
+import type {
+  AgentCreateResponse,
+  AgentsResponse,
+  AgentSummary,
+  Employment,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import type { OrgService } from "../../runtime/organization/service.js";
+import { HttpError } from "../errors.js";
 import { settleWithin } from "../settle.js";
 import {
   badRequest,
@@ -36,6 +47,7 @@ export interface AgentsRouteDeps {
   errorsRepo: ErrorLog;
   manager: SessionManager;
   access: Access;
+  orgService: Pick<OrgService, "employments" | "employersOf">;
   schedulesRepo: Schedules;
   sessionService: SessionService;
   sessionsRepo: SessionIndex;
@@ -44,6 +56,19 @@ export interface AgentsRouteDeps {
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
 const ACTIVITY_DAYS = 30;
+
+/** The refusal of a delete while organizations employ the Agent: each one by name, id and title. */
+function employedError(agentId: string, employers: readonly Employment[]): HttpError {
+  const where = employers
+    .map((e) => `organization "${e.orgName}" (${e.orgId}) as ${e.title}`)
+    .join("; ");
+  const leave = employers.length === 1 ? "the organization" : "these organizations";
+  return new HttpError(
+    409,
+    "agent_employed",
+    `Agent ${agentId} is an employee of ${where}; make it leave ${leave} before deleting it.`,
+  );
+}
 
 export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -55,6 +80,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     const items = await deps.agentService.listAgents(projectId);
     // One query for the whole list: which Agents have their API switch on (this server's web.db).
     const apiEnabled = new Set(deps.agentApi.enabledAgents(projectId));
+    // And one read of the Project's organizations for every Agent's employments.
+    const employments = await deps.orgService.employments(projectId);
     const agents: AgentSummary[] = await Promise.all(
       items.map(async (item) => {
         const stats = await deps.sessionService.sessionStats(
@@ -62,12 +89,16 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
           item.agentId,
           ACTIVITY_DAYS,
         );
+        const employed = Object.hasOwn(employments, item.agentId)
+          ? employments[item.agentId]
+          : undefined;
         return {
           ...item,
           activeSessionCount: deps.manager.activeCountForAgent(projectId, item.agentId),
           sessionCount: stats.sessionCount,
           sessionActivity: stats.activity,
           apiEnabled: apiEnabled.has(item.agentId),
+          ...(employed !== undefined ? { employments: employed } : {}),
         };
       }),
     );
@@ -134,6 +165,11 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     // Deletion is a Project-level management operation: owner only.
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
+    // An employee is refused before anything is touched: deleting its Agent would leave the
+    // organization's chart naming an Agent that is gone, and its desk naming a Session that is.
+    // Leaving the organization is the way out, and it keeps the Agent.
+    const employers = await deps.orgService.employersOf(projectId, agentId);
+    if (employers.length > 0) throw employedError(agentId, employers);
     // Mark as deleting and converge active runs (beginAgentDeletion): any new Task during
     // this window gets 409, preventing the race where a new task recreates the directory
     // and revives the Agent between abort and rm. Abort cleanup writes the Trace

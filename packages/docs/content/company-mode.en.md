@@ -93,6 +93,16 @@ Each employee gets one standing desk session the moment it is hired. Calendar ev
 
 Ticket sessions open on the model the employee's desk runs on at that moment. Editing the chart entry alone (`penguin org employee set --model-id <id> --provider <p>`) leaves the open desk and its ticket sessions where they are; it takes effect when the desk is renewed.
 
+**An employee's thinking level is its agent's.** A desk reads `model.thinking_level` from its agent's config at every new model context, and a ticket session opens on it. **Set thinking level** in the employee's org chart menu writes that config, the same setting the agent has in development mode. A level picked inside the desk conversation pins that Session only, and the dialog says so when the current desk is pinned.
+
+### Employees are agents
+
+An employee is an ordinary agent of the Project, so development mode can still chat with it and change its settings. The **Agents** page lists employees in a section of their own, **Company employees**, each card naming its organization and title; the new-chat agent pickers list them last, and the sidebar groups an employee only once it has a conversation of its own there.
+
+**An employee's agent cannot be deleted.** Its delete button stays off until the employee leaves, and deleting it through the API answers `409 agent_employed`, naming each organization and title. Every organization of the Project counts, paused ones included; for an organization whose `org_chart.yaml` does not parse, only the CEO is protected.
+
+An entry whose agent is gone anyway, deleted before this rule or removed by hand, is marked **Agent deleted** on the org chart and in the **Desks** group, and its desk cannot be opened. **Leave the organization** removes it; nothing removes it on its own. If the CEO's agent is the one gone, the organization cannot run: create an agent with the id `<org_id>_ceo` again and its next pass opens a new desk.
+
 ### Tickets
 
 A ticket file has YAML frontmatter (`title`, `status`, `owner`, `parent`, `notify`, `priority`, `due`, `blocked`, `blocked_by`, `sessions`, `history`), followed by four sections: `## Goal`, `## Acceptance criteria`, `## Progress` and `## Result`. The column directory the file is in is its status. The slug in the file name is lowercase English words joined by hyphens.
@@ -272,7 +282,7 @@ penguin org finance                               # spend per employee (cumulati
 In company mode, the sidebar lists the organization's pages: **Overview**, **Org Chart**, **Calendar**, **Tickets**, **Finance** and **Handbook**.
 
 - **Overview** is where an organization opens. It shows the mission folded to one line, this period's spend against the CEO's budget, and a KPI strip, followed by three full-width sections: the **Inbox** (all-hands messages that mention you or `@all`, every blocked ticket whoever it waits on, and the tickets closed this period), today's calendar, and the budget alerts. No card is a link; each has one corner button that names the page it summarizes.
-- **Org Chart** shows the reporting tree. Each employee's menu offers **Hire a subordinate**, **Set budget**, **Change reporting line**, **New desk session** and **Leave the organization**.
+- **Org Chart** shows the reporting tree. Each employee's menu offers **Hire a subordinate**, **Set budget**, **Set thinking level**, **Change reporting line**, **New desk session** and **Leave the organization**. An employee whose agent was deleted keeps only the items that need no agent.
 - **Tickets** is the board. Clicking a card opens its ticket in place, and dragging the card to another column moves the ticket; on a touch screen, hold the card until it lifts before dragging it, since a finger that moves straight away scrolls the page. The move control inside the ticket moves it without dragging. Inside a ticket, the parent, a child ticket and a ticket session each open by clicking their title. A ticket session opens as its full conversation and goes to the top of the sidebar's **Temporary** group, below **Desks**. It stays listed, in this browser, until you remove it with its ✕ or empty the whole group with **Close all** in its header; going elsewhere or reloading the page keeps it. Both only take entries off the list: the sessions themselves are kept. Ticket sessions are never listed in the sidebar otherwise.
 - **Handbook** shows the knowledge base as an explorer tree beside the rendered document. At every level, folders come before documents; folders stay collapsed until opened, and the arrow keys move through the tree.
 - **Finance** shows the period in three rows: the KPI panel beside the daily trend, then the spend tree and the ticket table side by side, then the period's warnings and pauses.

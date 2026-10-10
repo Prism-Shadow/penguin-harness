@@ -3,15 +3,26 @@
  * existing one of the Project, or a new one: id, name, description, plugins defaulting to
  * agent-company and agent-development) and the position (title, duties, workspace, budget)
  * — the single-field edits, each showing the current value first: budget (a monthly cap,
- * typed in the reader's own currency and stored in USD, or unbounded) and reporting line
- * (anyone outside the employee's own subtree); and the desk renewal, which writes the
- * workspace and opens a fresh desk session in one confirm. Hire and Save write at once: their
- * button is live only once every required field is filled and nothing typed is malformed (said
- * under the field as it is typed), and Save only once the value differs from the stored one.
- * The renewal is its own confirmation. Closing any of them with unsaved edits asks first.
+ * typed in the reader's own currency and stored in USD, or unbounded), reporting line
+ * (anyone outside the employee's own subtree) and thinking level; and the desk renewal, which
+ * writes the workspace and opens a fresh desk session in one confirm. Hire and Save write at
+ * once: their button is live only once every required field is filled and nothing typed is
+ * malformed (said under the field as it is typed), and Save only once the value differs from the
+ * stored one. The renewal is its own confirmation. Closing any of them with unsaved edits asks
+ * first.
+ *
+ * The thinking level is not the chart's: a desk reads it from the employee's Agent config at
+ * every new model context, and a ticket session opens on it, so that config is what the edit
+ * writes — the same write the development draft's picker makes. A level picked inside the desk
+ * session pins only that session, which then no longer follows the config; the dialog says so
+ * when the current desk is pinned.
  */
 import { useEffect, useState } from "react";
-import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
+import type {
+  AgentModelConfigDto,
+  OrgEmployeeItem,
+  OrgHireRequest,
+} from "@prismshadow/penguin-server/api";
 import {
   Button,
   FieldError,
@@ -47,6 +58,11 @@ import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
 import { managerCandidates } from "./org-chart-tree";
+import {
+  SELECTABLE_THINKING_LEVELS,
+  effectiveThinkingLevel,
+  thinkingLevelLabel,
+} from "../chat/thinking-level";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];
@@ -382,7 +398,22 @@ function HireForm({
 }
 
 /** Which single-field edit a dialog performs. */
-export type EmployeeEdit = "budget" | "reportsTo";
+export type EmployeeEdit = "budget" | "reportsTo" | "thinkingLevel";
+
+/** What the thinking-level edit reads before it offers anything: the Agent's own level ("" = none), what that resolves to, and the desk's pin ("" = none). */
+interface ThinkingLevelReading {
+  own: string;
+  effective: string;
+  pinned: string;
+}
+
+/** A level as the reader sees it: the tier's name, the raw value for anything unknown. */
+const levelName = (level: string): string =>
+  thinkingLevelLabel(S.chat.thinkingLevelNames, level) ?? level;
+
+/** Where the menu starts for a level in effect: that level, or the default tier for one the menu does not offer ("none"). */
+const menuLevel = (effective: string): string =>
+  (SELECTABLE_THINKING_LEVELS as readonly string[]).includes(effective) ? effective : "medium";
 
 /** The single-field edit's typing: what its close asks about. */
 const EMPLOYEE_EDIT_SCOPE = "employee-edit";
@@ -407,11 +438,22 @@ export function EmployeeEditDialog({
 }) {
   const { currency } = useTheme();
   const managers = managerCandidates(employees, employee.agentId);
-  /** What the field opens with: the stored budget in the reader's currency, or the current manager. */
+  /** The thinking-level edit's reading; null while it loads (or for the other edits). */
+  const [levels, setLevels] = useState<ThinkingLevelReading | null>(null);
+  /** The thinking-level edit before its reading has landed: nothing to offer, edit or save yet. */
+  const reading = edit === "thinkingLevel" && levels === null;
+  /**
+   * What the field opens with: the stored budget in the reader's currency, the current manager,
+   * or the level in effect once it has been read.
+   */
   const opening =
     edit === "budget"
       ? fromStoredUsd(employee.budget, currency)
-      : (employee.reportsTo ?? managers[0]?.agentId ?? "");
+      : edit === "thinkingLevel"
+        ? levels === null
+          ? ""
+          : menuLevel(levels.effective)
+        : (employee.reportsTo ?? managers[0]?.agentId ?? "");
   const [value, setValue] = useState(opening);
   const [busy, setBusy] = useState(false);
 
@@ -421,8 +463,45 @@ export function EmployeeEditDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit, employee]);
 
-  /** The field holds an edit; a closed dialog holds none. */
-  const dirty = edit !== null && value.trim() !== opening.trim();
+  // The thinking level lives in the Agent's config, the Project default stands in for an Agent
+  // without one, and the desk Session may carry a pin of its own: all three are read before
+  // anything is offered. Only the config is required; the other two degrade to "unknown".
+  useEffect(() => {
+    if (edit !== "thinkingLevel") return;
+    setLevels(null);
+    let cancelled = false;
+    const deskId = employee.desk?.sessionId;
+    Promise.all([
+      api.getAgentConfig(projectId, employee.agentId),
+      api.getChatDefaults(projectId).catch(() => null),
+      deskId === undefined ? null : api.getSession(deskId).catch(() => null),
+    ]).then(
+      ([config, defaults, desk]) => {
+        if (cancelled) return;
+        const own = config.config.model?.thinkingLevel ?? "";
+        const effective = effectiveThinkingLevel(own, defaults?.thinkingLevel);
+        const pin = desk?.session.thinkingLevel ?? "";
+        setLevels({
+          own,
+          effective,
+          pinned: thinkingLevelLabel(S.chat.thinkingLevelNames, pin) === null ? "" : pin,
+        });
+        setValue(menuLevel(effective));
+      },
+      (e: unknown) => {
+        if (cancelled) return;
+        toastError(apiErrorText(e));
+        onClose();
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit, employee, projectId]);
+
+  /** The field holds an edit; a closed dialog, or a level still being read, holds none. */
+  const dirty = edit !== null && !reading && value.trim() !== opening.trim();
   useUnsavedChanges(dirty, { scope: EMPLOYEE_EDIT_SCOPE, discard: () => setValue(opening) });
   const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, EMPLOYEE_EDIT_SCOPE));
   /** What is wrong with the value as it stands; said under the field once it has been edited. */
@@ -438,19 +517,29 @@ export function EmployeeEditDialog({
   const title =
     edit === "budget"
       ? S.company.chart.budgetTitle(employee.name)
-      : S.company.chart.reportsToTitle(employee.name);
+      : edit === "thinkingLevel"
+        ? S.company.chart.thinkingLevelTitle(employee.name)
+        : S.company.chart.reportsToTitle(employee.name);
 
   const save = async () => {
-    if (edit === null || !dirty || problem !== undefined || busy) return;
+    if (edit === null || reading || !dirty || problem !== undefined || busy) return;
     setBusy(true);
     try {
-      await api.patchOrgEmployee(
-        projectId,
-        orgId,
-        employee.agentId,
-        edit === "budget" ? { budget: toStoredUsd(value, currency) } : { reportsTo: value },
-      );
-      toastSuccess(S.company.chart.saved);
+      if (edit === "thinkingLevel") {
+        // The PUT carries only this key: the server merges it into the YAML, nothing else moves.
+        await api.putAgentConfig(projectId, employee.agentId, {
+          config: { model: { thinkingLevel: value as AgentModelConfigDto["thinkingLevel"] } },
+        });
+        toastSuccess(S.common.saved);
+      } else {
+        await api.patchOrgEmployee(
+          projectId,
+          orgId,
+          employee.agentId,
+          edit === "budget" ? { budget: toStoredUsd(value, currency) } : { reportsTo: value },
+        );
+        toastSuccess(S.company.chart.saved);
+      }
       onSaved();
     } catch (e) {
       toastError(apiErrorText(e));
@@ -473,7 +562,7 @@ export function EmployeeEditDialog({
             <Button
               size="sm"
               variant="primary"
-              disabled={busy || !dirty || problem !== undefined}
+              disabled={busy || reading || !dirty || problem !== undefined}
               onClick={() => void save()}
             >
               {S.common.save}
@@ -539,6 +628,43 @@ export function EmployeeEditDialog({
               </Select>
               {managers.length === 0 && <FieldError>{S.company.chart.reportsToCycle}</FieldError>}
             </div>
+          </div>
+        )}
+        {edit === "thinkingLevel" && (
+          <div className="space-y-3">
+            <CurrentValue
+              value={
+                levels === null
+                  ? "…"
+                  : levels.own === ""
+                    ? S.company.chart.thinkingLevelDefault(levelName(levels.effective))
+                    : levelName(levels.own)
+              }
+            />
+            <div>
+              <InfoFieldLabel
+                label={S.chat.thinkingLevel}
+                info={S.company.chart.thinkingLevelInfo}
+              />
+              <Select
+                size="sm"
+                aria-label={S.chat.thinkingLevel}
+                value={value}
+                disabled={levels === null}
+                onChange={(e) => setValue(e.target.value)}
+              >
+                {SELECTABLE_THINKING_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {levelName(level)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            {levels !== null && levels.pinned !== "" && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {S.company.chart.thinkingLevelPinned(levelName(levels.pinned))}
+              </p>
+            )}
           </div>
         )}
       </Modal>

@@ -1596,6 +1596,14 @@ export const en: Strings = {
     livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
+    employeesSection: "Company employees",
+    employeesSectionInfo:
+      "These agents are employees of an organization and work in company mode. You can still chat with them and change their settings here; one can be deleted only after it leaves its organization in company mode.",
+    employmentLine: (orgName: string, title: string): string => `${orgName} · ${title}`,
+    employedUndeletable: (employments: ReadonlyArray<{ orgName: string; title: string }>): string =>
+      `This agent is an employee of ${employments.map((e) => `organization "${e.orgName}" (${e.title})`).join(", ")}; make it leave ${employments.length > 1 ? "those organizations" : "the organization"} in company mode first`,
+    employeeMark: (employments: ReadonlyArray<{ orgName: string; title: string }>): string =>
+      `Company employee: ${employments.map((e) => `${e.orgName} · ${e.title}`).join(", ")}`,
     deleteConfirm: (name: string): string =>
       `Delete agent "${name}"? Its directory (including all Traces) will be removed recursively and cannot be recovered.`,
     stateTitle: "Agent State",
@@ -3315,6 +3323,9 @@ Scenarios:
     sessionOnOfflineMachineUnknown:
       "This conversation is on a machine that is not connected right now.",
     sessionOfflineHint: "It will open as soon as the connection is back.",
+    sessionNotFound: "This conversation does not exist or was deleted",
+    sessionNotFoundHint:
+      "The conversation this link points to is gone, or you do not have access to it.",
     emptyStream: "Send a message to start the conversation",
     historyLoadFailed: "Failed to load history",
     statsLabel: "Stats",
@@ -4638,6 +4649,7 @@ Scenarios:
     orgGoneBody:
       "It may have been deleted, or you may no longer have access to the Project it belongs to.",
     backToOrgs: "Back to organizations",
+    backToOverview: "Back to the overview",
     /** Create dialog. */
     createTitle: "New organization",
     orgId: "Organization id",
@@ -4777,6 +4789,7 @@ Scenarios:
       temporaryEntry: (title: string): string => `Temporary · ${title}`,
       closeTemporary: "Remove from Temporary",
       closeAllTemporary: "Close all",
+      agentMissing: "Agent deleted; its desk cannot be opened",
     },
     overview: {
       title: "Overview",
@@ -4867,6 +4880,10 @@ Scenarios:
       renewDesk: "New desk session",
       leave: "Leave the organization",
       ceoCannotLeave: "The CEO cannot leave",
+      setThinkingLevel: "Set thinking level",
+      agentMissing: "Agent deleted",
+      ceoMissing: (ceoId: string): string =>
+        `The CEO's Agent was deleted, so the organization cannot run: create an Agent with the id ${ceoId} again to restore it.`,
       invalidEntry: "This entry is invalid",
       workspaceTail: "Workspace",
       /** Hire dialog. */
@@ -4936,6 +4953,12 @@ Scenarios:
       manager: "Manager",
       reportsToHint:
         "Only employees outside its own subtree are listed; its subordinates move along with it",
+      thinkingLevelTitle: (name: string): string => `Set ${name}'s thinking level`,
+      thinkingLevelInfo:
+        "Written to the employee's Agent config, the same setting as this Agent's in development mode. The desk session uses it from its next model context and new ticket sessions open on it; a level picked inside the desk session pins only that session.",
+      thinkingLevelDefault: (level: string): string => `Project default (${level})`,
+      thinkingLevelPinned: (level: string): string =>
+        `The current desk session is pinned to "${level}" on its own; this setting reaches the desk from its next desk session.`,
     },
     calendar: {
       title: "Calendar",
@@ -5491,6 +5514,8 @@ Scenarios:
       calendar_event_exists: "A calendar event with that name already exists.",
       calendar_event_not_found: "That calendar event no longer exists.",
       desk_unavailable: "The desk session could not be opened.",
+      agent_employed:
+        "This agent is still an employee of an organization: make it leave in company mode, then delete it.",
       ticket_not_found: "That ticket no longer exists.",
       ticket_invalid: "This ticket file needs repair; it accepts no changes until then.",
       ticket_session_failed: "The ticket session could not be started.",
