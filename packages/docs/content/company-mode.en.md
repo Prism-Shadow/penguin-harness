@@ -302,7 +302,7 @@ The organization scheduler runs a pass every 30 seconds, and immediately after e
 
 ### Session marks
 
-A desk or ticket session is marked as the organization's on the Session row itself when it is opened. It is therefore listed in company mode and never in development mode's session list, even after the organization's directory is removed by hand or the server switch is turned off, when nothing else could tell whose it was. Organizations that already existed get their Sessions marked on the runtime's next pass over their files.
+A desk or ticket session is a company Session: its Trace records `source: "company"` (see [session_meta](/omni-message#sessionmeta)), and the Session row itself is marked as the organization's when it is opened. It is therefore listed in company mode and never in the session list, in either mode, even after the organization's directory is removed by hand or the server switch is turned off, when nothing else could tell whose it was. Organizations that already existed get their Sessions marked on the runtime's next pass over their files, and their older desk and ticket sessions, whose Traces record no source, read as company Sessions by that mark.
 
 ### Skill updates
 

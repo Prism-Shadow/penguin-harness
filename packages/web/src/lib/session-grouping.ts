@@ -301,18 +301,19 @@ export function splitPage<T>(fetched: T[], pageSize: number): { items: T[]; hasM
 }
 
 /**
- * The sidebar category a Session renders under — the same precedence the server's
- * `category` list filter applies, so filtered fetching and client rendering can never
- * disagree: archived wins regardless of `source` (archiving is an explicit user action,
- * so the Archived folder must show everything the user put there); otherwise a Session
- * goes to its origin's bucket, and no (or an unrecognized future) source falls through
- * to the active user rows (visible) rather than vanishing into the wrong folder.
+ * The sidebar category a Session renders under — the same rule the server's `category`
+ * list filter applies, so filtered fetching and client rendering can never disagree. A
+ * company Session (company mode's desk and ticket Sessions) is in none, archived or not: only
+ * company mode's own views list it. Otherwise archived wins regardless of `source` (archiving
+ * is an explicit user action, so the Archived folder must show everything the user put there);
+ * then a person's conversation (`user`, or a row the server has not classified yet) is active,
+ * and every other source — API, scheduled, subagent and CLI Sessions — goes to the Background
+ * folder.
  */
-export function sessionCategory(s: SessionInfo): SessionCategory {
+export function sessionCategory(s: SessionInfo): SessionCategory | null {
+  if (s.source === "company") return null;
   if (s.archived) return "archived";
-  return s.source === "subagent" || s.source === "schedule" || s.source === "benchmark"
-    ? s.source
-    : "active";
+  return s.source === undefined || s.source === "user" ? "active" : "background";
 }
 
 /**
@@ -327,34 +328,34 @@ export function matchesSessionQuery(s: SessionInfo, query: string): boolean {
 }
 
 /** The collapsed-folder categories of a group, in render order (below the active user rows). */
-export const FOLDER_CATEGORIES = ["subagent", "schedule", "benchmark", "archived"] as const;
+export const FOLDER_CATEGORIES = ["background", "archived"] as const;
 export type FolderCategory = (typeof FOLDER_CATEGORIES)[number];
 
 /**
- * Five-way split of one sidebar group's Sessions by sessionCategory (rendered top to
+ * Three-way split of one sidebar group's Sessions by sessionCategory (rendered top to
  * bottom in this order): active user rows in the group body, then the collapsed
- * Subagents / Scheduled / Evaluations / Archived folders.
+ * Background and Archived folders.
  */
 export type SessionPartition = Record<SessionCategory, SessionInfo[]>;
 
-/** Partitions a group's Sessions for rendering. Input order is preserved within each part. */
+/**
+ * Partitions a group's Sessions for rendering. Input order is preserved within each part; a
+ * company Session, in no category, is in no part.
+ */
 export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
-  const parts: SessionPartition = {
-    active: [],
-    subagent: [],
-    schedule: [],
-    benchmark: [],
-    archived: [],
-  };
-  for (const s of sessions) parts[sessionCategory(s)].push(s);
+  const parts: SessionPartition = { active: [], background: [], archived: [] };
+  for (const s of sessions) {
+    const category = sessionCategory(s);
+    if (category !== null) parts[category].push(s);
+  }
   return parts;
 }
 
 /**
- * A group's FOLDED share: the conversations its collapsed folders hold (Subagents /
- * Scheduled / Evaluations / Archived), summed from one set of category counts. Missing
- * keys count as zero rather than poisoning the sum with NaN — the guard
- * aggregateWorkspaceCounts applies to the same numbers.
+ * A group's FOLDED share: the conversations its collapsed folders hold (Background /
+ * Archived), summed from one set of category counts. Missing keys count as zero rather than
+ * poisoning the sum with NaN — the guard aggregateWorkspaceCounts applies to the same
+ * numbers.
  */
 export function foldedShare(counts: SessionCategoryCounts): number {
   let total = 0;
@@ -404,8 +405,8 @@ export function aggregateWorkspaceCounts(
       let group = out.get(key);
       if (!group) {
         group = {
-          totals: { active: 0, subagent: 0, schedule: 0, benchmark: 0, archived: 0 },
-          agents: { active: [], subagent: [], schedule: [], benchmark: [], archived: [] },
+          totals: { active: 0, background: 0, archived: 0 },
+          agents: { active: [], background: [], archived: [] },
         };
         out.set(key, group);
       }
@@ -425,20 +426,17 @@ export function aggregateWorkspaceCounts(
 /**
  * The Session the UI opens as "the last conversation" (the chat home's auto-select and
  * the collapsed rail's entry): the loaded row the user was last IN — not the one created
- * last, which on a revisited conversation is a different row. Archived rows are hidden by
- * choice, a subagent Session is a child of some other conversation, and a benchmark Session is
- * an evaluator's Test Session rather than a conversation of the user's (the evaluate / optimize
- * conversation they just sent is already the one on screen), so none of the three is ever
- * auto-opened; schedule-created runs are the user's conversations and qualify. Newest by
- * lastActiveAt (stamped from `Date#toISOString`, so uniform ISO-8601 UTC like createdAt and
- * comparable as a string), ties broken by sessionId — the list's ordering convention. Input
- * order doesn't matter.
+ * last, which on a revisited conversation is a different row. Only a person's conversation
+ * (an active row) qualifies: archived rows are hidden by choice, and neither a background
+ * Session — one an API caller, a scheduled task, a parent agent or `penguin run` opened — nor a
+ * company Session is a conversation of this list the user was in. Newest by lastActiveAt (stamped from `Date#toISOString`, so
+ * uniform ISO-8601 UTC like createdAt and comparable as a string), ties broken by sessionId —
+ * the list's ordering convention. Input order doesn't matter.
  */
 export function latestConversation(sessions: readonly SessionInfo[]): SessionInfo | null {
   let best: SessionInfo | null = null;
   for (const s of sessions) {
-    const category = sessionCategory(s);
-    if (category !== "active" && category !== "schedule") continue;
+    if (sessionCategory(s) !== "active") continue;
     if (
       !best ||
       s.lastActiveAt > best.lastActiveAt ||
@@ -604,10 +602,10 @@ const MONTH_MS = 30 * DAY_MS;
 export const timeGroupKey = (bucket: TimeBucket): string => `\0time-${bucket}`;
 
 /**
- * Group key the folders (Subagents / Scheduled / Evaluations / Archived) hang off in time
- * mode. They are NOT bucketed: their rows load only when a folder is first expanded, so an
- * unloaded Session's bucket is unknown and no bucket could honestly advertise a share of
- * them. One shared, Project-wide set below the buckets is what the sidebar renders instead.
+ * Group key the folders (Background / Archived) hang off in time mode. They are NOT bucketed:
+ * their rows load only when a folder is first expanded, so an unloaded Session's bucket is
+ * unknown and no bucket could honestly advertise a share of them. One shared, Project-wide set
+ * below the buckets is what the sidebar renders instead.
  */
 export const TIME_FOLDERS_GROUP_KEY = "\0time-folders";
 
@@ -661,13 +659,7 @@ export function groupSessionsByTime<T extends ActivityKey>(
 export function totalCategoryCounts(
   byAgent: ReadonlyMap<string, SessionCategoryCounts>,
 ): SessionCategoryCounts {
-  const totals: SessionCategoryCounts = {
-    active: 0,
-    subagent: 0,
-    schedule: 0,
-    benchmark: 0,
-    archived: 0,
-  };
+  const totals: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
   for (const counts of byAgent.values()) {
     for (const category of ALL_CATEGORIES) {
       const n = counts[category];
@@ -697,17 +689,19 @@ export function pinnedFirst<T>(
 }
 
 /**
- * The two marks a Session an organization owns can carry — a desk session of one of its
+ * The marks a Session an organization owns can carry — a desk session of one of its
  * employees, or a session contributing to one of its tickets. `client` is stamped on the row
- * when the organization runtime creates the Session and never changes; `orgId` is resolved per
- * read from the organization's own caches. Both are optional on the wire, and a row is an
- * organization's when either says so.
+ * when the organization runtime creates the Session and never changes, and a Session it opened
+ * is a `company` Session; `orgId` is resolved per read from the organization's own caches. All
+ * are optional on the wire, and a row is an organization's when any says so.
  */
 export interface OrgSessionMarks {
   /** The owning organization, resolved per read; absent once the organization is deleted. */
   orgId?: string;
   /** The client that created the Session; "org" is the organization runtime's own stamp. */
   client?: string;
+  /** What kind of conversation it is; "company" for a desk or ticket Session. */
+  source?: string;
 }
 
 /**
@@ -716,7 +710,11 @@ export interface OrgSessionMarks {
  * longer hold the Session, and the row would otherwise reappear somewhere it never belonged.
  */
 export function isOrgSession(row: OrgSessionMarks): boolean {
-  return (row.orgId !== undefined && row.orgId !== "") || row.client === "org";
+  return (
+    (row.orgId !== undefined && row.orgId !== "") ||
+    row.client === "org" ||
+    row.source === "company"
+  );
 }
 
 /**

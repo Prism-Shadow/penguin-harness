@@ -5,9 +5,11 @@
  * is the single way a desk session comes into being — the hire opens one, the reconcile
  * pass provisions the ones that are missing, a trigger falls back on it, and it renews a
  * desk when the CEO reassigns a workspace; ticket sessions are opened per start. Both are
- * stamped `client: "org"` at creation — the durable marker development mode's list reads to
- * leave them out of it — and take the organization's approval mode of that moment; a later
- * change of the mode reaches them through `syncApprovalMode` (reconcile.ts).
+ * company Sessions — `source: "company"` in their session_meta, which keeps them out of every
+ * category of the session list — stamped `client: "org"` at creation — the durable marker
+ * development mode's list reads to leave them and what they spawn out of it — and take the
+ * organization's approval mode of that moment; a later change of the mode reaches them
+ * through `syncApprovalMode` (reconcile.ts).
  */
 import { buildOrgTriggerMessage, userText } from "@prismshadow/penguin-core";
 import type { OrgTriggerOrigin } from "@prismshadow/penguin-core";
@@ -95,6 +97,7 @@ export async function ensureDesk(
       ...(model !== undefined ? { modelId: model.modelId, provider: model.provider } : {}),
       approvalMode: org.config.approvalMode,
       client: "org",
+      source: "company",
     });
   } catch (err) {
     return {
@@ -245,6 +248,7 @@ export async function openTicketSession(
       ...(model !== undefined ? { modelId: model.modelId, provider: model.provider } : {}),
       approvalMode: org.config.approvalMode,
       client: "org",
+      source: "company",
     });
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

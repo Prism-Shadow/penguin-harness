@@ -6,6 +6,7 @@ import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { authMiddleware, jsonOnlyWrites } from "../auth/middleware.js";
+import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
@@ -68,6 +69,10 @@ export class HttpModule {
         `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
       );
     });
+    // The same header the host layer puts ahead of its copies of these two checks (src/app.ts):
+    // their refusals answer before the Agent API's group runs, and a browser caller must read the
+    // code, not a CORS failure.
+    app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
     let capped: { size: number; mw: MiddlewareHandler } | null = null;
     app.use("/api/*", (c, next) => {
       const size = bodyLimitBytes(this.settings.getAttachmentLimitsMb());

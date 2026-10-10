@@ -161,6 +161,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
         system_prompt: "test",
         agent_state: "/tmp/agent-state",
         workspace: "/tmp/w",
+        source: "user",
       }),
       input,
     ]);
@@ -200,6 +201,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
         system_prompt: "test",
         agent_state: "/tmp/agent-state",
         workspace: "/tmp/w",
+        source: "user",
       }),
       ...t.deps.manager.pendingInputs(SID),
     ]);

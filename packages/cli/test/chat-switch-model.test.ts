@@ -114,6 +114,7 @@ function streamedSwitch(status: "completed" | "fatal" | "aborted", errorMessage?
                 system_prompt: "",
                 agent_state: "/tmp/agents/default_agent/agent_state",
                 workspace: session.workspace,
+                source: "user",
               }),
             ]
           : []),

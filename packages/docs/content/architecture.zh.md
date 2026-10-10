@@ -36,6 +36,7 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 | --- | --- |
 | `packages/core` | SDK 与引擎：`context_engine`、OmniMessage、LLM 与 Environment 接口、钩子、状态和 Trace |
 | `packages/server` | Human 实现：通过 core 运行 Task，经 HTTP 接收输入和审批，用 SSE 流式输出结果 |
+| `packages/amsp` | [Agent API](/agent-api) 的协议包：[AMSP](/amsp) 传输类型（Server 也引用）和零依赖的客户端，适用于 Node 与浏览器 |
 | `packages/cli` | Server 的终端客户端：REPL 与单次运行都经 HTTP 和 SSE 完成；本地没有运行中的 Server 时会自动启动一个。只有 `penguin config` 直接经 SDK 读写配置文件 |
 | `packages/web` | 纯渲染的 SPA：渲染 OmniMessage 流，不含任何引擎逻辑 |
 | `packages/desktop` | 桌面应用：一个 Electron 外壳，把 Server 作为 `utilityProcess` 运行，并在本地 HTTP 地址上打开窗口 |
