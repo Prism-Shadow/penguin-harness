@@ -99,7 +99,7 @@ describe("getMessages", () => {
       // Every listing command names its subject in its description.
       expect(m.ls.desc.length).toBeGreaterThan(0);
       expect(m.input.desc.length).toBeGreaterThan(0);
-      expect(m.logs.desc.length).toBeGreaterThan(0);
+      expect(m.log.desc.length).toBeGreaterThan(0);
       expect(m.agent.lsDesc.length).toBeGreaterThan(0);
       expect(m.project.lsDesc.length).toBeGreaterThan(0);
       expect(m.cost.desc.length).toBeGreaterThan(0);
@@ -113,7 +113,7 @@ describe("getMessages", () => {
       expect(m.client.httpError(500, "boom", "detail")).toContain("500");
       expect(m.client.sessionAmbiguous("ab", ["s1", "s2"])).toContain("s1");
       expect(m.client.sessionNotFound("zz", "proj-x")).toContain("zz");
-      expect(m.logs.tailInvalid("x")).toContain("x");
+      expect(m.log.tailInvalid("x")).toContain("x");
       expect(m.cost.byInvalid("bogus")).toContain("bogus");
       expect(m.run.sessionNoOverride()).toContain("--session");
       // The soft-yield / poll / caller-context family.
@@ -122,7 +122,7 @@ describe("getMessages", () => {
       expect(m.client.stillRunning("abcd1234")).toContain("abcd1234");
       expect(m.client.callerDefaultsFailed("session-x")).toContain("session-x");
       expect(m.input.noReplyYet().length).toBeGreaterThan(0);
-      expect(m.logs.timeoutNeedsFollow().length).toBeGreaterThan(0);
+      expect(m.log.timeoutNeedsFollow().length).toBeGreaterThan(0);
       expect(m.run.timeoutWithBackground()).toContain("--background");
       // ls --days and the schedule writer family.
       expect(m.ls.daysInvalid("x")).toContain("x");
@@ -149,12 +149,6 @@ describe("getMessages", () => {
       const hint = m.usage.hint("penguin schedule add", "[options] <name>");
       expect(hint).toContain("penguin schedule add [options] <name>");
       expect(hint).toContain("penguin schedule add --help");
-      // The session-rename family: the caller-session default in the description, the done line.
-      expect(m.session.desc.length).toBeGreaterThan(0);
-      expect(m.session.renameDesc).toContain("PENGUIN_SESSION_ID");
-      expect(m.session.renamed("session-s", "a title")).toContain("session-s");
-      expect(m.session.renamed("session-s", "a title")).toContain("a title");
-      expect(m.session.titleInvalid(0)).toContain("120");
       // The company-mode family: descriptions, the control-environment default, confirmations.
       expect(m.org.lsDesc.length).toBeGreaterThan(0);
       expect(m.org.ticketCreateDesc.length).toBeGreaterThan(0);

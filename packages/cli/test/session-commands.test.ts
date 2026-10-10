@@ -1,11 +1,28 @@
 /**
- * `penguin session` command wiring, driven through `cli()` in-process against the fake
- * server: rename (explicit id, the PENGUIN_SESSION_ID caller default, the latest-session
- * fallback, --json) and its client-side title check.
+ * `penguin session rename`, and the shape of the `penguin session` group, driven through
+ * `cli()` in-process against the fake server. (`session ls`, `session log` and
+ * `session input` keep their scenarios in server-commands.test.ts.)
+ *
+ * - Given an explicit session id, when renamed with `-t`, then that Session gets a PATCH
+ *   carrying only the title, and the done line names it.
+ * - Given no id and no PENGUIN_SESSION_ID, then the agent's most recent Session is renamed,
+ *   a `[latest]` line on stderr names it, and the older one is untouched.
+ * - Given PENGUIN_SESSION_ID and no id, then the calling Session is renamed, not the most
+ *   recent one, and no `[latest]` line is printed.
+ * - Given both an id and PENGUIN_SESSION_ID, then the id wins and the caller is untouched.
+ * - Given `--json`, then stdout is `{sessionId, title}` with the title the server stored.
+ * - Given a title with runs of whitespace, then the PATCH carries it with single spaces.
+ * - Given a title that is empty or too long, then it exits 1 and nothing is requested.
+ * - Given no `-t` at all (a lone id, say), then it is a usage error naming the option, and
+ *   no Session is renamed — not the id's, not the latest one.
+ * - Given no Session at all, then it says so and exits 1.
+ * - Given the retired top-level `ls`, `logs` or `input`, then each is an unknown command
+ *   and nothing reaches the server.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/index.js";
 import { getMessages } from "../src/i18n.js";
+import { SESSION_TITLE_MAX } from "../src/server-session.js";
 import { FakeServer } from "./fake-server.js";
 
 const t = getMessages("en");
@@ -35,22 +52,21 @@ afterEach(() => {
   outSpy.mockRestore();
   errSpy.mockRestore();
   uninstall();
-  delete process.env.PENGUIN_SESSION_ID;
 });
 
 const out = () => stdout.join("");
 const err = () => stderr.join("");
+const patches = () => server.requests.filter((r) => r.method === "PATCH");
 
 describe("penguin session rename", () => {
   it("renames the Session an explicit id names, with a PATCH that carries only the title", async () => {
     const s = server.addSession({ sessionId: "session-2026-08-25-11-00-00-feed0001" });
-    const code = await cli(["session", "rename", "Q3 release prep", "feed0001"]);
+    const code = await cli(["session", "rename", "feed0001", "-t", "Q3 release prep"]);
     expect(code).toBe(0);
-    expect(s.patches).toContainEqual({ title: "Q3 release prep" });
     expect(s.title).toBe("Q3 release prep");
-    const patch = server.requests.find((r) => r.method === "PATCH");
-    expect(patch?.path).toBe("/api/sessions/session-2026-08-25-11-00-00-feed0001");
-    expect(patch?.body).toEqual({ title: "Q3 release prep" });
+    expect(patches()).toHaveLength(1);
+    expect(patches()[0]?.path).toBe("/api/sessions/session-2026-08-25-11-00-00-feed0001");
+    expect(patches()[0]?.body).toEqual({ title: "Q3 release prep" });
     expect(out()).toContain(t.session.renamed("feed0001", "Q3 release prep"));
   });
 
@@ -60,21 +76,22 @@ describe("penguin session rename", () => {
       sessionId: "session-2026-08-25-10-00-00-feed0003",
       lastActiveAt: "2026-08-25T11:00:00.000Z",
     });
-    expect(await cli(["session", "rename", "New name"])).toBe(0);
-    expect(newer.patches).toContainEqual({ title: "New name" });
+    expect(await cli(["session", "rename", "--title", "New name"])).toBe(0);
+    expect(newer.title).toBe("New name");
     expect(older.patches).toHaveLength(0); // the newest wins, not the first listed
     expect(err()).toContain(t.client.latestSession(newer.sessionId));
   });
 
   it("PENGUIN_SESSION_ID wins over the latest-session fallback when no id is given", async () => {
     const caller = server.addSession({ sessionId: "session-2026-08-25-09-00-00-feed0004" });
-    server.addSession({
+    const newer = server.addSession({
       sessionId: "session-2026-08-25-10-00-00-feed0005",
       lastActiveAt: "2026-08-25T11:00:00.000Z",
     });
     process.env.PENGUIN_SESSION_ID = caller.sessionId;
-    expect(await cli(["session", "rename", "Caller's own title"])).toBe(0);
-    expect(caller.patches).toContainEqual({ title: "Caller's own title" });
+    expect(await cli(["session", "rename", "-t", "Caller's own title"])).toBe(0);
+    expect(caller.title).toBe("Caller's own title");
+    expect(newer.patches).toHaveLength(0);
     expect(err()).not.toContain("[latest]");
   });
 
@@ -82,30 +99,60 @@ describe("penguin session rename", () => {
     const caller = server.addSession({ sessionId: "session-2026-08-25-09-00-00-feed0006" });
     const other = server.addSession({ sessionId: "session-2026-08-25-10-00-00-feed0007" });
     process.env.PENGUIN_SESSION_ID = caller.sessionId;
-    expect(await cli(["session", "rename", "Explicit target", "feed0007"])).toBe(0);
-    expect(other.patches).toContainEqual({ title: "Explicit target" });
+    expect(await cli(["session", "rename", "feed0007", "-t", "Explicit target"])).toBe(0);
+    expect(other.title).toBe("Explicit target");
     expect(caller.patches).toHaveLength(0);
   });
 
-  it("--json prints the fresh title from the PATCH response instead of the done line", async () => {
+  it("--json prints the session id and the title as the server stored it", async () => {
     const s = server.addSession({ sessionId: "session-2026-08-25-11-00-00-feed0008" });
-    expect(await cli(["session", "rename", "JSON title", "feed0008", "--json"])).toBe(0);
-    const parsed = JSON.parse(out());
-    expect(parsed).toEqual({ sessionId: s.sessionId, title: "JSON title" });
+    expect(await cli(["session", "rename", "feed0008", "-t", "JSON title", "--json"])).toBe(0);
+    expect(JSON.parse(out())).toEqual({ sessionId: s.sessionId, title: "JSON title" });
   });
 
-  it("a title outside 1–120 characters is rejected client-side before any request", async () => {
-    for (const bad of ["  ", "x".repeat(121)]) {
-      const code = await cli(["session", "rename", bad, "feed0001"]);
-      expect(code).toBe(1);
-      expect(err()).toContain(t.session.titleInvalid(bad.trim().length));
-    }
-    expect(server.requests.some((r) => r.method === "PATCH")).toBe(false);
+  it("sends a title's runs of whitespace as single spaces", async () => {
+    const s = server.addSession({ sessionId: "session-2026-08-25-11-00-00-feed0009" });
+    expect(await cli(["session", "rename", "feed0009", "-t", "  Q3\n\trelease   prep "])).toBe(0);
+    expect(patches()[0]?.body).toEqual({ title: "Q3 release prep" });
+    expect(s.title).toBe("Q3 release prep");
+  });
+
+  it.each([
+    ["blank", "  "],
+    ["too long", "x".repeat(SESSION_TITLE_MAX + 1)],
+  ])("a %s title exits 1 before any request", async (_case, bad) => {
+    server.addSession({ sessionId: "session-2026-08-25-11-00-00-feed0010" });
+    expect(await cli(["session", "rename", "feed0010", "-t", bad])).toBe(1);
+    expect(err()).toContain(t.common.titleInvalid(bad.trim().length, SESSION_TITLE_MAX));
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it("without -t it is a usage error, and no Session is renamed", async () => {
+    const named = server.addSession({ sessionId: "session-2026-08-25-11-00-00-feed0011" });
+    expect(await cli(["session", "rename", "feed0011"])).toBe(1);
+    expect(err()).toContain(t.usage.missingOption("-t, --title <title>"));
+    expect(err()).toContain("penguin session rename");
+    expect(named.patches).toHaveLength(0);
+    expect(patches()).toHaveLength(0);
   });
 
   it("with no session at all, it reports none and exits 1", async () => {
-    const code = await cli(["session", "rename", "Any title"]);
+    const code = await cli(["session", "rename", "-t", "Any title"]);
     expect(code).toBe(1);
     expect(err()).toContain(t.client.noSessionsYet("default_agent", "default_project"));
+    expect(patches()).toHaveLength(0);
   });
+});
+
+describe("penguin session (the group)", () => {
+  it.each(["ls", "logs", "input"])(
+    "the retired top-level `%s` is an unknown command and reaches no server",
+    async (name) => {
+      server.addSession({});
+      expect(await cli([name])).toBe(1);
+      expect(err()).toContain(t.usage.unknownCommand(name));
+      expect(out()).toBe("");
+      expect(server.requests).toHaveLength(0);
+    },
+  );
 });

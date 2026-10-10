@@ -44,10 +44,12 @@ export interface Messages {
     json: string;
     /** --server: explicit server URL (overrides PENGUIN_API_URL, the local lock and auto-start). */
     server: string;
-    /** --timeout: soft-yield wait budget on run/input/logs -f (30s / 5m / 2h / bare seconds). */
+    /** --timeout: soft-yield wait budget on run / session input / session log -f (30s / 5m / 2h / bare seconds). */
     timeout: string;
-    /** input/logs' --agent-id: whose most recent session the omitted session argument means. */
+    /** The session group's --agent-id: whose most recent session the omitted session argument means. */
     latestAgentId: string;
+    /** run's --title and session rename's -t/--title: empty or over `max` characters once whitespace is collapsed. */
+    titleInvalid(length: number, max: number): string;
   };
   /** Commander's own parse failures, rebuilt in the user's language (see usage-error.ts). */
   usage: {
@@ -126,21 +128,17 @@ export interface Messages {
     timeoutWithBackground(): string;
     /** run's --title: name the Session being run (manual rename; the auto-title never overwrites it; with --session it renames the reused Session). */
     title: string;
-    /** --title outside the 1–120-character range the server enforces. */
-    titleInvalid(length: number): string;
   };
-  /** `penguin session`: session-level management commands. */
+  /** `penguin session`: the group that lists, reads, messages and renames sessions. */
   session: {
     /** Group description. */
     desc: string;
     /** `penguin session rename`'s own description. */
     renameDesc: string;
-    /** The title argument's help text. */
-    renameTitle: string;
-    /** The optional session_id argument's help text. */
+    /** rename's optional session_id argument. */
     renameSessionId: string;
-    /** A title that is empty or over 120 characters after trimming. */
-    titleInvalid(length: number): string;
+    /** rename's required -t/--title option. */
+    renameTitle: string;
     /** The success line (short id form; the full id is what --json prints). */
     renamed(sessionId: string, title: string): string;
   };
@@ -150,7 +148,7 @@ export interface Messages {
     /** chat's --verbose: start with full tool output (collapsing off). */
     verbose: string;
   };
-  /** `penguin ls`: session listing. */
+  /** `penguin session ls`: session listing. */
   ls: {
     desc: string;
     /** -a/--all: include archived sessions. */
@@ -168,15 +166,15 @@ export interface Messages {
     stateIdle(): string;
     stateRunning(): string;
   };
-  /** `penguin input`: send a message into an existing session (steer when running, task when idle). */
+  /** `penguin session input`: send a message into an existing session (steer when running, task when idle). */
   input: {
     desc: string;
     message: string;
     /** Poll form on a session that has produced no assistant text yet. */
     noReplyYet(): string;
   };
-  /** `penguin logs`: render a session's history, optionally following the live stream. */
-  logs: {
+  /** `penguin session log`: render a session's history, optionally following the live stream. */
+  log: {
     desc: string;
     tail: string;
     follow: string;
@@ -772,9 +770,9 @@ export interface Messages {
     stillRunning(shortId: string): string;
     /** Caller-context lookup failed (PENGUIN_SESSION_ID names a session this server cannot answer for): plain defaults apply. */
     callerDefaultsFailed(sessionId: string): string;
-    /** Dim stderr note naming the session a bare `logs` / `input` resolved to (the agent's most recent). */
+    /** Dim stderr note naming the session a bare `session log` / `input` / `rename` resolved to (the agent's most recent). */
     latestSession(sessionId: string): string;
-    /** Bare `logs` / `input` when the agent has no session at all: what to run to get one. */
+    /** Bare `session log` / `input` / `rename` when the agent has no session at all: what to run to get one. */
     noSessionsYet(agentId: string, projectId: string): string;
   };
   /** `/thinking` display when the Session pins no level: the Agent's configured default applies. */
@@ -1141,6 +1139,7 @@ const en: Messages = {
     timeout:
       "Wait at most this long (30s / 5m / 2h, or bare seconds), then detach and leave the task running (exit 0)",
     latestAgentId: "Agent whose most recent session is used when no session id is given",
+    titleInvalid: (length, max) => `--title must be 1–${max} characters (got ${length}).`,
   },
   usage: {
     missingArgument: (name) => `missing required argument <${name}>`,
@@ -1216,7 +1215,6 @@ const en: Messages = {
     background: "Post the task and exit immediately, printing the session id",
     title:
       "Name the Session (manual rename; the auto-generated title never overwrites it; with --session, renames the reused Session)",
-    titleInvalid: (length) => `--title must be 1–120 characters (got ${length}).`,
     sessionNoOverride: () =>
       "--session reuses an existing Session: --workspace, --model-id and --provider cannot be combined with it (the Session keeps its own; /switch-model inside penguin chat --resume changes its model, compacting first).",
     sourceInvalid: (value) =>
@@ -1254,22 +1252,21 @@ const en: Messages = {
     noReplyYet: () => "(no assistant reply yet)",
   },
   session: {
-    desc: "Session-level management (rename)",
+    desc: "Work with the project's sessions: list them, read a session's history, send it a message, rename it",
     renameDesc:
-      "Rename a session. Without session_id, the calling session (PENGUIN_SESSION_ID) when available, else the agent's most recent session",
-    renameTitle: "The new title (1–120 characters)",
+      "Set a session's title (the manual rename; the auto-generated title never overwrites it)",
     renameSessionId:
       "The session to rename (full id or a unique fragment, e.g. the 8-hex tail; default: PENGUIN_SESSION_ID, else the agent's most recent session)",
-    titleInvalid: (length) => `title must be 1–120 characters (got ${length}).`,
+    renameTitle: "The new title",
     renamed: (sessionId, title) => `Renamed ${sessionId} to \u201c${title}\u201d`,
   },
-  logs: {
+  log: {
     desc: "Render a session's history (defaults to the agent's most recent session)",
     tail: "Show only the last <n> entries",
     follow: "Keep following the live stream after the history",
     tailInvalid: (value) => `Invalid --tail value "${value}": expected a positive integer.`,
     timeoutNeedsFollow: () =>
-      "--timeout only applies to -f/--follow: without it, logs never waits.",
+      "--timeout only applies to -f/--follow: without it, session log never waits.",
   },
   agent: {
     desc: "Manage the project's agents",
@@ -1828,16 +1825,16 @@ const en: Messages = {
     httpError: (status, code, message) =>
       `Server error ${status} (${code})${message ? `: ${message}` : ""}`,
     sessionNotFound: (ref, projectId) =>
-      `No session matching "${ref}" in project ${projectId} (try \`penguin ls\`).`,
+      `No session matching "${ref}" in project ${projectId} (try \`penguin session ls\`).`,
     sessionAmbiguous: (ref, candidates) =>
       `"${ref}" matches ${candidates.length} sessions:\n  ${candidates.join("\n  ")}\nUse a longer fragment or the full id.`,
     streamLost: (detail) => `Lost the server stream and reconnecting failed: ${detail}`,
     streamResynced: () =>
-      "[stream] reconnected past the server's replay buffer; some output may be missing here (penguin logs shows the full history)",
+      "[stream] reconnected past the server's replay buffer; some output may be missing here (penguin session log shows the full history)",
     timeoutInvalid: (value) =>
       `Invalid --timeout value "${value}": expected 30s, 5m, 2h, or a bare number of seconds.`,
     stillRunning: (shortId) =>
-      `[still running] session ${shortId} continues on the server — follow with \`penguin logs -f ${shortId}\` or poll with \`penguin input ${shortId}\``,
+      `[still running] session ${shortId} continues on the server — follow with \`penguin session log -f ${shortId}\` or poll with \`penguin session input ${shortId}\``,
     callerDefaultsFailed: (sessionId) =>
       `[caller context] could not read calling session ${sessionId}; using the plain defaults`,
     latestSession: (sessionId) => `[latest] session ${sessionId}`,
@@ -2219,6 +2216,7 @@ const zh: Messages = {
     timeout:
       "最长等待时长（30s / 5m / 2h，或纯数字秒数）；到时脱开、任务继续在服务端运行（退出码 0）",
     latestAgentId: "省略 session id 时，取哪个 Agent 的最近一次会话",
+    titleInvalid: (length, max) => `--title 须为 1–${max} 个字符（实际 ${length} 个）。`,
   },
   usage: {
     missingArgument: (name) => `缺少必填参数 <${name}>`,
@@ -2286,7 +2284,6 @@ const zh: Messages = {
     background: "提交任务后立即退出，打印 session id",
     title:
       "为 Session 命名（手动重命名；自动生成的标题不会覆盖它；配合 --session 时重命名被复用的 Session）",
-    titleInvalid: (length) => `--title 须为 1–120 个字符（实际 ${length} 个）。`,
     sessionNoOverride: () =>
       "--session 复用既有 Session：不能与 --workspace、--model-id、--provider 同时使用（均沿用该 Session；如需换模型，在 penguin chat --resume 内用 /switch-model，会先压缩上下文）。",
     sourceInvalid: (value) =>
@@ -2322,21 +2319,19 @@ const zh: Messages = {
     noReplyYet: () => "（还没有助手回复）",
   },
   session: {
-    desc: "会话级管理（重命名）",
-    renameDesc:
-      "重命名会话。未给 session_id 时：有 PENGUIN_SESSION_ID 则指当前会话，否则取当前 Agent 最近一次会话",
-    renameTitle: "新标题（1–120 个字符）",
+    desc: "管理 Project 的会话：列出会话、查看历史、发送消息、重命名",
+    renameDesc: "设置会话标题（手动重命名；自动生成的标题不会覆盖它）",
     renameSessionId:
       "要重命名的会话，完整 id 或唯一片段（如末尾 8 位十六进制；缺省 PENGUIN_SESSION_ID，再缺省取当前 Agent 最近一次会话）",
-    titleInvalid: (length) => `标题须为 1–120 个字符（实际 ${length} 个）。`,
+    renameTitle: "新标题",
     renamed: (sessionId, title) => `已将 ${sessionId} 重命名为「${title}」`,
   },
-  logs: {
+  log: {
     desc: "渲染会话的历史消息（省略 session id 即取当前 Agent 最近一次会话）",
     tail: "只显示最后 <n> 条",
     follow: "渲染历史后继续跟随实时输出流",
     tailInvalid: (value) => `--tail 值「${value}」无效：应为正整数。`,
-    timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 logs 不等待。",
+    timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 session log 不等待。",
   },
   agent: {
     desc: "管理 Project 的 Agent",
@@ -2860,15 +2855,15 @@ const zh: Messages = {
     httpError: (status, code, message) =>
       `服务器错误 ${status}（${code}）${message ? `：${message}` : ""}`,
     sessionNotFound: (ref, projectId) =>
-      `Project ${projectId} 中没有匹配「${ref}」的会话（可用 \`penguin ls\` 查看）。`,
+      `Project ${projectId} 中没有匹配「${ref}」的会话（可用 \`penguin session ls\` 查看）。`,
     sessionAmbiguous: (ref, candidates) =>
       `「${ref}」匹配到 ${candidates.length} 个会话：\n  ${candidates.join("\n  ")}\n请使用更长的片段或完整 id。`,
     streamLost: (detail) => `与服务器的输出流断开且重连失败：${detail}`,
     streamResynced: () =>
-      "[stream] 重连时已超出服务端回放缓冲，此处可能缺少部分输出（penguin logs 可查看完整历史）",
+      "[stream] 重连时已超出服务端回放缓冲，此处可能缺少部分输出（penguin session log 可查看完整历史）",
     timeoutInvalid: (value) => `--timeout 值「${value}」无效：应为 30s、5m、2h 或纯数字秒数。`,
     stillRunning: (shortId) =>
-      `[仍在运行] 会话 ${shortId} 继续在服务端执行——可用 \`penguin logs -f ${shortId}\` 跟随，或 \`penguin input ${shortId}\` 轮询`,
+      `[仍在运行] 会话 ${shortId} 继续在服务端执行——可用 \`penguin session log -f ${shortId}\` 跟随，或 \`penguin session input ${shortId}\` 轮询`,
     callerDefaultsFailed: (sessionId) =>
       `[调用方上下文] 无法读取调用方会话 ${sessionId}，改用普通缺省值`,
     latestSession: (sessionId) => `[latest] 会话 ${sessionId}`,

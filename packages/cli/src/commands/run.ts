@@ -21,7 +21,7 @@
  *   model pair (neither can change after creation); `--approve` PATCHes the mode.
  * - `--title` names the Session (the manual rename the Web App's "Rename chat" does —
  *   the auto-title generator never overwrites it); with `--session` it renames the
- *   reused Session instead. Checked client-side (1–120 characters) before any request.
+ *   reused Session instead. Checked client-side (checkSessionTitle) before any request.
  * - `--background`: POST the task and exit immediately, printing the session id
  *   (`{"sessionId"}` under `--json`) — the task keeps running on the server.
  * - `--json` (non-background): suppress rendering; print `{sessionId, status, text}`
@@ -48,6 +48,7 @@ import {
 } from "../client.js";
 import {
   callerSessionContext,
+  checkSessionTitle,
   createServerSession,
   getSessionInfo,
   pinThinkingLevel,
@@ -141,13 +142,9 @@ export function registerRunCommand(program: Command, t: Messages): void {
       const thinking = resolveThinkingLevel(opts.thinking, t);
       const json = opts.json === true;
       // The title is checked BEFORE the Session is created, so a bad title fails fast
-      // without leaving an orphaned Session (the server enforces the same 1–120 rule).
-      const title = opts.title === undefined ? undefined : String(opts.title).trim();
-      if (title !== undefined && (title.length === 0 || title.length > 120)) {
-        process.stderr.write(`${t.error(t.run.titleInvalid(title.length))}\n`);
-        process.exitCode = 1;
-        return;
-      }
+      // without leaving an orphaned Session (the server enforces the same rule).
+      const title = opts.title === undefined ? undefined : checkSessionTitle(String(opts.title), t);
+      if (title === null) return;
 
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
@@ -206,8 +203,8 @@ export function registerRunCommand(program: Command, t: Messages): void {
       };
 
       if (opts.background === true) {
-        // POST and leave: the task runs on the server; the id is what `penguin input` /
-        // `penguin logs` address later.
+        // POST and leave: the task runs on the server; the id is what `penguin session
+        // input` / `penguin session log` address later.
         await client.request("POST", `/api/sessions/${session.sessionId}/tasks`, taskBody);
         process.stdout.write(
           json ? `${JSON.stringify({ sessionId: session.sessionId })}\n` : `${session.sessionId}\n`,
