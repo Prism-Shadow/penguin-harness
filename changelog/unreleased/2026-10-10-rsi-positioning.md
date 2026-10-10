@@ -3,7 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** process
 - **Scope:** `landing`, `docs`, `web`, `tooling`
-- **PR:** [#NNNN](https://github.com/Prism-Shadow/penguin-harness/pull/NNNN)
+- **PR:** [#1030](https://github.com/Prism-Shadow/penguin-harness/pull/1030)
 
 [中文版](2026-10-10-rsi-positioning.zh.md)
 

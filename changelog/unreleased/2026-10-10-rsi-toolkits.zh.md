@@ -3,7 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** feature
 - **Scope:** `plugins`, `core`, `server`, `web`, `docs`
-- **PR:** [#NNNN](https://github.com/Prism-Shadow/penguin-harness/pull/NNNN)
+- **PR:** [#1030](https://github.com/Prism-Shadow/penguin-harness/pull/1030)
 - **Breaking:** yes — `agent-tuning` 插件更名为 `rsi-default`，指名 `agent-tuning` 的安装请求会被拒绝
 
 [English](2026-10-10-rsi-toolkits.md)
