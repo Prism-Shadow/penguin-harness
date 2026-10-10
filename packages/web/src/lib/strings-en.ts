@@ -4176,6 +4176,12 @@ Scenarios:
     optimize: "Optimize",
     view: "View",
     copyPath: "Copy directory path",
+    versionLabel: "Version",
+    sourceLabel: "Source",
+    manifestBroken: "Manifest can't be read",
+    manifestBrokenHint: "Fix its benchmark_config.toml to use it, or delete it",
+    manifestBrokenHintMember: "It can be used once its benchmark_config.toml is fixed",
+    manifestBrokenDetail: (hint: string, reason: string): string => `${hint}. Reason: ${reason}`,
     deleteBenchmark: "Delete Benchmark",
     deleteConfirm: (title: string): string =>
       `Delete "${title}"? All of its cases and evaluation records will be removed; this cannot be undone.`,
@@ -4358,7 +4364,7 @@ Scenarios:
       "- desired_baseline_score: `<50` (the draft above wins when it names one)\n" +
       "- pilot_iteration_limit: `4` (the draft above wins when it names one)\n\n" +
       "A Benchmark sits beside agents, not under one: create `benchmarks/<benchmark_id>/` under the Project (never inside the tested agent's directory) with " +
-      "`benchmark_config.toml` (title, description, runs = 1; it records no agent), " +
+      '`benchmark_config.toml` (id equal to the directory name, title, description, version set to today\'s date version `"YYYY.MM.DD.1"`, status, runs = 1 and an `[origin]` table with `kind = "agent"`; it records no agent), ' +
       "one `CASE-NNN-<slug>/` per case (`statement/README.md` is the statement, `rubric/README.md` the scoring rubric, 100 points per case, nothing from the rubric leaking into the statement) " +
       "and `scoreboard.yaml` (initially `evaluations: []`; every evaluation records the tested `agent_id`, its `version`, the paired `provider` / `model_id` and the `thinking_level`). " +
       "Every trial evaluation goes through `run_subagent`, and the subagent's prompt must say to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +

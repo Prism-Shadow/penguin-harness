@@ -101,7 +101,7 @@ You do not choose an owning agent. A manual Benchmark is published at once but h
 
 Select a Benchmark card, or **View**, to open the Benchmark's page (`/benchmark/<benchmark>`). **Back to list** returns to the list.
 
-The header shows the Benchmark's directory, `benchmarks/<benchmark>`, beside the title, with a **Copy directory path** button, and its own **Use** button.
+The header shows the Benchmark's directory, `benchmarks/<benchmark>`, beside the title, with a **Copy directory path** button, the Benchmark's version when its manifest has one (for example `v2026.10.09.1`) and its own **Use** button. A Benchmark an agent imported from a repository folder also links that folder under **Source**.
 
 ### Cases
 
@@ -213,11 +213,11 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 
 ## How it works
 
-- **Storage.** A Benchmark is the directory `benchmarks/<benchmark>/` in the Project, beside `agents/`, named by its Benchmark id. Each case has `statement/README.md` and `rubric/README.md`, and the scores are in `scoreboard.yaml`. See [Benchmark storage](/self-improvement#benchmark-storage).
-- **Status.** `status` in `benchmark_config.toml` drives the mask: `draft` shows **Being built**, `failed` shows **Creation failed**, and `published` lifts the mask.
+- **Storage.** A Benchmark is the directory `benchmarks/<benchmark>/` in the Project, beside `agents/`, named by its Benchmark id. Its manifest is `benchmark_config.toml`, which also records a date version and where the copy came from (a Benchmark made by an earlier release has neither); each case has `statement/README.md` and `rubric/README.md`, and the scores are in `scoreboard.yaml`. See [Benchmark storage](/self-improvement#benchmark-storage).
+- **Status.** `status` in `benchmark_config.toml` drives the mask: `draft` shows **Being built**, `failed` shows **Creation failed**, and `published` lifts the mask. A Benchmark whose manifest cannot be read is masked too, as **Manifest can't be read**, with the reason on the icon beside it.
 - **Creating with AI.** The prompt's fixed ending hands the `benchmark-design` Skill the Test Agent's id, a desired baseline score and a pilot-iteration limit, and asks for the baseline to be taken.
 - **Creating manually.** The server writes the form to disk in the layout the Skills read (`POST …/benchmarks`, owner only), with the status `published`.
 - **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents, on the conversation's own model, which the evaluator agent reads from the `Provider` and `Model ID` lines of its system prompt. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
 - **Deleting.** The server removes the directory whole (`DELETE …/benchmarks/:id`). Deleting a Benchmark while an evaluation is still running can leave a directory behind, because the evaluation keeps writing into it. That directory has no `benchmark_config.toml`, so it is not listed, and you can delete it by hand.
 - **The example and the built-in Benchmarks.** Written when the Project is created; never written again. A Project from an earlier release keeps what it has and is not given the built-in Benchmarks.
-- **Built-in Benchmarks.** Their configs are ordinary; each statement names the task's folder in the repository at a pinned commit and links the repository's run rules, which the `agent-evaluation` Skill follows. Its `reference/harbor.md` adds only what PenguinHarness needs: where the checkout lives, which Agent State runs, and how a trial becomes a score.
+- **Built-in Benchmarks.** Their manifests are ordinary, with the origin `builtin`; each statement names the task's folder in the repository at a pinned commit and links the repository's run rules, which the `agent-evaluation` Skill follows. Its `reference/harbor.md` adds only what PenguinHarness needs: where the checkout lives, which Agent State runs, and how a trial becomes a score.

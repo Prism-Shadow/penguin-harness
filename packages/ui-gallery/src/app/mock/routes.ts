@@ -2036,12 +2036,17 @@ router
     if (store.f.benchmarks.some((b) => b.id === benchmarkId))
       fail(409, "benchmark_exists", "That id is taken.");
     const list = Array.isArray(cases) ? (cases as Array<Record<string, unknown>>) : [];
+    // The server writes the day's first version, on the local calendar.
+    const day = new Date();
+    const two = (n: number) => String(n).padStart(2, "0");
     const benchmark: BenchmarksResponse["benchmarks"][number] = {
       id: benchmarkId,
       title: str(title, benchmarkId),
       ...(typeof description === "string" ? { description } : {}),
       runs: typeof runs === "number" ? runs : 1,
       status: "published",
+      version: `${day.getFullYear()}.${two(day.getMonth() + 1)}.${two(day.getDate())}.1`,
+      origin: { kind: "manual" },
       caseCount: list.length,
       evaluations: [],
       agentIds: [],

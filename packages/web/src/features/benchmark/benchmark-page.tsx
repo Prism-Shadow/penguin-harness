@@ -152,8 +152,8 @@ function TestedAgents({
  * previous record of the same label, and the actions. The info column is the card's main button
  * — it enters the Benchmark's page — so everything inside it is phrasing content rather than a
  * nested block. A card that is not published is masked under a notice — still being built for a
- * draft, creation failed for a Benchmark whose calibration never finished — with only the delete
- * icon left live.
+ * draft, creation failed for a Benchmark whose calibration never finished, or a manifest that
+ * cannot be read, with the reason behind an icon — with only the delete icon left live.
  */
 export function BenchmarkCard({
   benchmark,
@@ -182,11 +182,18 @@ export function BenchmarkCard({
   // away. Only the owner's delete stays above the mask, which is how either is cleaned up.
   const masked = benchmark.status !== "published";
   const failed = benchmark.status === "failed";
+  // A Benchmark whose manifest cannot be read lists as failed; its notice says so instead.
+  const broken = benchmark.manifestError;
   // Deleting and creating again is a failed Benchmark's only way out, and the hint names that
   // step only to a viewer who has the delete button beside it.
-  const failedHint = canDelete
-    ? S.benchmark.creationFailedHint
-    : S.benchmark.creationFailedHintMember;
+  const failedHint =
+    broken !== undefined
+      ? canDelete
+        ? S.benchmark.manifestBrokenHint
+        : S.benchmark.manifestBrokenHintMember
+      : canDelete
+        ? S.benchmark.creationFailedHint
+        : S.benchmark.creationFailedHintMember;
   return (
     <Card padding="md" className="relative flex flex-wrap items-center gap-x-6 gap-y-2">
       <button
@@ -293,9 +300,18 @@ export function BenchmarkCard({
           {/* A failed creation is the one thing here the user has to act on, so its title takes
               the danger ink; the line under it stays secondary text either way. */}
           <span
-            className={`text-sm font-medium ${failed ? toneInk.danger : "text-gray-700 dark:text-gray-200"}`}
+            className={`inline-flex items-center ${ICON_GAP.row} text-sm font-medium ${failed ? toneInk.danger : "text-gray-700 dark:text-gray-200"}`}
           >
-            {failed ? S.benchmark.creationFailed : S.benchmark.building}
+            {broken !== undefined
+              ? S.benchmark.manifestBroken
+              : failed
+                ? S.benchmark.creationFailed
+                : S.benchmark.building}
+            {broken !== undefined && (
+              <span role="img" data-tooltip={broken.message} aria-label={broken.message}>
+                <GlyphIcon d={ICONS.info} size={ICON_SIZE.inlineGlyph} />
+              </span>
+            )}
           </span>
           <span className="text-xs text-gray-500 dark:text-gray-400">
             {failed ? failedHint : S.benchmark.buildingHint}

@@ -4295,6 +4295,15 @@ Benchmark：
     optimize: "优化",
     view: "查看",
     copyPath: "复制目录路径",
+    /** The Benchmark page's header: its manifest's version, and the repository folder it was imported from. */
+    versionLabel: "版本",
+    sourceLabel: "来源",
+    /** A Benchmark whose benchmark_config.toml cannot be read: masked like a failed one, the reason behind an icon. */
+    manifestBroken: "清单无法读取",
+    manifestBrokenHint: "修好它的 benchmark_config.toml 即可使用，也可以删除它",
+    manifestBrokenHintMember: "修好它的 benchmark_config.toml 后即可使用",
+    /** The Benchmark page's notice: the hint, then the reason the server gave. */
+    manifestBrokenDetail: (hint: string, reason: string): string => `${hint}。原因：${reason}`,
     deleteBenchmark: "删除 Benchmark",
     deleteConfirm: (title: string): string =>
       `确定删除「${title}」吗？它的全部题目与评估记录都会被删除，无法恢复。`,
@@ -4475,7 +4484,7 @@ Benchmark：
       "- desired_baseline_score：`<50`（上文另有要求时以上文为准）\n" +
       "- pilot_iteration_limit：`4`（上文另有要求时以上文为准）\n\n" +
       "Benchmark 与 Agent 平级：在 Project 的 `benchmarks/<benchmark_id>/` 下（不在被测智能体目录内）创建 `benchmark_config.toml`" +
-      "（title、description、runs = 1；不记录被测智能体）、" +
+      '（id 与目录名相同、title、description、version 为当天的日期版本 `"YYYY.MM.DD.1"`、status、runs = 1，以及 `kind = "agent"` 的 `[origin]` 表；不记录被测智能体）、' +
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
       "每一次试测都必须通过 `run_subagent` 派发子会话，并在子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
