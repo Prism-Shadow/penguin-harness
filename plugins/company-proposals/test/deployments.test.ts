@@ -234,6 +234,7 @@ describe("registering over the routes", () => {
   });
   afterEach(async () => {
     harness?.registry.stop();
+    service.close();
     await fs.rm(root, { recursive: true, force: true });
   });
 

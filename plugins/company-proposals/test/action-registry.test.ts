@@ -22,7 +22,7 @@ import {
   type HookCode,
 } from "../src/index.js";
 import { immediate } from "../src/schema.js";
-import { actionApp } from "./action-harness.js";
+import { actionApp, type ActionApp } from "./action-harness.js";
 import { BOSS, DEV, ORG, PROJECT, fakeOrg, type FakeOrgGateway } from "./fake-org.js";
 
 /** A write of the test's own: one row in a table of company.db, the run's start row in its transaction. */
@@ -75,13 +75,19 @@ describe("the Action registry", () => {
       `CREATE TABLE IF NOT EXISTS notes (text TEXT NOT NULL);`,
     );
   });
+  /** The registries the tests opened: stopped, so their store connections close. */
+  const apps: ActionApp[] = [];
   afterEach(async () => {
+    for (const a of apps.splice(0)) a.registry.stop();
     db.close();
     await org.cleanup();
   });
 
-  const appOf = (contributions: Contributed[]) =>
-    actionApp({ gateway, root: org.root, project: PROJECT, org: ORG, contributions });
+  const appOf = (contributions: Contributed[]) => {
+    const a = actionApp({ gateway, root: org.root, project: PROJECT, org: ORG, contributions });
+    apps.push(a);
+    return a;
+  };
 
   /** `POST …/actions/by-id/<id>/runs`: one contribution named exactly. */
   const exec = (a: ReturnType<typeof appOf>, id: string, params: Record<string, unknown> = {}) =>

@@ -28,6 +28,7 @@ import plugin, {
   PAGE_ID,
   ProposalError,
   ProposalService,
+  type ServiceDeps,
   ROUTES_ID,
   CONFIG_GROUP,
   DEFAULT_TEST_GROUPS,
@@ -216,6 +217,14 @@ describe("ProposalService", () => {
   const lines: string[] = [];
   const log = { line: (l: string) => lines.push(l) };
 
+  /** Every service the tests opened: closed, so their store connections release company.db. */
+  const services: ProposalService[] = [];
+  const newService = (deps: ServiceDeps): ProposalService => {
+    const s = new ProposalService(deps);
+    services.push(s);
+    return s;
+  };
+
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "proposals-service-"));
     gateway = new FakeGateway();
@@ -232,7 +241,7 @@ describe("ProposalService", () => {
     agents = new FakeAgents();
     lines.length = 0;
     githubCalls.length = 0;
-    service = new ProposalService({
+    service = newService({
       ...offline(),
       gateway,
       agents,
@@ -245,6 +254,7 @@ describe("ProposalService", () => {
   const harnesses: ActionApp[] = [];
   afterEach(async () => {
     for (const h of harnesses.splice(0)) h.registry.stop();
+    for (const s of services.splice(0)) s.close();
     await fs.rm(root, { recursive: true, force: true });
   });
 
@@ -307,7 +317,7 @@ describe("ProposalService", () => {
     let values: Record<string, unknown> = {};
     let remotes = "";
     const gitCalls: string[][] = [];
-    service = new ProposalService({
+    service = newService({
       ...offline(),
       gateway,
       agents,
@@ -477,7 +487,7 @@ describe("ProposalService", () => {
       if (p in pulls) return JSON.stringify(pulls[p]);
       throw new Error(`HTTP 404: ${p}`);
     };
-    service = new ProposalService({
+    service = newService({
       ...offline(),
       gateway,
       agents,
@@ -609,7 +619,7 @@ describe("ProposalService", () => {
     });
     gateway = new FakeGateway();
     githubCalls.length = 0;
-    service = new ProposalService({
+    service = newService({
       ...offline(),
       gateway,
       agents,
@@ -1052,7 +1062,7 @@ describe("ProposalService", () => {
   it("tests use only the declared groups, in the declared order, and a save applies to the next publish", async () => {
     const n = await delegated();
     const stored: Record<string, unknown> = {};
-    const configured = new ProposalService({
+    const configured = newService({
       ...offline(),
       gateway,
       agents,
@@ -1109,7 +1119,7 @@ describe("ProposalService", () => {
   it("a revision published without tests reads with no tests", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
-    const again = new ProposalService({
+    const again = newService({
       ...offline(),
       gateway,
       root,
@@ -1513,7 +1523,7 @@ describe("ProposalService", () => {
       expect(race.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
       expect(gateway.desks.slice(before)).toHaveLength(2);
       // A new service over the same store reads the same discussions.
-      const again = new ProposalService({
+      const again = newService({
         ...offline(),
         gateway,
         agents,
@@ -1661,7 +1671,7 @@ describe("ProposalService", () => {
     const forge = new FakeForge([
       cr("x/y", 42, { head: "b".repeat(40), branch: "fix", state: "merged" }),
     ]);
-    service = new ProposalService({
+    service = newService({
       ...offline(),
       gateway,
       agents,
@@ -1751,7 +1761,7 @@ describe("ProposalService", () => {
       forge.pulls = [cr("acme/site", 11, { head: "a".repeat(40), branch: "feat", state, base })];
     };
     pull("open", "main");
-    service = new ProposalService({
+    service = newService({
       ...offline(),
       gateway,
       agents,
@@ -1947,7 +1957,7 @@ describe("ProposalService", () => {
     });
 
     // A new service over the same store reads the same record.
-    const again = new ProposalService({
+    const again = newService({
       ...offline(),
       gateway,
       agents,
@@ -2022,7 +2032,7 @@ describe("ProposalService", () => {
       code: "revision_not_found",
     });
     // Replayed from the file, the same facts stand.
-    const replay = new ProposalService({
+    const replay = newService({
       ...offline(),
       gateway,
       root,
@@ -2119,7 +2129,7 @@ describe("ProposalService", () => {
       code: "comment_sent",
     });
     // A new service over the same store reads the same view.
-    const again = new ProposalService({
+    const again = newService({
       ...offline(),
       gateway,
       agents,
@@ -2191,7 +2201,7 @@ describe("ProposalService", () => {
     });
     expect(gateway.desks).toHaveLength(desks);
     // A new service over the same store reads the same brief.
-    const again = new ProposalService({
+    const again = newService({
       ...offline(),
       gateway,
       agents,
@@ -2285,7 +2295,7 @@ describe("ProposalService", () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
-    const again = new ProposalService({
+    const again = newService({
       ...offline(),
       gateway,
       agents,
