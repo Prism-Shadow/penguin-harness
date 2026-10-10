@@ -7,7 +7,9 @@
  * a runs array).
  * Content is normally created and refined by the benchmark-design Skill; the server also
  * writes the same layout for a Benchmark created by hand (`create`) and removes a Benchmark
- * directory whole (`remove`), and never touches a scoreboard.
+ * directory whole (`remove`), and never touches a scoreboard. A built-in Benchmark is read like
+ * any other: its cases run elsewhere (their statements say how), and the service does not know
+ * or care.
  * `benchmark_config.toml` is what makes a directory a Benchmark: `list` skips one without it.
  * Files that are there but corrupt degrade gracefully (title falls back to the directory
  * name, scores come back empty) rather than throwing.

@@ -41,6 +41,7 @@ function meta(sessionId: string, agentId: string): OmniMessage {
     system_prompt: "",
     agent_state: `/root/${PROJECT}/${agentId}/agent_state`,
     workspace: "/tmp/w",
+    source: "user",
   };
   return sessionMeta(payload);
 }

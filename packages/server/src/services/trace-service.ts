@@ -75,6 +75,7 @@ import type {
 } from "./message-window.js";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
+import { listCategory, readRecordedSource } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
@@ -808,6 +809,7 @@ export class TraceService implements Traces {
         const sourcePrompt = msg.payload.system_prompt;
         const sourceVisible = modelVisiblePath(sourceScratchpad);
         const forkVisible = modelVisiblePath(forkScratchpad);
+        // A fork is a person's conversation, whatever kind the Session it was cut from was.
         const payload = {
           ...msg.payload,
           session_id: newSessionId,
@@ -816,8 +818,8 @@ export class TraceService implements Traces {
             .join(newSessionId)
             .split(sourceVisible)
             .join(forkVisible),
+          source: "user" as const,
         };
-        delete payload.source;
         return { ...msg, payload };
       }
       const p = msg.payload as { type?: string; role?: string; text?: unknown };
@@ -1615,26 +1617,25 @@ export class TraceService implements Traces {
   }
 
   /**
-   * Classification (no IO): `archived` comes exactly from the DB row; the origin comes
+   * Classification (no IO): `archived` comes exactly from the DB row; the source comes
    * from the shared sources registry, else from the Session's registration-time facts
    * (trace_sessions — the reconciler head-read its earliest shard once when the file
-   * first appeared, so by listing time every indexed Session is classified exactly).
+   * first appeared, so by listing time every indexed Session is classified exactly), a head
+   * without one read with the row's client. Null for a `company` Session, which is in no
+   * category (listCategory) and so not in this listing.
    */
   private classify(
     sessionId: string,
     row: SessionRow | undefined,
     facts: TraceSessionRow | undefined,
-  ): TraceSessionFacts {
+  ): TraceSessionFacts | null {
+    // The registry's answer wins — it can be fresher (subagent registration happens at spawn,
+    // before any reconcile); else the stored facts, once their head was read.
     const known = this.sources?.get(sessionId);
-    // Registry answer (including null = known user-created) wins — it can be fresher
-    // (subagent registration happens at spawn, before any reconcile); else the stored facts.
-    const source = known !== undefined ? known : (facts?.source ?? undefined);
-    const category: SessionCategory =
-      (row?.archivedAt ?? null) !== null
-        ? "archived"
-        : source === "subagent" || source === "schedule" || source === "benchmark"
-          ? source
-          : "active";
+    const recorded = known !== undefined ? known : facts?.metaRead ? facts.source : undefined;
+    const source = recorded === undefined ? undefined : readRecordedSource(recorded, row?.client);
+    const category = listCategory(source, (row?.archivedAt ?? null) !== null);
+    if (category === null) return null;
     return { category, workspace: row?.workspace ?? facts?.workspace ?? "" };
   }
 
@@ -1663,29 +1664,19 @@ export class TraceService implements Traces {
     const ids = [...bySession.keys()].sort((a, b) => b.localeCompare(a));
     // Classify every group once; the same result drives the category filter, the
     // counts AND the returned fields, so a row can never appear in a bucket its own
-    // `category` denies. Every Session is listed whichever client created it.
-    const counts: SessionCategoryCounts = {
-      active: 0,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    };
+    // `category` denies. Every Session is listed whichever client created it, but a company
+    // Session, which no category holds.
+    const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const factsById = new Map<string, TraceSessionFacts>();
     const visible: string[] = [];
     for (const id of ids) {
       const facts = this.classify(id, rows.get(id), factsBySession.get(id));
+      if (facts === null) continue;
       factsById.set(id, facts);
       visible.push(id);
       counts[facts.category] += 1;
-      const ws = (workspaceCounts[facts.workspace] ??= {
-        active: 0,
-        subagent: 0,
-        schedule: 0,
-        benchmark: 0,
-        archived: 0,
-      });
+      const ws = (workspaceCounts[facts.workspace] ??= { active: 0, background: 0, archived: 0 });
       ws[facts.category] += 1;
     }
     const filtered =
@@ -1868,7 +1859,7 @@ export class TraceService implements Traces {
     if (!sessions) return;
     const facts = this.store.getSession(sessionId);
     if (!facts?.metaRead || facts.provider === null || facts.modelId === null) return;
-    if (facts.source !== null) this.sources?.set(sessionId, facts.source);
+    this.sources?.set(sessionId, facts.source);
     const createdAt = sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString();
     sessions.insertOrIgnore?.({
       sessionId,

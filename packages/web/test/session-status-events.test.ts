@@ -342,6 +342,25 @@ describe("the full sequence, for a Session the user is not looking at", () => {
     expect(glyph(store, "a", seen)).toBeNull();
   });
 
+  it("a background Session shows the hourglass while it runs but never the unread dot", () => {
+    for (const source of ["api", "schedule", "subagent", "cli"] as const) {
+      const store = storeWith({ ...freshSession("bg"), source });
+      applyUserEvent(store, stateEvent("bg", "running", STARTED), neverReload);
+      expect(glyph(store, "bg", neverSeen)).toBe("running");
+      applyUserEvent(store, stateEvent("bg", "idle", FINISHED), neverReload);
+      expect(glyph(store, "bg", neverSeen)).toBeNull();
+    }
+  });
+
+  it("a person's conversation, marked or not yet known, still settles to the unread dot", () => {
+    for (const over of [{ source: "user" as const }, {}]) {
+      const store = storeWith({ ...freshSession("p"), ...over });
+      applyUserEvent(store, stateEvent("p", "running", STARTED), neverReload);
+      applyUserEvent(store, stateEvent("p", "idle", FINISHED), neverReload);
+      expect(glyph(store, "p", neverSeen)).toBe("completedUnread");
+    }
+  });
+
   it("a Session the user opened earlier still goes unread when it later runs", () => {
     const store = storeWith(session("a"));
     const seen = seenAt("a", LOOKED);
