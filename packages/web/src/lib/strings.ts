@@ -2500,6 +2500,28 @@ export const zh = {
     uninstall: "移除",
     install: "安装",
     installing: "安装中…",
+    /** 头部按钮（仅管理员）：打开「启用本地插件」对话框。 */
+    enableLocal: "启用本地插件",
+    /** 对话框里说明这个操作做什么。 */
+    enableLocalBody:
+      "把一个已构建的插件目录 link 进本服务器的插件前缀，并为当前 Project 列上它的包名——一步完成，并重装配 App。这次 link 会被记录（由谁、何时、从哪个目录），一步即可撤销。目录需先构建：package.json 给出包名，装载要导入的入口文件是构建产物。",
+    /** 对话框的路径输入框。 */
+    enableLocalPathLabel: "插件目录的绝对路径",
+    enableLocalPathPlaceholder: "/绝对路径/指向/构建好的插件",
+    /** 对话框的确认按钮。 */
+    enableLocalAction: "启用",
+    /** 本地 link 的一步撤销：行上按钮与确认标题。 */
+    unlink: "取消链接",
+    unlinkConfirmTitle: (name: string) => `取消链接 ${name}？`,
+    unlinkConfirmBody:
+      "链接与当前 Project 的启用一并撤销；Agent 上已装出的技能副本保留。所有 Project 中正在进行的 Agent 运行都会被中止。",
+    /** 在别的机器视图里为什么不能在此撤销：link 是那台机器自己的。 */
+    localNotHere: "链接在那台机器上：请到那台机器撤销。",
+    /** 本地链接行的来源行：目录在哪、何时、由谁。 */
+    localLinkLine: (path: string, when: string, by: string) =>
+      `本地链接：${path} · ${when}链接 · 由 ${by}`,
+    localEnabledToast: (name: string) => `已启用 ${name}`,
+    localUnlinkedToast: (name: string) => `已取消链接 ${name}`,
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `已安装 ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */

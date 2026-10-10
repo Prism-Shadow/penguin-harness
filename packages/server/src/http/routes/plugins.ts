@@ -299,7 +299,8 @@ async function onThisMachine(
   ]);
   return {
     stored: new Set(inStore.map((e) => e.integrity)),
-    linked: new Set((inGeneration ?? []).map((e) => e.integrity)),
+    // A local link has no integrity to be keyed by, so it is not a linked content here.
+    linked: new Set((inGeneration ?? []).flatMap((e) => ("integrity" in e ? [e.integrity] : []))),
   };
 }
 

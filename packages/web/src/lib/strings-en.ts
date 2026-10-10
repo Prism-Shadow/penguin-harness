@@ -2424,6 +2424,28 @@ export const en: Strings = {
     uninstall: "Remove",
     install: "Install",
     installing: "Installing…",
+    /** Header button (admin only) opening the dialog that enables a local plugin. */
+    enableLocal: "Enable a local plugin",
+    /** What the local-plugin dialog does, said inside it. */
+    enableLocalBody:
+      "Links a built plugin directory into this server's plugin prefix and lists its package for this Project — one step, re-assembling the App. The link is recorded (who, when, from where) and undone in one step. Build the directory first: its package.json names the package, and the entry file a load would import is a build product.",
+    /** The local-plugin dialog's path input. */
+    enableLocalPathLabel: "The plugin directory's absolute path",
+    enableLocalPathPlaceholder: "/absolute/path/to/the/built/plugin",
+    /** The local-plugin dialog's confirm. */
+    enableLocalAction: "Enable",
+    /** The one-step undo of a local link, on its row and in its confirmation. */
+    unlink: "Unlink",
+    unlinkConfirmTitle: (name: string) => `Unlink ${name}?`,
+    unlinkConfirmBody:
+      "The link and this Project's enablement are both undone; skills an Agent already installed keep their copies. Agent runs in progress in every Project will be stopped.",
+    /** Why Unlink is unavailable in another machine's view: the link is that machine's own. */
+    localNotHere: "Linked on that machine: unlink it there.",
+    /** The provenance line of a locally linked row: where the directory is, when, by whom. */
+    localLinkLine: (path: string, when: string, by: string) =>
+      `Local link: ${path} · linked ${when} · by ${by}`,
+    localEnabledToast: (name: string) => `Enabled ${name}`,
+    localUnlinkedToast: (name: string) => `Unlinked ${name}`,
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `Installed ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */

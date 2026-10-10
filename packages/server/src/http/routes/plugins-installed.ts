@@ -11,6 +11,12 @@
  *   PUT    / { plugins }          rewrite this Project's shared table, and apply (admin)
  *   DELETE /?specifier=…          drop it from every table of this Project — or, with
  *          [&machineId=…]         `machineId`, from that machine's own table — and apply (admin)
+ *   POST   /local { path }        link a local plugin directory into the host's plugin prefix
+ *                                 and list its package for this Project, recording who linked
+ *                                 it, when, from where — and apply (admin)
+ *   DELETE /local?specifier=…     the one-step undo of a local link: the name leaves every
+ *                                 table of this Project and the record goes with it — and
+ *                                 apply (admin)
  *
  * WHERE THE LIST LIVES. In the Project's own config (the `[plugins]` table of `.project_config.toml`,
  * package name → requirement, Cargo's `[dependencies]` shape, plus a `[plugins.<machineId>]`
@@ -34,7 +40,17 @@
  * page says so before an admin applies a change. The edit itself travels with the
  * re-assembly (ReassemblyChange): written in its queue, so two admins' edits of one file
  * never interleave, and undone when the new tree fails to boot — the previous App is
- * restored on the previous list, and the answer is "did not take".
+ * restored on the previous list, and the answer is "did not take". A local link's record
+ * rides the same change: it is read by that very activation, so it is written inside the
+ * boot's own write step and restored with the tables when the boot fails.
+ *
+ * A LOCAL LINK (POST /local, plugin/links.ts) is the second way a name reaches this machine:
+ * the record maps a package name to a directory, activation links the generation's
+ * `node_modules/<name>` to it, and the Project's table still names the package alone — the
+ * name the directory's own package.json gives itself, so loading stays by name. The link is
+ * machine-local: a Project's other machines, which the fleet sync hands the list to, answer
+ * for the name from their own stores and records — a machine without the link reports the
+ * name unresolvable, on its own row.
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -71,6 +87,12 @@ import {
   PluginStoreError,
   readStore,
 } from "../../plugin/store.js";
+import {
+  inspectLocalPlugin,
+  readPluginLinks,
+  writePluginLinks,
+} from "../../plugin/links.js";
+import type { PluginLink, PluginLinks } from "../../plugin/links.js";
 import { INTEGRITY, mergeIndexes } from "../../plugin/registry.js";
 import { resolveRegistries } from "./plugins.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
@@ -156,6 +178,8 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const contributed = await deps.contributed();
     const bases = pluginBases(deps.root);
     const shipped = await shippedPlugins(deps.assetsDir());
+    // The local links of this machine, for the rows' provenance (plugin/links.ts).
+    const linked = await readPluginLinks(deps.root);
     // `builtin` on a row is where the package CAME FROM, a tag, not a second way of being
     // asked for. What the package declares is read from its files; whether the process holds
     // it, and why not, is the host's — a load that failed says so, rather than passing as a
@@ -182,6 +206,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           modules: [],
           replaces: [],
           ...(where.here ? { error: reason } : {}),
+          ...(linked.has(specifier) ? { local: linked.get(specifier) } : {}),
           ...where,
         });
         continue;
@@ -205,6 +230,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           ? { unsatisfied: { disabled: unmet.disabled, reason: unmet.reason } }
           : {}),
         ...(skills !== undefined ? { skills } : {}),
+        ...(linked.has(specifier) ? { local: linked.get(specifier) } : {}),
         ...where,
       });
     }
@@ -264,16 +290,17 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   };
 
   /**
-   * A name a list REWRITE adds must already be on this machine — shipped with the build or
-   * fetched into the plugin store by POST, which is the verb that runs npm. Otherwise PUT
-   * would be the way to list a package that is not on disk, exactly the state these routes
-   * exist to avoid.
+   * A name a list REWRITE adds must already be on this machine — shipped with the build,
+   * fetched into the plugin store by POST, or linked to a local directory by the local link
+   * route, which is the verb that reaches a directory. Otherwise PUT would be the way to
+   * list a package that is not on disk, exactly the state these routes exist to avoid.
    */
   const requireOnMachine = async (names: readonly string[]) => {
     if (names.length === 0) return;
-    const onMachine = new Set([
+    const onMachine = new Set<string>([
       ...(await shippedPlugins(deps.assetsDir())),
       ...(await readStore(deps.root)).map((e) => e.name),
+      ...(await readPluginLinks(deps.root)).keys(),
     ]);
     for (const name of names) {
       if (!onMachine.has(name)) {
@@ -287,29 +314,47 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   };
 
   /**
-   * Writes an edit of this Project's tables. When what THIS server runs changes, the edit is a
-   * re-assembly change: read and written inside the re-assembly's queue, so two edits never
-   * interleave, and undone — the tables as they were — when the new tree fails to boot. An
-   * edit that only concerns other machines is written as it is: re-assembling would stop
-   * every agent run in flight here for a tree that stays the same.
+   * Writes an edit of this Project's tables — and, when `linksOf` is given, of the local
+   * link record with it (plugin/links.ts), which the very activation this edit asks for
+   * reads, so the two land as one change and are undone as one. When what THIS server runs
+   * changes — a table this machine reads, or the record that says where a name resolves —
+   * the edit is a re-assembly change: read and written inside the re-assembly's queue, so
+   * two edits never interleave, and undone — the tables and the record as they were — when
+   * the new tree fails to boot. An edit that only concerns other machines is written as it
+   * is: re-assembling would stop every agent run in flight here for a tree that stays the
+   * same.
    */
-  const edit = async (projectId: string, next: (tables: PluginTables) => PluginTables) => {
+  const edit = async (
+    projectId: string,
+    next: (tables: PluginTables) => PluginTables,
+    linksOf?: (links: PluginLinks) => PluginLinks,
+  ) => {
     const current = await tablesOf(projectId);
+    const linksBefore = linksOf === undefined ? null : await readPluginLinks(deps.root);
     const same = (a: PluginTables, b: PluginTables) =>
       JSON.stringify(effectivePluginTable(a, deps.machineId)) ===
       JSON.stringify(effectivePluginTable(b, deps.machineId));
-    if (same(current, next(current))) {
+    const linksSame =
+      linksBefore === null ||
+      JSON.stringify([...linksBefore]) === JSON.stringify([...linksOf!(linksBefore)]);
+    if (same(current, next(current)) && linksSame) {
       await deps.projectConfig.setPluginTables(projectId, next(current));
       return;
     }
     let previous: PluginTables | null = null;
+    let previousLinks: PluginLinks | null = null;
     await deps.apply({
       write: async () => {
         previous = await deps.projectConfig.getPluginTables(projectId);
         await deps.projectConfig.setPluginTables(projectId, next(previous));
+        if (linksOf !== undefined) {
+          previousLinks = await readPluginLinks(deps.root);
+          await writePluginLinks(deps.root, linksOf(previousLinks));
+        }
       },
       undo: async () => {
         if (previous !== null) await deps.projectConfig.setPluginTables(projectId, previous);
+        if (previousLinks !== null) await writePluginLinks(deps.root, previousLinks);
       },
     });
   };
@@ -339,7 +384,10 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           e.name === name &&
           satisfies(e.version, version) &&
           (integrity === undefined || e.integrity === integrity),
-      );
+      ) ||
+      // A name linked to a local directory is already on the machine: asking for it is
+      // consent, like a shipped one. The link is what the version range is checked against.
+      (await readPluginLinks(deps.root)).has(name);
     if (runsHere && !onMachine) {
       // A download is always of an index entry that names its content: the highest
       // version the ask admits (or the pinned content), fetched as that exact version and
@@ -447,6 +495,81 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       ...tables,
       all: Object.fromEntries(names.map((s) => [s, tables.all[s] ?? {}])),
     }));
+    deps.syncFleet(projectId);
+    return c.json(await view(projectId));
+  });
+
+  /**
+   * Enables a LOCAL plugin: links the directory into the host's plugin prefix and lists its
+   * package for this Project, in one step (admin). The name is the one the directory's own
+   * package.json gives itself — the table stays names-only — and the link is recorded:
+   * where the directory is, who linked it, when. The record and the table land as ONE
+   * re-assembly change (see `edit`), so a boot that fails leaves neither behind.
+   */
+  app.post("/local", async (c) => {
+    requireAdmin(c);
+    const projectId = scope(c);
+    const body = await readJson(c);
+    const dir = typeof body.path === "string" ? body.path.trim() : "";
+    const inspected = await inspectLocalPlugin(dir);
+    if ("error" in inspected) {
+      throw new HttpError(400, "invalid_local_plugin", inspected.error);
+    }
+    const { name } = inspected;
+    const link: PluginLink = {
+      path: dir,
+      linkedAt: new Date().toISOString(),
+      by: c.var.user.userId,
+    };
+    await edit(
+      projectId,
+      (tables) => ({ ...tables, all: { ...tables.all, [name]: {} } }),
+      (links) => new Map(links).set(name, link),
+    );
+    deps.syncFleet(projectId);
+    return c.json(await view(projectId));
+  });
+
+  /**
+   * The one-step undo of a local link (admin): the name leaves every table of this Project
+   * and the record goes with it — the next activation builds a generation that no longer
+   * holds the name, and nothing is left behind that would make it resolve to the directory
+   * again. Skills an Agent already installed from it keep their installed copies, the way
+   * an unlisted plugin's do. A name that is not linked is a 404, not a quiet table edit.
+   */
+  app.delete("/local", async (c) => {
+    requireAdmin(c);
+    const projectId = scope(c);
+    const specifier = c.req.query("specifier") ?? "";
+    if (!PACKAGE_NAME.test(specifier)) {
+      throw new HttpError(400, "bad_request", "specifier must be a package name.");
+    }
+    if (!(await readPluginLinks(deps.root)).has(specifier)) {
+      throw new HttpError(
+        404,
+        "not_linked",
+        `'${specifier}' is not linked to a local directory on this machine.`,
+      );
+    }
+    const without = (table: PluginTables["all"] | undefined) => {
+      const kept = { ...table };
+      delete kept[specifier];
+      return kept;
+    };
+    await edit(
+      projectId,
+      (tables) => ({
+        all: without(tables.all),
+        machines: Object.fromEntries(
+          Object.entries(tables.machines).map(([id, t]) => [id, without(t)]),
+        ),
+      }),
+      (links) => {
+        const next = new Map(links);
+        next.delete(specifier);
+        return next;
+      },
+    );
     deps.syncFleet(projectId);
     return c.json(await view(projectId));
   });

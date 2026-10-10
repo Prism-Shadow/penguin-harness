@@ -24,27 +24,31 @@ shipped with the builtin plugins either (`scripts/build-plugins.mjs` skips the e
 
 ## Enable it
 
-A plugin is loaded by its package name only, from the bundled plugin directory a build stages.
-Stage the examples into it with the builtin plugins, then list the package in a Project's
-`.project_config.toml` and restart the server:
+A plugin is loaded by its package name only, from the host's plugin prefix — and a local
+directory reaches that prefix by being linked in. Build the package first (`dist/` and
+`ifaces.json` are build products, not tracked), then "Enable a local plugin" on the server's
+Plugins page (an admin operation) names the built directory; the server links it, lists the
+package for the Project and re-assembles itself around it — one step, nothing edited by hand:
 
 ```sh
-PENGUIN_PLUGIN_EXAMPLES=1 node scripts/build-plugins.mjs --out packages/server/plugins
+pnpm --filter @penguinharness/example-no-evaluation-center build
 ```
 
-```toml
-[plugins]
-"@penguinharness/example-no-evaluation-center" = "*"
-```
+The link is recorded — where the directory is, who linked it, when — the plugin's row shows it,
+and the row's "Unlink" undoes it in one step. The same operation as a route, for a host without
+the web app: `POST /api/projects/:projectId/plugins/installed/local` with
+`{ "path": "<the built directory>" }` (admin).
 
 What a Project lists is loaded for the whole server, so every user loses the page. Reload the web
-app after enabling it: the app reads contributions once per sign-in. The web e2e suite enables
-it this way, on a data root of its own (`packages/web/e2e/run.sh`).
+app after enabling it: the app reads contributions once per sign-in. The web e2e suite takes the
+other route to the same prefix — it stages the examples into the builtin one
+(`PENGUIN_PLUGIN_EXAMPLES=1`, see `packages/web/e2e/run.sh`) — because its throwaway data root has
+nothing a link's record should outlive.
 
 ## Get the page back
 
-- **For good:** remove the line from `.project_config.toml` and restart the server, then reload
-  the web app.
+- **For good:** "Unlink" the plugin on the Plugins page — one step that removes the name from
+  every Project's table and forgets the link — then reload the web app.
 - **For now:** open the app in safe mode — add `?safe` to the URL, or run "safe mode" from the
   command palette (`Ctrl+Shift+P` / `⇧⌘P`). Safe mode reads no contributions, so nothing is
   removed; leaving it removes the page again.

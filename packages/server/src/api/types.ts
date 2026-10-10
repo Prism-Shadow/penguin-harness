@@ -7295,6 +7295,20 @@ export interface UnsatisfiedPlugin {
   reason: string;
 }
 
+/**
+ * The provenance of a name enabled from a local directory (the local link route): what the
+ * link record under the data root holds. A locally linked package has no integrity — what
+ * its directory holds is what runs.
+ */
+export interface LocalPluginLink {
+  /** The directory the name is linked to, as it was named when the link was made. */
+  path: string;
+  /** When the link was made, ISO 8601. */
+  linkedAt: string;
+  /** Who made it, the operating user's id. */
+  by: string;
+}
+
 /** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
 export interface InstalledPlugin {
   /** The package specifier as written in the file. */
@@ -7341,6 +7355,13 @@ export interface InstalledPlugin {
    * its skills stop being offered — what "disabled" means for a skill's source.
    */
   skills?: SkillMetadataItem[];
+  /**
+   * Present when the name is linked to a local directory on this machine (enabled through
+   * the local link route): where the directory is, when it was linked and by whom — the
+   * record the one-step undo takes away. Independent of `active`: the provenance is a fact
+   * about the name, not about whether this process runs it.
+   */
+  local?: LocalPluginLink;
 }
 
 export interface InstalledPluginsResponse {

@@ -2630,6 +2630,28 @@ export const uninstallPlugin = (
     }`,
     { method: "DELETE" },
   );
+/**
+ * Admin only: enables a LOCAL plugin — links the directory into this server's plugin prefix
+ * and lists its package for this Project, recording who linked it, when, from where. The
+ * directory must be built (its package.json names the package; the entry file a load would
+ * import is a build product), and its own package name is what gets listed. The App is
+ * re-assembled around the link.
+ */
+export const enableLocalPlugin = (projectId: string, path: string) =>
+  apiFetch<InstalledPluginsResponse>(`${pluginsPath(projectId)}/local`, {
+    method: "POST",
+    body: { path },
+  });
+/**
+ * Admin only: the one-step undo of a local link — the name leaves every table of this
+ * Project and the link record goes with it. 404 `not_linked` when the name is not linked on
+ * this machine.
+ */
+export const cancelLocalPlugin = (projectId: string, specifier: string) =>
+  apiFetch<InstalledPluginsResponse>(
+    `${pluginsPath(projectId)}/local?specifier=${encodeURIComponent(specifier)}`,
+    { method: "DELETE" },
+  );
 
 // ---- The agent browser: the desktop's built-in browser, or the user's own Chrome ----
 /**

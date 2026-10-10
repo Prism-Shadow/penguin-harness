@@ -6,7 +6,7 @@
  * - An admin sees the search box and the settings gear, and the gear carries its words on the
  *   button, not only in its accessible name.
  * - An available module row offers Install, and an installed one Remove, each with its words
- *   beside the icon.
+ *   beside the icon; a locally linked row offers Unlink instead, with its provenance line.
  *
  * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
  * its cards. How the header row wraps on a narrow screen is PageHeader's, not this page's.
@@ -41,6 +41,7 @@ const header = (isAdmin: boolean) =>
     onQuery: () => undefined,
     isAdmin,
     machinePicker: null,
+    onEnableLocal: () => undefined,
     onOpenSettings: () => undefined,
   });
 
@@ -49,12 +50,16 @@ describe("the plugins page header", () => {
     const html = header(false);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
     expect(buttonText(html, en.plugins.openSettings)).toBeUndefined();
+    // The local-plugin entry is an admin's too.
+    expect(buttonText(html, en.plugins.enableLocal)).toBeUndefined();
   });
 
   it("offers an admin the search box and a settings gear that says what it is", () => {
     const html = header(true);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
     expect(buttonText(html, en.plugins.openSettings)).toBe(en.plugins.openSettings);
+    // Beside the gear, the entry that enables a local plugin, its words on the button.
+    expect(buttonText(html, en.plugins.enableLocal)).toBe(en.plugins.enableLocal);
   });
 });
 
@@ -82,5 +87,26 @@ describe("a module plugin's row", () => {
     const html = row(true);
     expect(buttonText(html, `${en.plugins.uninstall} @acme/plugin`)).toBe(en.plugins.uninstall);
     expect(buttonText(html, `${en.plugins.install} @acme/plugin`)).toBeUndefined();
+  });
+
+  it("offers Unlink on a locally linked row, with its provenance line", () => {
+    const html = inLocale(ModuleRow, {
+      specifier: "@acme/plugin",
+      entry: undefined,
+      state: "active",
+      shipped: false,
+      local: { path: "/srv/plugins/acme", linkedAt: "2026-10-10T00:00:00.000Z", by: "admin" },
+      busy: false,
+      blocked: false,
+      onInstall: null,
+      onRemove: () => undefined,
+      quickStart: { reason: "not on this server" },
+    });
+    // The remove verb is the one-step undo of the link and the enablement together.
+    expect(buttonText(html, `${en.plugins.unlink} @acme/plugin`)).toBe(en.plugins.unlink);
+    expect(buttonText(html, `${en.plugins.uninstall} @acme/plugin`)).toBeUndefined();
+    // The provenance line names where the directory is and who linked it.
+    expect(html).toContain("/srv/plugins/acme");
+    expect(html).toContain("admin");
   });
 });

@@ -289,8 +289,12 @@ export function resolvePluginPackage(
  * `import` / `node` / `default` condition — else `main` (with `.js` supplied when it is
  * written without one), else `index.js`. The packages are ESM and name one entry, which is
  * all this reads; anything richer is the package's own business once Node imports it.
+ *
+ * Also the one entry a LOCAL directory must have before it is linked to a name: the local
+ * links validate a directory with the same rule (plugin/links.ts), so what an enable
+ * accepts is what a load would import.
  */
-function packageEntry(dir: string, manifest: string): string | null {
+export function packageEntry(dir: string, manifest: string): string | null {
   let pkg: { exports?: unknown; main?: unknown };
   try {
     pkg = JSON.parse(readFileSync(manifest, "utf8")) as typeof pkg;

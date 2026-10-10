@@ -74,7 +74,12 @@ async function keptContents(root: string, options: SweepOptions): Promise<Set<st
   for (const gen of options.keep) {
     const entries = await readGeneration(root, gen);
     if (entries === null) return null;
-    for (const e of entries) kept.add(`${e.name}/${entryKey(e.integrity)}`);
+    for (const e of entries) {
+      // A local link (a name linked to a directory, plugin/links.ts) pins no store content:
+      // what it holds is outside the store, and never the sweep's to remove.
+      if (!("integrity" in e)) continue;
+      kept.add(`${e.name}/${entryKey(e.integrity)}`);
+    }
   }
   for (const pin of options.pins ?? []) {
     const key = entryKey(pin.integrity);

@@ -23,22 +23,26 @@ The package is private, so it is not published, and it is not shipped with the b
 
 ## Enable the player
 
-A plugin is loaded by its package name only, from the bundled plugin directory a build stages.
-Stage the examples into it with the builtin plugins, then list the package in a Project's
-`.project_config.toml` and restart the server:
+A plugin is loaded by its package name only, from the host's plugin prefix — and a local
+directory reaches that prefix by being linked in. Build the package first (`dist/` and
+`ifaces.json` are build products, not tracked), then "Enable a local plugin" on the server's
+Plugins page (an admin operation) names the built directory; the server links it, lists the
+package for the Project and re-assembles itself around it — one step, nothing edited by hand:
 
 ```sh
-PENGUIN_PLUGIN_EXAMPLES=1 node scripts/build-plugins.mjs --out packages/server/plugins
+pnpm --filter @penguinharness/example-music build
 ```
 
-```toml
-[plugins]
-"@penguinharness/example-music" = "*"
-```
+The link is recorded — where the directory is, who linked it, when — the plugin's row shows it,
+and the row's "Unlink" undoes it in one step. The same operation as a route, for a host without
+the web app: `POST /api/projects/:projectId/plugins/installed/local` with
+`{ "path": "<the built directory>" }` (admin).
 
 What a Project lists is loaded for the whole server. Reload the web app after enabling it: the app
-reads contributions once per sign-in. The web e2e suite enables it this way
-(`packages/web/e2e/run.sh`).
+reads contributions once per sign-in. The web e2e suite takes the other route to the same prefix —
+it stages the examples into the builtin one (`PENGUIN_PLUGIN_EXAMPLES=1`, see
+`packages/web/e2e/run.sh`) — because its throwaway data root has nothing a link's record should
+outlive.
 
 ## Install the Skill
 

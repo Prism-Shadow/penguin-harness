@@ -35,6 +35,11 @@
  *   skills and, when it ships a hook package, that package is in the Agent's installed hooks —
  *   which is why the page fetches both lists per Agent. Uninstall takes the plugin apart the
  *   same way: one DELETE per skill and one for the hook package.
+ * - Folder-plus "Enable a local plugin" (admin, header): a dialog with one field — the built
+ *   directory's absolute path — whose Enable links the directory into the server's plugin
+ *   prefix and lists its package for this Project in one server-side step. A locally linked
+ *   row shows where its directory is, when it was linked and by whom, and its remove verb is
+ *   the one-step Unlink of the link and the enablement together.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -42,6 +47,7 @@ import type {
   AgentSummary,
   HookItem,
   InstalledPluginsResponse,
+  LocalPluginLink,
   PluginGroupItem,
   PluginIndexEntry,
   PluginItem,
@@ -363,6 +369,18 @@ export function PluginsPage() {
   } | null>(null);
 
   /**
+   * The local-plugin dialog (the admin header entry): its path input, and whether its Enable
+   * is running. Closing clears the input — a path left behind would pre-fill the next open
+   * with a directory the operator may no longer mean.
+   */
+  const [localOpen, setLocalOpen] = useState(false);
+  const [localPath, setLocalPath] = useState("");
+  const [localBusy, setLocalBusy] = useState(false);
+  /** A local link waiting for its one-step-undo confirmation (null = none), and whether the undo runs. */
+  const [pendingUnlink, setPendingUnlink] = useState<string | null>(null);
+  const [unlinkBusy, setUnlinkBusy] = useState(false);
+
+  /**
    * Installs the package into the data root (fetched from npm unless this build ships it) and
    * lists it for this Project — writing the list alone would name a package that is not on
    * the machine, which is exactly the state the row would then have to report as broken. The
@@ -394,6 +412,57 @@ export function PluginsPage() {
     } finally {
       setPendingSpecifier(null);
       setPendingApply(null);
+    }
+  };
+
+  /**
+   * Enables a local plugin: links the directory in and lists its package, in one server-side
+   * step (the dialog's Enable). The linked name is found by its recorded path — the server
+   * read it off the directory's own package.json — and a load that failed is toasted as the
+   * reason, not as enabled, the same way an install is.
+   */
+  const runEnableLocal = async () => {
+    if (projectId === null || localBusy) return;
+    const path = localPath.trim();
+    if (path === "") return;
+    setLocalBusy(true);
+    try {
+      const next = await api.enableLocalPlugin(projectId, path);
+      setDeployment(next);
+      const row = next.plugins.find((p) => p.local?.path === path);
+      if (row?.error !== undefined) {
+        toastError(S.plugins.deploymentFailedToast(row.specifier, row.error));
+      } else if (row !== undefined) {
+        toastSuccess(S.plugins.localEnabledToast(row.specifier));
+      } else {
+        toastSuccess(S.common.saved);
+      }
+      setLocalOpen(false);
+      setLocalPath("");
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setLocalBusy(false);
+    }
+  };
+
+  /**
+   * The one-step undo of a local link, after its confirmation: the server drops the name from
+   * this Project's tables and takes the record with it, so nothing is left that would make the
+   * name resolve to the directory again.
+   */
+  const runLocalCancel = async (specifier: string) => {
+    if (projectId === null || unlinkBusy) return;
+    setUnlinkBusy(true);
+    try {
+      const next = await api.cancelLocalPlugin(projectId, specifier);
+      setDeployment(next);
+      toastSuccess(S.plugins.localUnlinkedToast(specifier));
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setUnlinkBusy(false);
+      setPendingUnlink(null);
     }
   };
 
@@ -740,6 +809,7 @@ export function PluginsPage() {
                   />
                 ) : null
               }
+              onEnableLocal={() => setLocalOpen(true)}
               onOpenSettings={() => setSettingsOpen(true)}
             />
           }
@@ -844,12 +914,15 @@ export function PluginsPage() {
                     shipped={row.shipped}
                     onlyOn={row.onlyOn}
                     removeBlocked={row.removeBlocked}
+                    local={row.local}
                     busy={pendingSpecifier === row.specifier}
                     blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
                     onInstall={null}
                     onRemove={
                       isAdmin
-                        ? () => setPendingApply({ specifier: row.specifier, install: false })
+                        ? row.local !== undefined
+                          ? () => setPendingUnlink(row.specifier)
+                          : () => setPendingApply({ specifier: row.specifier, install: false })
                         : null
                     }
                     quickStart={
@@ -967,6 +1040,69 @@ export function PluginsPage() {
           {pendingApply.quickStart === true && <p>{S.plugins.quickStartAfterInstall}</p>}
         </ConfirmModal>
       )}
+      {/* The local-plugin dialog (admin): one field — the built directory's absolute path —
+          and what the step does, said once. The server validates the directory and answers
+          with the row, whose error (an unbuilt directory, a name that cannot load) is
+          toasted rather than passed off as enabled. */}
+      {localOpen && (
+        <Modal open title={S.plugins.enableLocal} onClose={() => setLocalOpen(false)}>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300">{S.plugins.enableLocalBody}</p>
+            <div>
+              <label
+                htmlFor="plugins-local-path"
+                className="block text-xs font-medium text-gray-700 dark:text-gray-200"
+              >
+                {S.plugins.enableLocalPathLabel}
+              </label>
+              <input
+                id="plugins-local-path"
+                autoFocus
+                value={localPath}
+                onChange={(e) => setLocalPath(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void runEnableLocal();
+                }}
+                placeholder={S.plugins.enableLocalPathPlaceholder}
+                spellCheck={false}
+                aria-invalid={localPath.trim() === "" && localBusy}
+                className="mt-1.5 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 font-mono text-xs leading-5 text-gray-800 placeholder:text-gray-400 focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400/20 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setLocalOpen(false)}>
+                {S.common.cancel}
+              </Button>
+              <Button
+                size="sm"
+                disabled={localBusy || localPath.trim() === ""}
+                aria-busy={localBusy}
+                onClick={() => void runEnableLocal()}
+              >
+                {localBusy ? <StatusIcon state="running" /> : null}
+                {S.plugins.enableLocalAction}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* A local link's one-step undo: what it takes is said before it runs — the same cost
+          an apply has, plus the record going with it. */}
+      {pendingUnlink !== null && (
+        <ConfirmModal
+          open
+          title={S.plugins.unlinkConfirmTitle(pendingUnlink)}
+          tone="danger"
+          confirmLabel={S.plugins.unlink}
+          cancelLabel={S.common.cancel}
+          busy={unlinkBusy}
+          onClose={() => setPendingUnlink(null)}
+          onConfirm={() => void runLocalCancel(pendingUnlink)}
+        >
+          <p>{S.plugins.unlinkConfirmBody}</p>
+        </ConfirmModal>
+      )}
       {repairModal}
       {/* A library plugin's quick start on an Agent that lacks it: installing comes first, and is asked. */}
       {pendingQuickStart !== null && currentAgent && (
@@ -1034,6 +1170,11 @@ interface ModulePluginRow {
   onlyOn?: string[];
   /** Why Remove is unavailable in this view, when it is. */
   removeBlocked?: string;
+  /**
+   * The local link's provenance, when the machine in view loads the name from a directory
+   * (the server's link record): where the directory is, when it was linked, by whom.
+   */
+  local?: LocalPluginLink;
 }
 /**
  * What a listed module plugin is on the machine in view: running; waiting for a runtime that
@@ -1065,15 +1206,17 @@ const ALL_MACHINES_CHOICE = "*";
 /**
  * The page header's actions, the Models page's shape: search for everyone (a member filters the
  * list too), then, for an admin, the machine picker (which machine's plugins the rows show, and
- * which table an install or a removal edits: the shared one, or that machine's own) and the gear
- * that opens the Settings dialog's Plugins page. The gear's words sit beside its icon once the
- * header's `@container` is wide enough.
+ * which table an install or a removal edits: the shared one, or that machine's own), the
+ * "Enable a local plugin" entry (the dialog that links a directory in and lists its package),
+ * and the gear that opens the Settings dialog's Plugins page. The gear's and the local
+ * entry's words sit beside their icons once the header's `@container` is wide enough.
  */
 export function PluginsHeaderActions({
   query,
   onQuery,
   isAdmin,
   machinePicker,
+  onEnableLocal,
   onOpenSettings,
 }: {
   query: string;
@@ -1081,6 +1224,8 @@ export function PluginsHeaderActions({
   isAdmin: boolean;
   /** The machine picker, when there is another machine to pick; null otherwise. */
   machinePicker: React.ReactNode;
+  /** Opens the local-plugin dialog (admin only): linking a directory in, listing its package. */
+  onEnableLocal: () => void;
   onOpenSettings: () => void;
 }) {
   return (
@@ -1097,6 +1242,16 @@ export function PluginsHeaderActions({
       {isAdmin && (
         <>
           {machinePicker}
+          <Button
+            size="sm"
+            className="h-8 shrink-0"
+            aria-label={S.plugins.enableLocal}
+            title={S.plugins.enableLocal}
+            onClick={onEnableLocal}
+          >
+            <GlyphIcon d={ICONS.folderPlus} size={ICON_SIZE.iconButton} />
+            <span className="hidden @3xl:inline">{S.plugins.enableLocal}</span>
+          </Button>
           <Button
             size="sm"
             className="h-8 shrink-0"
@@ -1170,18 +1325,32 @@ export function installedPluginRows(
     if (!inView(listed, view)) continue;
     const shared = listed.everywhere !== false;
     const ownTable = view.machineId !== null && (listed.machines ?? []).includes(view.machineId);
+    // The row the machine in view reports: that machine's own link record names where ITS
+    // copy of the name comes from — a link is machine-local, and another machine's row is
+    // the one that says so. Undefined when that machine has not answered with the row.
+    const reported =
+      view.remote === null
+        ? listed
+        : view.remote.plugins.find((p) => p.specifier === listed.specifier);
     rows.push({
       kind: "module",
       specifier: listed.specifier,
       entry: indexEntryOf(index, listed.specifier),
       ...stateIn(listed, view, deployment?.machineId),
-      shipped:
-        listed.builtin || (view.remote ?? deployment)?.shipped.includes(listed.specifier) === true,
+      shipped: listed.builtin || (view.remote ?? deployment)?.shipped.includes(listed.specifier) === true,
       ...(shared ? {} : { onlyOn: (listed.machines ?? []).map(view.nameOf) }),
       // A machine's view edits that machine's own table; a shared entry is not in it.
       ...(view.machineId !== null && shared && !ownTable
         ? { removeBlocked: S.plugins.sharedCannotRemove }
         : {}),
+      // A local row's remove verb is the one-step Unlink, which undoes that machine's own
+      // record — from another machine's view, that is not this server's to do.
+      ...(reported?.local !== undefined &&
+      view.machineId !== null &&
+      view.machineId !== deployment?.machineId
+        ? { removeBlocked: S.plugins.localNotHere }
+        : {}),
+      ...(reported?.local !== undefined ? { local: reported.local } : {}),
     });
   }
   return rows;
@@ -1808,10 +1977,12 @@ function InstallRow({
  * version, the description, a metadata line saying what the deployment's own state is (not
  * installed → nothing yet; installed but not loaded → the restart it waits for; running → the
  * modules it holds), then the tag line — its categories, "built in" when this build ships
- * it, the license, the keywords. The trailing cluster is the verb: Install on an available
- * row, Remove on an installed one. The row is a link to the registry page when the registry
- * knows the package; the cluster sits BESIDE that link — a button inside an anchor is invalid
- * markup, and the click would have two meanings.
+ * it, the license, the keywords. A locally linked row carries its provenance line instead:
+ * where the directory is, when it was linked and by whom, and its remove verb is the
+ * one-step Unlink of the link and the enablement together. The trailing cluster is the verb:
+ * Install on an available row, Remove on an installed one. The row is a link to the registry
+ * page when the registry knows the package; the cluster sits BESIDE that link — a button
+ * inside an anchor is invalid markup, and the click would have two meanings.
  */
 export function ModuleRow({
   specifier,
@@ -1822,6 +1993,7 @@ export function ModuleRow({
   shipped,
   onlyOn,
   removeBlocked,
+  local,
   busy,
   blocked,
   onInstall,
@@ -1842,6 +2014,8 @@ export function ModuleRow({
   onlyOn?: string[];
   /** Why Remove is unavailable in this view, when it is. */
   removeBlocked?: string;
+  /** The local link's provenance, when the machine in view loads the name from a directory. */
+  local?: LocalPluginLink;
   /** This row's own install or removal is running. */
   busy: boolean;
   /** Another row's is: one at a time, so the rest are held rather than queued. */
@@ -1946,6 +2120,19 @@ export function ModuleRow({
       {cannotInstall !== null && (
         <p className={`mt-1 text-xs ${toneInk.attention}`}>{cannotInstall}</p>
       )}
+      {local !== undefined && (
+        <p
+          className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400"
+          data-tooltip={local.path}
+          data-tooltip-content="text"
+        >
+          {S.plugins.localLinkLine(
+            local.path,
+            formatRelativeDate(local.linkedAt.slice(0, 10), locale),
+            local.by,
+          )}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
         {(entry?.categories ?? []).map((category) => (
           <Tag key={category}>{category}</Tag>
@@ -2021,9 +2208,9 @@ export function ModuleRow({
               <Button
                 size="sm"
                 className="h-8 shrink-0"
-                aria-label={`${S.plugins.uninstall} ${specifier}`}
+                aria-label={`${local !== undefined ? S.plugins.unlink : S.plugins.uninstall} ${specifier}`}
                 aria-busy={busy}
-                title={removeBlocked ?? S.plugins.uninstall}
+                title={removeBlocked ?? (local !== undefined ? S.plugins.unlink : S.plugins.uninstall)}
                 disabled={busy || blocked || removeBlocked !== undefined}
                 onClick={onRemove}
               >
@@ -2032,7 +2219,9 @@ export function ModuleRow({
                 ) : (
                   <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
                 )}
-                <span className="hidden @3xl:inline">{S.plugins.uninstall}</span>
+                <span className="hidden @3xl:inline">
+                  {local !== undefined ? S.plugins.unlink : S.plugins.uninstall}
+                </span>
               </Button>
             )}
       </div>

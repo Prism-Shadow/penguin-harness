@@ -31,8 +31,16 @@
  * two go. What is in `<root>/plugins/` besides generations (the npm
  * prefix older builds installed into) is neither read nor removed.
  *
- * A linked plugin runs from its store entry, so the host SDK it keeps external is lent to it
- * from the running program (`lendHostPackages`).
+ * A name can also be linked to a LOCAL directory (plugin/links.ts): the link record is a
+ * machine-level input like the store, and activation answers such a name from it — the
+ * generation's `node_modules/<name>` points at the directory, so a rebuild of the source
+ * reaches the next boot through the unchanged link. A local entry has no integrity: its
+ * key names the path (and the version the directory's package.json reads), an integrity pin
+ * on it is refused, and the sweep never touches the source, which is not under `<root>/`.
+ *
+ * A linked plugin runs from its own directory, so the host SDK it keeps external is
+ * resolved from there — a checkout finds the workspace's `node_modules` above it; the
+ * lending hook (`lendHostPackages`) serves store entries only.
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -49,6 +57,7 @@ import {
   syncPluginStore,
 } from "./store.js";
 import type { StoreIndexEntry } from "./store.js";
+import { readPluginLinks, resolveLocalEntry } from "./links.js";
 import { compareVersions, satisfies } from "../api/plugin-pick.js";
 
 /** `<root>/plugins`: the activation directory. */
@@ -72,13 +81,14 @@ export interface PluginAsk {
   integrity?: string;
 }
 
-/** One plugin of a generation. */
-export interface GenerationEntry {
-  name: string;
-  version: string;
-  /** npm's integrity, `sha512-<base64>`; the store entry's key is derived from it. */
-  integrity: string;
-}
+/**
+ * One plugin of a generation: a store entry, keyed by npm's integrity — or a local
+ * directory the name is linked to (plugin/links.ts), which has none: what its directory
+ * holds is what runs, and the key names the path.
+ */
+export type GenerationEntry =
+  | { name: string; version: string; integrity: string }
+  | { name: string; version: string; local: string };
 
 /** The generation `current` names, when the pointer and a complete generation behind it exist. */
 export function currentGeneration(root: string): string | null {
@@ -112,19 +122,28 @@ export async function readGeneration(root: string, gen: string): Promise<Generat
   if (table === null || typeof table !== "object") return null;
   const out: GenerationEntry[] = [];
   for (const [name, row] of Object.entries(table as Record<string, unknown>)) {
-    const r = row as { version?: unknown; integrity?: unknown };
-    if (typeof r.version !== "string" || typeof r.integrity !== "string") continue;
-    out.push({ name, version: r.version, integrity: r.integrity });
+    const r = row as { version?: unknown; integrity?: unknown; local?: unknown };
+    if (typeof r.version !== "string") continue;
+    // A store entry names its integrity; a local link names the directory it points at.
+    if (typeof r.integrity === "string") {
+      out.push({ name, version: r.version, integrity: r.integrity });
+    } else if (typeof r.local === "string") {
+      out.push({ name, version: r.version, local: r.local });
+    }
   }
   return out;
 }
 
 const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** The key of a selection: the hash of its sorted (name, integrity) list, 16 hex digits. */
+/**
+ * The key of a selection: the hash of its sorted (name, content) list, 16 hex digits. A
+ * store entry's content is its integrity; a local link's is its path, with the version the
+ * directory's package.json read when the generation was written.
+ */
 export function generationKey(entries: readonly GenerationEntry[]): string {
   const pairs = entries
-    .map((e) => [e.name, e.integrity] as const)
+    .map((e) => [e.name, "integrity" in e ? e.integrity : `local:${e.local}@${e.version}`] as const)
     .sort(([a], [b]) => byCodeUnit(a, b));
   return createHash("sha256").update(JSON.stringify(pairs)).digest("hex").slice(0, 16);
 }
@@ -164,12 +183,22 @@ export async function writeGeneration(
       version: "0.0.0",
       dependencies: Object.fromEntries(sorted.map((e) => [e.name, e.version])),
       plugins: Object.fromEntries(
-        sorted.map((e) => [e.name, { version: e.version, integrity: e.integrity }]),
+        sorted.map((e) => [
+          e.name,
+          "integrity" in e
+            ? { version: e.version, integrity: e.integrity }
+            : { version: e.version, local: e.local },
+        ]),
       ),
     };
     await fsp.writeFile(path.join(tmp, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
     for (const e of sorted) {
-      const target = path.join(storeEntryDir(root, e.name, e.version, e.integrity), PACKAGE_DIR);
+      // A store entry runs from its entry's package; a local link runs from the directory
+      // itself, so a rebuild of the source reaches the next boot through the link.
+      const target =
+        "integrity" in e
+          ? path.join(storeEntryDir(root, e.name, e.version, e.integrity), PACKAGE_DIR)
+          : e.local;
       await linkPackage(target, path.join(tmp, "node_modules", ...e.name.split("/")));
     }
     await fsp.writeFile(path.join(tmp, COMPLETE_FILE), `${new Date().toISOString()}\n`);
@@ -250,8 +279,10 @@ export interface Activation {
  * Resolves the closure against the store, writes that generation if it is new and points
  * `current` at it. The store is brought up to date with this boot's own sources first (their
  * entries are what "the running build carries" means). `asks` maps each listed package name to
- * what every Project asks of it; a name that is not a package name finds no store entry and is
- * reported by the loader with its reason.
+ * what every Project asks of it; a name that is linked to a local directory (plugin/links.ts)
+ * is answered by the link — before the store, since the link is the machine's own answer for
+ * the name — and a name neither a link nor the store answers is reported by the loader with
+ * its reason.
  */
 export async function activatePlugins(
   root: string,
@@ -260,9 +291,17 @@ export async function activatePlugins(
 ): Promise<Activation> {
   const shipped = await syncPluginStore(root, assetsDir);
   const stored = await readStore(root);
+  const linked = await readPluginLinks(root);
   const chosen: GenerationEntry[] = [];
   const missing = new Map<string, string>();
   for (const [name, list] of asks) {
+    const link = linked.get(name);
+    if (link !== undefined) {
+      const pick = await resolveLocalEntry(name, link, list);
+      if ("missing" in pick) missing.set(name, pick.missing);
+      else chosen.push(pick);
+      continue;
+    }
     const pick = chooseEntry(name, list, stored, shipped);
     if ("missing" in pick) missing.set(name, pick.missing);
     else chosen.push({ name: pick.name, version: pick.version, integrity: pick.integrity });
