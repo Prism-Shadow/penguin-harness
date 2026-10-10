@@ -429,6 +429,31 @@ describe("models preset & catalog enrichment", () => {
     }
   });
 
+  it("a padded modelId is normalized once at the boundary: stored as the preset spelling, no padded near-duplicate row", async () => {
+    // The service's gates judge the trimmed id (unaddableModel / unroutableVendorModel
+    // trim) while the dedup and the stored model_id compare it verbatim — a padded
+    // spelling of a preset passes the gates and lands as an unroutable near-duplicate
+    // of the catalog row. The route's parse layer is the single ingestion point.
+    const put = await api.put(url(), {
+      models: [{ provider: "deepseek", modelId: " deepseek-flash " }],
+    });
+    expect(put.status).toBe(200);
+
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(body, "deepseek", "deepseek-flash")).toBeDefined();
+    expect(body.models.some((m) => m.modelId !== m.modelId.trim())).toBe(false);
+  });
+
+  it("two spellings of one id (padded and plain) are one reference after normalization: the padded duplicate is a 400", async () => {
+    const put = await api.put(url(), {
+      models: [
+        { provider: "deepseek", modelId: "deepseek-flash" },
+        { provider: "deepseek", modelId: " deepseek-flash " },
+      ],
+    });
+    expect(put.status).toBe(400);
+  });
+
   it("PUT a custom model: the vision flag persists; the openai protocol falls back to OPENAI_API_KEY; provider is required", async () => {
     // A vendor-group row on the openai protocol, as a group header's add once wrote it.
     await storeRows(t.root, projectId, [

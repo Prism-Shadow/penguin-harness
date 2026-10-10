@@ -88,7 +88,15 @@ function parseRef(value: unknown, label: string): ModelRefDto {
   const r = value as Record<string, unknown>;
   return {
     provider: requireString(r, "provider", { minLen: 1, maxLen: 64, label: `${label}.provider` }),
-    modelId: requireString(r, "modelId", { minLen: 1, maxLen: 200, label: `${label}.modelId` }),
+    // Normalized at this single ingestion point: the service's gates judge the trimmed
+    // id (unaddableModel / unroutableVendorModel trim), while the dedup and the stored
+    // model_id compare it verbatim, so a padded spelling would pass as "new" and store
+    // an unroutable near-duplicate. The CLI's `config model add` normalizes the same way.
+    modelId: requireString(r, "modelId", {
+      minLen: 1,
+      maxLen: 200,
+      label: `${label}.modelId`,
+    }).trim(),
   };
 }
 
@@ -171,11 +179,13 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
         maxLen: 64,
         label: `models[${i}].provider`,
       }),
+      // Same ingestion-point normalization as parseRef (see there): the trimmed id is
+      // what the gates judge, the dedup keys on, and the table stores.
       modelId: requireString(m, "modelId", {
         minLen: 1,
         maxLen: 200,
         label: `models[${i}].modelId`,
-      }),
+      }).trim(),
     };
     if (m.displayName !== undefined) {
       if (typeof m.displayName !== "string" || m.displayName.length > 100) {
