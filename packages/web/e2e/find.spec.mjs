@@ -8,14 +8,14 @@
  * - Ctrl+Shift+F (`find.all`) searches every area on screen and lists the hits by area, and the
  *   scope button narrows back to the area the focus was in.
  * - A match inside a collapsed work group is found: the groups of the searched area open while
- *   the query stands, a search of another area leaves them closed, and closing the bar folds
- *   them back.
+ *   the query stands (their steps' rows, not each step's own output), a search of another area
+ *   leaves them closed, and closing the bar folds them back.
  * - With earlier turns not loaded, "load and keep searching" backfills them and lands on the
  *   nearest hit above the one the reader was on, not on the first hit of the conversation.
  *
  * The replies come from mock-llm.mjs: the "find marker test" branch writes `findmarker` four
  * times across two paragraphs (a token nothing else in the app writes, so counts are exact), and
- * any other first message takes the default path, a work group running `ls -la`.
+ * any other first message takes the default path, a work group with one exec_command step.
  *
  * Standalone spec: shares one server with the other specs, so it registers its own user (which
  * auto-provisions a default Project).
@@ -166,37 +166,40 @@ test("a match inside a collapsed work group is found, and the group folds back w
   await ta.waitFor();
   await sender(page, ta)("list the workspace", 1);
 
-  // The settled tool group has folded itself away: the command it ran is not on the page.
+  // The settled tool group has folded itself away: its step's row is not on the page.
   const group = page.locator('[data-group-header][data-kind="tool"]');
   await expect(group).toHaveAttribute("aria-expanded", "false");
-  const command = page.getByText("ls -la");
-  await expect(command).toHaveCount(0);
+  const STEP = "执行命令";
+  const step = page.getByText(STEP);
+  await expect(step).toHaveCount(0);
 
   const bar = page.getByRole("search");
   const input = bar.locator("input");
 
-  // A search of the Session list leaves the conversation's groups closed.
-  const sessions = page.locator('[data-find-region="sessions"]');
-  await sessions.getByRole("button").filter({ hasText: TITLE }).first().click();
-  await page.keyboard.press("Control+f");
-  await input.fill("ls -la");
-  await expect(bar.getByText("无结果", { exact: true })).toBeVisible();
-  await expect(group).toHaveAttribute("aria-expanded", "false");
-  await page.keyboard.press("Escape");
-  await expect(bar).toHaveCount(0);
-
   // A search of the conversation opens the group once the query settles, and the hit is counted.
   await ta.click();
   await page.keyboard.press("Control+f");
-  await input.fill("ls -la");
+  await input.fill(STEP);
   await expect(group).toHaveAttribute("aria-expanded", "true");
-  await expect(bar.getByText(/^1\/\d+$/)).toBeVisible();
+  await expect(bar.getByText("1/1", { exact: true })).toBeVisible();
 
-  // Closing the bar folds it back: the reader never opened it.
+  // The same query moved to the Session list folds the conversation's group back: only the
+  // searched area opens its groups.
+  const sessions = page.locator('[data-find-region="sessions"]');
+  await sessions.getByRole("button").filter({ hasText: TITLE }).first().click();
+  await page.keyboard.press("Control+f");
+  await expect(bar.getByText("无结果", { exact: true })).toBeVisible();
+  await expect(group).toHaveAttribute("aria-expanded", "false");
+
+  // Back in the conversation it opens again, and closing the bar folds it: the reader never
+  // opened it.
+  await ta.click();
+  await page.keyboard.press("Control+f");
+  await expect(group).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
   await expect(bar).toHaveCount(0);
   await expect(group).toHaveAttribute("aria-expanded", "false");
-  await expect(command).toHaveCount(0);
+  await expect(step).toHaveCount(0);
 });
 
 test("load and keep searching backfills earlier turns and lands on the nearest hit above", async ({
