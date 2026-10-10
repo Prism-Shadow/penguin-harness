@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** feature
 - **Scope:** `model-catalog`, `core`, `docs`
+- **PR:** [#1016](https://github.com/Prism-Shadow/penguin-harness/pull/1016)
 
 [中文版](2026-10-10-model-catalog-update.zh.md)
 
