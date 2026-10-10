@@ -2429,24 +2429,25 @@ export const zh = {
     /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
     sharedCannotRemove: "已对所有机器启用：请在「所有机器」视图中移除。",
     machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
-    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "设置",
     pageDesc:
       "所有插件按分类列出。只含技能和／或钩子包的插件随本次构建自带，装到 Agent 上使用；服务端模块插件（如 Agent 运行沙箱后端）由管理员安装到整个服务端。",
-    /** The grouping select's options: each says what it does at rest, since it sits beside the filters. */
+    /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "分组方式",
     groupBy: {
-      category: "分组：分类",
-      status: "分组：状态",
-      kind: "分组：包含",
+      category: "按类别分组",
+      status: "按状态分组",
+      kind: "按内容分组",
       none: "不分组",
     },
-    /** The three filter selects (their accessible names), and an option as it reads: the facet before the value, since the selects sit side by side. */
-    filterCategories: "分类",
-    filterKind: "包含",
+    /** The three filter selects: each one's accessible name (what it filters) and its option that filters nothing; a chosen value reads as its own name. */
+    filterCategories: "类别",
+    filterKind: "内容",
     filterState: "状态",
-    filterAll: "全部",
-    filterValue: (facet: string, value: string) => `${facet}：${value}`,
+    filterAllCategories: "所有类别",
+    filterAnyKind: "任意内容",
+    filterAllStatuses: "所有状态",
     kindLabel: { skills: "技能", hooks: "钩子", modules: "服务端模块" },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent 运行沙箱",

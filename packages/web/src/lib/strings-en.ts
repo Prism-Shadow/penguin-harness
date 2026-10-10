@@ -2342,24 +2342,25 @@ export const en: Strings = {
     sharedCannotRemove: "Enabled on all machines: remove it in the All machines view.",
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
-    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "Settings",
     pageDesc:
       "Every plugin, by category. Plugins of skills and/or a hook package ship with this build and are installed on agents; server-module plugins, such as the Agent Sandbox backends, are installed on the whole server by an admin.",
-    /** The grouping select's options: each says what it does at rest, since it sits beside the filters. */
+    /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "Group by",
     groupBy: {
-      category: "Group: category",
-      status: "Group: status",
-      kind: "Group: contents",
+      category: "Group by category",
+      status: "Group by status",
+      kind: "Group by content",
       none: "No grouping",
     },
-    /** The three filter selects (their accessible names), and an option as it reads: the facet before the value, since the selects sit side by side. */
+    /** The three filter selects: each one's accessible name (what it filters) and its option that filters nothing; a chosen value reads as its own name. */
     filterCategories: "Category",
-    filterKind: "Contents",
+    filterKind: "Content",
     filterState: "Status",
-    filterAll: "all",
-    filterValue: (facet: string, value: string) => `${facet}: ${value}`,
+    filterAllCategories: "All categories",
+    filterAnyKind: "Any content",
+    filterAllStatuses: "All statuses",
     kindLabel: { skills: "Skills", hooks: "Hooks", modules: "Server modules" },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent Sandbox",

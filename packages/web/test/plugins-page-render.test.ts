@@ -3,8 +3,11 @@
  * card's actions by kind and role, a server module's confirm, and the detail dialog's sections
  * by kind.
  *
- * - A member sees the search box and no settings gear; an admin sees the gear with its words.
- * - Each select names itself in what it shows: the grouping, and a filter with its value.
+ * - A member sees the search box and no Settings button; an admin sees Settings, with its words.
+ * - Choosing a grouping regroups the cards that way, and choosing a filter's value keeps only
+ *   its cards until the option that filters nothing brings them all back.
+ * - A chosen value shows as its own name, an idle filter as its option that filters nothing,
+ *   and each select keeps an accessible name for what it groups or filters.
  * - A server module's card offers an admin Install, or Remove once listed, each with its words;
  *   a member gets the card read-only — its status, and no way to change the server.
  * - A library plugin's card offers any member quick start and "manage installs".
@@ -18,7 +21,13 @@
  * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
  * its cards. How the header row wraps on a narrow screen is PageHeader's, not this page's.
  */
-import { createElement, type FunctionComponent } from "react";
+import {
+  createElement,
+  isValidElement,
+  type FunctionComponent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { PluginIndexEntry, PluginItem } from "@prismshadow/penguin-server/api";
@@ -32,14 +41,24 @@ import {
   type PluginDetailHead,
   type ReadmeState,
 } from "../src/features/plugins/plugin-detail";
-import { NO_FILTERS, type PluginRow } from "../src/features/plugins/plugin-groups";
+import {
+  NO_FILTERS,
+  groupRows,
+  rowMatches,
+  type PluginFilters,
+  type PluginGroupBy,
+  type PluginRow,
+} from "../src/features/plugins/plugin-groups";
+import type { PluginStatus } from "../src/features/plugins/plugin-status";
 import { PluginControls, PluginsHeaderActions } from "../src/features/plugins/plugins-page";
+import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";
 import { stubLocalStorage } from "./helpers/storage";
 
 beforeEach(() => {
   stubLocalStorage().setItem("penguin.lang", "en");
+  setActiveStrings(en);
 });
 
 const inLocale = <P extends object>(child: FunctionComponent<P>, props: P) =>
@@ -52,6 +71,11 @@ function buttonText(html: string, name: string): string | undefined {
     html,
   );
   return match?.[1]?.replace(/<[^>]+>/g, "").trim();
+}
+
+/** The words of every button in the markup, as a reader sees them. */
+function buttonWords(html: string): string[] {
+  return [...html.matchAll(/<button[^>]*>(.*?)<\/button>/gs)].map((m) => text(m[1]!).trim());
 }
 
 /** The text of the markup as a reader sees it: tags turned into spaces, entities decoded. */
@@ -76,16 +100,16 @@ const header = (isAdmin: boolean) =>
   });
 
 describe("the plugins page header", () => {
-  it("offers a member the search box and no settings gear", () => {
+  it("offers a member the search box and no Settings button", () => {
     const html = header(false);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
-    expect(buttonText(html, en.plugins.openSettings)).toBeUndefined();
+    expect(buttonWords(html)).not.toContain(en.plugins.openSettings);
   });
 
-  it("offers an admin the search box and a settings gear that says what it is", () => {
+  it("offers an admin the search box and a Settings button that says what it is", () => {
     const html = header(true);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
-    expect(buttonText(html, en.plugins.openSettings)).toBe(en.plugins.openSettings);
+    expect(buttonWords(html)).toContain(en.plugins.openSettings);
   });
 });
 
@@ -204,35 +228,93 @@ describe("installing a server module", () => {
 });
 
 describe("the grouping and filter selects", () => {
-  const controls = (filters = NO_FILTERS) =>
-    inLocale(PluginControls, {
-      groupBy: "status",
-      onGroupBy: () => undefined,
-      filters,
-      onFilters: () => undefined,
-      rows: [libraryRow, moduleRow("none")],
-      statusOf: () => "available",
-      categories: [
-        { id: "office-productivity", title: "Office Productivity" },
-        { id: "sandbox", title: "Agent Sandbox" },
-      ],
-    });
-  /** What the select with this accessible name shows while closed. */
-  const shown = (html: string, name: string) => buttonText(html, name);
+  const rows = [libraryRow, moduleRow("none")];
+  const statusOf = (row: PluginRow): PluginStatus =>
+    row.library !== undefined ? "installed" : "available";
+  const categories = [
+    { id: "office-productivity", title: "Office Productivity" },
+    { id: "sandbox", title: "Agent Sandbox" },
+  ];
+  type ControlsProps = Parameters<typeof PluginControls>[0];
+  const props = (overrides: Partial<ControlsProps> = {}): ControlsProps => ({
+    groupBy: "category",
+    onGroupBy: () => undefined,
+    filters: NO_FILTERS,
+    onFilters: () => undefined,
+    rows,
+    statusOf,
+    categories,
+    ...overrides,
+  });
 
-  it("show the grouping, and each filter's name before its value", () => {
-    const idle = controls();
+  /** Every element in a tree of plain elements, depth first, its children (and lists of them) followed. */
+  const elements = (node: ReactNode): ReactElement<Record<string, unknown>>[] => {
+    if (Array.isArray(node)) return node.flatMap(elements);
+    if (!isValidElement(node)) return [];
+    const element = node as ReactElement<Record<string, unknown>>;
+    return [element, ...elements(element.props.children as ReactNode)];
+  };
+
+  /** Picks the option showing `words` in the select named `name`, as a reader choosing it would. */
+  const choose = (tree: ReactNode, name: string, words: string) => {
+    const select = elements(tree).find((el) => el.props["aria-label"] === name);
+    const option = elements(select?.props.children as ReactNode).find(
+      (el) => el.type === "option" && el.props.children === words,
+    );
+    if (select === undefined || option === undefined) throw new Error(`no "${words}" in ${name}`);
+    (select.props.onChange as (e: { target: { value: unknown } }) => void)({
+      target: { value: option.props.value },
+    });
+  };
+
+  it("choosing to group by status regroups the cards by status", () => {
+    let chosen: PluginGroupBy = "category";
+    const tree = PluginControls(
+      props({
+        onGroupBy: (by) => {
+          chosen = by;
+        },
+      }),
+    );
+    choose(tree, en.plugins.groupByLabel, en.plugins.groupBy.status);
+    expect(groupRows(rows, statusOf, chosen, categories).map((group) => group.id)).toEqual([
+      "installed",
+      "available",
+    ]);
+  });
+
+  it("choosing a category keeps only its cards, until the option that filters nothing brings them all back", () => {
+    let filters: PluginFilters = NO_FILTERS;
+    const onFilters = (next: PluginFilters) => {
+      filters = next;
+    };
+    const kept = () =>
+      rows.filter((row) => rowMatches(row, statusOf(row), filters, "")).map((row) => row.name);
+    choose(PluginControls(props({ onFilters })), en.plugins.filterCategories, "Agent Sandbox");
+    expect(kept()).toEqual(["sandbox-bwrap"]);
+    choose(
+      PluginControls(props({ filters, onFilters })),
+      en.plugins.filterCategories,
+      en.plugins.filterAllCategories,
+    );
+    expect(kept()).toEqual(["data-analysis", "sandbox-bwrap"]);
+  });
+
+  it("show a chosen value as its own name and an idle filter as the option that filters nothing", () => {
+    /** What the select with this accessible name shows while closed. */
+    const shown = (html: string, name: string) => buttonText(html, name);
+    const idle = inLocale(PluginControls, props({ groupBy: "status" }));
     expect(shown(idle, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.status);
-    expect(shown(idle, en.plugins.filterState)).toBe(
-      en.plugins.filterValue(en.plugins.filterState, en.plugins.filterAll),
+    expect(shown(idle, en.plugins.filterCategories)).toBe(en.plugins.filterAllCategories);
+    expect(shown(idle, en.plugins.filterKind)).toBe(en.plugins.filterAnyKind);
+    expect(shown(idle, en.plugins.filterState)).toBe(en.plugins.filterAllStatuses);
+    const picked = inLocale(
+      PluginControls,
+      props({ filters: { category: "sandbox", kind: "modules", status: "available" } }),
     );
-    const picked = controls({ ...NO_FILTERS, status: "available", category: "sandbox" });
-    expect(shown(picked, en.plugins.filterState)).toBe(
-      en.plugins.filterValue(en.plugins.filterState, en.plugins.status.available),
-    );
-    expect(shown(picked, en.plugins.filterCategories)).toBe(
-      en.plugins.filterValue(en.plugins.filterCategories, "Agent Sandbox"),
-    );
+    expect(shown(picked, en.plugins.filterCategories)).toBe("Agent Sandbox");
+    expect(shown(picked, en.plugins.filterKind)).toBe(en.plugins.kindLabel.modules);
+    expect(shown(picked, en.plugins.filterState)).toBe(en.plugins.status.available);
   });
 });
 

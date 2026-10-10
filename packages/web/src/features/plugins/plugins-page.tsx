@@ -41,7 +41,6 @@ import {
   ConfirmModal,
   GlyphIcon,
   ICONS,
-  ICON_SIZE,
   Notice,
   PageFrame,
   PageHeader,
@@ -622,66 +621,63 @@ export function PluginsPage() {
   // would otherwise take the scrollbar with it and shift everything sideways at the click.
   return (
     <PageFrame className="[scrollbar-gutter:stable]">
-      {/* The wrapper is the @container the header buttons' words answer to (see
-          PluginsHeaderActions). The options loaded plugins declare live on the Settings
-          dialog's Plugins page, an admin's page; the header's gear opens the dialog there rather
-          than sending anyone through the user menu to find it. */}
-      <div className="@container">
-        <PageHeader
-          title={S.plugins.pageTitle}
-          info={S.plugins.pageDesc}
-          actions={
-            <PluginsHeaderActions
-              query={query}
-              onQuery={setQuery}
-              isAdmin={isAdmin}
-              machinePicker={
-                otherMachines.length > 0 ? (
-                  <MachinePicker
-                    aria-label={S.plugins.viewMachine}
-                    choices={machineChoices}
-                    value={viewMachine ?? ALL_MACHINES_CHOICE}
-                    onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
-                  />
-                ) : null
-              }
-              onOpenSettings={() => setSettingsOpen(true)}
-            />
-          }
-        >
-          {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
-            that takes all of it in one press, and the way to clear it for someone who has looked
-            and decided to stay on the installed copies. A plugin is never NEW here — one nobody
-            has installed is not waiting for anyone — so the line states the upgradable count
-            alone rather than padding it with a zero. The per-card update buttons below remain
-            the way to take just one. */}
-          {todo && (
-            <TodoNotice
-              text={S.todo.changesUpgradable(noticeCounts(todo).updated)}
-              actionLabel={S.todo.updateNow}
-              busy={bulkRunning}
-              onAction={() => setPendingBulk(pluginUpdatePlan(agents))}
-              dismissLabel={S.todo.dismiss}
-              onDismiss={() => dismissTodo(projectId, "plugins", todo.signature)}
-            />
-          )}
-          {indexFailures.length > 0 && (
-            <Notice tone="attention" className="mt-4">
-              {S.pluginRegistry.sourceUnavailable(indexFailures.length)}
-            </Notice>
-          )}
-          {remote !== null && "error" in remote && remote.machineId === viewMachine && (
-            <Notice tone="attention" className="mt-4">
-              {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
-            </Notice>
-          )}
-          {deployment !== null && viewIncludesHere && deployment.restartPending && (
-            <Notice tone="attention" className="mt-4">
-              {S.plugins.restartPending}
-            </Notice>
-          )}
-        </PageHeader>
-      </div>
+      {/* The options loaded plugins declare live on the Settings dialog's Plugins page, an
+          admin's page; the header's Settings button opens the dialog there rather than sending
+          anyone through the user menu to find it. */}
+      <PageHeader
+        title={S.plugins.pageTitle}
+        info={S.plugins.pageDesc}
+        actions={
+          <PluginsHeaderActions
+            query={query}
+            onQuery={setQuery}
+            isAdmin={isAdmin}
+            machinePicker={
+              otherMachines.length > 0 ? (
+                <MachinePicker
+                  aria-label={S.plugins.viewMachine}
+                  choices={machineChoices}
+                  value={viewMachine ?? ALL_MACHINES_CHOICE}
+                  onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
+                />
+              ) : null
+            }
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        }
+      >
+        {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
+          that takes all of it in one press, and the way to clear it for someone who has looked
+          and decided to stay on the installed copies. A plugin is never NEW here — one nobody
+          has installed is not waiting for anyone — so the line states the upgradable count
+          alone rather than padding it with a zero. The per-card update buttons below remain
+          the way to take just one. */}
+        {todo && (
+          <TodoNotice
+            text={S.todo.changesUpgradable(noticeCounts(todo).updated)}
+            actionLabel={S.todo.updateNow}
+            busy={bulkRunning}
+            onAction={() => setPendingBulk(pluginUpdatePlan(agents))}
+            dismissLabel={S.todo.dismiss}
+            onDismiss={() => dismissTodo(projectId, "plugins", todo.signature)}
+          />
+        )}
+        {indexFailures.length > 0 && (
+          <Notice tone="attention" className="mt-4">
+            {S.pluginRegistry.sourceUnavailable(indexFailures.length)}
+          </Notice>
+        )}
+        {remote !== null && "error" in remote && remote.machineId === viewMachine && (
+          <Notice tone="attention" className="mt-4">
+            {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
+          </Notice>
+        )}
+        {deployment !== null && viewIncludesHere && deployment.restartPending && (
+          <Notice tone="attention" className="mt-4">
+            {S.plugins.restartPending}
+          </Notice>
+        )}
+      </PageHeader>
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -823,10 +819,10 @@ function CardGrid({ children }: { children: React.ReactNode }) {
 
 /**
  * The row of small selects under the title — the Cost Center's header shape: the grouping,
- * then the three filters. Each filter offers only the values some plugin on the page has. The
- * selects sit side by side, so every option names its select — "Group: status" beside
- * "Status: available" — and each is wide enough for its longest English option. On a phone
- * they pair up, two to a row.
+ * then the three filters. Each filter offers only the values some plugin on the page has. Every
+ * option says what it does on its own — "Group by status", "All categories" — and a chosen value
+ * reads as its own name, while each select's accessible name says what it groups or filters.
+ * Each is wide enough for its longest English option; on a phone they pair up, two to a row.
  */
 export function PluginControls({
   groupBy,
@@ -850,10 +846,9 @@ export function PluginControls({
     kinds: PLUGIN_KINDS.filter((k) => rows.some((row) => rowKinds(row).includes(k))),
     statuses: PLUGIN_STATUSES.filter((s) => rows.some((row) => statusOf(row) === s)),
   };
-  const optionText = S.plugins.filterValue;
   return (
     <div className="mb-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-      <div className="min-w-0 sm:w-40">
+      <div className="min-w-0 sm:w-44">
         <Select
           size="sm"
           aria-label={S.plugins.groupByLabel}
@@ -867,37 +862,37 @@ export function PluginControls({
           ))}
         </Select>
       </div>
-      <div className="min-w-0 sm:w-56">
+      <div className="min-w-0 sm:w-48">
         <Select
           size="sm"
           aria-label={S.plugins.filterCategories}
           value={filters.category}
           onChange={(e) => onFilters({ ...filters, category: e.target.value })}
         >
-          <option value="">{optionText(S.plugins.filterCategories, S.plugins.filterAll)}</option>
+          <option value="">{S.plugins.filterAllCategories}</option>
           {present.categories.map((c) => (
             <option key={c.id} value={c.id}>
-              {optionText(S.plugins.filterCategories, c.title)}
+              {c.title}
             </option>
           ))}
         </Select>
       </div>
-      <div className="min-w-0 sm:w-48">
+      <div className="min-w-0 sm:w-40">
         <Select
           size="sm"
           aria-label={S.plugins.filterKind}
           value={filters.kind}
           onChange={(e) => onFilters({ ...filters, kind: e.target.value as PluginFilters["kind"] })}
         >
-          <option value="">{optionText(S.plugins.filterKind, S.plugins.filterAll)}</option>
+          <option value="">{S.plugins.filterAnyKind}</option>
           {present.kinds.map((k) => (
             <option key={k} value={k}>
-              {optionText(S.plugins.filterKind, S.plugins.kindLabel[k])}
+              {S.plugins.kindLabel[k]}
             </option>
           ))}
         </Select>
       </div>
-      <div className="min-w-0 sm:w-48">
+      <div className="min-w-0 sm:w-44">
         <Select
           size="sm"
           aria-label={S.plugins.filterState}
@@ -906,10 +901,10 @@ export function PluginControls({
             onFilters({ ...filters, status: e.target.value as PluginFilters["status"] })
           }
         >
-          <option value="">{optionText(S.plugins.filterState, S.plugins.filterAll)}</option>
+          <option value="">{S.plugins.filterAllStatuses}</option>
           {present.statuses.map((s) => (
             <option key={s} value={s}>
-              {optionText(S.plugins.filterState, S.plugins.status[s])}
+              {S.plugins.status[s]}
             </option>
           ))}
         </Select>
@@ -921,9 +916,9 @@ export function PluginControls({
 /**
  * The page header's actions, the Models page's shape: search for everyone (a member filters the
  * list too), then, for an admin, the machine picker (which machine's plugins the rows show, and
- * which table an install or a removal edits: the shared one, or that machine's own) and the gear
- * that opens the Settings dialog's Plugins page. The gear's words sit beside its icon once the
- * header's `@container` is wide enough.
+ * which table an install or a removal edits: the shared one, or that machine's own) and Settings,
+ * which opens the Settings dialog's Plugins page. Settings is a secondary button in the Agents
+ * page header's look: the small rung, its glyph before words that always show.
  */
 export function PluginsHeaderActions({
   query,
@@ -953,15 +948,9 @@ export function PluginsHeaderActions({
       {isAdmin && (
         <>
           {machinePicker}
-          <Button
-            size="sm"
-            className="h-8 shrink-0"
-            aria-label={S.plugins.openSettings}
-            title={S.plugins.openSettings}
-            onClick={onOpenSettings}
-          >
-            <GlyphIcon d={ICONS.gear} size={ICON_SIZE.iconButton} />
-            <span className="hidden @3xl:inline">{S.plugins.openSettings}</span>
+          <Button size="sm" variant="secondary" onClick={onOpenSettings}>
+            <GlyphIcon d={ICONS.gear} />
+            {S.plugins.openSettings}
           </Button>
         </>
       )}
