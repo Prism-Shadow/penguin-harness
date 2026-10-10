@@ -31,7 +31,6 @@ import type {
   RecalledMessageResponse,
   ServerEvent,
   SessionCategory,
-  SessionBatchPageRequest,
   SessionBatchResult,
   SessionContextResponse,
   SessionCreateResponse,
@@ -78,6 +77,7 @@ import type { PreviewTokenSigner } from "../../services/preview-token.js";
 import type {
   ActivityCursor,
   SessionListOrder,
+  SessionListPaging,
   SessionService,
 } from "../../services/session-service.js";
 
@@ -233,9 +233,9 @@ function pageLimit(raw: string, name: string): number {
 /**
  * Parse GET /messages windowed-read params. No params → null: the legacy full-transcript
  * read, byte-identical to the pre-pagination response (other consumers depend on it).
- * `tailLimit=<n>` → the newest n units; `before=<cursor>[&limit=<n>]` → what precedes
- * the cursor. The two forms are mutually exclusive, and `limit` belongs to `before` alone —
- * mixing them is a caller bug worth a loud 400 rather than a guess.
+ * `tailLimit=<n>` → the newest n units; `before=<cursor>[&limit=<n>]` → the n units
+ * preceding the cursor. The two forms are mutually exclusive, and `limit` belongs to
+ * `before` alone — mixing them is a caller bug worth a loud 400 rather than a guess.
  */
 /**
  * Appends the running Task's already-published input messages that the Trace read has not
@@ -541,30 +541,90 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
 /** How many page requests one batch may carry — the sidebar's whole reload, with room. */
 const MAX_BATCH_REQUESTS = 256;
 
-/** A row offset inside a batch entry (creation order), checked before any query runs. */
-function batchOffset(value: unknown, name: string): number {
-  if (value === undefined) return 0;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw badRequest(`${name} must be a non-negative integer.`);
-  }
-  return value;
+/** One batch entry, parsed: the Agent it asks about and the list options it asks with. */
+interface BatchPage {
+  agentId: string;
+  paging: SessionListPaging;
+  order: SessionListOrder;
+  category?: SessionCategory;
+  workspaceGroup?: string;
+  withCounts?: true;
+  excludeOrg?: true;
 }
 
-/** A page size inside a batch entry, checked before any query runs. */
-function batchLimit(value: unknown, name: string): number {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    throw badRequest(`${name} must be a positive integer.`);
+/**
+ * Parse one batch entry under the rules the Agent-level list applies to its query: a limit of
+ * 1–1000, an offset of 0 or more, a cursor only in activity order and never beside an offset,
+ * a known order and category, a non-empty Workspace group. A batch must never serve a page the
+ * single list would have refused, so each of these is the same 400 there and here.
+ */
+function batchPage(entry: unknown, i: number): BatchPage {
+  const at = `requests[${i}]`;
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    throw badRequest(`${at} must be an object.`);
   }
-  return Math.min(value, 1000);
-}
-
-/** The activity cursor one batch entry pages below, checked before any query runs. */
-function activityCursor(value: unknown, name: string): ActivityCursor {
-  const raw = value as { lastActiveAt?: unknown; sessionId?: unknown };
-  if (typeof raw?.lastActiveAt !== "string" || typeof raw?.sessionId !== "string") {
-    throw badRequest(`${name} must be an activity cursor (lastActiveAt + sessionId).`);
+  const item = entry as Record<string, unknown>;
+  // An Agent id becomes a path fragment on the reads below: checked before any of them runs.
+  if (typeof item.agentId !== "string" || !isValidId(item.agentId)) {
+    throw badRequest(`${at}.agentId must be a valid id.`);
   }
-  return { lastActiveAt: raw.lastActiveAt, sessionId: raw.sessionId };
+  if (item.order !== undefined && !SESSION_LIST_ORDERS.includes(item.order as SessionListOrder)) {
+    throw badRequest(`${at}.order must be one of ${SESSION_LIST_ORDERS.join(" / ")}.`);
+  }
+  const order = (item.order ?? "created") as SessionListOrder;
+  const limit = item.limit;
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 1000) {
+    throw badRequest(`${at}.limit must be an integer between 1 and 1000.`);
+  }
+  let paging: SessionListPaging;
+  if (item.before !== undefined) {
+    if (order !== "activity") throw badRequest(`${at}.before requires order activity.`);
+    if (item.offset !== undefined) throw badRequest(`${at}.before and offset are exclusive.`);
+    const cursor = item.before as Partial<Record<keyof ActivityCursor, unknown>> | null;
+    const lastActiveAt = cursor?.lastActiveAt;
+    const sessionId = cursor?.sessionId;
+    if (
+      typeof lastActiveAt !== "string" ||
+      Number.isNaN(Date.parse(lastActiveAt)) ||
+      typeof sessionId !== "string" ||
+      !isValidId(sessionId)
+    ) {
+      throw badRequest(`${at}.before must be an activity cursor { lastActiveAt, sessionId }.`);
+    }
+    paging = { before: { lastActiveAt, sessionId }, limit };
+  } else {
+    const offset = item.offset ?? 0;
+    if (typeof offset !== "number" || !Number.isInteger(offset) || offset < 0) {
+      throw badRequest(`${at}.offset must be a non-negative integer.`);
+    }
+    paging = { offset, limit };
+  }
+  if (
+    item.category !== undefined &&
+    !SESSION_CATEGORIES.includes(item.category as SessionCategory)
+  ) {
+    throw badRequest(`${at}.category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
+  }
+  if (
+    item.workspaceGroup !== undefined &&
+    (typeof item.workspaceGroup !== "string" || item.workspaceGroup.trim() === "")
+  ) {
+    throw badRequest(`${at}.workspaceGroup must be a non-empty string.`);
+  }
+  for (const flag of ["withCounts", "excludeOrg"] as const) {
+    if (item[flag] !== undefined && typeof item[flag] !== "boolean") {
+      throw badRequest(`${at}.${flag} must be a boolean.`);
+    }
+  }
+  return {
+    agentId: item.agentId,
+    paging,
+    order,
+    ...(item.category !== undefined ? { category: item.category as SessionCategory } : {}),
+    ...(item.workspaceGroup !== undefined ? { workspaceGroup: item.workspaceGroup as string } : {}),
+    ...(item.withCounts === true ? { withCounts: true as const } : {}),
+    ...(item.excludeOrg === true ? { excludeOrg: true as const } : {}),
+  };
 }
 
 /**
@@ -585,67 +645,29 @@ export function sessionsBatchRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const body = await readJson(c);
-    const raw = (body as { requests?: unknown }).requests;
+    const raw = body.requests;
     if (!Array.isArray(raw)) throw badRequest("requests must be an array.");
     if (raw.length > MAX_BATCH_REQUESTS) {
       throw badRequest(`requests must hold at most ${MAX_BATCH_REQUESTS} entries.`);
     }
-    // Every id is validated BEFORE the first query runs: an Agent id is a path fragment on
-    // every read below, so one bad entry must fail the whole request rather than be
-    // discovered halfway through a batch.
-    const wanted = raw.map((entry, i) => {
-      const item = entry as Partial<SessionBatchPageRequest> & Record<string, unknown>;
-      if (typeof item.agentId !== "string" || !isValidId(item.agentId)) {
-        throw badRequest(`requests[${i}].agentId must be a valid id.`);
-      }
-      if (item.order !== undefined && item.order !== "created" && item.order !== "activity") {
-        throw badRequest(`requests[${i}].order must be created or activity.`);
-      }
-      const order = (item.order ?? "activity") as SessionListOrder;
-      const pagingCursor =
-        order === "activity" && item.before !== undefined
-          ? activityCursor(item.before, `${i}.before`)
-          : null;
-      if (item.category !== undefined && !SESSION_CATEGORIES.includes(item.category)) {
-        throw badRequest(
-          `requests[${i}].category must be one of ${SESSION_CATEGORIES.join(" / ")}.`,
-        );
-      }
-      if (item.workspaceGroup !== undefined && String(item.workspaceGroup).trim() === "") {
-        throw badRequest(`requests[${i}].workspaceGroup must not be empty.`);
-      }
-      return {
-        agentId: item.agentId,
-        paging: pagingCursor
-          ? { limit: batchLimit(item.limit, `${i}.limit`), before: pagingCursor }
-          : {
-              limit: batchLimit(item.limit, `${i}.limit`),
-              offset: batchOffset(item.offset, `${i}.offset`),
-            },
-        order,
-        ...(item.category !== undefined ? { category: item.category } : {}),
-        ...(item.workspaceGroup !== undefined
-          ? { workspaceGroup: String(item.workspaceGroup) }
-          : {}),
-        ...(item.withCounts === true ? { withCounts: true } : {}),
-        ...(item.excludeOrg === true ? { excludeOrg: true } : {}),
-      };
-    });
+    // Every entry is checked BEFORE the first query runs: one bad entry fails the whole
+    // request rather than being discovered halfway through a batch.
+    const wanted = raw.map(batchPage);
     // Sequential on purpose: these are the same in-memory index reads one-per-Agent already
     // performed, and running them concurrently would only re-introduce the interleaving this
     // endpoint exists to remove.
     const results: SessionBatchResult[] = [];
-    for (const want of wanted) {
+    for (const { agentId, ...options } of wanted) {
       try {
-        await deps.agentConfigService.requireExists(projectId, want.agentId);
-        const out = await deps.sessionService.listSessions(projectId, want.agentId, want);
-        results.push({ agentId: want.agentId, ok: true, ...out });
+        await deps.agentConfigService.requireExists(projectId, agentId);
+        const out = await deps.sessionService.listSessions(projectId, agentId, options);
+        results.push({ agentId, ok: true, ...out });
       } catch (err) {
         // An Agent this server does not host answers 404 — an ANSWER (see the sidebar's own
         // handling); anything else is a failure to answer, which must not be dressed up as
         // "no rows" and blank the sidebar.
         results.push({
-          agentId: want.agentId,
+          agentId,
           ok: false,
           reason: err instanceof HttpError && err.status === 404 ? "absent" : "error",
         });

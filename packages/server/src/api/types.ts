@@ -1928,9 +1928,12 @@ export interface SessionsResponse {
  */
 export interface SessionBatchPageRequest {
   agentId: string;
+  /** Rows per page, 1–1000. */
   limit: number;
   /** `activity`: last activity first — the sidebar's order. Omitted: creation order. */
   order?: "created" | "activity";
+  /** Rows to skip from the top (default 0). Not beside `before`. */
+  offset?: number;
   /**
    * Activity order only: rows strictly below this cursor — the last row of the previous page
    * (`lastActiveAt` + `sessionId`, the pair the list endpoint's `before` param carries).
@@ -1950,7 +1953,7 @@ export interface SessionBatchPageRequest {
  * `error` is a failure to answer at all — which the caller must not read as "no rows".
  */
 export type SessionBatchResult =
-  | ({ agentId: string; ok: true } & Omit<SessionsResponse, never>)
+  | ({ agentId: string; ok: true } & SessionsResponse)
   | { agentId: string; ok: false; reason: "absent" | "error" };
 
 export interface SessionsBatchRequest {
