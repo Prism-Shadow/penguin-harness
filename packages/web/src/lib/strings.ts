@@ -269,13 +269,22 @@ export const zh = {
       disconnectConfirm: (alias: string) =>
         `断开与 ${alias} 的连接？这条连接由使用它的所有 Project 共用，正在经它进行的工作会中断；那台机器上的服务继续运行，之后可以重新连接。`,
       releaseConfirm: (alias: string) =>
-        `把 ${alias} 移出本 Project？它不再列在这里，本 Project 的模型配置也不再同步给它；那台机器上的程序与连接保持不变，之后可以从「添加机器…」重新启用。`,
+        `把 ${alias} 移出本 Project？它不再列在这里，本 Project 的模型配置也不再同步给它；那台机器上的程序与连接保持不变，之后可以用「添加机器」把它加回来。`,
     },
     /** The connection check's results in the Machine dialog, one plain sentence per check. */
     check: {
       title: "连接检查",
       running: "正在检查…",
-      skipped: "未检查。",
+      skipped: (what: string) => `${what}：未检查。`,
+      /** Each check by name, for the line that says it was not asked. */
+      name: {
+        ssh: "ssh 登录",
+        platform: "系统",
+        tools: "安装工具",
+        download: "下载发布版",
+        disk: "磁盘空间",
+        port: "端口",
+      },
       sshPass: (user: string, host: string) =>
         user === "" ? "能经 ssh 登录。" : `能以 ${user} 登录 ${host}。`,
       ssh: {

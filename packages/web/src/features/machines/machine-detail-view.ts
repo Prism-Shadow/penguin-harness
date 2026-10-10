@@ -24,7 +24,14 @@ import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
 import { reasonText } from "./machine-card";
 import type { MachineVerb } from "./machine-detail-dialog";
-import { MACHINE_PHASES, readingTone, stepLabel } from "./machines-view";
+import {
+  MACHINE_PHASES,
+  failureText,
+  isPhase,
+  readingTone,
+  sshWords,
+  stepLabel,
+} from "./machines-view";
 import type { MachineReading } from "./machines-view";
 
 /** The machine's state as one chip: a glyph (or a spinner) and one plain word. */
@@ -264,11 +271,14 @@ const failedResult = (job: MachineJob) =>
 /**
  * The six steps in order, each marked by where the job stands: a queued job has every step still
  * to come, a running one is on its phase with the earlier ones done, one that finished well has
- * them all done, and a failed one is marked failed at its phase.
+ * them all done, and a failed one is marked failed at its phase — or, when it stopped before
+ * naming one (ssh refused the sign-in every job opens with), at the step its failure names.
  */
 export function jobSteps(job: MachineJob): JobStep[] {
-  const at = job.phase === null ? -1 : MACHINE_PHASES.indexOf(job.phase);
-  const failed = failedResult(job) !== null;
+  const failure = failedResult(job);
+  const failed = failure !== null;
+  const phase = job.phase ?? (failure !== null && isPhase(failure.step) ? failure.step : null);
+  const at = phase === null ? -1 : MACHINE_PHASES.indexOf(phase);
   const stateOf = (index: number): StepState => {
     if (job.queued) return "pending";
     if (!job.running && !failed) return "done";
@@ -293,8 +303,10 @@ export type JobView =
       steps: JobStep[];
       /** The failed step by name, or the server's own word for a step that is not a phase. */
       stepName: string;
-      /** The far side's own words. */
+      /** Why: an ssh refusal in the reader's language, anything else in the far side's words. */
       message: string;
+      /** ssh's own words under a refusal it caused; null otherwise. */
+      detail: string | null;
       canReplaceProgram: boolean;
     };
 
@@ -311,7 +323,7 @@ export function jobView(job: MachineJob): JobView {
     kind: "failed",
     steps: jobSteps(job),
     stepName: stepLabel(result.step),
-    message: result.message,
+    ...failureText(result, job.alias),
     canReplaceProgram: result.canReplaceProgram === true,
   };
 }
@@ -521,12 +533,6 @@ const CHECK_MARK: Record<MachineCheck["state"], { glyph: string | null; tone: To
 /** An OS as people name it. */
 const OS_NAME: Record<string, string> = { linux: "Linux", darwin: "macOS", win32: "Windows" };
 
-/** ssh's own lines out of what the server said: after its sentence, `(ssh: …)`. */
-function sshWords(said: string): string {
-  const words = /\(ssh: ([\s\S]*)\)\s*$/.exec(said)?.[1];
-  return (words ?? said).trim();
-}
-
 /**
  * A check as one plain sentence in the page's language, from the facts the server found — what
  * the machine has, and when it falls short, what to do. A sign-in that failed carries ssh's own
@@ -542,7 +548,7 @@ export function checkLine(check: MachineCheck, alias: string): CheckLine {
     text,
     detail,
   });
-  if (check.state === "skip") return line(c.skipped);
+  if (check.state === "skip") return line(c.skipped(c.name[check.id]));
   const size = (mb: number) => formatBytes(mb * 1024 * 1024);
   switch (check.id) {
     case "ssh":

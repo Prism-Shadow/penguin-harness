@@ -237,9 +237,9 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 
 - 安装：`{ok: true, installed: "installed" | "already-installed", version}`
 - 连接或重启：`{ok: true, connected: true}`
-- 失败：`{ok: false, step, message, canReplaceProgram?}`
+- 失败：`{ok: false, step, message, canReplaceProgram?, sshReason?}`
 
-`canReplaceProgram` 表示这次失败的后续步骤可以是强行安装程序：调用 `POST …/install` 并附带 `{replaceProgram: true}`。服务器只提供这一步而不擅自执行，因为它会重启一台可能还有其他人在使用的服务器。
+`canReplaceProgram` 表示这次失败的后续步骤可以是强行安装程序：调用 `POST …/install` 并附带 `{replaceProgram: true}`。服务器只提供这一步而不擅自执行，因为它会重启一台可能还有其他人在使用的服务器。ssh 本身拒绝时带 `sshReason`（取值与连接检查中 `ssh` 一项相同）；这种拒绝发生在任何操作之前时，任务失败于 `step: "check"`，且不提供 `canReplaceProgram`。
 
 同一时刻只运行一个任务。任务只存于内存，热推送或重启后就会丢失。要恢复就重新执行一遍：每一步都是幂等的。
 

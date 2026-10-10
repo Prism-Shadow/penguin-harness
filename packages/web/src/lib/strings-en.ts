@@ -232,12 +232,20 @@ export const en: Strings = {
       disconnectConfirm: (alias: string) =>
         `Disconnect from ${alias}? Every Project using it shares this connection, and whatever is running through it is cut off; the server over there keeps running, and you can connect again later.`,
       releaseConfirm: (alias: string) =>
-        `Remove ${alias} from this Project? It is no longer listed here and no longer receives this Project's Model config; the program and the connection over there stay as they are, and you can enable it again from Add machines….`,
+        `Remove ${alias} from this Project? It is no longer listed here and no longer receives this Project's Model config; the program and the connection over there stay as they are, and Add machine can bring it back.`,
     },
     check: {
       title: "Connection check",
       running: "Checking…",
-      skipped: "Not checked.",
+      skipped: (what: string) => `${what}: not checked.`,
+      name: {
+        ssh: "ssh sign-in",
+        platform: "System",
+        tools: "Installer tools",
+        download: "Release download",
+        disk: "Disk space",
+        port: "Port",
+      },
       sshPass: (user: string, host: string) =>
         user === "" ? "Signs in over ssh." : `Signs in as ${user} on ${host}.`,
       ssh: {

@@ -13,6 +13,7 @@ import type {
   MachineInfo,
   MachineJob,
   MachinePhase,
+  MachineSshFailure,
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
@@ -74,8 +75,31 @@ const PHASE_COMPLETE: Record<MachinePhase, true> = {
 };
 void PHASE_COMPLETE;
 
-const isPhase = (step: string): step is MachinePhase =>
+export const isPhase = (step: string): step is MachinePhase =>
   (MACHINE_PHASES as readonly string[]).includes(step);
+
+/** ssh's own lines out of what the server said: after its sentence, `(ssh: …)`. */
+export function sshWords(said: string): string {
+  const words = /\(ssh: ([\s\S]*)\)\s*$/.exec(said)?.[1];
+  return (words ?? said).trim();
+}
+
+/**
+ * Why a job failed, as the page says it: an ssh refusal in the reader's language from the
+ * reason the server found, with ssh's own words as its detail; anything else in the far side's
+ * own words, as the server relayed them.
+ */
+export function failureText(
+  result: { message: string; sshReason?: MachineSshFailure },
+  alias: string,
+): { message: string; detail: string | null } {
+  if (result.sshReason === undefined) return { message: result.message, detail: null };
+  const c = S.machines.check;
+  return {
+    message: c.ssh[result.sshReason](alias),
+    detail: c.sshSaid(sshWords(result.message)),
+  };
+}
 
 /**
  * A step as the interface names it: one of the pipeline's six by its name in the reader's
@@ -117,7 +141,7 @@ export function readMachine(
     return {
       kind: "failed",
       step: result.step,
-      message: result.message,
+      message: failureText(result, machine.alias).message,
       canReplaceProgram: result.canReplaceProgram === true,
     };
   }

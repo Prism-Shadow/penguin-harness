@@ -237,9 +237,9 @@ A connect (`POST …/connect`) and a restart (`POST …/restart`) are jobs of th
 
 - `{ok: true, installed: "installed" | "already-installed", version}` for an install
 - `{ok: true, connected: true}` for a connect or a restart
-- `{ok: false, step, message, canReplaceProgram?}` for a failure
+- `{ok: false, step, message, canReplaceProgram?, sshReason?}` for a failure
 
-`canReplaceProgram` marks a failure whose next step is to install the program anyway, with `POST …/install` and `{replaceProgram: true}`. The server offers this step instead of taking it, because it restarts a server other people may be using.
+`canReplaceProgram` marks a failure whose next step is to install the program anyway, with `POST …/install` and `{replaceProgram: true}`. The server offers this step instead of taking it, because it restarts a server other people may be using. `sshReason` is set when ssh itself refused (the same reasons as the connection check's `ssh` check); such a job fails at `step: "check"` when the refusal comes before anything else, and never offers `canReplaceProgram`.
 
 Only one job runs at a time. Jobs live in memory and do not survive a hot push or a restart. To recover, run the job again: every step is idempotent.
 

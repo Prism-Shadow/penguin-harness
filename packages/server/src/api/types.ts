@@ -4777,6 +4777,12 @@ export interface MachineJob {
          * because it restarts a server this Project does not own alone.
          */
         canReplaceProgram?: boolean;
+        /**
+         * Why ssh refused, when the failure is ssh's own (a host key, a key, a host name, a
+         * route), for the page to say in its language; `message` says it in English, with
+         * ssh's own words after `(ssh: …)`.
+         */
+        sshReason?: MachineSshFailure;
       };
 }
 

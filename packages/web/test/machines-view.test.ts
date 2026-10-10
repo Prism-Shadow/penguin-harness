@@ -26,6 +26,7 @@ import {
   readingTone,
   wantsUse,
 } from "../src/features/machines/machines-view";
+import { S } from "../src/lib/strings";
 
 const INSTALLED = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
 
@@ -147,6 +148,26 @@ describe("readMachine", () => {
       step: "connect",
       message: "Permission denied.",
       canReplaceProgram: true,
+    });
+  });
+
+  it("a job ssh refused reads in the page's language, from the reason the server found", () => {
+    const refused = job({
+      running: false,
+      result: {
+        ok: false,
+        step: "check",
+        message:
+          "This computer cannot find nas's host name. Check its HostName in the ssh config. (ssh: Could not resolve hostname nas.lan)",
+        canReplaceProgram: false,
+        sshReason: "host-not-found",
+      },
+    });
+    expect(readMachine(carrying("nas"), refused, "9.9.9")).toEqual({
+      kind: "failed",
+      step: "check",
+      message: S.machines.check.ssh["host-not-found"]("nas"),
+      canReplaceProgram: false,
     });
   });
 

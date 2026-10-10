@@ -73,6 +73,7 @@ import type { RemoteTarget } from "./commands.js";
 import { detectRemote, installOnRemote, resolvePushPlan, sameBuild } from "./install-server.js";
 import { parseProbeOutput, posixProbe } from "./detect.js";
 import { explainSshFailure, sshRefusal } from "./ssh-failure.js";
+import type { SshFailureReason } from "./ssh-failure.js";
 import { diagnoseCommand, parseDiagnosis, sshFailureChecks } from "./diagnose.js";
 import type { CarryRelease, PushPlan } from "./install-server.js";
 import { releaseCache } from "./release-cache.js";
@@ -793,13 +794,18 @@ export class MachinesService {
   }
 
   /**
-   * Withholds the offer to install the program anyway (`canReplaceProgram`) from a failure
-   * ssh itself caused — a host key, a key, a name, a route. An install reaches the machine
-   * through the same ssh and would stop at the same door, so the offer would be a second
-   * way to fail rather than a way out.
+   * What a failure ssh itself caused — a host key, a key, a name, a route — adds to the job's
+   * result: why, for the page to say in its own language, and no offer to install the program
+   * anyway (`canReplaceProgram`). An install reaches the machine through the same ssh and
+   * would stop at the same door, so the offer would be a second way to fail rather than a way
+   * out.
    */
-  #noProgramCure(target: RemoteTarget, message: string): { canReplaceProgram?: false } {
-    return explainSshFailure(message, target.alias) === null ? {} : { canReplaceProgram: false };
+  #sshCause(
+    target: RemoteTarget,
+    message: string,
+  ): { canReplaceProgram?: false; sshReason?: SshFailureReason } {
+    const failure = explainSshFailure(message, target.alias);
+    return failure === null ? {} : { canReplaceProgram: false, sshReason: failure.reason };
   }
 
   /**
@@ -807,7 +813,7 @@ export class MachinesService {
    * checkout spends a minute building its image for a machine that refuses the key. One `:`
    * over the session, which the work after it reuses. Null when it gets in, or when the
    * answer is the far side's own (a Windows shell has no `sh`: the work finds that out); the
-   * job's failure when ssh itself refused.
+   * job's failure when ssh itself refused, at the first step — checking the machine.
    */
   async #refusedAtTheDoor(machine: MachineInfo): Promise<MachineJob["result"] | null> {
     const target = this.#targetOf(machine.alias);
@@ -815,7 +821,7 @@ export class MachinesService {
     const refused = answer.code === 0 ? null : sshRefusal(answer.stdout, target.alias);
     return refused === null
       ? null
-      : { ok: false, step: "connect", message: refused, canReplaceProgram: false };
+      : { ok: false, step: "check", message: refused, ...this.#sshCause(target, refused) };
   }
 
   /**
@@ -1014,7 +1020,7 @@ export class MachinesService {
         ok: false,
         step: outcome.step,
         message: outcome.detail,
-        ...this.#noProgramCure(target, outcome.detail),
+        ...this.#sshCause(target, outcome.detail),
       };
     }
     // What the machine is, before anything below asks it again: the hand-over and the
@@ -1291,7 +1297,7 @@ export class MachinesService {
         ok: false,
         step: "connect",
         message: probed.state.detail,
-        ...this.#noProgramCure(target, probed.state.detail),
+        ...this.#sshCause(target, probed.state.detail),
       };
     }
     // The refusal startConnect made from the record, made again from what was just heard: an
@@ -1338,7 +1344,7 @@ export class MachinesService {
         ok: false,
         step: "connect",
         message: connection.detail,
-        ...this.#noProgramCure(target, connection.detail),
+        ...this.#sshCause(target, connection.detail),
       };
     }
     this.repo.patch(address, { remotePort });

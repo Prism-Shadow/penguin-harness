@@ -634,6 +634,11 @@ export function MachineDetailBody({
           {view.kind === "failed" && (
             <p className="mt-3 text-sm">{d.failedAtStep(view.stepName, view.message)}</p>
           )}
+          {view.kind === "failed" && view.detail !== null && (
+            <p data-said="ssh" className="mt-1 text-xs break-words text-fg-muted">
+              {view.detail}
+            </p>
+          )}
           {/* A failed machine's one thing to do is here, under what went wrong — and only here —
               listed like the verbs of Actions, each with what it does beside it. */}
           {view.kind === "failed" && primary?.kind === "retry" && (

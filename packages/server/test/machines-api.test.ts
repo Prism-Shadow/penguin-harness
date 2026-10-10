@@ -35,7 +35,8 @@
  * - Given an ssh-config edit, a new block is appended, this app's block is rewritten in place,
  *   and a hand-written one is refused.
  * - Given a refusal decidable without ssh (self-install, a second install, an unknown host, no
- *   image), nothing runs.
+ *   image), nothing runs. Given ssh's own refusal, the job ends at the first step with why, for
+ *   the page to say, and no offer to install anyway.
  * - Given a server running from a source checkout, nothing is refused for want of an image: an
  *   install or a batch builds one from the checkout (once per batch), installs it under the
  *   checkout's release with the build's own suffix, and keeps it beside — never in — the
@@ -1659,6 +1660,7 @@ describe("machines API", () => {
         ok: false,
         step: "connect",
         canReplaceProgram: false,
+        sshReason: "auth",
       });
     });
 
@@ -2031,7 +2033,7 @@ describe("machines API", () => {
       expect(body.checkoutImage).toEqual({ state: "built" });
     });
 
-    it("a machine whose ssh refuses this computer fails at once, and no image is built for it", async () => {
+    it("a machine whose ssh refuses this computer fails at once, at the first step, and no image is built for it", async () => {
       await checkout({
         runOn: async () => ({
           code: 255,
@@ -2045,8 +2047,9 @@ describe("machines API", () => {
       await waitFor(settled);
       expect(jobsOf()[0]?.result).toMatchObject({
         ok: false,
-        step: "connect",
+        step: "check",
         canReplaceProgram: false,
+        sshReason: "host-key-unknown",
       });
       expect((jobsOf()[0]?.result as { message: string }).message).toContain("ssh nas");
       expect(packs).toEqual([]);

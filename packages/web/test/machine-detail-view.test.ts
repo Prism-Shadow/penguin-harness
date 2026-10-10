@@ -15,7 +15,9 @@
  * - A job's steps: a queued job has every step still to come; a running one is on its phase with
  *   the earlier steps done; one that finished well is a single line; a failed one is marked
  *   failed at its phase, named in words, with the far side's own words — and a step the server
- *   names outside the pipeline is told as it was named.
+ *   names outside the pipeline is told as it was named. One that ssh refused before it named a
+ *   phase is marked failed at the step its failure names, and says why in the page's language
+ *   with ssh's own words under it.
  * - A verb is held for the first reason that applies: a request in flight holds every verb; a job
  *   on its way holds the single steps but never the ways out or the ssh form; no build holds
  *   Install; nothing installed holds Reconnect and Restart; a check already running holds Check
@@ -34,7 +36,7 @@
  * - The connection check says each check in a plain sentence: who signed in, the system, what
  *   the installer lacks (curl alone a caveat: the release is carried), whether the machine
  *   reaches the release (or is sent it), the room left, and who holds the port; a sign-in that
- *   failed says what to do, with ssh's own words under it.
+ *   failed says what to do, with ssh's own words under it; a check not asked says which.
  */
 import { describe, expect, it } from "vitest";
 import type { MachineCheck, MachineInfo, MachineJob } from "@prismshadow/penguin-server/api";
@@ -222,9 +224,39 @@ describe("a job's steps", () => {
       kind: "failed",
       stepName: S.machines.step.restart,
       message: failed.message,
+      detail: null,
       canReplaceProgram: true,
     });
     expect(states(stopped)).toEqual(["done", "done", "done", "failed", "pending", "pending"]);
+  });
+
+  it("mark a job ssh refused before it named a phase failed at the step it names, saying why in the page's language", () => {
+    const said =
+      "nas did not accept any key this computer offered. (ssh: penguin@nas: Permission denied (publickey).)";
+    const refused = job({
+      result: {
+        ok: false,
+        step: "check",
+        message: said,
+        canReplaceProgram: false,
+        sshReason: "auth",
+      },
+    });
+    expect(states(refused)).toEqual([
+      "failed",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+    ]);
+    expect(jobView(refused)).toMatchObject({
+      kind: "failed",
+      stepName: S.machines.step.check,
+      message: S.machines.check.ssh.auth("nas"),
+      detail: S.machines.check.sshSaid("penguin@nas: Permission denied (publickey)."),
+      canReplaceProgram: false,
+    });
   });
 
   it("tell a failed step the server names outside the pipeline as it was named", () => {
@@ -555,6 +587,10 @@ describe("the connection check", () => {
     expect(line({ id: "port", state: "pass", port: 7371, holder: "penguin" }).text).toBe(
       S.machines.check.portOurs(7371),
     );
-    expect(line({ id: "disk", state: "skip" })).toMatchObject({ glyph: null, tone: "muted" });
+    expect(line({ id: "disk", state: "skip" })).toMatchObject({
+      glyph: null,
+      tone: "muted",
+      text: S.machines.check.skipped(S.machines.check.name.disk),
+    });
   });
 });

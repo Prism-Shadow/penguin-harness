@@ -33,11 +33,11 @@ A server running from a source checkout (`pnpm dev`, `pnpm desktop`) builds its 
 
 ## Failures in plain words
 
-- ssh's fixed diagnostics lead with what they mean and what to do: an unknown or changed host key, a refused key, an unusable key file, a host name that does not resolve, a refused or silent port, a connection dropped before sign-in, a broken ssh config. ssh's own words follow. Such a failure no longer tries a second, Windows connection, no longer offers the forced install, and a job checks ssh before it builds its image.
+- ssh's fixed diagnostics lead with what they mean and what to do: an unknown or changed host key, a refused key, an unusable key file, a host name that does not resolve, a refused or silent port, a connection dropped before sign-in, a broken ssh config. ssh's own words follow. Such a failure no longer tries a second, Windows connection, no longer offers the forced install, and a job checks ssh before it builds its image. A failed job carries the reason (`sshReason`), so the page says it in its own language with ssh's words under it, and a job ssh refuses at the start fails at its first step.
 - A host block the page writes ends with `StrictHostKeyChecking accept-new`: every connection here runs in BatchMode, which cannot answer ssh's first-connection question, so a host added from the page failed with "Host key verification failed".
 - One `Include` line may name several files.
 - A server start that dies on a port another program holds says so, and offers no forced install; a crash's stack trace becomes its error line.
-- The installer's progress bars stay out of the job log, and an installer failure is quoted by its `error:` lines.
+- The installer's progress bars stay out of the job log, and an installer failure is quoted by its `error:` lines, led by the program's own error when the installer points at it.
 - `POST /api/projects/:projectId/machines/:machineId/diagnose` checks a machine without writing anything there: ssh sign-in, the system (a glibc older than the release's Node needs, and musl, fail by name; one too old for its terminals is a caveat), the tools the installer runs, whether the machine reaches the release, free disk, and the port its server would use. The Machine dialog runs it as **Check connection** and says each result in a sentence.
 
 ## Adding machines
