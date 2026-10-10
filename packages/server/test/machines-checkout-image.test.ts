@@ -12,7 +12,8 @@
  *   and neither is another pnpm workspace the server was installed into, its own
  *   `scripts/deploy.mjs` included.
  * - Given the packer, its own narration reaches the caller and its output file is the build;
- *   given a packer that fails, the failure is told in its last lines, as words.
+ *   given a packer that fails, the failure is told in its last lines, as words; given one that
+ *   runs out of time, it is stopped whole, and nothing it started keeps running.
  * - Given a checkout cloned over https with a credential in its origin URL, the provenance a
  *   build records names the repository without it; a remote that holds no secret is recorded
  *   as it is.
@@ -21,13 +22,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readPushedBuild, writePushedBuild } from "../src/hmr/pushed-build.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import { readPushedCli } from "../src/hmr/manifest.js";
 import { deployPacker, findCheckout } from "../src/machines/checkout-image.js";
 // @ts-expect-error — a plain .mjs build script, no declarations.
 import { withoutCredentials } from "../../../scripts/build-git-stamp.mjs";
+import { waitFor } from "./helpers.js";
 
 const b64 = (text: string) => Buffer.from(text).toString("base64");
 
@@ -56,6 +58,27 @@ const temp = () => {
 };
 afterEach(() => {
   for (const dir of temps.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+/** Processes a scenario started, stopped here should the scenario fail to stop them. */
+const strays: number[] = [];
+const isRunning = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+afterEach(() => {
+  vi.useRealTimers();
+  for (const pid of strays.splice(0)) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Gone already.
+    }
+  }
 });
 
 describe("a build laid down as a store", () => {
@@ -166,6 +189,40 @@ describe("the packer", () => {
     expect(packed).toEqual({ ok: true });
     expect(lines).toEqual(["building the web dist…", "wrote 2 bundles"]);
     expect(fs.readFileSync(out, "utf8")).toBe("the build");
+  });
+
+  it("a build that runs out of time is stopped whole: nothing it started keeps running", async () => {
+    const pidFile = path.join(temp(), "helper.pid");
+    const repo = checkoutWith(
+      [
+        'import { spawn } from "node:child_process";',
+        'import fs from "node:fs";',
+        // What pnpm or vite is to the real packer: a process it started, on its own output.
+        "const helper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {",
+        "  stdio: 'inherit',",
+        "  windowsHide: true,",
+        "});",
+        `fs.writeFileSync(${JSON.stringify(pidFile)}, String(helper.pid));`,
+        'console.log("[deploy] building the web dist…");',
+        "setInterval(() => {}, 1000);",
+      ].join("\n"),
+    );
+    // The time limit runs on this clock; the processes run on their own.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let building = () => {};
+    const started = new Promise<void>((resolve) => {
+      building = resolve;
+    });
+    const packed = deployPacker(repo)(path.join(temp(), "build.gz"), () => building());
+    await started;
+    const helper = Number(fs.readFileSync(pidFile, "utf8"));
+    strays.push(helper);
+
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+
+    expect(await packed).toMatchObject({ ok: false });
+    await waitFor(() => !isRunning(helper), 5000);
   });
 
   it("a failed build is told in its last lines, as words — no terminal codes, no stack frames", async () => {

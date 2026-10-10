@@ -23,7 +23,7 @@
  * nothing for an install to send. A build prunes the older images, never one a job is still
  * installing (`holding`).
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -272,6 +272,11 @@ const PACK_TIMEOUT_MS = 20 * 60_000;
 const TAIL_LINES = 10;
 /** The packer's own lines: its narration, told without the prefix. */
 const OWN = "[deploy] ";
+/**
+ * Whether a build can lead a process group of its own (POSIX), so that one signal reaches
+ * every process it started. Windows has no groups; there the tree is walked instead.
+ */
+const PROCESS_GROUPS = process.platform !== "win32";
 
 /**
  * The packer: `node scripts/deploy.mjs --out <file>` in the checkout, on this server's own
@@ -280,6 +285,12 @@ const OWN = "[deploy] ";
  * its last lines whoever printed them (pnpm, vite, the packer), which is where the reason is
  * — less the stack frames, which say where a tool failed rather than why, and would push the
  * why out of the quote.
+ *
+ * A build is stopped whole — the packer and the pnpm, vite and plugin installs it started —
+ * when it runs out of time and when this server exits. On POSIX it leads a process group of
+ * its own for that, so the terminal's Ctrl-C reaches this server alone; the server's SIGINT
+ * and SIGTERM end in process.exit, and the exit takes the group with it. On Windows it stays
+ * on the server's console, which Ctrl-C reaches as before, and `taskkill /T` stops its tree.
  */
 export function deployPacker(checkoutRoot: string): CheckoutPacker {
   return (outFile, onLine) =>
@@ -320,26 +331,35 @@ export function deployPacker(checkoutRoot: string): CheckoutPacker {
             },
             stdio: ["ignore", "pipe", "pipe"],
             windowsHide: true,
+            detached: PROCESS_GROUPS,
           },
         );
       } catch (err) {
         resolve({ ok: false, detail: message(err) });
         return;
       }
+      // Ctrl-C in the dev terminal, a tsx-watch restart, the desktop quitting: the build goes
+      // with the server.
+      const onExit = () => stopTree(child, "SIGTERM", true);
+      process.once("exit", onExit);
       let timedOut = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill();
+        stopTree(child, "SIGKILL", false);
       }, PACK_TIMEOUT_MS);
       timer.unref?.();
+      const settled = () => {
+        clearTimeout(timer);
+        process.off("exit", onExit);
+      };
       read(child.stdout);
       read(child.stderr);
       child.on("error", (err) => {
-        clearTimeout(timer);
+        settled();
         resolve({ ok: false, detail: message(err) });
       });
       child.on("close", (code, signal) => {
-        clearTimeout(timer);
+        settled();
         if (code === 0) {
           resolve({ ok: true });
           return;
@@ -355,6 +375,39 @@ export function deployPacker(checkoutRoot: string): CheckoutPacker {
         });
       });
     });
+}
+
+/**
+ * Stops a build and every process it started: a signal to the process group it leads, or on
+ * Windows `taskkill /T` over its tree — through spawnSync while this process is exiting, when
+ * nothing asynchronous runs any more — and the build's own process when taskkill cannot.
+ */
+function stopTree(child: ChildProcess, signal: NodeJS.Signals, exiting: boolean): void {
+  const pid = child.pid;
+  if (pid === undefined) return;
+  if (PROCESS_GROUPS) {
+    try {
+      process.kill(-pid, signal);
+    } catch {
+      // The group has ended already.
+    }
+    return;
+  }
+  const args = ["/pid", String(pid), "/T", "/F"];
+  if (exiting) {
+    const done = spawnSync("taskkill", args, { stdio: "ignore", windowsHide: true });
+    if (done.error !== undefined || done.status !== 0) child.kill();
+    return;
+  }
+  try {
+    const killer = spawn("taskkill", args, { stdio: "ignore", windowsHide: true });
+    killer.on("error", () => child.kill());
+    killer.on("exit", (code) => {
+      if (code !== 0) child.kill();
+    });
+  } catch {
+    child.kill();
+  }
 }
 
 function message(err: unknown): string {
