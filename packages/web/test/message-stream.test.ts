@@ -3,6 +3,8 @@
  * (react-dom/server static markup, node env, no DOM). Static markup carries no handlers, so
  * replyLinkBehavior is wrapped rather than replaced: every call still returns the real behaviour,
  * and the test keeps what the link adapter spread onto each rendered anchor in order to click it.
+ * It also draws a run-ending LLM failure as its error banner, with a hint under a context overflow
+ * and a Retry while the banner is the stream's last item.
  */
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
@@ -10,7 +12,9 @@ import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MessageStream } from "../src/features/chat/message-stream";
 import type { StreamRenderContext } from "../src/features/chat/message-stream";
+import type { ChatItem } from "../src/lib/omni/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
+import { S } from "../src/lib/strings";
 
 /** The behaviour each rendered link received, by the href it was sorted from. */
 const rendered = vi.hoisted(() => new Map<string | undefined, LinkBehavior>());
@@ -73,5 +77,50 @@ describe("MessageStream links", () => {
       expect(preventDefault).toHaveBeenCalledOnce();
       expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(path);
     }
+  });
+});
+
+describe("MessageStream error banner", () => {
+  const ctx: StreamRenderContext = {
+    pendingApprovals: new Map(),
+    onApprove: async () => {},
+    origin: [],
+    taskRunning: false,
+  };
+  const banner = (errorCode: string) =>
+    renderToStaticMarkup(
+      createElement(MessageStream, {
+        items: [{ kind: "llm_error", id: 1, errorCode, errorMessage: "400 Bad Request" }],
+        version: 1,
+        ctx,
+        onAddExcerpt: () => {},
+      }),
+    );
+
+  it("a context overflow carries the hint under the error; a plain rejection does not", () => {
+    const overflow = banner("context_overflow");
+    expect(overflow).toContain(S.chat.llmError("400 Bad Request"));
+    expect(overflow).toContain(S.chat.llmContextOverflowHint);
+    const rejected = banner("rejected");
+    expect(rejected).toContain(S.chat.llmError("400 Bad Request"));
+    expect(rejected).not.toContain(S.chat.llmContextOverflowHint);
+  });
+
+  it("the last banner offers Retry while no Task runs; a banner something follows does not", () => {
+    const stream = (items: ChatItem[]) =>
+      renderToStaticMarkup(
+        createElement(MessageStream, {
+          items,
+          version: 1,
+          ctx: { ...ctx, onRetry: async () => {} },
+          onAddExcerpt: () => {},
+        }),
+      );
+    const failed: ChatItem = { kind: "llm_error", id: 1, errorMessage: "400 Bad Request" };
+    // A Retry run's reply lands right after the banner: the failed input has been sent again.
+    const reply: ChatItem = { kind: "assistant_text", id: 2, text: "Done.", streaming: false };
+    const retry = `>${S.chat.retryFailedRun}</button>`;
+    expect(stream([failed])).toContain(retry);
+    expect(stream([failed, reply])).not.toContain(retry);
   });
 });

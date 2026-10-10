@@ -985,8 +985,13 @@ export function assembleSystemPrompt(
  * Filters builtin tool entries by the session model's type: entries with `forModel: "vision"` are
  * only used for models that support images (vision models), `forModel: "text-only"` is only for
  * text-only models; unlabeled entries are available to all models. The built-in defaults label
- * no entry (read_file serves both classes), so this only acts on configs that declare their own
- * per-class entries.
+ * no entry (read_file serves both classes), so the filter only acts on configs that declare
+ * their own per-class entries.
+ *
+ * A vision model is also handed read_file without its `prompt` argument: the argument is the
+ * question put to the Project's vision model, which reads images only for a text-only model, so
+ * a model that views images itself would only ever fill it in vain. Like the call_description
+ * toggle this trims an in-memory clone; an entry declaring no `prompt` passes through unchanged.
  * Docs: /docs/tools § "Configuration fields".
  */
 export function selectBuiltinToolsForModel(
@@ -994,7 +999,28 @@ export function selectBuiltinToolsForModel(
   modelVision: boolean,
 ): ToolDefinitionConfig[] {
   const kind = modelVision ? "vision" : "text-only";
-  return tools.filter((t) => t.forModel === undefined || t.forModel === kind);
+  const selected = tools.filter((t) => t.forModel === undefined || t.forModel === kind);
+  if (!modelVision) return selected;
+  return selected.map((t) => (t.name === "read_file" ? withoutArgument(t, "prompt") : t));
+}
+
+/**
+ * The entry with one property dropped from its parameter schema, `required` along with it — on
+ * a clone, the stored config is never rewritten. Entries without a parameter schema, or whose
+ * properties do not declare `name`, come back as they are.
+ */
+function withoutArgument(def: ToolDefinitionConfig, name: string): ToolDefinitionConfig {
+  const params = def.parameters;
+  if (params === undefined) return def;
+  const properties = params["properties"];
+  if (properties === null || typeof properties !== "object") return def;
+  if (!(name in (properties as Record<string, unknown>))) return def;
+  const { [name]: _dropped, ...rest } = properties as Record<string, unknown>;
+  const required = params["required"];
+  const trimmed = Array.isArray(required)
+    ? { required: required.filter((entry) => entry !== name) }
+    : {};
+  return { ...def, parameters: { ...params, properties: rest, ...trimmed } };
 }
 
 /**
@@ -1009,18 +1035,7 @@ export function selectBuiltinToolsForModel(
  * (old configs predating the field are a no-op).
  */
 function applyCallDescriptionToggle(def: ToolDefinitionConfig): ToolDefinitionConfig {
-  if (def.call_description !== false) return def;
-  const params = def.parameters;
-  if (params === undefined) return def;
-  const properties = params["properties"];
-  if (properties === null || typeof properties !== "object") return def;
-  if (!("description" in (properties as Record<string, unknown>))) return def;
-  const { description: _dropped, ...rest } = properties as Record<string, unknown>;
-  const required = params["required"];
-  const trimmed = Array.isArray(required)
-    ? { required: required.filter((name) => name !== "description") }
-    : {};
-  return { ...def, parameters: { ...params, properties: rest, ...trimmed } };
+  return def.call_description === false ? withoutArgument(def, "description") : def;
 }
 
 export function buildToolConfig(state: AgentState): ToolConfig {

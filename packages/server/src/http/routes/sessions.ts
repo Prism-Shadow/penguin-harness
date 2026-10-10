@@ -1454,6 +1454,20 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     return c.json({ skipped } satisfies RetryNowResponse);
   });
 
+  // Retry a failed run (the Retry button on a final error): starts a Task with empty input, so
+  // core resends the failed turn's input it holds as carry-over — no new user message. Who may
+  // start a Task may retry, and the driver is noted as POST /tasks notes it. 409 when busy
+  // (task_in_progress / compacting), and nothing_to_retry when nothing is held: a later
+  // message already resent that input.
+  app.post("/:sessionId/retry", async (c) => {
+    const row = resolveSession(c);
+    const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
+    if (driver !== null) deps.drivers?.note(row.sessionId, driver);
+    const { sessionId } = await deps.manager.retryTask(row.sessionId);
+    if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
+    return c.json({ sessionId, queued: false } satisfies TaskCreateResponse, 202);
+  });
+
   app.post("/:sessionId/compact", async (c) => {
     const row = resolveSession(c);
     const { sessionId } = await deps.manager.startCompact(row.sessionId);

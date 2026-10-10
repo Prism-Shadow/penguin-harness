@@ -19,9 +19,10 @@
  *   gave-up on abort, exhaustion or a new Task; request events inside a compaction do not.
  * - Subagent output routes into the nearest approved, unfinished run_subagent card, one hop
  *   per level, else a standalone card; a child's tokens count toward the parent's stats.
- * - Messages carry their time; a Task starts at a user message or image and closes with a
- *   stats row (tokens, output speed, elapsed from Trace timestamps, the copy target, the
- *   fork position), compaction and approval waits attributed by position.
+ * - Messages carry their time; a Task starts at a user message or image (or, for a Retry, at
+ *   the first request after the end that stopped the run) and closes with a stats row (tokens,
+ *   output speed, elapsed from Trace timestamps, the copy target, the fork position),
+ *   compaction and approval waits attributed by position.
  * - Compaction-internal messages and steering never start a Task; background notices ride
  *   inside the running Task unless they arrived idle.
  * - Elapsed time survives a reload mid-run and never leaks the local clock.
@@ -1474,6 +1475,50 @@ describe("Task segmentation and stats triggering", () => {
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(stats.stats!.elapsedDeltaMs).toBe(1_000);
     expect(stats.stats!.tokens).toBe(800);
+  });
+
+  it("a Retry's request after a failed run opens its own Task, live and rebuilt alike", () => {
+    // A Retry sends the failed turn's held input with no new message: its request_begin is the
+    // new run's first record, so the failed run keeps its stats row and the Retry gets its own.
+    const fatal = requestEnd("fatal", { errorCode: "rejected", errorMessage: "400 Bad Request" });
+    const failed = [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(tokenUsage(counts(300), counts(300)), "2026-07-05T00:00:02.000Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:02.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:03.000Z"),
+      at(fatal, "2026-07-05T00:00:04.000Z"),
+    ];
+    const retry = [
+      at(requestBegin(), "2026-07-05T00:01:00.000Z"),
+      at(assistantText("A"), "2026-07-05T00:01:01.000Z"),
+      at(tokenUsage(counts(900), counts(600)), "2026-07-05T00:01:02.000Z"),
+      at(requestEnd("completed"), "2026-07-05T00:01:02.000Z"),
+    ];
+    const live = createStreamModel();
+    for (const msg of failed) pushMessage(live, msg);
+    notifyTaskIdle(live);
+    for (const msg of retry) pushMessage(live, msg);
+    notifyTaskIdle(live);
+    // A rebuild sees no task_state:idle between the two runs.
+    const rebuilt = createStreamModel();
+    pushMessages(rebuilt, [...failed, ...retry]);
+    finalizeHistory(rebuilt);
+    for (const m of [live, rebuilt]) {
+      expect(items(m).map((i) => i.kind)).toEqual([
+        "user_text",
+        "llm_error",
+        "task_stats",
+        "assistant_text",
+        "task_stats",
+      ]);
+      const [first, second] = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
+      expect(first!.stats!.tokensDelta).toBe(300);
+      expect(first!.stats!.elapsedDeltaMs).toBe(4_000);
+      expect(second!.stats!.tokensDelta).toBe(600);
+      expect(second!.stats!.elapsedDeltaMs).toBe(2_000);
+      expect(second!.assistantText).toBe("A");
+    }
   });
 
   it("a full image_url message also starts a new Task", () => {

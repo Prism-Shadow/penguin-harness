@@ -1744,6 +1744,98 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome2.errorMessage).toContain("insufficient_user_quota");
   });
 
+  // The provider's wording singles out two definitive rejections — wherever it rides: the
+  // error's message, the parsed body's code, the Anthropic body's nested message. Only a 4xx
+  // is read this way: a 5xx stays retryable whatever it says.
+  it.each([
+    {
+      name: "llama.cpp past its context size",
+      status: 400,
+      message:
+        "request (100091 tokens) exceeds the available context size (98304 tokens), try increasing it",
+      body: undefined,
+      stopReason: "fatal",
+      code: "context_overflow",
+    },
+    {
+      name: "OpenAI context_length_exceeded",
+      status: 400,
+      message: "400 Bad Request",
+      body: { code: "context_length_exceeded", type: "invalid_request_error" },
+      stopReason: "fatal",
+      code: "context_overflow",
+    },
+    {
+      name: "Anthropic prompt is too long",
+      status: 400,
+      message: "400 invalid_request_error",
+      body: {
+        type: "error",
+        error: {
+          type: "invalid_request_error",
+          message: "prompt is too long: 210000 tokens > 200000 maximum",
+        },
+      },
+      stopReason: "fatal",
+      code: "context_overflow",
+    },
+    {
+      name: "DeepSeek unsupported image",
+      status: 400,
+      message:
+        "input[366].image[0]: You have uploaded an unsupported image. Please make sure your " +
+        "image is valid and has one of the following formats: webp, png, jpeg, and gif.",
+      body: undefined,
+      stopReason: "fatal",
+      code: "image_rejected",
+    },
+    {
+      name: "Anthropic Could not process image",
+      status: 400,
+      message: "Could not process image",
+      body: undefined,
+      stopReason: "fatal",
+      code: "image_rejected",
+    },
+    {
+      name: "OpenAI image past its patch limit",
+      status: 400,
+      message: "400 Bad Request",
+      body: {
+        message:
+          "The image you provided requires 53800 patches after processing, exceeding the " +
+          "limit of 30000. Please resize the image and try again.",
+        type: "invalid_request_error",
+        code: "invalid_value",
+      },
+      stopReason: "fatal",
+      code: "image_rejected",
+    },
+    {
+      name: "a plain parameter 400",
+      status: 400,
+      message: "unknown parameter: max_output_tokens",
+      body: undefined,
+      stopReason: "fatal",
+      code: "rejected",
+    },
+    {
+      name: "a 500 worded like an image rejection",
+      status: 500,
+      message: "Could not process image",
+      body: undefined,
+      stopReason: "retryable",
+      code: "network",
+    },
+  ])("classifies $name as $code", async ({ status, message, body, stopReason, code }) => {
+    async function* rejection(): AsyncGenerator<UniEvent> {
+      throw Object.assign(new Error(message), { status, ...(body ? { error: body } : {}) });
+    }
+    const model = new SeamModel(() => rejection());
+    const { outcome } = await drain(model.streamGenerate({ newMessages: [userText("go")] }));
+    expect(outcome).toMatchObject({ status: stopReason, errorCode: code });
+  });
+
   it("classifies an undici transport drop (TypeError terminated, cause UND_ERR_SOCKET) as retryable", async () => {
     async function* socketDrop(): AsyncGenerator<UniEvent> {
       yield delta({ type: "text.delta", text: "hi" });

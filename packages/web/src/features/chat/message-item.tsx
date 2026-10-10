@@ -6,8 +6,8 @@
  *
  * The drawing is the UI package's (MessageRow / MessageBubble / MessageMeta for what the person
  * sent and the run's notice lines, AssistantText for a reply); what stays here is which item
- * becomes what, the text parsing that collapses harness blocks into banners, and the reconnect
- * line's countdown and controls.
+ * becomes what, the text parsing that collapses harness blocks into banners, the reconnect
+ * line's countdown and controls, and the Retry a failed run's last line offers.
  */
 import { useEffect, useState } from "react";
 import {
@@ -69,6 +69,39 @@ function SentMessageMeta({ atMs, copyText }: { atMs: number | undefined; copyTex
 const COUNTDOWN_MIN_MS = 2000;
 
 /**
+ * The Retry a failed run's line offers (the fatal error banner, or a reconnect line that gave
+ * up), or undefined for none: only on the main conversation (a subagent's failure belongs to the
+ * child session, which the retry route does not target), only on the stream's last item (anything
+ * after the failure has already resent the failed turn's input) and only while no Task runs.
+ */
+function retryOffer(ctx: StreamRenderContext, last: boolean): StreamRenderContext["onRetry"] {
+  return last && ctx.origin.length === 0 && !ctx.taskRunning ? ctx.onRetry : undefined;
+}
+
+/**
+ * "Retry" on a failed run's line, on the same rung as the reconnect line's "retry now". A click
+ * disables it, and it stays disabled: the Task starting, or anything landing after the line,
+ * takes the button away (and with it this state). A refused retry enables it again — the page
+ * has already said why.
+ */
+function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
+  const [acted, setActed] = useState(false);
+  return (
+    <Button
+      variant="secondary"
+      size="xs"
+      disabled={acted}
+      onClick={() => {
+        setActed(true);
+        void onRetry().catch(() => setActed(false));
+      }}
+    >
+      {S.chat.retryFailedRun}
+    </Button>
+  );
+}
+
+/**
  * Reconnect hint line. The live waiting state renders a COUNTDOWN to the next attempt when
  * the engine announced its planned wait (request_end.retry_in_ms ≥ 2s — with the
  * exponential ladder a wait can reach 30s, and a static "waiting" line reads as a hang),
@@ -81,9 +114,18 @@ const COUNTDOWN_MIN_MS = 2000;
  * forever. History safety: replay delivers the following request_begin/abort immediately,
  * flipping the state, so neither the countdown nor the buttons render for replayed items;
  * the buttons are additionally main-session-only (a subagent's backoff belongs to the
- * child session, which the retry-now route does not target).
+ * child session, which the retry-now route does not target). A line that gave up ended the
+ * run, and as the stream's last item it offers Retry instead (see retryOffer).
  */
-function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderContext }) {
+function ReconnectLine({
+  item,
+  ctx,
+  last,
+}: {
+  item: ReconnectItem;
+  ctx: StreamRenderContext;
+  last: boolean;
+}) {
   const state = item.gaveUp ? "gaveUp" : item.retrying ? "retried" : "waiting";
   const target =
     state === "waiting" &&
@@ -119,6 +161,7 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
   const seconds = live ? Math.ceil(remainingMs / 1000) : undefined;
   const showControls =
     live && ctx.origin.length === 0 && (ctx.onRetryNow !== undefined || ctx.onGiveUp !== undefined);
+  const retry = state === "gaveUp" ? retryOffer(ctx, last) : undefined;
   return (
     <MessageBubble
       variant="notice"
@@ -155,6 +198,8 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
               </Button>
             )}
           </>
+        ) : retry ? (
+          <RetryRunButton onRetry={retry} />
         ) : undefined
       }
     >
@@ -172,7 +217,19 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
   );
 }
 
-export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderContext }) {
+export function MessageItem({
+  item,
+  ctx,
+  last = false,
+}: {
+  item: ChatItem;
+  ctx: StreamRenderContext;
+  /**
+   * Whether this is the stream's last item (only the failed Task's stats row may follow it): a
+   * failed run's line offers Retry only then.
+   */
+  last?: boolean;
+}) {
   switch (item.kind) {
     case "user_text": {
       // Harness-injected completion notice of a run_in_background task: collapsed into a
@@ -349,10 +406,24 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       );
     case "abort":
       return <MessageBubble variant="notice">{S.chat.aborted(item)}</MessageBubble>;
-    case "llm_error":
-      return <MessageBubble variant="notice">{S.chat.llmError(item.errorMessage)}</MessageBubble>;
+    case "llm_error": {
+      // A request over the model's context window gets a second, quieter line saying what to
+      // do: the provider's text names the overflow but not the way out of it.
+      const retry = retryOffer(ctx, last);
+      return (
+        <MessageBubble
+          variant="notice"
+          actions={retry ? <RetryRunButton onRetry={retry} /> : undefined}
+        >
+          {S.chat.llmError(item.errorMessage)}
+          {item.errorCode === "context_overflow" && (
+            <span className="mt-0.5 block text-fg-subtle">{S.chat.llmContextOverflowHint}</span>
+          )}
+        </MessageBubble>
+      );
+    }
     case "reconnect":
-      return <ReconnectLine item={item} ctx={ctx} />;
+      return <ReconnectLine item={item} ctx={ctx} last={last} />;
     case "compaction":
       return <CompactionBanner item={item} />;
     case "model_change": {

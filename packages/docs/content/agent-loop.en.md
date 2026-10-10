@@ -265,12 +265,15 @@ The fatal detector is a deterministic allowlist. A gateway that phrases a transi
 
 A `fatal` failure stops the run at once, without retrying. It covers:
 
-- a definitive provider `4xx` rejection, such as invalid parameters or an exhausted quota; `408` and `429` are excluded from this class;
+- a definitive provider `4xx` rejection, such as invalid parameters or an exhausted quota (`rejected`); `408` and `429` are excluded from this class;
+- a request larger than the model's context window (`context_overflow`), which the chat follows with a hint: continue on a model with a larger context window, and check that this model's context window setting is not larger than what its server supports;
 - a credential failure (`auth`);
 - a deterministic client-side rejection, such as fast mode on a model without a fast tier (`unsupported`);
 - input that cannot be assembled into a request (`invalid_input`).
 
 An identical request can only fail the same way, so the ladder would only delay the actionable error.
+
+One rejection is retried anyway: a provider refusing an image (`image_rejected`). When the turn's input carries images, the engine replaces them with a note that names each one (format, pixel size, byte size), quotes the provider's error, and gives the likely causes and how to make a copy that passes. It records that attempt as `retryable` with `retry_in_ms: 0` and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement, and because the note is built from the image and the recorded `error_message` alone, replay reproduces it exactly. If the input has no image left to remove, the bad image is in the committed history and the rejection is fatal like any other.
 
 ### How a turn is retried
 

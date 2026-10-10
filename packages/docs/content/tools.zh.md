@@ -200,14 +200,14 @@ WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进
 
 `edit_file` 和 `write_file` 在服务器进程内按文件串行执行，串行键取文件的真实路径，因此符号链接与其目标算作同一个文件。并行编辑同一文件时，会依次应用各次修改；如果前一次编辑已经移除了某个 `old_string`，后续编辑将匹配失败，而不是覆盖前面的修改。其他进程的写入不受这把锁约束。
 
-`read_file` 除文本外还能读取图片。图片分支接受不超过 5MB 的 png、jpeg、gif 或 webp 文件（先按魔数识别，再按扩展名识别），也接受 `file_path` 中给出的 http(s) URL。URL 只能用作图片来源，且会先检查响应的 content-type。
+`read_file` 除文本外还能读取图片。魔数或扩展名表明是图片的文件走图片分支，`file_path` 中给出的 http(s) URL 也一样；URL 只能用作图片来源。格式只按文件字节（魔数）判定：不超过 5MB 的 png、jpeg、gif 或 webp 才会被读取，其余格式（如 SVG、HEIC 照片、改了扩展名的网页）一律拒绝，并提示先转换为 PNG 或 JPEG。扩展名和响应的 content-type 都不决定格式。
 
 返回什么取决于 Session 模型的 vision 标志：
 
-- 支持图片的模型会直接拿到图片内容，文字输出只有一行，例如 `image/png, 123.4 kB`。
-- 纯文本模型则由 Project 的 `vision_model` 回答 `prompt`（默认是一段详细描述），以工具文字输出的形式流式返回。图片本身不会进入这个 Session 的历史。未配置 `vision_model` 时，在纯文本 Session 中读取图片会失败，并提示用户到模型设置中选择一个。参见[模型与供应商](/models)。
+- 支持图片的模型会直接拿到图片内容，文字输出只有一行，给出格式、像素尺寸和字节大小，例如 `image/png, 1280×720 px, 123.4 kB`。供应商仍拒收这张图时，引擎会去掉它重发请求（见[可重试失败与致命失败](/agent-loop#可重试失败与致命失败)），并在工具输出中留下一段说明。说明点出这张图片，引用供应商的报错，给出常见原因（边长或像素总数超过供应商的上限，供应商常把这种情况报成格式不受支持；文件超过大小上限；字节并非真正的图片），并让模型用 shell 命令把副本裁切或缩小到每边不超过 2000 px，再读取这份副本。
+- 纯文本模型则由 Project 的 `vision_model` 回答 `prompt`（默认是一段详细描述），以工具文字输出的形式流式返回。图片本身不会进入这个 Session 的历史。视觉模型拒收图片时，工具输出会附上同样的原因与建议。未配置 `vision_model` 时，在纯文本 Session 中读取图片会失败，并提示用户到模型设置中选择一个。参见[模型与供应商](/models)。
 
-走哪个分支由 `VisionDescriberService` 决定；SDK 只在纯文本 Session 时才向 Environment 注入它，因此一条配置（不带 `forModel`）即可同时服务两类模型。
+走哪个分支由 `VisionDescriberService` 决定；SDK 只在纯文本 Session 时才向 Environment 注入它，因此一条配置（不带 `forModel`）即可同时服务两类模型。支持图片的模型拿到的 `read_file` 不带 `prompt`：组装时在内存中把这个参数从 schema 里移除，与 `call_description: false` 移除 `description` 的做法相同，YAML 文件本身不会改动。
 
 ```ts
 // read_file — cat -n style output (line number, tab, content) for text; overlong single lines
@@ -218,7 +218,7 @@ WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进
   file_path: string;       // required: absolute, or relative to the Workspace; an http(s) URL for an image
   offset?: number;         // 1-based line to start from; default 1
   limit?: number;          // max lines returned; default 2000 — a trailing note points at the continuation
-  prompt?: string;         // a question about an image, answered by the vision_model for a text-only model; default: a detailed description
+  prompt?: string;         // text-only models only: a question about an image, answered by the vision_model; default: a detailed description
 }
 
 // edit_file — the file must exist; old_string must occur exactly once (or set replace_all);

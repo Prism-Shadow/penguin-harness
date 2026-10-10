@@ -200,14 +200,14 @@ Under the WSL backend the helper runs inside the distro, which the initializatio
 
 `edit_file` and `write_file` serialize per file within the server process, keyed by the file's real path, so a symlink and its target count as one file. Parallel edits of one file are applied one after another, and an `old_string` that an earlier edit removed fails to match instead of overwriting it. Writes from other processes are outside this lock.
 
-`read_file` reads images as well as text. The image branch takes a png, jpeg, gif or webp file up to 5MB, recognized by its magic number and then by its extension, or an http(s) URL in `file_path`. A URL is only ever an image source, and the response's content-type is checked first.
+`read_file` reads images as well as text. A file whose magic number or extension says image takes the image branch, and so does an http(s) URL in `file_path`; a URL is only ever an image source. The format is decided by the file's bytes (magic number) only: a png, jpeg, gif or webp up to 5MB is read, and anything else, such as an SVG, a HEIC photo or a renamed web page, is refused with a hint to convert it to PNG or JPEG first. Neither the extension nor the response's content-type decides the format.
 
 What comes back depends on the Session model's vision flag:
 
-- A model that accepts images gets the image itself as image content, and the text output is one line such as `image/png, 123.4 kB`.
-- A text-only model gets the Project's `vision_model` answering `prompt` (by default, a detailed description), streamed as the tool's text output. The image never enters that Session's history. Without a `vision_model`, reading an image in a text-only Session fails with an explanation asking the user to pick one in the model settings. See [Models & Providers](/models).
+- A model that accepts images gets the image itself as image content, and the text output is one line giving its format, pixel size and byte size, such as `image/png, 1280×720 px, 123.4 kB`. If the provider still refuses the image, the engine sends the request again without it (see [Retryable and fatal failures](/agent-loop#retryable-and-fatal-failures)) and leaves a note in the tool output. The note names the image, quotes the provider's error, gives the usual causes (a side or pixel count above the provider's limit, which providers often report as an unsupported format; a file over the size limit; bytes that are no real image) and tells the model to cut or downscale a copy to at most 2000 px per side with a shell command and read the copy.
+- A text-only model gets the Project's `vision_model` answering `prompt` (by default, a detailed description), streamed as the tool's text output. The image never enters that Session's history. If the vision model refuses the image, the tool output carries the same causes and advice. Without a `vision_model`, reading an image in a text-only Session fails with an explanation asking the user to pick one in the model settings. See [Models & Providers](/models).
 
-The branch is decided by the `VisionDescriberService` that the SDK injects into the Environment for text-only Sessions only, so one config entry (without `forModel`) serves both model classes.
+The branch is decided by the `VisionDescriberService` that the SDK injects into the Environment for text-only Sessions only, so one config entry (without `forModel`) serves both model classes. A model that accepts images is handed `read_file` without `prompt`: assembly drops the argument from the schema in memory, as `call_description: false` drops `description`, and the YAML is never rewritten.
 
 ```ts
 // read_file — cat -n style output (line number, tab, content) for text; overlong single lines
@@ -218,7 +218,7 @@ The branch is decided by the `VisionDescriberService` that the SDK injects into 
   file_path: string;       // required: absolute, or relative to the Workspace; an http(s) URL for an image
   offset?: number;         // 1-based line to start from; default 1
   limit?: number;          // max lines returned; default 2000 — a trailing note points at the continuation
-  prompt?: string;         // a question about an image, answered by the vision_model for a text-only model; default: a detailed description
+  prompt?: string;         // text-only models only: a question about an image, answered by the vision_model; default: a detailed description
 }
 
 // edit_file — the file must exist; old_string must occur exactly once (or set replace_all);

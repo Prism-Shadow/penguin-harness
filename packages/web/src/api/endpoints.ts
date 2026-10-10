@@ -1130,6 +1130,13 @@ export const postRetryNow = (sessionId: string) =>
     body: {},
   });
 
+/** "Retry" after a run ended on a failure: runs the Session once with no new input, so the failed turn's held input is sent on its own (409 nothing_to_retry when nothing is held, 409 while a Task runs). Same response shape as tasks. */
+export const postRetry = (sessionId: string) =>
+  apiFetch<TaskCreateResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/retry`, {
+    method: "POST",
+    body: {},
+  });
+
 /** Background processes the conversation started (details popover list); an evicted/never-loaded runtime reports an empty list. */
 export const getSessionProcesses = (sessionId: string) =>
   apiFetch<SessionProcessesResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/processes`);

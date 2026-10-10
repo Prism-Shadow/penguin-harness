@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  IMAGE_COPY_ADVICE,
+  IMAGE_REJECTION_CAUSES,
   assistantText,
   emptyTokenCounts,
   imageUrlMessage,
@@ -1987,6 +1989,111 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       "turn it off in the model settings",
     );
     expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
+  });
+
+  it("an image rejection retries at once with the input's images replaced by the note", async () => {
+    // GenerativeModel reports a provider refusing an image as fatal/image_rejected (see
+    // llm.test.ts). While the turn's input holds images, the engine replaces them and sends
+    // the turn again — no backoff: the 60s base would time this test out if it waited.
+    const inputs: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        inputs.push(params.newMessages);
+        if (inputs.length === 1) {
+          return {
+            status: "fatal",
+            errorCode: "image_rejected",
+            errorMessage: "400 You have uploaded an unsupported image.",
+          };
+        }
+        yield assistantText("I could not see the image.");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 60_000 });
+
+    // A read_file result carrying an image, handed in the way a carry-over hands it back.
+    const readImage = toolCallOutput({
+      output: "image/png, 1×1 px, 70 B",
+      toolCallId: "call_img",
+      images: [PNG_DATA_URL],
+    });
+    const { all, cutoff } = await collectRunWithReturn(engine, [readImage], allowAll);
+
+    expect(cutoff).toBeNull();
+    expect(inputs).toHaveLength(2);
+    expect((inputs[0]![0]!.payload as { images?: string[] }).images).toEqual([PNG_DATA_URL]);
+    // The retry carries no image: the tool output keeps its text and pairing id, the note
+    // appended in place of the picture — naming the image, quoting the provider, then the
+    // causes and the copy advice.
+    expect(inputs[1]).toHaveLength(1);
+    const retried = inputs[1]![0]!.payload as {
+      output?: string;
+      images?: string[];
+      tool_call_id?: string;
+    };
+    expect(retried.images).toBeUndefined();
+    expect(retried.output).toBe(
+      "image/png, 1×1 px, 70 B\n" +
+        "[image not sent: the model provider rejected the image this tool returned " +
+        "(image/png, 1×1 px, 70 B), so the request was sent again without it. " +
+        "Provider error: 400 You have uploaded an unsupported image. " +
+        `${IMAGE_REJECTION_CAUSES} ${IMAGE_COPY_ADVICE}]`,
+    );
+    expect(retried.tool_call_id).toBe("call_img");
+    // The rejected attempt is recorded as retried, announcing an immediate retry.
+    const ends = all
+      .filter((m) => (m.payload as { type?: string }).type === "request_end")
+      .map((m) => m.payload as { status?: string; error_code?: string; retry_in_ms?: number });
+    expect(ends).toHaveLength(2);
+    expect(ends[0]).toMatchObject({
+      status: "retryable",
+      error_code: "image_rejected",
+      retry_in_ms: 0,
+    });
+    expect(ends[1]!.status).toBe("completed");
+  });
+
+  it("an image rejection with no image left in the input ends the run as fatal", async () => {
+    // The refused image is in the committed history, which no retry can change.
+    let calls = 0;
+    const llm: LLMInterface = {
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        calls += 1;
+        return {
+          status: "fatal",
+          errorCode: "image_rejected",
+          errorMessage: "400 Could not process image",
+        };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
+
+    const { all, cutoff } = await collectRunWithReturn(engine, [userText("go on")], allowAll);
+    expect(calls).toBe(1);
+    expect(cutoff).toEqual({
+      kind: "llm_failure",
+      errorCode: "image_rejected",
+      errorMessage: "400 Could not process image",
+    });
+    const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
+    expect(end!.payload).toMatchObject({ status: "fatal", error_code: "image_rejected" });
+    expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
   });
 
   it("a retryable outcome takes the ladder", async () => {

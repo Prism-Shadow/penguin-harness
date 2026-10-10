@@ -16,7 +16,13 @@ import { READ_FILE_NAME, createReadFileTool } from "../src/environment/tools/rea
 import { MAX_IMAGE_BYTES } from "../src/environment/tools/image-source.js";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import { Environment } from "../src/environment/environment.js";
-import { assistantText, partialText, toolCall } from "../src/omnimessage/index.js";
+import {
+  IMAGE_COPY_ADVICE,
+  IMAGE_REJECTION_CAUSES,
+  assistantText,
+  partialText,
+  toolCall,
+} from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 import type { ToolResult } from "../src/environment/tools/types.js";
 import type {
@@ -114,7 +120,7 @@ describe("read_file on an image — session model views images (no describer)", 
     const { result, text } = await run({ file_path: "img.png" }, tmp);
     expect(result?.stopReason).toBeUndefined(); // defaults to completed
     expect(result?.images).toEqual([PNG_DATA_URL]);
-    expect(text).toBe(`image/png, ${PNG_1X1.length} B`);
+    expect(text).toBe(`image/png, 1×1 px, ${PNG_1X1.length} B`);
   });
 
   it("recognizes an image by its magic number whatever the extension says", async () => {
@@ -123,12 +129,18 @@ describe("read_file on an image — session model views images (no describer)", 
     expect(result?.images?.[0]).toMatch(/^data:image\/png;base64,/);
   });
 
-  it("recognizes an image by extension when the bytes carry no known magic number", async () => {
-    // The extension routes the file into the image branch, where it is handed over as its
-    // extension says (the same fallback the URL branch applies to a content-type-less response).
-    await writeFile(path.join(tmp, "plain.png"), Buffer.from("no magic here"));
-    const { result } = await run({ file_path: "plain.png" }, tmp);
-    expect(result?.images?.[0]).toMatch(/^data:image\/png;base64,/);
+  it("refuses a .png path whose bytes are SVG, naming what they are", async () => {
+    // The extension routes the file into the image branch, but only the bytes decide the
+    // format: an SVG handed over as image/png would get the whole request rejected.
+    await writeFile(
+      path.join(tmp, "logo.png"),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>',
+    );
+    const { result, text } = await run({ file_path: "logo.png" }, tmp);
+    expect(result?.stopReason).toBe("fatal");
+    expect(result?.images).toBeUndefined();
+    expect(text).toContain("SVG");
+    expect(text).toContain("Convert it to PNG or JPEG");
   });
 
   it("ignores offset and limit for an image", async () => {
@@ -226,7 +238,7 @@ describe("read_file on an image — text-only session model (describer injected)
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("vision request failure: fatal with the status and message", async () => {
+  it("vision request failure: fatal with the status and message, plus the copy advice for a refused image", async () => {
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
     const { llm } = fakeLLM("", { status: "fatal", errorMessage: "401 unauthorized" });
     const { result, text } = await run({ file_path: "a.png" }, tmp, {
@@ -235,6 +247,20 @@ describe("read_file on an image — text-only session model (describer injected)
     expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("fatal");
     expect(text).toContain("401 unauthorized");
+    expect(text).not.toContain(IMAGE_COPY_ADVICE);
+
+    // A refused image also gets the causes and the advice the session's own refusal note gives.
+    const refused = fakeLLM("", {
+      status: "fatal",
+      errorCode: "image_rejected",
+      errorMessage: "400 You have uploaded an unsupported image.",
+    });
+    const rejected = await run({ file_path: "a.png" }, tmp, {
+      visionDescriber: { modelId: "vis-1", createLLM: () => refused.llm },
+    });
+    expect(rejected.result?.stopReason).toBe("fatal");
+    expect(rejected.text).toContain("400 You have uploaded an unsupported image.");
+    expect(rejected.text).toContain(`\n${IMAGE_REJECTION_CAUSES} ${IMAGE_COPY_ADVICE}`);
   });
 
   it("an oversized image fails before any vision request", async () => {
@@ -261,7 +287,7 @@ describe("read_file on an image — text-only session model (describer injected)
 });
 
 describe("read_file on an http(s) URL", () => {
-  it("downloads via the global fetch, taking the content-type header as the mime", async () => {
+  it("downloads via the global fetch and returns the image", async () => {
     const fetchMock = vi.fn(
       async (_input: unknown) =>
         new Response(PNG_1X1, { status: 200, headers: { "content-type": "image/png" } }),
@@ -272,6 +298,18 @@ describe("read_file on an http(s) URL", () => {
     expect(fetchMock.mock.calls[0]![0]).toBe("https://example.com/a");
     expect(result?.images).toEqual([PNG_DATA_URL]);
     expect(text).toContain("image/png");
+  });
+
+  it("takes the format from the bytes, not from the content-type header", async () => {
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00]);
+    const headers = { "content-type": "image/png" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(jpeg, { status: 200, headers })),
+    );
+    const { result, text } = await run({ file_path: "https://example.com/photo.png" }, tmp);
+    expect(result?.images?.[0]).toMatch(/^data:image\/jpeg;base64,/);
+    expect(text).toContain("image/jpeg");
   });
 
   it("fails with the status code on a non-2xx response", async () => {

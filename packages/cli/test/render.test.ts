@@ -351,6 +351,36 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toContain("[abort]: aborted by user");
   });
 
+  it("an image rejection's retry names its cause; a context overflow prints a hint under the error", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(requestBegin());
+    // The engine retries an image rejection at once with the images replaced (retry_in_ms 0).
+    r.handle(
+      requestEnd("retryable", {
+        errorCode: "image_rejected",
+        errorMessage: "400 Could not process image",
+        attempt: 1,
+        retryInMs: 0,
+      }),
+    );
+    r.handle(requestBegin());
+    expect(stripAnsi(text())).toBe(
+      "[retry] the model provider rejected an image in this turn's input (replaced with a note); sending retry #1…\n",
+    );
+    r.handle(
+      requestEnd("fatal", {
+        errorCode: "context_overflow",
+        errorMessage: "400 prompt is too long: 210000 tokens > 200000 maximum",
+      }),
+    );
+    expect(stripAnsi(text()).split("\n").slice(1)).toEqual([
+      "[error] llm request error: 400 prompt is too long: 210000 tokens > 200000 maximum",
+      t.llmContextOverflowHint(),
+      "",
+    ]);
+  });
+
   it("prints the retry line for legacy-trace spellings too, straight from the stamped ordinal", () => {
     // Traces written before the stop-reason convergence spell retryable ends as
     // failed/timeout/malformed; the CLI keeps printing their retries. The number is the
