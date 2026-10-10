@@ -6,19 +6,9 @@
  * agent as a whole (the settings tab opens a new Session). Picking one opens the AI creation
  * dialog with that prompt filled in, and the same rows are the dialog's clickable examples.
  */
+import { GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CALENDAR_ICON } from "../../components/ui/group-list";
 import type { AiExample } from "../ai-create";
-
-/** Sunrise (a half sun over the horizon, rays out): the daily brief. */
-const SUNRISE_ICON =
-  "M12 2v3M4.9 5.9l2.1 2.1M2 13h3M19 13h3M17 8l2.1-2.1M6 18a6 6 0 0 1 12 0M2 22h20";
-/** Bell (lucide bell): the follow-up reminder. */
-const BELL_ICON = "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0";
-/** Activity pulse (lucide activity): the update monitor. */
-const ACTIVITY_ICON = "M22 12h-4l-3 9L9 3l-3 9H2";
 
 export type ScheduleSuggestionKey = "dailyBrief" | "weeklyReview" | "followUp" | "monitor";
 
@@ -34,11 +24,12 @@ export interface ScheduleSuggestion {
   prompt: string;
 }
 
-const ICONS: Record<ScheduleSuggestionKey, string> = {
-  dailyBrief: SUNRISE_ICON,
-  weeklyReview: CALENDAR_ICON,
-  followUp: BELL_ICON,
-  monitor: ACTIVITY_ICON,
+/** The rising sun is the daily brief, the bell a follow-up reminder, the pulse an update monitor. */
+const SUGGESTION_ICONS: Record<ScheduleSuggestionKey, string> = {
+  dailyBrief: ICONS.sunrise,
+  weeklyReview: ICONS.calendar,
+  followUp: ICONS.bell,
+  monitor: ICONS.pulse,
 };
 
 const ORDER: readonly ScheduleSuggestionKey[] = [
@@ -54,7 +45,7 @@ export function scheduleSuggestions(mode: SuggestionMode): ScheduleSuggestion[] 
     const s = S.schedule.suggestions[key];
     return {
       key,
-      icon: ICONS[key],
+      icon: SUGGESTION_ICONS[key],
       name: s.name,
       hint: s.hint,
       description: s.description,
@@ -86,7 +77,7 @@ export function ScheduleSuggestions({
       <div className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
         {S.schedule.suggestionsTitle}
       </div>
-      <ul className="space-y-0.5">
+      <ul className="space-y-1">
         {scheduleSuggestions(mode).map((s) => (
           <li key={s.key}>
             <button
@@ -102,7 +93,7 @@ export function ScheduleSuggestions({
                   <span className="truncate text-sm text-gray-800 dark:text-gray-100">
                     {s.name}
                   </span>
-                  <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                     {s.hint}
                   </span>
                 </span>

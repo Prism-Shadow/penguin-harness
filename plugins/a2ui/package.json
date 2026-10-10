@@ -1,0 +1,21 @@
+{
+  "name": "@penguinharness/a2ui",
+  "version": "0.2.13",
+  "description": "Rich reply blocks for readable output: a choice, a form, a procedure in steps, a callout, a Mermaid diagram, and glanceable widgets (a weather card, a live clock or countdown, and a dashboard of gauges for a system snapshot, a quota or a job's progress), each written as a fenced block inside an ordinary Markdown reply, rendered by the Web App with its own components and shown as plain text everywhere else; a pick fills the composer as ordinary text. Comes with STE-style writing rules for Chinese and English, two scripts that turn a weather lookup and a system snapshot into ready-made blocks, and a checker script that validates every block, scores the draft and prints a self-review rubric before the reply is sent.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/a2ui"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "hooks",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

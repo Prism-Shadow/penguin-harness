@@ -3,7 +3,7 @@
  *
  * `recordingModel` returns a real `GenerativeModel` with one thing replaced — the provider
  * client's stream, which reads from a script instead of the network. Everything else runs for
- * real: the model builds the UniConfig, AgentHub merges the input into its stateful history, and
+ * real: the model builds the UniConfig, MMSP merges the input into its stateful history, and
  * the recorded request is the output of the provider's own transforms. A `RecordedRequest` is
  * therefore the bytes the client would have put on the wire, not the internal UniMessage form.
  *
@@ -11,7 +11,13 @@
  * stopped being one growing prefix; `simulator.ts` says what a provider with Anthropic's cache
  * rules would actually have read back; `fixtures.ts` holds the scenery the Session suites share.
  */
-import type { UniConfig, UniEvent, UniMessage } from "@prismshadow/agenthub";
+import type {
+  DeltaContentItem,
+  UniConfig,
+  UniEvent,
+  UniMessage,
+  UsageMetadata,
+} from "@prismshadow/mmsp";
 import type { GenerativeModelConfig } from "../../../src/interfaces/index.js";
 import { GenerativeModel } from "../../../src/llm/index.js";
 
@@ -55,7 +61,7 @@ export interface RecordedRequest {
    * report can tell the cache lines apart; a single-model scenario leaves it off.
    */
   label?: string;
-  /** The full message list handed to the client (AgentHub's stateful history plus this turn). */
+  /** The full message list handed to the client (MMSP's stateful history plus this turn). */
   messages: UniMessage[];
   /** The resolved UniConfig for this request. */
   config: UniConfig;
@@ -100,7 +106,7 @@ const deepCopy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 /**
  * A real `GenerativeModel` with its provider client's stream replaced by a script. Everything
- * else runs for real: the model builds the UniConfig, AgentHub merges the input into its
+ * else runs for real: the model builds the UniConfig, MMSP merges the input into its
  * stateful history, and the recorded request is the output of the provider's own transforms.
  */
 export function recordingModel(
@@ -117,7 +123,7 @@ export function recordingModel(
     streamOptions: StreamOptions,
   ): AsyncGenerator<UniEvent> {
     const index = requests.length;
-    // Recorded before anything is yielded: AgentHub stamps `created_at` onto the message
+    // Recorded before anything is yielded: MMSP stamps `created_at` onto the message
     // objects and the harness hands the same objects to the next request.
     const request: RecordedRequest = {
       index,
@@ -158,45 +164,46 @@ function untilAborted(signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * The UniEvents one scripted reply streams, built the way the Claude client builds them: a
- * start event carrying the input usage, thinking deltas closed by a signature, text deltas,
- * each tool call as partial deltas followed by its complete item, and a stop event carrying
- * the finish reason and the response usage.
+ * The events one scripted reply streams, in the client-internal shape the Claude client
+ * yields them (MMSP's base class turns them into the public stream, closing each item with
+ * its done item and merging the usage pieces into the one stop event): the input usage as
+ * message_start reports it, thinking deltas closed by a signature, a text delta, each tool
+ * call opened by its name and id and followed by one arguments fragment, and the finish reason
+ * with the response usage as message_delta reports them.
  */
 async function* replyEvents(reply: ScriptedReply, signal?: AbortSignal): AsyncGenerator<UniEvent> {
   const promptTokens = reply.promptTokens ?? DEFAULT_PROMPT_TOKENS;
   if (signal?.aborted) return;
-  yield {
-    role: "assistant",
-    event_type: "start",
-    content_items: [],
-    usage_metadata: {
+  yield usage(
+    {
       cached_tokens: SCRIPTED_CACHED_TOKENS,
       prompt_tokens: promptTokens,
       thoughts_tokens: null,
       response_tokens: null,
     },
-    finish_reason: null,
-  };
+    null,
+  );
 
   if (reply.thinking) {
     if (signal?.aborted) return;
-    yield delta([{ type: "thinking", thinking: reply.thinking.text }]);
+    yield delta({ type: "thinking.delta", thinking: reply.thinking.text });
     if (signal?.aborted) return;
     // The signature arrives as an empty delta and closes the block, as Claude's
     // signature_delta does.
-    yield delta([
-      { type: "thinking", thinking: "", fidelity: { signature: reply.thinking.signature } },
-    ]);
+    yield delta({
+      type: "thinking.delta",
+      thinking: "",
+      fidelity: { signature: reply.thinking.signature },
+    });
   }
 
   if (reply.text) {
     if (signal?.aborted) return;
-    yield delta([{ type: "text", text: reply.text }]);
+    yield delta({ type: "text.delta", text: reply.text });
   }
 
   if (reply.outcome === "retryable-after-text") {
-    // A transport drop: no finish reason, nothing committed to AgentHub's history, and the
+    // A transport drop: no stop event, nothing committed to MMSP's history, and the
     // engine's reconnect ladder takes it (an unclassifiable error stays retryable).
     throw new Error("socket hang up");
   }
@@ -207,53 +214,47 @@ async function* replyEvents(reply: ScriptedReply, signal?: AbortSignal): AsyncGe
 
   for (const call of reply.toolCalls ?? []) {
     if (signal?.aborted) return;
-    yield {
-      role: "assistant",
-      event_type: "start",
-      content_items: [
-        { type: "partial_tool_call", name: call.name, arguments: "", tool_call_id: call.id },
-      ],
-      usage_metadata: null,
-      finish_reason: null,
-    };
+    // The call's name and id open it, as content_block_start does; the argument fragments
+    // carry neither, exactly as Claude's input_json_delta does.
+    yield delta({ type: "tool_call.delta", name: call.name, arguments: "", tool_call_id: call.id });
     if (signal?.aborted) return;
-    // Argument fragments carry no id, exactly as Claude's input_json_delta does; the
-    // translator attributes them to the call that opened last.
-    yield delta([
-      {
-        type: "partial_tool_call",
-        name: "",
-        arguments: JSON.stringify(call.args),
-        tool_call_id: "",
-      },
-    ]);
-    if (signal?.aborted) return;
-    // The complete item at the block's stop: AgentHub keeps this one in the committed
-    // message and drops the partials, while the harness translator emits the tool card from it.
-    yield delta([
-      { type: "tool_call", name: call.name, arguments: call.args, tool_call_id: call.id },
-    ]);
+    yield delta({
+      type: "tool_call.delta",
+      name: "",
+      arguments: JSON.stringify(call.args),
+      tool_call_id: "",
+    });
   }
 
   if (signal?.aborted) return;
-  yield {
-    role: "assistant",
-    event_type: "stop",
-    content_items: [],
-    usage_metadata: {
-      cached_tokens: SCRIPTED_CACHED_TOKENS,
-      prompt_tokens: promptTokens,
+  yield usage(
+    {
+      cached_tokens: null,
+      prompt_tokens: null,
       thoughts_tokens: null,
       response_tokens: SCRIPTED_RESPONSE_TOKENS,
     },
-    finish_reason: (reply.toolCalls?.length ?? 0) > 0 ? "tool_call" : "stop",
-  };
+    (reply.toolCalls?.length ?? 0) > 0 ? "tool_call" : "stop",
+  );
 }
 
-const delta = (contentItems: UniEvent["content_items"]): UniEvent => ({
+/** One client-internal delta event, carrying one fragment. */
+const delta = (item: DeltaContentItem): UniEvent => ({
   role: "assistant",
   event_type: "delta",
-  content_items: contentItems,
+  content_items: [item],
   usage_metadata: null,
   finish_reason: null,
+});
+
+/** A client-internal stop event: a usage piece and/or the finish reason, which the base class merges. */
+const usage = (
+  usageMetadata: UsageMetadata,
+  finishReason: "stop" | "tool_call" | null,
+): UniEvent => ({
+  role: "assistant",
+  event_type: "stop",
+  content_items: [],
+  usage_metadata: usageMetadata,
+  finish_reason: finishReason,
 });

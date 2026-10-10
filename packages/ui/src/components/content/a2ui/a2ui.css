@@ -1,0 +1,20 @@
+/*
+ * The A2UI blocks inside a reply's Markdown.
+ *
+ * A block renders inside `.md-body`, whose element rules are unlayered and so beat any utility a
+ * block's markup carries: every paragraph and list in a block — a notice's title, a choice's
+ * option list, the steps list — would take the reading margins and line height, and the steps
+ * list its decimal markers on top of the numbers the block draws itself. These rules hand the
+ * block's own parts back to the block, by the block's class, at a specificity the reading rules
+ * do not reach. Nothing here sets a colour or a size: the block's utilities do.
+ */
+.md-body .a2ui-block :is(p, ul, ol, li) {
+  margin: 0;
+}
+.md-body .a2ui-block p {
+  line-height: inherit;
+}
+.md-body .a2ui-block ol.a2ui-steps {
+  list-style: none;
+  padding-left: 0;
+}

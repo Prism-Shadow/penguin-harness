@@ -1,10 +1,30 @@
 /**
- * Unit tests for usage persistence and statistics: origin→model attribution,
- * summary buckets and group aggregation, cost computed **on the fly** (only
- * Tokens are persisted; cost is priced against current pricing at query time,
- * no pricing → NULL + hasUncosted; a later price update is reflected
- * immediately), and the status → success-rate pipeline that rides on the time
- * series (aborted doesn't count as a model failure).
+ * Usage persistence and statistics behind the cost center. Only Tokens are persisted; cost is
+ * priced against the current pricing at query time.
+ *
+ * Recording:
+ * - A token_usage message is one row of Tokens (never a cost); anything else writes nothing.
+ * - A sub-session's usage is attributed to its own model through its session_meta, and falls
+ *   back to the main Session's model when that mapping is missing or was evicted past its cap.
+ *
+ * Querying:
+ * - A scheduled model is priced per record by the tier its request ran in, each seller by its
+ *   own windows, so a finished period's total never moves with the clock.
+ * - The summary cards cover today, the last 7 days and everything; a model without pricing is
+ *   flagged, and a price added later prices past records at once; only the references the
+ *   response prices are looked up.
+ * - Groups aggregate by date (newest first), Agent, model and Session, folded across models and
+ *   narrowed by Agent and range.
+ * - Success counts completed requests over every non-aborted one: a user's Stop is not a model
+ *   failure.
+ * - Model totals sum every record a model ever wrote, per paired reference, per Project.
+ * - Series are zero-filled buckets by minute, hour (local clock), day, ISO week or month, with
+ *   per-Agent and per-model series aligned to them; a minute series needs a timestamp window,
+ *   the range defaults to 30 days, and an oversized series is refused.
+ * - Bucket enumeration stays unique and ascending across DST transitions.
+ * - The error table filters before it pages, so a later page never slides onto excluded rows,
+ *   and pages through rows rather than records once a day's repeats fold (paging itself is
+ *   covered through its route in errors.test.ts).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sessionMeta, tokenUsage, withOrigin } from "@prismshadow/penguin-core";
@@ -40,6 +60,7 @@ function meta(sessionId: string, modelId: string, provider = "custom"): SessionM
     system_prompt: "",
     agent_state: "/tmp/x",
     workspace: "/tmp/w",
+    source: "user",
   };
 }
 
@@ -741,27 +762,27 @@ describe("usage-service.queryErrors (error table paging)", () => {
   });
   afterEach(() => db.close());
 
-  it("pages newest-first and reports the filtered total, so the caller knows where the end is", () => {
+  it("pages through rows, not records, once a day's repeats fold", () => {
+    // Ten more of one error on the same day: one more row, ten more records.
+    for (let i = 0; i < 10; i += 1) {
+      errors.insert({
+        ts: `2026-07-27T01:00:${String(i).padStart(2, "0")}.000Z`,
+        date: "2026-07-27",
+        projectId: "p1",
+        agentId: "a1",
+        sessionId: "s1",
+        source: "messaging",
+        kind: "expected",
+        code: "messaging_connect_failed",
+        status: null,
+        message: "gateway stopped acknowledging heartbeats",
+      });
+    }
     const first = service.queryErrors("p1", { offset: 0, limit: 20 });
-    expect(first.total).toBe(25);
-    expect(first.items).toHaveLength(20);
-    expect(first.items[0]!.code).toBe("code_24"); // newest
-    const second = service.queryErrors("p1", { offset: 20, limit: 20 });
-    expect(second.total).toBe(25);
-    // The tail is the five oldest, still descending, with no overlap against page one.
-    expect(second.items.map((e) => e.code)).toEqual([
-      "code_4",
-      "code_3",
-      "code_2",
-      "code_1",
-      "code_0",
-    ]);
-  });
-
-  it("past the end is empty rather than an error, and total stays the full count", () => {
-    const page = service.queryErrors("p1", { offset: 100, limit: 20 });
-    expect(page.items).toEqual([]);
-    expect(page.total).toBe(25);
+    expect(first.total).toBe(35);
+    expect(first.rows).toBe(26);
+    expect(first.items[0]).toMatchObject({ code: "messaging_connect_failed", count: 10 });
+    expect(service.queryErrors("p1", { offset: 20, limit: 20 }).items).toHaveLength(6);
   });
 
   it("filters before it offsets, so a later page never slides onto rows the summary excluded", () => {

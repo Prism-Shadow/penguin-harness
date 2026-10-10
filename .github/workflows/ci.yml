@@ -95,12 +95,12 @@ jobs:
       # release.yml does, so the dry run lists the real tarball.
       - name: Stage what the release stages
         run: |
-          for p in core server cli; do cp LICENSE "packages/$p/LICENSE"; done
+          for p in amsp core server cli; do cp LICENSE "packages/$p/LICENSE"; done
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
       - name: Pack the publishable packages
         run: |
-          for p in core server cli; do
+          for p in amsp core server cli; do
             echo "--- packages/$p"
             (cd "packages/$p" && npm pack --dry-run)
           done
@@ -130,7 +130,16 @@ jobs:
 
   # The unit suite, split four ways. Shards are drawn so that build cost and test cost
   # roughly balance: core and server are the two long suites and get one each, the rest
-  # pair up behind them.
+  # pair up behind them. `rest` is recursive with exclusions, like macOS and Windows: an
+  # explicit list silently drops every package nobody remembered to add (all of plugins/
+  # once was), whereas a new package lands here by default. Its build list is theirs too,
+  # and prepares no sandbox backend: sandbox-bwrap's tests fetch the bubblewrap the plugin
+  # ships themselves (its vitest global setup), so CI need not know what that takes.
+  #
+  # `must_run` is PENGUIN_MUST_RUN: the environment-dependent suites (directory names under
+  # plugins/) this platform must really run. A named suite whose host probe fails turns the
+  # shard red with the probe's reason instead of skipping; an unnamed one skips where it
+  # cannot open, as locally.
   test:
     name: test (${{ matrix.shard }})
     runs-on: ubuntu-latest
@@ -146,19 +155,31 @@ jobs:
             tests: pnpm --filter @prismshadow/penguin-server test
           - shard: web-cli
             build: "@prismshadow/penguin-core...,@prismshadow/penguin-web..."
-            tests: pnpm --filter @prismshadow/penguin-web --filter @prismshadow/penguin-cli test
-          - shard: rest
-            build: "@prismshadow/penguin-desktop..."
             tests: >-
-              pnpm --filter @prismshadow/penguin-desktop --filter @prismshadow/penguin-landing
-              --filter @prismshadow/penguin-docs test
+              pnpm --filter @prismshadow/penguin-web --filter @prismshadow/penguin-ui
+              --filter @prismshadow/penguin-cli test
+          - shard: rest
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/penguin-plugin-claude-code...,@prismshadow/penguin-plugin-discord-bot...,@prismshadow/amsp..."
+            tests: >-
+              pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server'
+              --filter '!@prismshadow/penguin-web' --filter '!@prismshadow/penguin-ui'
+              --filter '!@prismshadow/penguin-cli' test
+            must_run: sandbox-bwrap,sandbox-dsh
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with:
           build: ${{ matrix.build }}
+      # Ubuntu 23.10 and later let only AppArmor-profiled programs create an unprivileged
+      # user namespace, and some tests here need one. Changing it takes root and changes the
+      # whole machine, so it is a host prerequisite the job sets, not something a test can.
+      - name: Allow unprivileged user namespaces
+        if: matrix.shard == 'rest'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Unit tests (vitest)
         run: ${{ matrix.tests }}
+        env:
+          PENGUIN_MUST_RUN: ${{ matrix.must_run }}
 
   # The installer bundle and the live-LLM e2e, together because both want a full build and
   # neither is long. The secret is exposed only in its own step (step-level env), so earlier
@@ -207,10 +228,12 @@ jobs:
             tests: pnpm --filter @prismshadow/penguin-server test
             smoke: false
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/amsp..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
             smoke: true
+            # PENGUIN_MUST_RUN, as on ubuntu: these suites must run here.
+            must_run: sandbox-seatbelt,sandbox-dsh
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
@@ -218,6 +241,8 @@ jobs:
           build: ${{ matrix.build }}
       - name: Unit tests (vitest)
         run: ${{ matrix.tests }}
+        env:
+          PENGUIN_MUST_RUN: ${{ matrix.must_run }}
       - name: Terminal smoke (node-pty under Electron's Node)
         if: matrix.smoke
         run: node packages/desktop/scripts/terminal-smoke.mjs
@@ -230,7 +255,17 @@ jobs:
   # shards. The runner ships Git-Bash on PATH, so core's exec_command tests exercise
   # the shell resolver's bash pick; genuinely POSIX-only tests skip themselves via
   # process.platform guards rather than CI filters, so a local Windows dev sees the same
-  # behaviour. Every package's tests still run exactly once across the shards. Line
+  # behaviour. What those guards leave unmeasured on Windows is listed here, and is not
+  # guaranteed there:
+  #   - server test/machines-transport-session.test.ts: its stub `ssh` is a shell script,
+  #     which execFile cannot run without a shell, so the session is measured on POSIX
+  #     only; spawning the real Windows OpenSSH client is not measured.
+  #   - server test/terminal-stream.test.ts: real ptys only. Headless ConPTY loses its
+  #     console ("AttachConsole failed") and node-pty leaks IPC rejections; the pure
+  #     terminal suites in terminal.test.ts run here.
+  #   - plugins/sandbox-dsh test/live.test.ts: what its live suite runs on Windows, and what
+  #     it leaves unmeasured there, is stated at the TODO(win32) in that file.
+  # Every package's tests still run exactly once across the shards. Line
   # endings come from .gitattributes (LF working tree), keeping build
   # outputs and fixtures byte-identical. No format:check, no typecheck, no e2e — see the
   # macOS note above.
@@ -254,9 +289,12 @@ jobs:
             build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/3
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/amsp..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
+            # PENGUIN_MUST_RUN, as on ubuntu and macOS: the DSH live suite must run here
+            # (through pwsh, see plugins/sandbox-dsh test/live.test.ts).
+            must_run: sandbox-dsh
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
@@ -279,6 +317,8 @@ jobs:
       # regression fails both attempts.
       - name: Unit tests (vitest)
         shell: bash
+        env:
+          PENGUIN_MUST_RUN: ${{ matrix.must_run }}
         run: |
           ${{ matrix.tests }} && exit 0
           echo "::warning::vitest failed on Windows; retrying once (see the pool-teardown note in ci.yml)"

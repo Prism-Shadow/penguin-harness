@@ -2,9 +2,12 @@
  * Built-in model catalog unit tests: unique ids, valid provider references, positive
  * three-bucket pricing, lookups, and preset entry generation.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { AutoLLMClient } from "@prismshadow/mmsp";
+import { listEndpointModels } from "../src/llm/list-models.js";
 import {
   APP_URL,
+  MMSP_CLIENTS,
   MODEL_CATALOG,
   MODEL_PROVIDERS,
   canonicalClientType,
@@ -16,15 +19,52 @@ import {
   offPeakScheduledRefs,
   DEEPSEEK_OFF_PEAK,
   QWEN_OFF_PEAK,
+  catalogGroupConnection,
   catalogModelEntries,
+  effectiveConnection,
+  groupKeyReaches,
   presetModelEntries,
   presetPromotions,
+  presetProviderTable,
   providerClientType,
+  providerConnectionShape,
   providerInfo,
   fastModeProtocol,
+  isAddableGroup,
+  isVendorGroup,
   resolveModelEnv,
+  routedClientType,
   resolveProviderModelEnv,
+  ModelCredentialError,
+  PENGUIN_GO_BASE_URL,
+  endpointEnvApiKey,
+  modelEnvFallback,
+  modelEnvPreviewKey,
+  providerEnvFallbackKey,
+  resolveEntryCredential,
+  resolveModelCredential,
+  sameEndpoint,
+  unaddableModel,
+  unroutableVendorModel,
 } from "../src/state/index.js";
+import type { ModelEntry, ProviderConnection, ProviderTable } from "../src/state/index.js";
+
+/**
+ * What a stored row is used with, the way a Session builds it: the row's own values, then its
+ * group's table in `table` (a new Project's, presetProviderTable, unless a test says otherwise).
+ */
+function storedConnection(entry: ModelEntry, table: ProviderTable = presetProviderTable()) {
+  return effectiveConnection(
+    {
+      provider: entry.provider,
+      modelId: entry.model_id,
+      clientType: entry.client_type,
+      baseUrl: entry.base_url,
+      apiKey: entry.api_key,
+    },
+    providerConnectionShape(table[entry.provider]),
+  );
+}
 
 describe("model-catalog", () => {
   it("(provider, model_id) pairs are unique and provider order keeps the recommendation first", () => {
@@ -36,14 +76,15 @@ describe("model-catalog", () => {
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
     // Group order is hand-curated, interleaving gateways and first-party vendors: the
-    // recommended TokenDance first, the prebuilt Penguin Go group next, DeepSeek after it,
-    // and vLLM last
+    // recommended TokenDance first, the prebuilt Penguin Go group next, OpenCode Go third,
+    // DeepSeek after it, and vLLM last
     // among the vendors (self-hosted, so nothing in it runs until the user names a server)
     // and custom always last. This is the page's DEFAULT only — a Project that has reordered
     // its groups stores every key and keeps its own arrangement (web's model-group-order.ts).
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "tokendance",
       "penguin-go",
+      "opencode-go",
       "deepseek",
       "openrouter",
       "fireworks",
@@ -142,13 +183,31 @@ describe("model-catalog", () => {
     }
   });
 
+  it("exactly TokenDance and DeepSeek publish a balance endpoint, on the host their keys already go to", () => {
+    // The descriptor is what puts a balance in a group's header, so the Web App never names a
+    // group; each one names the reader for its vendor's response shape.
+    const withBalance = MODEL_PROVIDERS.filter((p) => p.balance !== undefined).map((p) => [
+      p.id,
+      p.balance!.format,
+    ]);
+    expect(withBalance).toEqual([
+      ["tokendance", "tokendance"],
+      ["deepseek", "deepseek"],
+    ]);
+    // The server sends the group's stored key to this URL, so it is the vendor's own https
+    // endpoint and nothing else.
+    expect(providerInfo("tokendance")!.balance!.url).toBe(
+      "https://tokendance.space/portal/api/v1/user/balance",
+    );
+    expect(providerInfo("deepseek")!.balance!.url).toBe("https://api.deepseek.com/user/balance");
+  });
+
   it("prebuilds Penguin Go with fixed relay routes and list prices, leaving promotions to the platform", () => {
     const penguinGoModels = MODEL_CATALOG.filter((model) => model.provider === "penguin-go");
     // The DeepSeek rows follow DeepSeek's own lineup: V4.1 Flash and V4 Pro 0813. The two
     // retired V4 Flash ids are not resold.
     expect(penguinGoModels.map((model) => model.modelId)).toEqual([
       "gemini-3.8-flash",
-      "gemini-3.7-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash",
       "gemini-3.5-flash-lite",
@@ -168,12 +227,12 @@ describe("model-catalog", () => {
     expect(
       penguinGoModels
         .filter((model) => model.modelId.startsWith("gemini-"))
-        .every((model) => model.clientType === "gemini-3.8"),
+        .every((model) => model.clientType === "google-genai"),
     ).toBe(true);
     expect(
       penguinGoModels
         .filter((model) => model.modelId.startsWith("deepseek-"))
-        .every((model) => model.clientType === "deepseek-v4"),
+        .every((model) => model.clientType === "deepseek-official"),
     ).toBe(true);
     expect(catalogEntryFor("penguin-go", "deepseek-flash")?.supportsVision).toBe(true);
     expect(catalogEntryFor("penguin-go", "deepseek-v4-pro")).toMatchObject({
@@ -183,7 +242,7 @@ describe("model-catalog", () => {
     // No static promotion: the platform delivers whatever it runs at authorization and Sync,
     // so every row here is its list price and nothing else.
     expect(penguinGoModels.filter((model) => model.discount !== undefined)).toEqual([]);
-    for (const modelId of ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]) {
+    for (const modelId of ["gemini-3.8-flash", "gemini-3.6-flash"]) {
       expect(catalogEntryFor("penguin-go", modelId)!.pricing, modelId).toEqual({
         unit: "usd_per_mtok",
         cache_read: 0.075,
@@ -199,6 +258,135 @@ describe("model-catalog", () => {
       },
       offPeakDiscount: DEEPSEEK_OFF_PEAK,
     });
+  });
+
+  it("OpenCode Go: each model pins the protocol its endpoint table names, at the Go page's per-token rates", () => {
+    const group = providerInfo("opencode-go")!;
+    expect(group.label).toBe("OpenCode Go");
+    expect(group.apiKeyUrl).toBe("https://opencode.ai/auth");
+    expect(group.modelsUrl).toBe("https://opencode.ai/docs/go/");
+    // The group's endpoint is the Chat Completions base most of its models use; it pins no
+    // protocol, because its models sit on three (each row stores its own in a new Project).
+    expect(group.gatewayBaseUrl).toBe("https://opencode.ai/zen/go/v1");
+    expect(providerClientType("opencode-go")).toBeUndefined();
+    // No per-model pages: every model links to the Go docs page, which lists them all.
+    expect(modelHomepageUrl("opencode-go", "kimi-k3")).toBe("https://opencode.ai/docs/go/");
+
+    const go = MODEL_CATALOG.filter((m) => m.provider === "opencode-go");
+    const CHAT = ["openai-chat", "https://opencode.ai/zen/go/v1"];
+    const RESPONSES = ["openai-responses", "https://opencode.ai/zen/go/v1"];
+    // The Anthropic SDK appends /v1/messages itself, so the Messages base carries no /v1.
+    const MESSAGES = ["ant-messages", "https://opencode.ai/zen/go"];
+    // Dictionary order, newer versions of a series first. Protocols from the docs page's
+    // endpoint table; context windows and modalities from models.dev; vision checked live.
+    expect(
+      go.map((m) => [m.modelId, m.clientType, m.baseUrl, m.contextWindow, m.supportsVision]),
+    ).toEqual([
+      ["deepseek-v4.1-flash", ...CHAT, 1000000, true],
+      ["deepseek-v4-flash", ...CHAT, 1000000, false],
+      ["deepseek-v4-flash-vision-exp", ...CHAT, 1000000, true],
+      ["deepseek-v4-pro", ...CHAT, 1000000, false],
+      ["glm-5.3", ...CHAT, 1000000, false],
+      ["glm-5.3-flash", ...CHAT, 1000000, true],
+      ["glm-5.2", ...CHAT, 1000000, false],
+      ["glm-5.1", ...CHAT, 202752, false],
+      ["gpt-5.6-luna", ...RESPONSES, 1050000, true],
+      ["grok-4.6", ...RESPONSES, 500000, true],
+      ["hy4-preview", ...CHAT, 1024000, false],
+      ["hy3", ...CHAT, 192000, false],
+      ["kimi-k3", ...CHAT, 1048576, true],
+      ["kimi-k2.7-code", ...CHAT, 262144, true],
+      ["kimi-k2.6", ...CHAT, 262144, true],
+      ["longcat-2.0", ...CHAT, 1000000, false],
+      ["mimo-v2.5", ...CHAT, 1000000, true],
+      ["mimo-v2.5-pro", ...CHAT, 1048576, false],
+      ["minimax-m3", ...MESSAGES, 1000000, true],
+      ["minimax-m2.7", ...MESSAGES, 204800, false],
+      ["muse-spark-1.3-contributor", ...RESPONSES, 1048576, true],
+      ["muse-spark-1.2-contributor", ...RESPONSES, 1048576, true],
+      ["qwen3.8-flash", ...MESSAGES, 1000000, true],
+      ["qwen3.8-max", ...MESSAGES, 1000000, true],
+      ["qwen3.7-max", ...MESSAGES, 1000000, false],
+      ["qwen3.7-plus", ...MESSAGES, 1000000, true],
+      ["qwen3.6-plus", ...MESSAGES, 1000000, true],
+    ]);
+
+    // The Go page's rates in the catalog's (cache_read, cache_write, output) order. cache_write
+    // is the published cached-write rate where the page lists one and the input rate where it
+    // does not; tiered rows keep their base tier and the DeepSeek rows their peak rate.
+    expect(
+      Object.fromEntries(
+        go.map((m) => [
+          m.modelId,
+          [m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output],
+        ]),
+      ),
+    ).toEqual({
+      "deepseek-v4.1-flash": [0.006, 0.3, 1.2],
+      "deepseek-v4-flash": [0.006, 0.3, 1.2],
+      "deepseek-v4-flash-vision-exp": [0.006, 0.3, 1.2],
+      "deepseek-v4-pro": [0.044, 1.32, 3.96],
+      "glm-5.3": [0.26, 1.4, 4.4],
+      "glm-5.3-flash": [0.03, 0.15, 0.5],
+      "glm-5.2": [0.26, 1.4, 4.4],
+      "glm-5.1": [0.26, 1.4, 4.4],
+      "gpt-5.6-luna": [0.02, 0.25, 1.2],
+      "grok-4.6": [0.5, 2, 6],
+      "hy4-preview": [0.042, 0.834, 2.501],
+      hy3: [0.035, 0.14, 0.58],
+      "kimi-k3": [0.3, 3, 15],
+      "kimi-k2.7-code": [0.19, 0.95, 4],
+      "kimi-k2.6": [0.16, 0.95, 4],
+      "longcat-2.0": [0.006, 0.3, 1.2],
+      "mimo-v2.5": [0.0028, 0.14, 0.28],
+      "mimo-v2.5-pro": [0.003625, 0.435, 0.87],
+      "minimax-m3": [0.06, 0.3, 1.2],
+      "minimax-m2.7": [0.06, 0.375, 1.2],
+      "muse-spark-1.3-contributor": [0.002, 0.1, 0.2],
+      "muse-spark-1.2-contributor": [0.002, 0.1, 0.2],
+      "qwen3.8-flash": [0.016, 0.2, 0.47],
+      "qwen3.8-max": [0.25, 2.5, 6],
+      "qwen3.7-max": [0.5, 3.125, 7.5],
+      "qwen3.7-plus": [0.04, 0.5, 1.6],
+      "qwen3.6-plus": [0.05, 0.625, 3],
+    });
+
+    // The DeepSeek rows are the only ones on a schedule, DeepSeek's own, and off-peak they bill
+    // exactly the Go page's Off-Peak figures. 2026-09-19 is a Saturday: off-peak all day.
+    const scheduled = go.filter((m) => m.offPeakDiscount !== undefined);
+    expect(scheduled.map((m) => m.modelId)).toEqual([
+      "deepseek-v4.1-flash",
+      "deepseek-v4-flash",
+      "deepseek-v4-flash-vision-exp",
+      "deepseek-v4-pro",
+    ]);
+    const saturday = new Date("2026-09-19T10:00:00+08:00");
+    for (const m of scheduled) {
+      expect(m.offPeakDiscount, m.modelId).toBe(DEEPSEEK_OFF_PEAK);
+      const off = effectivePricing(m, saturday)!;
+      expect([off.cache_read, off.cache_write, off.output], m.modelId).toEqual(
+        m.modelId === "deepseek-v4-pro" ? [0.022, 0.66, 1.98] : [0.003, 0.15, 0.6],
+      );
+    }
+    // No promotion is on a rate: the running "4x" offer raises an allowance, not a price.
+    expect(go.filter((m) => m.discount !== undefined)).toEqual([]);
+
+    // A model the catalog already carries elsewhere keeps its display name here.
+    for (const [provider, modelId, goId] of [
+      ["zhipu", "glm-5.3-flash", "glm-5.3-flash"],
+      ["openai", "gpt-5.6-luna", "gpt-5.6-luna"],
+      ["openrouter", "x-ai/grok-4.6", "grok-4.6"],
+      ["moonshot", "kimi-k3", "kimi-k3"],
+      ["fireworks", "accounts/fireworks/models/kimi-k2p7-code", "kimi-k2.7-code"],
+      ["siliconflow", "meituan-longcat/LongCat-2.0", "longcat-2.0"],
+      ["minimax", "MiniMax-M3", "minimax-m3"],
+      ["tokendance", "hy4-preview", "hy4-preview"],
+      ["qwen-pay-as-you-go", "qwen3.8-max", "qwen3.8-max"],
+    ] as const) {
+      expect(catalogEntryFor("opencode-go", goId)!.displayName, goId).toBe(
+        catalogEntryFor(provider, modelId)!.displayName,
+      );
+    }
   });
 
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
@@ -268,7 +456,9 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("custom", "Atria-Dawn-Preview")?.displayName).toBe("Atria Dawn Preview");
     // Ids are case-sensitive at the vendor, so the lookup is too.
     expect(catalogEntryFor("custom", "atria-dawn-preview")).toBeUndefined();
-    const preset = presetModelEntries().find((e) => e.provider === "custom");
+    // custom has no group table in a new Project, so the preset row carries both itself and
+    // reaches them from the file alone, whatever custom's table later says.
+    const preset = presetModelEntries().find((e) => e.provider === "custom")!;
     expect(preset).toEqual({
       provider: "custom",
       model_id: "Atria-Dawn-Preview",
@@ -277,6 +467,17 @@ describe("model-catalog", () => {
       pricing: { unit: "usd_per_mtok", cache_read: 0, cache_write: 0, output: 0 },
       vision: false,
       base_url: "https://api.atria-asi.ai",
+    });
+    expect(presetProviderTable().custom).toBeUndefined();
+    expect(
+      storedConnection(preset, {
+        custom: { base_url: "http://127.0.0.1:11434/v1", client_type: "openai-chat" },
+      }),
+    ).toMatchObject({
+      baseUrl: "https://api.atria-asi.ai",
+      baseUrlSource: "model",
+      clientType: "ant-messages",
+      clientTypeSource: "model",
     });
     expect(modelHomepageUrl("custom", "Atria-Dawn-Preview")).toBeUndefined();
   });
@@ -296,9 +497,9 @@ describe("model-catalog", () => {
       ["Qwen/Qwen3.8-Flash-Next", 262144, true],
     ]);
     for (const m of vllm) {
-      // The pin is load-bearing on every row: Qwen/* matches none of AutoLLMClient's rules
-      // and would be rejected, and deepseek-ai/DeepSeek-V4-* contains "deepseek-v4", which
-      // would reach DeepSeek's first-party Responses client pointed at a vLLM server.
+      // The pin is load-bearing on every row: Qwen/* begins with no family AutoLLMClient
+      // knows and would be rejected, and deepseek-ai/DeepSeek-V4-* begins with "deepseek-",
+      // which would reach DeepSeek's official Responses client pointed at a vLLM server.
       expect(m.clientType, m.modelId).toBe("openai-chat-vllm-adapter");
       // Nobody bills per token and there is no shared endpoint: the user runs the server and
       // supplies its URL. Zero is a real rate here, not a missing one — see the pricing test.
@@ -311,7 +512,7 @@ describe("model-catalog", () => {
       expect(resolveModelEnv(m.modelId, m.clientType)?.envKey, m.modelId).toBe("OPENAI_API_KEY");
     }
     // The upstream id survives verbatim, capitals and all — it is what the vLLM server was
-    // started with, and AgentHub's per-model thinking table lowercases it on its own side.
+    // started with, and MMSP's per-model thinking table lowercases it on its own side.
     expect(catalogEntryFor("vllm", "Qwen/Qwen3.8-27B")?.displayName).toBe("Qwen 3.8 27B");
     expect(catalogEntryFor("vllm", "qwen/qwen3.8-27b")).toBeUndefined();
     // The same upstream ids are resold by SiliconFlow, and the pair lookup keeps the two
@@ -322,29 +523,32 @@ describe("model-catalog", () => {
     // The group pin, read the one way every call site reads it.
     expect(providerClientType("vllm")).toBe("openai-chat-vllm-adapter");
     expect(providerInfo("vllm")!.gatewayBaseUrl).toBeUndefined();
-    // Two groups declare one, in MODEL_PROVIDERS order: OpenRouter, whose entries all speak
-    // the Responses API its preset endpoint serves, and vLLM. The remaining gateways derive
-    // openai-chat from their preset endpoint, and custom / user-defined groups leave the
-    // protocol to detection.
-    expect(MODEL_PROVIDERS.filter((p) => p.clientType !== undefined).map((p) => p.id)).toEqual([
-      "openrouter",
-      "vllm",
-    ]);
+    // A model added by hand stores no protocol and follows its group's table, so in a new
+    // Project every built-in group that takes such models — custom aside, which leaves the
+    // protocol to detection — resolves one for an id its catalog does not list, and on an
+    // endpoint: the group's own (vLLM's is the user's, typed on the row).
+    for (const group of MODEL_PROVIDERS.filter((p) => p.addable && p.id !== "custom")) {
+      const added = storedConnection({ provider: group.id, model_id: "someone/added-by-hand" });
+      expect(added.clientType, group.id).toBe(providerClientType(group.id));
+      expect(added.clientType, group.id).toBeDefined();
+      expect(added.baseUrl, group.id).toBe(group.gatewayBaseUrl);
+    }
     expect(providerClientType("openrouter")).toBe("openai-responses");
     expect(providerClientType("custom")).toBeUndefined();
     expect(providerClientType("my-own-group")).toBeUndefined();
-    // Presets reach a Project with the pin and the zero rate, and without an endpoint: what a
-    // self-hosted deployment bills per token is nothing, and the Project stores that as a rate
-    // rather than as a gap (see the pricing test).
+    // Presets reach a Project with the pin (on the group's table) and the zero rate, and
+    // without an endpoint: what a self-hosted deployment bills per token is nothing, and the
+    // Project stores that as a rate rather than as a gap (see the pricing test).
     const preset = presetModelEntries().filter((e) => e.provider === "vllm");
     expect(preset).toHaveLength(8);
     for (const e of preset) {
-      expect(e.client_type, e.model_id).toBe("openai-chat-vllm-adapter");
+      const effective = storedConnection(e);
+      expect(effective.clientType, e.model_id).toBe("openai-chat-vllm-adapter");
       expect(
         [e.pricing?.cache_read, e.pricing?.cache_write, e.pricing?.output],
         e.model_id,
       ).toEqual([0, 0, 0]);
-      expect(e.base_url, e.model_id).toBeUndefined();
+      expect(effective.baseUrl, e.model_id).toBeUndefined();
     }
     // Each preset id has a recipe page; an id the user serves themselves has none, so it
     // falls back to the recipe index.
@@ -409,7 +613,7 @@ describe("model-catalog", () => {
       "openrouter",
     );
     // Vision is a per-row flag, not a property of the id's spelling: it tracks what the client
-    // routing the row actually carries. AgentHub's DeepSeek client denies image parts to ids
+    // routing the row actually carries. MMSP's DeepSeek client denies image parts to ids
     // matching /^deepseek-v4-(flash|pro)(-\d{4})?$/, which covers deepseek-v4-pro but not the
     // bare deepseek-flash; OpenRouter's vision-exp listing goes through the generic Responses
     // client instead.
@@ -421,8 +625,9 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("minimax", "MiniMax-M3")?.displayName).toBe("MiniMax M3");
   });
 
-  it("presetModelEntries: provider and bare upstream model_id are separate fields; preset endpoints are inlined", () => {
+  it("presetModelEntries: provider and bare upstream model_id are separate fields; a row stores a protocol or endpoint only where it differs from its group's", () => {
     const entries = presetModelEntries();
+    const table = presetProviderTable();
     const presets = MODEL_CATALOG.filter((m) => m.retired !== true);
     expect(entries).toHaveLength(presets.length);
     for (const [i, entry] of entries.entries()) {
@@ -436,15 +641,128 @@ describe("model-catalog", () => {
       // live, or which hour it was, when the Project was created or re-synced.
       expect(entry.pricing, entry.model_id).toEqual(cat.pricing);
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
-      // Gateway presets pin a client protocol, and so do the two direct rows whose own id
-      // does not route (MiniMax M3, DeepSeek deepseek-flash); other direct models auto-route.
-      expect(entry.client_type).toBe(cat.clientType);
-      // The same rows inline a preset base URL; no entry carries credentials.
-      expect(entry.base_url).toBe(cat.baseUrl);
+      // A value the group's table already carries is not repeated on the row: the row follows
+      // the table, and a value stored on it is one the row really differs by.
+      const group = table[entry.provider];
+      if (entry.client_type !== undefined && group?.client_type !== undefined) {
+        expect(entry.client_type, entry.model_id).not.toBe(group.client_type);
+      }
+      if (entry.base_url !== undefined && group?.base_url !== undefined) {
+        expect(sameEndpoint(entry.base_url, group.base_url), entry.model_id).toBe(false);
+      }
+      // No entry carries credentials.
       expect(entry.api_key).toBeUndefined();
       // The concatenated storage id and request_model_id have been removed and no longer appear.
       expect(Object.hasOwn(entry, "request_model_id")).toBe(false);
     }
+    // The rows that differ from their group: the two protocols of Penguin Go, the three of
+    // OpenCode Go and its Messages base, and custom's Atria, which has no group table at all.
+    const differing = entries.filter(
+      (e) => e.client_type !== undefined || e.base_url !== undefined,
+    );
+    expect([...new Set(differing.map((e) => e.provider))]).toEqual([
+      "penguin-go",
+      "opencode-go",
+      "custom",
+    ]);
+    expect(
+      differing.filter((e) => e.base_url !== undefined).map((e) => [e.provider, e.base_url]),
+    ).toEqual([
+      ...Array.from({ length: 7 }, () => ["opencode-go", "https://opencode.ai/zen/go"]),
+      ["custom", "https://api.atria-asi.ai"],
+    ]);
+  });
+
+  it("the seed is honest: under a new Project's group tables, every catalog row resolves to its catalog protocol and endpoint from the file alone", () => {
+    // presetModelEntries and catalogModelEntries (what "Restore defaults" writes, retired rows
+    // included) beside presetProviderTable are the only place the catalog's connection values
+    // enter a Project; after that nothing reads the catalog. So the file must say exactly
+    // what the catalog says — a row resolving to anything else would run on another endpoint
+    // or protocol than its catalog entry names.
+    const table = presetProviderTable();
+    for (const entry of catalogModelEntries()) {
+      const cat = catalogEntryFor(entry.provider, entry.model_id)!;
+      const ref = `${entry.provider}/${entry.model_id}`;
+      const effective = storedConnection(entry, table);
+      expect(effective.clientType, ref).toBe(canonicalClientType(cat.clientType));
+      expect(effective.baseUrl, ref).toBe(cat.baseUrl);
+    }
+  });
+
+  it("presetProviderTable: what a new Project stores per group — endpoint and protocol where every row shares them, nothing for first-party vendors and custom", () => {
+    const table = presetProviderTable();
+    const fields = Object.fromEntries(
+      Object.entries(table).map(([id, connection]) => [id, Object.keys(connection).sort()]),
+    );
+    const BOTH = ["base_url", "client_type"];
+    expect(fields).toEqual({
+      tokendance: BOTH,
+      // Two protocols across its rows: the relay endpoint they all share goes on the group,
+      // the protocols stay on the rows.
+      "penguin-go": ["base_url"],
+      // Three protocols and two bases: the group takes its gateway endpoint only.
+      "opencode-go": ["base_url"],
+      openrouter: BOTH,
+      fireworks: BOTH,
+      siliconflow: BOTH,
+      "qwen-pay-as-you-go": BOTH,
+      "qwen-token-plan": BOTH,
+      modelscope: BOTH,
+      // The user's own server: the protocol, and no endpoint to preset.
+      vllm: ["client_type"],
+    });
+    // A group with no gateway endpoint or group pin takes the one its rows all carry.
+    expect(table["penguin-go"]!.base_url).toBe(PENGUIN_GO_BASE_URL);
+    expect(table.fireworks!.client_type).toBe("openai-chat");
+    expect(table.modelscope!.client_type).toBe("openai-responses");
+    // First-party vendors route by id to their official clients' own endpoints: no table.
+    for (const id of [
+      "deepseek",
+      "google",
+      "openai",
+      "anthropic",
+      "zhipu",
+      "moonshot",
+      "minimax",
+    ]) {
+      expect(catalogGroupConnection(id), id).toBeUndefined();
+    }
+    expect(catalogGroupConnection("custom")).toBeUndefined();
+    expect(catalogGroupConnection("my-own-group")).toBeUndefined();
+    // A fresh object every time: a caller writing into one never changes the next.
+    table.tokendance!.base_url = "https://proxy.example/v1";
+    expect(presetProviderTable().tokendance!.base_url).toBe(
+      providerInfo("tokendance")!.gatewayBaseUrl,
+    );
+  });
+
+  it("presetModelEntries beside the file's own table: an added row stores what its catalog connection differs by, so it runs where the catalog says whatever the group was set to", () => {
+    // "Add new models" on a Project whose OpenRouter group goes through a proxy and whose
+    // TokenDance table was cleared: the rows it adds still reach their catalog endpoints.
+    const file: ProviderTable = {
+      openrouter: {
+        base_url: "https://proxy.example/openrouter/v1",
+        client_type: "openai-responses",
+      },
+      "penguin-go": { base_url: PENGUIN_GO_BASE_URL },
+    };
+    const rows = presetModelEntries(file);
+    for (const entry of rows) {
+      const cat = catalogEntryFor(entry.provider, entry.model_id)!;
+      const ref = `${entry.provider}/${entry.model_id}`;
+      const effective = storedConnection(entry, file);
+      expect(effective.clientType, ref).toBe(canonicalClientType(cat.clientType));
+      expect(effective.baseUrl, ref).toBe(cat.baseUrl);
+    }
+    const openrouter = rows.find((e) => e.provider === "openrouter")!;
+    expect(openrouter.base_url).toBe("https://openrouter.ai/api/v1");
+    expect(openrouter.client_type).toBeUndefined();
+    const tokendance = rows.find((e) => e.provider === "tokendance")!;
+    expect([tokendance.client_type, tokendance.base_url]).toEqual([
+      "openai-chat",
+      "https://tokendance.space/gateway/v1",
+    ]);
+    expect(rows.find((e) => e.provider === "penguin-go")!.base_url).toBeUndefined();
   });
 
   it("presetPromotions: a promoted row is seeded with its fraction, a Penguin Go row never is", () => {
@@ -460,14 +778,18 @@ describe("model-catalog", () => {
 
   it("gateway models pin explicit protocols and preset base URLs; env fallback stays OPENAI_API_KEY", () => {
     const or = MODEL_CATALOG.filter((m) => m.provider === "openrouter");
-    // Dictionary order, newer versions of a series first (gpt-6-* before gpt-5.6-*,
-    // gpt-5.6-* before gpt-5.5, opus-4.8 before 4.7) — precomputed in the catalog, no
+    // Dictionary order, newer versions of a series first (gpt-6.1-* before gpt-6-*, gpt-6-*
+    // before gpt-5.6-*, opus-5.5 before opus-5 before 4.8) — precomputed in the catalog, no
     // runtime sorting.
     expect(or.map((m) => m.modelId)).toEqual([
+      "anthropic/claude-fable-5.1",
       "anthropic/claude-fable-5",
+      "anthropic/claude-haiku-5.5",
+      "anthropic/claude-opus-5.5",
       "anthropic/claude-opus-5",
       "anthropic/claude-opus-4.8",
       "anthropic/claude-opus-4.7",
+      "anthropic/claude-sonnet-5.5",
       "anthropic/claude-sonnet-5",
       "deepseek/deepseek-v4.1-flash",
       "deepseek/deepseek-v4-flash-0731",
@@ -476,7 +798,6 @@ describe("model-catalog", () => {
       "deepseek/deepseek-v4-pro-0813",
       "deepseek/deepseek-v4-pro",
       "google/gemini-3.8-flash",
-      "google/gemini-3.7-flash",
       "google/gemini-3.6-flash",
       "google/gemini-3.5-flash",
       "google/gemini-3.5-flash-lite",
@@ -484,6 +805,7 @@ describe("model-catalog", () => {
       "moonshotai/kimi-k3",
       "moonshotai/kimi-k2.6",
       "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "openai/gpt-6.1-sol",
       "openai/gpt-6-astra",
       "openai/gpt-5.6-luna",
       "openai/gpt-5.6-sol",
@@ -498,21 +820,25 @@ describe("model-catalog", () => {
       "qwen/qwen3.8-27b",
       "qwen/qwen3.8-max",
       "qwen/qwen3.6-35b-a3b",
+      "stepfun/step-5-preview",
       "stepfun/step-3.7-flash",
       "tencent/hy4-preview",
       "tencent/hy3",
       "thinkingmachines/inkling",
+      "x-ai/grok-4.7",
       "x-ai/grok-4.6",
       "x-ai/grok-4.5",
+      "xiaomi/mimo-v2.6-flash",
+      "xiaomi/mimo-v2.6-pro",
       "xiaomi/mimo-v2.5",
       "z-ai/glm-5.3",
       "z-ai/glm-5.3-flash",
       "z-ai/glm-5.2",
     ]);
     for (const m of or) {
-      // Every gateway row pins a client type — never left to AgentHub's id-substring routing,
-      // which would send openai/gpt-5.6-* to the first-party GPT client and throw outright on
-      // the dotted anthropic/claude-opus-4.8. Whatever the upstream, OpenRouter serves the
+      // Every gateway row pins a client type — never left to MMSP's family routing, which
+      // would throw outright on every owner-prefixed id (openai/gpt-5.6-*, anthropic/claude-*)
+      // and send deepseek-ai/* to DeepSeek's client. Whatever the upstream, OpenRouter serves the
       // Responses API at {base}/responses, so the whole group pins it.
       expect(m.clientType, m.modelId).toBe("openai-responses");
       expect(m.baseUrl).toBe("https://openrouter.ai/api/v1");
@@ -546,8 +872,8 @@ describe("model-catalog", () => {
     }
     const sf = MODEL_CATALOG.filter((m) => m.provider === "siliconflow");
     // Dictionary order is case-insensitive (as in qwen-pay-as-you-go, where ZHIPU/GLM-5.3-Flash
-    // sorts last): Pro/ and Qwen/ fall between moonshotai/ and tencent/, and GLM-5.3 comes before
-    // GLM-5.2 as the newer version.
+    // sorts last): Pro/ and Qwen/ fall between moonshotai/ and tencent/, and GLM-5.3 and its
+    // Flash come before GLM-5.2 as the newer version.
     expect(sf.map((m) => m.modelId)).toEqual([
       "deepseek-ai/DeepSeek-V4-Flash",
       "deepseek-ai/DeepSeek-V4-Pro",
@@ -557,6 +883,7 @@ describe("model-catalog", () => {
       "Qwen/Qwen3.6-35B-A3B",
       "tencent/Hy4-preview",
       "zai-org/GLM-5.3",
+      "zai-org/GLM-5.3-Flash",
       "zai-org/GLM-5.2",
     ]);
     for (const m of sf) {
@@ -587,24 +914,35 @@ describe("model-catalog", () => {
       ["qwen3.7-plus", 1000000, true],
     ]);
     const td = MODEL_CATALOG.filter((m) => m.provider === "tokendance");
-    // Dictionary order by upstream id; vision flags and context windows from TokenDance's
-    // public catalog API.
+    // Plain dictionary order by upstream id; vision flags and context windows from TokenDance's
+    // public catalog API and portal model list.
     expect(td.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
       ["deepseek-v4-flash-0731", 1048576, false],
       ["deepseek-v4-flash-vision-exp", 1000000, true],
       ["deepseek-v4-pro-0813", 1000000, false],
       ["deepseek-v4.1-flash", 1000000, true],
       ["dots-3-note-preview", 512000, true],
+      ["glm-5.2", 1000000, false],
       ["glm-5.3", 1000000, false],
       ["glm-5.3-flash", 1000000, true],
+      ["glm-5.3-flashx", 1000000, true],
       ["hy4-preview", 1024000, false],
       ["kimi-k3", 1048576, true],
+      ["ling-3.0-flash", 256000, false],
+      ["ling-3.1-flash", 1000000, false],
+      ["mimo-v2.6-flash", 1000000, true],
+      ["mimo-v2.6-pro", 1000000, true],
+      ["mimo-v2.6-ultraspeed", 1000000, true],
       ["qwen3.8-flash", 1000000, true],
       ["qwen3.8-max", 1000000, true],
       ["seed-2.1-pro", 256000, true],
       ["seed-2.1-turbo", 256000, true],
       ["seed-evolving", 256000, true],
+      ["step-5-preview", 1000000, true],
     ]);
+    // The bare deepseek-v4-flash / deepseek-v4-pro ids, which the gateway sells as the V4
+    // "Preview" releases, are deliberately not presets (the user's call, 2026-10-10).
+    expect(td.some((m) => /^deepseek-v4-(flash|pro)$/.test(m.modelId))).toBe(false);
     for (const m of td) {
       expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://tokendance.space/gateway/v1");
@@ -613,12 +951,15 @@ describe("model-catalog", () => {
     // its rate in `discount` and the billed price is DERIVED from the two, never pasted
     // beside them. Reading the CNY prices back out of effectivePricing is what pins that:
     // change a list price or a discount alone and the recovered rate stops matching what
-    // TokenDance publishes. cache_write carries the input price (no separate cache-write fee
+    // TokenDance bills. cache_write carries the input price (no separate cache-write fee
     // on this gateway), so the published input / output / cache-hit triple is NOT in the
     // catalog's cny(cacheRead, cacheWrite, output) argument order.
     const CNY_PER_USD = 7;
-    const billedCny = (modelId: string): [number, number, number] => {
-      const billed = effectivePricing(td.find((m) => m.modelId === modelId)!)!;
+    const billedCny = (modelId: string, now?: Date): [number, number, number] => {
+      const billed = effectivePricing(
+        td.find((m) => m.modelId === modelId)!,
+        now,
+      )!;
       // input, output, cache hit — the order TokenDance's own price list uses.
       return [
         billed.cache_write * CNY_PER_USD,
@@ -627,11 +968,10 @@ describe("model-catalog", () => {
       ];
     };
     const discounted: Array<[string, number, [number, number, number]]> = [
-      ["glm-5.3-flash", 0.1, [0.72, 2.52, 0.207]],
+      ["glm-5.2", 0.2, [6.4, 22.4, 1.6]],
       ["glm-5.3", 0.1, [7.2, 25.2, 1.8]],
-      ["deepseek-v4-pro-0813", 0.1, [4.05, 12.15, 0.405]],
-      ["deepseek-v4-flash-0731", 0.1, [1.35, 4.05, 0.135]],
-      ["kimi-k3", 0.4, [12, 60, 0.96]],
+      ["glm-5.3-flash", 0.1, [0.72, 2.52, 0.207]],
+      ["ling-3.0-flash", 0.65, [0.14, 0.42, 0.028]],
       ["qwen3.8-max", 0.1, [10.8, 32.4, 1.35]],
       ["seed-2.1-pro", 0.5, [3, 15, 0.6]],
       ["seed-2.1-turbo", 0.5, [1.5, 7.5, 0.3]],
@@ -645,10 +985,10 @@ describe("model-catalog", () => {
       expect(output, `${modelId} output`).toBeCloseTo(cnyBilled[1], 4);
       expect(cacheHit, `${modelId} cache hit`).toBeCloseTo(cnyBilled[2], 4);
     }
-    // Exactly those nine carry a flat discount; every other row bills its list price
-    // unchanged. One of those others declares DeepSeek's peak/off-peak schedule instead, so
+    // Exactly those ten carry a flat discount; every other row bills its list price
+    // unchanged. Some of those others declare DeepSeek's peak/off-peak schedule instead, so
     // the rows are compared at a PEAK instant — 2026-09-10 is a Thursday, and 10:00 Beijing is
-    // inside the morning window — because effectivePricing halves it off-peak by design.
+    // inside the morning window — because effectivePricing halves them off-peak by design.
     expect(
       td
         .filter((m) => m.discount !== undefined)
@@ -659,17 +999,35 @@ describe("model-catalog", () => {
     for (const m of td.filter((x) => x.discount === undefined)) {
       expect(effectivePricing(m, peakInstant), m.modelId).toEqual(m.pricing);
     }
-    // The rows that follow the vendor's schedule instead of a gateway promotion (one of them
-    // retired), at the same peak tier the direct deepseek-flash row stores: CNY 0.04 / 2 / 8.
+    // The rows the portal prices by time (one of them retired) follow DeepSeek's own windows
+    // instead of a flat promotion: the peak list price in the windows, half of it at every other
+    // hour — which, for the 0731 and 0813 rows, is exactly what the gateway bills off-peak.
+    // Input, output, cache hit at peak, in CNY.
     const tdScheduled = td.filter((m) => m.offPeakDiscount !== undefined).map((m) => m.modelId);
-    expect(tdScheduled).toEqual(["deepseek-v4-flash-vision-exp", "deepseek-v4.1-flash"]);
+    expect(tdScheduled).toEqual([
+      "deepseek-v4-flash-0731",
+      "deepseek-v4-flash-vision-exp",
+      "deepseek-v4-pro-0813",
+      "deepseek-v4.1-flash",
+    ]);
+    const peakList: Record<string, [number, number, number]> = {
+      "deepseek-v4-flash-0731": [3, 9, 0.1],
+      "deepseek-v4-flash-vision-exp": [2, 8, 0.04],
+      "deepseek-v4-pro-0813": [9, 27, 0.3],
+      "deepseek-v4.1-flash": [2, 8, 0.04],
+    };
+    // 2026-09-12 is a Saturday: off-peak all day.
+    const offPeakInstant = new Date("2026-09-12T10:00:00+08:00");
     for (const id of tdScheduled) {
       const row = td.find((m) => m.modelId === id)!;
       expect(row.offPeakDiscount, id).toBe(DEEPSEEK_OFF_PEAK);
       expect(row.discount, id).toBeUndefined();
-      expect([row.pricing!.cache_read, row.pricing!.cache_write, row.pricing!.output], id).toEqual([
-        0.005714, 0.285714, 1.142857,
-      ]);
+      const peak = billedCny(id, peakInstant);
+      const off = billedCny(id, offPeakInstant);
+      for (let i = 0; i < 3; i++) {
+        expect(peak[i], `${id} peak`).toBeCloseTo(peakList[id]![i]!, 4);
+        expect(off[i], `${id} off-peak`).toBeCloseTo(peakList[id]![i]! / 2, 4);
+      }
     }
     // The one free row of the group: CNY 0 on every bucket, no discount decoration, a 512K
     // window, and the seller's own spelling of the name, its "（Free）" tag included, as the
@@ -739,11 +1097,10 @@ describe("model-catalog", () => {
       expect(m.baseUrl).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
     }
     const ms = MODEL_CATALOG.filter((m) => m.provider === "modelscope");
-    // Preset rows keep ModelScope's upstream ids. Like Penguin Go, this group is an aggregate:
-    // the row's client type tracks the upstream model family for display/request semantics, while
-    // the group credential remains ModelScope's api-inference token. Pricing is deliberately
-    // absent (see UNPRICED above); the windows and vision flags repeat what other rows of the
-    // same models record.
+    // Preset rows keep ModelScope's upstream ids and pin the Responses protocol served by its
+    // api-inference endpoint, while the group credential remains ModelScope's token. Pricing is
+    // deliberately absent (see UNPRICED above); the windows and vision flags repeat what other
+    // rows of the same models record.
     expect(
       ms.map((m) => [m.modelId, m.contextWindow, m.supportsVision, m.clientType, m.baseUrl]),
     ).toEqual([
@@ -751,21 +1108,21 @@ describe("model-catalog", () => {
         "deepseek-ai/DeepSeek-V4.1-Flash",
         1000000,
         true,
-        "deepseek-v4",
+        "openai-responses",
         "https://api-inference.modelscope.cn/v1",
       ],
       [
         "Qwen/Qwen3.8-27B",
         262144,
         true,
-        "openai-chat-vllm-adapter",
+        "openai-responses",
         "https://api-inference.modelscope.cn/v1",
       ],
       [
         "Qwen/Qwen3.8-Flash-Next",
         262144,
         true,
-        "openai-chat-vllm-adapter",
+        "openai-responses",
         "https://api-inference.modelscope.cn/v1",
       ],
     ]);
@@ -785,20 +1142,21 @@ describe("model-catalog", () => {
         "MiniMax-M3",
         1000000,
         true,
-        "minimax-m3",
-        "https://api.minimax.io/v1",
+        undefined,
+        undefined,
         // Standard tier at <=512K input: cache read 0.06, input 0.30, output 1.20 USD/Mtok.
         { unit: "usd_per_mtok", cache_read: 0.06, cache_write: 0.3, output: 1.2 },
       ],
     ]);
     expect(providerInfo("minimax")!.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
     expect(providerInfo("minimax")!.gatewayBaseUrl).toBeUndefined();
-    // Routed through AgentHub's OpenAI client -> when the credential is left blank it reads OPENAI_API_KEY (not the provider's own env var name).
+    // Routed through MMSP's OpenAI client -> when the credential is left blank it reads OPENAI_API_KEY (not the provider's own env var name).
     for (const id of [
       "openrouter",
       "fireworks",
       "siliconflow",
       "tokendance",
+      "opencode-go",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
       "modelscope",
@@ -827,6 +1185,7 @@ describe("model-catalog", () => {
       "fireworks",
       "siliconflow",
       "tokendance",
+      "opencode-go",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
       "modelscope",
@@ -865,24 +1224,24 @@ describe("model-catalog", () => {
       g35lite.pricing!.output,
     ]).toEqual([0.03, 0.3, 2.5]);
     // The gateway row for gemini-3.5-flash reports the same context window as the
-    // direct-vendor row for that model (and as AgentHub's registry): 1048576, not 1000000.
+    // direct-vendor row for that model (and as MMSP's registry): 1048576, not 1000000.
     expect(catalogEntryFor("openrouter", "google/gemini-3.5-flash")!.contextWindow).toBe(1048576);
     expect(catalogEntryFor("google", "gemini-3.5-flash")!.contextWindow).toBe(1048576);
 
-    // In preset entries, every gateway model inlines base_url, and so do the two direct rows
-    // whose own id does not route — MiniMax M3 and DeepSeek deepseek-flash (no credentials) —
-    // and the custom group's preset, whose group implies no endpoint at all.
-    const pinnedDirect = MODEL_CATALOG.filter((m) => m.provider === "deepseek" && m.baseUrl);
-    expect(pinnedDirect.map((m) => m.modelId)).toEqual(["deepseek-flash"]);
+    // In a new Project every gateway preset resolves to a base URL, and so does the custom
+    // group's preset, whose group implies no endpoint at all; direct rows never do.
+    const vendors = ["deepseek", "google", "openai", "anthropic", "zhipu", "moonshot", "minimax"];
+    expect(MODEL_CATALOG.filter((m) => vendors.includes(m.provider) && m.baseUrl)).toEqual([]);
     const customPresets = MODEL_CATALOG.filter((m) => m.provider === "custom");
-    const withBaseUrl = presetModelEntries().filter((e) => e.base_url !== undefined);
+    const withBaseUrl = presetModelEntries().filter(
+      (e) => storedConnection(e).baseUrl !== undefined,
+    );
     expect(withBaseUrl.map((e) => [e.provider, e.model_id]).sort()).toEqual(
       [
         ...gateway,
-        ...minimax,
-        ...pinnedDirect,
         ...customPresets,
         ...MODEL_CATALOG.filter((m) => m.provider === "penguin-go"),
+        ...MODEL_CATALOG.filter((m) => m.provider === "opencode-go"),
       ]
         // A retired gateway row keeps its pin in the catalog but is not a preset.
         .filter((m) => m.retired !== true)
@@ -892,36 +1251,19 @@ describe("model-catalog", () => {
   });
 
   it("direct-vendor groups: auto-routed (no client_type / base_url), newest series first", () => {
-    // These groups' ids are auto-routed by AgentHub, so they carry neither client_type nor a
-    // preset base URL — the opposite of the gateway groups above.
-    for (const id of ["google", "anthropic", "zhipu", "moonshot"]) {
+    // These groups' ids are auto-routed by MMSP (each begins with its vendor's family), so
+    // they carry neither client_type nor a preset base URL — the opposite of the gateway
+    // groups above.
+    for (const id of ["google", "anthropic", "zhipu", "moonshot", "minimax", "deepseek"]) {
       for (const m of MODEL_CATALOG.filter((e) => e.provider === id)) {
         expect(m.clientType, m.modelId).toBeUndefined();
         expect(m.baseUrl, m.modelId).toBeUndefined();
       }
     }
-    // The DeepSeek group is the exception, and only for one row: AgentHub 0.4.11 routes
-    // DeepSeek on the `deepseek-v4` substring alone, which the released `deepseek-flash`
-    // does not carry, so that row pins the client and inlines the vendor endpoint. Every
-    // other row in the group still auto-routes on its own spelling, and the pin comes off
-    // once AgentHub routes the bare id.
-    const pinned = MODEL_CATALOG.filter(
-      (m) => m.provider === "deepseek" && m.clientType !== undefined,
-    );
-    expect(pinned.map((m) => m.modelId)).toEqual(["deepseek-flash"]);
-    expect(pinned[0]!.clientType).toBe("deepseek-v4");
-    expect(pinned[0]!.baseUrl).toBe("https://api.deepseek.com");
-    for (const m of MODEL_CATALOG.filter(
-      (e) => e.provider === "deepseek" && e.modelId !== "deepseek-flash",
-    )) {
-      expect(m.clientType, m.modelId).toBeUndefined();
-      expect(m.baseUrl, m.modelId).toBeUndefined();
-    }
     // Dictionary order by tier with newer versions of a tier first (same rule the OpenRouter
     // block follows for the identical Claude line-up).
     expect(MODEL_CATALOG.filter((m) => m.provider === "google").map((m) => m.modelId)).toEqual([
       "gemini-3.8-flash",
-      "gemini-3.7-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash",
       "gemini-3.5-flash-lite",
@@ -936,16 +1278,14 @@ describe("model-catalog", () => {
       "glm-5.1",
       "glm-5",
     ]);
-    // Gemini 3.6 / 3.7 / 3.8 Flash: Google halves all three of them through 2026-12-31, and
-    // all six of their rows — direct and on OpenRouter — store Google's list price and
-    // declare that launch discount in `discount`, so the list survives the promotion and
-    // effectivePricing yields the 0.075/0.75/3.75 either seller bills today.
+    // Gemini 3.6 / 3.8 Flash: Google halves both of them through 2026-12-31, and all four of
+    // their rows — direct and on OpenRouter — store Google's list price and declare that
+    // launch discount in `discount`, so the list survives the promotion and effectivePricing
+    // yields the 0.075/0.75/3.75 either seller bills today.
     for (const [provider, modelId] of [
       ["google", "gemini-3.8-flash"],
-      ["google", "gemini-3.7-flash"],
       ["google", "gemini-3.6-flash"],
       ["openrouter", "google/gemini-3.8-flash"],
-      ["openrouter", "google/gemini-3.7-flash"],
       ["openrouter", "google/gemini-3.6-flash"],
     ] as const) {
       const row = catalogEntryFor(provider, modelId)!;
@@ -964,7 +1304,7 @@ describe("model-catalog", () => {
       ]);
     }
     // No other Gemini row carries a launch discount: Google's pricing page marks one on the
-    // 3.6 / 3.7 / 3.8 Flash generations and on nothing else in this catalog, so these rows
+    // 3.6 / 3.8 Flash generations and on nothing else in this catalog, so these rows
     // bill exactly the list price they store. The numbers are pinned because none of them is
     // the Flash list price above and each is a genuine other tier, not a hidden promotion —
     // re-read 2026-09-09: 3.5 Flash $1.50 / $9.00 / $0.15 cache hit, 3.5 Flash-Lite
@@ -997,7 +1337,7 @@ describe("model-catalog", () => {
       glm53or.pricing!.cache_write,
       glm53or.pricing!.output,
     ]).toEqual([0.26, 1.4, 4.4]);
-    // GLM-5.3 (AgentHub 0.4.2's unified GLM client): text-only, 1M context, and Z.AI's
+    // GLM-5.3: text-only, 1M context, and Z.AI's
     // published USD price — identical to glm-5.2.
     const glm53 = catalogEntryFor("zhipu", "glm-5.3")!;
     expect([glm53.contextWindow, glm53.supportsVision]).toEqual([1000000, false]);
@@ -1020,7 +1360,7 @@ describe("model-catalog", () => {
       glm53for.pricing!.cache_write,
       glm53for.pricing!.output,
     ]).toEqual([0.015, 0.075, 0.25]);
-    // Vision agrees on both routes: the direct row's AgentHub GLM client forwards image_url
+    // Vision agrees on both routes: the direct row's MMSP GLM client forwards image_url
     // parts for this one id, and the gateway row's generic Responses client carries them for
     // any id. It is the only vision-capable row in the direct Z.AI group.
     expect(glm53f.clientType).toBeUndefined();
@@ -1055,10 +1395,14 @@ describe("model-catalog", () => {
       grok46.pricing!.output,
     ]).toEqual([0.5, 2, 6]);
     expect(MODEL_CATALOG.filter((m) => m.provider === "anthropic").map((m) => m.modelId)).toEqual([
+      "claude-fable-5-1",
       "claude-fable-5",
+      "claude-haiku-5-5",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-opus-4-7",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
     ]);
@@ -1087,6 +1431,19 @@ describe("model-catalog", () => {
     expect([opus5.pricing!.cache_read, opus5.pricing!.cache_write, opus5.pricing!.output]).toEqual([
       0.5, 6.25, 25,
     ]);
+    // The cache-hit price is a per-generation share of input, read back off the stored buckets
+    // (input = cache_write / 1.25): 0.025x on Fable 5.1, 0.05x on Opus 5.5 and Sonnet 5.5, the
+    // standard 0.1x everywhere else. A 5.5 row carrying the older 0.1x figure fails here.
+    for (const m of MODEL_CATALOG.filter((e) => e.provider === "anthropic")) {
+      const share = m.pricing!.cache_read / (m.pricing!.cache_write / 1.25);
+      const expected =
+        m.modelId === "claude-fable-5-1"
+          ? 0.025
+          : ["claude-opus-5-5", "claude-sonnet-5-5"].includes(m.modelId)
+            ? 0.05
+            : 0.1;
+      expect(share, m.modelId).toBeCloseTo(expected, 6);
+    }
     // Sonnet 5 prices below Sonnet 4.6 because that is Anthropic's list, not a slip.
     expect(catalogEntryFor("anthropic", "claude-sonnet-4-6")!.pricing).toEqual({
       unit: "usd_per_mtok",
@@ -1103,12 +1460,17 @@ describe("model-catalog", () => {
       ["deepseek", "deepseek-flash", "fireworks", "accounts/fireworks/models/deepseek-v4p1-flash"],
       ["deepseek", "deepseek-v4-pro", "openrouter", "deepseek/deepseek-v4-pro-0813"],
       ["deepseek", "deepseek-v4-pro", "qwen-token-plan", "deepseek-v4-pro-0813"],
+      ["openai", "gpt-6.1-sol", "openrouter", "openai/gpt-6.1-sol"],
       ["openai", "gpt-6-astra", "openrouter", "openai/gpt-6-astra"],
       ["openai", "gpt-5.6", "openrouter", "openai/gpt-5.6-sol"],
       ["openai", "gpt-5.6-luna", "openrouter", "openai/gpt-5.6-luna"],
       ["openai", "gpt-5.6-terra", "openrouter", "openai/gpt-5.6-terra"],
+      ["anthropic", "claude-fable-5-1", "openrouter", "anthropic/claude-fable-5.1"],
       ["anthropic", "claude-fable-5", "openrouter", "anthropic/claude-fable-5"],
+      ["anthropic", "claude-haiku-5-5", "openrouter", "anthropic/claude-haiku-5.5"],
+      ["anthropic", "claude-opus-5-5", "openrouter", "anthropic/claude-opus-5.5"],
       ["anthropic", "claude-opus-5", "openrouter", "anthropic/claude-opus-5"],
+      ["anthropic", "claude-sonnet-5-5", "openrouter", "anthropic/claude-sonnet-5.5"],
       ["anthropic", "claude-sonnet-5", "openrouter", "anthropic/claude-sonnet-5"],
       ["google", "gemini-3.5-flash-lite", "openrouter", "google/gemini-3.5-flash-lite"],
       ["moonshot", "kimi-k3", "openrouter", "moonshotai/kimi-k3"],
@@ -1148,7 +1510,9 @@ describe("model-catalog", () => {
       (m) => m.provider === "moonshot" && m.modelId === "kimi-k3",
     )!.pricing!;
     expect([cnyOf(k3.cache_read), cnyOf(k3.cache_write), cnyOf(k3.output)]).toEqual([2, 20, 100]);
-    const k26 = MODEL_CATALOG.find((m) => m.modelId === "kimi-k2.6")!.pricing!;
+    const k26 = MODEL_CATALOG.find(
+      (m) => m.provider === "moonshot" && m.modelId === "kimi-k2.6",
+    )!.pricing!;
     expect([cnyOf(k26.cache_read), cnyOf(k26.cache_write), cnyOf(k26.output)]).toEqual([
       1.1, 6.5, 27,
     ]);
@@ -1192,6 +1556,7 @@ describe("model-catalog", () => {
     // gains a model.
     const direct = MODEL_CATALOG.filter((m) => m.provider === "openai").map((m) => m.modelId);
     expect(direct).toEqual([
+      "gpt-6.1-sol",
       "gpt-6-astra",
       "gpt-5.6",
       "gpt-5.6-luna",
@@ -1214,9 +1579,8 @@ describe("model-catalog", () => {
     // Because it is that tier, the alias is labelled with the sol codename its siblings and
     // its gateway listing carry; the id users send stays bare.
     expect(catalogEntryFor("openai", "gpt-5.6")!.displayName).toBe("GPT-5.6 Sol");
-    // Direct rows are auto-routed by id (AgentHub 0.4.2's native gpt-5.6 client, and its gpt6
-    // client for the gpt-6 ids from the release that ships it); only the gateway rows pin a
-    // protocol, and they pin Responses.
+    // Direct rows are auto-routed by id (the gpt- family names OpenAI's official client); only
+    // the gateway rows pin a protocol, and they pin Responses.
     for (const m of MODEL_CATALOG.filter((m) => m.provider === "openai")) {
       expect(m.clientType, m.modelId).toBeUndefined();
       expect(m.baseUrl, m.modelId).toBeUndefined();
@@ -1232,6 +1596,7 @@ describe("model-catalog", () => {
     // rather than the $10 input rate: the buckets have no slot for input that is never
     // written to cache.
     expect(price("openai", "gpt-6-astra")).toEqual([1, 12.5, 50]);
+    expect(price("openai", "gpt-6.1-sol")).toEqual([0.1, 2.5, 10]);
     expect(price("openai", "gpt-5.6")).toEqual([0.5, 5, 30]);
     expect(price("openai", "gpt-5.6-terra")).toEqual([0.2, 2, 12]);
     expect(price("openai", "gpt-5.6-luna")).toEqual([0.02, 0.2, 1.2]);
@@ -1244,6 +1609,8 @@ describe("model-catalog", () => {
     // GPT-6 Astra runs no promotion (`discount: 0`) and its default endpoint is OpenAI's own,
     // so every bucket matches the direct row.
     expect(price("openrouter", "openai/gpt-6-astra")).toEqual([1, 12.5, 50]);
+    // GPT-6.1 Sol likewise runs no promotion on OpenAI's own endpoint there.
+    expect(price("openrouter", "openai/gpt-6.1-sol")).toEqual(price("openai", "gpt-6.1-sol"));
     expect(catalogEntryFor("openrouter", "openai/gpt-6-astra")!.contextWindow).toBe(1050000);
     // The 5.4/5.5 rows run no promotion, so gateway and direct agree except on cache_write,
     // where the gateway publishes GPT's genuine 1.25x write premium and the direct rows use
@@ -1265,7 +1632,7 @@ describe("model-catalog", () => {
 
   it("canonicalClientType: the deprecated bare openai alias converges on openai-chat; everything else passes through", () => {
     expect(canonicalClientType("openai")).toBe("openai-chat");
-    // Case/whitespace-insensitive match (AgentHub lowercases client types before routing).
+    // Case/whitespace-insensitive match (MMSP lowercases client types before routing).
     expect(canonicalClientType(" OpenAI ")).toBe("openai-chat");
     expect(canonicalClientType("openai-chat")).toBe("openai-chat");
     // Other client types containing "openai" are different protocols and must pass through.
@@ -1277,7 +1644,7 @@ describe("model-catalog", () => {
   });
 });
 
-describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
+describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule)", () => {
   it("keeps Penguin Go relay credentials separate from both vendor protocols", () => {
     expect(resolveProviderModelEnv("penguin-go", "gemini-3.8-flash")?.envKey).toBe(
       "PENGUIN_GO_API_KEY",
@@ -1286,7 +1653,7 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
       "PENGUIN_GO_API_KEY",
     );
     expect(
-      resolveProviderModelEnv("modelscope", "deepseek-ai/DeepSeek-V4.1-Flash", "deepseek-v4")
+      resolveProviderModelEnv("modelscope", "deepseek-ai/DeepSeek-V4.1-Flash", "deepseek-official")
         ?.envKey,
     ).toBe("OPENAI_API_KEY");
     expect(resolveProviderModelEnv("deepseek", "deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
@@ -1295,47 +1662,84 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     );
   });
 
-  it("first-party model ids route to the provider client's env var", () => {
+  it("routedClientType: a pinned client type wins, else the family the id begins with names the official client, and an unknown pin routes nowhere", () => {
+    expect(routedClientType("deepseek-flash")).toBe("deepseek-official");
+    expect(routedClientType("DeepSeek-V4-Pro")).toBe("deepseek-official"); // case-insensitive
+    expect(routedClientType("claude-opus-4-8")).toBe("anthropic-official");
+    // MMSP 0.5.2 names Google's official client after its vendor, as it names the others.
+    expect(routedClientType("gemini-3.8-flash")).toBe("google-official");
+    expect(routedClientType("gemini-embedding-001")).toBe("google-official");
+    expect(routedClientType("gpt-6-astra")).toBe("openai-official");
+    // OpenAI's official client hands its embedding ids to the Embeddings client, pinned or not.
+    expect(routedClientType("text-embedding-3-large")).toBe("openai-embedding");
+    expect(routedClientType("text-embedding-3-large", "openai-official")).toBe("openai-embedding");
+    expect(routedClientType("glm-5.3-flash")).toBe("zai-official");
+    expect(routedClientType("kimi-k3")).toBe("moonshot-official");
+    expect(routedClientType("MiniMax-M3")).toBe("minimax-official");
+    // A pin wins over the id, lowercased as MMSP lowercases it; the bare openai alias is canonicalized.
+    expect(routedClientType("deepseek-v4-pro", "openai-chat")).toBe("openai-chat");
+    expect(routedClientType("deepseek-v4-pro", " OpenAI-Responses ")).toBe("openai-responses");
+    expect(routedClientType("deepseek-v4-pro", "openai")).toBe("openai-chat");
+    expect(routedClientType("deepseek-v4-pro", "")).toBe("deepseek-official");
+    // The two protocols the models page now offers to pick by hand route as pinned.
+    expect(routedClientType("served-model", "mmsp")).toBe("mmsp");
+    expect(routedClientType("gemini-3.8-flash", "google-genai")).toBe("google-genai");
+    // A pin MMSP does not have is refused, never routed by the id instead.
+    expect(routedClientType("deepseek-flash", "deepseek-v4")).toBeUndefined();
+    expect(routedClientType("deepseek-flash", "constructor")).toBeUndefined();
+    // A family is a PREFIX: a gateway spelling that merely contains one routes nowhere...
+    expect(routedClientType("anthropic/claude-fable-5")).toBeUndefined();
+    expect(routedClientType("moonshotai/kimi-k3")).toBeUndefined();
+    expect(routedClientType("totally-unknown-model")).toBeUndefined();
+    // ...while an owner prefix that IS a family still routes: `deepseek-ai/…` reaches DeepSeek's
+    // official client, which is why the vLLM / SiliconFlow / ModelScope rows pin their protocol.
+    expect(routedClientType("deepseek-ai/DeepSeek-V4.1-Flash")).toBe("deepseek-official");
+  });
+
+  it("every client type the mirror names is one the installed MMSP builds, the gemini-official alias included", () => {
+    // The mirror may not route anything MMSP refuses: each row's client type constructs, and a
+    // pin the table lacks is one MMSP refuses as well. When an MMSP upgrade drops an alias, its
+    // row fails here and goes (see changelog/unreleased/2026-10-10-backward-compatibility.md).
+    for (const clientType of Object.keys(MMSP_CLIENTS)) {
+      expect(
+        () =>
+          new AutoLLMClient({
+            model: "probe-model",
+            clientType,
+            apiKey: "sk-probe",
+            baseUrl: "https://example.invalid/v1",
+          }),
+        clientType,
+      ).not.toThrow();
+    }
+    expect(routedClientType("probe-model", "gemini-3.8")).toBeUndefined();
+    expect(
+      () => new AutoLLMClient({ model: "probe-model", clientType: "gemini-3.8", apiKey: "sk" }),
+    ).toThrow(/Unknown client type/);
+  });
+
+  it("first-party model ids route to the official client's env var", () => {
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
-    // The dotted V4.1 spelling still carries the deepseek-v4 substring AutoLLMClient routes
-    // on. It survives in the catalog as a RESOLD id — deepseek-v4.1-flash on TokenDance and
-    // both Qwen groups, and OpenRouter's deepseek/deepseek-v4.1-flash, all of which pin an
-    // OpenAI-protocol client anyway — so this branch is what the bare spelling would resolve
-    // to, not what those rows use.
     expect(resolveModelEnv("deepseek-v4.1-flash")?.envKey).toBe("DEEPSEEK_API_KEY");
     expect(resolveModelEnv("deepseek-v4.1-flash")?.envBaseUrlKey).toBe("DEEPSEEK_BASE_URL");
-    // The released direct id carries no `deepseek-v4` substring, and AgentHub 0.4.11 routes
-    // DeepSeek on that substring alone: unroutable on its own, which is why the catalog row
-    // pins client_type "deepseek-v4" — and with the pin it lands on the DeepSeek client.
-    // Mirroring AgentHub is the contract, so this stays undefined until AgentHub itself
-    // routes the bare name.
-    expect(resolveModelEnv("deepseek-flash")).toBeUndefined();
-    expect(resolveModelEnv("deepseek-flash", "deepseek-v4")?.envKey).toBe("DEEPSEEK_API_KEY");
-    expect(resolveModelEnv("deepseek-flash", "deepseek-v4")?.envBaseUrlKey).toBe(
-      "DEEPSEEK_BASE_URL",
-    );
+    // The released direct id begins with the family, so it routes on its own — no pin needed.
+    expect(resolveModelEnv("deepseek-flash")?.envKey).toBe("DEEPSEEK_API_KEY");
+    expect(resolveModelEnv("deepseek-flash", "deepseek-official")?.envKey).toBe("DEEPSEEK_API_KEY");
     expect(resolveModelEnv("claude-opus-4-8")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("claude-sonnet-4-6")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("gemini-3.5-flash")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("gpt-5.5-pro")?.envKey).toBe("OPENAI_API_KEY");
-    // The GPT-5.6 generation (agenthub 0.4.2) reads the same OPENAI_* pair.
     expect(resolveModelEnv("gpt-5.6-luna")?.envKey).toBe("OPENAI_API_KEY");
-    // So does the GPT-6 generation: agenthub routes the gpt-6 substring to its gpt6 client.
     expect(resolveModelEnv("gpt-6-astra")?.envKey).toBe("OPENAI_API_KEY");
     expect(resolveModelEnv("gpt-6-astra")?.envBaseUrlKey).toBe("OPENAI_BASE_URL");
     expect(resolveModelEnv("glm-5.2")?.envKey).toBe("ZAI_API_KEY");
-    // glm-5.3 is served by agenthub 0.4.2's unified GLM client (same ZAI_* pair).
     expect(resolveModelEnv("glm-5.3")?.envKey).toBe("ZAI_API_KEY");
-    // glm-5.3-flash carries the glm-5 substring, so it reaches the same client and pair.
     expect(resolveModelEnv("glm-5.3-flash")?.envKey).toBe("ZAI_API_KEY");
     expect(resolveModelEnv("glm-5.3-flash")?.envBaseUrlKey).toBe("ZAI_BASE_URL");
     expect(resolveModelEnv("kimi-k2.6")?.envBaseUrlKey).toBe("MOONSHOT_BASE_URL");
-    // agenthub 0.4.2 unified the Kimi clients; every spelling reads the same env pair
-    // (kimi-k3 matches no k2.x substring, so it must resolve on its own).
     expect(resolveModelEnv("kimi-k3")?.envKey).toBe("MOONSHOT_API_KEY");
     expect(resolveModelEnv("kimi-k3")?.envBaseUrlKey).toBe("MOONSHOT_BASE_URL");
     expect(resolveModelEnv("gemini-3.6-flash")?.envKey).toBe("GEMINI_API_KEY");
-    // The Gemini 3.7 generation is served by the same unified client (gemini-3 substring).
     expect(resolveModelEnv("gemini-3.7-flash")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("gemini-3.5-flash-lite")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("claude-fable-5")?.envKey).toBe("ANTHROPIC_API_KEY");
@@ -1343,25 +1747,42 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveModelEnv("claude-sonnet-5")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("MiniMax-M3")?.envKey).toBe("MINIMAX_API_KEY");
     expect(resolveModelEnv("MiniMax-M3")?.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
+    // A whole family, not a generation: ids released later inherit the answer.
+    expect(resolveModelEnv("MiniMax-M4")?.envKey).toBe("MINIMAX_API_KEY");
+    expect(resolveModelEnv("minimax-m3-preview")?.envKey).toBe("MINIMAX_API_KEY");
   });
 
-  it("explicit client_type selects the protocol, while model-scoped clients still validate the id", () => {
+  it("an explicit client_type selects the client, whatever the model id", () => {
     expect(resolveModelEnv("deepseek-v4-pro", "openai-chat")?.envKey).toBe("OPENAI_API_KEY");
     expect(resolveModelEnv("zai-org/GLM-5.2", "openai-chat")?.envKey).toBe("OPENAI_API_KEY");
     // The deprecated bare "openai" alias (pre-0.4.2 configs) still resolves the same pair.
     expect(resolveModelEnv("deepseek-v4-pro", "openai")?.envKey).toBe("OPENAI_API_KEY");
-    // agenthub 0.4.2's generic protocol clients: openai-responses reads OPENAI_*,
-    // ant-messages reads ANTHROPIC_* (matching the client implementations).
+    // The generic protocol clients read the pair of the vendor whose protocol they speak.
     expect(resolveModelEnv("deepseek-v4-pro", "openai-responses")?.envKey).toBe("OPENAI_API_KEY");
     expect(resolveModelEnv("deepseek-v4-pro", "ant-messages")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("deepseek-v4-pro", "ant-messages")?.envBaseUrlKey).toBe(
       "ANTHROPIC_BASE_URL",
     );
-    expect(resolveModelEnv("MiniMax-M3", "minimax-m3")?.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
-    expect(resolveModelEnv("custom-model", "minimax-m3")).toBeUndefined();
+    expect(resolveModelEnv("any-model", "google-genai")?.envKey).toBe("GEMINI_API_KEY");
+    // MMSP 0.5.1 keeps google-genai's 0.5.0 name as an alias.
+    expect(resolveModelEnv("any-model", "gemini-generate-content")?.envKey).toBe("GEMINI_API_KEY");
+    expect(resolveModelEnv("any-model", "openai-embedding")?.envKey).toBe("OPENAI_API_KEY");
+    // An MMSP server's client reads its own pair, whatever model the server's table serves.
+    expect(resolveModelEnv("any-model", "mmsp")).toEqual({
+      envKey: "MMSP_API_KEY",
+      envBaseUrlKey: "MMSP_BASE_URL",
+    });
+    expect(resolveModelEnv("Qwen/Qwen3.8", "openai-chat-vllm-adapter")?.envKey).toBe(
+      "OPENAI_API_KEY",
+    );
+    // An official client pinned by name serves any id the endpoint answers for.
+    expect(resolveModelEnv("custom-model", "minimax-official")?.envBaseUrlKey).toBe(
+      "MINIMAX_BASE_URL",
+    );
+    expect(resolveModelEnv("custom-model", "Anthropic-Official")?.envKey).toBe("ANTHROPIC_API_KEY");
   });
 
-  it("generic protocol client types (agenthub 0.4.2) resolve regardless of the model id: ant-messages reads ANTHROPIC_*, openai-responses / openai-chat read OPENAI_*", () => {
+  it("generic protocol client types resolve regardless of the model id: ant-messages reads ANTHROPIC_*, openai-responses / openai-chat read OPENAI_*", () => {
     expect(resolveModelEnv("any-model", "ant-messages")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("any-model", "ant-messages")?.envBaseUrlKey).toBe("ANTHROPIC_BASE_URL");
     expect(resolveModelEnv("any-model", "openai-responses")?.envKey).toBe("OPENAI_API_KEY");
@@ -1369,12 +1790,14 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveModelEnv("any-model", "openai-chat")?.envBaseUrlKey).toBe("OPENAI_BASE_URL");
   });
 
-  it("unroutable ids return undefined (AgentHub would reject; needs explicit client_type or an OpenAI-protocol grouping)", () => {
+  it("unroutable entries return undefined (MMSP would refuse them): an id of no known family, or a client type MMSP does not have", () => {
     expect(resolveModelEnv("totally-unknown-model")).toBeUndefined();
     expect(resolveModelEnv("xiaomi/mimo-v2.5")).toBeUndefined();
-    expect(resolveModelEnv("minimax-m3-preview")).toBeUndefined();
-    expect(resolveModelEnv("MiniMax-M4")).toBeUndefined();
-    expect(resolveModelEnv("MiniMax-M4", "minimax-m3")).toBeUndefined();
+    expect(resolveModelEnv("anthropic/claude-opus-4.8")).toBeUndefined();
+    // The vendor client types of MMSP 0.4 (MMSP) name no client any more.
+    expect(resolveModelEnv("MiniMax-M3", "minimax-m3")).toBeUndefined();
+    expect(resolveModelEnv("deepseek-flash", "deepseek-v4")).toBeUndefined();
+    expect(resolveModelEnv("gemini-3.8-flash", "gemini-3.8")).toBeUndefined();
   });
 
   it("catalog invariant: each model's resolved client uses its provider's documented environment variables", () => {
@@ -1399,8 +1822,102 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
         expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
         continue;
       }
+      if (m.provider === "opencode-go" && m.clientType === "ant-messages") {
+        // OpenCode Go's group pair is the OPENAI_* one its Chat Completions and Responses rows
+        // read; its Messages rows read the Anthropic client's pair, the same split as custom.
+        expect(env!.envKey, m.modelId).toBe("ANTHROPIC_API_KEY");
+        expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
+        continue;
+      }
       expect(env!.envKey, m.modelId).toBe(provider.envKey);
       expect(env!.envBaseUrlKey, m.modelId).toBe(provider.envBaseUrlKey);
+    }
+  });
+
+  it("catalog invariant: every built-in row in a vendor group is routable, by its pinned protocol or by its id", () => {
+    const vendorRows = MODEL_CATALOG.filter((m) => isVendorGroup(m.provider));
+    // A guard is only a guard if it is looking at something: the vendor groups are where
+    // ids alone decide routing, and they hold a large part of the catalog.
+    expect(vendorRows.length).toBeGreaterThan(20);
+    for (const m of vendorRows) {
+      expect(
+        unroutableVendorModel(m.provider, m.modelId, m.clientType),
+        `${m.provider}/${m.modelId}`,
+      ).toBe(false);
+    }
+  });
+
+  it("unroutableVendorModel judges only the groups that route by id, and only once an id is typed", () => {
+    // A vendor group: nothing carries a protocol, so the id has to be one MMSP places.
+    expect(unroutableVendorModel("deepseek", "qwen/qwen3.8-flash-next")).toBe(true);
+    expect(unroutableVendorModel("deepseek", "deepseek-v4-pro")).toBe(false);
+    expect(unroutableVendorModel("deepseek", "deepseek-flash")).toBe(false);
+    // An id of another family becomes routable the moment the entry pins the protocol itself;
+    // a pin MMSP does not know makes the entry unroutable whatever the id.
+    expect(unroutableVendorModel("deepseek", "qwen/qwen3.8-flash-next", "openai-chat")).toBe(false);
+    expect(unroutableVendorModel("deepseek", "deepseek-flash", "deepseek-v4")).toBe(true);
+    // Every other group decides the protocol without consulting the id.
+    expect(unroutableVendorModel("custom", "qwen/qwen3.8-flash-next")).toBe(false);
+    expect(unroutableVendorModel("openrouter", "qwen/qwen3.8-flash-next")).toBe(false);
+    expect(unroutableVendorModel("tokendance", "qwen/qwen3.8-flash-next")).toBe(false);
+    expect(unroutableVendorModel("vllm", "qwen/qwen3.8-flash-next")).toBe(false);
+    expect(unroutableVendorModel("my-own-group", "qwen/qwen3.8-flash-next")).toBe(false);
+    // An entry still being typed is not a routing failure.
+    expect(unroutableVendorModel("deepseek", "")).toBe(false);
+    expect(unroutableVendorModel("deepseek", "   ")).toBe(false);
+  });
+
+  it("isVendorGroup: catalog-known, not custom, no gateway endpoint and no group-level protocol pin", () => {
+    const vendors = ["deepseek", "google", "openai", "anthropic", "zhipu", "moonshot", "minimax"];
+    for (const id of vendors) {
+      expect(isVendorGroup(id), id).toBe(true);
+    }
+    // The Penguin Go relay pins its protocol per row rather than per group, so a model added
+    // there by hand would be routed by its id exactly as in any other vendor group.
+    expect(isVendorGroup("penguin-go")).toBe(true);
+    // Gateways carry an endpoint, two groups pin a protocol, and custom / user-defined
+    // groups exist precisely so the protocol can be chosen.
+    for (const id of ["tokendance", "openrouter", "fireworks", "siliconflow", "vllm", "custom"]) {
+      expect(isVendorGroup(id), id).toBe(false);
+    }
+    expect(isVendorGroup("my-own-group")).toBe(false);
+  });
+
+  it("isAddableGroup: custom, vLLM, OpenRouter, TokenDance, SiliconFlow and user-defined groups take hand-added models, no other built-in group does", () => {
+    const open = ["custom", "vllm", "openrouter", "tokendance", "siliconflow"];
+    for (const id of [...open, "my-own-group"]) {
+      expect(isAddableGroup(id), id).toBe(true);
+    }
+    // Every first-party vendor and every other gateway, the relays included.
+    const closed = MODEL_PROVIDERS.map((p) => p.id).filter((id) => !open.includes(id));
+    expect(closed).toContain("fireworks");
+    expect(closed).toContain("penguin-go");
+    expect(closed).toContain("deepseek");
+    for (const id of closed) {
+      expect(isAddableGroup(id), id).toBe(false);
+    }
+  });
+
+  it("unaddableModel: a closed group still takes its own presets, an addable group takes anything", () => {
+    expect(unaddableModel("fireworks", "accounts/someone/models/new-model")).toBe(true);
+    // Routable is not enough: the DeepSeek client would place this id, but it is no preset.
+    expect(unaddableModel("deepseek", "deepseek-v4-pro-next")).toBe(true);
+    // The pair is the key: DeepSeek's own id is not one of Fireworks' presets.
+    expect(unaddableModel("fireworks", "deepseek-flash")).toBe(true);
+    // Every catalog row may be written back into its own group — that is what "Sync presets"
+    // does for a row the Project deleted.
+    for (const m of MODEL_CATALOG) {
+      expect(unaddableModel(m.provider, m.modelId), `${m.provider}/${m.modelId}`).toBe(false);
+    }
+    for (const id of [
+      "custom",
+      "vllm",
+      "openrouter",
+      "tokendance",
+      "siliconflow",
+      "my-own-group",
+    ]) {
+      expect(unaddableModel(id, "someone/new-model"), id).toBe(false);
     }
   });
 
@@ -1454,20 +1971,21 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
   });
 });
 
-describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, and on which protocol)", () => {
-  it("OpenAI-protocol clients carry it: openai_chat / openai_responses / gpt6 / minimax_m3", () => {
+describe("fastModeProtocol (which models may be offered MMSP's fast_mode, and on which protocol)", () => {
+  it("clients that send service_tier carry it as `openai`: the OpenAI protocols, OpenAI, Gemini and MiniMax", () => {
     // Bare "openai" is the alias the web pins on custom, user-defined and gateway rows.
     expect(fastModeProtocol("anything-at-all", "openai")).toBe("openai");
     expect(fastModeProtocol("local-qwen", "openai-responses")).toBe("openai");
-    // minimax-m3 is the one branch AgentHub matches by exact equality, not substring.
-    expect(fastModeProtocol("MiniMax-M3", "minimax-m3")).toBe("openai");
+    expect(fastModeProtocol("Qwen/Qwen3.8", "openai-chat-vllm-adapter")).toBe("openai");
     expect(fastModeProtocol("MiniMax-M3")).toBe("openai");
-    // The gpt-5.x branch precedes the openai catch-all, and both map service_tier.
+    expect(fastModeProtocol("MiniMax-M3", "minimax-official")).toBe("openai");
     expect(fastModeProtocol("gpt-5.5-pro")).toBe("openai");
     expect(fastModeProtocol("gpt-5.4-mini")).toBe("openai");
     expect(fastModeProtocol("gpt-5.6")).toBe("openai");
-    // The gpt-6 branch sits alongside them: agenthub's gpt6 client maps fast mode too.
     expect(fastModeProtocol("gpt-6-astra")).toBe("openai");
+    // Google's Interactions API takes the priority tier too.
+    expect(fastModeProtocol("gemini-3.5-flash")).toBe("openai");
+    expect(fastModeProtocol("gemini-3.8-flash", "google-official")).toBe("openai");
   });
 
   it("Anthropic-protocol clients carry it as speed=fast", () => {
@@ -1476,36 +1994,43 @@ describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, an
     expect(fastModeProtocol("claude-sonnet-5")).toBe("anthropic");
     expect(fastModeProtocol("claude-opus-4-8")).toBe("anthropic");
     expect(fastModeProtocol("some-proxy-id", "ant-messages")).toBe("anthropic");
+    expect(fastModeProtocol("some-proxy-id", "anthropic-official")).toBe("anthropic");
     // Outside the research preview's Opus allowlist the client still sends it and Anthropic
     // answers 429 — a warning before enabling, not a reason to withhold the setting.
     expect(fastModeProtocol("claude-opus-4-7")).toBe("anthropic");
   });
 
-  it("clients that reject the parameter get no toggle: Gemini, GLM, Kimi, DeepSeek, embeddings", () => {
-    expect(fastModeProtocol("gemini-3.5-flash")).toBeUndefined();
-    expect(fastModeProtocol("gemini-3.1-pro-preview")).toBeUndefined();
-    expect(fastModeProtocol("gemini-embedding-001")).toBeUndefined();
+  it("clients that reject the parameter get no toggle: GLM, Kimi, DeepSeek, generateContent, embeddings", () => {
     expect(fastModeProtocol("glm-5.2")).toBeUndefined();
     expect(fastModeProtocol("kimi-k3")).toBeUndefined();
     expect(fastModeProtocol("kimi-k2.6")).toBeUndefined();
     expect(fastModeProtocol("kimi-k2.5")).toBeUndefined();
     expect(fastModeProtocol("deepseek-v4-pro")).toBeUndefined();
+    expect(fastModeProtocol("deepseek-flash", "deepseek-official")).toBeUndefined();
+    expect(fastModeProtocol("gemini-3.8-flash", "google-genai")).toBeUndefined();
     expect(fastModeProtocol("text-embedding-3-large", "openai-embedding")).toBeUndefined();
-    // A future first-party generation inherits the verdict from its family substring, so a
-    // catalog row added later needs no change here (agenthub routes glm-5.3 / gemini-3.7 to
-    // the same rejecting clients).
+    // An MMSP server forwards it to whatever client its table names for the model: nothing the
+    // harness could vouch for, so no toggle.
+    expect(fastModeProtocol("gpt-5.6", "mmsp")).toBeUndefined();
+    // OpenAI's embedding ids route to its Embeddings API even without a pin.
+    expect(fastModeProtocol("text-embedding-3-large")).toBeUndefined();
+    // A future first-party generation inherits the verdict from its family, so a catalog row
+    // added later needs no change here.
     expect(fastModeProtocol("glm-5.3")).toBeUndefined();
-    expect(fastModeProtocol("gemini-3.7-pro")).toBeUndefined();
+    expect(fastModeProtocol("kimi-k4")).toBeUndefined();
   });
 
-  it("claude5 carve-outs are tested against the model id and base URL, not the routing token", () => {
-    // Claude 4.6 is refused by name even though claude5 serves the family.
+  it("the Anthropic carve-outs are tested against the model id and base URL, not the routing token", () => {
+    // The generations that reject the speed parameter are refused by name, whatever routes them.
     expect(fastModeProtocol("claude-sonnet-4-6")).toBeUndefined();
-    expect(fastModeProtocol("Claude-Sonnet-4-6")).toBeUndefined();
-    // Routing may come from client_type while the 4-6 refusal reads the model id...
-    expect(fastModeProtocol("my-claude-sonnet-4-6-proxy", "claude-5")).toBeUndefined();
-    // ...and conversely a 4-6 client_type with a served model id keeps fast mode.
-    expect(fastModeProtocol("claude-sonnet-5", "claude-4-6")).toBe("anthropic");
+    expect(fastModeProtocol("claude-sonnet-5-5")).toBeUndefined();
+    expect(fastModeProtocol("claude-haiku-5-5")).toBeUndefined();
+    expect(fastModeProtocol("claude-fable-5-1")).toBeUndefined();
+    // Opus 5.5 is the 5.5 model that keeps the fast tier.
+    expect(fastModeProtocol("claude-opus-5-5")).toBe("anthropic");
+    expect(fastModeProtocol("my-claude-sonnet-4-6-proxy", "anthropic-official")).toBeUndefined();
+    // ...and conversely a served model id keeps fast mode under the same pin.
+    expect(fastModeProtocol("claude-sonnet-5", "anthropic-official")).toBe("anthropic");
     // Bedrock has no fast tier; the prefix lives in the base URL, which is why the rule needs it.
     expect(fastModeProtocol("claude-fable-5", undefined, "bedrock://us-east-1")).toBeUndefined();
     expect(fastModeProtocol("claude-fable-5", undefined, "https://api.anthropic.com")).toBe(
@@ -1513,30 +2038,29 @@ describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, an
     );
   });
 
-  it("an id AgentHub cannot route gets no toggle either (no client, so no fast tier)", () => {
-    // AutoLLMClient throws for an unmatched token — there is no openai_chat fallback.
+  it("an id MMSP cannot route gets no toggle either (no client, so no fast tier)", () => {
+    // AutoLLMClient throws for an id of no known family — there is no openai_chat fallback.
     expect(fastModeProtocol("totally-unknown-model")).toBeUndefined();
-    expect(fastModeProtocol("MiniMax-M4")).toBeUndefined();
-    // Dotted OpenRouter Anthropic ids match no branch at all when no client_type is pinned
-    // (neither "4-8" nor "-5"), unlike their dashed first-party spellings.
+    // A gateway spelling merely contains a family; it begins with none.
     expect(fastModeProtocol("anthropic/claude-opus-4.8")).toBeUndefined();
-    // The same row as the catalog ships it — client_type pinned — is served over openai_chat.
+    expect(fastModeProtocol("anthropic/claude-fable-5")).toBeUndefined();
+    // The same rows as the catalog ships them — client_type pinned — are served over the
+    // OpenAI protocol.
     expect(fastModeProtocol("anthropic/claude-opus-4.8", "openai")).toBe("openai");
-    // Self-routing can disagree with the provider group: a blank client_type sends this id to
-    // the native claude5 client, flipping the protocol that would carry the parameter.
-    expect(fastModeProtocol("anthropic/claude-fable-5")).toBe("anthropic");
-    expect(fastModeProtocol("anthropic/claude-fable-5", "openai")).toBe("openai");
+    expect(fastModeProtocol("anthropic/claude-fable-5", "openai-responses")).toBe("openai");
+    // So does a client type MMSP does not have.
+    expect(fastModeProtocol("MiniMax-M3", "minimax-m3")).toBeUndefined();
   });
 
   it("catalog invariant: every built-in row's verdict follows its client family", () => {
     for (const m of MODEL_CATALOG) {
       const verdict = fastModeProtocol(m.modelId, m.clientType, m.baseUrl);
-      if (m.clientType === "openai") {
-        // Every gateway row pins the OpenAI protocol, which always carries service_tier.
+      if (m.clientType === "openai-chat" || m.clientType === "openai-responses") {
+        // Every gateway row pins an OpenAI protocol, which always carries service_tier.
         expect(verdict, `${m.provider}/${m.modelId}`).toBe("openai");
-      } else if (["google", "zhipu", "moonshot", "deepseek"].includes(m.provider)) {
-        // These groups' first-party clients have no fast tier at all: rows added to them
-        // later (a new Gemini or GLM generation) stay excluded without touching this rule.
+      } else if (["zhipu", "moonshot", "deepseek"].includes(m.provider)) {
+        // These groups' official clients have no fast tier at all: rows added to them later
+        // (a new GLM generation) stay excluded without touching this rule.
         expect(verdict, `${m.provider}/${m.modelId}`).toBeUndefined();
       }
     }
@@ -1550,11 +2074,22 @@ describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, an
     expect(verdictOf("anthropic", "claude-sonnet-5")).toBe("anthropic");
     expect(verdictOf("anthropic", "claude-opus-4-8")).toBe("anthropic");
     expect(verdictOf("anthropic", "claude-opus-4-7")).toBe("anthropic");
-    // The one Anthropic row the client refuses by name.
-    expect(verdictOf("anthropic", "claude-sonnet-4-6")).toBeUndefined();
+    expect(verdictOf("anthropic", "claude-opus-5-5")).toBe("anthropic");
+    // The Anthropic rows the client refuses by name.
+    for (const id of [
+      "claude-sonnet-4-6",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "claude-fable-5-1",
+    ]) {
+      expect(verdictOf("anthropic", id), id).toBeUndefined();
+    }
     expect(verdictOf("openai", "gpt-5.5")).toBe("openai");
     expect(verdictOf("openai", "gpt-5.4-pro")).toBe("openai");
     expect(verdictOf("minimax", "MiniMax-M3")).toBe("openai");
+    expect(verdictOf("google", "gemini-3.8-flash")).toBe("openai");
+    // The relay's Gemini rows speak generateContent, which has no priority tier.
+    expect(verdictOf("penguin-go", "gemini-3.8-flash")).toBeUndefined();
   });
 });
 
@@ -1581,7 +2116,7 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
     });
   });
 
-  it("OpenCode gets the session header, and only when there is a session id to put in it", () => {
+  it("OpenCode always gets the session header: the Session's id, or a fresh random one", () => {
     const sessionId = "session-2026-09-14-10-30-00-a1b2c3d4";
     expect(attributionHeaders("https://opencode.ai/zen/v1", sessionId)).toEqual({
       "x-opencode-session": sessionId,
@@ -1590,10 +2125,15 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
     expect(attributionHeaders("https://api.opencode.ai/v1", sessionId)).toEqual({
       "x-opencode-session": sessionId,
     });
-    // No id, no header. A stand-in constant would file every conversation at the gateway
-    // under one session, which serves it worse than naming none.
-    expect(attributionHeaders("https://opencode.ai/zen/v1")).toBeUndefined();
-    expect(attributionHeaders("https://opencode.ai/zen/v1", "")).toBeUndefined();
+    // No id — a connectivity test, a vision probe — still names a conversation, since the
+    // gateway refuses a request that names none: a fresh random id each time, never one
+    // constant that would file every such request under a single session.
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    const first = attributionHeaders("https://opencode.ai/zen/v1")?.["x-opencode-session"];
+    const second = attributionHeaders("https://opencode.ai/zen/v1", "")?.["x-opencode-session"];
+    expect(first).toMatch(uuid);
+    expect(second).toMatch(uuid);
+    expect(first).not.toBe(second);
     // A host outside the scheme gets nothing, whatever path it serves: third-party mirrors of
     // a gateway are not part of the built-in attribution, and naming one here would put it in
     // the repository just as surely as listing it would.
@@ -1626,12 +2166,20 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
   });
 
   it("catalog invariant: every gateway row whose host runs an attribution scheme carries it", () => {
+    const sessionId = "session-2026-09-17-10-30-00-a1b2c3d4";
     for (const m of MODEL_CATALOG) {
       const headers = attributionHeaders(m.baseUrl);
       if (m.provider === "openrouter") {
         expect(headers?.["HTTP-Referer"], m.modelId).toBe("https://penguin.ooo/");
       } else if (m.provider === "tokendance") {
         expect(headers?.["X-App-URL"], m.modelId).toBe("https://penguin.ooo/");
+      } else if (m.provider === "opencode-go") {
+        // Both OpenCode Go bases, Messages included, name the Session they are serving, and
+        // name a conversation of their own outside one.
+        expect(attributionHeaders(m.baseUrl, sessionId), m.modelId).toEqual({
+          "x-opencode-session": sessionId,
+        });
+        expect(headers?.["x-opencode-session"], m.modelId).toBeTruthy();
       } else {
         expect(headers, `${m.provider}/${m.modelId}`).toBeUndefined();
       }
@@ -1646,9 +2194,9 @@ describe("off-peak schedules", () => {
 
   it("the DeepSeek rows store the peak price and declare the schedule", () => {
     // Every direct row, plus the resold rows whose sellers pass DeepSeek's own windows through:
-    // two on Penguin Go, two on TokenDance and one on OpenRouter. The retired rows keep the
-    // schedule too. A gateway row on the schedule carries no flat `discount` — the two are
-    // mutually exclusive, pinned by the last case here.
+    // two on Penguin Go, four on OpenCode Go, four on TokenDance and one on OpenRouter. The
+    // retired rows keep the schedule too. A gateway row on the schedule carries no flat
+    // `discount` — the two are mutually exclusive, pinned by the last case here.
     const rows = MODEL_CATALOG.filter((m) => m.offPeakDiscount === S);
     expect(rows.map((m) => `${m.provider}/${m.modelId}`)).toEqual([
       "deepseek/deepseek-flash",
@@ -1656,10 +2204,16 @@ describe("off-peak schedules", () => {
       "deepseek/deepseek-v4-flash-vision-exp",
       "deepseek/deepseek-v4-pro",
       "openrouter/deepseek/deepseek-v4.1-flash",
+      "tokendance/deepseek-v4-flash-0731",
       "tokendance/deepseek-v4-flash-vision-exp",
+      "tokendance/deepseek-v4-pro-0813",
       "tokendance/deepseek-v4.1-flash",
       "penguin-go/deepseek-flash",
       "penguin-go/deepseek-v4-pro",
+      "opencode-go/deepseek-v4.1-flash",
+      "opencode-go/deepseek-v4-flash",
+      "opencode-go/deepseek-v4-flash-vision-exp",
+      "opencode-go/deepseek-v4-pro",
     ]);
     for (const m of rows) {
       // Peak is exactly double the off-peak tier DeepSeek publishes. Compared at 1e-5: both
@@ -1826,6 +2380,683 @@ describe("off-peak schedules", () => {
     // schedule written in any other zone fails here instead of reaching the tooltip mislabelled.
     for (const { schedule, refs } of offPeakScheduledRefs()) {
       expect(schedule.utcOffsetMinutes, `${refs[0]!.provider}/${refs[0]!.modelId}`).toBe(480);
+    }
+  });
+});
+
+describe("modelEnvFallback / resolveModelCredential (a vendor key from the environment goes only to the vendor)", () => {
+  const VENDOR_ENV = {
+    OPENAI_API_KEY: "sk-openai-env",
+    ANTHROPIC_API_KEY: "sk-anthropic-env",
+    GEMINI_API_KEY: "sk-gemini-env",
+    DEEPSEEK_API_KEY: "sk-deepseek-env",
+  };
+  const shapeOf = (m: (typeof MODEL_CATALOG)[number]) => ({
+    provider: m.provider,
+    modelId: m.modelId,
+    clientType: m.clientType,
+    baseUrl: m.baseUrl,
+  });
+
+  it("refuses every keyless row of every gateway group, whatever vendor variables are set", () => {
+    const gateways = MODEL_PROVIDERS.filter((p) => p.gatewayBaseUrl !== undefined).map((p) => p.id);
+    expect(gateways).toContain("tokendance");
+    expect(gateways).toContain("openrouter");
+    const rows = MODEL_CATALOG.filter((m) => gateways.includes(m.provider));
+    expect(rows.length).toBeGreaterThan(20);
+    for (const m of rows) {
+      expect(modelEnvFallback(shapeOf(m)), `${m.provider}/${m.modelId}`).toBeUndefined();
+      expect(
+        () => resolveModelCredential(shapeOf(m), VENDOR_ENV),
+        `${m.provider}/${m.modelId}`,
+      ).toThrow(ModelCredentialError);
+    }
+    // The message says "API key", which is what hosts classify a missing credential by.
+    expect(() =>
+      resolveModelCredential(shapeOf(catalogEntryFor("tokendance", "glm-5.3")!), VENDOR_ENV),
+    ).toThrow(/has no API key/);
+  });
+
+  it("leaves a first-party vendor row on its client's own variable, handing the client no key", () => {
+    // No base URL: the client's default endpoint is the vendor's own.
+    const sonnet = shapeOf(catalogEntryFor("anthropic", "claude-sonnet-4-6")!);
+    expect(modelEnvFallback(sonnet)).toEqual({
+      envKey: "ANTHROPIC_API_KEY",
+      envBaseUrlKey: "ANTHROPIC_BASE_URL",
+      readByClient: true,
+    });
+    expect(resolveModelCredential(sonnet, VENDOR_ENV)).toEqual({});
+    // A row naming the vendor's own endpoint itself is allowed the variable too, but the
+    // value travels explicitly: MMSP refuses a base URL without a key rather than lend the
+    // vendor's variable to whatever endpoint was typed.
+    const flash = {
+      ...shapeOf(catalogEntryFor("deepseek", "deepseek-flash")!),
+      baseUrl: "https://api.deepseek.com",
+    };
+    expect(modelEnvFallback(flash)?.envKey).toBe("DEEPSEEK_API_KEY");
+    expect(resolveModelCredential(flash, VENDOR_ENV)).toEqual({
+      apiKey: "sk-deepseek-env",
+      baseUrl: "https://api.deepseek.com",
+    });
+    expect(() => resolveModelCredential(flash, {})).toThrow(/DEEPSEEK_API_KEY/);
+    // The variable being unset is the client's business, not ours: still handed nothing
+    // (a Bedrock ANTHROPIC_BASE_URL with no ANTHROPIC_API_KEY stays valid).
+    expect(resolveModelCredential(sonnet, {})).toEqual({});
+    // An inline key always wins, on any row.
+    expect(resolveModelCredential({ ...sonnet, apiKey: "sk-inline" }, VENDOR_ENV)).toEqual({
+      apiKey: "sk-inline",
+    });
+    expect(
+      resolveModelCredential(
+        { ...shapeOf(catalogEntryFor("openrouter", "openai/gpt-5.5")!), apiKey: "sk-or" },
+        VENDOR_ENV,
+      ),
+    ).toMatchObject({ apiKey: "sk-or" });
+  });
+
+  it("reads the Penguin Go relay's own variable itself and never a vendor's", () => {
+    const relayRows = MODEL_CATALOG.filter((m) => m.provider === "penguin-go");
+    expect(relayRows.length).toBeGreaterThan(0);
+    for (const m of relayRows) {
+      expect(modelEnvFallback(shapeOf(m)), m.modelId).toEqual({
+        envKey: "PENGUIN_GO_API_KEY",
+        envBaseUrlKey: "PENGUIN_GO_BASE_URL",
+        readByClient: false,
+      });
+      // Vendor variables set, relay variable unset: refused, not GEMINI_API_KEY.
+      expect(() => resolveModelCredential(shapeOf(m), VENDOR_ENV), m.modelId).toThrow(
+        /PENGUIN_GO_API_KEY/,
+      );
+      expect(
+        resolveModelCredential(shapeOf(m), { ...VENDOR_ENV, PENGUIN_GO_API_KEY: " pg-key " }),
+        m.modelId,
+      ).toEqual({ apiKey: "pg-key", baseUrl: PENGUIN_GO_BASE_URL });
+    }
+    // The relay key belongs to the relay endpoint: a row with no base URL is refused even
+    // with a key, so the key cannot travel to the vendor's default endpoint.
+    expect(() =>
+      resolveModelCredential(
+        {
+          provider: "penguin-go",
+          modelId: "gemini-3.8-flash",
+          clientType: "google-genai",
+          apiKey: "pg",
+        },
+        VENDOR_ENV,
+      ),
+    ).toThrow(/has no base URL/);
+  });
+
+  it("judges custom, vLLM and user-defined rows by their endpoint, not their group", () => {
+    // A private server: refused.
+    const local = {
+      provider: "custom",
+      modelId: "local-model",
+      clientType: "openai-chat",
+      baseUrl: "http://127.0.0.1:8000/v1",
+    };
+    expect(modelEnvFallback(local)).toBeUndefined();
+    expect(() => resolveModelCredential(local, VENDOR_ENV)).toThrow(ModelCredentialError);
+    const vllm = shapeOf(MODEL_CATALOG.find((m) => m.provider === "vllm")!);
+    expect(modelEnvFallback({ ...vllm, baseUrl: "http://gpu-box:8000/v1" })).toBeUndefined();
+    // The vendor's own endpoint typed into a custom row: the OpenAI key goes to OpenAI.
+    expect(modelEnvFallback({ ...local, baseUrl: "https://api.openai.com/v1/" })?.envKey).toBe(
+      "OPENAI_API_KEY",
+    );
+    // OPENAI_BASE_URL naming the very same server earns no exception (environment keys are
+    // for official endpoints only): the key goes on the row.
+    const paired = { ...VENDOR_ENV, OPENAI_BASE_URL: "http://127.0.0.1:8000/v1/" };
+    expect(() => resolveModelCredential(local, paired)).toThrow(ModelCredentialError);
+    // A user-defined group with no base URL auto-routes to the vendor: allowed, like before.
+    expect(modelEnvFallback({ provider: "myproxy", modelId: "claude-sonnet-4-6" })?.envKey).toBe(
+      "ANTHROPIC_API_KEY",
+    );
+    // A vendor row re-pointed at a proxy: refused.
+    expect(
+      modelEnvFallback({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        baseUrl: "https://proxy.example/anthropic",
+      }),
+    ).toBeUndefined();
+    // An id nothing routes has no client and so no variable.
+    expect(modelEnvFallback({ provider: "custom", modelId: "opaque" })).toBeUndefined();
+  });
+
+  it("an mmsp row reads MMSP_API_KEY only through MMSP_BASE_URL, and one naming a base URL is sent no key rather than refused", () => {
+    // MMSP's own rule: the mmsp client reads the MMSP_* pair only when handed no base URL, and
+    // calls a base URL handed without a key with no key at all, which an open MMSP server takes.
+    const env = { MMSP_API_KEY: "sk-mmsp-env", MMSP_BASE_URL: "http://127.0.0.1:25752/v1" };
+    const row = { provider: "custom", modelId: "qwen3.8", clientType: "mmsp" };
+    expect(modelEnvFallback(row)).toEqual({
+      envKey: "MMSP_API_KEY",
+      envBaseUrlKey: "MMSP_BASE_URL",
+      readByClient: true,
+    });
+    expect(resolveModelCredential(row, env)).toEqual({});
+    // Its own base URL, even the very one MMSP_BASE_URL names: no environment key goes with it,
+    // and nothing is refused either.
+    const named = { ...row, baseUrl: "http://127.0.0.1:25752/v1" };
+    expect(modelEnvFallback(named)).toBeUndefined();
+    expect(modelEnvPreviewKey(named)).toBeUndefined();
+    expect(endpointEnvApiKey("mmsp", named.baseUrl, env)).toBeUndefined();
+    expect(resolveModelCredential(named, env)).toEqual({ baseUrl: "http://127.0.0.1:25752/v1" });
+    expect(resolveModelCredential({ ...named, apiKey: "sk-row" }, env)).toEqual({
+      apiKey: "sk-row",
+      baseUrl: "http://127.0.0.1:25752/v1",
+    });
+    // The open-server exception is the mmsp client's alone: the same endpoint on an
+    // OpenAI-compatible client still needs a key.
+    expect(() => resolveModelCredential({ ...named, clientType: "openai-chat" }, env)).toThrow(
+      ModelCredentialError,
+    );
+  });
+
+  it("endpointEnvApiKey lends a bare endpoint the protocol's key on the same terms", () => {
+    expect(
+      endpointEnvApiKey("openai-chat", "https://gw.example.com/v1", VENDOR_ENV),
+    ).toBeUndefined();
+    expect(endpointEnvApiKey("ant-messages", "https://gw.example.com", VENDOR_ENV)).toBeUndefined();
+    expect(endpointEnvApiKey("openai-chat", "https://api.openai.com/v1", VENDOR_ENV)).toBe(
+      "sk-openai-env",
+    );
+    expect(endpointEnvApiKey("ant-messages", "https://api.anthropic.com/", VENDOR_ENV)).toBe(
+      "sk-anthropic-env",
+    );
+    expect(endpointEnvApiKey("openai-responses", undefined, VENDOR_ENV)).toBe("sk-openai-env");
+    // Not even when OPENAI_BASE_URL names that very URL.
+    expect(
+      endpointEnvApiKey("openai-chat", "https://gw.example.com/v1", {
+        ...VENDOR_ENV,
+        OPENAI_BASE_URL: "https://gw.example.com/v1",
+      }),
+    ).toBeUndefined();
+    expect(
+      endpointEnvApiKey("openai-chat", "https://api.openai.com/v1", { OPENAI_API_KEY: "  " }),
+    ).toBeUndefined();
+  });
+
+  it("providerEnvFallbackKey names the group-level fallback only for first-party groups, judged on the group's own table", () => {
+    // As a new Project stores them: the vendors have no table, Penguin Go names its relay.
+    const table = presetProviderTable();
+    const fallbackOf = (id: string, group: ProviderConnection | undefined) =>
+      providerEnvFallbackKey(id, providerConnectionShape(group));
+    expect(fallbackOf("anthropic", table.anthropic)).toBe("ANTHROPIC_API_KEY");
+    expect(fallbackOf("deepseek", table.deepseek)).toBe("DEEPSEEK_API_KEY");
+    expect(fallbackOf("penguin-go", table["penguin-go"])).toBe("PENGUIN_GO_API_KEY");
+    // Gateways, vLLM, custom and user-defined groups never, whatever their table says.
+    for (const id of [
+      "tokendance",
+      "openrouter",
+      "fireworks",
+      "siliconflow",
+      "qwen-token-plan",
+      "vllm",
+      "custom",
+      "my-group",
+    ]) {
+      expect(fallbackOf(id, table[id]), id).toBeUndefined();
+      expect(fallbackOf(id, undefined), id).toBeUndefined();
+    }
+    // The file decides the destination: a vendor group pointed at a proxy, or at another
+    // vendor's client, lends nothing; pointed at the vendor's own endpoint, it still does.
+    expect(fallbackOf("deepseek", { base_url: "https://proxy.example/deepseek" })).toBeUndefined();
+    expect(fallbackOf("deepseek", { base_url: "https://api.deepseek.com/" })).toBe(
+      "DEEPSEEK_API_KEY",
+    );
+    expect(fallbackOf("deepseek", { client_type: "openai-chat" })).toBeUndefined();
+    expect(fallbackOf("deepseek", { client_type: "deepseek-official" })).toBe("DEEPSEEK_API_KEY");
+    // The relay key goes only with the relay's endpoint: a Penguin Go table without one
+    // lends nothing.
+    expect(fallbackOf("penguin-go", undefined)).toBeUndefined();
+  });
+
+  it("sameEndpoint ignores case in the host and trailing slashes, and nothing else", () => {
+    expect(sameEndpoint("https://API.OpenAI.com/v1/", "https://api.openai.com/v1")).toBe(true);
+    expect(sameEndpoint("https://api.openai.com/v1", "https://api.openai.com/v2")).toBe(false);
+    expect(sameEndpoint("https://api.openai.com/v1", "https://api.openai.com")).toBe(false);
+    expect(sameEndpoint("http://host:8000/v1", "http://host:8001/v1")).toBe(false);
+    expect(sameEndpoint("not a url", "not a url")).toBe(false);
+    // The cases that make this a security check — a string-prefix "simplification" would pass
+    // each of them, and each would carry the OpenAI key somewhere else.
+    const openai = "https://api.openai.com/v1";
+    expect(sameEndpoint(openai, "https://api.openai.com.evil.example/v1")).toBe(false);
+    expect(sameEndpoint(openai, "https://api.openai.com@evil.example/v1")).toBe(false);
+    expect(sameEndpoint(openai, "http://api.openai.com/v1")).toBe(false);
+    for (const lookalike of [
+      "https://api.openai.com.evil.example/v1",
+      "https://api.openai.com@evil.example/v1",
+      "http://api.openai.com/v1",
+    ]) {
+      expect(
+        modelEnvFallback({
+          provider: "custom",
+          modelId: "x",
+          clientType: "openai-chat",
+          baseUrl: lookalike,
+        }),
+        lookalike,
+      ).toBeUndefined();
+    }
+  });
+
+  it("refuses a keyless Bedrock row with a message that names the way out, not 'not the vendor's own'", () => {
+    expect(() =>
+      resolveModelCredential(
+        { provider: "anthropic", modelId: "claude-sonnet-5", baseUrl: "bedrock://us-east-1" },
+        { ANTHROPIC_API_KEY: "sk-ant" },
+      ),
+    ).toThrow(/Bedrock endpoint.*ANTHROPIC_BASE_URL=bedrock:\/\/us-east-1/);
+    // Rule 1 keeps Bedrock reachable: no base URL on the row, the region in the environment.
+    expect(
+      resolveModelCredential(
+        { provider: "anthropic", modelId: "claude-sonnet-5" },
+        { ANTHROPIC_BASE_URL: "bedrock://us-east-1" },
+      ),
+    ).toEqual({});
+  });
+
+  it("modelEnvPreviewKey presents a fallback as covering the row only where that is not a misconfiguration", () => {
+    // The eight vLLM presets ship with no base URL: they fall back under the rule, but must not
+    // read as "key configured" — that would run a self-hosted id against api.openai.com.
+    for (const m of MODEL_CATALOG.filter((v) => v.provider === "vllm")) {
+      const shape = { provider: m.provider, modelId: m.modelId, clientType: m.clientType };
+      expect(modelEnvFallback(shape)?.envKey, m.modelId).toBe("OPENAI_API_KEY");
+      expect(modelEnvPreviewKey(shape), m.modelId).toBeUndefined();
+    }
+    // A custom row saved without a base URL: same.
+    expect(
+      modelEnvPreviewKey({ provider: "custom", modelId: "m", clientType: "openai-chat" }),
+    ).toBeUndefined();
+    // A custom row that names the vendor's endpoint itself: previewed.
+    expect(
+      modelEnvPreviewKey({
+        provider: "custom",
+        modelId: "m",
+        clientType: "openai-chat",
+        baseUrl: "https://api.openai.com/v1",
+      }),
+    ).toBe("OPENAI_API_KEY");
+    // Vendor groups and the relay: previewed, as on main.
+    expect(modelEnvPreviewKey({ provider: "anthropic", modelId: "claude-sonnet-4-6" })).toBe(
+      "ANTHROPIC_API_KEY",
+    );
+    expect(modelEnvPreviewKey(shapeOf(catalogEntryFor("deepseek", "deepseek-flash")!))).toBe(
+      "DEEPSEEK_API_KEY",
+    );
+    expect(modelEnvPreviewKey(shapeOf(catalogEntryFor("minimax", "MiniMax-M3")!))).toBe(
+      "MINIMAX_API_KEY",
+    );
+    expect(modelEnvPreviewKey(shapeOf(catalogEntryFor("penguin-go", "gemini-3.8-flash")!))).toBe(
+      "PENGUIN_GO_API_KEY",
+    );
+    // A vendor row pinned to the official client its id routes to anyway (what the MMSP
+    // rename writes on an old DeepSeek row) is the same request: previewed.
+    expect(
+      modelEnvPreviewKey({
+        provider: "deepseek",
+        modelId: "deepseek-flash",
+        clientType: "deepseek-official",
+      }),
+    ).toBe("DEEPSEEK_API_KEY");
+    // Nothing to preview where the file names no endpoint for a protocol the id would not
+    // route to: a vendor row on a generic protocol, the relay's rows without the relay's
+    // endpoint (refused outright), a user-defined group that sets nothing.
+    expect(
+      modelEnvPreviewKey({
+        provider: "deepseek",
+        modelId: "deepseek-flash",
+        clientType: "openai-chat",
+      }),
+    ).toBeUndefined();
+    expect(
+      modelEnvPreviewKey({
+        provider: "penguin-go",
+        modelId: "gemini-3.8-flash",
+        clientType: "google-genai",
+      }),
+    ).toBeUndefined();
+    expect(
+      modelEnvPreviewKey({ provider: "myproxy", modelId: "claude-sonnet-4-6" }),
+    ).toBeUndefined();
+    // Refused rows are never previewed.
+    expect(modelEnvPreviewKey(shapeOf(catalogEntryFor("tokendance", "glm-5.3")!))).toBeUndefined();
+    expect(
+      modelEnvPreviewKey({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        baseUrl: "https://proxy.example/anthropic",
+      }),
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * Group-level connections, as every request is built: effectiveConnection resolves a row's
+ * base URL, protocol and key from the file alone; resolveEntryCredential builds the client's
+ * credential on that effective shape.
+ *
+ * - Per field, a row's own base URL / protocol wins over its group's table; blank counts as
+ *   absent at every level; with neither, the row has none (the client's default) — a catalog
+ *   pair whose group has no table resolves to nothing, whatever the catalog says.
+ * - A row's own protocol wins over a group protocol, so Penguin Go's rows keep the protocol
+ *   each stores while the group sets another.
+ * - A group's key follows its endpoint (groupKeyReaches): it reaches a row with no base URL of
+ *   its own, or one on the group's origin, and nothing else.
+ * - The destination rule judges the effective endpoint: a DeepSeek group pointed at a proxy is
+ *   lent no DEEPSEEK_API_KEY, one pointed at DeepSeek's own endpoint is.
+ * - A group key wins over the environment and loses to the row's own key; a gateway row with
+ *   neither is still refused.
+ * - Session creation's explicit pair sits above the row; a blank one is no override.
+ * - Custom's Atria carries its own endpoint and protocol, so custom's group connection (a local
+ *   Ollama endpoint and its key) never redirects it, and the key — issued for another host —
+ *   never reaches it, while a model the user typed into custom follows the group in all three.
+ */
+describe("effectiveConnection / resolveEntryCredential (a row follows its group's table, then nothing)", () => {
+  const TD_ROW = { provider: "tokendance", modelId: "glm-5.3" };
+  const GROUP = { baseUrl: "https://group.example/v1", clientType: "openai-responses" };
+
+  it.each([
+    [
+      "the row's own value wins",
+      { baseUrl: "https://row.example/v1", clientType: "ant-messages" },
+      GROUP,
+      "https://row.example/v1",
+      "ant-messages",
+      "model",
+    ],
+    [
+      "the group's wins where the row has none",
+      {},
+      GROUP,
+      GROUP.baseUrl,
+      GROUP.clientType,
+      "provider",
+    ],
+    // The catalog names an endpoint and a protocol for this pair; with no table they are not
+    // used — the file holds nothing, so the client's defaults apply.
+    [
+      "nothing is used where neither has one, the catalog's included",
+      {},
+      undefined,
+      undefined,
+      undefined,
+      "none",
+    ],
+    [
+      "nothing is used where both are blank",
+      { baseUrl: " ", clientType: "" },
+      { baseUrl: "", clientType: "  " },
+      undefined,
+      undefined,
+      "none",
+    ],
+  ] as const)("base URL and protocol: %s", (_, row, group, baseUrl, clientType, source) => {
+    const effective = effectiveConnection({ ...TD_ROW, ...row }, group);
+    expect(effective.baseUrl).toBe(baseUrl);
+    expect(effective.clientType).toBe(clientType);
+    expect([effective.baseUrlSource, effective.clientTypeSource]).toEqual([source, source]);
+  });
+
+  it("a row nothing covers has no base URL or protocol, and a group table is all it needs", () => {
+    expect(
+      effectiveConnection({ provider: "my-ollama", modelId: "qwen-local" }, undefined),
+    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" });
+    // A user-defined group's table covers its rows; the deprecated spelling converges.
+    const group = providerConnectionShape({
+      base_url: "http://127.0.0.1:11434/v1",
+      client_type: "openai",
+    });
+    expect(effectiveConnection({ provider: "my-ollama", modelId: "qwen-local" }, group)).toEqual({
+      baseUrl: "http://127.0.0.1:11434/v1",
+      baseUrlSource: "provider",
+      clientType: "openai-chat",
+      clientTypeSource: "provider",
+      apiKeySource: "none",
+    });
+    expect(providerConnectionShape(undefined)).toBeUndefined();
+  });
+
+  it("a row's own protocol wins over a group protocol: Penguin Go's rows keep theirs while the group sets another", () => {
+    const table: ProviderTable = {
+      "penguin-go": { base_url: PENGUIN_GO_BASE_URL, client_type: "openai-chat", api_key: "pg" },
+    };
+    const rows = presetModelEntries().filter((e) => e.provider === "penguin-go");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const effective = storedConnection(row, table);
+      expect(effective.clientType, row.model_id).toBe(
+        catalogEntryFor("penguin-go", row.model_id)!.clientType,
+      );
+      expect(effective.clientTypeSource, row.model_id).toBe("model");
+      expect(effective, row.model_id).toMatchObject({ apiKey: "pg", apiKeySource: "provider" });
+    }
+    // A model the group's protocol does reach: one that stores none.
+    expect(
+      storedConnection({ provider: "penguin-go", model_id: "added-later" }, table),
+    ).toMatchObject({ clientType: "openai-chat", clientTypeSource: "provider" });
+  });
+
+  it.each([
+    [
+      "Atria in custom, custom on a local Ollama endpoint",
+      "https://api.atria-asi.ai",
+      "http://127.0.0.1:11434/v1",
+      false,
+    ],
+    ["Atria in custom, custom with no endpoint", "https://api.atria-asi.ai", undefined, false],
+    [
+      "a row with no base URL of its own, the group on a relay",
+      undefined,
+      PENGUIN_GO_BASE_URL,
+      true,
+    ],
+    ["a row with no base URL of its own, the group on none either", undefined, undefined, true],
+    [
+      "a blank base URL of its own, the group on a gateway",
+      "  ",
+      "https://openrouter.ai/api/v1",
+      true,
+    ],
+    [
+      "an OpenCode Go Messages row: another path on the group's host",
+      "https://opencode.ai/zen/go",
+      "https://opencode.ai/zen/go/v1",
+      true,
+    ],
+    [
+      "host case and the scheme's default port are the same origin",
+      "https://OpenCode.ai:443/zen/go",
+      "https://opencode.ai/zen/go/v1",
+      true,
+    ],
+    [
+      "one OpenRouter row re-pointed at another host",
+      "https://proxy.example/openrouter/v1",
+      "https://openrouter.ai/api/v1",
+      false,
+    ],
+    ["the same host on another port", "http://gpu-box:8001/v1", "http://gpu-box:8000/v1", false],
+    [
+      "the same host on another scheme",
+      "http://openrouter.ai/api/v1",
+      "https://openrouter.ai/api/v1",
+      false,
+    ],
+    ["a base URL that does not parse", "not a url", "not a url", false],
+  ] as const)("groupKeyReaches: %s", (_, row, group, reaches) => {
+    expect(groupKeyReaches(row, group)).toBe(reaches);
+    // effectiveConnection applies it: the group's key is the row's only where it reaches.
+    expect(
+      effectiveConnection(
+        { provider: "x", modelId: "m", baseUrl: row },
+        { baseUrl: group, apiKey: "sk-group" },
+      ).apiKeySource,
+    ).toBe(reaches ? "provider" : "none");
+  });
+
+  it("the environment lends a vendor key only to the vendor's own endpoint, as the group sets it", () => {
+    const row = { provider: "deepseek", model_id: "deepseek-flash" };
+    const env = { DEEPSEEK_API_KEY: "sk-deepseek-env" };
+    // The group pointed at a proxy: the DeepSeek key is not sent there.
+    expect(() =>
+      resolveEntryCredential(row, { baseUrl: "https://proxy.example/deepseek" }, {}, env),
+    ).toThrow(ModelCredentialError);
+    // The group pointed at DeepSeek's own endpoint: the variable travels with it, explicitly.
+    expect(resolveEntryCredential(row, { baseUrl: "https://api.deepseek.com/" }, {}, env)).toEqual({
+      apiKey: "sk-deepseek-env",
+      baseUrl: "https://api.deepseek.com/",
+    });
+    // No endpoint anywhere: the client reads its own variable.
+    expect(resolveEntryCredential(row, undefined, {}, env)).toEqual({});
+  });
+
+  it("a group key wins over the environment and loses to the row's own key", () => {
+    const env = { DEEPSEEK_API_KEY: "sk-env", OPENAI_API_KEY: "sk-openai-env" };
+    const group = providerConnectionShape({ api_key: "sk-group" });
+    const row = { provider: "deepseek", model_id: "deepseek-flash" };
+    expect(resolveEntryCredential(row, group, {}, env)).toEqual({ apiKey: "sk-group" });
+    expect(
+      effectiveConnection({ provider: "deepseek", modelId: "deepseek-flash" }, group),
+    ).toMatchObject({ apiKey: "sk-group", apiKeySource: "provider" });
+    expect(resolveEntryCredential({ ...row, api_key: "sk-row" }, group, {}, env)).toEqual({
+      apiKey: "sk-row",
+    });
+    // A gateway row with no key of its own runs on the group's, at the endpoint and on the
+    // protocol a new Project's table names; with no key anywhere it is refused, the user's
+    // OpenAI key notwithstanding.
+    const gateway = { provider: "tokendance", model_id: "glm-5.3" };
+    const td = presetProviderTable().tokendance!;
+    expect(
+      resolveEntryCredential(
+        gateway,
+        providerConnectionShape({ ...td, api_key: "td-key" }),
+        {},
+        env,
+      ),
+    ).toEqual({ apiKey: "td-key", baseUrl: td.base_url, clientType: "openai-chat" });
+    expect(() =>
+      resolveEntryCredential(gateway, { ...providerConnectionShape(td), apiKey: "  " }, {}, env),
+    ).toThrow(/has no API key/);
+  });
+
+  it("Session creation's explicit pair sits above the row; a blank one is no override", () => {
+    const row = {
+      provider: "custom",
+      model_id: "my-model",
+      client_type: "openai-chat",
+      base_url: "https://row.example/v1",
+      api_key: "sk-row",
+    };
+    expect(
+      resolveEntryCredential(
+        row,
+        undefined,
+        { apiKey: "sk-explicit", baseUrl: "https://explicit.example/v1" },
+        {},
+      ),
+    ).toEqual({
+      apiKey: "sk-explicit",
+      baseUrl: "https://explicit.example/v1",
+      clientType: "openai-chat",
+    });
+    expect(resolveEntryCredential(row, undefined, { apiKey: "", baseUrl: " " }, {})).toEqual({
+      apiKey: "sk-row",
+      baseUrl: "https://row.example/v1",
+      clientType: "openai-chat",
+    });
+  });
+
+  it("custom's group connection never redirects Atria or lends it a key, while a model the user typed there follows it", () => {
+    const atria = presetModelEntries().find((e) => e.provider === "custom")!;
+    const cat = catalogEntryFor("custom", atria.model_id)!;
+    const ollama = {
+      base_url: "http://127.0.0.1:11434/v1",
+      client_type: "openai-chat",
+      api_key: "sk-ollama",
+    };
+    // The preset as a new Project stores it: its own endpoint and protocol, and no key —
+    // custom's was issued for another host.
+    expect(storedConnection(atria, { custom: ollama })).toEqual({
+      baseUrl: cat.baseUrl,
+      baseUrlSource: "model",
+      clientType: cat.clientType,
+      clientTypeSource: "model",
+      apiKeySource: "none",
+    });
+    // So a Session on it is refused for want of a key rather than sent anywhere with Ollama's.
+    expect(() =>
+      resolveEntryCredential(
+        atria,
+        providerConnectionShape(ollama),
+        {},
+        {
+          ANTHROPIC_API_KEY: "sk-anthropic-env",
+        },
+      ),
+    ).toThrow(ModelCredentialError);
+    // A key of the preset's own still works, on the preset's endpoint and protocol.
+    expect(
+      resolveEntryCredential(
+        { ...atria, api_key: "sk-atria" },
+        providerConnectionShape(ollama),
+        {},
+        {},
+      ),
+    ).toEqual({ apiKey: "sk-atria", baseUrl: cat.baseUrl, clientType: cat.clientType });
+    // A model the user typed into custom follows the group in all three fields.
+    expect(
+      resolveEntryCredential(
+        { provider: "custom", model_id: "qwen3.8-27b-local" },
+        providerConnectionShape(ollama),
+        {},
+        {},
+      ),
+    ).toEqual({
+      apiKey: "sk-ollama",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      clientType: "openai-chat",
+    });
+  });
+});
+
+describe("listEndpointModels credential gate (the add-group import)", () => {
+  it("refuses a keyless listing of a gateway or private endpoint before any client exists, whatever the environment holds", async () => {
+    const env = { OPENAI_API_KEY: "sk-openai-env", ANTHROPIC_API_KEY: "sk-anthropic-env" };
+    await expect(
+      listEndpointModels({ clientType: "openai-chat", baseUrl: "https://gw.example.com/v1", env }),
+    ).rejects.toThrow(ModelCredentialError);
+    await expect(
+      listEndpointModels({ clientType: "ant-messages", baseUrl: "http://127.0.0.1:8000", env }),
+    ).rejects.toThrow(/enter the endpoint's API key/);
+    // With the SDK's own variable unset and the endpoint the vendor's own, the refusal is ours
+    // too (no client is constructed to read an unset variable and throw its own error).
+    await expect(
+      listEndpointModels({
+        clientType: "openai-chat",
+        baseUrl: "https://api.openai.com/v1",
+        env: {},
+      }),
+    ).rejects.toThrow(ModelCredentialError);
+  });
+
+  it("lists an open MMSP server with no key, never lending it MMSP_API_KEY", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ object: "list", data: [{ id: "qwen3.8" }, { id: "gpt-5.5" }] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const models = await listEndpointModels({
+        clientType: "mmsp",
+        baseUrl: "http://127.0.0.1:25752/v1",
+        env: { MMSP_API_KEY: "sk-mmsp-env", MMSP_BASE_URL: "http://127.0.0.1:25752/v1" },
+      });
+      expect(models).toEqual(["qwen3.8", "gpt-5.5"]);
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe("http://127.0.0.1:25752/v1/models");
+      expect(new Headers(init?.headers).has("authorization")).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });

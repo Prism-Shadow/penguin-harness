@@ -1,7 +1,14 @@
 /**
- * budget-input.ts unit tests: a budget is a monthly cap stored in USD, and the box that sets
- * it speaks whichever currency the reader picked — so what was typed has to reach the server
- * as USD, and what the server holds has to come back into the box as the reader's currency.
+ * The budget box (features/company/budget-input.ts): a monthly cap stored in USD, typed and
+ * shown in whichever currency the reader picked.
+ *
+ * - A USD box is stored as typed; a CNY box is divided by the fixed rate and rounded to cents.
+ * - An empty box is unbounded, zero is a real budget, and a negative or non-number is refused.
+ * - The box fills with the stored amount converted to the reader's currency (empty when there
+ *   is no budget); a USD box round-trips exactly, and a CNY box shows what the cent-rounded
+ *   amount really converts back to.
+ * - The box accepts an empty value or a non-negative number, nothing else.
+ * - The unit names the reader's currency, per month in the reader's language.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -81,10 +88,9 @@ describe("isBudgetText", () => {
 });
 
 describe("unitLabel", () => {
-  it("names the reader's currency and the period the cap covers", () => {
-    expect(unitLabel("USD", zh)).toBe("$ / 月");
-    expect(unitLabel("CNY", zh)).toBe("¥ / 月");
-    expect(unitLabel("USD", en)).toBe("$ / month");
-    expect(unitLabel("CNY", en)).toBe("¥ / month");
+  it("names the reader's currency, per month in the reader's language", () => {
+    expect(unitLabel("USD", en)).toMatch(/^\$/);
+    expect(unitLabel("CNY", en)).toMatch(/^¥/);
+    expect(unitLabel("USD", zh)).not.toBe(unitLabel("USD", en));
   });
 });

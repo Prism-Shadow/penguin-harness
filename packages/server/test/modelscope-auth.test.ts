@@ -1,4 +1,33 @@
+/**
+ * ModelScope key authorization: the harness starts a flow at the Penguin bridge, polls it, and
+ * writes the delivered token to the ModelScope group; later it refreshes that token.
+ *
+ * - The flow: the bridge's own authorize URL is passed through (never one a tab must not open),
+ *   the delivered token is written, a failed write keeps the token for a retry without polling
+ *   again, every terminal status maps onto the flow's own states and ends the
+ *   polling, an unreachable bridge or a rejected start is an upstream failure, the bridge's
+ *   rate limit surfaces with its Retry-After on start and backs a poll off, cancelling reaches
+ *   the bridge and applies nothing, a flow is hidden from another Project or user and forgotten
+ *   once expired, and a delivery is validated rather than trusted.
+ * - Refresh: a token about to expire is refreshed silently, dropped if the stored refresh token
+ *   changed meanwhile, kept usable when a proactive refresh fails, and re-authorization is asked
+ *   for when an expired token cannot be refreshed or after three failures (a changed refresh
+ *   token resets the count).
+ * - The routes: only the owner starts; the token lands once, as the group's key, which the
+ *   group's preset rows use, and no account state is exposed; in a group where no model uses
+ *   it yet (every one keyed on its own), it still lands and the flow completes with a count of
+ *   0; Disconnect (clearing the group key) ends the authorization, its refresh token
+ *   included, so nothing brings the key back; an unknown or foreign flow has its own
+ *   not-found code.
+ * - A request: a model on the group key refreshes a token about to expire, and the refreshed
+ *   token lands on the group and goes out with that very request; a model with a key of its
+ *   own sends it and asks for no refresh.
+ *
+ * No test reaches the network: the bridge is the suite's fetch fake, handed to the service or
+ * standing in for the global fetch in the route cases.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { presetModelEntries } from "@prismshadow/penguin-core/model-catalog";
 import type {
   ModelScopeAuthFlowStatusResponse,
   ModelScopeAuthStartResponse,
@@ -9,24 +38,21 @@ import {
   ModelScopeAuthService,
   modelscopeAccessToken,
 } from "../src/services/modelscope-auth-service.js";
+import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 /** The production bridge address, path prefix included: the prefix must survive into every call. */
 const BRIDGE = "https://go.penguin.ooo/modelscope";
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
-
 function started(expiresInMs = 60_000): Response {
-  return json(201, {
-    authorizeUrl: `${BRIDGE}/oauth/authorize?code=abc`,
-    expiresAt: new Date(Date.now() + expiresInMs).toISOString(),
-  });
+  return jsonResponse(
+    {
+      authorizeUrl: `${BRIDGE}/oauth/authorize?code=abc`,
+      expiresAt: new Date(Date.now() + expiresInMs).toISOString(),
+    },
+    201,
+  );
 }
 
 function pathOf(input: string | URL | Request): string {
@@ -63,7 +89,7 @@ describe("ModelScope key authorization service", () => {
         applied.push({ projectId, token: credential.accessToken });
         return 1;
       },
-      fetchImpl: async (input, init) => {
+      fetchImpl: fakeFetch(async ({ url: input, init }) => {
         if (pathOf(input) === "/modelscope/oauth/start") {
           const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
           expect(body.client).toEqual({ id: "penguin-harness" });
@@ -74,8 +100,8 @@ describe("ModelScope key authorization service", () => {
         }
         expect(init?.redirect).toBe("manual");
         polls += 1;
-        return polls === 1 ? json(200, { status: "pending" }) : json(200, delivery);
-      },
+        return polls === 1 ? jsonResponse({ status: "pending" }) : jsonResponse(delivery);
+      }).fetch,
     });
 
     const flow = await service.start(owner);
@@ -104,11 +130,11 @@ describe("ModelScope key authorization service", () => {
         if (applies === 1) throw new Error("disk busy");
         return 1;
       },
-      fetchImpl: async (input) => {
+      fetchImpl: fakeFetch(async ({ url: input }) => {
         if (pathOf(input).endsWith("/start")) return started();
         polls += 1;
-        return json(200, delivery);
-      },
+        return jsonResponse(delivery);
+      }).fetch,
     });
     const flow = await service.start(owner);
     expect(await service.status({ ...owner, flowId: flow.flowId })).toMatchObject({
@@ -124,23 +150,6 @@ describe("ModelScope key authorization service", () => {
     });
     expect(polls).toBe(1);
     expect(applies).toBe(2);
-  });
-
-  it("treats a group that swallowed the token as a failed write, not as success", async () => {
-    const service = new ModelScopeAuthService({
-      bridgeUrl: BRIDGE,
-      applyCredential: async () => 0,
-      fetchImpl: async (input) =>
-        pathOf(input).endsWith("/start") ? started() : json(200, delivery),
-    });
-    const flow = await service.start(owner);
-    expect(await service.status({ ...owner, flowId: flow.flowId })).toMatchObject({
-      status: "apply_failed",
-    });
-    // Still retryable: an empty group is an operator problem, not a reason to re-authorize.
-    expect(await service.retryApply({ ...owner, flowId: flow.flowId })).toMatchObject({
-      status: "apply_failed",
-    });
   });
 
   it("maps every terminal status the bridge can report onto the flow's own states", async () => {
@@ -159,8 +168,9 @@ describe("ModelScope key authorization service", () => {
       const service = new ModelScopeAuthService({
         bridgeUrl: BRIDGE,
         applyCredential: async () => 1,
-        fetchImpl: async (input) =>
-          pathOf(input).endsWith("/start") ? started() : json(200, { status: reported }),
+        fetchImpl: fakeFetch(async ({ url: input }) =>
+          pathOf(input).endsWith("/start") ? started() : jsonResponse({ status: reported }),
+        ).fetch,
       });
       const flow = await service.start(owner);
       const result = await service.status({ ...owner, flowId: flow.flowId });
@@ -175,11 +185,11 @@ describe("ModelScope key authorization service", () => {
     const service = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
       applyCredential: async () => 1,
-      fetchImpl: async (input) => {
+      fetchImpl: fakeFetch(async ({ url: input }) => {
         if (pathOf(input).endsWith("/start")) return started();
         polls += 1;
-        return json(200, { status: "expired" });
-      },
+        return jsonResponse({ status: "expired" });
+      }).fetch,
     });
     const flow = await service.start(owner);
     await service.status({ ...owner, flowId: flow.flowId });
@@ -191,9 +201,9 @@ describe("ModelScope key authorization service", () => {
     const unreachable = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
       applyCredential: async () => 1,
-      fetchImpl: async () => {
+      fetchImpl: fakeFetch(async () => {
         throw new Error("ECONNREFUSED");
-      },
+      }).fetch,
     });
     await expect(unreachable.start(owner)).rejects.toMatchObject({
       status: 502,
@@ -203,7 +213,7 @@ describe("ModelScope key authorization service", () => {
     const refused = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
       applyCredential: async () => 1,
-      fetchImpl: async () => json(409, { error: "flow_conflict" }),
+      fetchImpl: fakeFetch(async () => jsonResponse({ error: "flow_conflict" }, 409)).fetch,
     });
     await expect(refused.start(owner)).rejects.toMatchObject({
       status: 502,
@@ -216,11 +226,15 @@ describe("ModelScope key authorization service", () => {
       const service = new ModelScopeAuthService({
         bridgeUrl: BRIDGE,
         applyCredential: async () => 1,
-        fetchImpl: async () =>
-          json(201, {
-            authorizeUrl,
-            expiresAt: new Date(Date.now() + 60_000).toISOString(),
-          }),
+        fetchImpl: fakeFetch(async () =>
+          jsonResponse(
+            {
+              authorizeUrl,
+              expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            },
+            201,
+          ),
+        ).fetch,
       });
       await expect(service.start(owner)).rejects.toMatchObject({
         status: 502,
@@ -233,7 +247,9 @@ describe("ModelScope key authorization service", () => {
     const service = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
       applyCredential: async () => 1,
-      fetchImpl: async () => json(429, { error: "rate_limited", retryAfterSeconds: 12 }),
+      fetchImpl: fakeFetch(async () =>
+        jsonResponse({ error: "rate_limited", retryAfterSeconds: 12 }, 429),
+      ).fetch,
     });
     await expect(service.start(owner)).rejects.toMatchObject({
       status: 429,
@@ -249,18 +265,21 @@ describe("ModelScope key authorization service", () => {
       bridgeUrl: BRIDGE,
       now: () => now,
       applyCredential: async () => 1,
-      fetchImpl: async (input) => {
+      fetchImpl: fakeFetch(async ({ url: input }) => {
         if (pathOf(input).endsWith("/start")) {
-          return json(201, {
-            authorizeUrl: `${BRIDGE}/oauth/authorize?code=abc`,
-            expiresAt: new Date(now + 60_000).toISOString(),
-          });
+          return jsonResponse(
+            {
+              authorizeUrl: `${BRIDGE}/oauth/authorize?code=abc`,
+              expiresAt: new Date(now + 60_000).toISOString(),
+            },
+            201,
+          );
         }
         polls += 1;
         return polls === 1
-          ? json(429, { error: "rate_limited", retryAfterSeconds: 2 })
-          : json(200, delivery);
-      },
+          ? jsonResponse({ error: "rate_limited", retryAfterSeconds: 2 }, 429)
+          : jsonResponse(delivery);
+      }).fetch,
     });
     const flow = await service.start(owner);
     expect(await service.status({ ...owner, flowId: flow.flowId })).toEqual({ status: "pending" });
@@ -292,17 +311,17 @@ describe("ModelScope key authorization service", () => {
         expect(credential.refreshToken).toBe("new-refresh");
         return 3;
       },
-      fetchImpl: async (input, init) => {
+      fetchImpl: fakeFetch(async ({ url: input, init }) => {
         expect(pathOf(input)).toBe("/modelscope/oauth/refresh");
         expect(JSON.parse(String(init?.body))).toEqual({ refreshToken: "old-refresh" });
-        return json(200, {
+        return jsonResponse({
           token: {
             accessToken: "new-access",
             refreshToken: "new-refresh",
             expiresAt: new Date(now + 3_600_000).toISOString(),
           },
         });
-      },
+      }).fetch,
     });
     await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
       { changed: true },
@@ -326,14 +345,15 @@ describe("ModelScope key authorization service", () => {
         expect(options).toEqual({ expectedRefreshToken: "old-refresh" });
         return 0;
       },
-      fetchImpl: async () =>
-        json(200, {
+      fetchImpl: fakeFetch(async () =>
+        jsonResponse({
           token: {
             accessToken: "new-access",
             refreshToken: "new-refresh",
             expiresAt: new Date(now + 3_600_000).toISOString(),
           },
         }),
+      ).fetch,
     });
     await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
       { changed: false },
@@ -354,7 +374,7 @@ describe("ModelScope key authorization service", () => {
       applyCredential: async () => {
         throw new Error("must not apply");
       },
-      fetchImpl: async () => json(502, { error: "bridge_down" }),
+      fetchImpl: fakeFetch(async () => jsonResponse({ error: "bridge_down" }, 502)).fetch,
     });
     await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
       { changed: false },
@@ -373,7 +393,7 @@ describe("ModelScope key authorization service", () => {
         updatedAt: new Date(now - 1_000).toISOString(),
       }),
       applyCredential: async () => 1,
-      fetchImpl: async () => json(401, { error: "invalid_grant" }),
+      fetchImpl: fakeFetch(async () => jsonResponse({ error: "invalid_grant" }, 401)).fetch,
     });
     await expect(
       service.ensureFresh({ projectId: "p1", provider: "modelscope" }),
@@ -393,10 +413,10 @@ describe("ModelScope key authorization service", () => {
         updatedAt: new Date(0).toISOString(),
       }),
       applyCredential: async () => 1,
-      fetchImpl: async () => {
+      fetchImpl: fakeFetch(async () => {
         attempts += 1;
-        return json(502, { error: "bridge_down" });
-      },
+        return jsonResponse({ error: "bridge_down" }, 502);
+      }).fetch,
     });
 
     await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
@@ -430,17 +450,17 @@ describe("ModelScope key authorization service", () => {
         updatedAt: new Date(now - 1_000).toISOString(),
       }),
       applyCredential: async () => 3,
-      fetchImpl: async () => {
+      fetchImpl: fakeFetch(async () => {
         attempts += 1;
-        if (refreshToken === "old-refresh") return json(502, { error: "bridge_down" });
-        return json(200, {
+        if (refreshToken === "old-refresh") return jsonResponse({ error: "bridge_down" }, 502);
+        return jsonResponse({
           token: {
             accessToken: "reauthorized-access",
             refreshToken,
             expiresAt: new Date(now + 3_600_000).toISOString(),
           },
         });
-      },
+      }).fetch,
     });
 
     await service.ensureFresh({ projectId: "p1", provider: "modelscope" });
@@ -467,14 +487,14 @@ describe("ModelScope key authorization service", () => {
         applied += 1;
         return 1;
       },
-      fetchImpl: async (input) => {
+      fetchImpl: fakeFetch(async ({ url: input }) => {
         if (pathOf(input).endsWith("/start")) return started();
         if (pathOf(input).endsWith("/cancel")) {
           cancelled += 1;
-          return json(200, { ok: true });
+          return jsonResponse({ ok: true });
         }
-        return json(200, delivery);
-      },
+        return jsonResponse(delivery);
+      }).fetch,
     });
     const flow = await service.start(owner);
     service.cancel({ ...owner, flowId: flow.flowId });
@@ -492,7 +512,7 @@ describe("ModelScope key authorization service", () => {
       bridgeUrl: BRIDGE,
       now: () => now,
       applyCredential: async () => 1,
-      fetchImpl: async () => started(600_000),
+      fetchImpl: fakeFetch(async () => started(600_000)).fetch,
     });
     const flow = await service.start(owner);
     const gone = { status: 404, code: "modelscope_auth_flow_not_found" };
@@ -551,23 +571,20 @@ describe("ModelScope key authorization routes", () => {
     ).toBe(201);
 
     pollCount = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-        const path = pathOf(input);
-        // Every call carries the bridge's path prefix; a lost prefix is a 404 at the bridge.
-        if (path === "/modelscope/oauth/start") {
-          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-          expect(body.client).toEqual({ id: "penguin-harness" });
-          return started();
-        }
-        if (path === "/modelscope/oauth/poll") {
-          pollCount += 1;
-          return pollCount === 1 ? json(200, { status: "pending" }) : json(200, delivery);
-        }
-        throw new Error(`Unexpected bridge request: ${path}`);
-      }),
-    );
+    stubFetch(({ url, init }) => {
+      const path = pathOf(url);
+      // Every call carries the bridge's path prefix; a lost prefix is a 404 at the bridge.
+      if (path === "/modelscope/oauth/start") {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        expect(body.client).toEqual({ id: "penguin-harness" });
+        return started();
+      }
+      if (path === "/modelscope/oauth/poll") {
+        pollCount += 1;
+        return pollCount === 1 ? jsonResponse({ status: "pending" }) : jsonResponse(delivery);
+      }
+      throw new Error(`Unexpected bridge request: ${path}`);
+    });
   });
 
   afterEach(async () => {
@@ -576,18 +593,22 @@ describe("ModelScope key authorization routes", () => {
     await t.cleanup();
   });
 
-  it("writes the delivered token to the group's preset row and exposes no account state", async () => {
+  it("writes the delivered token as the group's key, which the preset rows use, and exposes no account state", async () => {
     const base = `/api/projects/${projectId}/modelscope-auth`;
     const before = (await (
       await ownerClient.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
     const preset = before.models.filter((model) => model.provider === "modelscope");
-    expect(preset.map((model) => model.modelId)).toEqual([
-      "deepseek-ai/DeepSeek-V4.1-Flash",
-      "Qwen/Qwen3.8-27B",
-      "Qwen/Qwen3.8-Flash-Next",
-    ]);
-    expect(preset.every((model) => model.credential?.apiKeyMasked === undefined)).toBe(true);
+    // The group's rows are the catalog's ModelScope presets.
+    expect(preset).not.toEqual([]);
+    expect(preset.map((model) => model.modelId).sort()).toEqual(
+      presetModelEntries()
+        .filter((entry) => entry.provider === "modelscope")
+        .map((entry) => entry.model_id)
+        .sort(),
+    );
+    expect(preset.every((model) => model.effective.clientType === "openai-responses")).toBe(true);
+    expect(before.providers.modelscope?.apiKeyMasked).toBeUndefined();
 
     expect((await memberClient.post(`${base}/start`, {})).status).toBe(403);
 
@@ -613,16 +634,25 @@ describe("ModelScope key authorization routes", () => {
     ).json()) as ModelsResponse;
     const authorized = after.models.filter((model) => model.provider === "modelscope");
     expect(authorized).toHaveLength(3);
-    // The token is reported masked, never in the clear.
-    expect(authorized.every((model) => model.credential?.apiKeyMasked)).toBe(true);
-
-    const stored = (await t.deps.projectConfigService.readRaw(projectId)).models as Record<
-      string,
-      unknown
-    >[];
+    // The token is reported masked, never in the clear, and every preset row uses it.
+    expect(after.providers.modelscope?.apiKeyMasked).toBeTruthy();
     expect(
-      stored.filter((model) => model.provider === "modelscope").map((model) => model.api_key),
-    ).toEqual(["ms-token-0001", "ms-token-0001", "ms-token-0001"]);
+      authorized.every(
+        (model) =>
+          model.effective.apiKeySource === "provider" &&
+          model.effective.apiKeyMasked === after.providers.modelscope?.apiKeyMasked,
+      ),
+    ).toBe(true);
+
+    // Stored once, as the group's key; no row holds a copy.
+    const raw = await t.deps.projectConfigService.readRaw(projectId);
+    expect((raw.providers as Record<string, Record<string, unknown>>).modelscope?.api_key).toBe(
+      "ms-token-0001",
+    );
+    const stored = raw.models as Record<string, unknown>[];
+    expect(
+      stored.filter((model) => model.provider === "modelscope" && model.api_key !== undefined),
+    ).toEqual([]);
     const tokenRow = t.deps.db
       .prepare(
         `SELECT refresh_token, access_token_expires_at
@@ -633,6 +663,161 @@ describe("ModelScope key authorization routes", () => {
       { refresh_token: string; access_token_expires_at: string } | undefined;
     expect(tokenRow).toMatchObject({ refresh_token: "ms-refresh-0001" });
     expect(Date.parse(tokenRow?.access_token_expires_at ?? "")).toBeGreaterThan(Date.now());
+  });
+
+  it("in a group where every model has its own key, the token still lands as the group key and the flow completes with 0", async () => {
+    const base = `/api/projects/${projectId}/modelscope-auth`;
+    const models = `/api/projects/${projectId}/models`;
+    const own = presetModelEntries()
+      .filter((entry) => entry.provider === "modelscope")
+      .map((entry, i) => ({
+        provider: "modelscope",
+        modelId: entry.model_id,
+        apiKey: `ms-own-key-000${i}`,
+      }));
+    expect((await ownerClient.put(models, { models: own })).status).toBe(200);
+
+    const flow = (await (
+      await ownerClient.post(`${base}/start`, {})
+    ).json()) as ModelScopeAuthStartResponse;
+    await ownerClient.get(`${base}/${flow.flowId}/status`);
+    const done = (await (
+      await ownerClient.get(`${base}/${flow.flowId}/status`)
+    ).json()) as ModelScopeAuthFlowStatusResponse;
+    expect(done).toEqual({ status: "completed", applied: 0 });
+
+    const after = (await (await ownerClient.get(models)).json()) as ModelsResponse;
+    expect(after.providers.modelscope?.apiKeyMasked).toBeTruthy();
+    // Every model keeps the key it was given.
+    expect(
+      after.models
+        .filter((model) => model.provider === "modelscope")
+        .map((model) => model.effective.apiKeySource),
+    ).toEqual(own.map(() => "model"));
+  });
+
+  it("a model on the group key sends the token refreshed into the group; a model with its own key sends that and asks for no refresh", async () => {
+    const [following, owning] = presetModelEntries()
+      .filter((entry) => entry.provider === "modelscope")
+      .map((entry) => entry.model_id);
+    const models = `/api/projects/${projectId}/models`;
+    await ownerClient.put(models, {
+      models: [
+        { provider: "modelscope", modelId: following },
+        { provider: "modelscope", modelId: owning, apiKey: "ms-own-row-key-0002" },
+      ],
+    });
+    await ownerClient.put(`${models}/providers/modelscope`, { apiKey: "ms-old-access-0001" });
+    // Authorized a while ago: the group's token expires within the refresh window.
+    t.deps.db
+      .prepare(
+        `INSERT INTO model_provider_auth_tokens
+           (project_id, provider, refresh_token, access_token_expires_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        projectId,
+        "modelscope",
+        "ms-refresh-0001",
+        new Date(Date.now() + 60_000).toISOString(),
+        new Date().toISOString(),
+      );
+    const network = stubFetch(({ url }) =>
+      pathOf(url).endsWith("/oauth/refresh")
+        ? jsonResponse({
+            token: {
+              accessToken: "ms-new-access-0003",
+              refreshToken: "ms-refresh-0004",
+              expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            },
+          })
+        : jsonResponse({ error: { message: "Incorrect API key provided." } }, 401),
+    );
+    const refreshes = () => network.calls.filter((c) => pathOf(c.url).endsWith("/oauth/refresh"));
+    const sentKeys = () =>
+      network.calls
+        .filter((c) => !pathOf(c.url).endsWith("/oauth/refresh"))
+        .map((c) => c.headers.get("authorization"));
+
+    await ownerClient.post(`${models}/test`, { provider: "modelscope", modelId: owning! });
+    expect(refreshes()).toEqual([]);
+    expect(new Set(sentKeys())).toEqual(new Set(["Bearer ms-own-row-key-0002"]));
+
+    network.calls.length = 0;
+    await ownerClient.post(`${models}/test`, { provider: "modelscope", modelId: following! });
+    expect(refreshes()).toHaveLength(1);
+    expect(new Set(sentKeys())).toEqual(new Set(["Bearer ms-new-access-0003"]));
+    const raw = await t.deps.projectConfigService.readRaw(projectId);
+    expect((raw.providers as Record<string, Record<string, unknown>>).modelscope?.api_key).toBe(
+      "ms-new-access-0003",
+    );
+  });
+
+  it("a ModelScope group key typed by hand replaces the authorization: its refresh token goes with the old key", async () => {
+    const tokens = () =>
+      t.deps.db
+        .prepare("SELECT refresh_token FROM model_provider_auth_tokens WHERE project_id = ?")
+        .all(projectId);
+    const insertToken = () =>
+      t.deps.db
+        .prepare(
+          `INSERT INTO model_provider_auth_tokens
+             (project_id, provider, refresh_token, access_token_expires_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(projectId, "modelscope", "ms-refresh-0005", null, new Date().toISOString());
+    const group = `/api/projects/${projectId}/models/providers/modelscope`;
+    insertToken();
+    // The group's endpoint is not its key: the authorization stands.
+    await ownerClient.put(group, { baseUrl: "https://ms-proxy.example/v1" });
+    expect(tokens()).toHaveLength(1);
+    await ownerClient.put(group, { apiKey: "ms-typed-key-0006" });
+    expect(tokens()).toEqual([]);
+    insertToken();
+    await ownerClient.put(`/api/projects/${projectId}/models`, {
+      providers: { modelscope: { clearApiKey: true } },
+      models: [],
+    });
+    expect(tokens()).toEqual([]);
+  });
+
+  it("Disconnect ends the authorization: the group key and its refresh token both go, and a later request neither refreshes nor brings the key back", async () => {
+    const base = `/api/projects/${projectId}/modelscope-auth`;
+    const flow = (await (
+      await ownerClient.post(`${base}/start`, {})
+    ).json()) as ModelScopeAuthStartResponse;
+    await ownerClient.get(`${base}/${flow.flowId}/status`);
+    const done = (await (
+      await ownerClient.get(`${base}/${flow.flowId}/status`)
+    ).json()) as ModelScopeAuthFlowStatusResponse;
+    expect(done.status).toBe("completed");
+    const tokens = () =>
+      t.deps.db
+        .prepare("SELECT refresh_token FROM model_provider_auth_tokens WHERE project_id = ?")
+        .all(projectId);
+    expect(tokens()).toHaveLength(1);
+
+    const res = await ownerClient.put(`/api/projects/${projectId}/models/providers/modelscope`, {
+      clearApiKey: true,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ModelsResponse;
+    expect(body.providers.modelscope?.apiKeyMasked).toBeUndefined();
+    const rows = body.models.filter((model) => model.provider === "modelscope");
+    expect(rows.every((model) => model.effective.apiKeySource === "none")).toBe(true);
+    expect(tokens()).toEqual([]);
+
+    const probe = (await (
+      await ownerClient.post(`/api/projects/${projectId}/models/test`, {
+        provider: "modelscope",
+        modelId: rows[0]!.modelId,
+      })
+    ).json()) as { ok: boolean; message?: string };
+    expect(probe.ok).toBe(false);
+    expect(probe.message).toMatch(/has no API key/);
+    expect(await t.deps.projectConfigService.getGroupApiKey(projectId, "modelscope")).toBe(
+      undefined,
+    );
   });
 
   it("answers an unknown or foreign flow with its own not-found code", async () => {

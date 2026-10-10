@@ -12,16 +12,19 @@
 #   Artifacts (one shape per target, serving online and offline installs alike):
 #   penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz, penguin-win32-x64.zip,
 #   their .sha256 files, SHA256SUMS, install.sh, install.ps1, probe-64k.bin, probe-1m.bin,
-#   release-download-manifest.tsv, and the desktop installers plus updater metadata/blockmaps;
-#   one version per tag, multiple versions coexist. Releases up to v0.1.5 shipped raw program
+#   release-download-manifest.tsv, the desktop installers plus updater metadata/blockmaps, and the
+#   Chrome extension as penguin-browser-extension-<version>.zip plus a version-less copy (GitHub
+#   only: neither the download manifest nor the OSS mirror lists it); one version per tag,
+#   multiple versions coexist. Releases up to v0.1.5 shipped raw program
 #   archives under the same names plus *-offline wrappers; the installers keep accepting that
 #   legacy layout for pinned versions.
-# - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/penguin-core
-#   -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
+# - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/amsp
+#   -> @prismshadow/penguin-core -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the
+#   tag version.
 #   core serves the penguin-sdk Skill's `npm install`; server ships the built web assets inside
 #   the package (web-dist/, its default web dir falls back to it), so `npm install -g
 #   @prismshadow/penguin-cli` alone yields a working `penguin` incl. the Web UI (needs Node >= 24).
-#   The publish flow mirrors AgentHub's publish.yml: OIDC trusted publishing (environment: npm +
+#   The publish flow mirrors MMSP's publish.yml: OIDC trusted publishing (environment: npm +
 #   id-token: write, no token). A Trusted Publisher can only be configured in the settings page of a
 #   package that ALREADY EXISTS on the registry, so a brand-new package cannot be first-published by
 #   this workflow. Release checklist for a new package: (1) a maintainer bootstrap-publishes it once
@@ -201,17 +204,44 @@ jobs:
       - name: Build (tsup + vite)
         run: pnpm build
 
+      # The Chrome extension (PenguinHarness Browser), zipped by its own build above. It ships
+      # under its versioned name and a version-less copy, so the docs and the Web App's pairing
+      # dialog can link to releases/latest/download/penguin-browser-extension.zip, for users who
+      # cannot reach the Chrome Web Store listing and load it unpacked; the manifest's pinned key
+      # keeps the extension id the same across both. Tags from before the extension have no
+      # zip and skip this step, so they stay rebuildable.
+      - name: Collect the Chrome extension
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p extension-artifacts
+          set -- packages/browser-extension/dist/penguin-browser-extension-*.zip
+          if [ ! -f "$1" ]; then
+            echo "No Chrome extension in this tag; nothing to collect."
+            exit 0
+          fi
+          cp "$1" "extension-artifacts/penguin-browser-extension-${TAG#v}.zip"
+          cp "$1" extension-artifacts/penguin-browser-extension.zip
+          unzip -l extension-artifacts/penguin-browser-extension.zip | grep -q ' manifest.json$'
+
       # lib/: the CLI and its production deps (including workspace core/server/skills, all build outputs);
       # Use pnpm's current deploy implementation with injected workspace packages; the hoisted target layout
       # avoids deeply nested .pnpm/node_modules paths that exceed Windows PowerShell 5.1's legacy MAX_PATH limit.
       # bin/penguin is scripts/launchers/penguin, shipped verbatim — it is the one spelling of
       # the payload layout (lib/dist/penguin.js, web/, an optional node/), and the shape
       # scripts/test-installer.sh pins.
-      - name: Assemble penguin/ (lib + web + bin)
+      # lib/plugins/: the builtin plugins (the sandbox backends among them) as the npm prefix
+      # the desktop app ships too — the server looks one directory above dist/ for it — so an
+      # installed CLI enables this platform's sandbox backend from the Plugins page with no
+      # registry, the same as the desktop app. Shipped, not installed: nothing loads until the
+      # operator adds it. One prefix serves every payload below (native parts per platform).
+      - name: Assemble penguin/ (lib + web + bin + plugins)
         run: |
           pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"
           cp -r packages/web/dist out/penguin/web
           install -D -m 755 scripts/launchers/penguin out/penguin/bin/penguin
+          node scripts/build-plugins.mjs --out out/penguin/lib/plugins
+          test -f out/penguin/lib/plugins/node_modules/@penguinharness/sandbox-bwrap/package.json
 
       # Program payloads: linux runtimes use .tar.xz, darwin .tar.gz (nodejs.org naming);
       # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest). Payloads
@@ -417,6 +447,7 @@ jobs:
             desktop-artifacts/latest*.yml
             desktop-artifacts/*.blockmap
             desktop-artifacts/SHA256SUMS.desktop
+            extension-artifacts/*.zip
             install.sh
             install.ps1
 
@@ -515,7 +546,7 @@ jobs:
   publish-npm:
     name: Publish npm packages
     runs-on: ubuntu-latest
-    # OIDC trusted publishing (same as AgentHub's publish.yml): no token; npmjs establishes trust via
+    # OIDC trusted publishing (same as MMSP's publish.yml): no token; npmjs establishes trust via
     # environment `npm` + this workflow. A publish failure doesn't affect the release job (independent, parallel).
     permissions:
       id-token: write
@@ -597,6 +628,7 @@ jobs:
           for dir in plugins/*/; do
             (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V")
           done
+          (cd packages/amsp && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/cli && npm version --no-git-tag-version --allow-same-version "$V")
@@ -610,6 +642,7 @@ jobs:
       - name: Build and test
         run: |
           pnpm -r build
+          pnpm --filter @prismshadow/amsp test
           pnpm --filter @prismshadow/penguin-core test
           pnpm --filter @prismshadow/penguin-server test
           pnpm --filter @prismshadow/penguin-cli test
@@ -633,6 +666,7 @@ jobs:
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
+          cp LICENSE packages/amsp/LICENSE
           cp LICENSE packages/core/LICENSE
           cp LICENSE packages/server/LICENSE
           cp LICENSE packages/cli/LICENSE
@@ -644,10 +678,11 @@ jobs:
           # The @penguinharness/* plugin packages go first: core declares them as workspace:*
           # deps, rewritten to their versions at publish time, so they must exist first.
           for dir in plugins/*/; do
-            # Read the name and the private flag out of the manifest rather than building a name
-            # from the directory: plugins/sandbox-* are @prismshadow/penguin-plugin-sandbox-* and
-            # private, so a derived name queries a package that does not exist and filters to
-            # nothing. Publishing is driven by what each package says it is.
+            # Read the name and the private flag out of the manifest rather than assuming them:
+            # a name is not always @penguinharness/<dir>, and not every plugin is published (the
+            # server plugins that were never first-published are private); a private package
+            # queried on npm filters to nothing.
+            # Publishing is driven by what each package says it is.
             name="$(node -p "require('./$dir/package.json').name")"
             private="$(node -p "require('./$dir/package.json').private === true")"
             if [ "$private" = "true" ]; then
@@ -660,8 +695,9 @@ jobs:
             fi
             pnpm --filter "$name" publish --access public --no-git-checks
           done
-          for pkg in core server cli; do
-            name="@prismshadow/penguin-$pkg"
+          # Full names, in dependency order: @prismshadow/amsp is not a penguin-* name, and the
+          # server depends on it, so it goes first.
+          for name in @prismshadow/amsp @prismshadow/penguin-core @prismshadow/penguin-server @prismshadow/penguin-cli; do
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
               echo "$name@$V already on the registry, skipping."
               continue

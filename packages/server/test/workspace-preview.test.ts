@@ -1,14 +1,25 @@
 /**
- * Workspace HTML preview on the separate preview origin: token signing/verification,
- * the mint endpoint's origin derivation, and the preview route.
+ * Workspace HTML preview on a separate preview origin.
  *
- * The load-bearing case is "same token, App origin's Host": the preview route answers on
- * the same process as the App, so if it served Agent-written HTML there, it would be a
- * same-origin XSS with the session cookie attached.
+ * The load-bearing case is "same token, App origin's Host": the preview route answers in the
+ * App's process, so if it served Agent-written HTML there it would be a same-origin XSS with
+ * the session cookie attached.
+ *
+ * - A preview token round-trips, and a tampered, foreign-signed, malformed or expired one is
+ *   refused.
+ * - The preview origin is the loopback counterpart of the App's host on the server's own port
+ *   (IPv6 brackets kept, fixed roles only for loopback binds); none while the port is still 0 or
+ *   when the counterpart is unreachable from the bind; a configured origin wins, unless it is
+ *   the App request's own host.
+ * - The route redirects to the counterpart, serves the file with its real type, no sandbox and
+ *   no referrer, resolves relative subresources under the same token, refuses the App origin's
+ *   host, refuses a garbage token and keeps path confinement, and serves nothing but /preview on
+ *   the preview host; minting needs a session and a valid path; /api/me reports isolation; a
+ *   configured origin turns the loopback guard off.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   createPreviewTokenSigner,
   hostOnly,
@@ -179,13 +190,22 @@ describe("preview route", () => {
   let sessionId: string;
   let workspace: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner");
     owner = apiClient(t.app, a.cookie);
     ownerCookie = a.cookie;
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner-preview", name: "project" })
+      await owner.post("/api/projects", { projectId: `owner-preview_${projects}`, name: "project" })
     ).json()) as ProjectCreateResponse;
     const projectId = created.project.projectId;
     await owner.put(`/api/projects/${projectId}/models`, {
@@ -200,9 +220,6 @@ describe("preview route", () => {
     await fs.mkdir(path.join(workspace, "assets"));
     await fs.writeFile(path.join(workspace, "index.html"), "<!doctype html><script src=app.js>");
     await fs.writeFile(path.join(workspace, "assets", "app.js"), "console.log(1)");
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   /**

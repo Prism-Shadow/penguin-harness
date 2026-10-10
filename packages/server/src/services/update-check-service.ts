@@ -23,7 +23,8 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { versionRoutes } from "../http/routes/version.js";
-import type { Clock, Config, Lifecycle } from "../hmr/capabilities.js";
+import type { Clock, Config } from "../hmr/capabilities.js";
+import { processRestart } from "./process-restart.js";
 import type { UpdateJob } from "./update-job.js";
 import type { HarnessHistoryIface } from "./harness-history.js";
 
@@ -38,12 +39,13 @@ export const SUCCESS_TTL_MS = 60 * 60 * 1000;
 export const FAILURE_TTL_MS = 10 * 60 * 1000;
 
 /** The network, as the update check reaches it; a test stands in a canned one. */
-export abstract class HttpFetch extends Interface<{
-  fetch(
+@Interface()
+export abstract class HttpFetch {
+  abstract fetch(
     input: string,
     init?: Opaque<"RequestInit", RequestInit>,
   ): Promise<Opaque<"Response", Response>>;
-}>() {}
+}
 @Component()
 export class GlobalFetch implements HttpFetch {
   fetch(input: string, init?: RequestInit): Promise<Response> {
@@ -167,7 +169,6 @@ export class VersionRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly updateCheck!: UpdateCheck;
   @Use() private readonly updateJob!: UpdateJob;
-  @Use() private readonly lifecycle!: Lifecycle;
   @Use() private readonly history!: HarnessHistoryIface;
   @Bind("VersionModule.routes") routes!: Hono<AppEnv>;
   setup() {
@@ -175,7 +176,8 @@ export class VersionRoutes {
       config: this.config,
       updateCheck: this.updateCheck,
       updateJob: this.updateJob,
-      lifecycle: this.lifecycle,
+      // The platform's own, claimed from nothing: the environment and the process it runs in.
+      restart: processRestart(),
       history: this.history,
     });
   }

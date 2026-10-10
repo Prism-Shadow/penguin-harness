@@ -26,13 +26,13 @@ All types are exported by `@prismshadow/penguin-core`. The source lives in `pack
         LLMInterface │            │ EnvironmentInterface
                      ▼            ▼
         GenerativeModel        Environment
-         └─ AgentHub gateway    └─ BuiltinTool registry (exec_command …)
+         └─ MMSP gateway        └─ BuiltinTool registry (exec_command …)
 ```
 
 | Interface | Contract | Built-in implementation |
 | --- | --- | --- |
 | Human | `session.run`'s inputs and streamed output | CLI, Server (SSE) |
-| LLM | `LLMInterface.streamGenerate` | `GenerativeModel` (over AgentHub) |
+| LLM | `LLMInterface.streamGenerate` | `GenerativeModel` (over MMSP) |
 | Environment | `EnvironmentInterface.executeTool` et al. | `Environment` + the builtin tool registry |
 
 Every interface follows two rules:
@@ -77,6 +77,7 @@ interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;     // per-tool approval; denies everything when omitted
   preToolUse?: PreToolUseFn; // pre-tool-use hook consult; the Session wires it from installed hook packages
+  userPrompt?: UserPromptFn; // user-prompt hook consult; the Session wires it from installed hook packages
 }
 
 interface RunCutoff {       // how a run was cut off early
@@ -145,12 +146,12 @@ interface GenerativeModelConfig {
   modelId: string;
   apiKey?: string;
   baseUrl?: string;
-  clientType?: string;             // AgentHub client protocol (openai-chat / openai-responses / …); inferred from modelId when omitted
+  clientType?: string;             // MMSP client type (openai-chat / openai-responses / …); when omitted, routed by the vendor family modelId begins with (gpt-, claude-, …)
   tools: ToolDefinition[];
   systemPrompt?: string;           // fully assembled system prompt, placeholders substituted
   contextWindow?: number;
   maxTokens?: number;
-  fastMode?: boolean;              // per-model fast mode (AgentHub fast_mode; premium faster tier), off by default
+  fastMode?: boolean;              // per-model fast mode (MMSP fast_mode; premium faster tier), off by default
   thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh" | "max"
   requestTimeoutMs?: number;       // Request idle budget: the longest wait for the next upstream event, default 300000; <=0 disables
   sessionId?: string;              // the Session's id, sent only to endpoints whose attribution header names the conversation
@@ -160,16 +161,15 @@ interface GenerativeModelConfig {
 
 ### The built-in implementation: GenerativeModel
 
-`GenerativeModel` (`packages/core/src/llm/generative-model.ts`) builds the contract on the `AutoLLMClient` of the `@prismshadow/agenthub` model gateway.
+`GenerativeModel` (`packages/core/src/llm/generative-model.ts`) builds the contract on the `AutoLLMClient` of the MMSP model gateway ([`@prismshadow/mmsp`](https://www.npmjs.com/package/@prismshadow/mmsp)).
 
 **History.** The gateway keeps conversation history **statefully** and receives only the new messages each turn. Resuming a Session replays the committed history through a one-time `setHistory`.
 
-**Event translation.** An internal `EventTranslator` turns gateway stream events into `partial_*` fragments plus complete messages, and keeps each item's opaque `fidelity` payload verbatim. Segmentation mirrors the gateway's own aggregation:
+**Event translation.** An internal `EventTranslator` turns gateway stream events into `partial_*` fragments plus complete messages, and keeps each item's opaque `fidelity` payload verbatim. The gateway streams one item at a time, as `.delta` fragments closed by the item's `.done`, and ends every response with one `stop` event, so the translation is one to one and nothing is reassembled:
 
-- A thinking block is closed by its fidelity payload.
-- A run of equal fidelity stays one block. OpenAI-compatible clients stamp every delta with the same `{ reasoning_field }`, which must not split blocks.
-- A text segment splits on a differing `fidelity.phase` and closes on a `fidelity.signature`. Fidelity keys accumulate on merge.
-- Complete messages settle in thinking → text → tool_call order.
+- A `.delta` becomes a `partial_*` delta, behind a `start` on the item's first fragment.
+- A `.done` becomes the partial `stop` and the complete message (thinking, text or tool call), read off the `.done` item alone.
+- The `stop` event carries the request's Token usage and finish reason. A response that finishes on `length` (cut off at the output cap) or `unknown` ends its last item `fatal`; a stream that ends without a `stop` event is `retryable`.
 
 **Thought summaries.** Every request asks the gateway for thought summaries (`thinking_summary`). No provider rejects the flag: the gateway drops it for families without such a feature, and the Claude family reads it as summarized thinking. Besides letting the reader watch the model reason, it keeps events arriving during a reasoning phase.
 
@@ -247,15 +247,17 @@ interface ToolExecutionRequest {
 interface EnvironmentConfig {
   workspaceDir: string;
   toolConfig: ToolConfig;                   // { customTools: ToolDefinitionConfig[]; mcpServers: MCPServerConfig[] }
-  sessionScratchpadDir?: string;            // this Session's scratchpad (scratchpad/<sessionId>); enables truncated-output recovery
+  sessionScratchpadDir?: string;            // this Session's scratchpad (scratchpad/<sessionId>); enables truncated-output recovery,
+                                            // and is writable beside the Workspace under a workspace-write sandbox
   services?: EnvironmentServices;           // runtime services injected into individual tools
   vault?: Record<string, string>;           // Vault env vars, injected into exec_command / input_command subprocesses
   proxyEnv?: () => ProxyEnvPolicy | null;   // command-subprocess proxy policy; re-read per spawn, absent or null = pass through
   controlEnv?: () => Record<string, string>; // host control variables (API address, token, Session coordinates); re-read per
                                             // spawn; override vault entries, never the hardened ones
   pathPrepend?: () => string[];             // directories put at the front of PATH for command subprocesses; re-read per spawn
-  confineSpawn?: () => SpawnConfiner | null; // sandbox confinement for command subprocesses; re-read per spawn,
-                                            // absent or null = commands spawn unconfined
+  confineSpawn?: () => SpawnConfiner | null; // sandbox confinement for everything spawned for the Session: command
+                                            // subprocesses, stdio MCP Servers and the file tools' helper; re-read per
+                                            // spawn, absent or null = everything spawns unconfined
 }
 
 // "strip" removes HTTP(S)_PROXY/ALL_PROXY (NO_PROXY kept); "inject" forces the explicit
@@ -264,11 +266,29 @@ interface EnvironmentConfig {
 type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
 
 // Rewrites the exact argv a command is about to spawn so it runs confined. Fail-closed: a
-// confiner that cannot enforce its policy throws, and the command fails to spawn.
+// confiner that cannot enforce its policy throws, and the command fails to spawn. What
+// workspace-write may write is `workspaceDir` and `scratchpadDir` (the Session's scratchpad,
+// absent without one), never `cwd`. Handed to createAgent, the same confiner also confines
+// hook scripts: argv `[node, <script>]`, `cwd` the package directory.
 type SpawnConfiner = (
   argv: readonly string[],
-  opts: { cwd: string; workspaceDir: string },
-) => readonly string[];
+  opts: { cwd: string; workspaceDir: string; scratchpadDir?: string },
+) => ConfinedSpawn;
+
+interface ConfinedSpawn {
+  argv: readonly string[];                  // spawned instead of the original argv
+  env?: Readonly<Record<string, string>>;   // entries the sandbox runner itself needs, laid over the command's env
+  runnerLines?: readonly string[];          // lines the runner prints before the command; dropped from the head of its stderr
+}
+
+// The policy itself (@prismshadow/penguin-core/plugin). "danger-full-access" with no network cut
+// and no masked path is the sandbox off.
+type SandboxSettings = {
+  mode: "read-only" | "workspace-write" | "danger-full-access";
+  network?: "none" | "local";               // absent = unrestricted; also bounds read_file's URL source
+  maskPaths?: string[];                     // hidden from commands, hook scripts and the file tools, reads included
+  writableTemp?: boolean;                   // absent = the temporary directory is writable
+};
 
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // needed by run_subagent
@@ -308,7 +328,9 @@ interface BuiltinTool {
   detachable?: boolean;              // has a background form a running call can be moved to
   execute(
     args: Record<string, unknown>,
-    ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve? }
+    ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve?, fs? };
+                                     // fs = the file-system port a file tool works through (the sandboxed helper
+                                     // when the Session is confined, this process otherwise; fs.sandboxed says which)
   ): AsyncGenerator<OmniMessage, ToolResult | void>;
 }
 
@@ -381,7 +403,7 @@ interface VisionDescriberService {
 | --- | --- |
 | Swap or customize model access | Implement `LLMInterface` (or just set `client_type` for OpenAI-compatible endpoints) |
 | Swap the execution sandbox | Implement `EnvironmentInterface` |
-| Confine the commands an agent runs | Supply `confineSpawn` with a `SpawnConfiner` |
+| Confine what an agent runs and writes | Supply `confineSpawn` with a `SpawnConfiner`: it wraps commands, hook scripts, stdio MCP Servers and the file tools' helper alike |
 | Add a tool | Implement `BuiltinTool`, register a factory, and list the tool under `tools.builtin` in `system_config.yaml` (entries without a registered factory are skipped); or connect an MCP server under `tools.mcpServers` |
 | Customize approval policy | Inject an `ApproveFn` (the CLI and Web approval modes are wrappers over it) |
 | Change an agent's behavior | Edit its Agent State (`system_config.yaml`, `AGENTS.md`, Skills); see the [Configuration Reference](/configuration) |

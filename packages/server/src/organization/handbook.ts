@@ -72,7 +72,7 @@ written in it. Commands, file names, ids and field names stay ASCII.
 
 | Path | What it is | Who writes it |
 | --- | --- | --- |
-| \`org_config.toml\` | name, mission, status, timezone, working language, approval mode, mention-chain and budget thresholds | people, CEO |
+| \`org_config.toml\` | name, mission, status, timezone, working language, approval mode, mention-chain and budget thresholds | people, CEO — except the approval mode, which only the board changes, in the organization's settings |
 | \`org_chart.yaml\` | employee tree: title, reports_to, duties, workspace, budget, model | CEO, HR (\`penguin org hire\` / \`employee set\`) |
 | \`handbook/\` | the knowledge base: this index (\`README.md\`) and the documents it lists | CEO, HR, employees (\`penguin org handbook …\` or file tools) |
 | \`desks.toml\` | employee → current desk session (fact file) | the server |
@@ -234,7 +234,7 @@ ${input.mission}
 
 | 路径 | 是什么 | 谁来写 |
 | --- | --- | --- |
-| \`org_config.toml\` | 名称、使命、状态、时区、工作语言、审批模式、@ 连锁上限与预算阈值 | 人、CEO |
+| \`org_config.toml\` | 名称、使命、状态、时区、工作语言、审批模式、@ 连锁上限与预算阈值 | 人、CEO——审批模式除外：只由董事会在组织设置里修改 |
 | \`org_chart.yaml\` | 员工树：头衔、reports_to、职责、workspace、预算、Model | CEO、HR（\`penguin org hire\` / \`employee set\`） |
 | \`handbook/\` | 知识库：这份索引（\`README.md\`）与它列出的文档 | CEO、HR、员工（\`penguin org handbook …\` 或文件工具） |
 | \`desks.toml\` | 员工 → 当前工位会话（事实文件） | 服务端 |

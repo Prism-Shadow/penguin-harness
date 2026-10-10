@@ -12,64 +12,65 @@
  * aren't highlighted together).
  */
 import { Fragment, useState } from "react";
-import { HOOK_ICON } from "../../components/ui/icons";
+import {
+  Badge,
+  Fold,
+  GlyphIcon,
+  ICONS,
+  REHYPE_PLUGINS,
+  REMARK_PLUGINS,
+  RequiredMark,
+  ZoomableImage,
+} from "@prismshadow/penguin-ui";
+import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { S } from "../../lib/strings";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import { formatTime, humanizeTokens } from "../../lib/format";
-import { Badge, stopReasonTone } from "../../components/ui/badge";
-import { RequiredMark } from "../../components/ui/field";
-import type { BadgeTone } from "../../components/ui/badge";
-import { ZoomableImage } from "../../components/ui/image-zoom";
+import { stopReasonTone } from "../../lib/stop-reason-tone";
 
-export function typeTone(type: string): BadgeTone {
-  if (type === "session_meta") return "brand";
-  if (type === "model_msg") return "gray";
-  return "amber";
+/** An event type as a badge: the session header stands out as a neutral solid tag. */
+export function typeBadge(type: string): BadgeStyle {
+  if (type === "session_meta") return { tone: "neutral", variant: "solid" };
+  if (type === "model_msg") return { tone: "neutral" };
+  return { tone: "attention" };
 }
 
-/** Icon for each event type (24×24 line path). */
+/**
+ * The glyph of each event type; a type not listed wears the circled exclamation. Where the chat
+ * already has a mark for the same thing, the event wears it: the stopped square for an abort,
+ * the squeeze for compaction, the agent pair for a subagent.
+ */
 const TYPE_ICON: Record<string, string> = {
-  text: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
-  thinking: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3 11v2h6v-2a6 6 0 0 0-3-11z",
-  image_url: "M3 5h18v14H3zM3 15l5-5 4 4 3-3 6 6",
-  inline_data: "M3 5h18v14H3zM3 15l5-5 4 4 3-3 6 6",
-  tool_call: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
-  tool_call_output: "M4 6l4 4-4 4M12 18h8",
-  token_usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
-  request_begin: "M5 12h14M13 6l6 6-6 6",
-  request_end: "M19 12H5M11 6l-6 6 6 6",
-  approval_decision: "M9 12l2 2 4-4M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z",
-  compaction_begin: "M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4M9 12h6",
-  compaction_end: "M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4M9 12h6",
-  abort: "M6 6h12v12H6z",
-  subagent: "M12 3v6m0 0l-5 4v8m5-12l5 4v8M4 21h16",
+  text: ICONS.bubbleLines,
+  thinking: ICONS.lightbulb,
+  image_url: ICONS.image,
+  inline_data: ICONS.image,
+  tool_call: ICONS.wrench,
+  tool_call_output: ICONS.terminalPrompt,
+  token_usage: ICONS.barChart,
+  request_begin: ICONS.arrowRightCentered,
+  request_end: ICONS.arrowLeftCentered,
+  approval_decision: ICONS.shieldCheck,
+  compaction_begin: ICONS.compress,
+  compaction_end: ICONS.compress,
+  abort: ICONS.stopCircle,
+  subagent: ICONS.robotPair,
   // A hook's answer: the hook glyph the settings tab and the harness card use.
-  hook: HOOK_ICON,
-  // MCP connect pair: a plug shape; tool_list_ready reuses the wrench (a toolset record).
-  mcp_connect_begin: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
-  mcp_connect_end: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
-  tool_list_ready: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
+  hook: ICONS.fishHook,
+  // MCP connect pair: a plug; tool_list_ready reuses the wrench (a toolset record).
+  mcp_connect_begin: ICONS.plug,
+  mcp_connect_end: ICONS.plug,
+  tool_list_ready: ICONS.wrench,
 };
-const DEFAULT_ICON = "M12 8v5m0 3h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z";
 
 function TypeIcon({ type }: { type: string }) {
   return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="shrink-0 text-gray-400 dark:text-gray-500"
-      aria-hidden
-    >
-      <path d={TYPE_ICON[type] ?? DEFAULT_ICON} />
-    </svg>
+    <GlyphIcon
+      d={TYPE_ICON[type] ?? ICONS.alertCircle}
+      size={13}
+      className="text-gray-400 dark:text-gray-500"
+    />
   );
 }
 
@@ -204,7 +205,8 @@ const summaryClass =
 function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
   const rows: Array<[string, string]> = [
     ["session_id", String(p.session_id ?? "")],
-    // Session origin (subagent / schedule); user-created sessions have no source and show the empty dash.
+    // The Session's source as the record carries it; a Trace from before the source was
+    // required has none and shows the empty dash.
     ["source", String(p.source ?? "")],
     ["model_id", String(p.model_id ?? "")],
     ["context_window", String(p.model_context_window ?? "")],
@@ -221,8 +223,8 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
   // Pre-split traces embedded `tools` here; per the explicit-incompatibility decision the
   // legacy field is not rendered — the toolset view is the tool_list_ready event.
   return (
-    <div className="space-y-2.5">
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
+    <div className="space-y-2">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
         {rows.map(([k, v]) => (
           <Fragment key={k}>
             <dt className="text-gray-400">{k}</dt>
@@ -430,27 +432,32 @@ export function EventRow({
             : "hover:bg-gray-50 dark:hover:bg-gray-800/50"
         }`}
       >
-        <span className="shrink-0 font-mono text-[11px] text-gray-400">
+        <span className="shrink-0 font-mono text-xs text-gray-400">
           {formatTime(msg.timestamp)}
         </span>
         <TypeIcon type={payloadType} />
-        <Badge tone={typeTone(msg.type)}>{payloadType}</Badge>
-        {msg.origin && msg.origin.length > 0 && <Badge tone="brand">origin</Badge>}
+        <Badge {...typeBadge(msg.type)}>{payloadType}</Badge>
+        {msg.origin && msg.origin.length > 0 && <Badge variant="solid">origin</Badge>}
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
           {summarizeEvent(msg)}
         </span>
       </button>
-      {open && (
-        <div className="border-t border-gray-100 bg-gray-50/60 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/40">
-          <EventBody msg={msg} />
-          {/* Stop reason: bottom-right */}
-          {stopReason && (
-            <div className="mt-1.5 flex justify-end">
-              <Badge tone={stopReasonTone(stopReason)}>{stopReason}</Badge>
-            </div>
-          )}
-        </div>
-      )}
+      {/* The body folds under the theme's layout motion, and is built only while it shows: a
+          rendered event (Markdown, a code block, a table) costs something, and a Trace has
+          hundreds of rows the reader never opens. */}
+      <Fold open={open}>
+        {() => (
+          <div className="border-t border-gray-100 bg-gray-50/60 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/40">
+            <EventBody msg={msg} />
+            {/* Stop reason: bottom-right */}
+            {stopReason && (
+              <div className="mt-1.5 flex justify-end">
+                <Badge tone={stopReasonTone(stopReason)}>{stopReason}</Badge>
+              </div>
+            )}
+          </div>
+        )}
+      </Fold>
     </li>
   );
 }

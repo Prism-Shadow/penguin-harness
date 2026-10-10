@@ -37,7 +37,7 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 1. 在**插件市场**页面，点击插件卡片上的**管理安装**。对话框会列出当前 Project 里的所有 Agent。
 2. 在 Agent 旁边点击**安装**。
 
-安装的是整个插件：包括全部 Skill 和钩子包。新对话立即生效；正在运行的对话在下一次压缩后生效。
+安装的是整个插件：包括全部 Skill 和钩子包。新对话立即生效。已经打开的对话里，钩子包从下一轮起生效，Skill 在下一次压缩后生效。
 
 卸载插件：把鼠标移到 Agent 旁的**已安装**上，点击**卸载**并确认。卸载会删除已安装的 Skill 和钩子文件，包括本地做过的修改。
 
@@ -114,11 +114,15 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 
 ## 钩子包
 
-钩子包在 Agent 循环的[钩子点](/agent-loop#stop-hook)运行脚本：你发送消息时、工具调用之前，以及 Task 结束时。比如[目标模式](/goal-mode)就由 `goal` 插件的钩子包驱动。钩子包通常随插件库里的插件一起安装。
+钩子包在 Agent 循环的[钩子点](/agent-loop#钩子)运行脚本：你每次发送消息时、工具调用之前，以及 Task 结束时。比如[目标模式](/goal-mode)就由 `goal` 插件的钩子包驱动。
+
+钩子包通常随插件库里的插件一起安装，但 Agent 的 `agent_state/hooks/<name>/` 下任何带 `hooks.json` 的目录都是钩子包：从插件库安装的、从 zip 导入的，或者由你或 Agent 自己手写的。目录名就是包名，手写的清单会被宽容地读取，见[钩子包清单](#钩子包清单)。
+
+对话在每次开启模型上下文时读取已安装的钩子包：开始时、每次压缩之后，以及恢复时。因此写进目录的钩子包在新对话里立即生效，在已经打开的对话里从下一次压缩起生效。经 Web App 或 API 安装、导入 zip 或卸载时，已经打开的对话生效得更早，从下一轮开始，因为服务端会在 Agent 的运行时空闲时重建它们。
 
 要管理某个 Agent 的钩子包，打开**智能体**，选中这个 Agent，然后打开**钩子**标签页。
 
-- **启用钩子**是整个 Agent 的钩子总开关，不能按包单独开关。开启时，这个 Agent 启动的每个 Session 都会运行全部已安装的钩子包；关闭时，新 Session 不运行任何钩子，已安装的包仍然保留。改动从下一轮开始生效，已经在运行的 Task 沿用它开始时的设置。只有 Project owner 能改这个开关。
+- **启用钩子**是整个 Agent 的钩子总开关，不能按包单独开关。开启时，这个 Agent 启动的每个 Session 都会运行全部已安装的钩子包；关闭时，任何 Session 都不运行钩子，已安装的包仍然保留。改动从下一轮开始生效，已经打开的对话也是如此；已经在运行的 Task 沿用它的钩子，除非 Task 结束之前压缩开启了新的上下文。只有 Project owner 能改这个开关。
 - 每行显示包的名称、运行的钩子点、描述和版本，附**打包导出**和**卸载**两个操作。
 
 ### 导入钩子包
@@ -137,7 +141,7 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 3. 如果已安装同名包，点击**覆盖安装**确认。
 
 > [!WARNING]
-> 导入的钩子包立即生效。只要 Agent 开着钩子，这些脚本就会在本机的每个钩子点运行，请只导入你信任的包。
+> 导入的钩子包立即生效。只要 Agent 开着钩子，这些脚本就会在本机的每个钩子点运行，请只导入你信任的包。它们在对话的[沙盒](/settings#沙盒)下运行，与 Agent 的命令遵守同一份策略；沙盒关闭时，它们拥有 harness 自身的权限。
 
 ## 服务端插件
 
@@ -191,15 +195,17 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
-| 办公效率 | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
+| 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框、Mermaid 图，以及天气、时钟、倒计时和指标小组件，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则、把天气查询和系统快照直接生成组件块的脚本，以及一个发送前校验、打分的检查脚本（预装） |
+| | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
+| | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号 |
 | | `use-bento-slides` | 创建和编辑 Bento 演示文稿：单文件 `.bento.html` 幻灯片，文件内容为 JSON，支持素材到图表的映射、morph 过渡和状态幻灯片 |
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装） |
 | | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
-| AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含四个 Skill：`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用）、`unified-llm-api`（通过 `@prismshadow/agenthub` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
+| AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含四个 Skill：`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent |
 | | `agent-tuning` | 用四个 Skill 构成调优闭环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent） |
@@ -230,7 +236,8 @@ plugins/<plugin>/
 | `version` | `YYYY.MM.DD.N`：日期加当天的序号 |
 | `category` | `office-productivity`、`software-development`、`ai-app-development`、`agent-company` 之一；缺失或未知的分类归入「其他」 |
 | `preinstall` | 可选；设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
-| `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各个[钩子点](/agent-loop#stop-hook)运行的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径以 `hooks/` 为起点，timeout 单位为秒 |
+| `quick_start` | 插件页「快速开始」预填进新对话草稿的演示：`{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
+| `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各个[钩子点](/agent-loop#stop-hook)运行的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径以 `hooks/` 为起点，timeout 单位为秒。`user_prompt` 命令可以另加 `"trigger"`：`"prompt"`（缺省）表示用户每次提交 Prompt 时运行，`"host"` 表示只在宿主按包名启动该包的流程时运行 |
 
 ### 插件命名与版本
 
@@ -264,16 +271,26 @@ Skill 的目录名是权威名称，必须匹配 `^[A-Za-z0-9_-]+$`，并覆盖 
   "name": "goal",
   "description": "Goal mode: …",
   "description_zh": "目标模式：…",
-  "version": "2026.09.01.1",
+  "version": "2026.09.29.1",
   "stop": [{ "command": "stop.mjs", "timeout": 60 }],
   "pre_tool_use": [],
-  "user_prompt": [{ "command": "start.mjs", "timeout": 60 }]
+  "user_prompt": [{ "command": "start.mjs", "timeout": 60, "trigger": "host" }]
 }
 ```
 
 脚本是只用内置模块的纯 Node 代码，harness 能运行的地方它们就能运行。每个脚本以子进程方式运行：从 stdin 读取 JSON，向 stdout 写回 JSON 应答；[Agent 循环](/agent-loop#stop-hook)描述了这套约定。Agent 的每个顶层 Session 都会在循环的各个钩子点查询已安装的钩子包。**启用钩子**开关保存在 Agent 的 `system_config.yaml` 的 `hooks.enabled` 键里；这个键不存在时，钩子处于开启状态。
 
-钩子包的其他脚本供宿主按约定调用。例如，用户发起目标时，服务端运行的就是 `goal` 插件的 `start.mjs`；参见[目标模式](/goal-mode)。
+`user_prompt` 命令在用户每次提交 Prompt 时运行，除非它带 `"trigger": "host"`。宿主触发的命令只在宿主按包名启动该包自己的流程时，经 `Session.runUserPromptHook` 运行。`goal` 插件的 `start.mjs` 就是这样的命令：用户发起目标时由服务端运行它。参见 [User-prompt hook](/agent-loop#user-prompt-hook) 与[目标模式](/goal-mode)。
+
+钩子包不只来自安装器，因此清单的读取是宽容的：
+
+- 清单没有列出的钩子点没有命令，等同于 `[]`。
+- 没有字符串 `command` 的条目、或命令解析到包目录之外的条目会被丢弃。不是正数的 `timeout` 取缺省值，`"prompt"`、`"host"` 之外的 `trigger` 同样取缺省值。
+- 不是字符串的展示字段读作空值；无论 `name` 写的是什么，目录名都是包名。
+- `hooks.json` 缺失或不是 JSON 对象的目录不算钩子包。
+
+> [!NOTE]
+> 清单的 `version` 若是早于 `2026.09.29.1` 的插件版本，说明它写于 `user_prompt` 命令在每条 Prompt 上运行之前，因此其中没有写 `trigger` 的 `user_prompt` 命令一律按 `"host"` 读取。这样，在那之前安装的 `goal` 包不会在每条消息上都启动一次目标；[更新插件](#更新已安装的插件)即可替换它。手工修改这样的包时，给每条 `user_prompt` 命令写上明确的 `trigger`；要让这些命令在每条 Prompt 上运行，则提高 `version`。这一读法保留到 0.3.0。
 
 ### 渐进加载
 
@@ -291,5 +308,5 @@ Skill 分两步加载：先加载索引，正文按需读取。
 - 安装钩子包时，会写入 `hooks.json`、插件的 `icon.svg`，以及插件 `hooks/` 目录下的所有文件。
 - 每次安装都会整体替换目录，所以重新安装会清掉新版本不再包含的文件。已安装的副本就是靠重新安装来更新的。
 - 卸载会删除整个 `skills/<name>/` 或 `hooks/<name>/` 目录。
-- 运行中的 Session 沿用创建时加载的钩子包。安装或卸载钩子包、或者**启用钩子**开关变动之后，服务端会在 Agent 缓存的运行时下次空闲时重建它们。
+- 运行中的 Session 沿用当前模型上下文开启时读到的钩子包；下一个上下文（压缩之后或恢复时）会重新读取。经 Web App 或 API 安装、导入或卸载钩子包，或者**启用钩子**开关变动之后，服务端会在 Agent 缓存的运行时下次空闲时重建它们，因此已经打开的对话从下一轮起生效。
 - 除 Web App 外，插件也可以通过 SDK 安装。

@@ -21,34 +21,30 @@ import type {
   ScheduleItem,
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  ConfirmModal,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Menu,
+  MenuItem,
+  SearchInput,
+  Segmented,
+  SettingsEmpty,
+  SkeletonList,
+  Switch,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { Badge } from "../../components/ui/badge";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Dropdown } from "../../components/ui/dropdown";
-import { SettingsEmpty } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Icon } from "../../components/ui/group-list";
-import { INFO_ICON } from "../../components/ui/icons";
-import { Input } from "../../components/ui/input";
-import { Segmented } from "../../components/ui/segmented";
-import {
-  ELLIPSIS_ICON,
-  PENCIL_ICON,
-  TRASH_ICON,
-  overflowMenuDangerClass,
-  overflowMenuGlyph,
-  overflowMenuRowClass,
-} from "../../components/ui/session-row-menu";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { Switch } from "../../components/ui/switch";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import { CreateButtons } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { describeSchedule } from "./schedule-describe";
 import { ScheduleAiModal } from "./schedule-ai-modal";
 import { ScheduleFormModal } from "./schedule-form-modal";
@@ -66,34 +62,30 @@ import { toggleBody } from "./schedule-upsert";
 /** How often the list refetches while on screen — about the server's own re-read cadence for the schedule directory. */
 const REFRESH_MS = 30_000;
 
-/** The state marks: a filled play for an armed task, pause bars, a check for the settled states. */
-const PLAY_ICON = "M7 4l13 8-13 8z";
-const PAUSE_ICON = "M8 4v16M16 4v16";
-const CHECK_ICON = "M5 12l4 4L19 6";
-
 /** The row's leading state glyph; an invalid file wears the info circle in the danger tone, its reason in the tooltip. */
 function StateGlyph({ item }: { item: ScheduleItem }) {
   const glyph = scheduleGlyph(item.status);
   const name = S.schedule.statusNames[item.status] ?? item.status;
   const tone =
     glyph === "play" ? toneInk.success : glyph === "alert" ? toneInk.danger : toneInk.muted;
+  // The state marks: a filled play for an armed task, pause bars, a check for the settled states.
   const d =
     glyph === "play"
-      ? PLAY_ICON
+      ? ICONS.play
       : glyph === "pause"
-        ? PAUSE_ICON
+        ? ICONS.pause
         : glyph === "check"
-          ? CHECK_ICON
-          : INFO_ICON;
+          ? ICONS.check
+          : ICONS.info;
   return (
-    <span className={`shrink-0 ${tone}`} title={item.invalidReason ?? name}>
+    <span className={`shrink-0 ${tone}`} data-tooltip={item.invalidReason ?? name}>
       <GlyphIcon d={d} size={ICON_SIZE.rowLead} filled={glyph === "play"} />
       <span className="sr-only">{name}</span>
     </span>
   );
 }
 
-/** A row's overflow menu: edit, and delete in the destructive treatment (the session row menu's rows). */
+/** A row's overflow menu: edit, and delete in the destructive treatment (small Menu rows). */
 function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
   const item = (fn: () => void) => () => {
@@ -109,28 +101,22 @@ function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
       button={
         <button
           type="button"
-          title={S.schedule.rowActions}
+          data-tooltip={S.schedule.rowActions}
           aria-label={S.schedule.rowActions}
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.rowLead} filled />
+          <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.rowLead} filled />
         </button>
       }
     >
-      <button type="button" className={overflowMenuRowClass} onClick={item(onEdit)}>
-        {overflowMenuGlyph(PENCIL_ICON)}
-        {S.common.edit}
-      </button>
-      <button type="button" className={overflowMenuDangerClass} onClick={item(onDelete)}>
+      <Menu density="sm">
+        <MenuItem glyph={ICONS.pencil} label={S.common.edit} onSelect={item(onEdit)} />
         {/* The glyph inherits the row's red. */}
-        <span className="shrink-0">
-          <Icon d={TRASH_ICON} size={13} />
-        </span>
-        {S.common.delete}
-      </button>
+        <MenuItem glyph={ICONS.trash} label={S.common.delete} danger onSelect={item(onDelete)} />
+      </Menu>
     </Dropdown>
   );
 }
@@ -248,21 +234,19 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
           </div>
           {/* The AI half is open to every member — asking the agent for a task is a message,
               not a write — while the form writes files and stays with the owner. */}
-          <CreateButtons
+          <AiCreateButtons
             size="sm"
             onAi={() => openAi("")}
             {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}
           />
         </div>
 
-        <Input
+        <SearchInput
           size="sm"
-          type="search"
           value={query}
           placeholder={S.schedule.panelSearchPlaceholder}
           aria-label={S.schedule.panelSearchPlaceholder}
-          autoComplete="off"
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
         />
         <Segmented
           cols={4}
@@ -282,7 +266,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
         ) : visible.length === 0 ? (
           <SettingsEmpty>{S.schedule.panelNoMatch}</SettingsEmpty>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {visible.map((item) => {
               const line = describeSchedule(item, locale);
               return (
@@ -298,15 +282,17 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
                         // The name leads the tooltip, not just the prompt: a task name is a
                         // file name and truncates in a dock this narrow, and the panel would
                         // otherwise be the one surface that cannot show it in full.
-                        title={`${item.name}\n${item.prompt}`}
+                        data-tooltip={`${item.name}\n${item.prompt}`}
+                        data-tooltip-content="text"
                       >
                         {item.name}
                       </span>
-                      {item.queued && <Badge tone="brand">{S.schedule.queued}</Badge>}
+                      {item.queued && <Badge variant="solid">{S.schedule.queued}</Badge>}
                     </div>
                     <div
                       className="truncate text-xs text-gray-500 dark:text-gray-400"
-                      title={item.invalidReason ?? line}
+                      data-tooltip={item.invalidReason ?? line}
+                      data-tooltip-content="text"
                     >
                       {line}
                     </div>
@@ -360,6 +346,8 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
         busy={busy}
         onClose={() => setDeleting(null)}
         onConfirm={() => void confirmRemove()}
+        confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting !== null ? S.schedule.deleteConfirm(deleting.name) : ""}

@@ -1,0 +1,21 @@
+{
+  "name": "@penguinharness/browser-automation",
+  "version": "0.2.13",
+  "description": "Drive the PenguinHarness agent browser (the desktop app's built-in browser or the user's own Chrome) with penguin browser — read pages as simplified HTML or text, act with JavaScript and trusted clicks and typing, and extract structured data.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/browser-automation"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "hooks",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,13 +1,20 @@
 /**
  * The company sidebar's 工位 group (features/company/org-sessions.ts) and the development
- * list's organization filter (session-grouping): a desk row per employee in chart order
- * whether or not a desk exists, the session list's live status winning over both snapshots,
- * the messaging mark read from the sessions route and patched by a bind or an unbind,
- * the glyph a row draws, an employee's own state read from every Session the organization
- * attributes to it — its ticket sessions included, though no list shows them as a group —
- * and the render-time guard that keeps an organization's row out of the development list when
- * one still reaches it (the server leaves them out of the list's own fetches; see
- * sessions-own-rows.test.ts).
+ * list's organization filter (lib/session-grouping.ts).
+ *
+ * - There is a desk row per employee in chart order, whether or not the desk was ever opened;
+ *   its state is the session list's live status, else the sessions route's, else the chart's.
+ * - A desk row carries the messaging channel the sessions route names, follows a bind, a
+ *   switch and an unbind written into the loaded answer, and hands back the same answer when
+ *   nothing changes.
+ * - The Temporary group's ticket sessions are named from the route, and nothing is named
+ *   before it is read.
+ * - A row draws the live states and nothing once settled.
+ * - An employee's own state reads every Session the organization attributes to it, running
+ *   while any of them runs or compacts, falling back to the snapshots; a budget pause wins.
+ * - A Session belongs to an organization by either mark (an empty orgId is none), and the
+ *   development list drops those rows at render time whatever the switches say (its fetches
+ *   already leave them out; see sessions-store.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -19,6 +26,7 @@ import {
   deskRows,
   liveEmployeeStates,
   orgRowActivity,
+  ticketSessionTitles,
   withDeskMessagingChannel,
 } from "../src/features/company/org-sessions";
 import { isOrgSession, withoutOrgSessions } from "../src/lib/session-grouping";
@@ -199,6 +207,21 @@ describe("the desk row's messaging mark", () => {
     expect(withDeskMessagingChannel(bound, "s-t1", "telegram")).toBe(bound);
     expect(withDeskMessagingChannel(bound, "s-ceo", "telegram")).toBe(bound);
     expect(withDeskMessagingChannel(bound, "s-pm", null)).toBe(bound);
+  });
+});
+
+describe("ticketSessionTitles", () => {
+  it("names the ticket sessions the route gave a title, across every ticket", () => {
+    const titles = ticketSessionTitles(sessions);
+    expect(titles.get("s-t2")).toBe("Write docs");
+    expect(titles.get("s-t3")).toBe("Build the site");
+    // Untitled yet, and a desk: neither is named, so the Temporary row keeps its own title.
+    expect(titles.has("s-t1")).toBe(false);
+    expect(titles.has("s-ceo")).toBe(false);
+  });
+
+  it("names nothing while the route has not been read", () => {
+    expect(ticketSessionTitles(undefined).size).toBe(0);
   });
 });
 

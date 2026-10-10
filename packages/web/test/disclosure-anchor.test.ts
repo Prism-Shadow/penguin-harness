@@ -1,6 +1,6 @@
 /**
- * The rule that decides which disclosure a site gets (src/components/ui/info-popover.tsx and
- * help-fold.tsx): **the circled "?" may only appear beside a title.**
+ * The rule that decides which disclosure a site gets (the UI package's InfoPopover and
+ * HelpFold): **the circled "?" may only appear beside a title.**
  *
  * A "?" is an anchored mark — it reads as help because it modifies the title next to it. Standing
  * alone at the top of a panel it modifies nothing, and a reader has to click it to find out what
@@ -12,24 +12,14 @@
  * beside a "?" is a question about sibling nodes, and a regex cannot see siblings.
  */
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
+/** Web and the shared UI package: the rule follows InfoPopover's call sites wherever they live. */
+const SCAN = scanSources();
 
 /** Components whose whole job is to render a field's or a section's title. */
 const TITLE_ELEMENTS = new Set(["FieldLabel"]);
-
-function tsxFiles(dir = SRC, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) tsxFiles(path, out);
-    else if (name.endsWith(".tsx")) out.push(path);
-  }
-  return out;
-}
 
 const jsxTag = (node: ts.Node): string | null => {
   if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText();
@@ -68,10 +58,10 @@ function slotIn(node: ts.Node): { host: ts.JsxElement | ts.JsxFragment; slot: ts
 /** Every `<InfoPopover>` in the tree that has no title among its preceding siblings. */
 function findOrphans(): string[] {
   const orphans: string[] = [];
-  for (const path of tsxFiles()) {
+  for (const file of SCAN.files.filter((f) => f.name.endsWith(".tsx"))) {
     const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
+      file.path,
+      file.text,
       ts.ScriptTarget.Latest,
       /* setParentNodes */ true,
       ts.ScriptKind.TSX,
@@ -86,7 +76,7 @@ function findOrphans(): string[] {
             .some(rendersTitle);
         if (!anchored) {
           const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-          orphans.push(`${path.slice(SRC.length + 1).replaceAll(sep, "/")}:${line}`);
+          orphans.push(`${file.id}:${line}`);
         }
       }
       ts.forEachChild(node, visit);
@@ -97,11 +87,17 @@ function findOrphans(): string[] {
 }
 
 describe("disclosure anchoring", () => {
+  it("scans every source root, and finds the two disclosures in one place each", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, "packages/ui/src/components/overlays/info-popover/info-popover.tsx");
+    expectSingleHome(SCAN, "packages/ui/src/components/overlays/info-popover/help-fold.tsx");
+  });
+
   it("never leaves an InfoPopover standing without a title beside it", () => {
     expect(
       findOrphans(),
       'A circled "?" must sit after a title. Where the surface has no title — an Agent settings ' +
-        "tab, whose name lives in the tab bar — use HelpFold (components/ui/help-fold.tsx) instead.",
+        "tab, whose name lives in the tab bar — use HelpFold instead.",
     ).toEqual([]);
   });
 

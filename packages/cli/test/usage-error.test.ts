@@ -1,8 +1,8 @@
 /**
  * Commander's parse failures, driven through `cli()`: the raw English line is gone, what
  * the user reads is one localized sentence plus the failing command's own usage — for a
- * positional (`logs`, once its argument is required again by `schedule rm`) and for a
- * flag (`schedule add`), in both locales. Exit codes stay commander's.
+ * positional (`schedule rm`), for a flag (`schedule add`) and for an unknown option on a
+ * grouped subcommand (`session ls`), in both locales. Exit codes stay commander's.
  */
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -84,9 +84,9 @@ describe("unknown option and unknown command", () => {
       const t = getMessages(lang);
 
       stderr.length = 0;
-      expect(await cli(["ls", "--nope"])).toBe(1);
+      expect(await cli(["session", "ls", "--nope"])).toBe(1);
       expect(err()).toContain(t.usage.unknownOption("--nope"));
-      expect(err()).toContain("penguin ls");
+      expect(err()).toContain("penguin session ls");
 
       stderr.length = 0;
       expect(await cli(["nosuchthing"])).toBe(1);

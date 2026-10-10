@@ -1,14 +1,13 @@
 /**
- * The shell's organization status marks (features/company/shell-org-status.ts): which state
- * an organization headlines and its tone, and what a session-list group renders so a failed
- * fetch never leaves a skeleton behind.
+ * The shell's organization status marks (features/company/shell-org-status.ts).
+ *
+ * - An organization headlines invalid configuration above paused, and paused above active.
+ * - A session-list group shows its skeleton only until a fetch completes, then the error line
+ *   when the fetch completed without it, else its list or its empty line, so a failed fetch
+ *   never leaves a skeleton behind.
  */
 import { describe, expect, it } from "vitest";
-import {
-  ORG_STATUS_TONE,
-  groupRender,
-  orgStatusKind,
-} from "../src/features/company/shell-org-status";
+import { groupRender, orgStatusKind } from "../src/features/company/shell-org-status";
 
 describe("orgStatusKind", () => {
   it("ranks invalid configuration above paused, and paused above active", () => {
@@ -16,10 +15,6 @@ describe("orgStatusKind", () => {
     expect(orgStatusKind({ status: "paused" })).toBe("paused");
     expect(orgStatusKind({ status: "paused", invalid: "bad chart" })).toBe("invalid");
     expect(orgStatusKind({ status: "active", invalid: "bad chart" })).toBe("invalid");
-  });
-
-  it("maps the three states to danger, attention and success", () => {
-    expect(ORG_STATUS_TONE).toEqual({ invalid: "danger", paused: "attention", active: "success" });
   });
 });
 

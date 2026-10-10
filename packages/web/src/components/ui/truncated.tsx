@@ -1,8 +1,9 @@
 /**
- * Single-line truncated text: attaches `title` (hover to see the full text)
- * **only when actually truncated**, and only where nothing else reveals the tail.
+ * Single-line truncated text: attaches a tooltip (hover to see the full text, the shared
+ * panel read from `data-tooltip`) **only when actually truncated**, and only where nothing
+ * else reveals the tail.
  *
- * The site-wide rule is "don't duplicate `title` when the element already shows
+ * The site-wide rule is "don't duplicate a tooltip when the element already shows
  * the text", but text whose tail is cut off by `truncate` isn't fully shown —
  * this is the one exception. Whether it overflows must be measured
  * (`scrollWidth > clientWidth`), and re-measured whenever the container's size
@@ -16,28 +17,25 @@
  * `title-scroll-reveal` keyframes) driven by the two custom properties set here:
  * this component only measures and publishes numbers. There are no timers, and
  * the reduced-motion query is one app-wide subscription shared by every row
- * (use-reduced-motion.ts), not one per row.
+ * (the UI package's usePrefersReducedMotion), not one per row.
  *
  * Which of the two discloses the tail is `titleDisclosure` (title-reveal.ts), and
  * they are alternatives: the tooltip covers the text the scroll cannot reach —
  * callers without `scrollReveal`, and scroll-reveal rows under reduced motion,
  * where the global `animation: none !important` block in styles.css disables the
  * keyframes outright and leaves the plain ellipsis. Where the reveal does run, no
- * `title` is attached: having both put a tooltip over the very text sliding past
+ * tooltip is attached: having both put a tooltip over the very text sliding past
  * underneath it (#570). The full text always stays in the DOM either way, so the
  * accessible name carries it whole no matter how much of it is visually clipped.
  *
- * `codeTooltip` swaps the native `title` for the styled Tooltip panel, set as code, for a
- * line that is a command rather than a name. A command runs long, and the native tooltip —
- * slow to appear, unstyled, and laid out however the browser or the desktop shell sees fit —
- * is no dependable way to read one whole. The same rule decides whether the panel may open:
- * it is held shut while the text fits, exactly where no `title` would have been attached.
+ * `codeTooltip` sets the panel as code, for a line that is a command rather than a name: a
+ * command runs long, and reads whole only in monospace with its own line breaks. The same
+ * rule decides whether the panel may open: it is held shut while the text fits.
  */
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import { Tooltip, usePrefersReducedMotion } from "@prismshadow/penguin-ui";
 import { revealDistancePx, revealDurationMs, titleDisclosure } from "../../lib/title-reveal";
-import { Tooltip } from "./tooltip";
-import { usePrefersReducedMotion } from "./use-reduced-motion";
 
 export function Truncated({
   text,
@@ -99,7 +97,9 @@ export function Truncated({
             } as CSSProperties,
           }
         : {})}
-      {...(disclosure === "tooltip" && !codeTooltip ? { title: text } : {})}
+      {...(disclosure === "tooltip" && !codeTooltip
+        ? { "data-tooltip": text, "data-tooltip-content": "text" }
+        : {})}
     >
       {/* The scroll needs a child the keyframes can turn into an inline-block and
           transform; at rest it renders inline, i.e. exactly like the bare text node

@@ -1,8 +1,12 @@
 /**
  * Plugin options (admin only, server-global): one card per settings entry — a group a module
  * contributes (the sandbox) or a loaded plugin's declared configuration — drawn from its
- * schema: a string, a secret, a boolean, a number, a choice or a list of
- * lines per field, so the page knows nothing about any particular entry. An entry naming a
+ * schema: a string, a secret, a boolean, a number, a choice, a list of lines or a table (a
+ * row per preset, say; plugin-config-table.tsx) per field, so the page knows nothing about any
+ * particular entry. Fields a group marks `advanced` sit in a fold under the others, collapsed
+ * by default (advanced-fold.tsx). A group with a `switch` draws that field alone while it is
+ * off, and one that reports a `backend` it lacks offers to install it when the switch is turned
+ * on (sandbox-backend-prompt.tsx). An entry naming a
  * `parent` is drawn inside that card (a sandbox backend's own options inside the sandbox's) and
  * saved with it; notices the entry reports sit under its title. Each card saves on its own;
  * nothing is written until its Save, which sends each changed entry of the card in one PUT. A secret field always starts empty and shows
@@ -27,61 +31,39 @@ import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { localizedText } from "../chat/skill-use";
 import { apiErrorText } from "../../lib/api-error";
-import { Button } from "../../components/ui/button";
-import { Input, Textarea } from "../../components/ui/input";
-import { PasswordInput } from "../../components/ui/password-input";
-import { Select } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { toneInk, toneStrip } from "../../lib/tone";
-import { SectionShell } from "./section-shell";
 import { useSessions } from "../../state/sessions";
+import { useProject } from "../../state/project";
+import {
+  THIS_SERVER_KEY,
+  backendToOffer,
+  dismissBackendPrompt,
+  installInOrder,
+} from "../../lib/sandbox-backend-prompt";
+import { dispatchPluginConfigSaved } from "../../lib/plugin-config-event";
 import { MachinePicker } from "../machines/machine-picker";
-
-/** The picker's value for this server; a machine id is never this short. */
-const THIS_SERVER = "*";
-
-/**
- * A field's draft: strings and numbers as typed (a number stays the string in the box until
- * Save, so "1." or "-" survives the keystroke), booleans as values; a secret's clear box
- * beside it.
- */
-type Draft = Record<string, unknown>;
-
-/** The draft a plugin's form starts from: every non-secret value as stored, every secret empty. */
-function draftOf(entry: PluginConfigEntry): Draft {
-  const out: Draft = {};
-  for (const [name, field] of Object.entries(entry.configuration.properties)) {
-    if (field.type === "secret") continue;
-    const v = entry.values[name];
-    if (v === undefined) continue;
-    out[name] =
-      field.type === "number"
-        ? String(v)
-        : field.type === "list"
-          ? (Array.isArray(v) ? v : []).join("\n")
-          : v;
-  }
-  return out;
-}
-
-/** The value a draft sends for a field: a number parsed from its box, a list split into lines, everything else as is. */
-function valueOf(field: PluginConfigField, draft: unknown): unknown {
-  if (field.type === "list") {
-    const lines = (typeof draft === "string" ? draft : "")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line !== "");
-    return lines.length === 0 ? null : lines;
-  }
-  if (field.type !== "number") return draft ?? null;
-  const text = typeof draft === "string" ? draft.trim() : "";
-  return text === "" ? null : Number(text);
-}
-
-/** Whether two field values are the same (lists compared by content). */
-const sameValue = (a: unknown, b: unknown) =>
-  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+import { AdvancedFold } from "./advanced-fold";
+import {
+  baselineOf,
+  draftOf,
+  drawnFields,
+  sameValue,
+  switchedOff,
+  valueOf,
+} from "./plugin-config-draft";
+import type { Draft } from "./plugin-config-draft";
+import { ConfigField } from "./plugin-config-field";
+import { ConfigHeading } from "./plugin-config-heading";
+import { withLiveParts } from "./plugin-config-live";
+import { SandboxBackendPrompt } from "./sandbox-backend-prompt";
+import {
+  Button,
+  ConfirmModal,
+  NoticeStrip,
+  SettingsSection,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 
 /**
  * Brings one card into view once the list has loaded — an opening that names a card (the
@@ -114,12 +96,25 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   const [clearing, setClearing] = useState<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * A group action awaiting confirmation, with its own title. A plugin cannot mark an action
+   * as dangerous, so every one asks before it runs on the machine.
+   */
+  const [pendingAction, setPendingAction] = useState<{
+    entry: PluginConfigEntry;
+    id: string;
+    title: string;
+  } | null>(null);
   const { machineIds, machineLabels } = useSessions();
   /** The machine whose settings the page shows and saves: null for this server. */
   const [machine, setMachine] = useState<string | null>(null);
   /** Why the picked machine's settings could not be read, when they could not. */
   const [loadError, setLoadError] = useState<string | null>(null);
   const nameOf = (id: string) => machineLabels.get(id) ?? id;
+  const projectId = useProject().currentProject?.projectId ?? null;
+  /** The backend package the install prompt offers, while it is open. */
+  const [offered, setOffered] = useState<string[] | null>(null);
+  const [installing, setInstalling] = useState(false);
 
   const adopt = (list: PluginConfigEntry[]) => {
     setEntries(list);
@@ -237,7 +232,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       }
       // Only what changed: sending an untouched field would store its default as a value,
       // pinning it against a later change of the default.
-      if (sameValue(v, entry.values[name])) continue;
+      if (sameValue(v, baselineOf(field, entry.values[name]))) continue;
       values[name] = v;
       changed = true;
     }
@@ -279,6 +274,10 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
         }
       }
       toastSuccess(S.common.saved);
+      // Pages showing what the card configures (the composer's permission menu) read it again.
+      for (const [entry] of updates) {
+        dispatchPluginConfigSaved({ group: entry.name, card: card.name });
+      }
     } finally {
       setBusy(null);
     }
@@ -290,6 +289,16 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
    * knows what happened, this page does not — and the groups it answers with replace ours,
    * because a setup that worked changes what the card says about itself.
    */
+  /** A group action's button: asks first, with the action's own title (see pendingAction). */
+  const askAction = (entry: PluginConfigEntry, id: string) => {
+    const action = entry.actions?.find((a) => a.id === id);
+    setPendingAction({
+      entry,
+      id,
+      title: (action && localized(action.title, action.titleZh)) ?? action?.title ?? id,
+    });
+  };
+
   const runAction = async (entry: PluginConfigEntry, action: string) => {
     setBusy(`${entry.name}\0${action}`);
     try {
@@ -305,6 +314,58 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     }
   };
 
+  /**
+   * The switch was turned on: if the machine reports no sandbox backend for its OS, ask whether
+   * to install its default ones. The switch stays on in the draft whatever the answer.
+   */
+  const offerBackend = (entry: PluginConfigEntry) => {
+    const pkgs = backendToOffer(entry, machine ?? THIS_SERVER_KEY);
+    if (pkgs !== null) setOffered(pkgs);
+  };
+  const closePrompt = (dontAskAgain: boolean) => {
+    if (dontAskAgain) dismissBackendPrompt(machine ?? THIS_SERVER_KEY);
+    setOffered(null);
+  };
+
+  /**
+   * Installs the offered backends the way the Plugins page does, one after another: into this
+   * Project's table for the machine on screen only — this server's own machine id when the card
+   * shows this server, so no other machine is asked to run it. A request that fails stops the
+   * run and is reported; either way the prompt closes and the card's live parts (notices, the
+   * backend report) are read again, so what did install shows; drafts being edited are kept.
+   */
+  const installOffered = async (dontAskAgain: boolean) => {
+    if (offered === null || installing) return;
+    if (projectId === null) {
+      toastError(S.settings.sandboxBackendPrompt.noProject);
+      return;
+    }
+    setInstalling(true);
+    let target = machine;
+    await installInOrder(
+      offered,
+      async (pkg) => {
+        const to = (target ??= (await api.getInstalledPlugins(projectId)).machineId);
+        const res = await api.installPlugin(projectId, pkg, to);
+        return res.plugins.find((p) => p.specifier === pkg)?.error;
+      },
+      {
+        installed: (pkg) => toastSuccess(S.plugins.deploymentInstalledToast(pkg)),
+        failed: (pkg, error) => toastError(S.plugins.deploymentFailedToast(pkg, error)),
+        threw: (e) => toastError(apiErrorText(e)),
+      },
+    );
+    closePrompt(dontAskAgain);
+    try {
+      const config = await api.adminGetPluginConfig(machine);
+      setEntries((prev) => withLiveParts(prev ?? [], config.plugins));
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   // Only when there is another machine to pick: a single server has nothing to switch to.
   const picker =
     machineIds.length > 0 ? (
@@ -312,18 +373,18 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
         <MachinePicker
           aria-label={S.settings.pluginConfigMachine}
           choices={[
-            { value: THIS_SERVER, label: S.plugins.thisServer },
+            { value: THIS_SERVER_KEY, label: S.plugins.thisServer },
             ...machineIds.map((id) => ({ value: id, label: nameOf(id) })),
           ]}
-          value={machine ?? THIS_SERVER}
+          value={machine ?? THIS_SERVER_KEY}
           onChange={(v) => {
-            if (busy === null) setMachine(v === THIS_SERVER ? null : v);
+            if (busy === null) setMachine(v === THIS_SERVER_KEY ? null : v);
           }}
         />
       </div>
     ) : null;
 
-  if (entries === null) return <SectionShell>{picker}</SectionShell>;
+  if (entries === null) return <SettingsSection>{picker}</SettingsSection>;
 
   const patch = (plugin: string, name: string, value: unknown) => {
     setDrafts((prev) => ({ ...prev, [plugin]: { ...(prev[plugin] ?? {}), [name]: value } }));
@@ -335,215 +396,60 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   };
 
   const control = (entry: PluginConfigEntry, name: string, field: PluginConfigField) => {
-    const draft = drafts[entry.name] ?? {};
     const key = `${entry.name}\0${name}`;
-    const error = fieldErrors[key];
-    const label = localized(field.title, field.titleZh) ?? name;
-    const hint = localized(field.description, field.descriptionZh);
-    const disabled = busy !== null;
-    switch (field.type) {
-      case "enum":
-        return (
-          <Select
-            key={name}
-            size="sm"
-            label={label}
-            {...(hint !== undefined ? { hint } : {})}
-            {...(error !== undefined ? { error } : {})}
-            value={typeof draft[name] === "string" ? (draft[name] as string) : ""}
-            disabled={disabled}
-            onChange={(e) => patch(entry.name, name, e.target.value)}
-          >
-            {(field.options ?? []).map((option) => {
-              // An option this machine cannot honour stays listed, greyed out, with the reason.
-              const off = entry.unavailable?.find(
-                (u) => u.field === name && u.value === option.value,
-              );
-              const title = localized(option.title, option.titleZh);
-              return (
-                <option key={option.value} value={option.value} disabled={off !== undefined}>
-                  {off === undefined
-                    ? title
-                    : S.settings.pluginOptionUnavailable(
-                        title ?? option.value,
-                        localized(off.reason, off.reasonZh) ?? off.reason,
-                      )}
-                </option>
-              );
-            })}
-          </Select>
-        );
-      case "list":
-        return (
-          <Textarea
-            key={name}
-            label={label}
-            rows={3}
-            {...(hint !== undefined ? { hint } : {})}
-            {...(error !== undefined ? { error } : {})}
-            value={typeof draft[name] === "string" ? (draft[name] as string) : ""}
-            placeholder={field.placeholder ?? ""}
-            disabled={disabled}
-            onChange={(e) => patch(entry.name, name, e.target.value)}
-          />
-        );
-      case "boolean":
-        return (
-          <div key={name} className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{label}</p>
-              {hint !== undefined && (
-                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
-              )}
-            </div>
-            <Switch
-              checked={draft[name] === true}
-              onChange={(v) => patch(entry.name, name, v)}
-              disabled={disabled}
-            />
-          </div>
-        );
-      case "secret": {
-        const masked = typeof entry.values[name] === "string" ? (entry.values[name] as string) : "";
-        const typed = typeof draft[name] === "string" ? (draft[name] as string) : "";
-        return (
-          <div key={name} className="space-y-1">
-            <PasswordInput
-              size="sm"
-              label={label}
-              {...(hint !== undefined ? { hint } : {})}
-              {...(error !== undefined ? { error } : {})}
-              value={typed}
-              placeholder={
-                masked !== "" ? S.settings.pluginSecretKeepHint : (field.placeholder ?? "")
-              }
-              disabled={disabled}
-              autoComplete="off"
-              onChange={(e) => {
-                patch(entry.name, name, e.target.value);
-                setClearing((prev) => {
-                  const next = new Set(prev);
-                  next.delete(key);
-                  return next;
-                });
-              }}
-            />
-            {masked !== "" && typed === "" && (
-              <label className="flex items-center gap-x-3 text-xs text-gray-500 dark:text-gray-400">
-                <span className="font-mono">{masked}</span>
-                <span className="flex items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={clearing.has(key)}
-                    disabled={disabled}
-                    onChange={(e) =>
-                      setClearing((prev) => {
-                        const next = new Set(prev);
-                        if (e.target.checked) next.add(key);
-                        else next.delete(key);
-                        return next;
-                      })
-                    }
-                  />
-                  {S.settings.pluginSecretClear}
-                </span>
-              </label>
-            )}
-          </div>
-        );
-      }
-      case "number":
-        return (
-          <Input
-            key={name}
-            size="sm"
-            type="number"
-            label={label}
-            {...(hint !== undefined ? { hint } : {})}
-            {...(error !== undefined ? { error } : {})}
-            value={typeof draft[name] === "string" ? (draft[name] as string) : ""}
-            placeholder={field.placeholder ?? ""}
-            disabled={disabled}
-            onChange={(e) => patch(entry.name, name, e.target.value)}
-          />
-        );
-      default:
-        return (
-          <Input
-            key={name}
-            size="sm"
-            label={label}
-            {...(hint !== undefined ? { hint } : {})}
-            {...(error !== undefined ? { error } : {})}
-            value={typeof draft[name] === "string" ? (draft[name] as string) : ""}
-            placeholder={field.placeholder ?? ""}
-            disabled={disabled}
-            autoComplete="off"
-            onChange={(e) => patch(entry.name, name, e.target.value)}
-          />
-        );
-    }
-  };
-
-  /** An entry's title, its store name, its description and its notices. */
-  const heading = (entry: PluginConfigEntry, nested: boolean) => {
-    const description = localized(
-      entry.configuration.description,
-      entry.configuration.descriptionZh,
-    );
+    const choiceField = field.rowChoice?.field;
     return (
-      <div className="space-y-1.5">
-        <div>
-          <p className={nested ? "text-[13px] font-semibold" : "text-sm font-semibold"}>
-            {localized(entry.configuration.title, entry.configuration.titleZh) ?? entry.name}
-          </p>
-          <p className="font-mono text-xs text-gray-500 dark:text-gray-400">{entry.name}</p>
-          {description !== undefined && (
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{description}</p>
-          )}
-        </div>
-        {(entry.actions ?? []).length > 0 && (
-          <div className="space-y-2">
-            {(entry.actions ?? []).map((action) => {
-              const description = localized(action.description, action.descriptionZh);
-              return (
-                <div key={action.id} className="flex items-start gap-3">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={busy !== null}
-                    onClick={() => void runAction(entry, action.id)}
-                  >
-                    {localized(action.title, action.titleZh) ?? action.title}
-                  </Button>
-                  {description !== undefined && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+      <ConfigField
+        key={name}
+        entry={entry}
+        name={name}
+        field={field}
+        value={drafts[entry.name]?.[name]}
+        error={fieldErrors[key]}
+        // A refused cell is named `<field>.<row>.<column>`; the table lists them under itself.
+        tableErrors={Object.entries(fieldErrors)
+          .filter(([k]) => k === key || k.startsWith(`${key}.`))
+          .map(([, text]) => text)}
+        {...(choiceField !== undefined
+          ? {
+              choice: drafts[entry.name]?.[choiceField],
+              onChoice: (row: string) => patch(entry.name, choiceField, row),
+            }
+          : {})}
+        clearing={clearing.has(key)}
+        onChange={(value) => {
+          patch(entry.name, name, value);
+          // Typing a new secret is not also clearing it.
+          if (field.type === "secret") setClearingKey(key, false);
+          if (value === true && name === entry.configuration.switch) {
+            offerBackend(entry);
+          }
+        }}
+        onClearingChange={(on) => setClearingKey(key, on)}
+        disabled={busy !== null}
+        locale={locale}
+      />
+    );
+  };
+  const setClearingKey = (key: string, on: boolean) =>
+    setClearing((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+
+  /** An entry's fields in declaration order: the basic ones, then the Advanced fold, if any. */
+  const fields = (entry: PluginConfigEntry) => {
+    const all = drawnFields(entry, drafts[entry.name]);
+    const advanced = all.filter(([, field]) => field.advanced === true);
+    return (
+      <>
+        {all.filter(([, field]) => field.advanced !== true).map(([n, f]) => control(entry, n, f))}
+        {advanced.length > 0 && (
+          <AdvancedFold>{advanced.map(([n, f]) => control(entry, n, f))}</AdvancedFold>
         )}
-        {(entry.notices ?? []).map((notice, i) =>
-          notice.tone === "progress" ? (
-            <p key={i} className={`flex items-center gap-2 text-xs ${toneInk.busy}`}>
-              <span
-                aria-hidden
-                className="inline-block size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
-              />
-              <span className="min-w-0 break-words">{localized(notice.text, notice.textZh)}</span>
-            </p>
-          ) : notice.tone === "attention" ? (
-            <p key={i} className={`rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
-              {localized(notice.text, notice.textZh)}
-            </p>
-          ) : (
-            <p key={i} className="text-xs text-gray-500 dark:text-gray-400">
-              {localized(notice.text, notice.textZh)}
-            </p>
-          ),
-        )}
-      </div>
+      </>
     );
   };
 
@@ -552,12 +458,12 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   const names = new Set(entries.map((e) => e.name));
   const cards = entries.filter((e) => e.parent === undefined || !names.has(e.parent));
   return (
-    <SectionShell>
+    <SettingsSection>
       {picker}
       {machine !== null && loadError !== null && (
-        <p className={`rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
+        <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
           {S.plugins.machineUnreadable(nameOf(machine), loadError)}
-        </p>
+        </NoticeStrip>
       )}
       <FocusCard focus={focus} ready={entries.length > 0} />
       {cards.map((card) => {
@@ -568,19 +474,29 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
             data-plugin-config={card.name}
             className="space-y-3 rounded-md border border-gray-200 p-4 dark:border-gray-800"
           >
-            {heading(card, false)}
-            {Object.entries(card.configuration.properties).map(([name, field]) =>
-              control(card, name, field),
-            )}
-            {children.map((child) => (
+            <ConfigHeading
+              entry={card}
+              draft={drafts[card.name]}
+              nested={false}
+              disabled={busy !== null}
+              onAction={(action) => askAction(card, action)}
+              locale={locale}
+            />
+            {fields(card)}
+            {(switchedOff(card, drafts[card.name]) ? [] : children).map((child) => (
               <div
                 key={child.name}
                 className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60"
               >
-                {heading(child, true)}
-                {Object.entries(child.configuration.properties).map(([name, field]) =>
-                  control(child, name, field),
-                )}
+                <ConfigHeading
+                  entry={child}
+                  draft={drafts[child.name]}
+                  nested
+                  disabled={busy !== null}
+                  onAction={(action) => askAction(child, action)}
+                  locale={locale}
+                />
+                {fields(child)}
               </div>
             ))}
             <div className="flex justify-end">
@@ -596,6 +512,36 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
           </section>
         );
       })}
-    </SectionShell>
+      <ConfirmModal
+        open={pendingAction !== null}
+        title={S.settings.pluginActionTitle}
+        tone="primary"
+        onClose={() => setPendingAction(null)}
+        onConfirm={() => {
+          if (pendingAction !== null) void runAction(pendingAction.entry, pendingAction.id);
+          setPendingAction(null);
+        }}
+        confirmLabel={S.settings.pluginActionRun}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {pendingAction !== null
+            ? S.settings.pluginActionConfirm(
+                pendingAction.title,
+                machine === null ? null : nameOf(machine),
+              )
+            : ""}
+        </p>
+      </ConfirmModal>
+      <SandboxBackendPrompt
+        pkgs={offered}
+        machineName={machine === null ? S.plugins.thisServer : nameOf(machine)}
+        busy={installing}
+        onInstall={(dontAskAgain) => void installOffered(dontAskAgain)}
+        onLater={(dontAskAgain) => {
+          if (!installing) closePrompt(dontAskAgain);
+        }}
+      />
+    </SettingsSection>
   );
 }

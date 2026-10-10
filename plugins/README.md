@@ -8,12 +8,16 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins
 
 | Category | Plugins |
 | --- | --- |
-| Office Productivity | `data-analysis`, `use-firecrawl`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
+| Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
 | Software Development | `software-development`, `use-claude-code` |
 | AI App Development | `agent-development`, `model-development`, `skill-porting`, `agent-tuning` |
 | Agent Company | `agent-company` |
 
-`humanizer`, `use-claude-code`, `continual-learning` and `agent-company` carry `preinstall: false`, so `default_agent` does not get them at initialization — they are installed from the library on demand (`agent-company` by the organization itself, when it creates the CEO and hires employees, or by hand onto any Agent that should be able to create one). `goal` is the stop hook behind goal mode: its `start.mjs` writes the Session's `GOAL.json` and composes round 1, its `stop.mjs` reads the Trace after every Task and injects the next round or ends the goal. `continual-learning` hands a long task's condensed excerpt to a background subagent that folds the findings into the agent's skills.
+`humanizer`, `use-claude-code`, `continual-learning` and `agent-company` carry `preinstall: false`, so `default_agent` does not get them at initialization — they are installed from the library on demand (`agent-company` by the organization itself, when it creates the CEO and hires employees, or by hand onto any Agent that should be able to create one). `goal` is the stop hook behind goal mode: its `start.mjs`, a `user_prompt` command marked `"trigger": "host"` so that it runs only when a goal starts, writes the Session's `GOAL.json` and composes round 1; its `stop.mjs` reads the Trace after every Task and injects the next round or ends the goal. `continual-learning` hands a long task's condensed excerpt to a background subagent that folds the findings into the agent's skills.
+
+`a2ui` makes replies easier to read and act on: a choice, a form, a procedure in steps, a callout, a Mermaid diagram, or a weather, clock, countdown or metrics widget written as a fenced block inside ordinary Markdown, which the Web App renders with its own components (a pick fills the composer as plain text) and every other surface shows as readable text. The skill carries STE-style writing rules for Chinese and English, two hand-written, dependency-free scripts that print ready-made blocks from real data (`scripts/weather.mjs` reads Open-Meteo, `scripts/sysinfo.mjs` the machine it runs on), and `scripts/check.mjs`, a self-contained bundle of core's `@prismshadow/penguin-core/a2ui` grammar (`pnpm build:a2ui-check` regenerates it; a core test fails when it is stale) that validates every block, scores the draft and prints the self-review rubric before the reply is sent.
+
+`browser-automation` drives the agent browser through `penguin browser` — the desktop app's built-in browser, or the user's own Chrome through the PenguinHarness Browser extension: GenericAgent's scan → act → check loop over simplified HTML, trusted clicks and typing, and the user's own sign-ins, with Amazon orders as the worked example.
 
 `agent-tuning` powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, optimize it to version N+1 with a snapshot before every round.
 

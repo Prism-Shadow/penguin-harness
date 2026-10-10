@@ -47,5 +47,10 @@ export default defineConfig({
     testTimeout: process.platform === "win32" ? 30_000 : 5_000,
     hookTimeout: process.platform === "win32" ? 30_000 : 10_000,
     retry: process.platform === "win32" ? 2 : process.platform === "darwin" ? 1 : 0,
+    // `vitest run --coverage` maps every file under src/, loaded by a test or not.
+    coverage: {
+      provider: "v8",
+      include: ["src/**"],
+    },
   },
 });

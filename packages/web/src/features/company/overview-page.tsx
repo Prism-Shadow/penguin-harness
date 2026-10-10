@@ -30,31 +30,37 @@ import type {
   OrgTicketStatus,
   OrganizationDetail,
 } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  Chevron,
+  EmptyState,
+  GlyphIcon,
+  Heading,
+  ICON_GAP,
+  ICON_SIZE,
+  RuledSection,
+  Segmented,
+  Text,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatRelativeShort } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { Badge } from "../../components/ui/badge";
-import { Chevron } from "../../components/ui/chevron";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
-import { Segmented } from "../../components/ui/segmented";
-import { toastError } from "../../components/ui/toast";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { orgChannelPath, orgKey, orgPagePath } from "./company-nav";
 import type { CompanyNavKey } from "./company-nav";
 import { CHANNEL_ICON } from "./channel-sidebar";
-import { OrgEmptyLine, OrgPage, OrgPageSkeleton, OrgSection, useOrg } from "./org-layout";
+import { OrgEmptyLine, OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
   BudgetBar,
   ErrorLine,
@@ -112,7 +118,7 @@ const rowClass = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-lef
 /** A small tone-marked count: the dot, the label, the number. */
 function ToneCount({ tone, label, value }: { tone: Tone; label: string; value: number }) {
   return (
-    <span className={`inline-flex items-center ${ICON_GAP.tight}`} title={label}>
+    <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
       <span className={`block h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
       <span>{label}</span>
       <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">{value}</span>
@@ -153,9 +159,9 @@ function SummaryLabel({
 }) {
   return (
     <div className="flex items-start justify-between gap-2">
-      <span className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <Text variant="eyebrow" as="span" className="block">
         {label}
-      </span>
+      </Text>
       <JumpButton label={jump} onClick={onJump} />
     </div>
   );
@@ -223,9 +229,7 @@ function MissionFold({ mission }: { mission: string }) {
   const toggle = expanded ? S.company.overview.collapse : S.company.overview.expand;
   return (
     <div className="mt-3 max-w-3xl">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {S.company.overview.mission}
-      </p>
+      <Text variant="eyebrow">{S.company.overview.mission}</Text>
       <div className="mt-0.5 flex items-baseline gap-3">
         <p
           ref={textRef}
@@ -240,7 +244,6 @@ function MissionFold({ mission }: { mission: string }) {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            title={toggle}
             aria-expanded={expanded}
             aria-controls={bodyId}
             className={`inline-flex shrink-0 items-center ${ICON_GAP.tight} rounded text-xs text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
@@ -304,13 +307,12 @@ function StepCard({
         <span className="text-sm font-medium">{title}</span>
       </span>
       <p className="flex-1 text-xs text-gray-500 dark:text-gray-400">{body}</p>
-      <span className="flex items-center justify-between gap-2">
-        {done ? (
+      {/* The action keeps the row's end, and drops below the done mark when both do not fit. */}
+      <span className="flex flex-wrap items-center gap-2">
+        {done && (
           <span className={`text-xs ${toneInk.success}`}>{S.company.overview.stepDone}</span>
-        ) : (
-          <span />
         )}
-        {action}
+        <span className="ml-auto">{action}</span>
       </span>
     </li>
   );
@@ -511,7 +513,10 @@ export function OverviewPage() {
           period's spend is not repeated here — it is the last cell of the KPI strip. */}
       <header className="min-w-0 border-b border-gray-200 pb-5 dark:border-gray-800">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-2xl font-semibold tracking-tight">{detail.name}</h2>
+          {/* The organization's name on the h1 rung, one outline level under the page title. */}
+          <Heading level={1} as="h2">
+            {detail.name}
+          </Heading>
           <OrgStatusPill org={detail} />
         </div>
         <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
@@ -522,162 +527,176 @@ export function OverviewPage() {
         <MissionFold mission={detail.mission} />
       </header>
 
-      {/* KPI strip: four cells ruled by hairlines, each with the button that opens its page. */}
-      <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-gray-200 bg-gray-200 lg:grid-cols-4 dark:border-gray-800 dark:bg-gray-800">
-        <KpiCell
-          label={S.company.overview.employees}
-          value={counts.total}
-          jump={S.company.overview.openChart}
-          onJump={() => page("chart")}
-          detail={
-            <>
-              <ToneCount tone="success" label={S.company.overview.onDesk} value={counts.onDesk} />
-              <ToneCount tone="busy" label={S.company.overview.running} value={counts.running} />
-              <ToneCount tone="attention" label={S.company.overview.paused} value={counts.paused} />
-            </>
-          }
-        />
-        <KpiCell
-          label={S.company.overview.board}
-          value={board.open}
-          jump={S.company.overview.openBoard}
-          onJump={() => page("tickets")}
-          detail={
-            <span className="block w-full">
-              <span
-                className="flex h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
-                role="img"
-                aria-label={`${S.company.overview.openTickets} ${board.open} · ${S.company.overview.boardTotal(board.total)}`}
-              >
-                {board.segments
-                  .filter((seg) => seg.count > 0)
-                  .map((seg) => (
-                    <span
-                      key={seg.status}
-                      title={`${S.company.tickets.columns[seg.status] ?? seg.status} ${seg.count}`}
-                      className={`block h-full ${BOARD_FILL[seg.status]}`}
-                      style={{ width: `${seg.share * 100}%` }}
-                    />
-                  ))}
-              </span>
-              {/* The counts under the bar are the controls, not the bar and not the cell: each
-                  is a small button that opens the board filtered to what it counts, and its
-                  tooltip says so rather than leaving the reader to guess. */}
-              <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-                {board.segments.map((seg) => (
-                  <button
-                    key={seg.status}
-                    type="button"
-                    title={S.company.overview.openColumn(
-                      S.company.tickets.columns[seg.status] ?? seg.status,
-                    )}
-                    onClick={() => page("tickets", `?column=${seg.status}`)}
-                    className={`inline-flex items-center ${ICON_GAP.tight} rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
-                  >
-                    <span
-                      className={`block h-1.5 w-1.5 rounded-full ${BOARD_FILL[seg.status]}`}
-                      aria-hidden
-                    />
-                    {S.company.tickets.columns[seg.status] ?? seg.status}
-                    <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
-                      {seg.count}
-                    </span>
-                  </button>
-                ))}
-                {/* The blocked count is one more label in this row, not a pill: it is read
-                    beside the five column counts and has to weigh the same as they do. */}
-                <button
-                  type="button"
-                  title={S.company.overview.openColumn(S.company.overview.blocked)}
-                  onClick={() => page("tickets", "?blocked=1")}
-                  className={`inline-flex items-center ${ICON_GAP.tight} rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
-                >
-                  <span
-                    className={`block h-1.5 w-1.5 rounded-full ${
-                      detail.blockedTickets > 0 ? toneDot.attention : toneDot.muted
-                    }`}
-                    aria-hidden
-                  />
-                  {S.company.overview.blocked}
-                  <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
-                    {detail.blockedTickets}
-                  </span>
-                </button>
-              </span>
-            </span>
-          }
-        />
-        <KpiCell
-          label={S.company.overview.today}
-          value={today.total}
-          jump={S.company.overview.openCalendar}
-          onJump={() => page("calendar")}
-          detail={
-            today.total === 0 ? (
-              <span>{S.company.overview.todayEmpty}</span>
-            ) : (
+      {/* KPI strip: four cells ruled by hairlines, each with the button that opens its page.
+          Four abreast only where the strip itself is wide enough for the board cell's count
+          buttons at the reader's text size (the sidebar and the text size both take from it,
+          so the viewport cannot say); two by two otherwise. */}
+      <div className="@container mt-5">
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-gray-200 bg-gray-200 @xl:grid-cols-4 dark:border-gray-800 dark:bg-gray-800">
+          <KpiCell
+            label={S.company.overview.employees}
+            value={counts.total}
+            jump={S.company.overview.openChart}
+            onJump={() => page("chart")}
+            detail={
               <>
-                {today.fired > 0 && (
-                  <ToneCount tone="success" label={markLabel("fired")} value={today.fired} />
-                )}
-                {today.queued > 0 && (
-                  <ToneCount tone="attention" label={markLabel("queued")} value={today.queued} />
-                )}
-                {today.failed > 0 && (
-                  <ToneCount tone="danger" label={S.company.overview.failed} value={today.failed} />
-                )}
-                {today.paused > 0 && (
-                  <ToneCount tone="muted" label={markLabel("paused")} value={today.paused} />
-                )}
+                <ToneCount tone="success" label={S.company.overview.onDesk} value={counts.onDesk} />
+                <ToneCount tone="busy" label={S.company.overview.running} value={counts.running} />
                 <ToneCount
                   tone="attention"
-                  label={S.company.overview.upcoming}
-                  value={today.upcoming}
+                  label={S.company.overview.paused}
+                  value={counts.paused}
                 />
               </>
-            )
-          }
-        />
-        <KpiCell
-          label={S.company.overview.spend}
-          value={
-            <span className={`flex items-center ${ICON_GAP.card}`}>
-              {/* Small: the cell is a quarter of the strip, and the ring is the picture of a
+            }
+          />
+          <KpiCell
+            label={S.company.overview.board}
+            value={board.open}
+            jump={S.company.overview.openBoard}
+            onJump={() => page("tickets")}
+            detail={
+              <span className="block w-full">
+                <span
+                  className="flex h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
+                  role="img"
+                  aria-label={`${S.company.overview.openTickets} ${board.open} · ${S.company.overview.boardTotal(board.total)}`}
+                >
+                  {board.segments
+                    .filter((seg) => seg.count > 0)
+                    .map((seg) => (
+                      <span
+                        key={seg.status}
+                        data-tooltip={`${S.company.tickets.columns[seg.status] ?? seg.status} ${seg.count}`}
+                        className={`block h-full ${BOARD_FILL[seg.status]}`}
+                        style={{ width: `${seg.share * 100}%` }}
+                      />
+                    ))}
+                </span>
+                {/* The counts under the bar are the controls, not the bar and not the cell: each
+                  is a small button that opens the board filtered to what it counts, and its
+                  tooltip says so rather than leaving the reader to guess. */}
+                <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {board.segments.map((seg) => (
+                    <button
+                      key={seg.status}
+                      type="button"
+                      data-tooltip={S.company.overview.openColumn(
+                        S.company.tickets.columns[seg.status] ?? seg.status,
+                      )}
+                      onClick={() => page("tickets", `?column=${seg.status}`)}
+                      className={`inline-flex items-center ${ICON_GAP.tight} whitespace-nowrap rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+                    >
+                      <span
+                        className={`block h-1.5 w-1.5 rounded-full ${BOARD_FILL[seg.status]}`}
+                        aria-hidden
+                      />
+                      {S.company.tickets.columns[seg.status] ?? seg.status}
+                      <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+                        {seg.count}
+                      </span>
+                    </button>
+                  ))}
+                  {/* The blocked count is one more label in this row, not a pill: it is read
+                    beside the five column counts and has to weigh the same as they do. */}
+                  <button
+                    type="button"
+                    data-tooltip={S.company.overview.openColumn(S.company.overview.blocked)}
+                    onClick={() => page("tickets", "?blocked=1")}
+                    className={`inline-flex items-center ${ICON_GAP.tight} whitespace-nowrap rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+                  >
+                    <span
+                      className={`block h-1.5 w-1.5 rounded-full ${
+                        detail.blockedTickets > 0 ? toneDot.attention : toneDot.muted
+                      }`}
+                      aria-hidden
+                    />
+                    {S.company.overview.blocked}
+                    <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+                      {detail.blockedTickets}
+                    </span>
+                  </button>
+                </span>
+              </span>
+            }
+          />
+          <KpiCell
+            label={S.company.overview.today}
+            value={today.total}
+            jump={S.company.overview.openCalendar}
+            onJump={() => page("calendar")}
+            detail={
+              today.total === 0 ? (
+                <span>{S.company.overview.todayEmpty}</span>
+              ) : (
+                <>
+                  {today.fired > 0 && (
+                    <ToneCount tone="success" label={markLabel("fired")} value={today.fired} />
+                  )}
+                  {today.queued > 0 && (
+                    <ToneCount tone="attention" label={markLabel("queued")} value={today.queued} />
+                  )}
+                  {today.failed > 0 && (
+                    <ToneCount
+                      tone="danger"
+                      label={S.company.overview.failed}
+                      value={today.failed}
+                    />
+                  )}
+                  {today.paused > 0 && (
+                    <ToneCount tone="muted" label={markLabel("paused")} value={today.paused} />
+                  )}
+                  <ToneCount
+                    tone="attention"
+                    label={S.company.overview.upcoming}
+                    value={today.upcoming}
+                  />
+                </>
+              )
+            }
+          />
+          <KpiCell
+            label={S.company.overview.spend}
+            value={
+              <span className={`flex items-center ${ICON_GAP.card}`}>
+                {/* Small: the cell is a quarter of the strip, and the ring is the picture of a
                   number already spelled out beside it. */}
-              <SpendRing
-                size={40}
-                cost={spend.cost}
-                currency={currency}
-                {...(spend.budget !== null ? { budget: spend.budget } : {})}
-                {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
-              />
-              <span className="min-w-0 truncate">{formatMoney(spend.cost, currency)}</span>
-            </span>
-          }
-          jump={S.company.overview.openFinance}
-          onJump={() => page("finance")}
-          detail={
-            <span className="block w-full">
-              <BudgetBar
-                cost={spend.cost}
-                currency={currency}
-                compact
-                {...(spend.budget !== null ? { budget: spend.budget } : {})}
-                {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
-              />
-              <span className="mt-1.5 block">{spendDetail}</span>
-            </span>
-          }
-        />
+                <SpendRing
+                  size={40}
+                  cost={spend.cost}
+                  currency={currency}
+                  {...(spend.budget !== null ? { budget: spend.budget } : {})}
+                  {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
+                />
+                <span className="min-w-0 truncate">{formatMoney(spend.cost, currency)}</span>
+              </span>
+            }
+            jump={S.company.overview.openFinance}
+            onJump={() => page("finance")}
+            detail={
+              <span className="block w-full">
+                <BudgetBar
+                  cost={spend.cost}
+                  currency={currency}
+                  compact
+                  {...(spend.budget !== null ? { budget: spend.budget } : {})}
+                  {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
+                />
+                <span className="mt-1.5 block">{spendDetail}</span>
+              </span>
+            }
+          />
+        </div>
       </div>
 
       {steps.fresh ? (
-        <OrgSection
+        <RuledSection
           title={S.company.overview.firstStepsTitle}
           info={S.company.overview.firstStepsInfo}
           className="mt-8"
         >
-          <ol className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {/* As many cards abreast as hold a step's action whole; the others wrap below. */}
+          <ol className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-4">
             {FIRST_STEPS.map((step, i) => (
               <StepCard
                 key={step}
@@ -690,11 +709,11 @@ export function OverviewPage() {
               />
             ))}
           </ol>
-        </OrgSection>
+        </RuledSection>
       ) : (
         <>
           {/* The inbox: everything that needs the reader, newest first. */}
-          <OrgSection
+          <RuledSection
             title={S.company.overview.inbox}
             info={S.company.overview.inboxInfo}
             count={inbox.length}
@@ -716,7 +735,7 @@ export function OverviewPage() {
             {visibleInbox.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.inboxEmpty}</OrgEmptyLine>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="space-y-1">
                 {visibleInbox.map((row) => (
                   <li key={row.key} className={rowClass}>
                     <span
@@ -730,11 +749,7 @@ export function OverviewPage() {
                     <InboxDot row={row} />
                     <TitleButton
                       className="flex-1 truncate"
-                      title={
-                        row.target.kind === "ticket"
-                          ? S.company.overview.openTicket
-                          : S.company.overview.openChannel
-                      }
+                      hint={row.title}
                       onClick={() => openInboxRow(row.target)}
                     >
                       {row.title}
@@ -746,7 +761,7 @@ export function OverviewPage() {
                     )}
                     <span
                       className="w-20 shrink-0 text-right text-xs tabular-nums text-gray-400 dark:text-gray-500"
-                      {...(row.time !== null ? { title: formatDateTime(row.time) } : {})}
+                      {...(row.time !== null ? { "data-tooltip": formatDateTime(row.time) } : {})}
                     >
                       {row.time === null ? "—" : formatRelativeShort(row.time, locale)}
                     </span>
@@ -754,12 +769,12 @@ export function OverviewPage() {
                 ))}
               </ul>
             )}
-          </OrgSection>
+          </RuledSection>
 
           {/* Today's timeline: a dot per instance on a rule, in the tone of its outcome. */}
           {/* No jump of its own: the KPI cell above carries the one button to the calendar,
               and every row's title opens it too. */}
-          <OrgSection title={S.company.overview.today} count={today.total} className="mt-8">
+          <RuledSection title={S.company.overview.today} count={today.total} className="mt-8">
             {today.entries.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.todayEmpty}</OrgEmptyLine>
             ) : (
@@ -778,7 +793,7 @@ export function OverviewPage() {
                         </span>
                         <TitleButton
                           className="flex-1 truncate"
-                          title={S.company.overview.openCalendar}
+                          hint={entry.title}
                           onClick={() => page("calendar")}
                         >
                           {entry.title}
@@ -800,10 +815,10 @@ export function OverviewPage() {
                 )}
               </ol>
             )}
-          </OrgSection>
+          </RuledSection>
 
           {/* Budget alerts: who, warned or paused, when. */}
-          <OrgSection
+          <RuledSection
             title={S.company.overview.alerts}
             count={detail.alerts.length}
             className="mt-8"
@@ -811,20 +826,16 @@ export function OverviewPage() {
             {detail.alerts.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.alertsEmpty}</OrgEmptyLine>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="space-y-1">
                 {detail.alerts.map((a) => (
                   <li key={`${a.agentId}/${a.period}`} className={rowClass}>
-                    <TitleButton
-                      className="flex-1 truncate"
-                      title={S.company.overview.openFinance}
-                      onClick={() => page("finance")}
-                    >
+                    <TitleButton className="flex-1 truncate" onClick={() => page("finance")}>
                       <PrincipalChip principal={agentPrincipal(a.agentId)} names={names} />
                     </TitleButton>
                     {a.pausedAt !== undefined ? (
-                      <Badge tone="red">{S.company.finance.paused}</Badge>
+                      <Badge tone="danger">{S.company.finance.paused}</Badge>
                     ) : (
-                      <Badge tone="amber">{S.company.finance.warned}</Badge>
+                      <Badge tone="attention">{S.company.finance.warned}</Badge>
                     )}
                     <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
                       {formatRelativeShort(a.pausedAt ?? a.warnedAt ?? "", locale)}
@@ -833,7 +844,7 @@ export function OverviewPage() {
                 ))}
               </ul>
             )}
-          </OrgSection>
+          </RuledSection>
         </>
       )}
     </OrgPage>

@@ -20,37 +20,43 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Card,
+  ConfirmModal,
+  CopiedStatus,
+  CopyCheckGlyph,
+  DownloadIcon,
+  GlyphIcon,
+  HelpFold,
+  HiddenFileInput,
+  ICONS,
+  IconButton,
+  Input,
+  Modal,
+  SettingsEmpty,
+  SkeletonList,
+  Textarea,
+  buttonClass,
+  toastError,
+  toastSuccess,
+  useCopied,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Button, labelButtonClass } from "../../components/ui/button";
-import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Input, Textarea } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { DownloadIcon } from "../../components/ui/icons";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { SettingsEmpty } from "../../components/ui/empty-state";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
 import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
 import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { HelpFold } from "../../components/ui/help-fold";
 
 /** The Button look on the upload `<label>`; the Hooks tab's upload label borrows it. */
-export const UPLOAD_LABEL_CLASS = labelButtonClass("secondary", "sm");
-
-/** Delete (trash can) icon path — the same glyph as the agents page card delete; the Hooks tab's row delete borrows it. */
-export const TRASH_ICON =
-  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
+export const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the skill name for the confirm copy. */
 interface PendingOverwrite {
@@ -253,7 +259,7 @@ export function SkillsTab({
       ) : skills.length === 0 ? (
         <SettingsEmpty>{S.skills.agentTabEmpty}</SettingsEmpty>
       ) : (
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <Card padding="none">
           {skills.map((skill) => (
             <div
               key={skill.name}
@@ -262,52 +268,49 @@ export function SkillsTab({
               <SkillTile icon={skill.icon} name={skill.name} size={36} glyph={20} />
               <div className="min-w-0 flex-1">
                 <span
-                  className="block truncate font-mono text-[13px] font-semibold"
-                  title={skill.name}
+                  className="block truncate font-mono text-[length:var(--ui-text-code-size)] font-semibold"
+                  data-tooltip={skill.name}
+                  data-tooltip-content="code"
                 >
                   {skill.name}
                 </span>
                 {/* Short description truncates to one line (full description goes into title for hover reading). */}
                 <p
                   className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
-                  title={skill.description}
+                  data-tooltip={skill.description}
+                  data-tooltip-content="text"
                 >
                   {localizedShortText(locale, skill)}
                 </p>
               </div>
               {metaLine(skill) !== "" && (
-                <span
-                  className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
-                  title={metaLine(skill)}
-                >
+                <span className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500">
                   {metaLine(skill)}
                 </span>
               )}
               {/* Icon-only row actions (same affordance as the agents page cards: neutral
                   bordered icon for export, danger variant with red text/hover for delete);
                   the tooltip + aria-label carry the wording. */}
-              <Button
-                size="icon"
+              <IconButton
+                label={`${S.skills.exportSkill} ${skill.name}`}
                 title={S.skills.exportSkill}
-                aria-label={`${S.skills.exportSkill} ${skill.name}`}
                 disabled={busy}
                 onClick={() => void exportSkill(skill.name)}
               >
                 <DownloadIcon size={14} className="text-gray-600 dark:text-gray-300" />
-              </Button>
-              <Button
-                size="icon"
+              </IconButton>
+              <IconButton
                 variant="danger"
+                label={`${S.skills.uninstall} ${skill.name}`}
                 title={S.skills.uninstall}
-                aria-label={`${S.skills.uninstall} ${skill.name}`}
                 disabled={busy}
                 onClick={() => setRemoving(skill.name)}
               >
-                <GlyphIcon d={TRASH_ICON} size={14} />
-              </Button>
+                <GlyphIcon d={ICONS.trash} size={14} />
+              </IconButton>
             </div>
           ))}
-        </div>
+        </Card>
       )}
 
       {promptSection}
@@ -325,7 +328,7 @@ export function SkillsTab({
             <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
               {S.skills.importChatWhy}
             </p>
-            <div className="mt-2.5 space-y-2.5">
+            <div className="mt-2.5 space-y-3">
               <Input
                 size="sm"
                 label={S.skills.importSourceLabel}
@@ -387,7 +390,9 @@ export function SkillsTab({
       <ConfirmModal
         open={overwriting !== null}
         title={S.skills.importOverwriteTitle}
+        tone="primary"
         confirmLabel={S.skills.importOverwriteAction}
+        cancelLabel={S.common.cancel}
         busy={uploading}
         onClose={() => setOverwriting(null)}
         onConfirm={() => {
@@ -406,6 +411,8 @@ export function SkillsTab({
         busy={busy}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
+        confirmLabel={S.skills.uninstall}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {removing !== null ? S.skills.uninstallConfirmBody(removing, agentName) : ""}

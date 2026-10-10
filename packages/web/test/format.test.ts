@@ -16,6 +16,7 @@ import {
   formatRelativeShort,
   formatScore,
   formatTps,
+  formatYearMonthDay,
   humanizeDuration,
   humanizeTokens,
   signedDelta,
@@ -388,5 +389,14 @@ describe("formatMonthDay (version-line 'last updated' date)", () => {
     expect(formatMonthDay("2026-07-26x", "en")).toBe("2026-07-26x");
     expect(formatMonthDay("2026-13-01", "en")).toBe("2026-13-01");
     expect(formatMonthDay("2026-00-10", "zh")).toBe("2026-00-10");
+  });
+});
+
+describe("formatYearMonthDay (a release's date in the release notes)", () => {
+  it("a release date reads as the month, day and year in each language", () => {
+    expect(formatYearMonthDay("2026-09-15", "en")).toBe("Sep 15, 2026");
+    expect(formatYearMonthDay("2026-09-15", "zh")).toBe("2026年9月15日");
+    expect(formatYearMonthDay("not-a-date", "en")).toBe("not-a-date");
+    expect(formatYearMonthDay("2026-13-01", "zh")).toBe("2026-13-01");
   });
 });

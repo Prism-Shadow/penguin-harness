@@ -20,24 +20,35 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import type { OrgHandbookFile, OrgHandbookFileResponse } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  ConfirmModal,
+  EmptyState,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+  Input,
+  Md,
+  Modal,
+  RuledSection,
+  Skeleton,
+  Textarea,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
+import type { TreeToggle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/format";
+import { isShortcut } from "../../lib/shortcuts/match";
+import { currentPlatform } from "../../lib/shortcuts/platform";
+import { keymap } from "../../lib/shortcuts/store";
+import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useLocale } from "../../state/locale";
-import { Button } from "../../components/ui/button";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Input, Textarea } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { Skeleton } from "../../components/ui/skeleton";
-import type { TreeToggle } from "../../components/ui/file-tree";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import { Md } from "../chat/md";
-import { OrgEmptyLine, OrgPage, OrgSection, useOrg } from "./org-layout";
+import { OrgEmptyLine, OrgPage, useOrg } from "./org-layout";
 import { ErrorLine } from "./shared";
 import { COLLAPSE_ALL_ICON, HandbookExplorer } from "./handbook-explorer";
 import {
@@ -53,7 +64,7 @@ import {
 } from "./handbook-tree";
 
 /** The two panes: a fixed list column beside the document, stacked on a narrow screen. */
-const PANES_CLASS = "grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-[17rem_minmax(0,1fr)]";
+const PANES_CLASS = "grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-[17rem_minmax(0,1fr)]";
 
 /** The size a listing row would report for content just written, before the listing is re-read. */
 const byteLength = (text: string) => new TextEncoder().encode(text).length;
@@ -79,6 +90,13 @@ export function HandbookPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  /** A step that would throw the editor's unsaved draft away, waiting on the discard prompt. */
+  const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
+  const dirty = editing && doc !== null && draft !== doc.content;
+  const guardDiscard = (go: () => void) => {
+    if (dirty) setPendingDiscard(() => go);
+    else go();
+  };
 
   // Another organization's handbook must not linger while this one loads.
   useEffect(() => {
@@ -237,11 +255,13 @@ export function HandbookPage() {
   };
 
   const onEditorKey = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+    if (isShortcut(e.nativeEvent, keymap(), "editor.save", currentPlatform())) {
+      // A held chord repeats: every repeat is kept from the browser (Save Page), one save runs.
       e.preventDefault();
-      void save();
+      if (!e.repeat) void save();
     }
   };
+  const saveShortcut = useShortcutLabel("editor.save");
 
   const tree = useMemo(() => (files === null ? null : buildHandbookTree(files)), [files]);
   const rows = useMemo(
@@ -288,14 +308,14 @@ export function HandbookPage() {
       <div className={PANES_CLASS}>
         {/* The create button sits in the section's action slot rather than the page's: it
             is the list's own action, and a button in both headers keeps their rules level. */}
-        <OrgSection
+        <RuledSection
           title={S.company.handbook.documents}
           count={files?.length ?? 0}
           actions={
             <>
               <button
                 type="button"
-                title={S.company.handbook.collapseAll}
+                data-tooltip={S.company.handbook.collapseAll}
                 aria-label={S.company.handbook.collapseAll}
                 disabled={expanded.size === 0}
                 onClick={() => {
@@ -303,11 +323,20 @@ export function HandbookPage() {
                   setToggled(null);
                   setExpanded(new Set<string>());
                 }}
-                className="inline-flex items-center justify-center rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                className="inline-flex items-center justify-center rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
               >
                 <GlyphIcon d={COLLAPSE_ALL_ICON} size={ICON_SIZE.groupHeaderAction} />
               </button>
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
+              {/* A new document is selected once written, which closes the editor. */}
+              <Button
+                size="sm"
+                onClick={() =>
+                  guardDiscard(() => {
+                    setEditing(false);
+                    setCreateOpen(true);
+                  })
+                }
+              >
                 {S.company.handbook.newDocument}
               </Button>
             </>
@@ -318,13 +347,15 @@ export function HandbookPage() {
             selected={selected}
             locale={locale}
             toggled={toggled}
-            onSelect={setSelected}
+            onSelect={(path) => {
+              if (path !== selected) guardDiscard(() => setSelected(path));
+            }}
             onToggle={toggleFolder}
           />
           {tree.nodes.length === 0 && (
             <OrgEmptyLine>{S.company.handbook.noOtherDocuments}</OrgEmptyLine>
           )}
-        </OrgSection>
+        </RuledSection>
 
         <section className="min-w-0" aria-label={selected}>
           {/* The document's own header: its path (a file name, not a heading, so no
@@ -339,14 +370,14 @@ export function HandbookPage() {
                   in a list of them. The explorer row carries the same sentence in its tooltip
                   and its accessible name. */}
               {isIndex && (
-                <span className="shrink-0 rounded-full bg-gray-100 px-1.5 text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                  {S.company.handbook.indexLabel}
+                <span className="shrink-0">
+                  <Badge size="sm">{S.company.handbook.indexLabel}</Badge>
                 </span>
               )}
               {selectedFile !== null && (
                 <span
-                  className="hidden shrink-0 text-[11px] text-gray-400 sm:inline dark:text-gray-500"
-                  title={S.company.handbook.updatedAt(
+                  className="hidden shrink-0 text-xs text-gray-400 sm:inline dark:text-gray-500"
+                  data-tooltip={S.company.handbook.updatedAt(
                     formatDateTime(selectedFile.updatedAt),
                     formatBytes(selectedFile.size),
                   )}
@@ -358,10 +389,14 @@ export function HandbookPage() {
             <div className="flex shrink-0 items-center gap-1.5">
               {editing ? (
                 <>
-                  <span className="hidden text-[11px] text-gray-400 sm:inline dark:text-gray-500">
-                    {S.company.handbook.editorHint}
+                  <span className="hidden text-xs text-gray-400 sm:inline dark:text-gray-500">
+                    {S.company.handbook.editorHint(saveShortcut)}
                   </span>
-                  <Button size="sm" disabled={saving} onClick={() => setEditing(false)}>
+                  <Button
+                    size="sm"
+                    disabled={saving}
+                    onClick={() => guardDiscard(() => setEditing(false))}
+                  >
                     {S.common.cancel}
                   </Button>
                   <Button size="sm" variant="primary" disabled={saving} onClick={() => void save()}>
@@ -437,6 +472,7 @@ export function HandbookPage() {
         open={deleteOpen}
         title={S.company.handbook.deleteDocument}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         busy={deleting}
         onClose={() => (deleting ? undefined : setDeleteOpen(false))}
         onConfirm={() => void remove()}
@@ -444,6 +480,20 @@ export function HandbookPage() {
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {S.company.handbook.deleteConfirm(selected)}
         </p>
+      </ConfirmModal>
+      <ConfirmModal
+        open={pendingDiscard !== null}
+        title={S.common.discardTitle}
+        confirmLabel={S.common.discard}
+        cancelLabel={S.common.cancel}
+        onClose={() => setPendingDiscard(null)}
+        onConfirm={() => {
+          const go = pendingDiscard;
+          setPendingDiscard(null);
+          go?.();
+        }}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.common.discardBody}</p>
       </ConfirmModal>
     </OrgPage>
   );

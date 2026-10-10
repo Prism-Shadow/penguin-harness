@@ -3,25 +3,44 @@
  * bottom while streaming — an upward swipe immediately pauses follow, and scrolling back near
  * the bottom resumes it (see stream-follow.ts for the exact rule).
  * StreamRenderContext threads the pending-approval map and approval callback down to tool
- * cards at any nesting depth. Text selected in the stream gets the app's own context menu
- * (Copy / Add to conversation — see stream-selection-menu.tsx).
+ * cards at any nesting depth. Text selected in the stream, and a web link in it, get the app's
+ * own context menu (Copy / Add to conversation; open the link or copy its address — see
+ * stream-selection-menu.tsx).
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
+import {
+  A2uiActionsProvider,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  Spinner,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
-import { EmptyState } from "../../components/ui/empty-state";
 import { MessageItem } from "./message-item";
-import { WorkspaceLinksProvider } from "./md";
-import { WorkGroup, isWorkItem } from "./work-group";
+import { interactiveReplyIndex } from "./a2ui-reply";
+import { WorkspaceLinksProvider } from "./workspace-links";
+import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
 import { useStreamSelectionMenu } from "./stream-selection-menu";
 import type { ComposerReference } from "../../lib/workspace-tree";
+import { FIND_LOAD_OLDER_EVENT, FIND_MORE_ATTR } from "../../lib/find-dom";
+import { FindRevealContext, useRegionRevealed } from "../../lib/find-expand";
+
+/**
+ * What a reply's rich blocks (```a2ui choices and forms) read from context: whether they take
+ * input, where a pick goes, and the language of its text.
+ */
+export type A2uiActions = ComponentProps<typeof A2uiActionsProvider>["value"];
+
+/** The fill of every reply whose blocks do not take input, where picking is disabled anyway. */
+const NO_FILL = (): void => {};
 
 /** Context passed down to nested rendering (pending approvals + approval submit callback + current origin chain). */
 export interface StreamRenderContext {
@@ -43,8 +62,8 @@ export interface StreamRenderContext {
    * long as the model might still call another tool, the trailing group always shows "Running".
    */
   taskRunning: boolean;
-  /** Converts this turn's stats into cost (USD) using the current Model pricing; returns null when no price is configured (cost is hidden). */
-  taskCost?: (stats: TaskStats) => number | null;
+  /** Converts this turn's stats into cost (USD) at the current pricing of `model`, the model the turn ran on (the Session's own when the turn names none); returns null when no price is configured (cost is hidden). */
+  taskCost?: (stats: TaskStats, model?: { provider: string; modelId: string }) => number | null;
   /**
    * "Retry now" on the live reconnect countdown: skips the remaining backoff wait
    * server-side (POST /retry-now); the line flips to "retrying" when the request_begin
@@ -75,12 +94,23 @@ export interface StreamRenderContext {
   statFiles?: (paths: string[]) => Promise<ReadonlySet<string>>;
   /** Creates a new root Session through the selected completed assistant turn. */
   onFork?: (target: ForkTarget) => Promise<void>;
+  /**
+   * The actions of the reply whose blocks take input: `interactive` set, `fill` putting the
+   * picked text in this conversation's composer (an empty fill, a choice's "Other…", empties
+   * it), `lang` the interface language, and `drafts` + `draftScope` keeping a form's or a
+   * multi-select's answers in progress across a reload. Honored for the main conversation only, and there for the latest
+   * reply with nothing said after it (see a2ui-reply.ts); every other reply gets the same
+   * language with input off and no drafts. Must keep its identity while its inputs do: the
+   * blocks read it through context, past the memoized Markdown, so a fresh object per render
+   * would re-render every block on every stream frame.
+   */
+  a2uiActions?: A2uiActions;
 }
 
 /** Pure list rendering (reused recursively inside subagent cards): consecutive thinking + tool-call items are aggregated into one "Reasoning & Tools" group. */
 export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRenderContext }) {
   // Split into segments first — group (consecutive thinking + tool calls) or single (everything
-  // else) — then render. WorkGroup needs to know whether it's the last segment (current turn
+  // else) — then render. ActivityGroup needs to know whether it's the last segment (current turn
   // still in progress) to decide its default expanded/collapsed state.
   type Seg = { type: "group"; items: ChatItem[] } | { type: "single"; item: ChatItem };
   const segs: Seg[] = [];
@@ -100,14 +130,34 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
   }
   flushRun();
 
+  // A reply's choice or form takes input only as the main conversation's open question
+  // (a2ui-reply.ts; the subagent panel spreads this ctx under its own origin). Every other
+  // reply gets the same language with input off, derived once per actions object so both
+  // values keep their identity across stream frames.
+  const live = ctx.a2uiActions;
+  const liveReply =
+    live !== undefined ? items[interactiveReplyIndex(items, ctx.origin)] : undefined;
+  const still = useMemo<A2uiActions | undefined>(
+    () => (live === undefined ? undefined : { interactive: false, fill: NO_FILL, lang: live.lang }),
+    [live],
+  );
+
   const renderSeg = (seg: Seg, i: number): ReactNode =>
     seg.type === "group" ? (
-      <WorkGroup
+      <SessionWorkGroup
         key={`wg-${seg.items[0]!.id}`}
         items={seg.items}
         ctx={ctx}
         isLast={i === segs.length - 1}
       />
+    ) : seg.item.kind === "assistant_text" && live !== undefined && still !== undefined ? (
+      // Every reply gets a provider and only its value moves between the two: when the user
+      // answers, the question's reply changes a context value rather than its place in the
+      // tree, so it is not remounted (no Markdown re-parse, no diagram re-render), and only
+      // the blocks of a reply whose value changed re-render.
+      <A2uiActionsProvider key={seg.item.id} value={seg.item === liveReply ? live : still}>
+        <MessageItem item={seg.item} ctx={ctx} />
+      </A2uiActionsProvider>
     ) : (
       <MessageItem key={seg.item.id} item={seg.item} ctx={ctx} />
     );
@@ -127,7 +177,7 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
    * The container is created as soon as the turn's **first** segment appears, keyed by that
    * segment's id, and the key never changes afterward. If we waited for the stats row to arrive
    * before moving already-rendered groups into a new container, React would treat it as a
-   * position change — unmount and remount — and the WorkGroup and tool-card expanded states
+   * position change — unmount and remount — and the ActivityGroup and tool-card expanded states
    * (each backed by its own internal useState) would reset instantly: any tool details the user
    * had manually expanded would collapse the moment the reply finishes.
    *
@@ -205,6 +255,7 @@ export function MessageStream({
   outline,
   older,
   onAddExcerpt,
+  findRegion = "conversation",
 }: {
   items: ChatItem[];
   /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
@@ -226,8 +277,16 @@ export function MessageStream({
    * to a conversation with a composer.
    */
   onAddExcerpt: (reference: ComposerReference) => void;
+  /**
+   * The find-in-page region this transcript is (`data-find-region`). The main conversation and
+   * the subagent panel are two of them, and the bar tells them apart by this value alone
+   * (components/find/find-bar.tsx), which is why it is a prop rather than a constant.
+   */
+  findRegion?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // A search of this region opens its collapsed work groups (lib/find-expand.ts).
+  const revealedForFind = useRegionRevealed(scrollRef);
   const selectionMenu = useStreamSelectionMenu(onAddExcerpt);
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
   const followRef = useRef<StreamFollow | null>(null);
@@ -375,6 +434,21 @@ export function MessageStream({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [follow]);
 
+  // Find bar's "load and keep searching" row (components/find/find-bar.tsx): dispatches this
+  // event on the region element so the bar never needs a callback prop of its own. The guards
+  // are maybeLoadOlder's minus the scrollTop threshold (the click is the request) and minus the
+  // error check, so after a failed backfill the click retries it.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onFindLoadOlder = () => {
+      const o = olderRef.current;
+      if (o && o.hasMore && !o.loading) o.onLoad();
+    };
+    el.addEventListener(FIND_LOAD_OLDER_EVENT, onFindLoadOlder);
+    return () => el.removeEventListener(FIND_LOAD_OLDER_EVENT, onFindLoadOlder);
+  }, []);
+
   /** Back-to-bottom: glide down to the live bottom (reduced motion gets an instant jump); follow re-engages on arrival. */
   const jumpToLatest = () => {
     const el = scrollRef.current;
@@ -424,6 +498,8 @@ export function MessageStream({
           if (scrollElRef) scrollElRef.current = el;
           selectionMenu.hostRef(el);
         }}
+        data-find-region={findRegion}
+        {...(older?.hasMore ? { [FIND_MORE_ATTR]: "true" } : {})}
         // A selection inside the stream answers a secondary click with the app's own menu;
         // everything else keeps the browser's (see stream-selection-menu.tsx).
         onPointerDown={selectionMenu.hostProps.onPointerDown}
@@ -457,14 +533,14 @@ export function MessageStream({
             <div className="flex justify-center pb-2">
               {older.loading ? (
                 <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  <Spinner size="sm" label={S.common.loading} />
                   {S.chat.loadingEarlier}
                 </span>
               ) : older.error !== null ? (
                 <button
                   type="button"
                   onClick={older.onLoad}
-                  className="py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                  className="whitespace-nowrap py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                 >
                   {S.chat.loadEarlierRetry}
                 </button>
@@ -479,9 +555,11 @@ export function MessageStream({
             <EmptyState title={S.chat.emptyStream} />
           ) : (
             // Links in replies, reasoning and compaction summaries name files of this Session's
-            // Workspace: they open in its Files panel rather than a new tab (see md.tsx).
+            // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
             <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
-              <MessageItems items={items} ctx={ctx} />
+              <FindRevealContext.Provider value={revealedForFind}>
+                <MessageItems items={items} ctx={ctx} />
+              </FindRevealContext.Provider>
             </WorkspaceLinksProvider>
           )}
         </div>
@@ -495,25 +573,11 @@ export function MessageStream({
         <button
           type="button"
           aria-label={S.chat.jumpToLatest}
-          title={S.chat.jumpToLatest}
+          data-tooltip={S.chat.jumpToLatest}
           onClick={jumpToLatest}
           className="anim-pop absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-500 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            aria-hidden
-          >
-            <path
-              d="M12 5v14M6 13l6 6 6-6"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <GlyphIcon d={ICONS.arrowDown} size={16} />
         </button>
       )}
     </div>

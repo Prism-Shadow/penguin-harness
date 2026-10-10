@@ -9,12 +9,9 @@
  */
 import { useState } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
+import { Button, GlyphIcon, ICONS, Modal } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
-import { Button } from "../../components/ui/button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { MAGIC_WAND_ICON } from "../../components/ui/icons";
-import { Modal } from "../../components/ui/modal";
 import { AiCreatePanel, composeAiPrompt } from "../ai-create";
 import { scheduleExamples } from "./schedule-suggestions";
 
@@ -70,7 +67,7 @@ function ScheduleAiDialog({
             glyph in place; a second copy control here would answer with a toast instead.
           */}
           <Button size="sm" variant="primary" disabled={!filled} onClick={go}>
-            <GlyphIcon d={MAGIC_WAND_ICON} />
+            <GlyphIcon d={ICONS.wand} />
             {S.schedule.editInSession}
           </Button>
         </>

@@ -19,12 +19,7 @@
 import { mkdir, open, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import {
-  PartialAggregator,
-  isCompleteModelMessage,
-  isEventMessage,
-  isSessionMeta,
-} from "../omnimessage/index.js";
+import { isCompleteModelMessage, isEventMessage, isSessionMeta } from "../omnimessage/index.js";
 import type { OmniMessage } from "../omnimessage/index.js";
 import { formatLocalDate } from "../internal/dates.js";
 
@@ -236,20 +231,6 @@ export class Writer {
     for (const msg of msgs) {
       await this.write(msg);
     }
-  }
-
-  /**
-   * Aggregates a message stream mixed with streaming `partial_*` into complete messages first,
-   * then writes them per the `write` convention. A convenience helper: `write` skips partial_*
-   * by default (the producer will already append the complete message), so this method is only
-   * needed when reconstructing a complete context from raw streaming fragments.
-   */
-  async aggregateAndWrite(msgs: OmniMessage[]): Promise<void> {
-    const agg = new PartialAggregator();
-    for (const msg of msgs) {
-      await this.writeAll(agg.push(msg));
-    }
-    await this.writeAll(agg.flush());
   }
 
   /**

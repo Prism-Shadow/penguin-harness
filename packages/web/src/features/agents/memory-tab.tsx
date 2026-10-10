@@ -29,32 +29,46 @@ import type {
   MemoryScopeExport,
   MemoryScopeInfo,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Card,
+  CollapsibleSection,
+  ConfirmModal,
+  CopiedStatus,
+  CopyCheckGlyph,
+  DownloadIcon,
+  Drawer,
+  GlyphIcon,
+  HelpFold,
+  HiddenFileInput,
+  ICONS,
+  IconButton,
+  InfoPopover,
+  ListRow,
+  Md,
+  Modal,
+  Notice,
+  RadioGroup,
+  Sheet,
+  SkeletonList,
+  Textarea,
+  ToggleRow,
+  UploadIcon,
+  bodyWithoutFrontmatter,
+  buttonClass,
+  toastError,
+  toastSuccess,
+  useCopied,
+} from "@prismshadow/penguin-ui";
+import type { SheetSnap } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatRelativeDate } from "../../lib/format";
-import { toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { Button, labelButtonClass } from "../../components/ui/button";
-import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { HelpFold } from "../../components/ui/help-fold";
-import { Modal } from "../../components/ui/modal";
-import { Textarea } from "../../components/ui/input";
-import { rowDescClass } from "../../components/ui/option-menu";
-import { Switch } from "../../components/ui/switch";
-import { Chevron } from "../../components/ui/chevron";
-import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { Drawer } from "../../components/ui/drawer";
-import { Sheet, type SheetSnap } from "../../components/ui/sheet";
-import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import { Md } from "../chat/md";
+import { useReportDirty, useSaveConfirm } from "./save-confirm";
 import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
@@ -65,26 +79,15 @@ import {
 } from "./memory-transfer";
 import type { MemoryImportPlan } from "./memory-transfer";
 
-import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
-
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
-
-/** Row-action glyphs (icon-only buttons, the skills tab's affordance): view = the agents page's eye, edit = the shared pencil-line, delete = the shared trash can. */
-const EYE_ICON =
-  "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z";
-const PENCIL_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
-const TRASH_ICON =
-  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
-/** "Add" plus glyph on the group headers, matching the models page's per-group add entry. */
-const PLUS_ICON = "M12 5v14M5 12h14";
 
 /**
  * The small ghost button's look on a `<label>`: the Button component only renders a `<button>`,
  * and the import control has to wrap a file input (the Agent State section's transfer label does
  * the same for its own size). Mirrors Button's `ghost` variant at `sm`, icon + text.
  */
-const GHOST_LABEL_CLASS = labelButtonClass("ghost", "sm");
+const GHOST_LABEL_CLASS = buttonClass("ghost", "sm");
 
 /**
  * Collapsed scope keys, persisted per user \u00d7 Project \u00d7 Agent (localStorage, same conventions as
@@ -129,10 +132,13 @@ interface Selected {
 export function MemoryTab({
   agentId,
   onConfigChanged,
+  onDirtyChange,
 }: {
   agentId: string;
   /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them (e.g. the inserted placeholder). */
   onConfigChanged?: () => void;
+  /** Whether the two memory prompts hold unsaved edits (the page asks before leaving the tab). */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
@@ -154,11 +160,20 @@ export function MemoryTab({
   const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsedScopes(collapseKey));
   const [memoryPrompt, setMemoryPrompt] = useState("");
   const [workspacePrompt, setWorkspacePrompt] = useState("");
+  /** The prompts as last loaded or saved, the baseline the unsaved-edits flag compares against. */
+  const [storedPrompts, setStoredPrompts] = useState<{ prompt: string; workspace: string } | null>(
+    null,
+  );
   const mainPromptRef = useRef<HTMLTextAreaElement>(null);
   const workspacePromptRef = useRef<HTMLTextAreaElement>(null);
   // Chip clicks steal focus, so track the last-focused prompt field instead of the current one.
   const [lastPromptField, setLastPromptField] = useState<"main" | "workspace">("main");
   const { requestSave, element: saveConfirm } = useSaveConfirm();
+  useReportDirty(
+    storedPrompts !== null &&
+      (memoryPrompt !== storedPrompts.prompt || workspacePrompt !== storedPrompts.workspace),
+    onDirtyChange,
+  );
   // Open flag and content are separate: the Sheet animates out on close, and nulling the
   // content with it would empty the panel mid-exit. The stale content is simply kept.
   const [viewOpen, setViewOpen] = useState(false);
@@ -212,6 +227,10 @@ export function MemoryTab({
       ]);
       setMemoryPrompt(configView.config.memory.prompt);
       setWorkspacePrompt(configView.config.memory.workspacePrompt);
+      setStoredPrompts({
+        prompt: configView.config.memory.prompt,
+        workspace: configView.config.memory.workspacePrompt,
+      });
       setEnabled(overview.enabled);
       setTemplateHasMemory(overview.templateHasMemory);
       setMemoryDir(overview.memoryDir);
@@ -315,6 +334,10 @@ export function MemoryTab({
         .then((res) => {
           setMemoryPrompt(res.config.memory.prompt);
           setWorkspacePrompt(res.config.memory.workspacePrompt);
+          setStoredPrompts({
+            prompt: res.config.memory.prompt,
+            workspace: res.config.memory.workspacePrompt,
+          });
           toastSuccess(S.agent.savedTakesEffect);
           onConfigChanged?.();
         })
@@ -484,49 +507,45 @@ export function MemoryTab({
   // variant with red text/hover for delete); the tooltip + aria-label carry the wording.
   const rowActions = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
     <div className="flex shrink-0 items-center gap-1.5">
-      <Button
-        size="icon"
+      <IconButton
+        label={`${S.memory.view} ${file.title}`}
         title={S.memory.view}
-        aria-label={`${S.memory.view} ${file.title}`}
         onClick={() => void openView(scope, file)}
       >
-        <GlyphIcon d={EYE_ICON} size={14} className="text-gray-600 dark:text-gray-300" />
-      </Button>
-      <Button
-        size="icon"
+        <GlyphIcon d={ICONS.eye} size={14} className="text-gray-600 dark:text-gray-300" />
+      </IconButton>
+      <IconButton
+        label={`${S.memory.edit} ${file.title}`}
         title={S.memory.edit}
-        aria-label={`${S.memory.edit} ${file.title}`}
         onClick={() => openEditor(scope, file)}
       >
-        <GlyphIcon d={PENCIL_ICON} size={14} className="text-gray-600 dark:text-gray-300" />
-      </Button>
-      <Button
-        size="icon"
+        <GlyphIcon d={ICONS.penLine} size={14} className="text-gray-600 dark:text-gray-300" />
+      </IconButton>
+      <IconButton
         variant="danger"
+        label={`${S.memory.delete} ${file.title}`}
         title={S.memory.delete}
-        aria-label={`${S.memory.delete} ${file.title}`}
         onClick={() => setRemoving({ scope, file })}
       >
-        <GlyphIcon d={TRASH_ICON} size={14} />
-      </Button>
+        <GlyphIcon d={ICONS.trash} size={14} />
+      </IconButton>
     </div>
   );
 
+  // A memory's title is its file's identifier, so it keeps the data face on the code rung.
   const fileRow = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
-    <li key={file.name} className="flex items-center gap-3 px-3.5 py-2.5">
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-[13px] font-medium text-gray-800 dark:text-gray-200">
-          {file.title}
-        </p>
-        {file.description && (
-          <p className="truncate text-xs text-gray-500 dark:text-gray-400">{file.description}</p>
-        )}
-      </div>
-      <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
-        {file.updatedAt ?? formatRelativeDate(file.modifiedAt, locale)}
-      </span>
-      {rowActions(scope, file)}
-    </li>
+    <ListRow
+      key={file.name}
+      as="li"
+      title={<span className="font-mono text-[length:var(--ui-text-code-size)]">{file.title}</span>}
+      description={file.description ? file.description : undefined}
+      meta={
+        <span className="tabular-nums">
+          {file.updatedAt ?? formatRelativeDate(file.modifiedAt, locale)}
+        </span>
+      }
+      trailing={rowActions(scope, file)}
+    />
   );
 
   /** Metadata + rendered body of the memory in view, shared by the Drawer and the Sheet. */
@@ -556,77 +575,69 @@ export function MemoryTab({
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
       <HelpFold label={S.agent.tabMemory}>{S.memory.desc}</HelpFold>
 
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
-        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{S.memory.enable}</p>
-        <Switch checked={enabled} onChange={(v) => void toggleEnabled(v)} disabled={switchBusy} />
-      </div>
+      <ToggleRow
+        variant="card"
+        label={S.memory.enable}
+        checked={enabled}
+        onChange={(v) => void toggleEnabled(v)}
+        disabled={switchBusy}
+      />
 
       {!templateHasMemory && (
-        <div
-          className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 ${toneStrip.attention}`}
+        <Notice
+          tone="attention"
+          variant="callout"
+          action={{ label: S.memory.insertPlaceholder, onClick: () => void insertPlaceholder() }}
         >
-          <p className="text-xs">{S.memory.templateMissing}</p>
-          <Button size="sm" onClick={() => void insertPlaceholder()}>
-            {S.memory.insertPlaceholder}
-          </Button>
-        </div>
+          {S.memory.templateMissing}
+        </Notice>
       )}
 
       {groups === null ? (
         <SkeletonList rows={4} />
       ) : (
-        <div className={enabled ? "space-y-5" : "space-y-5 opacity-60"}>
+        <div className={enabled ? "space-y-4" : "space-y-4 opacity-60"}>
           {groups.map(({ scope, files }) => {
             const open = !collapsed.has(scope.scopeKey);
             return (
-              <section
+              /* One collapsible section per scope: the head strip folds the group; the group's
+                 own actions sit after the toggle, outside it, since a button cannot hold
+                 another. The section is a size container, not a viewport breakpoint: the
+                 settings panel narrows independently of the window. Below @md the three action
+                 labels drop and only their icons remain — 28rem is where the English labels
+                 plus the count stop fitting beside the title, and rem tracks the user's font
+                 tier (state/theme.tsx), so the threshold scales with the labels it measures. No
+                 action is hidden at any width; each keeps its icon, an aria-label and a
+                 tooltip. */
+              <CollapsibleSection
                 key={scope.scopeKey}
-                className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800"
-              >
-                {/* Group header (the models page's group convention): the collapse button fills
-                    the row, the group's own actions sit between it and the chevron — a real
-                    <button> cannot nest another, so the actions are siblings, with the hover
-                    highlight on the whole header so it reads as a single unit.
-                    The row is a size container, not a viewport breakpoint: the settings panel
-                    narrows independently of the window. Below @md the three action labels drop
-                    and only their icons remain — 28rem is where the English labels plus the count
-                    stop fitting beside the title, and rem tracks the user's font tier
-                    (state/theme.tsx), so the threshold scales with the labels it measures. No
-                    action is hidden at any width; each keeps its icon, an aria-label and a
-                    title. */}
-                <div className="@container flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60">
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() => toggleCollapsed(scope.scopeKey)}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 px-3.5 py-2.5 text-left"
-                  >
-                    {/* Scope title can truncate (min-w-0): the actions to its right must not
-                        shrink, so a shrink-0 title is pushed out of the button box instead — and
-                        a button does not clip, so it would paint on top of the first action. */}
-                    <span className="min-w-0 truncate text-sm font-semibold text-gray-800 dark:text-gray-200">
+                className="@container"
+                title={
+                  scope.kind === "workspace" && scope.workspacePath !== undefined ? (
+                    <>
                       {scopeTitle(scope)}
-                    </span>
-                    {scope.kind === "workspace" && scope.workspacePath !== undefined && (
-                      <span className="min-w-0 truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                      <span className="ml-2 font-mono text-xs font-normal text-gray-400 dark:text-gray-500">
                         {scope.workspacePath}
                       </span>
-                    )}
-                    <span className="min-w-0 flex-1" />
-                    <span className="shrink-0 whitespace-nowrap text-xs text-gray-400 dark:text-gray-500">
-                      {S.memory.itemCount(files.length)}
-                    </span>
-                  </button>
-                  {/* Whole-group transfer, icon + label (the labels are what say which way a
-                      transfer goes, wherever the row is wide enough to keep them): export for any
-                      member, import for the owner. The tooltip carries what the label cannot —
-                      that the whole group travels — and on a narrow row, where the label is gone,
-                      it carries the direction too, alongside the aria-label. */}
-                  <span className="shrink-0">
+                    </>
+                  ) : (
+                    scopeTitle(scope)
+                  )
+                }
+                meta={S.memory.itemCount(files.length)}
+                open={open}
+                onOpenChange={() => toggleCollapsed(scope.scopeKey)}
+                actions={
+                  /* Whole-group transfer, icon + label (the labels are what say which way a
+                     transfer goes, wherever the row is wide enough to keep them): export for any
+                     member, import for the owner. The tooltip carries what the label cannot —
+                     that the whole group travels — and on a narrow row, where the label is gone,
+                     it carries the direction too, alongside the aria-label. */
+                  <>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -637,22 +648,20 @@ export function MemoryTab({
                       <DownloadIcon size={13} />
                       <span className="hidden @md:inline">{S.memory.exportScope}</span>
                     </Button>
-                  </span>
-                  {isOwner && (
-                    <label
-                      className={`${GHOST_LABEL_CLASS} shrink-0`}
-                      title={S.memory.importScopeHint}
-                      aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
-                    >
-                      <HiddenFileInput
-                        accept=".json,application/json"
-                        onChange={(e) => void pickImport(scope, e)}
-                      />
-                      <UploadIcon size={13} />
-                      <span className="hidden @md:inline">{S.memory.importScope}</span>
-                    </label>
-                  )}
-                  <span className="shrink-0">
+                    {isOwner && (
+                      <label
+                        className={`${GHOST_LABEL_CLASS} shrink-0`}
+                        data-tooltip={S.memory.importScopeHint}
+                        aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
+                      >
+                        <HiddenFileInput
+                          accept=".json,application/json"
+                          onChange={(e) => void pickImport(scope, e)}
+                        />
+                        <UploadIcon size={13} />
+                        <span className="hidden @md:inline">{S.memory.importScope}</span>
+                      </label>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -660,44 +669,26 @@ export function MemoryTab({
                       aria-label={S.memory.addScopeLabel(scopeTitle(scope))}
                       onClick={() => openAdd(scope)}
                     >
-                      <GlyphIcon d={PLUS_ICON} size={13} />
+                      <GlyphIcon d={ICONS.plus} size={13} />
                       <span className="hidden @md:inline">{S.memory.add}</span>
                     </Button>
-                  </span>
-                  {/* Collapse arrow sits at the far right of the header (after the add entry); it too can be clicked to collapse. */}
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    aria-label={scopeTitle(scope)}
-                    onClick={() => toggleCollapsed(scope.scopeKey)}
-                    className="shrink-0 p-1.5"
-                  >
-                    <Chevron open={open} className="text-gray-400" />
-                  </button>
-                </div>
-                <div
-                  className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
-                >
-                  {/* inert while collapsed: rows at zero height shouldn't still be Tab-focusable or clickable. */}
-                  <div className="overflow-hidden" inert={!open}>
-                    {files.length === 0 ? (
-                      <p className="px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
-                        {scope.kind === "user" ? S.memory.emptyUserScope : S.memory.emptyScope}
-                      </p>
-                    ) : (
-                      <ul className="divide-y divide-gray-100 border-t border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-                        {files.map((file) => fileRow(scope, file))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              </section>
+                  </>
+                }
+              >
+                {files.length === 0 ? (
+                  <p className="px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
+                    {scope.kind === "user" ? S.memory.emptyUserScope : S.memory.emptyScope}
+                  </p>
+                ) : (
+                  <ul>{files.map((file) => fileRow(scope, file))}</ul>
+                )}
+              </CollapsibleSection>
             );
           })}
         </div>
       )}
 
-      <section className="space-y-2.5 rounded-lg border border-gray-200 p-3.5 dark:border-gray-800">
+      <Card as="section" padding="md" className="space-y-3">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-200">
           {S.memory.promptSection}
           <InfoPopover label={S.memory.promptSection}>{S.memory.promptSectionHint}</InfoPopover>
@@ -722,8 +713,9 @@ export function MemoryTab({
           onFocus={() => setLastPromptField("workspace")}
           onChange={(e) => setWorkspacePrompt(e.target.value)}
         />
-        {/* Placeholder reference, the Prompt tab's convention — a chip inserts into whichever field was focused last. */}
-        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
+        {/* Placeholder reference, the Prompt tab's convention — a chip inserts into whichever field was focused last.
+            Inside the card it takes the step below the card's radius. */}
+        <div className="rounded-sm border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
           <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
           <ul className="space-y-1">
             {S.memory.promptPlaceholders.map(([token, desc]) => (
@@ -740,7 +732,7 @@ export function MemoryTab({
                           token!,
                         )
                   }
-                  title={S.memory.insertToken}
+                  data-tooltip={S.memory.insertToken}
                   className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
                 >
                   {token}
@@ -755,7 +747,7 @@ export function MemoryTab({
             {S.common.save}
           </Button>
         </div>
-      </section>
+      </Card>
 
       {saveConfirm}
 
@@ -802,9 +794,9 @@ export function MemoryTab({
         widthClass="sm:max-w-lg"
       >
         {editing && (
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.editWhy}</p>
-            <p className="break-all font-mono text-[11px] text-gray-400 dark:text-gray-500">
+            <p className="break-all font-mono text-xs text-gray-400 dark:text-gray-500">
               {memoryFilePath(editing.scope, editing.file)}
             </p>
             <Textarea
@@ -846,9 +838,9 @@ export function MemoryTab({
         widthClass="sm:max-w-lg"
       >
         {adding && (
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.addWhy}</p>
-            <p className="break-all font-mono text-[11px] text-gray-400 dark:text-gray-500">
+            <p className="break-all font-mono text-xs text-gray-400 dark:text-gray-500">
               {`${memoryDir}/${adding.scopeKey}`}
             </p>
             <Textarea
@@ -903,38 +895,32 @@ export function MemoryTab({
         {importing && (
           <div className="space-y-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.importWhy}</p>
-            <p className="break-all font-mono text-[11px] text-gray-500 dark:text-gray-400">
+            <p className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">
               {S.memory.importFile(importing.fileName, importing.doc.files.length)}
             </p>
-            <fieldset className="space-y-2">
-              <legend className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
-                {S.memory.importModeLabel}
-              </legend>
-              {(
-                [
-                  ["skip", S.memory.importModeSkip, S.memory.importModeSkipHint],
-                  ["overwrite", S.memory.importModeOverwrite, S.memory.importModeOverwriteHint],
-                  ["replace", S.memory.importModeReplace, S.memory.importModeReplaceHint],
-                ] as [MemoryImportMode, string, string][]
-              ).map(([mode, label, hint]) => (
-                <label key={mode} className="flex cursor-pointer items-start gap-2 text-xs">
-                  <input
-                    type="radio"
-                    name="memory-import-mode"
-                    className="mt-1 shrink-0"
-                    checked={importMode === mode}
-                    onChange={() => setImportMode(mode)}
-                  />
-                  <span className="min-w-0">
-                    <span className="text-gray-800 dark:text-gray-200">{label}</span>
-                    {/* One step below the row title, the same pairing OptionMenu's rows use. */}
-                    <span className={`block ${rowDescClass.sm} text-gray-500 dark:text-gray-400`}>
-                      {hint}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
+            <RadioGroup
+              label={S.memory.importModeLabel}
+              name="memory-import-mode"
+              value={importMode}
+              onChange={setImportMode}
+              options={[
+                {
+                  value: "skip",
+                  label: S.memory.importModeSkip,
+                  hint: S.memory.importModeSkipHint,
+                },
+                {
+                  value: "overwrite",
+                  label: S.memory.importModeOverwrite,
+                  hint: S.memory.importModeOverwriteHint,
+                },
+                {
+                  value: "replace",
+                  label: S.memory.importModeReplace,
+                  hint: S.memory.importModeReplaceHint,
+                },
+              ]}
+            />
             <div className="flex justify-end">
               <Button size="sm" variant="primary" disabled={importBusy} onClick={submitImport}>
                 {S.memory.importAction}
@@ -952,6 +938,7 @@ export function MemoryTab({
         tone="danger"
         title={S.memory.importConfirmTitle}
         confirmLabel={S.memory.importAction}
+        cancelLabel={S.common.cancel}
         busy={importBusy}
         onClose={() => setImportPlan(null)}
         onConfirm={() => void runImport(true)}
@@ -973,6 +960,7 @@ export function MemoryTab({
         tone="danger"
         title={S.memory.deleteTitle}
         confirmLabel={S.memory.delete}
+        cancelLabel={S.common.cancel}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
       >

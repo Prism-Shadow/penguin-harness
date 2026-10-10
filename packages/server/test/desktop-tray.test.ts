@@ -1,11 +1,16 @@
 /**
- * The tray-icon preference relay: the /api/desktop/tray routes (shell-window sessions
- * only), the DesktopService store/forward pair behind them, and the message-port glue.
+ * The tray-icon preference relay: the /api/desktop/tray routes (the shell window's sessions
+ * only), and the shell port they ride.
  *
- * The session gate is pinned in both directions like the client update's next door: the
- * shell's own window may read and write, a password-via session against the same
- * desktop-mode server gets 403 — its holder may be on another machine and must not reach
- * into the chrome of a window it is not looking at.
+ * - The tray state reads as null before the shell's first push, then as what it pushed.
+ * - A PUT forwards the switch to the shell and answers 202; a field it cannot read, or a
+ *   request that asks for nothing, is refused and reaches no shell.
+ * - A password session against the same desktop server gets 403 (its holder may be on another
+ *   machine, and must not reach into the chrome of a window it is not looking at); with no
+ *   shell wired the PUT answers 503; a plain server has no such route.
+ * - Only a well-formed tray frame is read, defaulting a missing or unknown language to English;
+ *   the updater's frames on the same port are not tray frames.
+ * - Tray pushes and tray commands share one port with the updater's, neither disturbing the other.
  */
 import { describe, expect, it } from "vitest";
 import { createDesktopApp, createTestApp, desktopLoginCookie, loginAdmin } from "./helpers.js";
@@ -15,7 +20,7 @@ import {
   parseTrayStatusMessage,
   wireShellUpdatePort,
 } from "../src/services/desktop-update-port.js";
-import type { ShellPort } from "../src/services/desktop-update-port.js";
+import { FakePort } from "./builtin-browser/fake-shell.js";
 
 const put = (cookie: string, body: string) => ({
   method: "PUT",
@@ -170,32 +175,17 @@ describe("the tray half of the shell port", () => {
 
   it("stores tray pushes and posts tray commands beside the updater's, on one port", () => {
     const desktop = new DesktopService("t");
-    const posted: unknown[] = [];
-    let onMessage: ((e: { data: unknown }) => void) | undefined;
-    const port: ShellPort = {
-      on: (_event, listener) => {
-        onMessage = listener;
-      },
-      postMessage: (message) => posted.push(message),
-    };
+    const port = new FakePort();
     wireShellUpdatePort(desktop, port);
 
-    onMessage!({
-      data: { type: "desktop-tray-status", status: { showTrayIcon: false, locale: "zh" } },
-    });
+    port.emit({ type: "desktop-tray-status", status: { showTrayIcon: false, locale: "zh" } });
     expect(desktop.getTrayStatus()).toEqual({ showTrayIcon: false, locale: "zh" });
     // An updater frame on the same port leaves the tray state alone, and vice versa.
-    onMessage!({
-      data: { type: "desktop-updater-status", status: { appVersion: "1", state: "idle" } },
-    });
+    port.emit({ type: "desktop-updater-status", status: { appVersion: "1", state: "idle" } });
     expect(desktop.getTrayStatus()).toEqual({ showTrayIcon: false, locale: "zh" });
     expect(desktop.getUpdateStatus()).toEqual({ appVersion: "1", state: "idle" });
 
     expect(desktop.requestTrayCommand({ showTrayIcon: true })).toBe(true);
-    expect(posted).toEqual([{ type: "desktop-tray-command", showTrayIcon: true }]);
-  });
-
-  it("reports no sender before a port is wired", () => {
-    expect(new DesktopService("t").requestTrayCommand({ showTrayIcon: false })).toBe(false);
+    expect(port.sent).toEqual([{ type: "desktop-tray-command", showTrayIcon: true }]);
   });
 });

@@ -22,32 +22,39 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { HookItem } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmModal,
+  CopiedStatus,
+  CopyCheckGlyph,
+  DownloadIcon,
+  GlyphIcon,
+  HelpFold,
+  HiddenFileInput,
+  ICONS,
+  Modal,
+  SettingsEmpty,
+  SkeletonList,
+  Textarea,
+  toastError,
+  toastSuccess,
+  useCopied,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { SettingsEmpty } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { HelpFold } from "../../components/ui/help-fold";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { DownloadIcon, HOOK_ICON } from "../../components/ui/icons";
-import { Textarea } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { localizedText } from "../chat/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
 import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
 import { buildHookImportPrompt } from "./hook-import";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { TRASH_ICON, UPLOAD_LABEL_CLASS } from "./skills-tab";
+import { UPLOAD_LABEL_CLASS } from "./skills-tab";
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the package name for the confirm copy. */
 interface PendingOverwrite {
@@ -248,7 +255,7 @@ export function HooksTab({
       ) : hooks.length === 0 ? (
         <SettingsEmpty>{S.hooks.agentTabEmpty}</SettingsEmpty>
       ) : (
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <Card padding="none">
           {hooks.map((hook) => {
             const description = localizedText(locale, hook.description, hook.descriptionZh);
             return (
@@ -259,7 +266,7 @@ export function HooksTab({
                 <SkillTile
                   icon={hook.icon}
                   name={hook.name}
-                  fallback={HOOK_ICON}
+                  fallback={ICONS.fishHook}
                   size={36}
                   glyph={20}
                 />
@@ -268,8 +275,9 @@ export function HooksTab({
                       point names, wrapping onto a second line rather than truncating. */}
                   <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                     <span
-                      className="max-w-full truncate font-mono text-[13px] font-semibold"
-                      title={hook.name}
+                      className="max-w-full truncate font-mono text-[length:var(--ui-text-code-size)] font-semibold"
+                      data-tooltip={hook.name}
+                      data-tooltip-content="code"
                     >
                       {hook.name}
                     </span>
@@ -280,16 +288,14 @@ export function HooksTab({
                   {/* Description truncates to one line (the full text goes into title for hover reading). */}
                   <p
                     className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
-                    title={description}
+                    data-tooltip={description}
+                    data-tooltip-content="text"
                   >
                     {description}
                   </p>
                 </div>
                 {hook.version !== "" && (
-                  <span
-                    className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
-                    title={hook.version}
-                  >
+                  <span className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500">
                     {hook.version}
                   </span>
                 )}
@@ -312,12 +318,12 @@ export function HooksTab({
                   disabled={busy}
                   onClick={() => setRemoving(hook.name)}
                 >
-                  <GlyphIcon d={TRASH_ICON} size={14} />
+                  <GlyphIcon d={ICONS.trash} size={14} />
                 </Button>
               </div>
             );
           })}
-        </div>
+        </Card>
       )}
 
       {/* Import modal: recommended chat import on top, zip upload below (the Skills tab's shape). */}
@@ -333,7 +339,7 @@ export function HooksTab({
             <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
               {S.hooks.importChatWhy}
             </p>
-            <div className="mt-2.5 space-y-2.5">
+            <div className="mt-2.5 space-y-3">
               {/* A source may be a whole pasted hooks config block, so the field is multi-line. */}
               <Textarea
                 label={S.hooks.importSourceLabel}
@@ -398,7 +404,9 @@ export function HooksTab({
       <ConfirmModal
         open={overwriting !== null}
         title={S.hooks.importOverwriteTitle}
+        tone="primary"
         confirmLabel={S.hooks.importOverwriteAction}
+        cancelLabel={S.common.cancel}
         busy={uploading}
         onClose={() => setOverwriting(null)}
         onConfirm={() => {
@@ -417,6 +425,8 @@ export function HooksTab({
         busy={busy}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
+        confirmLabel={S.skills.uninstall}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {removing !== null ? S.hooks.uninstallConfirmBody(removing, agentName) : ""}
