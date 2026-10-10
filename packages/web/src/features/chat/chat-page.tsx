@@ -122,6 +122,7 @@ import {
   sessionForProject,
   sessionProbeKey,
 } from "./session-project";
+import { RouteProbe } from "./route-probe";
 import { machineForSession } from "../../lib/session-machines";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
@@ -494,11 +495,6 @@ export function ChatPage() {
    * `routeSessionPending` and the redirect below still read `listed`, so a Session actually
    * deleted still probes, still fails, and still redirects — one tick later than before.
    */
-  // One lookup per Session at a time. The effect below re-runs whenever the list churns
-  // (a status flip, a page landing), and re-running it used to cancel and REISSUE this
-  // request — a deep link into a busy Project fired a dozen identical lookups for one
-  // conversation. The ref makes a second issue for the same Session impossible.
-  const probeInFlight = useRef<string | null>(null);
   const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
   const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
   const heldSession = useRef<SessionInfo | null>(null);
@@ -847,7 +843,10 @@ export function ChatPage() {
    * connection is back (state/sessions.tsx: OFFLINE_RECHECK_MS).
    */
   const routeSessionOffline = routeSessionPending && probeFailedKey === probeKey;
+  /** The direct lookup of the routed Session, one per page (route-probe.ts). */
+  const [routeProbe] = useState(() => new RouteProbe());
   useEffect(() => {
+    routeProbe.track(draft ? null : probeKey, sessionsLoading);
     // NOT gated on `sessionsLoading`: the direct lookup is what opens the conversation, and
     // holding it behind the sidebar's list fan-out (one first page per Agent per machine)
     // put seconds of sidebar work in front of the conversation the reader asked for. The
@@ -865,37 +864,25 @@ export function ChatPage() {
       setProbeFailedKey(probeKey);
       return;
     }
-    // Deliberately NOT cancelled on re-run/unmount: this lookup is keyed by the routed
-    // Session, and its answer stays valid across the list churn that re-runs this effect.
-    // Tying its lifetime to one effect run is what made a deep link issue a dozen identical
-    // requests — and abandoning it on a re-run is worse still: the row never arrives and the
-    // conversation sits on its skeleton with nothing left to ask. A result for a Session the
-    // route has left is ignored by resolveRoutedSession anyway.
-    if (probeInFlight.current === probeKey) return;
-    probeInFlight.current = probeKey;
-    const settle = () => {
-      if (probeInFlight.current === probeKey) probeInFlight.current = null;
-    };
-    api.getSession(routeSessionId).then(
-      (res) => {
-        settle();
-        const session = sessionForProject(res.session, projectId);
-        if (session) {
+    // Deliberately NOT cancelled on re-run: this lookup is keyed by the routed Session, and
+    // its answer stays valid across the list churn that re-runs this effect. Tying its
+    // lifetime to one run is what made a deep link issue a dozen identical requests. One
+    // lookup per Session in flight, the list's loading read when it settles, and an answer
+    // about a Session the route has left dropped: see route-probe.ts.
+    routeProbe.run(
+      probeKey,
+      async () => sessionForProject((await api.getSession(routeSessionId)).session, projectId),
+      {
+        found: (session) => {
           setFetchedSession(session);
           addSession(session);
           // A Session of an Agent the list has not loaded (company mode creates Agents
           // server-side): fetch the list, or the page has no Agent to render under.
           if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
-        } else if (!sessionsLoading) setProbeFailedKey(probeKey);
-      },
-      () => {
-        settle();
-        // A lookup that failed while the sidebar's own list is still in flight is not a
-        // verdict: a Session created moments ago can be neither listed nor answered-for yet.
-        // Leave the route pending — this effect re-runs when the list settles, probes once
-        // more, and only then does a second failure mean gone.
-        if (sessionsLoading) return;
-        setProbeFailedKey(probeKey);
+        },
+        // Only once the list has settled: a failure while it loads is not a verdict, and
+        // this effect re-runs when it settles and asks again.
+        gone: () => setProbeFailedKey(probeKey),
       },
     );
     // `selected` rather than `sessions`: while the routed row stays unloaded, list churn
