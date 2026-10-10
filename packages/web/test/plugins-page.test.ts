@@ -2,9 +2,10 @@
  * The Plugins page's pure decisions (features/plugins/plugins-page.tsx). One file, so the page
  * module is imported once.
  *
- * - All machines: every plugin is listed, and a machine-only one says where it runs. This
- *   server: what it is asked for, a shared plugin not removable from its table. Another
- *   machine: the state that machine reports, and what it has not received yet.
+ * - The page views one machine. This server: its own table and the shared one, a shared row
+ *   tagged and not removable, its own rows removable, another machine's plugin offered; a
+ *   plugin in this server's table alone counts as installed. Another machine: the state that
+ *   machine reports, and what it has not received yet.
  * - A plugin is installed on an Agent once any part of it is there (a skill, or its hook
  *   package), read off the two installed lists; nothing is installed for an Agent with no
  *   snapshot or for a plugin that ships nothing.
@@ -50,6 +51,7 @@ const deployment: InstalledPluginsResponse = {
   plugins: [
     row("@acme/shared", { everywhere: true, machines: [], here: true }),
     row("@acme/gpu-only", { everywhere: false, machines: [GPU], here: false }),
+    row("@acme/self-only", { everywhere: false, machines: [SELF], here: true }),
   ],
   shipped: [],
   file: ".project_config.toml",
@@ -57,27 +59,36 @@ const deployment: InstalledPluginsResponse = {
   restartPending: false,
 };
 
-const nameOf = (id: string) => (id === GPU ? "gpu-box" : "this server");
 const modules = (rows: ReturnType<typeof installedPluginRows>) =>
   rows.flatMap((r) => (r.kind === "module" ? [r] : []));
 
 describe("plugin rows per machine", () => {
-  it("all machines: every plugin, and a machine-only one says where it runs", () => {
-    const view: PluginView = { machineId: null, remote: null, nameOf };
+  it("this server: its own table and the shared one, and only its own rows can be removed", () => {
+    const view: PluginView = { machineId: SELF, remote: null };
     const rows = modules(installedPluginRows([], "en", deployment, [], view));
-    expect(rows.map((r) => [r.specifier, r.state, r.onlyOn])).toEqual([
-      ["@acme/shared", "active", undefined],
-      ["@acme/gpu-only", "elsewhere", ["gpu-box"]],
+    expect(rows.map((r) => [r.specifier, r.state, r.shared])).toEqual([
+      ["@acme/shared", "active", true],
+      ["@acme/self-only", "active", undefined],
     ]);
-    // Offered for all machines, since the shared table does not list it.
-    expect(availablePluginRows(deployment, [], view)).toEqual([]);
+    // Only for another machine: offered here as usual.
+    expect(availablePluginRows({ ...deployment, shipped: ["@acme/gpu-only"] }, [], view)).toEqual([
+      expect.objectContaining({ specifier: "@acme/gpu-only", state: "none" }),
+    ]);
   });
 
-  it("this server: what it is asked for, and a shared plugin cannot be removed from its table", () => {
-    const view: PluginView = { machineId: SELF, remote: null, nameOf };
-    const rows = modules(installedPluginRows([], "en", deployment, [], view));
-    expect(rows.map((r) => r.specifier)).toEqual(["@acme/shared"]);
-    expect(rows[0]!.removeBlocked).toBeDefined();
+  it("a plugin installed for this server alone is not offered again", () => {
+    const failing: InstalledPluginsResponse = {
+      ...deployment,
+      plugins: [row("@acme/self-only", { everywhere: false, machines: [SELF], here: true }, false)],
+      shipped: ["@acme/self-only"],
+    };
+    failing.plugins[0]!.error = "load failed";
+    // No view: this server, before any machine is picked.
+    const rows = modules(installedPluginRows([], "en", failing, []));
+    expect(rows.map((r) => [r.specifier, r.state, r.shared])).toEqual([
+      ["@acme/self-only", "failed", undefined],
+    ]);
+    expect(availablePluginRows(failing, [])).toEqual([]);
   });
 
   it("another machine: the state it reports, and what it has not received yet", () => {
@@ -87,17 +98,17 @@ describe("plugin rows per machine", () => {
       plugins: [row("@acme/gpu-only", { everywhere: true, machines: [], here: true }, false)],
     };
     remote.plugins[0]!.error = "npm: 404";
-    const view: PluginView = { machineId: GPU, remote, nameOf };
+    const view: PluginView = { machineId: GPU, remote };
     const rows = modules(installedPluginRows([], "en", deployment, [], view));
-    expect(rows.map((r) => [r.specifier, r.state, r.removeBlocked === undefined])).toEqual([
-      ["@acme/shared", "unsynced", false],
-      ["@acme/gpu-only", "failed", true],
+    expect(rows.map((r) => [r.specifier, r.state, r.shared])).toEqual([
+      ["@acme/shared", "unsynced", true],
+      ["@acme/gpu-only", "failed", undefined],
     ]);
   });
 });
 
 describe("a plugin the running build cannot fully run", () => {
-  const view: PluginView = { machineId: SELF, remote: null, nameOf };
+  const view: PluginView = { machineId: SELF, remote: null };
   const here = { everywhere: true, machines: [], here: true };
   const states = (plugins: InstalledPluginsResponse["plugins"]) =>
     modules(installedPluginRows([], "en", { ...deployment, plugins }, [], view)).map((r) => [
@@ -144,9 +155,7 @@ describe("a plugin the running build cannot fully run", () => {
         },
       ],
     };
-    const rows = modules(
-      installedPluginRows([], "en", deployment, [], { machineId: GPU, remote, nameOf }),
-    );
+    const rows = modules(installedPluginRows([], "en", deployment, [], { machineId: GPU, remote }));
     expect(rows.find((r) => r.specifier === "@acme/gpu-only")).toMatchObject({
       state: "disabled",
       unsatisfied: "names interface 'Nope'",

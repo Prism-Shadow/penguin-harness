@@ -6,7 +6,8 @@
  * - An admin sees the search box and the settings gear, and the gear carries its words on the
  *   button, not only in its accessible name.
  * - An available module row offers Install, and an installed one Remove, each with its words
- *   beside the icon.
+ *   beside the icon. A shared row's Remove is disabled and described by the row's "shared" tag
+ *   and its hint, so a screen reader says why.
  *
  * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
  * its cards. How the header row wraps on a narrow screen is PageHeader's, not this page's.
@@ -59,12 +60,13 @@ describe("the plugins page header", () => {
 });
 
 describe("a module plugin's row", () => {
-  const row = (installed: boolean) =>
+  const row = (installed: boolean, shared?: boolean) =>
     inLocale(ModuleRow, {
       specifier: "@acme/plugin",
       entry: undefined,
       state: installed ? "active" : "none",
       shipped: false,
+      shared,
       busy: false,
       blocked: false,
       onInstall: installed ? null : () => undefined,
@@ -82,5 +84,28 @@ describe("a module plugin's row", () => {
     const html = row(true);
     expect(buttonText(html, `${en.plugins.uninstall} @acme/plugin`)).toBe(en.plugins.uninstall);
     expect(buttonText(html, `${en.plugins.install} @acme/plugin`)).toBeUndefined();
+  });
+
+  /** The opening tag of the row's Remove button. */
+  const removeButton = (html: string) =>
+    new RegExp(`<button[^>]*aria-label="${en.plugins.uninstall} @acme/plugin"[^>]*>`).exec(
+      html,
+    )?.[0] ?? "";
+
+  it("describes a shared row's disabled Remove by its tag and hint", () => {
+    const html = row(true, true);
+    const button = removeButton(html);
+    expect(button).toContain('disabled=""');
+    const ids = /aria-describedby="([^"]+)"/.exec(button)?.[1]?.split(" ") ?? [];
+    const textOf = (id: string) =>
+      new RegExp(`id="${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>([^<]*)<`).exec(html)?.[1];
+    expect(ids.map(textOf)).toEqual([en.plugins.sharedTag, en.plugins.sharedHint]);
+  });
+
+  it("leaves an own row's Remove enabled and undescribed", () => {
+    const button = removeButton(row(true));
+    expect(button).not.toBe("");
+    expect(button).not.toContain('disabled=""');
+    expect(button).not.toContain("aria-describedby");
   });
 });

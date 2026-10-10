@@ -2499,16 +2499,12 @@ export const zh = {
     pageTitle: "插件",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
-    allMachines: "所有机器",
     thisServer: "本机",
-    /** A row listed for some machines only, by alias. */
-    onlyOn: (names: string) => `仅在 ${names}`,
-    /** An all-machines row listed only for other machines. */
-    notHere: "本机不运行",
     /** A row the Project lists for a machine that has not reported it running yet. */
     notSynced: "尚未同步到该机器",
-    /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
-    sharedCannotRemove: "已对所有机器启用：请在「所有机器」视图中移除。",
+    /** The tag on a row the shared table lists, and its tooltip (Remove is unavailable on it). */
+    sharedTag: "所有机器共用",
+    sharedHint: "在 Project 配置中对所有机器统一管理，不能在这里移除。",
     machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
     /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
     openSettings: "设置",

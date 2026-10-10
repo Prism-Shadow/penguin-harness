@@ -2422,16 +2422,12 @@ export const en: Strings = {
     pageTitle: "Plugins",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "Machine",
-    allMachines: "All machines",
     thisServer: "This server",
-    /** A row listed for some machines only, by alias. */
-    onlyOn: (names: string) => `only on ${names}`,
-    /** An all-machines row listed only for other machines. */
-    notHere: "not on this server",
     /** A row the Project lists for a machine that has not reported it running yet. */
     notSynced: "not on that machine yet",
-    /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
-    sharedCannotRemove: "Enabled on all machines: remove it in the All machines view.",
+    /** The tag on a row the shared table lists, and its tooltip (Remove is unavailable on it). */
+    sharedTag: "Shared by all machines",
+    sharedHint: "Managed in the Project config for every machine; it cannot be removed here.",
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
     /** Header icon button opening the Settings dialog on its Plugins page (admin only). */

@@ -44,6 +44,8 @@ export interface BadgeProps extends BadgeStyle {
   size?: BadgeSize;
   /** The sentence behind the badge's word, on hover (a discount's terms, what "built in" means). */
   tooltip?: string;
+  /** The badge's element id, for a control that names it as its description (aria-describedby). */
+  id?: string;
   children: ReactNode;
 }
 
@@ -101,10 +103,12 @@ export function Badge({
   variant = "soft",
   size = "md",
   tooltip,
+  id,
   children,
 }: BadgeProps) {
   return (
     <span
+      {...(id !== undefined ? { id } : {})}
       {...(tooltip !== undefined ? { "data-tooltip": tooltip } : {})}
       className={badgeClass(tone, variant, size)}
     >

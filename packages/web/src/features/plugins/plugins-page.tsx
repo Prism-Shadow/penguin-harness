@@ -36,7 +36,7 @@
  *   which is why the page fetches both lists per Agent. Uninstall takes the plugin apart the
  *   same way: one DELETE per skill and one for the hook package.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import type {
   AgentSummary,
@@ -93,6 +93,7 @@ import { prepareNewChatDraft } from "../chat/new-chat";
 import { localizedShortText, localizedText } from "../chat/skill-use";
 import { PluginDetailModal } from "./plugin-detail";
 import { usePluginRepair } from "./plugin-repair";
+import { viewedMachine } from "./viewed-machine";
 import { SettingsDialog } from "../settings/settings-dialog";
 import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
@@ -277,10 +278,26 @@ export function PluginsPage() {
   useEffect(reloadDeployment, [reloadDeployment]);
 
   const { machineIds, machineLabels } = useSessions();
-  /** The machine the page shows and edits: null for all machines, or a machine's own id. */
-  const [viewMachine, setViewMachine] = useState<string | null>(null);
-  useEffect(() => setViewMachine(null), [projectId]);
+  /** The machine picked in the header; null until one is, which views this server. */
+  const [pickedMachine, setPickedMachine] = useState<string | null>(null);
+  useEffect(() => setPickedMachine(null), [projectId]);
   const selfId = deployment?.machineId;
+  const nameOf = (machineId: string) =>
+    machineId === selfId ? S.plugins.thisServer : (machineLabels.get(machineId) ?? machineId);
+  // The picker offers this server, then the machines this Project reaches and any a table
+  // names; a deployment with neither has one machine, and no picker.
+  const otherMachines = [
+    ...new Set([...machineIds, ...(deployment?.plugins ?? []).flatMap((p) => p.machines ?? [])]),
+  ].filter((id) => id !== selfId);
+  const machineChoices: MachineChoice[] = (
+    selfId === undefined ? [] : [selfId, ...otherMachines]
+  ).map((id) => ({ value: id, label: nameOf(id) }));
+  /** The machine the page shows and edits — undefined only until this server's id is read. */
+  const viewMachine = viewedMachine(
+    pickedMachine,
+    machineChoices.map((c) => c.value),
+    selfId,
+  );
   /** What the viewed machine answered itself — or why it could not — when it is not this server. */
   const [remote, setRemote] = useState<
     | { machineId: string; res: InstalledPluginsResponse }
@@ -291,7 +308,7 @@ export function PluginsPage() {
   // background, so a row reads "not on that machine yet" until it has answered with it.
   useEffect(() => {
     setRemote(null);
-    if (projectId === null || viewMachine === null || viewMachine === selfId) return;
+    if (projectId === null || viewMachine === undefined || viewMachine === selfId) return;
     let cancelled = false;
     api.getInstalledPlugins(projectId, viewMachine).then(
       (res) => !cancelled && setRemote({ machineId: viewMachine, res }),
@@ -301,27 +318,12 @@ export function PluginsPage() {
       cancelled = true;
     };
   }, [projectId, viewMachine, selfId, deployment]);
-  const nameOf = (machineId: string) =>
-    machineId === selfId ? S.plugins.thisServer : (machineLabels.get(machineId) ?? machineId);
-  const view: PluginView = {
-    machineId: viewMachine,
-    remote: remote !== null && "res" in remote ? remote.res : null,
-    nameOf,
-  };
-  /** Whether the machine in view is this server itself, or every machine including it. */
-  const viewIncludesHere = viewMachine === null || viewMachine === selfId;
-  // The picker offers the machines this Project reaches and any a table names; a deployment
-  // with neither has one machine, and no picker.
-  const otherMachines = [
-    ...new Set([...machineIds, ...(deployment?.plugins ?? []).flatMap((p) => p.machines ?? [])]),
-  ].filter((id) => id !== selfId);
-  const machineChoices: MachineChoice[] = [
-    { value: ALL_MACHINES_CHOICE, label: S.plugins.allMachines },
-    ...(selfId === undefined ? [] : [selfId, ...otherMachines]).map((id) => ({
-      value: id,
-      label: nameOf(id),
-    })),
-  ];
+  const view: PluginView | undefined =
+    viewMachine === undefined
+      ? undefined
+      : { machineId: viewMachine, remote: remote !== null && "res" in remote ? remote.res : null };
+  /** Whether the machine in view is this server itself. */
+  const viewingHere = viewMachine === selfId;
 
   // The registry, fetched once on page entry.
   useEffect(() => {
@@ -364,7 +366,8 @@ export function PluginsPage() {
     specifier: string,
     install: boolean,
   ): Promise<InstalledPluginsResponse | null> => {
-    if (pendingSpecifier !== null || projectId === null) return null;
+    // Always the viewed machine's own table: the page never edits the shared one.
+    if (pendingSpecifier !== null || projectId === null || viewMachine === undefined) return null;
     setPendingSpecifier(specifier);
     try {
       const next = install
@@ -721,12 +724,12 @@ export function PluginsPage() {
               onQuery={setQuery}
               isAdmin={isAdmin}
               machinePicker={
-                otherMachines.length > 0 ? (
+                machineChoices.length > 1 && viewMachine !== undefined ? (
                   <MachinePicker
                     aria-label={S.plugins.viewMachine}
                     choices={machineChoices}
-                    value={viewMachine ?? ALL_MACHINES_CHOICE}
-                    onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
+                    value={viewMachine}
+                    onChange={setPickedMachine}
                   />
                 ) : null
               }
@@ -755,7 +758,7 @@ export function PluginsPage() {
               {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
             </Notice>
           )}
-          {deployment !== null && viewIncludesHere && deployment.restartPending && (
+          {deployment !== null && viewingHere && deployment.restartPending && (
             <Notice tone="attention" className="mt-4">
               {S.plugins.restartPending}
             </Notice>
@@ -832,8 +835,7 @@ export function PluginsPage() {
                     error={row.error}
                     unsatisfied={row.unsatisfied}
                     shipped={row.shipped}
-                    onlyOn={row.onlyOn}
-                    removeBlocked={row.removeBlocked}
+                    shared={row.shared}
                     busy={pendingSpecifier === row.specifier}
                     blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
                     onInstall={null}
@@ -844,7 +846,7 @@ export function PluginsPage() {
                     }
                     quickStart={
                       // The demo opens in a chat on this server, so it needs the plugin here.
-                      row.state === "active" && viewIncludesHere
+                      row.state === "active" && viewingHere
                         ? {
                             onStart: () =>
                               openQuickStart(
@@ -881,7 +883,10 @@ export function PluginsPage() {
                     state={row.state}
                     shipped={row.shipped}
                     busy={pendingSpecifier === row.specifier}
-                    blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
+                    blocked={
+                      viewMachine === undefined ||
+                      (pendingSpecifier !== null && pendingSpecifier !== row.specifier)
+                    }
                     onInstall={
                       isAdmin
                         ? () => setPendingApply({ specifier: row.specifier, install: true })
@@ -889,7 +894,7 @@ export function PluginsPage() {
                     }
                     onRemove={null}
                     quickStart={
-                      isAdmin && viewIncludesHere
+                      isAdmin && viewingHere
                         ? {
                             onStart: () =>
                               setPendingApply({
@@ -1020,42 +1025,34 @@ interface ModulePluginRow {
   /** What the running build lacks for it: all of it when `state` is `disabled`, part of it when `active`. */
   unsatisfied?: string;
   shipped: boolean;
-  /** The machines it is listed for, by name, when the shared table does not list it. */
-  onlyOn?: string[];
-  /** Why Remove is unavailable in this view, when it is. */
-  removeBlocked?: string;
+  /** Listed in the shared table: every machine runs it, and the page does not edit that table. */
+  shared?: true;
 }
 /**
  * What a listed module plugin is on the machine in view: running; waiting for a runtime that
  * can re-assemble (`pending`); FAILED — the process tried and could not load it, for the
- * reason the server sends, which no restart would change; `elsewhere` — the all-machines view
- * of a plugin listed only for other machines, which this server neither installs nor loads;
- * or `unsynced` — listed for a machine that has not reported running it. DISABLED is the
- * running build's doing: the plugin loaded, but the build lacks a module or interface it
- * needs, so it is left out until a build that has them — a restart changes nothing. A plugin
- * that only lost contributions this build has no slot for stays `active`, with the reason.
+ * reason the server sends, which no restart would change; or `unsynced` — listed for a
+ * machine that has not reported running it. DISABLED is the running build's doing: the plugin
+ * loaded, but the build lacks a module or interface it needs, so it is left out until a build
+ * that has them — a restart changes nothing. A plugin that only lost contributions this build
+ * has no slot for stays `active`, with the reason.
  */
-type ModuleState = "none" | "pending" | "active" | "failed" | "disabled" | "elsewhere" | "unsynced";
+type ModuleState = "none" | "pending" | "active" | "failed" | "disabled" | "unsynced";
 
 /**
- * Which machine the page shows: `machineId` null for all machines (the shared table), or a
- * machine's own id. `remote` is that machine's own answer when it is not this server — what
- * it actually runs — and null when it is this server or could not be read.
+ * Which machine the page shows — always one, by its own id. `remote` is that machine's own
+ * answer when it is not this server — what it actually runs — and null when it is this server
+ * or could not be read.
  */
 export interface PluginView {
-  machineId: string | null;
+  machineId: string;
   remote: InstalledPluginsResponse | null;
-  /** A machine's display name, by its own id. */
-  nameOf: (machineId: string) => string;
 }
-
-/** The picker's value for all machines: a machine id is never this short. */
-const ALL_MACHINES_CHOICE = "*";
 
 /**
  * The page header's actions, the Models page's shape: search for everyone (a member filters the
  * list too), then, for an admin, the machine picker (which machine's plugins the rows show, and
- * which table an install or a removal edits: the shared one, or that machine's own) and the gear
+ * whose own table an install or a removal edits) and the gear
  * that opens the Settings dialog's Plugins page. The gear's words sit beside its icon once the
  * header's `@container` is wide enough.
  */
@@ -1103,21 +1100,21 @@ export function PluginsHeaderActions({
   );
 }
 
-const ALL_MACHINES: PluginView = { machineId: null, remote: null, nameOf: (id) => id };
-
-/** Whether a listed plugin belongs in the view: shared, or listed for the machine in view. */
-function inView(listed: InstalledPluginsResponse["plugins"][number], view: PluginView): boolean {
+/** Whether a listed plugin runs on the machine: shared, or in that machine's own table. */
+function runsOn(
+  listed: InstalledPluginsResponse["plugins"][number],
+  machineId: string | undefined,
+): boolean {
   return (
-    view.machineId === null ||
     listed.everywhere !== false ||
-    (listed.machines ?? []).includes(view.machineId)
+    (machineId !== undefined && (listed.machines ?? []).includes(machineId))
   );
 }
 
 /** A listed plugin's state as the machine in view has it. */
 function stateIn(
   listed: InstalledPluginsResponse["plugins"][number],
-  view: PluginView,
+  view: PluginView | undefined,
   selfId: string | undefined,
 ): { state: ModuleState; error?: string; unsatisfied?: string } {
   const local = (row: InstalledPluginsResponse["plugins"][number]) => {
@@ -1131,9 +1128,7 @@ function stateIn(
           ? { state: "failed" as const, error: row.error }
           : { state: "pending" as const };
   };
-  if (view.machineId === null)
-    return listed.here === false ? { state: "elsewhere" } : local(listed);
-  if (view.machineId === selfId) return local(listed);
+  if (view === undefined || view.machineId === selfId) return local(listed);
   const there = view.remote?.plugins.find((p) => p.specifier === listed.specifier);
   return there === undefined ? { state: "unsynced" } : local(there);
 }
@@ -1141,37 +1136,35 @@ function stateIn(
 /**
  * What is installed, in one list: the library's plugins — they ship with the build, so
  * every Agent may use them, and the category their group gave them rides along as a tag —
- * followed by the module plugins this Project asks for, each with its registry entry
- * (description, version, categories) when the registry has one.
+ * followed by the module plugins the machine in view runs (its own table and the shared one;
+ * this server when `view` is omitted), each with its registry entry (description, version,
+ * categories) when the registry has one.
  */
 export function installedPluginRows(
   groups: readonly PluginGroupItem[],
   locale: Parameters<typeof localizedText>[0],
   deployment: InstalledPluginsResponse | null,
   index: readonly PluginIndexEntry[],
-  view: PluginView = ALL_MACHINES,
+  view?: PluginView,
 ): PluginRow[] {
+  const machineId = view?.machineId ?? deployment?.machineId;
   const rows: PluginRow[] = [];
   for (const group of groups) {
     const category = localizedText(locale, group.title, group.titleZh);
     for (const plugin of group.plugins) rows.push({ kind: "library", plugin, category });
   }
   for (const listed of deployment?.plugins ?? []) {
-    if (!inView(listed, view)) continue;
-    const shared = listed.everywhere !== false;
-    const ownTable = view.machineId !== null && (listed.machines ?? []).includes(view.machineId);
+    if (!runsOn(listed, machineId)) continue;
     rows.push({
       kind: "module",
       specifier: listed.specifier,
       entry: indexEntryOf(index, listed.specifier),
       ...stateIn(listed, view, deployment?.machineId),
       shipped:
-        listed.builtin || (view.remote ?? deployment)?.shipped.includes(listed.specifier) === true,
-      ...(shared ? {} : { onlyOn: (listed.machines ?? []).map(view.nameOf) }),
-      // A machine's view edits that machine's own table; a shared entry is not in it.
-      ...(view.machineId !== null && shared && !ownTable
-        ? { removeBlocked: S.plugins.sharedCannotRemove }
-        : {}),
+        listed.builtin || (view?.remote ?? deployment)?.shipped.includes(listed.specifier) === true,
+      // Shown as shared even when the machine's own table lists it too: removing it from
+      // there would leave it running, so the page offers no removal that would not take.
+      ...(listed.everywhere !== false ? { shared: true as const } : {}),
     });
   }
   return rows;
@@ -1199,17 +1192,16 @@ export function indexEntryOf(
 export function availablePluginRows(
   deployment: InstalledPluginsResponse | null,
   index: readonly PluginIndexEntry[],
-  view: PluginView = ALL_MACHINES,
+  view?: PluginView,
 ): ModulePluginRow[] {
-  // What the machine in view does not run yet: in the all-machines view, anything the shared
-  // table lacks — a plugin listed for some machines is still offered for all of them.
+  // What the machine in view does not run yet — a plugin listed for other machines only is
+  // offered here as usual.
+  const machineId = view?.machineId ?? deployment?.machineId;
   const listed = new Set(
-    (deployment?.plugins ?? [])
-      .filter((p) => (view.machineId === null ? p.everywhere !== false : inView(p, view)))
-      .map((p) => p.specifier),
+    (deployment?.plugins ?? []).filter((p) => runsOn(p, machineId)).map((p) => p.specifier),
   );
   // What the machine in view ships, when it answered; this server's otherwise.
-  const shippedList = (view.remote ?? deployment)?.shipped ?? [];
+  const shippedList = (view?.remote ?? deployment)?.shipped ?? [];
   const seen = new Set<string>();
   const rows: ModulePluginRow[] = [];
   for (const { name } of index) {
@@ -1446,14 +1438,20 @@ function Tag({
   children,
   quiet,
   title,
+  id,
 }: {
   children: React.ReactNode;
   /** What the plugin carries or is keyed by, rather than what it is: the outlined weight. */
   quiet?: boolean;
   title?: string;
+  id?: string;
 }) {
   return (
-    <Badge variant={quiet ? "outline" : "soft"} tooltip={title}>
+    <Badge
+      variant={quiet ? "outline" : "soft"}
+      tooltip={title}
+      {...(id !== undefined ? { id } : {})}
+    >
       {children}
     </Badge>
   );
@@ -1810,8 +1808,7 @@ export function ModuleRow({
   error,
   unsatisfied,
   shipped,
-  onlyOn,
-  removeBlocked,
+  shared,
   busy,
   blocked,
   onInstall,
@@ -1828,10 +1825,8 @@ export function ModuleRow({
   unsatisfied?: string;
   /** The build carries this one: installing it copies nothing over the network. */
   shipped: boolean;
-  /** The machines it is listed for, by name, when not every machine runs it. */
-  onlyOn?: string[];
-  /** Why Remove is unavailable in this view, when it is. */
-  removeBlocked?: string;
+  /** Listed in the shared table: tagged, and Remove is unavailable (the page edits one machine's table). */
+  shared?: boolean;
   /** This row's own install or removal is running. */
   busy: boolean;
   /** Another row's is: one at a time, so the rest are held rather than queued. */
@@ -1844,6 +1839,9 @@ export function ModuleRow({
   onRepair?: (() => void) | null;
 }) {
   const { locale } = useLocale();
+  // A shared row's disabled Remove is described by its visible tag and the hint the tag's
+  // tooltip shows, so a screen reader learns why it is unavailable without hovering.
+  const sharedId = useId();
   const stateText =
     state === "active"
       ? S.plugins.stateActive
@@ -1855,9 +1853,7 @@ export function ModuleRow({
             ? S.plugins.stateDisabled
             : state === "unsynced"
               ? S.plugins.notSynced
-              : state === "elsewhere"
-                ? S.plugins.notHere
-                : S.plugins.notInstalled;
+              : S.plugins.notInstalled;
   // Metadata line, the library card's shape: version · updated · what it is here.
   const updated =
     entry?.updatedAt === undefined
@@ -1940,7 +1936,11 @@ export function ModuleRow({
         {(entry?.categories ?? []).map((category) => (
           <Tag key={category}>{category}</Tag>
         ))}
-        {onlyOn !== undefined && <Tag>{S.plugins.onlyOn(onlyOn.join(", "))}</Tag>}
+        {shared === true && (
+          <Tag id={`${sharedId}-tag`} title={S.plugins.sharedHint}>
+            {S.plugins.sharedTag}
+          </Tag>
+        )}
         {shipped && <Tag title={S.plugins.builtinHint}>{S.plugins.builtin}</Tag>}
         {(entry?.keywords ?? []).map((keyword) => (
           <Tag key={keyword} quiet>
@@ -2013,8 +2013,9 @@ export function ModuleRow({
                 className="h-8 shrink-0"
                 aria-label={`${S.plugins.uninstall} ${specifier}`}
                 aria-busy={busy}
-                title={removeBlocked ?? S.plugins.uninstall}
-                disabled={busy || blocked || removeBlocked !== undefined}
+                title={shared === true ? S.plugins.sharedHint : S.plugins.uninstall}
+                aria-describedby={shared === true ? `${sharedId}-tag ${sharedId}-hint` : undefined}
+                disabled={busy || blocked || shared === true}
                 onClick={onRemove}
               >
                 {busy ? (
@@ -2025,6 +2026,11 @@ export function ModuleRow({
                 <span className="hidden @3xl:inline">{S.plugins.uninstall}</span>
               </Button>
             )}
+        {shared === true && (
+          <span id={`${sharedId}-hint`} className="sr-only">
+            {S.plugins.sharedHint}
+          </span>
+        )}
       </div>
     </div>
   );
