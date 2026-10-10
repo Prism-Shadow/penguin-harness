@@ -14,7 +14,7 @@
  *
  * Any member of the Project may take either path: a Benchmark belongs to the Project.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { AgentSummary, BenchmarkSummary } from "@prismshadow/penguin-server/api";
 import {
@@ -93,6 +93,12 @@ export function ImportBenchmarkModal({
   const [source, setSource] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // A refusal lands under the upload button, at the foot of a dialog whose body may scroll — an
+  // overwrite refused while the Benchmark is being evaluated among them: bring it into view.
+  const uploadErrorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (uploadError !== null) uploadErrorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [uploadError]);
   // Non-null shows the overwrite confirm (the upload answered 409 benchmark_exists).
   const [overwriting, setOverwriting] = useState<PendingOverwrite | null>(null);
   // Copy feedback lives at the button: its glyph flips to the check while copied.
@@ -208,7 +214,9 @@ export function ImportBenchmarkModal({
               {uploading ? S.benchmark.importUploading : S.benchmark.importUploadAction}
             </label>
             {uploadError !== null && (
-              <p className={`mt-1.5 text-xs ${toneInk.danger}`}>{uploadError}</p>
+              <p ref={uploadErrorRef} className={`mt-1.5 text-xs ${toneInk.danger}`}>
+                {uploadError}
+              </p>
             )}
           </section>
         </div>
