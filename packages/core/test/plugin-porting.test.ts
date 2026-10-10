@@ -9,7 +9,9 @@
  * - A dated version the skill already carries is kept; otherwise the given one is stamped.
  * - Another tool's display metadata and every file that is not text leave the skill; the text
  *   files beside SKILL.md stay.
- * - A folder without a SKILL.md is removed; a folder whose name is not a skill name is renamed.
+ * - A folder without a SKILL.md is removed; a folder whose name is not a skill name is renamed —
+ *   by its frontmatter name when nothing of the folder name is left, else `skill`, and never onto
+ *   a name another skill has.
  * - What it leaves is a package the plugin library reads with no warning.
  */
 import { spawnSync } from "node:child_process";
@@ -127,6 +129,24 @@ describe("normalize-skills.mjs", () => {
     normalize(dir);
     expect((await fs.readdir(path.join(dir, "skills"))).sort()).toEqual(["my-skill"]);
     expect(parseSkillFrontmatter(await read("skills/my-skill/SKILL.md"))?.name).toBe("my-skill");
+  });
+
+  it("renames a folder that keeps no letter or digit by its frontmatter name, else skill, and never onto another skill's name", async () => {
+    const dir = await building({
+      "skills/writing/SKILL.md": "---\nname: writing\ndescription: Already here.\n---\n\nBody.\n",
+      // Chinese folder names leave nothing under the name rule.
+      "skills/写作/SKILL.md": "---\nname: writing\ndescription: Write.\n---\n\nBody.\n",
+      "skills/翻译/SKILL.md": "---\nname: 翻译\ndescription: Translate.\n---\n\nBody.\n",
+      "skills/校对/SKILL.md": "---\nname: 校对\ndescription: Proofread.\n---\n\nBody.\n",
+    });
+    normalize(dir);
+    const described = Object.fromEntries(
+      readLibraryPackage(dir).skills.map((s) => [s.name, s.description]),
+    );
+    expect(Object.keys(described).sort()).toEqual(["skill", "skill-2", "writing", "writing-2"]);
+    expect(described.writing).toBe("Already here.");
+    expect(described["writing-2"]).toBe("Write.");
+    expect([described.skill, described["skill-2"]].sort()).toEqual(["Proofread.", "Translate."]);
   });
 
   it("leaves a package the plugin library reads with no warning", async () => {

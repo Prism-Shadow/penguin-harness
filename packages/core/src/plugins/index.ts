@@ -575,8 +575,11 @@ function readRoot(name: string, root: LibraryRoot): LibraryPlugin | null {
   }
 }
 
-/** Decodes bytes as UTF-8, or null when they are not valid UTF-8 (an image, an archive). */
-const strictUtf8 = new TextDecoder("utf-8", { fatal: true });
+/**
+ * Decodes bytes as UTF-8, or null when they are not valid UTF-8 (an image, an archive). A
+ * byte-order mark stays in the text (`ignoreBOM`), so a text file installs byte for byte.
+ */
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 function utf8Text(bytes: Uint8Array): string | null {
   try {
     return strictUtf8.decode(bytes);
@@ -678,7 +681,8 @@ function stampSkill(
  * its hook package. What the manifest reader warns about, the loader adds to: `hooks/` without a
  * dated `penguin.hooks.version` (no hook package is listed), `penguin.hooks` without `hooks/`, a
  * quick start naming skills the package does not ship (those names are dropped), an icon that
- * will not do, a file left out of a skill for not being text. A shipped plugin must read clean,
+ * will not do, a skill directory whose name is not a skill name (left out), a file left out of a
+ * skill for not being text. A shipped plugin must read clean,
  * so for one of those any warning throws; an installed package lists with the field missing,
  * and the warning goes to the log.
  */
@@ -692,9 +696,16 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
   const skillsDir = path.join(dir, "skills");
   if (fs.existsSync(skillsDir)) {
     for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        skills.push(readSkillDir(path.join(skillsDir, entry.name), entry.name, strict, skipped));
+      if (!entry.isDirectory()) continue;
+      // An Agent's skill directories follow the plugin name rule: a skill under any other name
+      // could not be installed, and would stop an install of the plugin partway.
+      if (!PLUGIN_NAME_PATTERN.test(entry.name)) {
+        warnings.push(
+          `skills/${entry.name} is not a skill name (letters, digits, "_" and "-"); it is not listed`,
+        );
+        continue;
       }
+      skills.push(readSkillDir(path.join(skillsDir, entry.name), entry.name, strict, skipped));
     }
     skills.sort((a, b) => a.name.localeCompare(b.name));
   }

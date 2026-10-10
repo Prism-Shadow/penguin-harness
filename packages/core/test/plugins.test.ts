@@ -29,7 +29,8 @@
  * - What a shipped package fails on, an installed one lists through, with the field missing and
  *   one warning: a malformed field, `hooks/` without a hook version (the skills still list), a
  *   skill without a version (unversioned, never flagged behind), an unsafe or oversized icon, a
- *   binary file in a skill (left out; the text beside it installs).
+ *   skill directory whose name is not a skill name (left out), a binary file in a skill (left
+ *   out; the text beside it installs byte for byte). A safe icon is kept from its `<svg>` root on.
  * - An old package that still carries a plugin.json lists by its directories; nothing is read
  *   from the plugin.json.
  */
@@ -598,7 +599,8 @@ describe("packages the operator installed on the server", () => {
       ]),
     );
     const icons = Object.fromEntries(loadLibraryPlugins().map((p) => [p.name, p.icon]));
-    expect(icons.plain).toBe(plain);
+    // Kept from its <svg> root on: the Web App inlines only markup that begins there.
+    expect(icons.plain).toBe(plain.slice(plain.indexOf("<svg")));
     for (const name of Object.keys(unsafe)) expect(icons[name], name).toBeUndefined();
     // A skill of a package without an icon installs without one (the book glyph).
     expect(libraryPlugin("script")!.skills[0]).not.toHaveProperty("icon");
@@ -606,7 +608,7 @@ describe("packages the operator installed on the server", () => {
     expect(isSafeIconSvg(unsafe.script)).toBe(false);
   });
 
-  it("leaves a binary file out of a skill, and installs the text files beside it", async () => {
+  it("leaves a binary file out of a skill, and installs the text files beside it as they are, a byte-order mark included", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe]);
     await setUp(["@acme/notes"], {
@@ -614,11 +616,29 @@ describe("packages the operator installed on the server", () => {
         ...notes("@acme/notes"),
         "skills/notes/assets/logo.png": png,
         "skills/notes/references/api.md": "# API\n",
+        "skills/notes/scripts/setup.ps1": "﻿Write-Output 'ready'\n",
       },
     });
     const [skill] = libraryPlugin("notes")!.skills;
-    expect(Object.keys(skill!.files ?? {})).toEqual(["references/api.md"]);
+    expect(Object.keys(skill!.files ?? {}).sort()).toEqual([
+      "references/api.md",
+      "scripts/setup.ps1",
+    ]);
+    expect(skill!.files?.["scripts/setup.ps1"]).toBe("﻿Write-Output 'ready'\n");
     expect(logged(warn)).toContain("skills/notes/assets/logo.png is not a text file");
+  });
+
+  it("leaves out a skill directory whose name is not a skill name, with a warning, and lists the rest", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await setUp(["@acme/notes"], {
+      "@acme/notes": {
+        ...notes("@acme/notes"),
+        "skills/pdf.tools/SKILL.md": skillFile("pdf.tools", "2026.10.01.1"),
+      },
+    });
+    // What the library lists is what an install writes: nothing an Agent's skills folder refuses.
+    expect(libraryPlugin("notes")!.skills.map((s) => s.name)).toEqual(["notes"]);
+    expect(logged(warn)).toContain("skills/pdf.tools is not a skill name");
   });
 
   it("lists an old package that still carries a plugin.json by its directories, reading nothing from it", async () => {

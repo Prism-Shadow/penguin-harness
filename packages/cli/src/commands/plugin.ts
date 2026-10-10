@@ -99,13 +99,13 @@ function zipPackage(dir: string, rootName: string): { zip: Uint8Array; files: nu
       if (entry.isDirectory()) {
         if (!walk(childAbs, childRel)) return false;
       } else if (entry.isFile()) {
-        const bytes = fs.readFileSync(childAbs);
+        // Sized before a byte is read: a file past the caps is never loaded (one over 2 GiB
+        // could not be read whole at all).
+        const size = fs.statSync(childAbs).size;
         files += 1;
-        total += bytes.byteLength;
-        if (files > MAX_FILES || bytes.byteLength > MAX_FILE_BYTES || total > MAX_TOTAL_BYTES) {
-          return false;
-        }
-        out[`${rootName}/${childRel}`] = new Uint8Array(bytes);
+        total += size;
+        if (files > MAX_FILES || size > MAX_FILE_BYTES || total > MAX_TOTAL_BYTES) return false;
+        out[`${rootName}/${childRel}`] = new Uint8Array(fs.readFileSync(childAbs));
       }
     }
     return true;

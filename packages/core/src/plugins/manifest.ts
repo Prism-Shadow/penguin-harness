@@ -418,12 +418,17 @@ const UNSAFE_SVG: readonly RegExp[] = [
   /url\(\s*(?!['"]?\s*#)/i,
 ];
 
+/** An SVG's text from its root element on: no byte-order mark, XML declaration or whitespace before `<svg`. */
+function svgFromRoot(text: string): string {
+  return text.replace(/^﻿/, "").replace(/^\s*(?:<\?xml[^>]*\?>\s*)?/i, "");
+}
+
 /**
  * Whether an SVG may be inlined into the page as a plugin's icon: it begins with `<svg` (after
  * an optional XML declaration and whitespace) and holds nothing UNSAFE_SVG names.
  */
 export function isSafeIconSvg(text: string): boolean {
-  const body = text.replace(/^﻿/, "").replace(/^\s*(?:<\?xml[^>]*\?>\s*)?/i, "");
+  const body = svgFromRoot(text);
   if (!/^<svg[\s>]/i.test(body)) return false;
   return !UNSAFE_SVG.some((rule) => rule.test(body));
 }
@@ -432,7 +437,9 @@ export function isSafeIconSvg(text: string): boolean {
  * A package's icon: the SVG `penguin.icon` names, else `icon.svg` at the package root when there
  * is one. Read only when the file stays inside the package (a symlink is not followed), weighs at
  * most MAX_PLUGIN_ICON_BYTES and passes isSafeIconSvg; otherwise no icon (the UI's puzzle glyph),
- * with a warning saying why. A package with no icon at all has none, silently.
+ * with a warning saying why. A package with no icon at all has none, silently. The icon is the
+ * text from its `<svg` root on: the Web App inlines only markup that begins there, so an XML
+ * declaration the file opens with is left behind rather than costing the icon.
  */
 export function readPluginIcon(
   dir: string,
@@ -455,7 +462,7 @@ export function readPluginIcon(
   if (stat.size > MAX_PLUGIN_ICON_BYTES) {
     return { warnings: [`${key} is larger than ${MAX_PLUGIN_ICON_BYTES / 1024} KiB; ignored`] };
   }
-  const icon = fs.readFileSync(abs, "utf8");
+  const icon = svgFromRoot(fs.readFileSync(abs, "utf8"));
   if (!isSafeIconSvg(icon)) {
     return {
       warnings: [

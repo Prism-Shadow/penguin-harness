@@ -16,8 +16,8 @@
 - `penguin` 块存放 `title` / `title_zh`（显示名）、`description_zh`、`short_description` / `short_description_zh`、`category`、`icon`（包内的 SVG 路径；不填时取根目录的 `icon.svg`）、`preinstall`、`quick_start` 和 `hooks`（钩子包，带日期 `version`）。Skill、钩子和服务端模块仍按目录找到。
 - core 用同一个读取器 `parsePluginPackage` 读取每个包。没有合法包名或发行版本号的包会被拒绝；其他字段类型不对时丢弃，并给出指明字段的告警。随构建发布的包只要有告警，插件库就加载失败；管理员安装的包把告警写进服务端日志一次，并在缺少该字段的情况下照常列出。
 - 缺失的字段显示为缺失：没有描述时以弱化文字显示「暂无描述」（No description），没有标题时显示插件名，没有图标时显示拼图块，没有分类时归入「其他」，没有快速开始时预选第一个 Skill。
-- 图标只有在位于包内、不超过 64 KiB、且不含脚本、事件、链接和外部引用时才会内联显示，否则丢弃；管理员安装的包如此，本机上服务端模块的索引行也如此。
-- 在管理员安装的包中，没有日期版本的 Skill 按无版本处理，永远不会被提示更新；带 `hooks/` 却没有 `penguin.hooks.version` 的包只列出 Skill、不列出钩子包。Skill 目录中不是 UTF-8 文本的文件（如图片）不再读取，而不是被安装成乱码。
+- 图标只有在位于包内、不超过 64 KiB、且不含脚本、事件、链接和外部引用时才会内联显示，否则丢弃；管理员安装的包如此，本机上服务端模块的索引行也如此。`<svg>` 之前的 XML 声明不随图标发送，这样的图标照常显示。
+- 在管理员安装的包中，没有日期版本的 Skill 按无版本处理，永远不会被提示更新；带 `hooks/` 却没有 `penguin.hooks.version` 的包只列出 Skill、不列出钩子包。名称不符合 Skill 命名规则的 Skill 目录会被略过并告警，因为任何 Agent 都装不了它。Skill 目录中不是 UTF-8 文本的文件（如图片）不再读取，而不是被安装成乱码。
 - 19 个随构建发布的包把 `plugin.json` 的字段搬进 `package.json`，加上带 `penguin-plugin` 的 `keywords`，并从 `files` 中去掉 `plugin.json`。`scripts/check-plugin-versions.mjs` 从 `penguin.hooks` 读取钩子声明；基准提交仍带 `plugin.json` 时，从基准的 `plugin.json` 读取。
 - 插件详情显示标题，下方是包名，另有一行作者、许可证以及主页和仓库链接，包里有才显示。搜索框也匹配标题。`PluginItem` 新增 `title`、`titleZh`、`author`、`license`、`homepage` 和 `repository`。
 
@@ -29,4 +29,4 @@
 
 ## 兼容性
 
-管理员从 npm 仓库装进服务端前缀的 0.2.13 及更早版本的 `@penguinharness/*` 包仍按目录载入：英文描述、图标、版本和 Skill 照常显示。只写在它们 `plugin.json` 里的内容——中文和简短描述、分类、快速开始，以及 `goal` 与 `continual-learning` 的钩子包——在管理员安装该包的新版本之前都会缺失。已经装有这些钩子的 Agent 保留自己的副本。
+随构建发布的插件已把字段写进 `package.json`，与构建自带插件同名的包总是从构建读取，因此已发布版本装下的内容都不受影响：服务端前缀里较旧的 `@penguinharness/*` 包仍和以前一样不会列出。按此前文档中 `plugin.json` 格式编写的插件，需要把字段移进其 `package.json` 的 `penguin` 块；在此之前它按目录载入：英文描述、图标、版本和 Skill 照常显示，中文和简短描述、分类、快速开始以及钩子包则缺失。Agent 上已安装的 Skill 和钩子包不受影响。

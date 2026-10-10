@@ -1,7 +1,7 @@
 ---
 name: plugin-porting
 description: Turn an external plugin — a Codex or Claude Code plugin, a skills repository, a folder in a GitHub repository — into a PenguinHarness plugin package and install it on the server's plugin market with `penguin plugin install <folder>`; the package format, the mapping rules and the review duties.
-version: 2026.10.10.1
+version: 2026.10.10.2
 ---
 
 # Plugin Porting
@@ -59,12 +59,13 @@ WORK="$(mktemp -d)"
 SHA="$(curl -s --max-time 30 "https://api.github.com/repos/<owner>/<repo>/commits/<ref>" \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).sha))')"
 curl -sL --max-time 300 "https://codeload.github.com/<owner>/<repo>/tar.gz/$SHA" -o "$WORK/src.tgz"
-tar -xzf "$WORK/src.tgz" -C "$WORK" "<repo>-$SHA/<path>"
-SRC="$WORK/<repo>-$SHA/<path>"
+TOP="$(tar -tzf "$WORK/src.tgz" | head -1 | cut -d/ -f1)"
+tar -xzf "$WORK/src.tgz" -C "$WORK" "$TOP/<path>"
+SRC="$WORK/$TOP/<path>"
 find "$SRC" -type f | head -100; find "$SRC" -type f | wc -l
 ```
 
-Always pass `--max-time`: a host that is unreachable from this machine hangs instead of failing. When one way does not answer, use another: `git ls-remote https://github.com/<owner>/<repo>.git <ref>`, `gh api repos/<owner>/<repo>/commits/<ref> --jq .sha`, `gh api repos/<owner>/<repo>/tarball/$SHA > "$WORK/src.tgz"`. A local folder is copied into `$WORK` first and handled the same way.
+Always pass `--max-time`: a host that is unreachable from this machine hangs instead of failing. When one way does not answer, use another: `git ls-remote https://github.com/<owner>/<repo>.git <ref>`, `gh api repos/<owner>/<repo>/commits/<ref> --jq .sha`, `gh api repos/<owner>/<repo>/tarball/$SHA > "$WORK/src.tgz"`. The archive's top folder is `<repo>-<sha>` from codeload and `<owner>-<repo>-<short sha>` from the API, which is why `TOP` is read from the archive. A local folder is copied into `$WORK` first and handled the same way.
 
 ## 2. Recognise the source
 
@@ -83,7 +84,7 @@ Build in `PKG="$WORK/<name>"`, in this order:
    ```bash
    node "<skill dir>/scripts/normalize-skills.mjs" "$PKG"
    ```
-   It rewrites every frontmatter to `name`, a one-line `description` (a `when_to_use` is merged into it) and `version` (today, `.1`, unless the skill already carries a dated one), drops the other keys, removes each skill's `agents/` folder (another tool's display metadata) and every file that is not text, and prints what it changed.
+   It rewrites every frontmatter to `name`, a one-line `description` (a `when_to_use` is merged into it) and `version` (today, `.1`, unless the skill already carries a dated one), drops the other keys, removes each skill's `agents/` folder (another tool's display metadata) and every file that is not text, renames a folder whose name is not a skill name (`[A-Za-z0-9_-]`; one with nothing left of it, such as a Chinese name, takes the frontmatter `name`, else `skill`), and prints what it changed.
 2. **Commands.** A command that only tells the model to read a skill is dropped. Any other command becomes `skills/<command>/SKILL.md` with the same frontmatter, its `$ARGUMENTS` rewritten as "the user's request". Agents, hooks, LSP servers and hosted apps are not carried; a genuinely procedural agent may be folded into the related skill's body — say which.
 3. **package.json.** Map the upstream manifest (Codex in brackets): `name` → `@ported/<name>` (lower case); `version` when it is semver, else `0.1.0`; `description`; `author` (or `interface.developerName`) as a name; `homepage` (or `interface.websiteURL`); `repository` → `{ "type": "git", "url": "https://github.com/<owner>/<repo>", "directory": "<path>" }`; `license`; `keywords` plus `penguin-plugin` and `ported`. In `penguin`: `title` (`interface.displayName`), `short_description` (`interface.shortDescription`), `category` (Developer Tools, Developer, DevOps or Cloud → `software-development`; Productivity, Office, Communication, Project Management or Writing → `office-productivity`; AI, Machine Learning, Data or Agents → `ai-app-development`; anything else → leave it out), `icon` (below), `quick_start.prompt` (`interface.defaultPrompt[0]`). Write it with a heredoc and check it with `node -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$PKG/package.json"`.
 4. **Icon.** Copy the upstream SVG icon (`interface.composerIcon`) to `$PKG/icon.svg` and set `penguin.icon`. It must start with `<svg`; strip an XML comment or a DOCTYPE before it. A PNG logo is not used: no SVG, no icon.
@@ -113,7 +114,14 @@ Refuse — and tell the user why — a package whose content exfiltrates data or
 penguin plugin install "$PKG" --project-id <project id>
 ```
 
-The CLI reads the folder with the plugin library's own reader first (a problem is printed and nothing is sent), zips it without `node_modules`, `.git` and `.npmrc`, and uploads it. Warnings (`[plugins] …: … ignored`) name a field that will show as missing: fix it and run again. When the server holds another version of the package, it says so: add `--overwrite` to replace it. Fix errors in the package, never on the server.
+The CLI reads the folder with the plugin library's own reader first (a problem is printed and nothing is sent), zips it without `node_modules`, `.git` and `.npmrc`, and uploads it. Warnings (`[plugins] …: …`) name a field that will show as missing, and the package installs anyway. The server keeps one copy per version and answers the same version again with "already installed; nothing changed", so after fixing what a warning names, remove the copy first and install again:
+
+```bash
+penguin plugin remove <package name> --project-id <project id>
+penguin plugin install "$PKG" --project-id <project id>
+```
+
+When the server holds another version of the package, it says so: add `--overwrite` to replace it. Fix errors in the package, never on the server.
 
 ## 6. Verify and report
 

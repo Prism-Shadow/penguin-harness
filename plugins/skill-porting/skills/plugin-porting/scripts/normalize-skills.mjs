@@ -4,14 +4,16 @@
 //   node normalize-skills.mjs <package dir> [--version YYYY.MM.DD.N]
 //
 // For each directory under <package dir>/skills/:
-// - the directory name keeps only letters, digits, "_" and "-" (anything else becomes "-");
+// - the directory name keeps only letters, digits, "_" and "-" (anything else becomes "-"); a
+//   name left with no letter or digit (a Chinese one, say) takes the frontmatter `name` the same
+//   way, else `skill`, and a name another skill already has gets `-2`, `-3`, …;
 // - SKILL.md's frontmatter is rewritten to exactly three single-line keys: `name` (the
 //   directory), `description` (one line; a block scalar is flattened, a `when_to_use` is merged
 //   in) and `version` (a dated version the skill already carries, else the given one, else
 //   today's UTC date with sequence number 1); every other key is dropped, and named;
 // - another tool's display metadata (`agents/*.yaml`) is removed, and so is every file that is
 //   not UTF-8 text (images, archives), every symlink and every .DS_Store;
-// - a directory without a SKILL.md is not a skill and is removed.
+// - a directory without a SKILL.md is not a skill and is removed, and so is a symlink in skills/.
 // It prints what it changed, one line per skill. Built-in modules only.
 import fs from "node:fs";
 import path from "node:path";
@@ -93,27 +95,52 @@ const firstLine = (body) =>
     .map((line) => line.trim())
     .find((line) => line !== "" && !line.startsWith("#") && !line.startsWith("```")) ?? "";
 
+/** A skill name: what an Agent's skills folder accepts. */
+const SKILL_NAME = /^[A-Za-z0-9_-]+$/;
+/** `text` under the skill name rule: anything else becomes "-", and no "-" is left at either end. */
+const slug = (text) => text.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+
+const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+// The names a renamed skill may not take: every folder already named by the rule.
+const taken = new Set(
+  entries.filter((e) => e.isDirectory() && SKILL_NAME.test(e.name)).map((e) => e.name),
+);
+
 let count = 0;
-for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+for (const entry of entries) {
+  if (entry.isSymbolicLink()) {
+    fs.rmSync(path.join(skillsDir, entry.name), { force: true });
+    console.log(`skills/${entry.name}: a symlink, not part of the package: removed`);
+    continue;
+  }
   if (!entry.isDirectory()) continue;
   let dir = path.join(skillsDir, entry.name);
   const skillFile = () => path.join(dir, "SKILL.md");
   if (!fs.existsSync(skillFile())) {
     fs.rmSync(dir, { recursive: true, force: true });
+    taken.delete(entry.name);
     console.log(`skills/${entry.name}: no SKILL.md, so not a skill: removed`);
     continue;
   }
   const notes = [];
-  const name = entry.name.replace(/[^A-Za-z0-9_-]+/g, "-");
-  if (name !== entry.name) {
+  const text = fs.readFileSync(skillFile(), "utf8");
+  const front = readFrontmatter(text);
+  let name = entry.name;
+  if (!SKILL_NAME.test(name)) {
+    // The folder name under the rule; when nothing of it is left, the frontmatter name.
+    const named = front?.fields.get("name");
+    const base = [slug(entry.name), slug(typeof named === "string" ? named : ""), "skill"].find(
+      (candidate) => /[A-Za-z0-9]/.test(candidate),
+    );
+    name = base;
+    for (let n = 2; taken.has(name); n += 1) name = `${base}-${n}`;
+    taken.add(name);
     const renamed = path.join(skillsDir, name);
     fs.renameSync(dir, renamed);
     dir = renamed;
     notes.push(`renamed from ${entry.name}`);
   }
 
-  const text = fs.readFileSync(skillFile(), "utf8");
-  const front = readFrontmatter(text);
   let description;
   let version = fallbackVersion;
   let body;

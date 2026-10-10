@@ -8,8 +8,8 @@
  *   state, and the packages of Skills or hooks installed on the server.
  * - A local package directory is read with the plugin library's reader, zipped under one
  *   top-level directory without node_modules or .git, and posted to the zip route.
- * - A directory the library would refuse, or one that is no plugin at all, is reported and
- *   nothing is posted.
+ * - A directory the library would refuse, one that is no plugin at all, or one past the server's
+ *   caps is reported and nothing is posted.
  * - Another version on the server answers 409: the CLI says how to replace it, and
  *   `--overwrite` sends the same package again with `overwrite`.
  */
@@ -168,6 +168,17 @@ describe("penguin plugin install <directory>", () => {
     });
     expect(await cli(["plugin", "install", empty])).not.toBe(0);
     expect(stderr.join("")).toContain(t.plugin.dirNotPlugin(empty));
+    expect(server.requests.filter((r) => r.method === "POST")).toEqual([]);
+  });
+
+  it("reports a directory past the server's caps, and posts nothing", async () => {
+    const dir = await packageDir(NOTES);
+    // One file over the 5 MB a package file may weigh, sized without writing it (sparse).
+    const big = path.join(dir, "assets.bin");
+    await fs.writeFile(big, "");
+    await fs.truncate(big, 6 * 1024 * 1024);
+    expect(await cli(["plugin", "install", dir])).not.toBe(0);
+    expect(stderr.join("")).toContain(t.plugin.dirTooLarge(dir));
     expect(server.requests.filter((r) => r.method === "POST")).toEqual([]);
   });
 

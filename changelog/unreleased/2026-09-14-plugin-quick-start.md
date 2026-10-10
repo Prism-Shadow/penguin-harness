@@ -16,7 +16,7 @@ shows the plugin working once sent.
   them. No model is called and no token is spent until you send it.
 - **Installed first, after asking.** A plugin the current Agent lacks is installed on it after a
   confirmation, and the draft opens once it is.
-- **Declared by each plugin.** A library plugin declares `quick_start` in its `plugin.json`
-  (`prompt`, `prompt_zh`, `skills`, `goal`), listed on `GET /api/plugins`. Every builtin library
+- **Declared by each plugin.** A library plugin declares `quick_start` in the `penguin` block
+  of its `package.json` (`prompt`, `prompt_zh`, `skills`, `goal`), listed on `GET /api/plugins`. Every builtin library
   plugin declares one — the goal plugin starts a small goal. A third-party plugin that declares
   none gets its first skill.

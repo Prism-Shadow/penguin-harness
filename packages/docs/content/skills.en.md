@@ -308,7 +308,7 @@ npm's fields:
 | `hooks.version` | The hook package's date version, `YYYY.MM.DD.N`; required when the plugin ships `hooks/` (without it no hook package is listed), and written into the installed `hooks.json` |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds. A `user_prompt` command may add `"trigger"`: `"prompt"` (the default) runs it on every prompt the user submits, `"host"` only when a host starts the package's flow by name |
 
-Missing means missing. Only a package without a valid `name` or `version` is refused. Any other field the package lacks shows as missing, and a field of the wrong type is dropped with a warning in the server log. A file in a skill directory that is not text, such as a PNG, is neither read nor installed. A plugin's `package.json` is the only manifest: a `plugin.json` that an older package still carries is not read.
+Missing means missing. Only a package without a valid `name` or `version` is refused. Any other field the package lacks shows as missing, and a field of the wrong type is dropped with a warning in the server log. A skill directory whose name does not match `^[A-Za-z0-9_-]+$` is left out with a warning, since no agent could install it, and a file in a skill directory that is not text, such as a PNG, is neither read nor installed. A plugin's `package.json` is the only manifest: a `plugin.json` that an older package still carries is not read.
 
 ### Plugin naming and versioning
 
