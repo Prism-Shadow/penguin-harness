@@ -207,7 +207,7 @@ WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进
 - 支持图片的模型会直接拿到图片内容，文字输出只有一行，例如 `image/png, 123.4 kB`。
 - 纯文本模型则由 Project 的 `vision_model` 回答 `prompt`（默认是一段详细描述），以工具文字输出的形式流式返回。图片本身不会进入这个 Session 的历史。未配置 `vision_model` 时，在纯文本 Session 中读取图片会失败，并提示用户到模型设置中选择一个。参见[模型与供应商](/models)。
 
-走哪个分支由 `VisionDescriberService` 决定；SDK 只在纯文本 Session 时才向 Environment 注入它，因此一条配置（不带 `forModel`）即可同时服务两类模型。
+走哪个分支由 `VisionDescriberService` 决定；SDK 只在纯文本 Session 时才向 Environment 注入它，因此一条配置（不带 `forModel`）即可同时服务两类模型。支持图片的模型拿到的 `read_file` 不带 `prompt`：组装时在内存中把这个参数从 schema 里移除，与 `call_description: false` 移除 `description` 的做法相同，YAML 文件本身不会改动。
 
 ```ts
 // read_file — cat -n style output (line number, tab, content) for text; overlong single lines
@@ -218,7 +218,7 @@ WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进
   file_path: string;       // required: absolute, or relative to the Workspace; an http(s) URL for an image
   offset?: number;         // 1-based line to start from; default 1
   limit?: number;          // max lines returned; default 2000 — a trailing note points at the continuation
-  prompt?: string;         // a question about an image, answered by the vision_model for a text-only model; default: a detailed description
+  prompt?: string;         // text-only models only: a question about an image, answered by the vision_model; default: a detailed description
 }
 
 // edit_file — the file must exist; old_string must occur exactly once (or set replace_all);

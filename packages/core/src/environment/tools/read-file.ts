@@ -17,7 +17,8 @@
  * - absent (the session model views images): yields a one-line `image/png, 123.4 kB` delta and
  *   returns the image via `ToolResult.images` for Environment to attach (a single streaming
  *   delta carries it whole before stop, and the complete `tool_call_output` carries it again);
- * - present: the image and the caller's `prompt` (default: a detailed description) go in one
+ * - present: the image and the caller's `prompt` (default: a detailed description; only a
+ *   text-only model is handed the argument, see selectBuiltinToolsForModel) go in one
  *   one-off request to the Project's `vision_model`, whose text deltas stream back as this
  *   tool's own output; nothing of that request (thinking, token_usage) leaks into the parent
  *   session stream. Some providers flatly 400 on a tool_result carrying an image, which is why

@@ -207,7 +207,7 @@ What comes back depends on the Session model's vision flag:
 - A model that accepts images gets the image itself as image content, and the text output is one line such as `image/png, 123.4 kB`.
 - A text-only model gets the Project's `vision_model` answering `prompt` (by default, a detailed description), streamed as the tool's text output. The image never enters that Session's history. Without a `vision_model`, reading an image in a text-only Session fails with an explanation asking the user to pick one in the model settings. See [Models & Providers](/models).
 
-The branch is decided by the `VisionDescriberService` that the SDK injects into the Environment for text-only Sessions only, so one config entry (without `forModel`) serves both model classes.
+The branch is decided by the `VisionDescriberService` that the SDK injects into the Environment for text-only Sessions only, so one config entry (without `forModel`) serves both model classes. A model that accepts images is handed `read_file` without `prompt`: assembly drops the argument from the schema in memory, as `call_description: false` drops `description`, and the YAML is never rewritten.
 
 ```ts
 // read_file — cat -n style output (line number, tab, content) for text; overlong single lines
@@ -218,7 +218,7 @@ The branch is decided by the `VisionDescriberService` that the SDK injects into 
   file_path: string;       // required: absolute, or relative to the Workspace; an http(s) URL for an image
   offset?: number;         // 1-based line to start from; default 1
   limit?: number;          // max lines returned; default 2000 — a trailing note points at the continuation
-  prompt?: string;         // a question about an image, answered by the vision_model for a text-only model; default: a detailed description
+  prompt?: string;         // text-only models only: a question about an image, answered by the vision_model; default: a detailed description
 }
 
 // edit_file — the file must exist; old_string must occur exactly once (or set replace_all);
