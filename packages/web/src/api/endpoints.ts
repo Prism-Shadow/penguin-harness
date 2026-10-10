@@ -182,6 +182,7 @@ import type {
   SessionsResponse,
   SessionSwitchModelRequest,
   SessionBatchPageRequest,
+  SessionsBatchRequest,
   SessionsBatchResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
@@ -834,7 +835,7 @@ export const batchSessions = (
 ) =>
   apiFetch<SessionsBatchResponse>(`/api/projects/${encodeURIComponent(projectId)}/sessions/batch`, {
     method: "POST",
-    body: { requests },
+    body: { requests } satisfies SessionsBatchRequest,
     server: machineId ?? null,
   });
 
@@ -1087,18 +1088,6 @@ export type MessagesPageQuery =
   { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
 
 /**
- * Byte budget for one windowed page.
- *
- * The unit limit bounds how much of the conversation is ASKED for, never how much comes back:
- * a wide unit window of a tool-calling run is tens of megabytes (one screenshot alone is a
- * megabyte of base64), and the reader only ever looks at the newest part of it. The server cuts
- * the page at a record boundary and hands back the `before` cursor for what it dropped, so
- * scrolling up asks for exactly those records — nothing is lost, it is simply not shipped
- * before it is wanted.
- */
-export const WINDOW_MAX_BYTES = 1_500_000;
-
-/**
  * History rebuild. Carries the server's clock at read time (see ApiFetchMeta.serverNowMs)
  * alongside the messages: a Task still running has no Trace entry for the event currently in
  * flight, so its elapsed can only be measured by differencing this against the Task's first
@@ -1114,9 +1103,8 @@ export const getMessages = (sessionId: string, page?: MessagesPageQuery) => {
     page === undefined
       ? ""
       : page.kind === "tail"
-        ? `?tailLimit=${page.limit}&maxBytes=${WINDOW_MAX_BYTES}`
-        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}` +
-          `&maxBytes=${WINDOW_MAX_BYTES}`;
+        ? `?tailLimit=${page.limit}`
+        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`;
   return apiFetchWithMeta<MessagesResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs}`,
   ).then(({ data, serverNowMs }) => ({ ...data, serverNowMs }));
