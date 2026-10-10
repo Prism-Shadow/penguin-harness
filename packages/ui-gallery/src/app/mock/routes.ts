@@ -1158,6 +1158,10 @@ router
     return empty();
   })
   .post("/api/sessions/:sessionId/retry-now", (): RetryNowResponse => ({ skipped: false }))
+  // No scripted run ever fails here, so a Retry has nothing held to resend.
+  .post("/api/sessions/:sessionId/retry", (): never =>
+    fail(409, "nothing_to_retry", "There is nothing to retry."),
+  )
   .get("/api/sessions/:sessionId/processes", ({ store, params }): SessionProcessesResponse => {
     const row = store.session(params.sessionId!);
     return {
