@@ -1,7 +1,7 @@
 ---
 name: plugin-porting
 description: Turn an external plugin — a Codex or Claude Code plugin, a skills repository, a folder in a GitHub repository — into a PenguinHarness plugin package, its skills and its MCP servers, and install it on the server's plugin market with `penguin plugin install <folder>`; the package format, the mapping rules and the review duties.
-version: 2026.10.11.1
+version: 2026.10.11.2
 ---
 
 # Plugin Porting

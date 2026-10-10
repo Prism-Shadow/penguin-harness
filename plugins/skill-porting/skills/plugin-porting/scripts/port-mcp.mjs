@@ -18,8 +18,10 @@
 //   may not take a variable); `command` → stdio; anything else is not carried;
 // - a stdio `command` or `./` argument that is a path inside the plugin, and a relative `cwd`,
 //   are rooted at `${PLUGIN_ROOT}` (the package directory on the server): the notes name each
-//   file that must be carried into the package with the same path; a path leaving the plugin
-//   (`../`) is not carried;
+//   file that must be carried into the package with the same path; a server whose command or
+//   argument leaves the plugin — `../x`, `./../x`, `bin/../../x` alike — is not carried, and a
+//   `cwd` leaving it is dropped; the manifest's `mcpServers` file is read only from inside the
+//   plugin;
 // - Codex `env_vars: [NAME]` (host variables forwarded when set) → `env: { NAME: "${NAME}" }`,
 //   Codex `bearer_token_env_var` → an `Authorization: Bearer ${NAME}` header;
 // - `${CLAUDE_PLUGIN_ROOT}` → `${PLUGIN_ROOT}`; Claude's `${VAR}` stays a reference
@@ -95,6 +97,18 @@ const keyStem = (name) =>
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
 
+/**
+ * A path relative to the plugin as it reads once `.` and `..` are resolved, or null when it
+ * leaves the plugin — however it spells the way out (`../x`, `./../x`, `bin/../../x`) — or is
+ * absolute.
+ */
+function insidePlugin(rel) {
+  const normalized = path.posix.normalize(rel);
+  return normalized === ".." || normalized.startsWith("../") || path.posix.isAbsolute(normalized)
+    ? null
+    : normalized;
+}
+
 /** Where the server map lives: the plugin manifest's pointer, else a root `.mcp.json`. */
 function findServers() {
   for (const manifest of [".codex-plugin/plugin.json", ".claude-plugin/plugin.json"]) {
@@ -102,6 +116,8 @@ function findServers() {
     const declared = readJson(manifest).mcpServers;
     if (isRecord(declared)) return { map: declared, from: manifest };
     const rel = typeof declared === "string" ? declared : ".mcp.json";
+    // The manifest names a file of the plugin: one outside it is never read.
+    if (insidePlugin(rel) === null) return { map: {}, from: rel, outside: true };
     if (exists(rel)) return { map: readJson(rel), from: rel.replace(/^\.\//, "") };
     if (typeof declared === "string") return { map: {}, from: rel, missing: true };
   }
@@ -116,6 +132,11 @@ if (found === null) {
   process.exit(0);
 }
 if (found.missing) notes.push(`${found.from} is named by the manifest but is not in the plugin`);
+if (found.outside) {
+  notes.push(
+    `${found.from}, which the manifest names for its MCP servers, lies outside the plugin; not read`,
+  );
+}
 const upstream = isRecord(found.map.mcpServers) ? found.map.mcpServers : found.map;
 
 const servers = [];
@@ -167,26 +188,31 @@ for (const [id, spec] of Object.entries(upstream)) {
         }
         return `\${${variable[1]}}`;
       });
-  /** Notes a file of the plugin a stdio server runs, to be carried into the package. */
+  /** The files of the plugin this server runs, noted to be carried once the server is. */
+  const carried = [];
   const carry = (rel) =>
-    notes.push(
+    carried.push(
       `${name}: carry ${rel} into the package at the same path (text only; read it in full)` +
         (upstreamRoot !== undefined ? `: ${upstreamRoot}/${rel}` : ""),
     );
   /**
    * A stdio command or argument naming a file of the plugin — `./x`, `x/y`, `${PLUGIN_ROOT}/x` —
-   * rooted at the package directory, its file noted to be carried; anything else as it is.
+   * rooted at the package directory, its file noted to be carried; null when the path leaves the
+   * plugin, which the package cannot carry; anything else as it is.
    */
   const rooted = (text, isCommand) => {
     if (text.startsWith("${PLUGIN_ROOT}/")) {
-      carry(text.slice("${PLUGIN_ROOT}/".length));
-      return text;
+      const rel = insidePlugin(text.slice("${PLUGIN_ROOT}/".length));
+      if (rel === null) return null;
+      carry(rel);
+      return `\${PLUGIN_ROOT}/${rel}`;
     }
     const relative =
       text.startsWith("./") ||
       (isCommand && !path.isAbsolute(text) && !text.startsWith("${") && text.includes("/"));
     if (!relative) return text;
-    const rel = text.replace(/^\.\//, "");
+    const rel = insidePlugin(text.replace(/^\.\//, ""));
+    if (rel === null) return null;
     carry(rel);
     return `\${PLUGIN_ROOT}/${rel}`;
   };
@@ -214,15 +240,21 @@ for (const [id, spec] of Object.entries(upstream)) {
       continue;
     }
     const command = rewrite(spec.command, "command");
-    if (command.startsWith("../")) {
-      notes.push(`${id}: its command ${command} lies outside the plugin; not carried`);
-      continue;
-    }
     // A command with a slash is a file (a bare one is looked up on the PATH); an argument is
     // one only when it says so (`./x`).
     config.command = rooted(command, true);
+    if (config.command === null) {
+      notes.push(`${id}: its command ${command} lies outside the plugin; not carried`);
+      continue;
+    }
     if (Array.isArray(spec.args)) {
-      config.args = spec.args.map((arg) => rooted(rewrite(String(arg), "args"), false));
+      const args = spec.args.map((arg) => rewrite(String(arg), "args"));
+      config.args = args.map((arg) => rooted(arg, false));
+      const outside = args.find((_arg, index) => config.args[index] === null);
+      if (outside !== undefined) {
+        notes.push(`${id}: its argument ${outside} lies outside the plugin; not carried`);
+        continue;
+      }
     }
     const env = {};
     if (isRecord(spec.env)) {
@@ -242,14 +274,16 @@ for (const [id, spec] of Object.entries(upstream)) {
     if (Object.keys(env).length > 0) config.env = env;
     if (typeof spec.cwd === "string") {
       const cwd = rewrite(spec.cwd, "cwd");
-      if (cwd.startsWith("../")) {
-        notes.push(`${name}: its cwd ${cwd} lies outside the plugin; dropped`);
-      } else if (path.isAbsolute(cwd) || cwd.startsWith("${")) {
-        config.cwd = cwd;
-      } else {
-        const rel = cwd.replace(/^\.\/?/, "");
-        config.cwd = rel === "" ? "${PLUGIN_ROOT}" : `\${PLUGIN_ROOT}/${rel}`;
-      }
+      // The plugin's own directory, or one inside it, is rooted at the package; another
+      // variable or an absolute path stays as written.
+      const inPlugin = cwd === "${PLUGIN_ROOT}" || cwd.startsWith("${PLUGIN_ROOT}/");
+      const rel =
+        inPlugin || (!path.isAbsolute(cwd) && !cwd.startsWith("${"))
+          ? insidePlugin(inPlugin ? `.${cwd.slice("${PLUGIN_ROOT}".length)}` : cwd)
+          : undefined;
+      if (rel === undefined) config.cwd = cwd;
+      else if (rel === null) notes.push(`${name}: its cwd ${cwd} lies outside the plugin; dropped`);
+      else config.cwd = rel === "." ? "${PLUGIN_ROOT}" : `\${PLUGIN_ROOT}/${rel}`;
     }
   } else {
     const url = typeof spec.url === "string" ? spec.url : "";
@@ -343,6 +377,7 @@ for (const [id, spec] of Object.entries(upstream)) {
   }
 
   taken.add(name);
+  notes.push(...carried);
   servers.push({ name, config, ...(setup.length > 0 ? { setup } : {}) });
 }
 

@@ -23,8 +23,10 @@
  * - A Claude Code `mcpServers` map, with or without its wrapper: `${CLAUDE_PLUGIN_ROOT}` becomes
  *   `${PLUGIN_ROOT}`, a `${VAR}` stays a reference, a literal token in a header is not carried.
  * - A stdio server's relative command, `./` arguments and `cwd` are rooted in the package, each
- *   file named to be carried; a command leaving the plugin, an address that is not http(s) and a
- *   server whose transport cannot be told are not carried.
+ *   file named to be carried; a command or an argument leaving the plugin — however its path
+ *   spells the way out — an address that is not http(s) and a server whose transport cannot be
+ *   told are not carried, and a `cwd` leaving the plugin is dropped. A server map the manifest
+ *   names outside the plugin is not read.
  * - `--oauth` and `--bearer` mark what only the upstream prose says: the server signs in with
  *   OAuth, and a token is the alternative.
  * - What it prints, pasted into a package.json, reads through the plugin library with no warning.
@@ -299,10 +301,15 @@ describe("port-mcp.mjs", () => {
             args: ["--config", "${CLAUDE_PLUGIN_ROOT}/config.json"],
             env: { DB_URL: "${DB_URL}", REGION: "${REGION:-us-east-1}" },
           },
+          // The plugin root, then out of it.
+          climb: { command: "${CLAUDE_PLUGIN_ROOT}/../../bin/tool" },
         },
       }),
     });
     const db = portMcp(wrapped);
+    expect(db.notes).toContain(
+      "climb: its command ${PLUGIN_ROOT}/../../bin/tool lies outside the plugin; not carried",
+    );
     expect(db.mcp_servers).toEqual([
       {
         name: "db",
@@ -361,6 +368,11 @@ describe("port-mcp.mjs", () => {
           },
           launcher: { command: "./scripts/launch", cwd: "work" },
           escape: { command: "../outside/run" },
+          // The same escape spelled so that it does not start with "../".
+          dotted: { command: "./../outside/run" },
+          nested: { command: "bin/../../outside/run" },
+          argument: { command: "node", args: ["./../outside/server.cjs"] },
+          climber: { command: "node", args: ["--stdio"], cwd: "./.." },
           legacy: { type: "ws", url: "ws://example.com" },
           plain: { type: "http", url: "ftp://example.com/mcp" },
         },
@@ -389,6 +401,7 @@ describe("port-mcp.mjs", () => {
           cwd: "${PLUGIN_ROOT}/work",
         },
       },
+      { name: "climber", config: { transport: "stdio", command: "node", args: ["--stdio"] } },
     ]);
     const said = notes.join("\n");
     expect(said).toContain(
@@ -398,8 +411,36 @@ describe("port-mcp.mjs", () => {
     expect(said).toContain(
       "escape: its command ../outside/run lies outside the plugin; not carried",
     );
+    expect(said).toContain(
+      "dotted: its command ./../outside/run lies outside the plugin; not carried",
+    );
+    expect(said).toContain(
+      "nested: its command bin/../../outside/run lies outside the plugin; not carried",
+    );
+    expect(said).toContain(
+      "argument: its argument ./../outside/server.cjs lies outside the plugin; not carried",
+    );
+    expect(said).toContain("climber: its cwd ./.. lies outside the plugin; dropped");
+    expect(said).not.toContain("carry ../");
     expect(said).toContain("legacy: its transport cannot be told; not carried");
     expect(said).toContain("plain: its address");
+  });
+
+  it("reads the server map only from inside the plugin", async () => {
+    const dir = await upstream({
+      "plugin/.codex-plugin/plugin.json": JSON.stringify({
+        name: "reach",
+        mcpServers: "../outside.json",
+      }),
+      "outside.json": JSON.stringify({
+        mcpServers: { borrowed: { type: "http", url: "https://example.com/mcp" } },
+      }),
+    });
+    const { mcp_servers: servers, notes } = portMcp(path.join(dir, "plugin"));
+    expect(servers).toEqual([]);
+    expect(notes).toEqual([
+      "../outside.json, which the manifest names for its MCP servers, lies outside the plugin; not read",
+    ]);
   });
 
   it("marks what only the upstream prose says, and what it prints reads through the plugin library with no warning", async () => {

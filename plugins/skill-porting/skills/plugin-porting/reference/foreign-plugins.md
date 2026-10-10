@@ -107,7 +107,7 @@ words):
 | --- | --- |
 | the map key | `name`: lower case, `[^a-z0-9_-]` → `-`; a name taken twice gets `-2` and a note |
 | `type: "http"` / `"sse"` + `url`; `command` | `config.transport` `http` / `sse` / `stdio`; a URL must be http(s) and its host fixed, else the server is not carried |
-| `command`, `./` arguments, `cwd` | a file of the plugin becomes `${PLUGIN_ROOT}/<path>`, and a note names the file to carry into the package; `../` is not carried |
+| `command`, `./` arguments, `cwd` | a file of the plugin becomes `${PLUGIN_ROOT}/<path>`, and a note names the file to carry into the package; a server whose command or argument leaves the plugin (`../x`, `./../x`, `bin/../../x` alike) is not carried, and a `cwd` leaving it is dropped |
 | Codex `env_vars` | `env: { NAME: "${NAME}" }` + a setup key each — keep only what the server needs |
 | `${CLAUDE_PLUGIN_ROOT}` | `${PLUGIN_ROOT}` |
 | `${VAR}`, `${VAR:-default}` | `${VAR}` + a setup key (the default is named in a note) |
