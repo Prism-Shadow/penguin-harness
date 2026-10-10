@@ -52,7 +52,6 @@ import { providerEnvFallbackKey } from "@prismshadow/penguin-core/model-catalog"
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
@@ -434,7 +433,7 @@ export function ProviderSettingsDialog({
     onClose();
   };
   /** Every way out of the dialog (Cancel, Esc, the backdrop, ×); none while a save is in flight. */
-  const requestClose = useGuardedClose(...closeUnlessBusy(saving, close, form.scope));
+  const requestClose = useGuardedClose(close, form.scope, { locked: saving });
 
   const busy = saving || detecting;
   return (

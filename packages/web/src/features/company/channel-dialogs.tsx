@@ -27,7 +27,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { channelIdProblem } from "./channel-list";
 import type { ChannelIdProblem } from "./channel-list";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
@@ -72,7 +71,7 @@ function NewChannelForm({
   const [refusedId, setRefusedId] = useState<string | undefined>(undefined);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const id = channelId.trim();
   const problem = channelIdProblem(id, taken);
   // A broken id is said as it is typed; an empty one is only marked required.
@@ -200,7 +199,7 @@ function ChannelTextForm({
   const value = form.draft;
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const valid = !required || value.trim() !== "";
 
   const submit = async () => {

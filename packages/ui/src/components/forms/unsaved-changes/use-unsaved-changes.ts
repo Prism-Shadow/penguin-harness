@@ -5,7 +5,7 @@
  *   it is dirty, and registers the form while it is;
  * - {@link useUnsavedChanges} registers a dirtiness the caller computes itself;
  * - {@link useGuardedClose} turns a dialog's `onClose` into one that asks first while its forms
- *   hold unsaved edits.
+ *   hold unsaved edits, and does nothing while the dialog's save is in flight.
  *
  * A route change asks through the app's router blocker and a page unload through the host's
  * `beforeunload`; neither needs anything from the form beyond being registered.
@@ -135,17 +135,34 @@ export function useFormDraft<T>(initial: T, options: FormDraftOptions<T> = {}): 
   };
 }
 
+export interface GuardedCloseOptions {
+  /**
+   * The dialog's save is in flight. Every way of closing does nothing until it answers: a close
+   * then would offer to discard edits the request is about to store — a "discard" the server
+   * would contradict a moment later.
+   */
+  locked?: boolean;
+}
+
 /**
  * A dialog's close through the guard. Pass the result as the dialog's `onClose` (Modal,
  * PagedDialog, Drawer, Sheet) **and** to its Cancel button: Esc, the ×, a scrim click and Cancel
  * all arrive there. While a form in `scope` holds unsaved edits it asks first; on "discard" the
- * forms reset and `onClose` runs, on "keep editing" nothing happens. After a successful save call
- * the raw `onClose` — nothing is dirty by then anyway.
+ * forms reset and `onClose` runs, on "keep editing" nothing happens. While `locked` (a save in
+ * flight) it does nothing at all. After a successful save call the raw `onClose` — nothing is
+ * dirty by then anyway.
  */
-export function useGuardedClose(onClose: () => void, scope: string): () => void {
+export function useGuardedClose(
+  onClose: () => void,
+  scope: string,
+  options: GuardedCloseOptions = {},
+): () => void {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const lockedRef = useRef(false);
+  lockedRef.current = options.locked === true;
   return useCallback(() => {
+    if (lockedRef.current) return;
     void guardLeave(() => onCloseRef.current(), scope);
   }, [scope]);
 }

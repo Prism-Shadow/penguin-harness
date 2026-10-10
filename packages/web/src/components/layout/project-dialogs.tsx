@@ -43,7 +43,6 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { useInstantSetting } from "../../lib/instant-setting";
 import {
   PROJECT_ID_MAX_LENGTH,
@@ -106,7 +105,7 @@ function CreateProjectForm({
   /** What the server refused about the id (a duplicate, say); cleared by the next edit of it. */
   const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
   const suffix = idInput.trim();
   const id = prefix + suffix;

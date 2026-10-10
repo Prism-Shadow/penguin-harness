@@ -69,7 +69,6 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { formatDateTime, formatMoney } from "../../lib/format";
 import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
@@ -257,7 +256,7 @@ function TicketDialog({
   // open section, and nothing on the page beneath.
   const scope = `ticket-dialog:${projectId}/${orgId}`;
   useUnsavedChanges(sectionDirty, { scope, discard: () => setEditing(null) });
-  const requestClose = useGuardedClose(onClose, scope);
+  const requestClose = useGuardedClose(onClose, scope, { locked: busy });
   /** A step that would drop the open section's edits: asks first while there are any. */
   const leaveSection = (go: () => void) => void guardLeave(go, scope);
 
@@ -1034,7 +1033,7 @@ function BlockTicketDialog({
 }) {
   const form = useFormDraft({ reason: "", by: "" });
   const { reason, by } = form.draft;
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   return (
     <Modal
       open

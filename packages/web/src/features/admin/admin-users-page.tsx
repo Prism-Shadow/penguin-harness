@@ -156,10 +156,10 @@ function CreateUserDialog({
 
 function CreateUserForm({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const form = useFormDraft({ userId: "", password: "" });
-  const requestClose = useGuardedClose(onClose, form.scope);
   /** What the server refused, on the field it is about. Cleared by the next keystroke. */
   const [refused, setRefused] = useState<{ userId?: string; password?: string }>({});
   const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const id = form.draft.userId.trim();
   const { password } = form.draft;
   // The naming rule is said under the box as soon as it is broken, so a held Create explains itself.
@@ -251,9 +251,9 @@ function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose
 
 function ResetPasswordForm({ user, onClose }: { user: UserInfo; onClose: () => void }) {
   const form = useFormDraft("");
-  const requestClose = useGuardedClose(onClose, form.scope);
   const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const password = form.draft;
 
   const submit = async () => {

@@ -32,7 +32,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { toneInk } from "../../lib/tone";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { ID_PATTERN, caseId, isValidRuns } from "./benchmark-prompts";
@@ -141,7 +140,7 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
   const [idTaken, setIdTaken] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
   const updateCase = (key: number, patch: Partial<CaseDraft>) =>
     form.setDraft((prev) => ({

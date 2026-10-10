@@ -54,7 +54,6 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { employeeColor } from "../../lib/category-colors";
@@ -900,7 +899,7 @@ export function CalendarEventDialog({
   });
   const draft = form.draft;
   const set = form.patch;
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   // Each required field is marked by its asterisk; Save waits until all are filled.
   const valid =
     draft.agentId !== "" &&

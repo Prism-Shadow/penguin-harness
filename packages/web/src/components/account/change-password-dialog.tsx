@@ -38,11 +38,11 @@ function ChangePasswordForm({ onClose }: { onClose: () => void }) {
   // reads, and a field it wants but the form leaves out fails the request.
   const noOldPassword = omitsOldPassword({ desktopMode, sessionVia });
   const form = useFormDraft(EMPTY);
-  const requestClose = useGuardedClose(onClose, form.scope);
   const { oldPassword, newPassword, confirmPassword } = form.draft;
   /** What the server refused, on the field it is about. Cleared by the next keystroke. */
   const [refused, setRefused] = useState<{ old?: string; new?: string }>({});
   const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
   const mismatch = confirmPassword !== "" && newPassword !== confirmPassword;
   const complete =

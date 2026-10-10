@@ -13,9 +13,11 @@
  * - A dirty form is registered for every leave to find, and only while dirty.
  * - A dialog's guarded close asks about the dialog's own form alone: a dirty form on the page
  *   beneath neither holds the close nor gets discarded by it.
+ * - While the dialog's save is in flight (`locked`), Esc, the ×, the scrim and Cancel do nothing;
+ *   once the save has failed, the close asks again.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createElement as h, useState } from "react";
+import { Fragment, createElement as h, useState } from "react";
 import { Modal, hasUnsaved, useFormDraft, useGuardedClose } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -28,6 +30,8 @@ import {
   hasButton,
   mount,
   pressEscape,
+  pressScrim,
+  run,
   type,
   unmountAll,
 } from "./helpers/dom";
@@ -154,6 +158,50 @@ function RecordDialog({ onClose }: { onClose: () => void }) {
   });
 }
 
+/** A record dialog whose Save waits on `write`, closing once it lands and staying open if it fails. */
+function SavingDialog({ onClose, write }: { onClose: () => void; write: () => Promise<void> }) {
+  const form = useFormDraft("");
+  const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
+  const save = async () => {
+    setBusy(true);
+    try {
+      await write();
+      onClose();
+    } catch {
+      // A refused save keeps the dialog open and its form dirty.
+    } finally {
+      setBusy(false);
+    }
+  };
+  return h(Modal, {
+    open: true,
+    title: "New key",
+    onClose: requestClose,
+    footer: h(
+      Fragment,
+      null,
+      h("button", { type: "button", onClick: requestClose }, "Cancel"),
+      h("button", { type: "button", onClick: () => void save() }, "Save"),
+    ),
+    children: h("input", {
+      "aria-label": "Key",
+      value: form.draft,
+      onChange: (e: { target: { value: string } }) => form.setDraft(e.target.value),
+    }),
+  });
+}
+
+/** A write that waits until the test refuses it. */
+function pendingWrite() {
+  let refuse = (): void => {};
+  const write = () =>
+    new Promise<void>((_, reject) => {
+      refuse = () => reject(new Error("refused"));
+    });
+  return { write, refuse: () => refuse() };
+}
+
 describe("a dialog's guarded close", () => {
   beforeAll(() => setActiveStrings(en));
   afterAll(() => setActiveStrings(zh));
@@ -185,5 +233,32 @@ describe("a dialog's guarded close", () => {
     await click(button("Discard changes"));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(field("Page field").value).toBe("edited on the page");
+  });
+
+  it("does nothing on Esc, the ×, the scrim or Cancel while its save is in flight", async () => {
+    const onClose = vi.fn();
+    const { write } = pendingWrite();
+    await mount(h("div", null, h(SavingDialog, { onClose, write }), h(UnsavedPrompt)));
+    await type(field("Key"), "OPENAI_API_KEY");
+    await click(button("Save"));
+    await pressEscape();
+    await click(button("Close"));
+    await pressScrim();
+    await click(button("Cancel"));
+    expect(hasButton("Discard changes")).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(dialogs()).toHaveLength(1);
+  });
+
+  it("asks again once its save has failed", async () => {
+    const onClose = vi.fn();
+    const { write, refuse } = pendingWrite();
+    await mount(h("div", null, h(SavingDialog, { onClose, write }), h(UnsavedPrompt)));
+    await type(field("Key"), "OPENAI_API_KEY");
+    await click(button("Save"));
+    await run(refuse);
+    await pressEscape();
+    expect(hasButton("Discard changes")).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

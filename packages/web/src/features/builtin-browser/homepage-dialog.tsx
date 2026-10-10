@@ -21,7 +21,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { S } from "../../lib/strings";
 import { homepageFromInput } from "./address";
 import { dispatchBrowser } from "./browser-store";
@@ -42,7 +41,7 @@ export function HomepageDialog({
   const text = form.draft;
   const setText = form.setDraft;
   const [saving, setSaving] = useState(false);
-  const requestClose = useGuardedClose(...closeUnlessBusy(saving, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: saving });
   const target = homepageFromInput(text);
 
   const save = async () => {

@@ -45,7 +45,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
@@ -175,7 +174,7 @@ function HireForm({
   const { title, duties, workspace, budget } = form.draft;
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
   const picked = agents.find((a) => a.agentId === agentId);
   // Left empty, the server partitions the shared workspace by Agent id, so the placeholder
@@ -503,7 +502,7 @@ export function EmployeeEditDialog({
   /** The field holds an edit; a closed dialog, or a level still being read, holds none. */
   const dirty = edit !== null && !reading && value.trim() !== opening.trim();
   useUnsavedChanges(dirty, { scope: EMPLOYEE_EDIT_SCOPE, discard: () => setValue(opening) });
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, EMPLOYEE_EDIT_SCOPE));
+  const requestClose = useGuardedClose(onClose, EMPLOYEE_EDIT_SCOPE, { locked: busy });
   /** What is wrong with the value as it stands; said under the field once it has been edited. */
   const problem =
     edit === "budget" && !isBudgetText(value)
@@ -718,7 +717,7 @@ function DeskRenewForm({
   /** What the server refused about the workspace; cleared by the next keystroke. */
   const [error, setError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const plan = deskRenewPlan(employee.workspace, workspace);
 
   const confirm = async () => {

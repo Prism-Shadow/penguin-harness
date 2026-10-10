@@ -121,12 +121,12 @@ function CreateAgentForm({
   onCreated,
 }: CreateAgentDialogProps) {
   const form = useFormDraft(EMPTY, { normalize: normalizeCreate });
-  const requestClose = useGuardedClose(onClose, form.scope);
   const { name, agentId, description, plugins, skillsDir, dirSkills: pickedDirSkills } = form.draft;
   const snapshotFile = form.draft.snapshot;
   /** What the server refused, under the id. Cleared by the next edit of the id. */
   const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const [pluginsOpen, setPluginsOpen] = useState(false);
   /** The Skills the picked directory carries (null while none is picked or it is being read). */
   const [dirSkills, setDirSkills] = useState<SkillMetadataItem[] | null>(null);

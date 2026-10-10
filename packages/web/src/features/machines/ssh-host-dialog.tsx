@@ -32,7 +32,6 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 
 type Field = "alias" | "hostName" | "user" | "port" | "identityFile";
 type Form = Record<Field, string>;
@@ -117,7 +116,7 @@ export function SshHostDialog({
   /** What the server refused, under the alias; cleared by the next keystroke. */
   const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, draft.scope));
+  const requestClose = useGuardedClose(onClose, draft.scope, { locked: busy });
   const found = validateHostForm(form);
   const valid = Object.values(found).every((error) => error === undefined);
   /** A field's problem as shown: a malformed value; an empty required field has its asterisk. */

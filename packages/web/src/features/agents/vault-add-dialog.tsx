@@ -52,10 +52,10 @@ export function VaultAddDialog(props: VaultAddDialogProps) {
 
 function VaultAddForm({ existingKeys, onAdd, onClose }: VaultAddDialogProps) {
   const form = useFormDraft(EMPTY, { normalize: normalizeEntry });
-  const requestClose = useGuardedClose(onClose, form.scope);
   /** What the server refused, under the key. Cleared by the next keystroke. */
   const [refused, setRefused] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   /** The configured key the user is being asked to overwrite. */
   const [overwriting, setOverwriting] = useState<string | null>(null);
 

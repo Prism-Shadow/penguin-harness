@@ -292,7 +292,7 @@ function ScheduleFormDialog({
     { normalize: (f) => normalizeForm(f, defaultModel) },
   );
   const form = draft.draft;
-  const requestClose = useGuardedClose(onClose, draft.scope);
+  const requestClose = useGuardedClose(onClose, draft.scope, { locked: busy });
   const missing = missingFields(form);
   /** A required field's error, once the field differs from what the dialog opened with. */
   const requiredError = (field: "name" | "prompt" | "startAt" | "sessionId") =>

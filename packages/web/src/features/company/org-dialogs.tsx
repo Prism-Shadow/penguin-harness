@@ -58,7 +58,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -606,7 +605,7 @@ function OrganizationSettingsForm({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [typedId, setTypedId] = useState("");
   const { models, error: modelsError } = useProjectModels(projectId, true);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   /** The organization always has a name, a mission and a timezone: an emptied one holds Save. */
   const valid = name.trim() !== "" && mission.trim() !== "" && timezone.trim() !== "";
 

@@ -109,7 +109,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
@@ -2275,7 +2274,7 @@ function AddGroupDialog({
   };
 
   const busy = importing !== null;
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const suffixLabel =
     clientType === null ? S.models.protocolUnset : protocolPathForModel(trimmed, clientType);
 
@@ -3280,7 +3279,7 @@ function ModelDialog({
     }
   };
   /** Every way out — Cancel, Esc, the ×, a press outside — asks first while the draft holds edits. */
-  const requestClose = useGuardedClose(...closeUnlessBusy(saving, onClose, draft.scope));
+  const requestClose = useGuardedClose(onClose, draft.scope, { locked: saving });
 
   // Provider info for the current group (updates live as the group dropdown
   // changes): the "get model id / API key" links come from it (shown next to

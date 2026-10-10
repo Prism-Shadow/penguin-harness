@@ -51,7 +51,6 @@ import type { TreeToggle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/format";
 import { isShortcut } from "../../lib/shortcuts/match";
 import { currentPlatform } from "../../lib/shortcuts/platform";
@@ -535,7 +534,7 @@ function NewDocumentForm({
   const path = form.draft;
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const rel = completeHandbookPath(path);
   // A path that is only a folder names no document: the field starts as one, and completing
   // `decisions/` to `decisions.md` would create a file beside the folder rather than in it. That

@@ -17,7 +17,6 @@
 import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 import { Button, Modal, useGuardedClose, useUnsavedChanges } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import {
   MessagingBindingBody,
   MessagingBindingHelp,
@@ -54,7 +53,7 @@ export function MessagingBindingModal({
     },
   });
   useUnsavedChanges(b.unsavedAny, { scope: MESSAGING_DIALOG_SCOPE, discard: b.discard });
-  const requestClose = useGuardedClose(...closeUnlessBusy(b.busy, onClose, MESSAGING_DIALOG_SCOPE));
+  const requestClose = useGuardedClose(onClose, MESSAGING_DIALOG_SCOPE, { locked: b.busy });
 
   return (
     <Modal

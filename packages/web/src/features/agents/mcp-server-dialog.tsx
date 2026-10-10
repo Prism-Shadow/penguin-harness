@@ -111,10 +111,10 @@ export function McpServerDialog({
 }: McpServerDialogProps) {
   const [initial] = useState(() => (entry === null ? emptyMcpForm() : serverToForm(entry)));
   const form = useFormDraft(initial, { normalize: normalizeMcp });
-  const requestClose = useGuardedClose(onClose, form.scope);
   // Server-side rejection (transport validation 400) rendered at the dialog's foot.
   const [refused, setRefused] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   // Connectivity probe: runs the current form through POST /config/mcp-test (server-side
   // connect + discovery, nothing saved); the result pops as a toast.
   const [testing, setTesting] = useState(false);

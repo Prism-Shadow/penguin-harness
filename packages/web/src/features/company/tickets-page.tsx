@@ -60,7 +60,6 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
@@ -614,7 +613,7 @@ function CreateTicketForm({
   );
   const { title, slug, goal, acceptance, owner, parent, notify, priority, due } = form.draft;
   const [busy, setBusy] = useState(false);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   // The rule sits behind the "?", so a slug that breaks it says so as it is typed.
   const slugBroken = slug.trim() !== "" && !isTicketSlug(slug.trim());
   const valid = title.trim() !== "" && !slugBroken;

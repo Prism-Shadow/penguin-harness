@@ -39,7 +39,6 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { closeUnlessBusy } from "../../lib/busy-close";
 import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
 import {
   SHORTCUT_MAX_COUNT,
@@ -270,7 +269,7 @@ function ShortcutDialog({
   });
   const draft = form.draft;
   const [busy, setBusy] = useState(false);
-  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const editing = draft.id !== null;
   const draftError = shortcutDraftError(draft);
   // A new shortcut is a change on its own; an edit has to change something.
