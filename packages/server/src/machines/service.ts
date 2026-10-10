@@ -25,6 +25,8 @@
  */
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DEFAULT_PROJECT_ID,
   VERSION,
@@ -38,6 +40,7 @@ import type {
   MachinePhase,
   MachineServerStatus,
   MachineUseRefusal,
+  MachinesCheckoutImage,
 } from "../api/types.js";
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
@@ -64,6 +67,9 @@ import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
+import type { PushPlan } from "./install-server.js";
+import { CheckoutImage, deployPacker, findCheckout, imageAssets } from "./checkout-image.js";
+import type { CheckoutPacker } from "./checkout-image.js";
 import { probeServerState } from "./server-state.js";
 import { upgradeRemote } from "./upgrade.js";
 import type { UpgradeOutcome } from "./upgrade.js";
@@ -103,6 +109,17 @@ type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
 type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported";
 
 /**
+ * What a job installs, once it has one: a plan and where its installers are, or the failure
+ * that left it without.
+ */
+type ImageFor = (
+  say: Say,
+) => Promise<
+  | { ok: true; plan: PushPlan; assets: () => string | null }
+  | { ok: false; result: MachineJob["result"] }
+>;
+
+/**
  * What this service does to the world, injectable as a set. Production passes none of them;
  * tests fake the reaching-out, because the real ones read the developer's own ~/.ssh/config
  * and spawn ssh against whatever it names. The push path itself is covered where it belongs
@@ -135,6 +152,11 @@ export interface MachinesEffects {
   upgrade: typeof upgradeRemote;
   /** This server's own Project config, credentials in plaintext — the source of a model sync. */
   loadConfig: (projectId: string) => Promise<ProjectConfig>;
+  /**
+   * Packs this server's checkout into an install image (checkout-image.ts) — or null when it
+   * does not run from a checkout, which is every server but a development one.
+   */
+  packCheckout: CheckoutPacker | null;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
 }
@@ -198,6 +220,8 @@ export class MachinesService {
   /** Per machine, when the next re-hold may be tried (epoch ms) and how many tries have failed in a row. */
   readonly #reholdNotBefore = new Map<string, number>();
   readonly #reholdFailures = new Map<string, number>();
+  /** The image a source checkout builds for its installs; null for every other server. */
+  readonly #checkout: CheckoutImage | null;
 
   constructor(
     private readonly dataRoot: string,
@@ -227,9 +251,17 @@ export class MachinesService {
       mintToken: (target, runOn) => mintTokenOnRemote(target, layout, runOn),
       upgrade: upgradeRemote,
       loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
+      packCheckout: null,
       now: () => new Date(),
       ...effects,
     };
+    const pack = this.#effects.packCheckout;
+    this.#checkout =
+      pack === null
+        ? null
+        : new CheckoutImage(path.join(dataRoot, "machines", "checkout-image"), VERSION, pack, () =>
+            this.#effects.now(),
+          );
   }
 
   // --- what is known -----------------------------------------------------------------------
@@ -409,12 +441,61 @@ export class MachinesService {
   }
 
   /**
-   * The version this server would install, or null when it has no image to push — a dev
-   * checkout that has never been pushed to is the one shape with none. The page asks for it
-   * so it can say so up front, rather than letting every install fail at the same step.
+   * The version this server would install, or null when it has none to name. A source
+   * checkout names the image it last built — its next install builds again, from the checkout
+   * as it is then — and null before the first build; a server that is neither installed nor
+   * a checkout has no image at all. The page asks so it can say so up front, rather than
+   * letting every install fail at the same step.
    */
   imageVersion(): string | null {
-    return this.#effects.resolvePlan(this.dataRoot)?.version ?? null;
+    return this.#plan()?.version ?? null;
+  }
+
+  /** The checkout's image, for the page to speak of; null unless this server runs from a checkout. */
+  checkoutImage(): MachinesCheckoutImage | null {
+    if (this.#checkout === null || this.#effects.resolvePlan(this.dataRoot) !== null) return null;
+    return this.#checkout.status();
+  }
+
+  /** What an install would put on a machine now: this install's own plan, else the checkout's last image. */
+  #plan(): PushPlan | null {
+    return this.#effects.resolvePlan(this.dataRoot) ?? this.#checkout?.plan() ?? null;
+  }
+
+  /**
+   * What the jobs of one batch install. An installed server's plan is fixed; a checkout builds
+   * its image from the source as the batch finds it, once for the whole batch — the first job
+   * to ask starts the build, the others hear it out, and a job that starts after it is done
+   * takes its result rather than building again. Null when this server has nothing to
+   * install and no checkout to build it from.
+   */
+  #imageForBatch(): ImageFor | null {
+    const plan = this.#effects.resolvePlan(this.dataRoot);
+    if (plan !== null) return async () => ({ ok: true, plan, assets: this.#assets });
+    const checkout = this.#checkout;
+    if (checkout === null) return null;
+    let built: Awaited<ReturnType<CheckoutImage["build"]>> | null = null;
+    return async (say) => {
+      if (built === null) {
+        say("Building the install image from this checkout…", "check");
+        built = await checkout.build((line) => say(line));
+      }
+      if (built.ok) {
+        // The installers this image was packed with travel in it.
+        const assets = imageAssets(built.plan);
+        return { ok: true, plan: built.plan, assets: () => assets };
+      }
+      return {
+        ok: false,
+        result: {
+          ok: false,
+          step: "build the install image",
+          message: built.detail,
+          // This server's own lack: installing the program anyway would send nothing new.
+          canReplaceProgram: false,
+        },
+      };
+    };
   }
 
   /** The running or last job; null before the first one. */
@@ -726,12 +807,14 @@ export class MachinesService {
     if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
       return { ok: false, why: "self" };
     }
-    const plan = this.#effects.resolvePlan(this.dataRoot);
-    if (plan === null) return { ok: false, why: "no-image" };
+    const image = this.#imageForBatch();
+    if (image === null) return { ok: false, why: "no-image" };
 
-    this.#startJob("install", machine, { offerReplaceProgram: !replaceProgram }, (say) =>
-      this.#installWork(projectId, machine, plan, replaceProgram, say),
-    );
+    this.#startJob("install", machine, { offerReplaceProgram: !replaceProgram }, async (say) => {
+      const ready = await image(say);
+      if (!ready.ok) return ready.result;
+      return this.#installWork(projectId, machine, ready, replaceProgram, say);
+    });
     return { ok: true };
   }
 
@@ -739,7 +822,7 @@ export class MachinesService {
   async #installWork(
     projectId: string,
     machine: MachineInfo,
-    plan: NonNullable<ReturnType<MachinesEffects["resolvePlan"]>>,
+    { plan, assets }: { plan: PushPlan; assets: () => string | null },
     replaceProgram: boolean,
     say: Say,
   ): Promise<MachineJob["result"]> {
@@ -764,7 +847,7 @@ export class MachinesService {
       target,
       plan,
       onProgress: say,
-      assets: this.#assets,
+      assets,
       layout: this.#layout,
       ...(replaceProgram ? { forceInstaller: true } : {}),
     });
@@ -789,7 +872,7 @@ export class MachinesService {
       // asks the machine itself, so a runtime that cannot claim this platform refuses in
       // words rather than restarting into a silent fallback.
       say("Handing this build to its own update channel…", "handover");
-      const pushed = await this.#handOverBuild(address, target, say);
+      const pushed = await this.#handOverBuild(address, target, plan, say);
       if (pushed.kind === "no-server") {
         say("Its server is not running; this build will be used when it next starts.");
       } else if (pushed.kind !== "upgraded") {
@@ -917,7 +1000,7 @@ export class MachinesService {
     replaceProgram = false,
   ): { refused: { machineId: string; why: MachineUseRefusal }[] } {
     const refused: { machineId: string; why: MachineUseRefusal }[] = [];
-    const plan = this.#effects.resolvePlan(this.dataRoot);
+    const image = this.#imageForBatch();
     for (const address of new Set(addresses)) {
       const machine = this.#allMachines().find((entry) => entry.id === address);
       if (machine === undefined) {
@@ -928,13 +1011,15 @@ export class MachinesService {
         refused.push({ machineId: address, why: "self" });
         continue;
       }
-      if (plan === null) {
+      if (image === null) {
         refused.push({ machineId: address, why: "no-image" });
         continue;
       }
-      this.#startJob("use", machine, { offerReplaceProgram: !replaceProgram }, (say) =>
-        this.#useWork(projectId, address, plan, replaceProgram, say),
-      );
+      this.#startJob("use", machine, { offerReplaceProgram: !replaceProgram }, async (say) => {
+        const ready = await image(say);
+        if (!ready.ok) return ready.result;
+        return this.#useWork(projectId, address, ready, replaceProgram, say);
+      });
     }
     return { refused };
   }
@@ -943,10 +1028,11 @@ export class MachinesService {
   async #useWork(
     projectId: string,
     address: string,
-    plan: NonNullable<ReturnType<MachinesEffects["resolvePlan"]>>,
+    image: { plan: PushPlan; assets: () => string | null },
     replaceProgram: boolean,
     say: Say,
   ): Promise<MachineJob["result"]> {
+    const { plan } = image;
     // Read at run time, not at queue time: a batch's later rows see what the earlier ones did.
     const machine = this.#allMachines().find((entry) => entry.id === address);
     if (machine === undefined) {
@@ -955,7 +1041,7 @@ export class MachinesService {
     const needsInstall =
       replaceProgram || machine.installed === null || machine.installed.version !== plan.version;
     if (needsInstall) {
-      const installed = await this.#installWork(projectId, machine, plan, replaceProgram, say);
+      const installed = await this.#installWork(projectId, machine, image, replaceProgram, say);
       if (installed !== null && !installed.ok) return installed;
     } else {
       say(`Already on ${plan.version}.`, "check");
@@ -1241,8 +1327,17 @@ export class MachinesService {
     };
   }
 
-  /** Hands a machine this server's pushed build, through the connection held to it. */
-  async #handOverBuild(address: string, target: RemoteTarget, say: Say): Promise<UpgradeOutcome> {
+  /**
+   * Hands a machine the build a plan carries, through the connection held to it: this
+   * server's own pushed build, or a checkout's image — read from the plan's own store, never
+   * from a checkout's `<root>/hmr`, which holds nothing of it.
+   */
+  async #handOverBuild(
+    address: string,
+    target: RemoteTarget,
+    plan: PushPlan,
+    say: Say,
+  ): Promise<UpgradeOutcome> {
     const probed = await this.#effects.probe(
       target,
       this.#layout,
@@ -1266,7 +1361,9 @@ export class MachinesService {
       agent: this.#effects.agent(target, port),
       port,
       cookie: session.cookie,
-      dataRoot: this.dataRoot,
+      // The root the plan's store sits in: `<root>/hmr` for this server's own, and the
+      // image's directory for a checkout's.
+      dataRoot: plan.hmrDir === null ? this.dataRoot : path.dirname(plan.hmrDir),
       onProgress: say,
     });
   }
@@ -1393,16 +1490,20 @@ export class MachinesService {
     await Promise.all(workers);
   }
 
-  /** Hands this server's build to every machine carrying a different one. */
+  /**
+   * Hands this server's build to every machine carrying a different one. A checkout hands
+   * over the image it last built and builds nothing here: this runs at every start, and a
+   * dev server restarts on every edit.
+   */
   async syncOutOfDate(): Promise<void> {
-    const plan = this.#effects.resolvePlan(this.dataRoot);
+    const plan = this.#plan();
     if (plan === null) return;
     const behind = this.repo
       .all()
       .filter((row) => row.version !== null && row.version !== plan.version)
       .map((row) => row.address);
     await this.#sweep(behind, async (address, target) => {
-      const outcome = await this.#handOverBuild(address, target, () => {});
+      const outcome = await this.#handOverBuild(address, target, plan, () => {});
       // Recorded only when the machine also wrote it down: a swap it could not persist is
       // gone at its next restart, and a record of it would outlive the thing it records.
       if (outcome.kind === "upgraded" && outcome.persisted) {
@@ -1536,8 +1637,16 @@ export class MachinesModule {
     // after — every stored reference to this machine, here and on the machines it reaches,
     // points at it. A test that supplies its own service mints none.
     const repo = new MachinesRepo(this.db as unknown as DatabaseSync);
-    const machines = new MachinesService(this.paths.root, repo.ownId(), repo, {}, () =>
-      this.hmr.assetsDir(),
+    // A server running from a checkout builds the image its installs need (checkout-image.ts);
+    // asked of this module's own file, which a packaged program or a pushed platform keeps
+    // outside any checkout.
+    const checkout = findCheckout(path.dirname(fileURLToPath(import.meta.url)));
+    const machines = new MachinesService(
+      this.paths.root,
+      repo.ownId(),
+      repo,
+      checkout === null ? {} : { packCheckout: deployPacker(checkout) },
+      () => this.hmr.assetsDir(),
     );
     this.machines = machines;
     this.routes = machinesRoutes({ machines, access: this.access });

@@ -56,7 +56,9 @@ export const zh = {
     /** Tooltip on the version in the header: what this server would install. */
     imageVersion: (version: string) => `本服务端版本：${version}`,
     noImage:
-      "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像；源码检出则在第一次热推后获得。",
+      "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像，源码检出会在第一次安装时自行构建；本服务端两者都不是。",
+    /** A source checkout builds the image it installs; the build's own last lines follow this sentence. */
+    checkoutImageFailed: "本服务端从源码检出运行，未能构建要装到机器上的安装镜像。构建输出：",
     empty: "~/.ssh/config 中没有可添加的主机。",
     /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
     search: "搜索主机…",

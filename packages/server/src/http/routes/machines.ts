@@ -60,12 +60,16 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     await next();
   });
 
-  const state = (c: Context<AppEnv>): MachinesResponse => ({
-    machines: deps.machines.list(requireValidId(c, "projectId")),
-    imageVersion: deps.machines.imageVersion(),
-    job: deps.machines.job(),
-    jobs: deps.machines.jobs(),
-  });
+  const state = (c: Context<AppEnv>): MachinesResponse => {
+    const checkoutImage = deps.machines.checkoutImage();
+    return {
+      machines: deps.machines.list(requireValidId(c, "projectId")),
+      imageVersion: deps.machines.imageVersion(),
+      ...(checkoutImage === null ? {} : { checkoutImage }),
+      job: deps.machines.job(),
+      jobs: deps.machines.jobs(),
+    };
+  };
 
   /**
    * Bring machines into use — the one verb a person needs. Each is queued for the whole
@@ -221,7 +225,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       throw new HttpError(
         409,
         "no_install_image",
-        "This server has no install image to push. A packaged or installed server carries one; a development checkout gets one from its first hot push.",
+        "This server has no install image to push. A packaged or installed server carries one, and a source checkout builds one at its first install; this server is neither.",
       );
     }
     return c.json(state(c), 202);

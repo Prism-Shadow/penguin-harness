@@ -183,3 +183,19 @@ export function behindMachines(state: MachinesResponse): MachineInfo[] {
 export function anyJobPending(state: MachinesResponse): boolean {
   return state.jobs.some((job) => job.queued || job.running);
 }
+
+/**
+ * What the page says about this server's install image, if anything. `noImage` is the one
+ * case that stops the page: nothing to install and nothing to build it from, so adding and
+ * enabling machines are off. A source checkout builds its image when an install asks, so no
+ * image yet is no reason to stop — only a build that failed is worth a word, and the word is
+ * the build's own.
+ */
+export type ImageNotice = { kind: "noImage" } | { kind: "buildFailed"; detail: string };
+
+export function imageNotice(state: MachinesResponse): ImageNotice | null {
+  const checkout = state.checkoutImage;
+  if (checkout?.state === "failed") return { kind: "buildFailed", detail: checkout.detail };
+  if (state.imageVersion === null && checkout === undefined) return { kind: "noImage" };
+  return null;
+}

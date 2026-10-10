@@ -55,6 +55,7 @@ import {
   MACHINE_PHASES,
   anyJobPending,
   behindMachines,
+  imageNotice,
   installedMachines,
   jobFor,
   localMachine,
@@ -367,7 +368,8 @@ export function MachinesPage() {
   const toggleExpanded = (id: string) => setExpanded((prev) => toggled(prev, id));
   const toggleAdding = (id: string) => setAdding((prev) => toggled(prev, id));
 
-  const noImage = state !== null && imageVersion === null;
+  const notice = state === null ? null : imageNotice(state);
+  const noImage = notice?.kind === "noImage";
 
   return (
     <PageFrame width="sm">
@@ -526,6 +528,13 @@ export function MachinesPage() {
         {noImage && error === null && (
           <NoticeStrip tone="attention" className="mt-4 rounded-md border px-3 py-2 text-sm">
             {S.machines.noImage}
+          </NoticeStrip>
+        )}
+        {notice?.kind === "buildFailed" && error === null && (
+          <NoticeStrip tone="attention" className="mt-4 rounded-md border px-3 py-2 text-sm">
+            <p>{S.machines.checkoutImageFailed}</p>
+            {/* The build's own last lines: where pnpm, vite or the packer said what went wrong. */}
+            <pre className={`mt-1 break-words whitespace-pre-wrap ${MONO}`}>{notice.detail}</pre>
           </NoticeStrip>
         )}
       </PageHeader>

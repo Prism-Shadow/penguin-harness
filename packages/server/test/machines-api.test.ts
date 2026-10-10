@@ -36,12 +36,20 @@
  *   and a hand-written one is refused.
  * - Given a refusal decidable without ssh (self-install, a second install, an unknown host, no
  *   image), nothing runs.
+ * - Given a server running from a source checkout, nothing is refused for want of an image: an
+ *   install or a batch builds one from the checkout (once per batch), installs it under the
+ *   checkout's release with the build's own suffix, and keeps it beside — never in — the
+ *   server's own hmr store; an unchanged tree is the same image, a changed one a new version;
+ *   a failed build ends the job in the build's own words; the image outlives a restart; an
+ *   installed server's own image wins.
  */
 import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
+import zlib from "node:zlib";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { VERSION } from "@prismshadow/penguin-core";
 import type {
   MachinesUseResponse,
   MachinesResponse,
@@ -54,8 +62,11 @@ import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects } from "../src/machines/service.js";
 import { remoteLayoutFor } from "../src/machines/layout.js";
 import type { RemoteLayout } from "../src/machines/layout.js";
-import type { RemoteInstallOutcome } from "../src/machines/install-server.js";
+import type { PushPlan, RemoteInstallOutcome } from "../src/machines/install-server.js";
 import type { RemoteIdentity } from "../src/machines/detect.js";
+import type { CheckoutPacker } from "../src/machines/checkout-image.js";
+import { readPushedBuild } from "../src/hmr/pushed-build.js";
+import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import {
   apiClient,
   createTestApp,
@@ -93,6 +104,26 @@ const PUSHED_PLAN = {
   harness: '{"platform":{"bundle":"store/platform/cafe.mjs"}}',
   hmrDir: "/nonexistent",
   version: "9.9.9+hmr.cafe",
+};
+
+/** What a checkout's packer leaves: a whole build, every part inline. */
+const CHECKOUT_BUILD: PushedBuild = {
+  platform: "export const hotPlatform = { id: 'checkout' };\n",
+  cli: "export async function cli() { return 0; }\n",
+  web: {
+    files: { "index.html": Buffer.from("<!doctype html><title>dev</title>").toString("base64") },
+  },
+  assets: {
+    files: {
+      "install.sh": Buffer.from("#!/bin/sh\necho install\n").toString("base64"),
+      "node_modules/node-pty/build/Release/spawn-helper": Buffer.from("helper").toString("base64"),
+    },
+    exec: ["node_modules/node-pty/build/Release/spawn-helper"],
+  },
+  source: {
+    repo: "https://github.com/Prism-Shadow/penguin-harness.git",
+    revision: "v0.2.13-1-gabc1234",
+  },
 };
 
 /** An effects set that names two hosts and installs successfully, with the parts a test cares about overridden. */
@@ -1762,6 +1793,224 @@ describe("machines API", () => {
       expect(body.error.code).toBe("ssh_host_invalid");
       expect(body.error.message).toContain("alias");
       expect(written).toEqual([]);
+    });
+  });
+
+  describe("a source checkout's install image", () => {
+    /**
+     * The packer's stand-in, the one boundary these scenarios fake: it leaves a build the way
+     * `deploy.mjs --out` does — a gzipped upgrade body — and says what it is doing. Laying the
+     * image down, naming it and reading it back are the real thing.
+     */
+    const packs: string[] = [];
+    const packing =
+      (build: PushedBuild = CHECKOUT_BUILD): CheckoutPacker =>
+      async (outFile, onLine) => {
+        packs.push(outFile);
+        onLine("building the web dist…");
+        fs.writeFileSync(outFile, zlib.gzipSync(Buffer.from(JSON.stringify(build))));
+        return { ok: true };
+      };
+    /** A server running from a checkout: no installed release, and a packer to build with. */
+    const checkout = (over: Partial<MachinesEffects> = {}) =>
+      boot({ resolvePlan: () => null, packCheckout: packing(), ...over });
+    const listed = async () =>
+      (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+    const useBody = (machines: string[]) =>
+      admin.post("/api/projects/default_project/machines/use", { machines });
+    const jobsOf = () => t.deps.machines.jobs();
+    const settled = () => jobsOf().every((job) => !job.queued && !job.running);
+    beforeEach(() => {
+      packs.length = 0;
+    });
+
+    it("before its first build it is told to the page as built on demand, and nothing is refused", async () => {
+      await checkout();
+      const body = await listed();
+      expect(body.imageVersion).toBeNull();
+      expect(body.checkoutImage).toEqual({ state: "unbuilt" });
+      // Listing builds nothing; only an install or a use does.
+      expect(packs).toEqual([]);
+
+      const used = (await (await useBody(["ssh:nas"])).json()) as MachinesUseResponse;
+      expect(used.refused).toEqual([]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+    });
+
+    it("the first install builds the image, installs it, and records its version — the server's own store untouched", async () => {
+      const plans: PushPlan[] = [];
+      const installers: (string | null)[] = [];
+      await checkout({
+        install: async (opts) => {
+          plans.push(opts.plan);
+          installers.push(opts.assets?.() ?? null);
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      const job = t.deps.machines.job()!;
+      expect(job.result).toMatchObject({ ok: true, installed: "installed" });
+      // The packer's own narration is the job's while it builds.
+      expect(job.log).toContain("building the web dist…");
+      const version = (job.result as { version: string }).version;
+      // The checkout's release, plus the build it carries: the form a hot-pushed server reports.
+      expect(version.startsWith(`${VERSION}+hmr.`)).toBe(true);
+      expect(plans).toHaveLength(1);
+      expect(plans[0]).toMatchObject({ baseVersion: VERSION, version });
+      // What is replicated is the image's own store, a whole build — never the server's live
+      // `<root>/hmr`, which a dev server would restore in place of its source.
+      const image = path.dirname(plans[0]!.hmrDir!);
+      expect(image.startsWith(path.join(machinesRoot, "machines", "checkout-image"))).toBe(true);
+      expect(readPushedBuild(image)).not.toBeNull();
+      expect(fs.existsSync(path.join(machinesRoot, "hmr"))).toBe(false);
+      // The installer the far side runs is the one packed into this image: a checkout run
+      // under tsx has no built copy of its own.
+      expect(installers[0]?.startsWith(image)).toBe(true);
+      expect(fs.readFileSync(path.join(installers[0]!, "install.sh"), "utf8")).toContain("install");
+
+      expect(recordsInStore()["ssh:nas"]?.version).toBe(version);
+      const body = await listed();
+      expect(body.imageVersion).toBe(version);
+      expect(body.checkoutImage).toEqual({ state: "built" });
+    });
+
+    it("a batch builds once, and every machine in it gets that image", async () => {
+      await checkout();
+      await useBody(["ssh:build-box", "ssh:nas"]);
+      await waitFor(settled);
+      expect(packs).toHaveLength(1);
+      const versions = Object.values(recordsInStore()).map((record) => record.version);
+      expect(versions).toHaveLength(2);
+      expect(new Set(versions).size).toBe(1);
+    });
+
+    it("a build that fails ends the job in its own words, installs nothing, and the page says the same", async () => {
+      let installs = 0;
+      const said = "vite: build failed in src/app.tsx (3:7): Unexpected token";
+      await checkout({
+        packCheckout: async () => ({ ok: false, detail: said }),
+        install: async () => {
+          installs += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      // No forced install on offer: reinstalling would send nothing this server lacks.
+      expect(jobsOf()[0]?.result).toEqual({
+        ok: false,
+        step: "build the install image",
+        message: said,
+        canReplaceProgram: false,
+      });
+      expect(installs).toBe(0);
+      expect(recordsInStore()).toEqual({});
+      expect((await listed()).checkoutImage).toEqual({ state: "failed", detail: said });
+    });
+
+    it("rebuilding an unchanged checkout lands on the image already there: the machine on it gets nothing new", async () => {
+      let installs = 0;
+      await checkout({
+        install: async () => {
+          installs += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      const first = (await listed()).imageVersion;
+
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      // Each ask builds from the checkout as it is then; the same tree is the same image.
+      expect(packs).toHaveLength(2);
+      expect(installs).toBe(1);
+      expect((await listed()).imageVersion).toBe(first);
+      expect(jobsOf()[0]?.log).toContain(`Already on ${first}.`);
+    });
+
+    it("a changed checkout is a new version, and the machine on the old one reads as behind it", async () => {
+      await checkout();
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      const first = (await listed()).imageVersion;
+
+      // The same server after an edit to the platform: its next build is another image.
+      service = new MachinesService(
+        machinesRoot,
+        LOCAL_ID,
+        machinesRepo,
+        effects({
+          resolvePlan: () => null,
+          packCheckout: packing({
+            ...CHECKOUT_BUILD,
+            platform: `${CHECKOUT_BUILD.platform}// edited\n`,
+          }),
+        }),
+      );
+      await useBody(["ssh:build-box"]);
+      await waitFor(settled);
+
+      const body = await listed();
+      expect(body.imageVersion).not.toBe(first);
+      expect(body.imageVersion?.startsWith(`${VERSION}+hmr.`)).toBe(true);
+      // What the page compares to raise "update": the record against the image, both true.
+      expect(recordsInStore()["ssh:nas"]?.version).toBe(first);
+      expect(recordsInStore()["ssh:build-box"]?.version).toBe(body.imageVersion);
+    });
+
+    it("outlives a restart: a fresh service over the same root names the image it built, without building", async () => {
+      await checkout();
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      const version = (await listed()).imageVersion;
+
+      const reborn = new MachinesService(
+        machinesRoot,
+        LOCAL_ID,
+        machinesRepo,
+        effects({ resolvePlan: () => null, packCheckout: packing() }),
+      );
+      expect(reborn.imageVersion()).toBe(version);
+      expect(reborn.checkoutImage()).toEqual({ state: "built" });
+      expect(packs).toHaveLength(1);
+    });
+
+    it("a machine carrying the release but not this image is handed the image through its update channel", async () => {
+      let handed: PushedBuild | null = null;
+      await checkout({
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async (opts) => {
+          const body = readPushedBuild(opts.dataRoot);
+          handed =
+            body === null ? null : (JSON.parse(zlib.gunzipSync(body).toString()) as PushedBuild);
+          return { kind: "upgraded", detail: "", persisted: true };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true });
+      expect(handed).toMatchObject({
+        platform: CHECKOUT_BUILD.platform,
+        cli: CHECKOUT_BUILD.cli,
+        web: CHECKOUT_BUILD.web,
+      });
+    });
+
+    it("an installed server's own image wins: the checkout is neither built nor mentioned", async () => {
+      await boot({ packCheckout: packing() });
+      const body = await listed();
+      expect(body.imageVersion).toBe("9.9.9");
+      expect(body.checkoutImage).toBeUndefined();
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, version: "9.9.9" });
+      expect(packs).toEqual([]);
     });
   });
 

@@ -4721,15 +4721,32 @@ export interface MachineJob {
       };
 }
 
+/**
+ * A source checkout's install image (machines/checkout-image.ts), built from the checkout
+ * when an install or a use first needs it: not built yet, building, built, or failed with
+ * the build's own last words.
+ */
+export type MachinesCheckoutImage =
+  | { state: "unbuilt" }
+  | { state: "building" }
+  | { state: "built" }
+  | { state: "failed"; detail: string };
+
 /** GET /api/machines, and the 202 body of POST /api/machines/:machineId/install. */
 export interface MachinesResponse {
   machines: MachineInfo[];
   /**
    * The version an install would leave on the remote — the base release, plus a `+hmr.<sha>`
-   * suffix when this server carries a pushed version to replicate. Null for a development
-   * checkout, which stands on no release the remote could download.
+   * suffix when this server carries a pushed version to replicate. A source checkout answers
+   * with the image it last built, and null before its first build (see `checkoutImage`).
+   * Null otherwise only for a server that carries no image and builds none.
    */
   imageVersion: string | null;
+  /**
+   * Present only when this server runs from a source checkout: it builds its install image
+   * from the checkout at each install or use, so no image yet is not a reason to refuse one.
+   */
+  checkoutImage?: MachinesCheckoutImage;
   /** The most recently started job, running or finished. */
   job: MachineJob | null;
   /**

@@ -5,12 +5,19 @@
  * word; a held connection settles "ready" over an older failed job, since a re-hold that
  * brought the machine back must not leave the row saying it failed; and "in use" comes from
  * the machine's own persisted record, never from the job slot.
+ *
+ * The image notice:
+ * - Given a server with no image and no checkout, the page says so and stops adding machines.
+ * - Given a source checkout that has not built its image yet, nothing stops the page.
+ * - Given a checkout whose last build failed, the page shows the build's own words, and still
+ *   lets a person try again.
  */
 import { describe, expect, it } from "vitest";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 import {
   anyJobPending,
   behindMachines,
+  imageNotice,
   installedMachines,
   jobFor,
   localMachine,
@@ -284,5 +291,32 @@ describe("outOfDate", () => {
     expect(outOfDate(carrying("nas"), null)).toBe(false);
     expect(outOfDate(fresh("nas"), "9.9.10")).toBe(false);
     expect(outOfDate(here(), "9.9.10")).toBe(false);
+  });
+});
+
+describe("the image notice", () => {
+  it("a server with no image and nothing to build one from stops the page", () => {
+    expect(imageNotice(response([], { imageVersion: null }))).toEqual({ kind: "noImage" });
+    expect(imageNotice(response([]))).toBeNull();
+  });
+
+  it("a source checkout that has not built its image yet stops nothing", () => {
+    const unbuilt: MachinesResponse = {
+      ...response([], { imageVersion: null }),
+      checkoutImage: { state: "unbuilt" },
+    };
+    expect(imageNotice(unbuilt)).toBeNull();
+    expect(imageNotice({ ...unbuilt, checkoutImage: { state: "building" } })).toBeNull();
+  });
+
+  it("a checkout whose last build failed shows the build's own words, not the no-image refusal", () => {
+    const state: MachinesResponse = {
+      ...response([], { imageVersion: null }),
+      checkoutImage: { state: "failed", detail: "[deploy] spawnSync pnpm ENOENT" },
+    };
+    expect(imageNotice(state)).toEqual({
+      kind: "buildFailed",
+      detail: "[deploy] spawnSync pnpm ENOENT",
+    });
   });
 });

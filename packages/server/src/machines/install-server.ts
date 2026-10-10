@@ -86,7 +86,8 @@ function harnessSuffix(harnessText: string): string {
  * The base release is read from the running install's own tree — the tarball layout
  * (`<root>/lib/dist/penguin.js` under a `lib/`) or the desktop app's staged payload — the
  * same way `penguin --version` would answer. A development checkout has neither, and
- * answers null: it stands on no release the remote could download.
+ * answers null here: it stands on no installed release, and builds its image on demand
+ * instead (checkout-image.ts).
  */
 export function resolvePushPlan(
   dataRoot: string | null,
@@ -94,16 +95,20 @@ export function resolvePushPlan(
 ): PushPlan | null {
   const baseVersion = baseReleaseVersion(argv1);
   if (baseVersion === null) return null;
+  return planOver(baseVersion, dataRoot === null ? null : path.join(dataRoot, "hmr"));
+}
+
+/**
+ * A plan for this base release plus whatever hmr state `hmrDir` holds — the bare release
+ * when it holds none. The one place a plan's version is spelled, for a packaged server's own
+ * store and a checkout's image alike.
+ */
+export function planOver(baseVersion: string, hmrDir: string | null): PushPlan {
   let harness: string | null = null;
-  let hmrDir: string | null = null;
-  if (dataRoot !== null) {
-    const dir = path.join(dataRoot, "hmr");
+  if (hmrDir !== null) {
     try {
-      const text = fs.readFileSync(path.join(dir, "harness.json"), "utf8").trim();
-      if (text !== "") {
-        harness = text;
-        hmrDir = dir;
-      }
+      const text = fs.readFileSync(path.join(hmrDir, "harness.json"), "utf8").trim();
+      if (text !== "") harness = text;
     } catch {
       /* never pushed to: the plan is the bare release */
     }
@@ -111,7 +116,7 @@ export function resolvePushPlan(
   return {
     baseVersion,
     harness,
-    hmrDir,
+    hmrDir: harness === null ? null : hmrDir,
     version: harness === null ? baseVersion : baseVersion + harnessSuffix(harness),
   };
 }
