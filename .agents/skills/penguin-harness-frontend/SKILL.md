@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-frontend
-description: Use when changing the PenguinHarness Web App (`packages/web`) or the shared UI package — adding or restyling any UI, picking a status colour, adding an icon, laying out a row or a form field, writing user-facing copy, building a popup or a hover-revealed panel, or making anything open, fold, resize or maximize. Covers the semantic tone tokens, the icon size/stroke/gap scale, the semantic-versus-formatting rule and the hover "?", the two-dictionary i18n contract, the portal-panel pattern, motion (every disclosure folds through `Fold`, sizes move through the theme's layout motion), and the recent owner decisions on favorites, maximized surfaces, the collapsed rail and example cards.
+description: Use when changing the PenguinHarness Web App (`packages/web`) or the shared UI package — adding or restyling any UI, picking a status colour, adding an icon, laying out a row or a form field, deciding when a control commits and how a form saves, writing user-facing copy, building a popup or a hover-revealed panel, or making anything open, fold, resize or maximize. Covers the semantic tone tokens, the icon size/stroke/gap scale, the settings commit model (switches commit, forms save, leaving asks), the semantic-versus-formatting rule and the hover "?", the two-dictionary i18n contract, the portal-panel pattern, motion (every disclosure folds through `Fold`, sizes move through the theme's layout motion), and the recent owner decisions on favorites, maximized surfaces, the collapsed rail and example cards.
 ---
 
 # Web App frontend conventions
@@ -229,6 +229,68 @@ for `sm`, and on a font size spelled in a control module outside the two records
 a parser sees without types: a footer handed over as a component or built in a variable, and a
 dialog body outside those declared modules, follow the same rule but are on you. Adding a module to
 `DIALOG_BODY_MODULES` is how a new settings page joins the check.
+
+## Settings controls: a switch commits, a form saves, leaving asks
+
+Owner rule (2026-10-10), the same on every settings surface — the Settings dialog, the Agent
+settings tabs, project settings, the model and provider dialogs, plugin cards, messaging, company
+mode, machines, workflows:
+
+- **Instant controls commit on the gesture.** `Switch`/`ToggleRow`, a standalone `Checkbox`,
+  swatches, pin/star marks, the shortcut recorder — and a `Segmented`, `RadioGroup`,
+  `Select`/`OptionMenu` that is the only control in its `PrefRow`. Render the new value at once,
+  write only that value, settle on the server's answer; on failure roll back **and**
+  `toastError(apiErrorText(e))` (or the row's hint slot) — `useInstantSetting`
+  (`lib/instant-setting.ts`) does all three. A consequential switch asks first through
+  `ConfirmModal` and shows the stored state until confirmed — and joins
+  `test/consequential-confirms.test.ts`. A switch that acts on a typed value acts on the *saved*
+  value: while that value has unsaved edits (or is missing, where the switch means nothing
+  without it), disable it with a hint that says what to save (`S.settings.saveProxyAddressFirst`,
+  `S.messaging.saveBeforeEnable`). Instant controls are never part of a draft and never dirty.
+- **Typed controls commit on Save.** `Input`, `Textarea`, `PasswordInput`, numbers, URLs,
+  key-value and lines editors, `TagInput`, table/list editors, prompt editors. Never on blur, never
+  debounced. Build the form on `useFormDraft(loaded, { scope })` from `@prismshadow/penguin-ui`:
+  bind `draft`/`patch`, compute inline `errors` from the draft, and render
+  `<Button size="sm" variant="primary" disabled={!dirty || errors !== null || busy}>{S.common.save}</Button>`
+  plus Cancel (a dialog) or Reset (`S.common.reset` on a page; `disabled={!dirty}`, no confirm).
+  After a successful save call `adopt(response)`; after a failed one do nothing — the draft stays
+  dirty and the error sits under its field. Save writes at once: no "save changes?" confirm before
+  an ordinary Save; a `ConfirmModal` precedes a save only when it overwrites or destroys something
+  else (a file on disk, an imported snapshot, restoring defaults, a delete, a price change that
+  clears a promotion). A select, segmented control or radio inside such a form is a field of the
+  form. A create-or-edit dialog of one record (an MCP server, a key, a schedule, a model, a
+  provider group, a messaging binding, a machine, a user, an Agent) is one form, its switches
+  included; so is a table whose rows are added in the draft (command-policy rules, plugin tables).
+- **Leaving a dirty form asks, once, through one card.** `useFormDraft` registers the form while
+  it is dirty; the app's `NavigationGuard` (a `useBlocker` on the data router) catches every route
+  change, `?tab=` switches, sidebar links and browser back/forward included; a dialog passes
+  `useGuardedClose(onClose, form.scope)` as its `onClose` **and** to its Cancel button, which
+  covers Esc, the ×, the scrim and Cancel; any other state switch that would replace a form (a
+  rail, a local tab strip, a machine picker, a document switch) goes through
+  `guardLeave(action, scope)`. The card is `UnsavedChangesHost` in `App`: 「放弃未保存的修改？」,
+  danger 「放弃修改」, 「继续编辑」. Never render a second discard dialog, never offer "save and
+  leave", never ask when the form is clean, and never make a switch count as dirty. Mount a
+  dialog's form only while the dialog is open — a closed dialog that keeps a dirty draft keeps the
+  router asking about a form nobody can see. `beforeunload` is the host's job (the browser's own
+  words); the desktop shell answers `will-prevent-unload` with a native box.
+
+Checklist for a new settings surface:
+
+1. Sort every control: instant or typed. A switch beside typed fields is still instant (write
+   it alone, adopt the response; the typed draft stays) unless the dialog creates or edits one
+   record.
+2. Typed → `useFormDraft` with the surface's `scope` (one shared scope per dialog or rail, none
+   for a record dialog, which gets its own); Save gated on dirty **and** valid; Reset or Cancel;
+   errors inline; `adopt` on success only.
+3. Dialog → `useGuardedClose` on `onClose` and Cancel. Page tabs in `?tab=` need nothing more.
+   Non-router switches → `guardLeave`.
+4. Add the module to `FORM_MODULES` in `test/form-commit-guard.test.ts`; it fails on an `onBlur`
+   save, a Save form that does not register, and a `Modal` in a form module whose `onClose` is
+   not the guarded one.
+5. Scenarios (a `@vitest-environment jsdom` suite on `test/helpers/dom.ts`): asks on each leave
+   path when dirty, not when clean; Save held while clean or invalid; a failed save stays dirty;
+   the switch beside the form writes alone and rolls back with a toast.
+6. Strings in both dictionaries; buttons `size="sm"` in dialog bodies and footers.
 
 ## A button keeps its label on one line
 
