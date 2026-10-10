@@ -15,7 +15,8 @@
  * pushing it: the body POST /api/hmr/upgrade takes, every part inline. That is how a server
  * running from a checkout builds the install image it puts on machines
  * (packages/server/src/machines/checkout-image.ts), so the packer is this one, not a second
- * copy of it. It needs no target and no credential.
+ * copy of it. It needs no target and no credential, and builds the web dist beside the file
+ * rather than in packages/web/dist, which that server may be serving (see `webDist`).
  *
  * Usage:
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531
@@ -95,6 +96,18 @@ if (outFile === null && target === undefined) usage("[deploy] no target given.")
 if (outFile !== null && target !== undefined) {
   usage("[deploy] --out writes the version to a file; give it no target.");
 }
+
+/**
+ * Where this run's web dist is built and read back. A push builds it in place, as it always
+ * has. `--out` builds it into a directory of its own beside the out file: a server running
+ * from this checkout builds its install image this way, and that server — `pnpm desktop`, or
+ * the dev server's own static fallback — serves packages/web/dist to the page in use, so a
+ * build in place would take the page's files out from under it. `--skip-web-build` only reads
+ * the dist, so it reads it in place either way.
+ */
+const webDist =
+  outFile !== null && !skipWebBuild ? path.resolve(`${outFile}.${process.pid}.web`) : WEB_DIST;
+
 // Two credentials, either one: the admin password (exchanged for a cookie), or the
 // runtime's own local API token (`<root>/api-token`, admin-equivalent — see
 // server/src/auth/api-token.ts), sent as a Bearer. A local push needs no password.
@@ -229,13 +242,20 @@ async function compileEntry(entry, outfile) {
 /** The built web dist as a { relPath: base64 } manifest. */
 async function readWebManifest() {
   const files = {};
-  for (const entry of await fsp.readdir(WEB_DIST, { recursive: true, withFileTypes: true })) {
+  for (const entry of await fsp.readdir(webDist, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const abs = path.join(entry.parentPath, entry.name);
-    files[path.relative(WEB_DIST, abs).split(path.sep).join("/")] = await fsp.readFile(abs);
+    files[path.relative(webDist, abs).split(path.sep).join("/")] = await fsp.readFile(abs);
   }
   return files;
 }
+
+/**
+ * cmd.exe gets a `shell: true` spawn's args joined into one command line, unquoted, so a path
+ * with a space in it (a data root under `C:\Users\Jane Doe`) would split in two. Quoted the way
+ * build-plugins.mjs quotes.
+ */
+const quoteForCmd = (a) => (/[\s"^&|<>;,()%!]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
 
 /**
  * Files the pushed platform needs as real files rather than bundled code. A bundle cannot carry one: it is
@@ -329,11 +349,16 @@ async function main() {
     log("reusing the existing web dist");
   } else {
     log("building the web dist…");
-    execFileSync("pnpm", ["--filter", "@prismshadow/penguin-web", "build"], {
+    // Extra args reach the package's own `vite build`. Outside the package, vite would leave
+    // the directory as it found it and warn; it is this run's own, so it is emptied.
+    const build = ["--filter", "@prismshadow/penguin-web", "build"];
+    if (webDist !== WEB_DIST) build.push("--outDir", webDist, "--emptyOutDir");
+    const windows = process.platform === "win32";
+    execFileSync("pnpm", windows ? build.map(quoteForCmd) : build, {
       cwd: ROOT,
       stdio: "inherit",
       // pnpm is a .cmd shim on Windows, which Node refuses to spawn without a shell.
-      shell: process.platform === "win32",
+      shell: windows,
     });
   }
 
@@ -454,4 +479,5 @@ main()
   })
   .finally(() => {
     for (const f of [PLATFORM_BUNDLE, CLI_BUNDLE]) fs.rmSync(f, { force: true });
+    if (webDist !== WEB_DIST) fs.rmSync(webDist, { recursive: true, force: true });
   });
