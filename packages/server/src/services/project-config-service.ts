@@ -1708,9 +1708,11 @@ export class ProjectConfigService implements ProjectConfigStore {
     // models added by hand (core's isAddableGroup); every other built-in group, the other
     // gateways included, carries its catalog presets and the rows it already stores. The
     // same grandfathering as above: a stored row is written as it stands, hand-added
-    // ones from before this rule included, and so is a row renamed inside its own group. A row
-    // moved in from another group is being added here, and a preset is always welcome back
-    // (the preset sync writes a deleted one again).
+    // ones from before this rule included, and so is a row renamed inside its own group —
+    // where the rename is a move: the old reference is gone from this same request, and a
+    // pair that keeps it is a fresh add in rename's clothing. A row moved in from another
+    // group is being added here, and a preset is always welcome back (the preset sync
+    // writes a deleted one again).
     for (const entry of req.models) {
       if (!unaddableModel(entry.provider, entry.modelId)) continue;
       if (prevModels.some((m) => entryMatches(m, entry.provider, entry.modelId))) continue;
@@ -1718,7 +1720,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       if (
         from !== undefined &&
         from.provider === entry.provider &&
-        prevModels.some((m) => entryMatches(m, from.provider, from.modelId))
+        prevModels.some((m) => entryMatches(m, from.provider, from.modelId)) &&
+        // The rename exemption migrates a row that moved; it must not become the way a
+        // presets-only group takes a fresh id: a request that still carries the old
+        // reference is adding a row, not renaming one, and the new entry would inherit
+        // the stored row wholesale through the rename base — inline credential included.
+        !req.models.some((m) => m.provider === from.provider && m.modelId === from.modelId)
       ) {
         continue;
       }

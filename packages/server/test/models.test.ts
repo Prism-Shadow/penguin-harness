@@ -672,6 +672,50 @@ describe("models preset & catalog enrichment", () => {
     }
   });
 
+  it("a renamedFrom whose old reference the same request keeps is a clone, not a rename: the exemption does not open the gate", async () => {
+    // A stored row with its own inline credential is what a clone is after: the rename base
+    // is the stored row wholesale (credential included), inherited under the fresh id.
+    await storeRows(t.root, projectId, [
+      { provider: "fireworks", modelId: "acme/legacy-pick", clientType: "openai-chat" },
+      { provider: "custom", modelId: "mine", clientType: "openai-chat" },
+    ]);
+    const legacy = {
+      provider: "fireworks",
+      modelId: "acme/legacy-pick",
+      clientType: "openai-chat",
+      apiKey: "sk-legacy-1",
+    };
+    const mine = { provider: "custom", modelId: "mine", clientType: "openai-chat" };
+    expect((await api.put(url(), { models: [legacy, mine] })).status).toBe(200);
+
+    // One request that both keeps the old row and adds a fresh id naming it as the rename
+    // source. A true rename moves the row — the old reference is gone from the request —
+    // so this is a fresh add in rename's clothing, and the gate answers as one.
+    const clone = await api.put(url(), {
+      models: [
+        legacy,
+        mine,
+        {
+          provider: "fireworks",
+          modelId: "acme/fresh-clone",
+          clientType: "openai-chat",
+          renamedFrom: { provider: "fireworks", modelId: "acme/legacy-pick" },
+        },
+      ],
+    });
+    expect(clone.status).toBe(400);
+    expect(((await clone.json()) as ErrorBody).error.code).toBe("model_not_addable");
+
+    // Nothing was written: the table is still the seeded one, and the stored credential
+    // survives exactly once — the clone did not inherit a copy of it.
+    const stored = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(stored.models.map(pairKey).sort()).toEqual(
+      ["custom\0mine", "fireworks\0acme/legacy-pick"].sort(),
+    );
+    const cfgRaw = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    expect(cfgRaw.split("sk-legacy-1").length - 1).toBe(1);
+  });
+
   it('a config stored before the AgentHub 0.4.2 rename (client_type = "openai") keeps working: GET reports the canonical openai-chat', async () => {
     // Simulate an existing user config written by an older harness version: the deprecated
     // bare "openai" spelling on disk. Reading must not error and must report the canonical
