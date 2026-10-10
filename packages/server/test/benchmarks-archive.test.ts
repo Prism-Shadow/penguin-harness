@@ -5,8 +5,11 @@
  *
  * - A member imports a package: it lists with its cases and the package's version, an empty
  *   scoreboard and origin `zip`; its files land byte for byte, and a dot-entry inside a case is
- *   left out. A package zipped at its root imports under the id its manifest declares. An outsider
- *   cannot import.
+ *   left out. A package zipped at its root imports under the id its manifest declares. A package
+ *   an Agent fetched from a repository folder (`penguin benchmark import --origin-…`) lists with
+ *   that folder as its git origin; an origin that is not a git folder at a commit is refused. A
+ *   folder zipped as that command uploads it (benchmark-package.ts) imports as its zip would, and
+ *   is refused by name when it holds the copy's own state or a link. An outsider cannot import.
  * - A second import of a taken id is a 409 whose details name the id, and changes nothing; with
  *   `overwrite` the directory is replaced whole, its evaluation records and `.jobs/` gone — but
  *   not while an evaluation of it is still running (a trial under `.jobs/` without its result, or
@@ -32,12 +35,14 @@
  * the Benchmarks a new Project is seeded with.
  */
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import type { Zippable } from "fflate";
 import { parse as parseYaml } from "yaml";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { benchmarksDir } from "@prismshadow/penguin-core";
+import { readBenchmarkUpload } from "../src/benchmark-package.js";
 import type {
   BenchmarkArchiveImportResponse,
   BenchmarksResponse,
@@ -251,6 +256,99 @@ describe("benchmark packages", () => {
 
       expect(res.status).toBe(201);
       expect((await list()).map((b) => [b.id, b.caseCount])).toEqual([["report-writing-v1", 2]]);
+    });
+
+    it("a package fetched from a repository folder, named as its origin, lists with that git origin", async () => {
+      const origin = { kind: "git", url: FOLDER, ref: SHA, path: "packages/report-writing-v1" };
+
+      const res = await member.post(`${base}/archive`, {
+        dataBase64: zipB64(packageFiles("report-writing-v1")),
+        origin,
+      });
+
+      expect(res.status).toBe(201);
+      const { benchmark } = (await res.json()) as BenchmarkArchiveImportResponse;
+      expect(benchmark.origin).toMatchObject(origin);
+      expect(Date.parse(benchmark.origin!.importedAt!)).not.toBeNaN();
+      const manifestOnDisk = JSON.parse(
+        await fs.readFile(path.join(dir, "report-writing-v1", "benchmark.json"), "utf8"),
+      ) as { origin: Record<string, string> };
+      expect(manifestOnDisk.origin).toMatchObject(origin);
+    });
+
+    it.each([
+      ["a kind other than git", { kind: "zip" }],
+      ["a link that is not http(s)", { url: "javascript:alert(1)" }],
+      ["a branch where the commit goes", { ref: "main" }],
+      ["no folder", { path: "" }],
+    ])("refuses an origin with %s, writing nothing", async (_what, over) => {
+      const origin = { kind: "git", url: FOLDER, ref: SHA, path: "packages/x", ...over };
+
+      const res = await member.post(`${base}/archive`, {
+        dataBase64: zipB64(packageFiles("report-writing-v1")),
+        origin,
+      });
+
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ErrorBody).error.code).toBe("bad_request");
+      expect(await fs.readdir(dir)).toEqual([]);
+    });
+
+    describe("a folder as `penguin benchmark import` uploads it", () => {
+      let folder: string;
+      beforeEach(async () => {
+        folder = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-benchmark-folder-"));
+        for (const [rel, data] of Object.entries(packageFiles("report-writing-v1", ""))) {
+          await write(folder, rel, data);
+        }
+      });
+      afterEach(async () => {
+        await fs.rm(folder, { recursive: true, force: true });
+      });
+
+      const upload = async () =>
+        member.post(`${base}/archive`, {
+          dataBase64: Buffer.from(await readBenchmarkUpload(folder)).toString("base64"),
+        });
+
+      it("imports as the package's zip would", async () => {
+        const res = await upload();
+
+        expect(res.status).toBe(201);
+        expect((await list()).map((b) => [b.id, b.caseCount])).toEqual([["report-writing-v1", 2]]);
+      });
+
+      it("is refused by name when it holds the copy's own state", async () => {
+        await write(folder, "scoreboard.yaml", SCOREBOARD);
+
+        const res = await upload();
+
+        expect(res.status).toBe(400);
+        const { error } = (await res.json()) as ErrorBody;
+        expect(error.code).toBe("benchmark_archive_invalid");
+        expect(error.message.endsWith(": scoreboard.yaml")).toBe(true);
+        expect(await fs.readdir(dir)).toEqual([]);
+      });
+
+      it.runIf(canCreateSymlink())(
+        "is refused by name when it holds a link, which is never followed",
+        async () => {
+          await fs.symlink(
+            path.join(folder, "CASE-002-format", "rubric", "README.md"),
+            path.join(folder, "CASE-001-contradictions", "statement", "rubric.md"),
+          );
+
+          const res = await upload();
+
+          expect(res.status).toBe(400);
+          const { error } = (await res.json()) as ErrorBody;
+          expect(error.code).toBe("benchmark_archive_invalid");
+          expect(error.message.endsWith(": CASE-001-contradictions/statement/rubric.md")).toBe(
+            true,
+          );
+          expect(await fs.readdir(dir)).toEqual([]);
+        },
+      );
     });
 
     it("an outsider cannot import into the Project", async () => {

@@ -5,9 +5,9 @@
  * around them, which differ per dictionary.
  *
  * - A folder link in a repository opens a draft, to the Project's default Agent, whose prompt
- *   names the link and asks for the package at a pinned 40-hex commit, written under the
- *   Project's benchmarks/ with a git origin and an empty scoreboard, stopping before an overwrite
- *   — in either language.
+ *   names the link and asks for the package at a pinned 40-hex commit, imported into this Project
+ *   through `penguin benchmark import` with the folder as its git origin — the server writes the
+ *   copy and its empty scoreboard — stopping before an overwrite, in either language.
  * - The draft goes to the first Agent when the Project has no default_agent; with no Agent, or no
  *   source, there is nothing to open.
  * - A local path and a description get leads of their own, and the same tail.
@@ -31,7 +31,6 @@ const AGENTS = [agent("report_writer"), agent("default_agent")];
 
 /** What the Agent has to be told, whichever language the tail is in. */
 const CONTRACT = [
-  "proj_1",
   "benchmark.json",
   "YYYY.MM.DD.N",
   "statement/README.md",
@@ -39,12 +38,15 @@ const CONTRACT = [
   "git ls-remote",
   "40",
   "`published`",
-  "`<app_data_dir>/benchmarks/<id>/`",
+  "`penguin benchmark import ",
+  "--project-id proj_1",
+  "--origin-url",
+  "--origin-ref",
+  "--origin-path",
+  "`--overwrite`",
+  "`benchmarks/<id>/`",
   "scoreboard.yaml",
   ".jobs/",
-  '"kind": "git"',
-  '"ref"',
-  '"imported_at"',
   "evaluations: []",
   "`benchmark-design`",
   "reference/package.md",

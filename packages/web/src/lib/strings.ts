@@ -4576,9 +4576,9 @@ Benchmark：
     importPromptTail: (projectId: string): string =>
       [
         "包是一个文件夹：根下有 `benchmark.json`（字段：id、title、description、version（`YYYY.MM.DD.N`）、status、runs、origin），每题一个 `CASE-*/`，内含 `statement/README.md` 与 `rubric/README.md`。",
-        "只取这一个文件夹，并固定在一个提交上：先把链接里的分支或标签解析成 40 位提交号（`git ls-remote`），再下载它（codeload 的 tarball 或 sparse checkout）；写入任何东西之前读完每个文件——不是 Benchmark 包、`status` 不是 `published`、或含有文本材料以外的东西，就拒绝导入。",
-        `写入 \`<app_data_dir>/benchmarks/<id>/\`（Project「${projectId}」）；该目录已存在时先停下问我——覆盖会替换整个目录，连同 \`scoreboard.yaml\` 与 \`.jobs/\`。不要拷贝上游的大文件，题干里有它们的链接。`,
-        '把 `origin` 写成 `{"kind": "git", "url": <原样的链接>, "ref": <40 位提交号>, "path": <仓库里的文件夹路径>, "imported_at": <当前时间，ISO 8601>}`（来源不是仓库文件夹时写 `{"kind": "agent"}`），`version` 保持包里的值，新写一份内容为 `evaluations: []` 的 `scoreboard.yaml`，再读一遍 `benchmark.json` 确认能解析，然后报告 id、标题、版本与题数；评估中心随即列出它。',
+        "只取这一个文件夹，固定在一个提交上，放进临时目录：先把链接里的分支或标签解析成 40 位提交号（`git ls-remote`），再下载它（codeload 的 tarball 或 sparse checkout）；导入之前读完每个文件——不是 Benchmark 包、`status` 不是 `published`、或含有文本材料以外的东西，就拒绝导入。不要拷贝上游的大文件，题干里有它们的链接。",
+        `用 \`penguin benchmark import <那个文件夹> --project-id ${projectId} --origin-url <原样的链接> --origin-ref <40 位提交号> --origin-path <仓库里的文件夹路径>\` 导入（来源不是仓库文件夹时不带 \`--origin-*\` 选项）。服务端按检查上传 zip 的规则检查它，并自己写入 \`benchmarks/<id>/\`：来源记为 git，版本保持包里的值，\`scoreboard.yaml\` 只含 \`evaluations: []\`；你自己不要往 \`benchmarks/\` 下写任何东西。`,
+        "命令提示该 Benchmark 已存在时，先停下问我再覆盖——覆盖（`--overwrite`）会替换整个目录，连同 `scoreboard.yaml` 与 `.jobs/`；该 Benchmark 还有评估在运行时，服务端也会拒绝覆盖。最后报告命令输出的 id、标题、版本与题数；评估中心随即列出它。",
         "如果你装有 `benchmark-design` 技能，先读它的 `reference/package.md`（「Importing a package」一节）。",
       ].join("\n"),
     importCopyPrompt: "复制 Prompt",

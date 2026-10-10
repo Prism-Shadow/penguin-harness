@@ -108,7 +108,7 @@ Benchmark 也可以以**包**的形式导入：它的 `benchmark.json` 和全部
    - **上传 Benchmark zip 包。**选择**选择 zip 文件**，挑一个从 Benchmark 页面导出的 zip，或者根目录（或唯一的顶层目录）里有 `benchmark.json` 和各个 `CASE-*` 文件夹的 zip。
 3. 如果已有同 id 的 Benchmark，会先弹出确认再覆盖。覆盖会替换它的全部文件，并删除它的评估记录与运行结果，无法撤销。这个 Benchmark 的评估还有 trial 在它的 `.jobs` 文件夹里运行时，覆盖会被拒绝，因为评估会接着往新副本里写：等评估结束后再导入。
 
-Agent 会把链接解析到一个固定提交，只取回那一个文件夹，写入前读完每个文件，覆盖已有的 Benchmark 之前先问你。服务端自己从不抓取这个链接。
+Agent 会把链接解析到一个固定提交，只把那一个文件夹取回到临时目录并读完每个文件，再用 [`penguin benchmark import`](/cli#penguin-benchmark) 导入它：这个命令让它经过与上传 zip 相同的检查，由服务端写入 Benchmark。覆盖已有的 Benchmark 之前，Agent 会先问你。服务端自己从不抓取这个链接。
 
 包里不带分数：导入的 Benchmark 没有评估记录，先用它[评估 Agent](#评估-agent)。zip 不是包时，上传会被拒绝并说明原因：
 
@@ -250,7 +250,7 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 - **状态。** `benchmark.json` 中的 `status` 决定遮罩：`draft` 显示**构建中**，`failed` 显示**创建失败**，`published` 解除遮罩。清单读不了的 Benchmark 同样遮罩，显示**清单无法读取**，旁边图标的悬停提示说明原因。
 - **用 AI 创建。** 提示词的固定结尾把被测智能体的 id、期望的基线分和 Pilot 迭代上限交给 `benchmark-design` Skill，并要求取得基线分。
 - **手动创建。** 服务端按 Skill 读取的目录结构，把表单内容写入磁盘（`POST …/benchmarks`，仅 owner），状态为 `published`。
-- **导入。** 上传的 zip 交给 `POST …/benchmarks/archive`（任意成员），服务端检查后把包写入 `benchmarks/<id>/`，来源记为 `zip` 并带导入时间，记分板为空；版本保持包里的值。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，说明评估仍在运行，覆盖会以 `409` `benchmark_busy` 拒绝。Agent 从仓库文件夹导入时写入来源 `git`，带链接、提交与文件夹；做法见 `benchmark-design` Skill 的 `reference/package.md`。
+- **导入。** 上传的 zip 交给 `POST …/benchmarks/archive`（任意成员），服务端检查后把包写入 `benchmarks/<id>/`，来源记为 `zip` 并带导入时间，记分板为空；版本保持包里的值。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，说明评估仍在运行，覆盖会以 `409` `benchmark_busy` 拒绝。Agent 从仓库文件夹导入时用 `penguin benchmark import` 走同一个路由，并带上链接、提交与文件夹，服务端把它们记为来源 `git`；做法见 `benchmark-design` Skill 的 `reference/package.md`。
 - **导出。** `GET …/benchmarks/:id/archive`（任意成员）把已发布 Benchmark 的 `benchmark.json` 与题目打成 zip。
 - **评估。** 提示词要求通过自行派生的 `agent-evaluation` 子 Agent，在本会话自己的模型上跑完完整的 Case × runs 矩阵；执行评估的 Agent 从系统提示词的 `Provider` 与 `Model ID` 两行读出这个模型。每条结果报告的 Agent、模型和思考等级都必须一致，最后只向 `scoreboard.yaml` 追加一条带标签的评估。被测的 Agent 和 Benchmark 都保持不变。
 - **删除。** 服务端整目录删除（`DELETE …/benchmarks/:id`）。评估还在运行时删除 Benchmark，可能留下一个目录，因为运行中的评估还在往里写。这个目录没有 `benchmark.json`，不会出现在列表里，可以手动删除。

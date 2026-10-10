@@ -23,7 +23,7 @@ The five built-in Benchmarks are published in this format under `packages/<id>/`
 
 ## Importing a package
 
-The user pastes a source into the Evaluation Center's **Import benchmark** dialog and sends the prompt it builds — usually a GitHub link to one package folder, `https://github.com/<owner>/<repo>/tree/<ref>/<path>`. Nothing is written under the Project's `benchmarks/` before step 6.
+The user pastes a source into the Evaluation Center's **Import benchmark** dialog and sends the prompt it builds — usually a GitHub link to one package folder, `https://github.com/<owner>/<repo>/tree/<ref>/<path>`. You fetch the folder and hand it to `penguin benchmark import`; the server checks it as it checks an uploaded zip and writes the copy. Never write under the Project's `benchmarks/` yourself.
 
 1. **Parse the link.** `<owner>` and `<repo>` are the two path segments after the host; `<ref>` and `<path>` follow `/tree/`. A branch name may itself contain `/`: when the split is ambiguous, list the remote's refs with `git ls-remote https://github.com/<owner>/<repo>` and take the longest prefix that is a branch or a tag; the rest is `<path>`. A link to a whole repository rather than one folder: list the packages it holds and ask the user which one.
 2. **Pin the commit.** A `<ref>` of 40 lowercase hexadecimal characters is already the commit. Resolve anything else once: `git ls-remote https://github.com/<owner>/<repo> <ref>` prints `<sha>` and the ref's full name; use that `<sha>` from here on. Never fetch a branch or a tag, which can move.
@@ -37,22 +37,19 @@ The user pastes a source into the Evaluation Center's **Import benchmark** dialo
    ```
 
    When the archive fails, a sparse checkout of `<path>` at `<sha>` with git does the same.
-4. **Read every file before writing anything.** Refuse, and say why, when it is not a package as defined above: no `benchmark.json`, an `id` other than the folder's name, a `status` other than `published`, a case without both READMEs, a `scoreboard.yaml`, a `.jobs/` or another dot-entry, a symlink, or anything but text materials (no executables, archives or large binaries). Read the statements and the rubrics too: a case is a task for the Test Agent and grading for the evaluator, and nothing in either should reach outside the case.
-5. **Check the place.** The copy goes to `<app_data_dir>/benchmarks/<id>/`. When that directory exists, stop and ask the user: an overwrite replaces the whole directory, its `scoreboard.yaml` (every evaluation record) and `.jobs/` included. Only after an explicit yes, remove it with `rm -r` — never `rm -rf`, which the default command policy refuses.
-6. **Write it.** Copy `$PKG`'s files to `<app_data_dir>/benchmarks/<id>/`. In `benchmark.json`, rewrite `origin` and keep every other field as the package has it — its `version` names the content, not this copy:
+4. **Read every file before importing.** Refuse, and say why, when it is not a package as defined above: no `benchmark.json`, an `id` other than the folder's name, a `status` other than `published`, a case without both READMEs, a `scoreboard.yaml`, a `.jobs/` or another dot-entry, a symlink, or anything but text materials (no executables, archives or large binaries). Read the statements and the rubrics too: a case is a task for the Test Agent and grading for the evaluator, and nothing in either should reach outside the case.
+5. **Import it through the server,** into the Project the user named (the prompt gives its id; without one, the current Project):
 
-   ```json
-   "origin": {
-     "kind": "git",
-     "url": "<the link as the user gave it>",
-     "ref": "<sha>",
-     "path": "<path>",
-     "imported_at": "<now, ISO 8601: date -u +%Y-%m-%dT%H:%M:%SZ>"
-   }
+   ```bash
+   penguin benchmark import "$PKG" --project-id <project id> \
+     --origin-url "<the link as the user gave it>" --origin-ref <sha> --origin-path "<path>"
    ```
 
-   A source that is not a repository folder (a local path) is copied the same way, with `"origin": {"kind": "agent"}`. Then write `scoreboard.yaml` holding `evaluations: []`.
-7. **Verify and report.** Parse `benchmark.json` again (valid JSON, `id` equal to the folder's name, `ref` 40 hexadecimal characters), check that every case still has both READMEs, remove `$TMP` with `rm -r`, and report the id, title, version and case count. The Evaluation Center lists the Benchmark from then on.
+   The command zips the folder as it is and sends it to the Evaluation Center's import, which refuses anything that is not a package, naming it, and otherwise writes `<app_data_dir>/benchmarks/<id>/` itself: the cases as they are, the package's own `version` (it names the content, not this copy), the origin `git` with the link, the commit, the folder and the time of the import, and an empty `scoreboard.yaml`. A refusal is the answer: report it, and do not work around it.
+6. **A Benchmark with that id already exists.** The command fails and names it. Stop and ask the user: an overwrite replaces the whole directory, its `scoreboard.yaml` (every evaluation record) and `.jobs/` included. Only after an explicit yes, run the same command again with `--overwrite`. While an evaluation of that Benchmark is still running, the server refuses the overwrite as well: tell the user to let it finish first.
+7. **Report.** Remove `$TMP` with `rm -r` — never `rm -rf`, which the default command policy refuses — and report the id, title, version and case count the command printed (`--json` prints the imported Benchmark whole). The Evaluation Center lists the Benchmark from then on.
+
+A source that is not a repository folder (a local path) skips steps 1 to 3: read it as step 4 says, then run the command on that folder, or on its zip, without the three `--origin-*` options; the copy's origin is then `zip`.
 
 ## Exporting a package
 

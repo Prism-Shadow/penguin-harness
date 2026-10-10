@@ -5,10 +5,12 @@
  * wherever the user hit it. `unzipBounded` is where they are enforced on the way in, since an
  * archive can only be bounded before it is inflated. The Benchmark package archive
  * (benchmark-archive.ts) shares them all but the file count.
+ *
+ * The CLI loads this module too, through benchmark-package.ts, to hold a folder it uploads to the
+ * same caps: it imports fflate and errors.ts and nothing heavier, and keeps it that way.
  */
 import { unzipSync } from "fflate";
-import { HttpError } from "../http/errors.js";
-import { badRequest } from "../http/validate.js";
+import { HttpError, badRequest } from "../http/errors.js";
 
 /** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). Shared with the hooks and Benchmark archive routes. */
 export const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;

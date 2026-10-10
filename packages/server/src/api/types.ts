@@ -4121,7 +4121,8 @@ export interface BenchmarkCreateResponse {
  * anything else at its top level, a link, a package that is not `published` or a case without
  * both READMEs is refused (400); so is a zip past the caps (413 `benchmark_too_large`: 14MB
  * zipped, 1000 files, 5MB a file, 20MB inflated). The copy is written with origin `zip` and an
- * empty scoreboard. An id already taken is 409 `benchmark_exists` (`details.benchmarkId` names
+ * empty scoreboard — or origin `git`, when the request says the package is a repository folder
+ * fetched at a commit. An id already taken is 409 `benchmark_exists` (`details.benchmarkId` names
  * it) unless `overwrite`.
  */
 export interface BenchmarkArchiveImportRequest {
@@ -4132,6 +4133,24 @@ export interface BenchmarkArchiveImportRequest {
    * Refused with 409 `benchmark_busy` while an evaluation of it is still running a trial there.
    */
   overwrite?: boolean;
+  /**
+   * The repository folder the package was fetched from, at one commit: what
+   * `penguin benchmark import --origin-url … --origin-ref … --origin-path …` sends for an Agent's
+   * import of a folder link. The copy's origin is then `git` with these fields and the time of the
+   * import, instead of `zip`.
+   */
+  origin?: BenchmarkArchiveGitOrigin;
+}
+
+/** Where a package fetched from a git repository came from. */
+export interface BenchmarkArchiveGitOrigin {
+  kind: "git";
+  /** The folder link as the user gave it: an http(s) URL, at most 2048 characters. */
+  url: string;
+  /** The 40-character commit the link was resolved to. */
+  ref: string;
+  /** The folder inside the repository, at most 1024 characters. */
+  path: string;
 }
 
 export interface BenchmarkArchiveImportResponse {

@@ -26,7 +26,11 @@ import type {
   WorkspaceFileReadOptions,
 } from "../services/workspace-files-service.js";
 import type { AgentListItem } from "../services/agent-service.js";
-import type { BenchmarkArchive, BenchmarkCreateInput } from "../services/benchmark-service.js";
+import type {
+  BenchmarkArchive,
+  BenchmarkCreateInput,
+  BenchmarkImportOptions,
+} from "../services/benchmark-service.js";
 
 /** AgentConfig: the mechanism AgentConfigService implements. */
 @Interface()
@@ -131,11 +135,14 @@ export abstract class Benchmarks {
   abstract takenIds(projectId: string): Promise<string[]>;
   abstract create(projectId: string, input: BenchmarkCreateInput): Promise<BenchmarkSummary>;
   abstract remove(projectId: string, benchmarkId: string): Promise<void>;
-  /** Writes the package an uploaded zip holds; a taken id is a 409 unless `overwrite`. */
+  /**
+   * Writes the package an uploaded zip holds, with origin `zip` or the git origin `options` names;
+   * a taken id is a 409 unless `overwrite`, and an overwrite of one still being evaluated a 409 too.
+   */
   abstract importArchive(
     projectId: string,
     archive: Uint8Array,
-    options: { overwrite: boolean },
+    options: BenchmarkImportOptions,
   ): Promise<BenchmarkSummary>;
   /** A published Benchmark's package as a zip. */
   abstract exportArchive(projectId: string, benchmarkId: string): Promise<BenchmarkArchive>;

@@ -37,6 +37,7 @@ import {
   type BenchmarkManifest,
 } from "@prismshadow/penguin-core";
 import type {
+  BenchmarkArchiveGitOrigin,
   BenchmarkCaseScore,
   BenchmarkCaseSummary,
   BenchmarkCasesResponse,
@@ -72,6 +73,13 @@ export interface BenchmarkCreateInput {
   description?: string;
   runs: number;
   cases: BenchmarkCaseInput[];
+}
+
+/** How an uploaded package is written: over a taken id or not, and where it came from. */
+export interface BenchmarkImportOptions {
+  overwrite: boolean;
+  /** The repository folder the package was fetched from; absent for an upload, whose origin is `zip`. */
+  origin?: BenchmarkArchiveGitOrigin;
 }
 
 /** A Benchmark's package as a zip, and the name its download is offered under. */
@@ -439,19 +447,20 @@ export class BenchmarkService implements Benchmarks {
 
   /**
    * Writes the package an uploaded zip holds as `benchmarks/<id>/` (benchmark-archive.ts says what
-   * is refused and why). What lands is the package as a new copy: its cases byte for byte, its
-   * manifest with the origin rewritten to `zip` and the time of this import (the version stays the
-   * package's: it names the content, not the copy), and a `scoreboard.yaml` with no evaluations —
-   * a package carries none. A taken id is a 409 unless `overwrite`, which replaces the whole
-   * directory, its scoreboard and `.jobs/` included — except while an evaluation of it is still
-   * running (`runningTrial`), which would go on writing its trials and its scoreboard into the new
-   * copy: 409 `benchmark_busy`. The copy is staged and renamed into place, so a failed write
-   * leaves the id as it was.
+   * is refused and why). What lands is the package as a new copy: its cases byte for byte; its
+   * manifest with the origin rewritten to `zip` and the time of this import, or to `git` with the
+   * repository folder `options.origin` names for a package fetched from one (the version stays
+   * the package's: it names the content, not the copy); and a `scoreboard.yaml` with no
+   * evaluations, since a package carries none. A taken id is a 409 unless `overwrite`, which
+   * replaces the whole directory, its scoreboard and `.jobs/` included — except while an
+   * evaluation of it is still running (`runningTrial`), which would go on writing its trials and
+   * its scoreboard into the new copy: 409 `benchmark_busy`. The copy is staged and renamed into
+   * place, so a failed write leaves the id as it was.
    */
   async importArchive(
     projectId: string,
     archive: Uint8Array,
-    options: { overwrite: boolean },
+    options: BenchmarkImportOptions,
   ): Promise<BenchmarkSummary> {
     const { manifest: packaged, caseFiles } = readBenchmarkArchive(archive);
     const dir = benchmarksDir(this.root, projectId);
@@ -466,9 +475,20 @@ export class BenchmarkService implements Benchmarks {
         `Benchmark ${packaged.id} is being evaluated: ${running} marks a trial that has not finished, and the evaluation would go on writing into the new copy. Overwrite it once the evaluation ends.`,
       );
     }
+    const importedAt = new Date().toISOString();
+    const { origin } = options;
     const manifest: BenchmarkManifest = {
       ...packaged,
-      origin: { kind: "zip", imported_at: new Date().toISOString() },
+      origin:
+        origin !== undefined
+          ? {
+              kind: "git",
+              url: origin.url,
+              ref: origin.ref,
+              path: origin.path,
+              imported_at: importedAt,
+            }
+          : { kind: "zip", imported_at: importedAt },
     };
     try {
       await placeBenchmark(

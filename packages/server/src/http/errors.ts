@@ -25,6 +25,11 @@ export class HttpError extends Error {
   }
 }
 
+/** A 400 for a request the route cannot take as it is; validate.ts re-exports it beside its checks. */
+export function badRequest(message: string): HttpError {
+  return new HttpError(400, "bad_request", message);
+}
+
 export function errorBody(code: string, message: string, details?: ErrorDetails): ErrorBody {
   return { error: { code, message, ...(details !== undefined ? { details } : {}) } };
 }

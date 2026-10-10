@@ -307,6 +307,27 @@ export interface Messages {
     colLastFired(): string;
     colStatus(): string;
   };
+  /** `penguin benchmark`: Benchmark packages into the Project's Evaluation Center, through the server's zip import. */
+  benchmark: {
+    desc: string;
+    importDesc: string;
+    overwrite: string;
+    originUrl: string;
+    originRef: string;
+    originPath: string;
+    /** The three --origin-* options were not given together. */
+    originIncomplete(): string;
+    /** The path cannot go up as a package: nothing there, neither a folder nor a file, or past a cap. */
+    missing(path: string): string;
+    unsupported(path: string): string;
+    tooManyFiles(path: string, limit: number): string;
+    fileTooLarge(file: string, limitMb: number): string;
+    tooLarge(path: string, limitMb: number): string;
+    zipTooLarge(path: string, limitMb: number): string;
+    /** 409 benchmark_exists without --overwrite: which Benchmark is there, and how to replace it. */
+    exists(id: string, projectId: string): string;
+    imported(id: string, version: string, cases: number, projectId: string): string;
+  };
   /** `penguin org`: company mode — a thin client over the organization API (the organization's files stay the single source of truth; every DTO is a projection). */
   org: {
     desc: string;
@@ -1363,6 +1384,31 @@ const en: Messages = {
     colLastFired: () => "LAST FIRED",
     colStatus: () => "STATUS",
   },
+  benchmark: {
+    desc: "Bring Benchmark packages into the Project's Evaluation Center",
+    importDesc:
+      "Import a Benchmark package (a folder holding benchmark.json and its CASE-* folders, or a zip of one) through the server, which checks it as it checks an uploaded zip",
+    overwrite:
+      "Replace a Benchmark of the same id whole: its evaluation records and run results are deleted",
+    originUrl:
+      "The repository folder link the package was fetched from, as given (with --origin-ref and --origin-path)",
+    originRef: "The 40-character commit that link was resolved to",
+    originPath: "The folder inside the repository",
+    originIncomplete: () =>
+      "--origin-url, --origin-ref and --origin-path go together: give all three, or none.",
+    missing: (p) => `Nothing at ${p}: give a Benchmark package folder or its zip.`,
+    unsupported: (p) => `${p} is neither a folder nor a file.`,
+    tooManyFiles: (p, limit) =>
+      `${p} holds more than ${limit} files, the most a Benchmark package may hold.`,
+    fileTooLarge: (file, mb) =>
+      `${file} is larger than ${mb}MB, the most one file of a Benchmark package may be.`,
+    tooLarge: (p, mb) => `${p} holds more than ${mb}MB, the most a Benchmark package may hold.`,
+    zipTooLarge: (p, mb) => `${p} is larger than ${mb}MB zipped, the most an import takes.`,
+    exists: (id, projectId) =>
+      `Benchmark ${id} already exists in Project ${projectId}. To replace it, run the command again with --overwrite: its evaluation records and run results are deleted with it.`,
+    imported: (id, version, cases, projectId) =>
+      `Imported Benchmark ${id}${version ? ` v${version}` : ""} (${cases} ${cases === 1 ? "case" : "cases"}) into Project ${projectId}.`,
+  },
   org: {
     desc: "Company mode: manage an organization (employees, desks, calendar, tickets, channels, finance)",
     lsDesc: "List the project's organizations",
@@ -2413,6 +2459,27 @@ const zh: Messages = {
     colTarget: () => "目标",
     colLastFired: () => "最近触发",
     colStatus: () => "状态",
+  },
+  benchmark: {
+    desc: "把 Benchmark 包导入 Project 的评估中心",
+    importDesc:
+      "经服务端导入一个 Benchmark 包（含 benchmark.json 与各个 CASE-* 文件夹的文件夹，或它的 zip），服务端按检查上传 zip 的规则检查它",
+    overwrite: "整体替换同 id 的 Benchmark：它的评估记录与运行结果会被删除",
+    originUrl: "包所取自的仓库文件夹链接，按原样填写（与 --origin-ref、--origin-path 一起给出）",
+    originRef: "该链接解析到的 40 位提交号",
+    originPath: "仓库里的文件夹路径",
+    originIncomplete: () =>
+      "--origin-url、--origin-ref 与 --origin-path 要么三个都给，要么都不给。",
+    missing: (p) => `${p} 不存在：请给出 Benchmark 包的文件夹或它的 zip。`,
+    unsupported: (p) => `${p} 既不是文件夹，也不是文件。`,
+    tooManyFiles: (p, limit) => `${p} 里的文件超过 ${limit} 个，超出了 Benchmark 包的上限。`,
+    fileTooLarge: (file, mb) => `${file} 超过 ${mb}MB，超出了 Benchmark 包单个文件的上限。`,
+    tooLarge: (p, mb) => `${p} 合计超过 ${mb}MB，超出了 Benchmark 包的上限。`,
+    zipTooLarge: (p, mb) => `${p} 打包后超过 ${mb}MB，超出了导入的上限。`,
+    exists: (id, projectId) =>
+      `Project ${projectId} 里已有 Benchmark ${id}。如要替换它，请加 --overwrite 再运行一次：它的评估记录与运行结果会一并删除。`,
+    imported: (id, version, cases, projectId) =>
+      `已把 Benchmark ${id}${version ? ` v${version}` : ""}（${cases} 题）导入 Project ${projectId}。`,
   },
   org: {
     desc: "公司模式：管理组织（员工、工位、日程、工单、频道、财务）",
