@@ -196,7 +196,8 @@ export function ChartCard({
           </span>
         </span>
         <span className="mt-2 flex items-center gap-1.5 text-xs leading-4 text-gray-600 dark:text-gray-300">
-          <ChartStateDot state={state} />
+          {/* No Agent, no run state: a dot would claim one. */}
+          {!missing && <ChartStateDot state={state} />}
           <span
             className={`flex min-w-0 flex-1 items-center gap-1 text-fg-subtle${missing ? "" : " font-mono"}`}
             data-tooltip={flag ?? employee.resolvedWorkspace ?? employee.workspace}

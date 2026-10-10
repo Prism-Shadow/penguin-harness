@@ -332,6 +332,10 @@ export function OrgChartPage() {
       setLeaveFor(null);
       void load();
       void company.reloadOrganizations();
+      // The sidebar's 工位 group reads the company store's own copies, which no event
+      // refreshes for a departure: without this the employee's row stays until one does.
+      void company.reloadOrgChart();
+      void company.reloadOrgSessions();
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
