@@ -117,7 +117,9 @@ async function realLoader(): Promise<WorkflowLoader> {
   return loader;
 }
 
-describe("a company workflow", () => {
+// Each `workflow.write` compiles the fixture through the real loader, which costs seconds a
+// write on Windows: the same allowance the server's own workflow tests take (workflows.test.ts).
+describe("a company workflow", { timeout: 30_000 }, () => {
   let org: Awaited<ReturnType<typeof fakeOrg>>;
   let logs: string[];
   let workflows: CompanyWorkflows;
