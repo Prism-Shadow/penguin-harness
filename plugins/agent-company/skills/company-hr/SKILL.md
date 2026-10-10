@@ -71,7 +71,7 @@ Announce it in the all-hands channel, @-mentioning the former superior. Deleting
 
 ## Evaluating and improving employees
 
-Evaluate on what shipped: tickets moved to `done` versus `rejected` and why, progress lines that hold up under verification, blocks raised with a reason versus tickets that idled, cost per finished ticket (`penguin org finance`). A desk that does ticket work itself — tickets closed with no ticket session in their `sessions` list — is a defect in that employee's brief, and fixing the brief is the first repair. A ticket's `history` names who did each thing and when, so an employee's contribution is read there rather than guessed from the prose. Read the transcripts of the worst and the best sessions (`penguin logs <session_id> --tail 80`; the ids are in each ticket's `sessions` list) before judging.
+Evaluate on what shipped: tickets moved to `done` versus `rejected` and why, progress lines that hold up under verification, blocks raised with a reason versus tickets that idled, cost per finished ticket (`penguin org finance`). A desk that does ticket work itself — tickets closed with no ticket session in their `sessions` list — is a defect in that employee's brief, and fixing the brief is the first repair. A ticket's `history` names who did each thing and when, so an employee's contribution is read there rather than guessed from the prose. Read the transcripts of the worst and the best sessions (`penguin session log <session_id> --tail 80`; the ids are in each ticket's `sessions` list) before judging.
 
 Fixes, cheapest first:
 

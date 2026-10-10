@@ -76,9 +76,34 @@ describe("isSafeUrl", () => {
 // Telegram — HTML, a closed tag set with no headings, lists or tables
 // ---------------------------------------------------------------------------
 
+describe("tildes in a reply", () => {
+  // Replies use `~` for ranges and "about" far more than for strikethrough; two of them in one
+  // paragraph must not strike out the words between them, on any channel.
+  const RANGE = "3~5 天，约 ~30 秒";
+
+  it("parse as text, never as strikethrough, keeping what sits between them", () => {
+    const root = parseMarkdown("a ~~**gone**~~ b ~c~");
+    const para = root.children[0]!;
+    expect(para.type).toBe("paragraph");
+    const types = "children" in para ? para.children.map((n) => n.type) : [];
+    expect(types).not.toContain("delete");
+    expect(types).toContain("strong");
+    const text =
+      "children" in para ? para.children.map((n) => ("value" in n ? n.value : "")).join("") : "";
+    expect(text).toBe("a ~~~~ b ~c~");
+  });
+
+  it("show as typed on every channel", () => {
+    expect(telegramHtmlOf(`~~s~~ ${RANGE}`)).toBe(`~~s~~ ${RANGE}`);
+    expect(feishuMarkdownOf("~~s~~ 3~5")).toBe("&#126;&#126;s&#126;&#126; 3&#126;5");
+    expect(qqMarkdownOf("~~s~~ 3~5")).toBe("\\~\\~s\\~\\~ 3\\~5");
+    expect(wechatMarkdownOf("~~s~~ 3~5")).toBe("\\~\\~s\\~\\~ 3\\~5");
+  });
+});
+
 describe("telegramHtmlOf", () => {
   it("renders the inline constructs Telegram has tags for", () => {
-    expect(telegramHtmlOf("**b** *i* ~~s~~ `c`")).toBe("<b>b</b> <i>i</i> <s>s</s> <code>c</code>");
+    expect(telegramHtmlOf("**b** *i* `c`")).toBe("<b>b</b> <i>i</i> <code>c</code>");
     expect(telegramHtmlOf("[label](https://x.com/p)")).toBe('<a href="https://x.com/p">label</a>');
     expect(telegramHtmlOf("> quoted\n> more")).toBe("<blockquote>quoted\nmore</blockquote>");
   });
@@ -150,7 +175,7 @@ describe("telegramHtmlOf", () => {
 describe("feishuMarkdownOf", () => {
   it("keeps every construct the rich-text component renders", () => {
     expect(feishuMarkdownOf("# One\n###### Six")).toBe("# One\n\n###### Six");
-    expect(feishuMarkdownOf("**b** *i* ~~s~~ `c`")).toBe("**b** *i* ~~s~~ `c`");
+    expect(feishuMarkdownOf("**b** *i* `c`")).toBe("**b** *i* `c`");
     expect(feishuMarkdownOf("```python\nprint(1)\n```")).toBe("```python\nprint(1)\n```");
     expect(feishuMarkdownOf("- a\n    - b")).toBe("- a\n    - b");
     expect(feishuMarkdownOf("1. one\n2. two")).toBe("1. one\n2. two");
@@ -216,7 +241,7 @@ describe("feishuMarkdownOf", () => {
 describe("qqMarkdownOf", () => {
   it("keeps the constructs QQ documents", () => {
     expect(qqMarkdownOf("## Two")).toBe("## Two");
-    expect(qqMarkdownOf("**b** *i* ~~s~~")).toBe("**b** *i* ~~s~~");
+    expect(qqMarkdownOf("**b** *i*")).toBe("**b** *i*");
     expect(qqMarkdownOf("- a\n    - b")).toBe("- a\n    - b");
     expect(qqMarkdownOf("1. one\n2. two")).toBe("1. one\n2. two");
     expect(qqMarkdownOf("> quoted")).toBe("> quoted");
@@ -268,7 +293,7 @@ describe("wechatMarkdownOf", () => {
 
   it("keeps the constructs WeChat reads, which is the most of the four", () => {
     expect(wechatMarkdownOf("## Two")).toBe("## Two");
-    expect(wechatMarkdownOf("**b** ~~s~~")).toBe("**b** ~~s~~");
+    expect(wechatMarkdownOf("**b** *i*")).toBe("**b** *i*");
     expect(wechatMarkdownOf("- a\n    - b")).toBe("- a\n    - b");
     expect(wechatMarkdownOf("1. one\n2. two")).toBe("1. one\n2. two");
     expect(wechatMarkdownOf("> quoted")).toBe("> quoted");

@@ -136,7 +136,10 @@ export interface ActivityGroupProps {
   startMs?: number;
   /** The settled span, shown once nothing is in flight. */
   durationMs?: number;
-  /** A step waits on an approval: the body is forced open. */
+  /**
+   * The body is forced open, the reader's own open state kept for later: a step waits on an
+   * approval, or the caller needs the rows on screen (a search of the transcript).
+   */
   pending?: boolean;
   /**
    * The activity's steps, one tree level under the head. Present (even empty, before the first

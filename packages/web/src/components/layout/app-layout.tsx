@@ -44,6 +44,7 @@ import { ChannelRailRows, DefaultChannelRailRow } from "../../features/company/c
 import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
 import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../features/company/company-nav";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
+import { FindBar } from "../find/find-bar";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
@@ -443,6 +444,9 @@ export function AppLayout() {
               <Sidebar onNavigate={() => setDrawerOpen(false)} />
             </div>
           </Drawer>
+          {/* The find bar (`find.open` / `find.all`): in the layout, so it serves every route
+              that mounts a [data-find-region] container, not only the chat page. */}
+          <FindBar />
         </>
       }
     >

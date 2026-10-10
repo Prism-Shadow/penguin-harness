@@ -1,15 +1,16 @@
 /**
  * A provider group's header on the models page (group-header.ts, group-connection.tsx,
- * group-balance.tsx): which actions each kind of group offers, in the order they stand, the
- * connection of a group whose key comes from an authorization flow, and the balance's menu.
+ * group-balance.tsx, group-settings-menu.tsx): which actions each kind of group offers, in the
+ * order they stand, the connection of a group whose key comes from an authorization flow, the
+ * balance's menu, and the gear's menu.
  *
  * - The matrix, per group kind: the balance where the catalog declares one (TokenDance, DeepSeek)
  *   and the group holds a key (or the environment lends one, or it is pinned); the connection on
  *   the three groups with a flow; Add model only where hand-added models are taken (custom,
  *   vLLM, OpenRouter, TokenDance, SiliconFlow, user-defined); Delete group only on a user-defined
- *   group; then the speed test and the group settings on every group, the settings last. No
- *   group offers a separate "Enter key": the group key is set in the settings (or by Connect).
- * - A member keeps the two read-only parts and nothing that writes.
+ *   group; then the speed test and the gear on every group, the gear last. No group offers a
+ *   separate "Enter key": the group key is set in the settings (or by Connect).
+ * - A member keeps the two read-only parts and the gear, and nothing that writes.
  * - "Connected" is the GROUP holding a key: a key set on one model is that model's alone.
  * - Not connected, the owner's status is one button: it shows "Not connected" and pressing it
  *   starts the connect flow (once per press; never while the page is busy). Connected, one
@@ -21,6 +22,10 @@
  * - Given Disconnect confirmed, one `PUT …/models/providers/:id` clears the group key and the
  *   table the server answers with is adopted, so the group reads "Not connected" without a
  *   reload; given the server refuses, nothing is adopted and the group stays connected.
+ * - The gear keeps its name and opens a menu: the three sorts as radio rows, the group's current
+ *   one checked, then Group settings…. Choosing a sort reports it; Group settings… opens the
+ *   dialog. A member's menu holds the sort alone; a busy page holds Group settings… back but
+ *   never the sort, nor the gear itself.
  */
 import { createElement, isValidElement } from "react";
 import type { ReactElement, ReactNode } from "react";
@@ -45,6 +50,11 @@ import {
 } from "../src/features/models/group-connection";
 import type { DisconnectHost } from "../src/features/models/group-connection";
 import { BalanceMenu, balanceView } from "../src/features/models/group-balance";
+import {
+  GroupSettingsControl,
+  GroupSettingsMenu,
+} from "../src/features/models/group-settings-menu";
+import type { ModelGroupSort } from "../src/features/models/model-sort";
 import { userProviderInfo } from "../src/features/models/model-grouping";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
@@ -131,13 +141,14 @@ describe("the group header's actions, in order, by group kind", () => {
     expect(adding.sort()).toEqual(["custom", "openrouter", "siliconflow", "tokendance", "vllm"]);
   });
 
-  it("a member keeps the balance and the connection status, and nothing that writes", () => {
-    expect(member("tokendance", true)).toEqual(["balance", "connect"]);
-    expect(member("penguin-go", true)).toEqual(["connect"]);
-    expect(member("deepseek", true)).toEqual(["balance"]);
-    expect(member("vllm")).toEqual([]);
-    expect(member("custom")).toEqual([]);
-    expect(member("my-own-group")).toEqual([]);
+  it("a member keeps the balance, the connection status and the gear, and nothing that writes", () => {
+    // The gear stays for its sort, a view preference; its menu offers a member nothing else.
+    expect(member("tokendance", true)).toEqual(["balance", "connect", "settings"]);
+    expect(member("penguin-go", true)).toEqual(["connect", "settings"]);
+    expect(member("deepseek", true)).toEqual(["balance", "settings"]);
+    expect(member("vllm")).toEqual(["settings"]);
+    expect(member("custom")).toEqual(["settings"]);
+    expect(member("my-own-group")).toEqual(["settings"]);
   });
 
   it("a pinned balance stays in its header after the key is gone, so the pin can come off there", () => {
@@ -157,6 +168,7 @@ describe("a key lent by the server's environment", () => {
     ]);
     expect(groupHeaderActions(group("deepseek"), { ...facts, isOwner: false })).toEqual([
       "balance",
+      "settings",
     ]);
   });
 
@@ -452,5 +464,98 @@ describe("Disconnect", () => {
     );
     expect(body).toContain("TokenDance");
     expect(fetch.requests).toEqual([]);
+  });
+});
+
+describe("the gear menu", () => {
+  /** A menu row as the menu holds it (not rendered): its words, state and what choosing it runs. */
+  interface Row {
+    label: string;
+    checked?: boolean;
+    disabled?: boolean;
+    onSelect: () => void;
+  }
+  function menuRows(node: ReactNode): Row[] {
+    if (!isValidElement(node)) return Array.isArray(node) ? node.flatMap(menuRows) : [];
+    const props = node.props as Partial<Row> & { children?: ReactNode };
+    if (typeof props.onSelect === "function" && typeof props.label === "string") {
+      return [props as Row];
+    }
+    return menuRows(props.children);
+  }
+
+  const SORTS = [
+    S.models.sortModes["price-asc"],
+    S.models.sortModes["price-desc"],
+    S.models.sortModes.name,
+  ];
+  const menu = (
+    sort: ModelGroupSort,
+    settings?: { onOpen: () => void; disabled: boolean },
+    onSort: (sort: ModelGroupSort) => void = () => {},
+  ) => GroupSettingsMenu({ provider: group("openrouter"), sort, onSort, settings });
+
+  it("offers the three sorts as radio rows, the group's current one checked, then Group settings…", () => {
+    const element = menu("price-desc", { onOpen: () => {}, disabled: false });
+    expect(menuRows(element).map((row) => [row.label, row.checked])).toEqual([
+      [SORTS[0], false],
+      [SORTS[1], true],
+      [SORTS[2], false],
+      [S.models.groupSettingsEntry, undefined],
+    ]);
+    const html = renderToStaticMarkup(element);
+    expect(html.match(/role="menuitemradio"/g)).toHaveLength(3);
+    expect(html.match(/aria-checked="true"/g)).toHaveLength(1);
+    expect(html.match(/role="menuitem"/g)).toHaveLength(1);
+    // The rule sits between the sort and the settings row.
+    expect(html.indexOf('role="separator"')).toBeGreaterThan(html.lastIndexOf("menuitemradio"));
+    expect(html.indexOf('role="separator"')).toBeLessThan(html.indexOf('role="menuitem"'));
+  });
+
+  it("choosing a sort reports it, and Group settings… opens the dialog", () => {
+    const onSort = vi.fn();
+    const onOpen = vi.fn();
+    const rows = menuRows(menu("price-asc", { onOpen, disabled: false }, onSort));
+    rows[2]!.onSelect();
+    expect(onSort).toHaveBeenCalledWith("name");
+    rows[1]!.onSelect();
+    expect(onSort).toHaveBeenLastCalledWith("price-desc");
+    expect(onOpen).not.toHaveBeenCalled();
+    rows[3]!.onSelect();
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onSort).toHaveBeenCalledTimes(2);
+  });
+
+  it("a member's menu holds the sort alone", () => {
+    const element = menu("name");
+    expect(menuRows(element).map((row) => row.label)).toEqual(SORTS);
+    const html = renderToStaticMarkup(element);
+    expect(html).not.toContain('role="separator"');
+    expect(html).not.toContain('role="menuitem"');
+  });
+
+  it("a busy page holds Group settings… back, but never the sort", () => {
+    const rows = menuRows(menu("price-asc", { onOpen: () => {}, disabled: true }));
+    expect(rows.map((row) => row.disabled === true)).toEqual([false, false, false, true]);
+    const html = renderToStaticMarkup(menu("price-asc", { onOpen: () => {}, disabled: true }));
+    expect(html.match(/disabled=""/g)).toHaveLength(1);
+  });
+
+  it("the gear keeps its name, opens a menu, and stays pressable while the page is busy", () => {
+    for (const onSettings of [() => {}, undefined]) {
+      const html = renderToStaticMarkup(
+        createElement(GroupSettingsControl, {
+          provider: group("tokendance"),
+          sort: "price-asc",
+          onSort: () => {},
+          onSettings,
+          busy: true,
+        }),
+      );
+      expect(html).toContain(`aria-label="${S.models.groupSettings} TokenDance"`);
+      expect(html).toContain('aria-haspopup="menu"');
+      expect(html).toContain('aria-expanded="false"');
+      expect(html).not.toContain('disabled=""');
+    }
   });
 });

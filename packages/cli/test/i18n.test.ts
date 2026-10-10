@@ -99,7 +99,7 @@ describe("getMessages", () => {
       // Every listing command names its subject in its description.
       expect(m.ls.desc.length).toBeGreaterThan(0);
       expect(m.input.desc.length).toBeGreaterThan(0);
-      expect(m.logs.desc.length).toBeGreaterThan(0);
+      expect(m.log.desc.length).toBeGreaterThan(0);
       expect(m.agent.lsDesc.length).toBeGreaterThan(0);
       expect(m.project.lsDesc.length).toBeGreaterThan(0);
       expect(m.cost.desc.length).toBeGreaterThan(0);
@@ -113,7 +113,7 @@ describe("getMessages", () => {
       expect(m.client.httpError(500, "boom", "detail")).toContain("500");
       expect(m.client.sessionAmbiguous("ab", ["s1", "s2"])).toContain("s1");
       expect(m.client.sessionNotFound("zz", "proj-x")).toContain("zz");
-      expect(m.logs.tailInvalid("x")).toContain("x");
+      expect(m.log.tailInvalid("x")).toContain("x");
       expect(m.cost.byInvalid("bogus")).toContain("bogus");
       expect(m.run.sessionNoOverride()).toContain("--session");
       // The soft-yield / poll / caller-context family.
@@ -122,7 +122,7 @@ describe("getMessages", () => {
       expect(m.client.stillRunning("abcd1234")).toContain("abcd1234");
       expect(m.client.callerDefaultsFailed("session-x")).toContain("session-x");
       expect(m.input.noReplyYet().length).toBeGreaterThan(0);
-      expect(m.logs.timeoutNeedsFollow().length).toBeGreaterThan(0);
+      expect(m.log.timeoutNeedsFollow().length).toBeGreaterThan(0);
       expect(m.run.timeoutWithBackground()).toContain("--background");
       // ls --days and the schedule writer family.
       expect(m.ls.daysInvalid("x")).toContain("x");
@@ -189,6 +189,10 @@ describe("getMessages", () => {
     // The dictionaries are genuinely two languages, not one copied twice.
     expect(getMessages("zh").ls.desc).not.toBe(getMessages("en").ls.desc);
     expect(getMessages("zh").org.desc).not.toBe(getMessages("en").org.desc);
+    expect(getMessages("zh").session.desc).not.toBe(getMessages("en").session.desc);
+    expect(getMessages("zh").session.renamed("s", "t")).not.toBe(
+      getMessages("en").session.renamed("s", "t"),
+    );
     expect(getMessages("zh").client.noServer()).not.toBe(getMessages("en").client.noServer());
   });
 
