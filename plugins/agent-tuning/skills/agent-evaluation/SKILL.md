@@ -1,7 +1,7 @@
 ---
 name: agent-evaluation
 description: Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.
-version: 2026.10.09.5
+version: 2026.10.10.1
 ---
 
 # Agent Evaluation
@@ -86,7 +86,7 @@ penguin run \
   --approve allow-all
 ```
 
-Every Session `penguin run` creates is a CLI Session, so the Test Session lands in the Background folder of the Web App's session list, marked CLI, rather than among the Test Agent's active conversations.
+Every Session `penguin run` creates is a CLI Session, so the Test Session is archived rather than listed among the Test Agent's conversations: the Web App lists it under **Settings › Archived chats**, marked CLI, and `penguin session ls` shows it only with `-a`.
 
 Use the exact requested Agent, Project, absolute Workspace path, and model pair. Never omit either model flag and never fall back to a Project default. If a launch fails, retry only when unchanged Workspace and Trace evidence proves that the Test Agent did not start. Every retry must follow a new diagnosis and apply a specific correction; never repeat an unchanged launch. Do not impose a numeric retry limit while distinct safe repairs remain. Return `evaluation_failed` when no new repair remains, external configuration is required, or it is unclear whether the Test Agent started.
 
