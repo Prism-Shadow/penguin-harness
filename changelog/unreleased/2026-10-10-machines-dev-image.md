@@ -19,4 +19,5 @@ A server running from a source checkout (`pnpm dev`, `pnpm desktop`) builds its 
 - A build that fails ends its job at the step `build the install image` with the build's last lines, and offers no forced install. The Machines page shows the same lines in a notice until a build succeeds.
 - A hand-over through a machine's update channel, at an install or at the sweep a server runs when it starts, sends the build of the plan being installed, so a checkout hands over its image.
 - `no_install_image` is now answered only by a server that is neither installed nor a checkout of this repository, and its message and the page's notice say so. A server installed as a dependency into another pnpm workspace is not a checkout, and never runs that workspace's `scripts/deploy.mjs`.
+- The provenance a push or an install image records (`source.repo`, shown by `GET /api/version` and the harness history on the machine that receives it) names the origin remote without the user and password an https clone can carry.
 - `deploy.mjs` runs `pnpm` through a shell on Windows, where it is a `.cmd` shim.

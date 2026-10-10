@@ -13,6 +13,9 @@
  *   `scripts/deploy.mjs` included.
  * - Given the packer, its own narration reaches the caller and its output file is the build;
  *   given a packer that fails, the failure is told in its last lines, as words.
+ * - Given a checkout cloned over https with a credential in its origin URL, the provenance a
+ *   build records names the repository without it; a remote that holds no secret is recorded
+ *   as it is.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -23,6 +26,8 @@ import { readPushedBuild, writePushedBuild } from "../src/hmr/pushed-build.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import { readPushedCli } from "../src/hmr/manifest.js";
 import { deployPacker, findCheckout } from "../src/machines/checkout-image.js";
+// @ts-expect-error — a plain .mjs build script, no declarations.
+import { withoutCredentials } from "../../../scripts/build-git-stamp.mjs";
 
 const b64 = (text: string) => Buffer.from(text).toString("base64");
 
@@ -188,5 +193,28 @@ describe("the packer", () => {
         "Command failed: pnpm --filter @prismshadow/penguin-web build",
       ].join("\n"),
     });
+  });
+});
+
+describe("the provenance a build records", () => {
+  it.each([
+    [
+      "https://ghp_0000placeholder@github.com/Prism-Shadow/penguin-harness.git",
+      "https://github.com/Prism-Shadow/penguin-harness.git",
+    ],
+    [
+      "https://oauth2:token-placeholder@git.example.com/team/penguin-harness.git",
+      "https://git.example.com/team/penguin-harness.git",
+    ],
+  ])("a remote cloned with a credential is recorded without it (%s)", (remote, recorded) => {
+    expect(withoutCredentials(remote)).toBe(recorded);
+  });
+
+  it.each([
+    "git@github.com:Prism-Shadow/penguin-harness.git",
+    "ssh://git@github.com/Prism-Shadow/penguin-harness.git",
+    "https://github.com/Prism-Shadow/penguin-harness.git",
+  ])("a remote that holds no secret is recorded as it is (%s)", (remote) => {
+    expect(withoutCredentials(remote)).toBe(remote);
   });
 });
