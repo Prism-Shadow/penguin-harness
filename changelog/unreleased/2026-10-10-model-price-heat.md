@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1019](https://github.com/Prism-Shadow/penguin-harness/pull/1019)
 
 [中文版](2026-10-10-model-price-heat.zh.md)
 
