@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1021](https://github.com/Prism-Shadow/penguin-harness/pull/1021)
 
 [中文版](2026-10-10-sandbox-full-access-label.zh.md)
 
