@@ -16,6 +16,12 @@
  * track's own transition ends — or at once when its computed duration is zero, or when it is not
  * rendered at all (a hidden ancestor runs no transition, so no event would ever come).
  *
+ * The body is held to the box's width (`min-w-0`). The grid's one column is `auto`, and an `auto`
+ * column grows to its item's minimum width — which, left automatic, is the body's min-content
+ * width: a row that truncates its text with `nowrap` counts at its full text width there. Such a
+ * body would come out wider than the fold, its right edge past the box (and clipped by any card
+ * around it), its rows never truncating where the box ends.
+ *
  * The clip is on the track's own box, and only while it moves. Between `0fr` and `1fr` a browser
  * gives the box f of the content's height but the row only f² of it (a flex track under one `fr`
  * is sized against the box's own intrinsic size), so a body clipped at its row would vanish ahead
@@ -106,7 +112,7 @@ export function Fold({
   const trackClass = ["grid", phase === "settled" ? "" : "overflow-clip", className]
     .filter((part) => part !== "")
     .join(" ");
-  const bodyClass = ["min-h-0", bodyClassName].filter((part) => part !== "").join(" ");
+  const bodyClass = ["min-h-0 min-w-0", bodyClassName].filter((part) => part !== "").join(" ");
   return (
     <div
       ref={trackRef}
