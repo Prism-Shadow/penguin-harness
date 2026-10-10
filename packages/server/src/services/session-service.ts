@@ -176,6 +176,15 @@ export interface ActivityCursor {
   sessionId: string;
 }
 
+/** One row the listing rule files as archived (SessionService.archivedRows). */
+export interface ArchivedRow {
+  row: SessionRow;
+  /** The source the row was classified by; absent while its Trace head is unread. */
+  source?: SessionSource;
+  /** Whether a Trace record exists: what toInfo takes for this row. */
+  hasTrace: boolean;
+}
+
 /**
  * The activity order: `lastActiveAt` descending, ties broken by `sessionId` descending; negative
  * when `a` is the more recent. Plain `<` / `>` on both fields, never `localeCompare`: the client
@@ -522,34 +531,7 @@ export class SessionService {
     workspaceLatest?: Record<string, string>;
   }> {
     const { paging, order = "created", category, workspaceGroup, withCounts, excludeOrg } = opts;
-    const rows = new Map(
-      this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
-    );
-    // One query for the whole Project's organization-owned sessions, looked up per row
-    // below: the company caches are small, and a lookup per row would put a statement
-    // behind every entry of a long sidebar list.
-    const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
-    if (excludeOrg) {
-      // The durable `client` stamp answers first: it survives the organization and is
-      // inherited by sub-sessions, which no cache names. The caches catch a row the
-      // reconcile pass has not stamped yet.
-      for (const [id, row] of rows) if (row.client === "org" || orgIds.has(id)) rows.delete(id);
-    }
-
-    let traces: ReadonlySet<string> | undefined;
-    if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
-      // Hydration pass: some rows predate this process and are unclassified — one
-      // reconciled index read supplies discovery so sourceOf's facts lookups and the
-      // has_trace cache need no per-row work. Steady state (everything classified)
-      // skips this.
-      traces = await this.discoverTraces(projectId, agentId);
-      for (const row of rows.values()) {
-        if (!row.hasTrace && traces.has(row.sessionId)) {
-          row.hasTrace = true;
-          this.deps.sessions.markHasTrace(row.sessionId);
-        }
-      }
-    }
+    const { rows, orgIds, traces } = await this.walkRows(projectId, agentId, excludeOrg === true);
 
     const sorted = [...rows.values()].sort(
       order === "activity" ? compareActivityDesc : compareCreatedDesc,
@@ -608,6 +590,72 @@ export class SessionService {
     }
     const sessions = await toPage(paging ? matched.slice(skip, want) : matched);
     return withCounts ? { sessions, counts, workspaceCounts, workspaceLatest } : { sessions };
+  }
+
+  /**
+   * The archive page's walk (services/archived-sessions-service.ts): every row of the Agent the
+   * listing rule files as archived — the rows `listSessions` serves with `category: "archived"`
+   * and `excludeOrg`, classified the same way — with the source each was classified by and
+   * whether it has a Trace. It builds no SessionInfo: the page makes one (toInfo) only for the
+   * rows a response carries, so a request costs a classification per archived row, not a full
+   * row view per archived row.
+   */
+  async archivedRows(projectId: string, agentId: string): Promise<ArchivedRow[]> {
+    const { rows, traces } = await this.walkRows(projectId, agentId, true);
+    const out: ArchivedRow[] = [];
+    for (const row of rows.values()) {
+      const hasTrace = traces ? traces.has(row.sessionId) : row.hasTrace === true;
+      const source = await this.sourceOf(row, hasTrace);
+      if (listCategory(source, listingMarksOf(row)) !== "archived") continue;
+      out.push({ row, hasTrace, ...(source !== undefined ? { source } : {}) });
+    }
+    return out;
+  }
+
+  /**
+   * The rows a list walk starts from: the Agent's index rows, an organization's left out when
+   * `excludeOrg` asks (see listSessions), with the Project's organization map; and when any row
+   * predates this process, the one reconciled Trace discovery (`traces`) that lets every row be
+   * classified without per-row work and backfills the `has_trace` cache. Steady state —
+   * every row classified — skips the discovery and leaves `traces` absent.
+   */
+  private async walkRows(
+    projectId: string,
+    agentId: string,
+    excludeOrg: boolean,
+  ): Promise<{
+    rows: Map<string, SessionRow>;
+    orgIds: ReadonlyMap<string, string>;
+    traces: ReadonlySet<string> | undefined;
+  }> {
+    const rows = new Map(
+      this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
+    );
+    // One query for the whole Project's organization-owned sessions, looked up per row
+    // below: the company caches are small, and a lookup per row would put a statement
+    // behind every entry of a long sidebar list.
+    const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
+    if (excludeOrg) {
+      // The durable `client` stamp answers first: it survives the organization and is
+      // inherited by sub-sessions, which no cache names. The caches catch a row the
+      // reconcile pass has not stamped yet.
+      for (const [id, row] of rows) if (row.client === "org" || orgIds.has(id)) rows.delete(id);
+    }
+
+    let traces: ReadonlySet<string> | undefined;
+    if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
+      // Hydration pass: some rows predate this process and are unclassified — one
+      // reconciled index read supplies discovery so sourceOf's facts lookups and the
+      // has_trace cache need no per-row work.
+      traces = await this.discoverTraces(projectId, agentId);
+      for (const row of rows.values()) {
+        if (!row.hasTrace && traces.has(row.sessionId)) {
+          row.hasTrace = true;
+          this.deps.sessions.markHasTrace(row.sessionId);
+        }
+      }
+    }
+    return { rows, orgIds, traces };
   }
 
   /**

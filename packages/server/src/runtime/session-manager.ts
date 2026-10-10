@@ -2580,6 +2580,7 @@ export abstract class SessionServiceIface extends Interface<
     | "hasTrace"
     | "listingOf"
     | "listSessions"
+    | "archivedRows"
     | "sessionStats"
     | "createSession"
     | "defaultSandbox"

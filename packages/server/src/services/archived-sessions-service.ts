@@ -5,13 +5,15 @@
  *
  * "Archived" is the listing rule's answer (runtime/session-sources.ts listCategory): a Session
  * the user archived, or one a program opened (`api` / `schedule` / `cli`) that the user has not
- * kept. Classification is the Session list's own (SessionService.listSessions with
- * `category: "archived"`), so the page and the sidebar can never disagree about a row; an
- * organization's rows are left out exactly as the sidebar leaves them out (`excludeOrg`), and a
- * `subagent` or `company` Session is in no list at all.
+ * kept. Classification is the Session list's own (SessionService.archivedRows walks what
+ * listSessions serves with `category: "archived"`), so the page and the sidebar can never
+ * disagree about a row; an organization's rows are left out exactly as the sidebar leaves them
+ * out (`excludeOrg`), and a `subagent` or `company` Session is in no list at all.
  *
  * The listing is computed on demand from the index rows the server already holds in SQLite and
- * the source registry; nothing is cached here, and a batch re-reads what it acts on.
+ * the source registry; nothing is cached here, and a batch re-reads what it acts on. Filtering,
+ * grouping and paging work on the classified rows, and only the rows a page returns become a
+ * SessionInfo — a page of ten costs ten of those, however many Sessions are archived.
  */
 import type {
   ArchivedSessionGroup,
@@ -25,13 +27,14 @@ import type {
   ServerEvent,
   SessionCategory,
   SessionInfo,
+  SessionSource,
 } from "../api/types.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import { HttpError } from "../http/errors.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { TraceIndexStore } from "../mechanisms/traces.js";
 import { compareActivityDesc } from "./session-service.js";
-import type { ActivityCursor, SessionService } from "./session-service.js";
+import type { ActivityCursor, ArchivedRow } from "./session-service.js";
 import { TEMP_WORKSPACE_GROUP, isTempWorkspace, matchesWorkspaceGroup } from "./workspace-group.js";
 
 /** What the archive page reaches. */
@@ -42,7 +45,10 @@ export interface ArchivedSessionsDeps {
   canAccess(userId: string, projectId: string): boolean;
   sessions: Pick<SessionIndex, "listByProject" | "findById" | "setListing">;
   sessionService: {
-    listSessions: SessionService["listSessions"];
+    /** One Agent's archived rows, classified as the Session list classifies them. */
+    archivedRows(projectId: string, agentId: string): Promise<ArchivedRow[]>;
+    /** One row as the Session list serves it: made only for the rows a page returns. */
+    toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo>;
     listingOf(row: SessionRow): Promise<SessionCategory | null>;
   };
   /** The Trace index's per-Session facts: the first-prompt title of a row that has none. */
@@ -54,9 +60,10 @@ export interface ArchivedSessionsDeps {
   now?: () => string;
 }
 
-/** An archived Session as the page lists it: the row, and the group it falls in. */
-interface ArchivedEntry {
-  session: SessionInfo;
+/** An archived Session as the page lists it: its row as classified, its title, and its group. */
+interface ArchivedEntry extends ArchivedRow {
+  /** The row's own title, else its Trace's first-prompt title; null when it has neither. */
+  title: string | null;
   projectName: string;
   /** The group's Workspace: the path, or TEMP_WORKSPACE_GROUP for the merged temporary ones. */
   workspace: string;
@@ -72,8 +79,7 @@ function groupOf(workspace: string): string {
  * person's, or one whose Trace has not been read yet, which lists as a person's — and the
  * program's source otherwise.
  */
-function archivedSourceOf(session: SessionInfo): ArchivedSessionSource {
-  const source = session.source;
+function archivedSourceOf(source: SessionSource | undefined): ArchivedSessionSource {
   return source === "api" || source === "schedule" || source === "cli" ? source : "user";
 }
 
@@ -87,21 +93,21 @@ export class ArchivedSessionsService {
   ): Promise<ArchivedSessionGroupsResponse> {
     const entries = await this.matching(userId, query);
     const byKey = new Map<string, ArchivedSessionGroup>();
-    for (const { session, projectName, workspace } of entries) {
-      const key = `${session.projectId}\0${workspace}`;
+    for (const { row, projectName, workspace } of entries) {
+      const key = `${row.projectId}\0${workspace}`;
       const group = byKey.get(key);
       if (group === undefined) {
         byKey.set(key, {
-          projectId: session.projectId,
+          projectId: row.projectId,
           projectName,
           workspace,
           count: 1,
-          latest: session.lastActiveAt,
+          latest: row.lastActiveAt,
         });
         continue;
       }
       group.count += 1;
-      if (session.lastActiveAt > group.latest) group.latest = session.lastActiveAt;
+      if (row.lastActiveAt > group.latest) group.latest = row.lastActiveAt;
     }
     const groups = [...byKey.values()].sort((a, b) => {
       if (a.latest !== b.latest) return a.latest > b.latest ? -1 : 1;
@@ -113,7 +119,8 @@ export class ArchivedSessionsService {
 
   /**
    * One group's page, newest activity first (the Session list's activity order and cursor):
-   * the rows strictly below `before`, at most `limit` of them.
+   * the rows strictly below `before`, at most `limit` of them — the only ones made into a
+   * SessionInfo, with the Trace's first-prompt title on a row that has none of its own.
    */
   async rows(
     userId: string,
@@ -125,12 +132,20 @@ export class ArchivedSessionsService {
     },
   ): Promise<ArchivedSessionsResponse> {
     const { before, limit } = query;
-    const sorted = (await this.matching(userId, query))
-      .map((entry) => entry.session)
-      .sort(compareActivityDesc);
+    const sorted = (await this.matching(userId, query)).sort((a, b) =>
+      compareActivityDesc(a.row, b.row),
+    );
     const below =
-      before === undefined ? sorted : sorted.filter((s) => compareActivityDesc(s, before) > 0);
-    return { sessions: below.slice(0, limit), hasMore: below.length > limit };
+      before === undefined ? sorted : sorted.filter((e) => compareActivityDesc(e.row, before) > 0);
+    const sessions = await Promise.all(
+      below.slice(0, limit).map(async (entry) => {
+        const session = await this.deps.sessionService.toInfo(entry.row, entry.hasTrace);
+        return session.title === undefined && entry.title !== null
+          ? { ...session, title: entry.title }
+          : session;
+      }),
+    );
+    return { sessions, hasMore: below.length > limit };
   }
 
   /**
@@ -204,8 +219,8 @@ export class ArchivedSessionsService {
       }
       return { rows, missing };
     }
-    for (const { session } of await this.matching(userId, target.filter)) {
-      const row = this.deps.sessions.findById(session.sessionId);
+    for (const { row: listed } of await this.matching(userId, target.filter)) {
+      const row = this.deps.sessions.findById(listed.sessionId);
       if (row !== null) rows.push(row);
     }
     return { rows, missing };
@@ -219,19 +234,19 @@ export class ArchivedSessionsService {
     const q = query.q?.trim().toLowerCase() ?? "";
     const out: ArchivedEntry[] = [];
     for (const project of await this.projectsFor(userId, query.projectId)) {
-      for (const session of await this.archivedOf(project.projectId)) {
-        if (query.source !== undefined && archivedSourceOf(session) !== query.source) continue;
-        if (q !== "" && !(session.title ?? "").toLowerCase().includes(q)) continue;
+      const projectName = project.name ?? project.projectId;
+      for (const entry of await this.archivedOf(project.projectId, projectName)) {
+        if (query.source !== undefined && archivedSourceOf(entry.source) !== query.source) {
+          continue;
+        }
+        if (q !== "" && !(entry.title ?? "").toLowerCase().includes(q)) continue;
         if (
           query.workspace !== undefined &&
-          !matchesWorkspaceGroup(session.workspace, query.workspace)
-        )
+          !matchesWorkspaceGroup(entry.row.workspace, query.workspace)
+        ) {
           continue;
-        out.push({
-          session,
-          projectName: project.name ?? project.projectId,
-          workspace: groupOf(session.workspace),
-        });
+        }
+        out.push(entry);
       }
     }
     return out;
@@ -256,30 +271,30 @@ export class ArchivedSessionsService {
   }
 
   /**
-   * One Project's archived Sessions, the user's own conversations only, with the Trace's
-   * first-prompt title on a row that has no title of its own (the Agent Traces listing's
+   * One Project's archived Sessions, the user's own conversations only, each titled by its row
+   * or, when the row has no title, by its Trace's first prompt (the Agent Traces listing's
    * fallback), so a search can find an untitled conversation by what it asked.
    */
-  private async archivedOf(projectId: string): Promise<SessionInfo[]> {
+  private async archivedOf(projectId: string, projectName: string): Promise<ArchivedEntry[]> {
     const agentIds = new Set(this.deps.sessions.listByProject(projectId).map((r) => r.agentId));
-    const out: SessionInfo[] = [];
+    const out: ArchivedEntry[] = [];
     for (const agentId of agentIds) {
-      const { sessions } = await this.deps.sessionService.listSessions(projectId, agentId, {
-        category: "archived",
-        excludeOrg: true,
-      });
-      if (sessions.length === 0) continue;
-      const titles = sessions.some((s) => s.title === undefined)
+      const archived = await this.deps.sessionService.archivedRows(projectId, agentId);
+      if (archived.length === 0) continue;
+      const titles = archived.some((a) => a.row.title === null)
         ? new Map(
             this.deps.traceStore
               .listSessionsByAgent(projectId, agentId)
               .map((facts) => [facts.sessionId, facts.title]),
           )
         : null;
-      for (const session of sessions) {
-        const fallback =
-          session.title === undefined ? (titles?.get(session.sessionId) ?? null) : null;
-        out.push(fallback !== null ? { ...session, title: fallback } : session);
+      for (const entry of archived) {
+        out.push({
+          ...entry,
+          title: entry.row.title ?? titles?.get(entry.row.sessionId) ?? null,
+          projectName,
+          workspace: groupOf(entry.row.workspace),
+        });
       }
     }
     return out;

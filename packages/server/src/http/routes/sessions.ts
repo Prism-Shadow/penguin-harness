@@ -1891,8 +1891,8 @@ export class SessionApiRoutes {
         canAccess: (userId, projectId) => access.canAccess(userId, projectId),
         sessions: sessionsRepo,
         sessionService: {
-          listSessions: (projectId, agentId, opts) =>
-            sessionService.listSessions(projectId, agentId, opts),
+          archivedRows: (projectId, agentId) => sessionService.archivedRows(projectId, agentId),
+          toInfo: (row, hasTrace) => sessionService.toInfo(row, hasTrace),
           listingOf: (row) => sessionService.listingOf(row),
         },
         traceStore: this.traceStore,

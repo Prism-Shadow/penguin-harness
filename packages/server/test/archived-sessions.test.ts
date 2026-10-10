@@ -9,6 +9,8 @@
  *   Session that never ran — by Workspace under Project, newest first; never a person's active
  *   conversation, a subagent, or a Session of a Project the user cannot open.
  * - Given a group, its rows page newest first by cursor, each row exactly once.
+ * - Given many archived Sessions, the counts build no Session's full view and a page builds one
+ *   per row it returns.
  * - Given a query, it matches a stored title and a first-prompt title; the source filter keeps
  *   one kind (`user` = archived by hand); a Project filter keeps one Project.
  * - Given ids, unarchive keeps each archived one in the sidebar's list, through a later run;
@@ -27,7 +29,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { requestBegin, sessionMeta, subagentEvent, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
@@ -232,6 +234,28 @@ describe("the archive page", () => {
         (s) => s.sessionId,
       ),
     ).toEqual([ids.scheduled]);
+  });
+
+  it("builds a Session's full view only for the rows a page returns, however many are archived", async () => {
+    const w = await world();
+    for (let i = 0; i < 25; i += 1) {
+      await seed(w.p1, { source: "cli", workspace: "/tmp/arch-ws-many" });
+    }
+    const toInfo = vi.spyOn(t.deps.sessionService, "toInfo");
+    try {
+      const counted = await groups(w.owner, `?projectId=${w.p1}`);
+      expect(counted.groups.find((g) => g.workspace === "/tmp/arch-ws-many")?.count).toBe(25);
+      expect(toInfo).not.toHaveBeenCalled();
+      const page = await rows(
+        w.owner,
+        `projectId=${w.p1}&workspace=${enc("/tmp/arch-ws-many")}&limit=10`,
+      );
+      expect(page.sessions).toHaveLength(10);
+      expect(page.hasMore).toBe(true);
+      expect(toInfo).toHaveBeenCalledTimes(10);
+    } finally {
+      toInfo.mockRestore();
+    }
   });
 
   it("matches a stored title and a first-prompt title, and filters by source and by Project", async () => {
