@@ -242,14 +242,11 @@ export function ImportPluginTabs({
       : value.trim() === "" || tabTakes("npm", value)
         ? null
         : "invalid";
+    // A folder link is a valid URL npm cannot install, not a malformed one: it reads as a muted
+    // field hint with the way out beside it, not as a red error. Red (the `error` prop) stays for
+    // a value the field rejects as wrong — a name on the link tab, an http: link.
     const error =
-      fault === null
-        ? null
-        : fault === "subpath"
-          ? S.plugins.importLinkSubpath
-          : npm
-            ? S.plugins.importNpmInvalid
-            : S.plugins.importLinkInvalid;
+      fault === "invalid" ? (npm ? S.plugins.importNpmInvalid : S.plugins.importLinkInvalid) : null;
     return (
       <>
         <p className="text-xs text-fg-muted">
@@ -268,9 +265,12 @@ export function ImportPluginTabs({
               {...(error !== null ? { error } : {})}
             />
             {fault === "subpath" && (
-              <Button size="sm" variant="link" className="mt-1" onClick={() => askAgentWith(value)}>
-                {S.plugins.importLinkAskAgent}
-              </Button>
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
+                <span>{S.plugins.importLinkSubpath}</span>
+                <Button size="sm" variant="link" onClick={() => askAgentWith(value)}>
+                  {S.plugins.importLinkAskAgent}
+                </Button>
+              </p>
             )}
           </div>
           <Button
