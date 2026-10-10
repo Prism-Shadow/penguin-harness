@@ -40,7 +40,7 @@ export function buildBenchmarkImportPrompt(input: string, projectId: string): st
 
 /**
  * The draft "Open a new chat" asks for: the prompt for `input`, to the Project's default Agent —
- * the one that carries the preinstalled agent-tuning plugin, whose benchmark-design Skill tells it
+ * the one that carries the preinstalled rsi-default plugin, whose benchmark-design Skill tells it
  * how to import a package. Null when there is nothing to send (no source) or no Agent to send it to.
  */
 export function benchmarkImportChat(

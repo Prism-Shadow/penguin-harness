@@ -171,6 +171,10 @@
 .hero-rotator-word:nth-child(2) {
   animation-delay: -5s;
 }
+/* A single word has nothing to rotate to, so it stays put. */
+.hero-rotator-word:only-child {
+  animation: none;
+}
 @keyframes hero-word-cycle {
   0%,
   43%,

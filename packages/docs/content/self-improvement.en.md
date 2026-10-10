@@ -1,11 +1,13 @@
 ---
 title: Self-Improvement
-description: How Skills build a Benchmark, score an agent on it, and keep only the changes that raise its score, with every version snapshotted and every score traceable.
+description: How Skills build a Benchmark, score an agent on it, and keep only the changes that raise its score, with every version snapshotted and every score traceable; and the RSI toolkits that run other self-evolution algorithms.
 ---
 
 Self-improvement in PenguinHarness is a loop: build a Benchmark for an agent, score the agent on it, change the agent, and keep a change only when the score strictly improves. The loop adds no runtime of its own. Skills orchestrate the ordinary agent machinery: evaluations are ordinary Sessions, optimization is ordinary file editing, and every result is a file in the Project.
 
 Building a Benchmark and optimizing an agent run in two independent top-level Sessions, and each single evaluation is delegated through the built-in `run_subagent` tool. The top-level prompt supplies the settings for the task: the agent, the Benchmark, the capability, the scores and the rounds. The Skills own everything else: call relationships, calibration, Freeze, the result protocol, repair, rollback and reporting.
+
+This loop is the Default RSI Toolkit; [RSI toolkits](#rsi-toolkits) covers the other self-evolution algorithms.
 
 ## Roles
 
@@ -16,7 +18,7 @@ Building a Benchmark and optimizing an agent run in two independent top-level Se
 | Evaluator | `agent-evaluation` | A leaf subagent created through `run_subagent` | Runs the Target Agent on one Case once and scores that run |
 | Optimizer | `agent-optimization` | A separate top-level Session | Changes the Target Agent under a falsifiable hypothesis and keeps a new version only when its score strictly improves |
 
-No built-in agent is reserved for a role: each role is a Skill, and all four Skills ship in the `agent-tuning` plugin. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
+No built-in agent is reserved for a role: each role is a Skill, and all four Skills ship in the `rsi-default` plugin (the Default RSI Toolkit). The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
 
 ### How the roles call each other
 
@@ -105,6 +107,25 @@ Optimization needs a complete Formal Baseline in the Scoreboard: without one, th
 Invalid evaluations and correction reruns do not count toward the round limit; a complete, valid evaluation of a rejected Candidate does. When an execution fails, the Optimizer keeps the same Candidate and repairs only the missing cell. It keeps trying as long as each attempt follows a new diagnosis and applies a different safe repair.
 
 The Optimizer also stops on contamination, on `version_changed` or `benchmark_invalid`, or when no safe repair remains.
+
+## RSI toolkits
+
+RSI, recursive self-improvement, is what this page is about: an agent improves its own harness — prompts, Skills, tools and hooks — from its own measured results, while the model stays fixed. Each self-evolution algorithm ships as an **RSI toolkit**, a plugin in the library's **Agent Self-Evolution** category. The loop above is the **Default RSI Toolkit**, `rsi-default`. Four more toolkits each run one published algorithm the way its paper does, through one Skill named like the plugin:
+
+- **OPRO** (`rsi-opro`), from [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409) (Yang et al., 2023): the optimizer proposes new instructions from the history of scored instructions, every candidate is measured on the frozen Benchmark, and the best-scoring instruction is kept.
+- **APE** (`rsi-ape`), from [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910) (Zhou et al., 2022): in one non-iterative pass, the proposer induces candidate instructions from input/output demonstrations, every candidate is measured, and the best is kept.
+- **ACE** (`rsi-ace`), from [Agentic Context Engineering](https://arxiv.org/abs/2510.04618) (Zhang et al., 2025), in its sequential offline form: a Reflector reads each training Trace, a Curator folds the lessons into a playbook of rules the agent reads before every task, and the final playbook is measured on the frozen Benchmark.
+- **AWM** (`rsi-awm`), from [Agent Workflow Memory](https://arxiv.org/abs/2409.07429) (Wang et al., 2024): workflows are induced from successful trajectories into the agent's memory, online over a training stream or offline from supplied experiences, then frozen and tested on the Benchmark.
+
+OPRO and APE each ship a small demo task: ask for it, and the Skill builds a fresh agent and a six-case Benchmark before it starts. Each Skill states the paper's default parameters and a smaller smoke budget, and never runs the paper's full budget unless you ask for it.
+
+The toolkits depend neither on each other nor on `rsi-default`, so any one of them runs with no other plugin installed. Each initializes its own learning slot in the tested agent: a Skill of the agent's own that holds what the method learns (an instruction, a playbook or workflows), and one fixed line in its `AGENTS.md` telling it to read that Skill before it starts a task. The method's loop edits only what that Skill holds. Every measurement runs through the toolkit's own `references/evaluation.md`, which carries the same one-cell protocol as `agent-evaluation` (one subagent per Case × run, spawned through `run_subagent` and returning plain protocol YAML) and writes the same Scoreboard record. The file is byte-identical in all four algorithm toolkits. Built-in Benchmark cases run by their statements' **How this case is run** section, as they do under `agent-evaluation`.
+
+Every candidate a toolkit measures gets a new Agent State `version`. As in the Default loop, a version is snapshotted before the toolkit changes it, and the run ends on the version the method selects. The evaluations go into `scoreboard.yaml` under the usual label, so a Default run and an OPRO run of the same agent on the same model and thinking level share one line of the chart: each point's version tells them apart, and each evaluation's summary title names the method. In the Web App, the **Method** field of the Evaluation Center's **Optimize** tab picks the toolkit; see [Evaluation Center](/evaluation-center#optimize-an-agent).
+
+## Reproduced Benchmarks
+
+Reproducing a published benchmark is not a toolkit's job. A reproduced Benchmark is a package in the public repository [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark), under `packages/<id>/`, and it enters a Project by import: ask an agent to import the package's folder, and the copy records the commit it came from (origin `git`; see [The manifest](#the-manifest)). Whatever is special about running it is written in the Benchmark itself, in each statement's **How this case is run** section and in the repository's README, never in a plugin or a Skill, so every RSI toolkit runs it the same way. The five built-in Benchmarks are reproductions of this kind, written into every new Project.
 
 ## Starting from the Web App
 
@@ -206,11 +227,15 @@ Every score can be traced back to the run that produced it.
 
 ## Related Skills
 
-| Skill | Purpose |
-| --- | --- |
-| `agent-initialization` | Turn a requirement into a working agent: write its `AGENTS.md` and install the Skills it needs |
-| `benchmark-design` | Design and calibrate a multi-Case capability Benchmark |
-| `agent-evaluation` | Run and score one isolated Benchmark Case run |
-| `agent-optimization` | Improve an agent from Benchmark results |
+| Skill | Plugin | Purpose |
+| --- | --- | --- |
+| `agent-initialization` | `rsi-default` | Turn a requirement into a working agent: write its `AGENTS.md` and install the Skills it needs |
+| `benchmark-design` | `rsi-default` | Design and calibrate a multi-Case capability Benchmark |
+| `agent-evaluation` | `rsi-default` | Run and score one isolated Benchmark Case run |
+| `agent-optimization` | `rsi-default` | Improve an agent from Benchmark results |
+| `rsi-opro` | `rsi-opro` | Run OPRO: optimize an instruction from its scored history |
+| `rsi-ape` | `rsi-ape` | Run APE: induce an instruction from input/output demonstrations |
+| `rsi-ace` | `rsi-ace` | Run ACE: evolve a playbook of rules from training Traces |
+| `rsi-awm` | `rsi-awm` | Run AWM: induce workflows from successful trajectories |
 
 How Skills are organized and installed is covered in [Skills](/skills).

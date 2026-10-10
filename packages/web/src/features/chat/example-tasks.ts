@@ -17,8 +17,19 @@
  * `S.chat.exampleTasks[id]`, which is also where the rule for how long a prompt may get is
  * stated. Skills listed here are preselected in the composer only when the selected Agent has
  * them installed; an empty list fills the prompt alone.
+ *
+ * The first folder is the one open on arrival: reproducing a self-evolution algorithm. Its two
+ * toolkit demos are their plugins' quick starts word for word, skills included.
  */
 export const EXAMPLE_FOLDERS = [
+  {
+    id: "rsi",
+    tasks: [
+      { id: "agentOptimization", skills: [] },
+      { id: "rsiApe", skills: ["rsi-ape"] },
+      { id: "rsiOpro", skills: ["rsi-opro"] },
+    ],
+  },
   {
     id: "webapps",
     tasks: [
@@ -34,7 +45,6 @@ export const EXAMPLE_FOLDERS = [
       { id: "investmentCopilot", skills: ["penguin-sdk", "web-design"] },
       { id: "missionControl", skills: ["penguin-sdk", "web-design"] },
       { id: "agentBenchmarkBuild", skills: [] },
-      { id: "agentOptimization", skills: [] },
     ],
   },
   {

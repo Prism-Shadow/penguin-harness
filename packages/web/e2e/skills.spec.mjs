@@ -3,8 +3,8 @@
  * - the sidebar nav shows "插件市场" ("Plugins"), and the page renders the library's plugin
  *   cards across group sections (a collapsible group header: category name + plugin count,
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
- *   group name it's "办公效率 / 软件开发 / AI 应用开发 / Agent 调优", falling back to
- *   English by default); cards carry a custom icon (the plugin's first skill's icon.svg,
+ *   group name it's "Agent 自进化 / 办公效率 / 软件开发 / AI 应用开发 / Agent 公司", falling
+ *   back to English by default); cards carry a custom icon (the plugin's first skill's icon.svg,
  *   sanitized then inlined, not the book fallback), with metadata showing the `YYYY.MM.DD.N`
  *   version and usage count (worded semantically, not a bare number badge);
  * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
@@ -38,6 +38,7 @@ const P = "password123";
 // falling back to English (both states are asserted). A category is a tag on each library
 // plugin's row now; the page is one flat list, with the installed section folded by default.
 const CATEGORIES = [
+  /Agent Self-Evolution|Agent 自进化/,
   /Office Productivity|办公效率/,
   /Software Development|软件开发/,
   /AI App Development|AI 应用开发/,
@@ -46,7 +47,7 @@ const CATEGORIES = [
 const INSTALLED_HEADER = /已安装的插件|Installed plugins/;
 // Library plugin cards the page renders (merged plugins carry several skills each).
 const PLUGINS = [
-  "agent-tuning",
+  "rsi-default",
   "agent-development",
   "model-development",
   "software-development",
@@ -58,6 +59,10 @@ const SKILLS = [
   "benchmark-design",
   "agent-evaluation",
   "agent-optimization",
+  "rsi-opro",
+  "rsi-ape",
+  "rsi-ace",
+  "rsi-awm",
   "data-analysis",
   "penguin-sdk",
   "penguin-config",
@@ -140,7 +145,7 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   // layout has the icon spanning two rows on the left, with the name and short description as
   // separate text columns, so it can no longer be located by "the innermost div containing the name").
   const creationCard = page
-    .getByText("agent-tuning", { exact: true })
+    .getByText("rsi-default", { exact: true })
     .locator("xpath=ancestor::div[contains(@class,'rounded-md')][1]");
   await expect(creationCard.locator("span[aria-hidden] > svg")).toHaveCount(1);
   await expect(creationCard.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);

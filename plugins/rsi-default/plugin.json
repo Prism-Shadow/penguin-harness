@@ -1,0 +1,13 @@
+{
+  "description": "The Default RSI Toolkit: the trial → reflect → improve loop as four Skills — initialize an agent from a requirement, design and calibrate a capability Benchmark, run and score isolated cases, and improve the agent from measured results, with a snapshot before every round.",
+  "description_zh": "默认 RSI 工具包：试跑 → 反思 → 提升的循环，四个 Skill——依据需求初始化 Agent、设计并校准能力 Benchmark、隔离执行与评分、再根据测得结果改进 Agent，每轮之前自动快照。",
+  "short_description": "Default RSI Toolkit: trial, reflect, improve.",
+  "short_description_zh": "默认 RSI 工具包：试跑、反思、提升。",
+  "version": "2026.10.10.1",
+  "category": "rsi",
+  "quick_start": {
+    "prompt": "Plan a new agent that reviews pull requests: draft its AGENTS.md and list the skills it would need. Show me the plan and wait for my go-ahead before writing anything.",
+    "prompt_zh": "规划一个审阅 Pull Request 的新 Agent：起草它的 AGENTS.md，列出它需要的技能。先把方案给我看，等我确认后再写入任何东西。",
+    "skills": ["agent-initialization"]
+  }
+}

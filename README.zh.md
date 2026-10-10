@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><strong>开源、本地的多 Agent 应用自动开发平台</strong><br />全自动<strong>创建</strong> · <strong>优化</strong> · <strong>部署</strong> AI 应用</p>
+<p align="center"><strong>大一统、稳定的 RSI 框架</strong><br />全自动优化<strong>模型 × Harness</strong>——任何模型、任何算法、任何 Agent 都能递归自我进化</p>
 
 <p align="center">
   <a href="https://penguin.ooo/download">
@@ -15,7 +15,7 @@
   </a>
 </p>
 
-<p align="center">1000+ 模型 · 多平台 · Apache 2.0 · Agent 自进化</p>
+<p align="center">1000+ 模型 · 多平台 · Apache 2.0 · 大一统 RSI 框架</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@prismshadow/penguin-core"><img src="https://img.shields.io/npm/v/@prismshadow/penguin-core" alt="npm 版本" /></a>
@@ -45,22 +45,15 @@
 
 ## 为什么选择 PenguinHarness
 
-> 使用 LangChain，以 1 倍速度人工构建 Agent；<br />使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。
+> 使用 LangChain，以 1 倍速度人工构建 Agent；<br />使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent；<br />再用 RSI 工具包，让 Agent 自动改进 Agent。
 
-PenguinHarness 运行在你的电脑或服务器上，自动串联 Agent 应用的创建、评测、优化与部署。三个递进的理由定义了这个平台：
+PenguinHarness 运行在你的电脑或服务器上，是递归自我进化（RSI）的大一统框架：模型固定不动，进化的是 Harness——提示词、Skill、工具与钩子——而每一种自进化算法都跑在同一套 Benchmark、记分板与快照之上。三个递进的理由定义了这个框架：
 
-### 1. 🏆 以几十分之一的成本，跑出优异的效果
+### 1. 🧬 最全面的 Agent 自进化框架
 
-刻意精简的工具集配合干净的底层接口：更少的工具调用、更少的 Token，对 DeepSeek 等开放模型深度适配。各自搭配常用模型、同一批任务，正面对比：
+每一种算法都是插件库里的一个工具包，每个工具包都按原论文的流程运行。**Default RSI Toolkit**（`rsi-default`）跑「试跑 → 反思 → 提升」的循环：跑 Benchmark、找失分点、发布 N+1 版，每轮之前自动快照；**OPRO**、**APE**、**ACE**、**AWM** 各自是独立的工具包（`rsi-opro`、`rsi-ape`、`rsi-ace`、`rsi-awm`），工具包之间互不依赖。复现的 Benchmark 统一放在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)，可导入任何 Project；评估中心画出每一条分数曲线，每个请求都可在轨迹观测中回放。
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/benchmark-dark.svg" />
-    <img src="assets/readme/benchmark-light.svg" alt="Benchmark：PenguinHarness 在数据分析题库准确率最高、编程题库与 OpenAI Codex 持平，成本仅为两者的零头" width="920" />
-  </picture>
-</p>
-
-**数据分析准确率最高——成本只有 Claude Code 的 1/70。**
+https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 ### 2. ⚡ 一句话生成可运行的 Agent 应用
 
@@ -76,21 +69,29 @@ https://github.com/user-attachments/assets/604eb626-0a5d-4a62-87e3-14ebade1cd5f
 
 **而生成整个 RAG 应用，仅消耗了 0.2 元（$0.02）的 token——使用 DeepSeek V4 Pro 模型。**
 
-### 3. 🧬 原生 Agent 自进化引擎
+### 3. 🏆 以几十分之一的成本，跑出优异的效果
 
-借助 PenguinHarness 技能库，Agent 自己评估、自己优化：跑 Benchmark、找失分点、发布 N+1 版——每轮之前自动快照，每个请求都可在轨迹观测中回放。
+刻意精简的工具集配合干净的底层接口：更少的工具调用、更少的 Token，对 DeepSeek 等开放模型深度适配。各自搭配常用模型、同一批任务，正面对比：
 
-https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/benchmark-dark.svg" />
+    <img src="assets/readme/benchmark-light.svg" alt="Benchmark：PenguinHarness 在数据分析题库准确率最高、编程题库与 OpenAI Codex 持平，成本仅为两者的零头" width="920" />
+  </picture>
+</p>
+
+**数据分析准确率最高——成本只有 Claude Code 的 1/70。**
 
 ## 内置插件库
 
-开箱内置四类插件（[文档](https://penguin.ooo/docs/skills)）——Skill，以及驱动目标模式与持续学习的会话钩子；Agent 也能编写并优化自己的 Skill：
+开箱内置五类插件（[文档](https://penguin.ooo/docs/skills)）——Skill，以及驱动目标模式与持续学习的会话钩子；Agent 也能编写并优化自己的 Skill：
 
 | 分类        | 插件                                                                            |
 | ----------- | ------------------------------------------------------------------------------- |
+| Agent 自进化 | `rsi-default`、`rsi-opro`、`rsi-ape`、`rsi-ace`、`rsi-awm`                       |
 | 办公效率    | `a2ui`、`data-analysis`、`use-firecrawl`、`browser-automation`、`use-bento-slides`、`humanizer`、`goal`、`continual-learning` |
 | 软件开发    | `software-development`、`use-claude-code`                                |
-| AI 应用开发 | `agent-development`、`model-development`、`skill-porting`、`agent-tuning`       |
+| AI 应用开发 | `agent-development`、`model-development`、`skill-porting`                       |
 | Agent 公司  | `agent-company`                                                                 |
 
 桌面应用的侧边停靠栏里还内置了一个浏览器。Agent 通过 `penguin browser` 和 `browser-automation` 插件驱动它：读取页面、点击和输入，并提取亚马逊订单这样的数据，登录用的是从你自己的浏览器导入的账号。

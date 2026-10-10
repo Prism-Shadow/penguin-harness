@@ -1,0 +1,13 @@
+{
+  "description": "The AWM RSI Toolkit: Agent Workflow Memory (Wang et al., 2024) — workflows are induced from successful trajectories and stored in the Target's memory, online over a training stream or offline from supplied experiences, then frozen for independent testing on the Benchmark. Self-contained: it creates the Target's workflow memory, evaluates its own cells and writes the Evaluation Center's scoreboard.",
+  "description_zh": "AWM RSI 工具包：按论文《Agent Workflow Memory》（Wang 等，2024）——从成功轨迹归纳工作流并存入 Target 的记忆，在线（训练流）或离线（给定经验）两种模式，冻结后在 Benchmark 上独立测试。自成一体：自行创建 Target 的工作流记忆、自行评测每个单元、写入评估中心的记分板。",
+  "short_description": "AWM RSI Toolkit: induce workflows from trajectories.",
+  "short_description_zh": "AWM RSI 工具包：从轨迹归纳工作流。",
+  "version": "2026.10.10.1",
+  "category": "rsi",
+  "quick_start": {
+    "prompt": "Use the `rsi-awm` Skill to run AWM on an agent of this Project: ask me for the Test Agent and the published Benchmark, run the online_train mode over its cases once at the smoke budget, freeze the workflow memory, and report the baseline and final scores.",
+    "prompt_zh": "使用 `rsi-awm` 技能在本 Project 的一个智能体上运行 AWM：先问我被测智能体与已发布的 Benchmark，以冒烟预算按 online_train 模式跑一遍题目，冻结工作流记忆，报告基线分与最终分。",
+    "skills": ["rsi-awm"]
+  }
+}

@@ -1,9 +1,11 @@
 /**
- * Use-case gallery as switchable tabs — the RAG docs expert and the penguin sled
- * game under their condensed one-sentence prompts. Video entries use a matching
- * PenguinHarness run as their poster; still-only entries show the finished product.
+ * Use-case gallery as switchable tabs, each under its one-sentence prompt: an AI app built from
+ * one sentence (the RAG docs expert), and a self-evolution algorithm reproduced from one sentence
+ * (APE on the demo task that ships with the rsi-ape Skill). Video entries use a matching
+ * PenguinHarness run as their poster; still-only entries show the result.
  * Tab order follows S.cases.tabs; CASE_STILLS is index-aligned with it. A tab may carry a `cost`
- * line (the RAG one does) — an emphasized token-cost hook under the caption.
+ * line (the RAG one does) — an emphasized token-cost hook under the caption; an empty one
+ * renders nothing.
  */
 import { useState } from "react";
 import { S } from "../lib/strings";
@@ -16,16 +18,16 @@ import chatZhLight from "../assets/shots/chat-zh-light.webp";
 import chatZhDark from "../assets/shots/chat-zh-dark.webp";
 import chatEnLight from "../assets/shots/chat-en-light.webp";
 import chatEnDark from "../assets/shots/chat-en-dark.webp";
-import gameZhLight from "../assets/game-zh-light.webp";
-import gameZhDark from "../assets/game-zh-dark.webp";
-import gameEnLight from "../assets/game-en-light.webp";
-import gameEnDark from "../assets/game-en-dark.webp";
+import benchmarkZhLight from "../assets/shots/benchmark-zh-light.webp";
+import benchmarkZhDark from "../assets/shots/benchmark-zh-dark.webp";
+import benchmarkEnLight from "../assets/shots/benchmark-en-light.webp";
+import benchmarkEnDark from "../assets/shots/benchmark-en-dark.webp";
 
 type ShotSet = Record<Locale, { light: string; dark: string }>;
 
 /**
- * Demo recording for a case, index-aligned with S.cases.tabs; null where the finished
- * product is still shown as a still. The community-hosted file only downloads on play
+ * Demo recording for a case, index-aligned with S.cases.tabs; null where the tab shows a
+ * still. The community-hosted file only downloads on play
  * (preload="none"), and a matching PenguinHarness run doubles as the poster — so a video
  * tab costs a visitor exactly what an image tab already did until they press play.
  */
@@ -34,15 +36,19 @@ const CASE_VIDEOS: Array<Record<Locale, string> | null> = [
   null,
 ];
 
-/** Theme- and locale-matched posters or stills, index-aligned with S.cases.tabs. */
+/**
+ * Theme- and locale-matched posters or stills, index-aligned with S.cases.tabs. The APE tab
+ * shows the Evaluation Center screenshot until a capture of the score chart from a real run
+ * replaces it.
+ */
 const CASE_STILLS: ShotSet[] = [
   {
     zh: { light: chatZhLight, dark: chatZhDark },
     en: { light: chatEnLight, dark: chatEnDark },
   },
   {
-    zh: { light: gameZhLight, dark: gameZhDark },
-    en: { light: gameEnLight, dark: gameEnDark },
+    zh: { light: benchmarkZhLight, dark: benchmarkZhDark },
+    en: { light: benchmarkEnLight, dark: benchmarkEnDark },
   },
 ];
 

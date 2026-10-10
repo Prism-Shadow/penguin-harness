@@ -118,6 +118,7 @@ describe("skills api", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginLibraryResponse;
     expect(body.groups.map((g) => g.id)).toEqual([
+      "rsi",
       "office-productivity",
       "software-development",
       "ai-app-development",

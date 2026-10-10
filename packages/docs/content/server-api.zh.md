@@ -402,7 +402,7 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 ## Agent
 
-下面的路径省略了 `/api/projects/:projectId` 前缀，只有两个全局的 `/api/plugins` 路由是例外。
+下面的路径省略了 `/api/projects/:projectId` 前缀，全局的 `/api/plugins` 与 `/api/rsi` 路由是例外。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -437,6 +437,7 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | DELETE | `/agents/:agentId/api/keys/:keyId` | 删除 API 密钥（仅所有者） |
 | GET | `/api/plugins`（全局） | 按分类返回插件库（任何已登录用户） |
 | GET | `/api/plugins/:plugin/files`（全局） | 单个插件库插件自带的所有文件，以路径为键返回文本（任何已登录用户） |
+| GET | `/api/rsi`（全局） | 自进化目录：插件库里的 RSI 工具包与内置的 Benchmark 复现（任何已登录用户） |
 
 ### Agent 路由
 
@@ -462,6 +463,7 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 - `POST …/hooks/archive` 要求 `hooks.json` 及其脚本位于 zip 根目录或同一个顶层目录内，且列出的每条命令都必须指向包内的文件。不带 `overwrite` 时，同名钩子包已安装会返回 409 `hook_exists`。`GET …/hooks/:name/archive` 导出的 zip 可以再通过这个路由安装。
 - `GET /api/plugins` 按分类返回插件库的全部插件，包括每个插件的 Skill 元数据和钩子点。
 - `GET /api/plugins/:plugin/files` 返回单个插件库插件自带的全部文件，以路径为键返回文本：`skills/<name>/` 下是每个 Skill 可安装的 `SKILL.md` 和参考文件，`hooks/` 下是钩子脚本。插件详情页的文件浏览器用的就是这个路由。
+- `GET /api/rsi` 返回 `{toolkits, benchmarks}`：插件库 `rsi` 分类的每个插件一条（`plugin`、它的 `skills`，以及是否预装），每个内置 Benchmark 一条（`id`、`title`）。草稿页的两个计数由它派生。
 
 ### Agent API 设置
 

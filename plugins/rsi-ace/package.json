@@ -1,0 +1,21 @@
+{
+  "name": "@penguinharness/rsi-ace",
+  "version": "0.2.13",
+  "description": "The ACE RSI Toolkit: Agentic Context Engineering (Zhang et al., 2025), the sequential offline algorithm — a Reflector reads each training Trace, a Curator folds the lessons into a playbook of rules the Target reads before every task, and the final playbook is measured on the frozen Benchmark. Self-contained: it creates the Target's playbook Skill, evaluates its own cells and writes the Evaluation Center's scoreboard.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/rsi-ace"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "hooks",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

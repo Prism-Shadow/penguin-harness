@@ -1,11 +1,13 @@
 ---
 title: 自我进化
-description: Skill 如何构建 Benchmark、给 Agent 打分，并只保留让分数提高的改动；每个版本都有快照，每个分数都能追溯。
+description: Skill 如何构建 Benchmark、给 Agent 打分，并只保留让分数提高的改动；每个版本都有快照，每个分数都能追溯。另有运行其他自进化算法的 RSI 工具包。
 ---
 
 PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在上面给 Agent 打分，修改 Agent，只有分数严格提升才保留改动。这个循环不额外引入任何运行机制，而是由 Skill 编排普通的 Agent 机制：评估是普通的 Session，优化是普通的文件编辑，每个结果都是 Project 里的文件。
 
 构建 Benchmark 和优化 Agent 分别在两个独立的顶层 Session 中运行，每一次单独的评估则通过内置的 `run_subagent` 工具委派出去。顶层 Prompt 提供这次任务的设定：Agent、Benchmark、要考察的能力、分数和轮数。其余一切都由 Skill 负责：调用关系、校准、Freeze、结果协议、修复、回滚和汇报。
+
+这个循环就是 Default RSI Toolkit；其他自进化算法见 [RSI 工具包](#rsi-工具包)。
 
 ## 角色
 
@@ -16,7 +18,7 @@ PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在
 | Evaluator | `agent-evaluation` | 通过 `run_subagent` 创建的叶子子 Agent | 让 Target Agent 在一道题目上运行一次，并为这次运行打分 |
 | Optimizer | `agent-optimization` | 另一个独立的顶层 Session | 按可证伪的假设修改 Target Agent，分数严格提升才保留新版本 |
 
-没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill，四个 Skill 都随 `agent-tuning` 插件提供。在 Web App 界面里，Target Agent 叫作**被测智能体**。
+没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill，四个 Skill 都随 `rsi-default` 插件（Default RSI Toolkit）提供。在 Web App 界面里，Target Agent 叫作**被测智能体**。
 
 ### 角色之间的调用
 
@@ -105,6 +107,25 @@ Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和
 无效的评估和纠正性的重跑不计入轮数上限；落选 Candidate 的完整有效评估则计入。执行失败时，Optimizer 保留同一个 Candidate，只补齐缺失的那一格。只要每次尝试都基于新的诊断、采用不同的安全修复，它就会继续尝试。
 
 遇到污染、`version_changed` 或 `benchmark_invalid`，或者再也没有安全的修复办法时，Optimizer 也会停止。
+
+## RSI 工具包
+
+RSI（Recursive Self-Improvement，递归自我进化）正是本页讲的事：模型固定不动，Agent 依据自己实测的结果改进自己的 Harness——提示词、Skill、工具与钩子。每一种自进化算法都以一个 **RSI 工具包**发布，也就是插件库 **Agent 自进化**分类里的一个插件。上文的循环就是 **Default RSI Toolkit**（`rsi-default`）；另外四个工具包各按原论文的流程运行一种已发表的算法，各带一个与插件同名的 Skill：
+
+- **OPRO**（`rsi-opro`），出自 [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409)（Yang 等，2023）：优化器依据历史指令与分数提出新指令，每个候选都在冻结的 Benchmark 上测量，保留得分最高的指令。
+- **APE**（`rsi-ape`），出自 [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910)（Zhou 等，2022）：不迭代、一次完成，提议者从输入 / 输出示例归纳候选指令，每个候选都测量一遍，保留最优者。
+- **ACE**（`rsi-ace`），出自 [Agentic Context Engineering](https://arxiv.org/abs/2510.04618)（Zhang 等，2025），采用其顺序离线算法：Reflector 逐条阅读训练 Trace，Curator 把教训并入 Agent 每次任务前都会读的规则手册（playbook），最终的手册在冻结的 Benchmark 上测量。
+- **AWM**（`rsi-awm`），出自 [Agent Workflow Memory](https://arxiv.org/abs/2409.07429)（Wang 等，2024）：从成功轨迹归纳工作流并存入 Agent 的记忆，可以在线（训练流）或离线（给定经验）进行，冻结后在 Benchmark 上测试。
+
+OPRO 与 APE 各自带一个小型演示任务：只要提出来，Skill 会先新建一个 Agent 和一套 6 题的 Benchmark 再开始。每个 Skill 都写明论文的默认参数和一档更小的冒烟预算；除非你要求，它从不按论文的完整预算运行。
+
+工具包之间互不依赖，也不依赖 `rsi-default`，任何一个单独安装即可运行。每个工具包都在被测 Agent 里自行初始化学习槽：一个 Agent 自有的 Skill，存放方法学到的内容（指令、规则手册或工作流），再在它的 `AGENTS.md` 里加一行固定指令，要求它开始任务前先读这个 Skill。方法的循环只改这个 Skill 存放的内容。每一次测量都经由工具包自带的 `references/evaluation.md` 进行：它与 `agent-evaluation` 采用同一套单格协议（每个 Case × run 经 `run_subagent` 派生一个子 Agent，返回纯协议 YAML），写入同样的记分板记录。四个算法工具包里的这份文件逐字节相同。内置 Benchmark 的题目按题干的 **How this case is run** 一节运行，与 `agent-evaluation` 一致。
+
+工具包测量的每个候选都取一个新的 Agent State `version`。与默认循环相同，每个版本在被改动之前先打快照；运行结束时停在方法选定的版本上。这些评估照常写入 `scoreboard.yaml`，标签规则不变，因此同一个 Agent 在同一模型与思考等级下的默认循环与 OPRO 共用图表上的一条线：各点的版本号区分它们，每条评估的摘要标题写明所用的方法。在 Web App 中，用评估中心**优化**标签页的**方法**字段选择工具包，见[评估中心](/evaluation-center#优化-agent)。
+
+## 复现的 Benchmark
+
+复现一个已发表的 benchmark 不是工具包的事。复现的 Benchmark 是公开仓库 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) 中 `packages/<id>/` 下的一个包，经导入进入 Project：让 Agent 导入这个包的文件夹，副本会记下它来自哪个提交（来源为 `git`，见[清单](#清单)）。运行它的特殊流程写在 Benchmark 自身，即各题题干的 **How this case is run** 一节和仓库的 README，从不写进插件或 Skill，因此每个 RSI 工具包都以同样的方式运行它。五个内置 Benchmark 就是这样的复现，随每个新 Project 一起写入。
 
 ## 从 Web App 发起
 
@@ -206,11 +227,15 @@ Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的
 
 ## 相关 Skill
 
-| Skill | 用途 |
-| --- | --- |
-| `agent-initialization` | 把需求变成可用的 Agent：编写它的 `AGENTS.md`，安装它需要的 Skill |
-| `benchmark-design` | 设计并校准包含多道题目的能力 Benchmark |
-| `agent-evaluation` | 隔离地运行一道 Benchmark 题目一次，并为这次运行打分 |
-| `agent-optimization` | 根据 Benchmark 的结果改进 Agent |
+| Skill | 插件 | 用途 |
+| --- | --- | --- |
+| `agent-initialization` | `rsi-default` | 把需求变成可用的 Agent：编写它的 `AGENTS.md`，安装它需要的 Skill |
+| `benchmark-design` | `rsi-default` | 设计并校准包含多道题目的能力 Benchmark |
+| `agent-evaluation` | `rsi-default` | 隔离地运行一道 Benchmark 题目一次，并为这次运行打分 |
+| `agent-optimization` | `rsi-default` | 根据 Benchmark 的结果改进 Agent |
+| `rsi-opro` | `rsi-opro` | 运行 OPRO：依据历史分数优化指令 |
+| `rsi-ape` | `rsi-ape` | 运行 APE：从输入 / 输出示例归纳指令 |
+| `rsi-ace` | `rsi-ace` | 运行 ACE：从训练 Trace 进化规则手册 |
+| `rsi-awm` | `rsi-awm` | 运行 AWM：从成功轨迹归纳工作流 |
 
 Skill 如何组织和安装，见[技能与插件](/skills)。

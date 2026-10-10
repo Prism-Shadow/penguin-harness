@@ -3,7 +3,9 @@
  * id helpers of its manual form. Every prompt ends in a fixed tail that names the Skill to use
  * and the parameters it requires — the Test Agent, the Benchmark id, run and round counts, the
  * target score — so a novice's one-line wish arrives as a request the Skill can act on without
- * asking anything back. The two "Ask AI" tails are the same shape pointed the other way: they
+ * asking anything back. An RSI toolkit other than the default gets a shorter tail: its own Skill,
+ * the three inputs every toolkit takes, and its paper's budget left to it rather than a round
+ * limit and a target. The two "Ask AI" tails are the same shape pointed the other way: they
  * name no Skill and ask for no change, carrying the facts already on screen — an evaluation's
  * scores and Session ids, or a case's two material paths — so the answer is read out of the
  * files rather than guessed. The wording lives in the dictionaries; this module only assembles it.
@@ -81,6 +83,30 @@ export function optimizeTail(params: OptimizeParams): string {
 /** The whole Optimize prompt: the optional focus text first, then the parameter tail. */
 export function buildOptimizePrompt(focus: string, params: OptimizeParams): string {
   return composeAiPrompt(focus, optimizeTail(params));
+}
+
+/** What the Optimize tab hands an RSI toolkit other than the default (see rsi-methods.ts). */
+export interface RsiOptimizeParams {
+  /** The toolkit's one Skill, named like its plugin. */
+  skill: string;
+  /** The method as the select labels it, e.g. "OPRO". */
+  label: string;
+  /** The Agent under test: the one the toolkit initializes and improves. */
+  targetAgentId: string;
+  benchmarkId: string;
+  /** Runs per case for every measurement. */
+  runs: number;
+  /**
+   * The provider and model the tested agent's baseline was recorded on — the pair the default
+   * loop keeps. Given both, the tail pins the toolkit's evaluations to them, so its scores join
+   * the baseline's series; without a baseline, the toolkit measures on its own conversation's.
+   */
+  provider?: string;
+  modelId?: string;
+}
+
+export function rsiOptimizeTail(params: RsiOptimizeParams): string {
+  return S.benchmark.rsiOptimizeTail(params);
 }
 
 /** One case's line in the evaluation question: as the dialog prints it, plus every run's Session id. */

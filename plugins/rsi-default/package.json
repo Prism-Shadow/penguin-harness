@@ -1,0 +1,21 @@
+{
+  "name": "@penguinharness/rsi-default",
+  "version": "0.2.13",
+  "description": "The Default RSI Toolkit: the trial → reflect → improve loop as four Skills — initialize an agent from a requirement, design and calibrate a capability Benchmark, run and score isolated cases, and improve the agent from measured results, with a snapshot before every round.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/rsi-default"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "hooks",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

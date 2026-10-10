@@ -156,6 +156,7 @@ import type {
   RecalledMessageResponse,
   RestartResponse,
   RetryNowResponse,
+  RsiCatalogResponse,
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
@@ -1648,6 +1649,9 @@ export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plug
 /** Everything one library plugin ships as text keyed by path (skills' files, hook scripts), for the plugin detail view's file browser. */
 export const getPluginFiles = (plugin: string) =>
   apiFetch<PluginFilesResponse>(`/api/plugins/${encodeURIComponent(plugin)}/files`);
+
+/** The self-evolution catalogue (any logged-in user): the library's RSI toolkits and the built-in Benchmark reproductions, which the draft screen counts. */
+export const getRsiCatalog = () => apiFetch<RsiCatalogResponse>("/api/rsi");
 
 /**
  * Installs whole library plugins — each one's skills and hook package; an already-installed

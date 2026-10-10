@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><strong>Open-source, local-first multi-agent app development platform</strong><br />Fully automate <strong>building</strong> · <strong>optimizing</strong> · <strong>deploying</strong> AI applications</p>
+<p align="center"><strong>Unified and Stable RSI Framework</strong><br />Automatically improve <strong>model × harness</strong> — any model, any algorithm, any agent evolves recursively</p>
 
 <p align="center">
   <a href="https://penguin.ooo/download">
@@ -15,7 +15,7 @@
   </a>
 </p>
 
-<p align="center">1000+ Models · Multi-Platform · Apache 2.0 · Agent Self-Evolution</p>
+<p align="center">1000+ Models · Multi-Platform · Apache 2.0 · Unified RSI Framework</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@prismshadow/penguin-core"><img src="https://img.shields.io/npm/v/@prismshadow/penguin-core" alt="npm version" /></a>
@@ -45,22 +45,15 @@
 
 ## Why PenguinHarness
 
-> With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.
+> With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.<br />And with the RSI toolkits, agents improve agents — automatically.
 
-PenguinHarness runs on your computer or server and automates the agent app lifecycle from creation and evaluation to optimization and deployment. Three reasons define the platform:
+PenguinHarness runs on your computer or server. It is the unified framework for recursive self-improvement (RSI): the model stays fixed, the harness — prompts, Skills, tools, hooks — is what evolves, and every self-evolution algorithm runs on the same Benchmarks, scoreboards and snapshots. Three reasons define the framework:
 
-### 1. 🏆 Outstanding results at tens of times less cost
+### 1. 🧬 The most comprehensive agent self-evolution framework
 
-A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer tokens — deeply tuned for open models like DeepSeek. Each harness on the model it is normally paired with, same tasks, head-to-head:
+Every algorithm is a toolkit from the plugin library, and every toolkit runs the way its paper does. The **Default RSI Toolkit** (`rsi-default`) runs the trial → reflect → improve loop: run the Benchmark, find the lost points, ship version N+1 with a snapshot before every round. **OPRO**, **APE**, **ACE** and **AWM** each ship as their own toolkit (`rsi-opro`, `rsi-ape`, `rsi-ace`, `rsi-awm`), with no dependency between toolkits. Reproduced Benchmarks live in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) and import into any Project; the Evaluation Center plots every score, and every request is replayable in the Trace view.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/benchmark-dark.svg" />
-    <img src="assets/readme/benchmark-light.svg" alt="Benchmark: PenguinHarness leads the data-analysis suite and ties OpenAI Codex on coding, at a small fraction of both rivals' cost" width="920" />
-  </picture>
-</p>
-
-**Best accuracy on data analysis — at 1/70 of Claude Code's cost.**
+https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
 ### 2. ⚡ One sentence generates a runnable agent app
 
@@ -76,21 +69,29 @@ https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
 
 **And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.**
 
-### 3. 🧬 Native agent self-evolution engine
+### 3. 🏆 Outstanding results at tens of times less cost
 
-With PenguinHarness Skills, an agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round and every request observable in the Trace view.
+A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer tokens — deeply tuned for open models like DeepSeek. Each harness on the model it is normally paired with, same tasks, head-to-head:
 
-https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/benchmark-dark.svg" />
+    <img src="assets/readme/benchmark-light.svg" alt="Benchmark: PenguinHarness leads the data-analysis suite and ties OpenAI Codex on coding, at a small fraction of both rivals' cost" width="920" />
+  </picture>
+</p>
+
+**Best accuracy on data analysis — at 1/70 of Claude Code's cost.**
 
 ## Built-in plugins
 
-Four plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills)) — skills, plus the session hooks that drive goal mode and continual learning; agents can also write and optimize their own skills:
+Five plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills)) — skills, plus the session hooks that drive goal mode and continual learning; agents can also write and optimize their own skills:
 
 | Category             | Plugins                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
+| Agent Self-Evolution | `rsi-default`, `rsi-opro`, `rsi-ape`, `rsi-ace`, `rsi-awm`                    |
 | Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
 | Software Development | `software-development`, `use-claude-code`                              |
-| AI App Development   | `agent-development`, `model-development`, `skill-porting`, `agent-tuning`     |
+| AI App Development   | `agent-development`, `model-development`, `skill-porting`                     |
 | Agent Company        | `agent-company`                                                               |
 
 The desktop app also has a built-in browser in its side dock. Agents drive it with `penguin browser` and the `browser-automation` plugin: they read pages, click and type, and pull out data such as your Amazon orders, signed in with the accounts you import from your own browser.
