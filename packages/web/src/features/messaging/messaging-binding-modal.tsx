@@ -8,18 +8,23 @@
  * dialog from a cached row can re-read that cache); every behavior (channel switching,
  * save/enable split, single-enabled gating, models-style secret clearing, status poll) lives
  * in the editor. There is no unbind action — removing a credential is the secret field's
- * clear checkbox. Closing (the footer's Close, Esc, the backdrop) with unsaved edits on any
- * channel's form asks to discard them first; a failed load closes without asking.
+ * clear checkbox. Closing (the footer's Close, Esc, the ×, the backdrop) with unsaved edits on
+ * any channel's form asks to discard them first, through the app's one prompt; nothing closes it
+ * while a save is in flight, and a failed load closes without asking. The dialog's edits are
+ * registered under a scope of their own, apart from the conversation's dock panel, so neither
+ * asks about the other's.
  */
-import { useState } from "react";
 import type { MessagingChannel } from "@prismshadow/penguin-server/api";
-import { Button, ConfirmModal, Modal } from "@prismshadow/penguin-ui";
+import { Button, Modal, useGuardedClose, useUnsavedChanges } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
   MessagingBindingBody,
   MessagingBindingHelp,
   useMessagingBinding,
 } from "./messaging-binding-editor";
+
+/** The dialog's edits: what its close asks about. */
+const MESSAGING_DIALOG_SCOPE = "messaging-dialog";
 
 export function MessagingBindingModal({
   sessionId,
@@ -47,11 +52,8 @@ export function MessagingBindingModal({
       onClose();
     },
   });
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const requestClose = () => {
-    if (b.unsavedAny) setConfirmDiscard(true);
-    else onClose();
-  };
+  useUnsavedChanges(b.unsavedAny, { scope: MESSAGING_DIALOG_SCOPE, discard: b.discard });
+  const requestClose = useGuardedClose(onClose, MESSAGING_DIALOG_SCOPE, { locked: b.busy });
 
   return (
     <Modal
@@ -60,13 +62,13 @@ export function MessagingBindingModal({
       onClose={requestClose}
       footer={
         <>
-          <Button size="sm" onClick={requestClose}>
+          <Button size="sm" disabled={b.busy} onClick={requestClose}>
             {S.common.close}
           </Button>
           <Button
             size="sm"
             variant="primary"
-            disabled={b.busy || b.form === null}
+            disabled={b.busy || !b.dirty || !b.valid}
             onClick={() => void b.save()}
           >
             {b.busy ? S.common.saving : S.common.save}
@@ -79,19 +81,6 @@ export function MessagingBindingModal({
         {/* The Save action lives in the footer; the collapsed FAQ trails the body. */}
         {b.form !== null && <MessagingBindingHelp channel={b.form.channel} />}
       </div>
-      <ConfirmModal
-        open={confirmDiscard}
-        title={S.common.discardTitle}
-        onClose={() => setConfirmDiscard(false)}
-        onConfirm={() => {
-          setConfirmDiscard(false);
-          onClose();
-        }}
-        confirmLabel={S.common.discard}
-        cancelLabel={S.common.cancel}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.common.discardBody}</p>
-      </ConfirmModal>
     </Modal>
   );
 }

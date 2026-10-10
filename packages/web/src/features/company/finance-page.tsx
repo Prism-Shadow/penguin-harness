@@ -55,9 +55,11 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  guardLeave,
   noAutofill,
   toastError,
   toastSuccess,
+  useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -167,14 +169,19 @@ function FinanceCard({
   );
 }
 
+/** An open budget editor's typing: what opening another row's editor asks about. */
+const BUDGET_EDIT_SCOPE = "finance-budget";
+
 /**
  * The budget cell while it is being typed: a number box in the reader's own currency with the
- * unit after it (empty = unbounded, said beneath it while typing), save and cancel. Enter
- * saves, Escape cancels, and focus leaving the editor saves too — the two buttons keep focus
- * on mousedown so clicking cancel never saves first. What goes out is USD, which is what the
- * chart file holds, and a box in another currency says so under itself.
+ * unit after it (empty = unbounded, said beneath it while typing), save and cancel. Enter and
+ * the check save, Escape and the cross cancel; focus leaving the box writes nothing. While the
+ * box holds a value other than the stored one it counts as unsaved, so leaving the page (or
+ * opening another row's editor) asks first. What goes out is USD, which is what the chart file
+ * holds, and a box in another currency says so under itself. Exported for
+ * test/budget-editor.test.ts, which renders it on its own.
  */
-function BudgetEditor({
+export function BudgetEditor({
   initial,
   name,
   currency,
@@ -191,8 +198,12 @@ function BudgetEditor({
   onSave: (value: number | null) => void;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState(() => fromStoredUsd(initial, currency));
-  const wrapRef = useRef<HTMLSpanElement>(null);
+  const stored = fromStoredUsd(initial, currency);
+  const [text, setText] = useState(stored);
+  useUnsavedChanges(text.trim() !== stored.trim(), {
+    scope: BUDGET_EDIT_SCOPE,
+    discard: onCancel,
+  });
   const commit = () => {
     if (!isBudgetText(text)) {
       toastError(S.company.chart.budgetHint);
@@ -201,13 +212,7 @@ function BudgetEditor({
     onSave(toStoredUsd(text, currency));
   };
   return (
-    <span
-      ref={wrapRef}
-      className="inline-flex flex-col items-end gap-1"
-      onBlur={(e) => {
-        if (!wrapRef.current?.contains(e.relatedTarget as Node | null)) commit();
-      }}
-    >
+    <span className="inline-flex flex-col items-end gap-1">
       <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
         <input
           autoFocus
@@ -238,7 +243,6 @@ function BudgetEditor({
           data-tooltip={S.company.finance.saveBudget}
           aria-label={S.company.finance.saveBudget}
           disabled={busy}
-          onMouseDown={(e) => e.preventDefault()}
           onClick={commit}
           className={iconButtonClass}
         >
@@ -248,7 +252,6 @@ function BudgetEditor({
           type="button"
           data-tooltip={S.company.finance.cancelEdit}
           aria-label={S.company.finance.cancelEdit}
-          onMouseDown={(e) => e.preventDefault()}
           onClick={onCancel}
           className={iconButtonClass}
         >
@@ -635,7 +638,12 @@ export function FinancePage() {
                                 type="button"
                                 data-tooltip={S.company.finance.editBudget}
                                 aria-label={S.company.finance.editBudgetOf(employee.name)}
-                                onClick={() => setEditingId(employee.agentId)}
+                                onClick={() =>
+                                  void guardLeave(
+                                    () => setEditingId(employee.agentId),
+                                    BUDGET_EDIT_SCOPE,
+                                  )
+                                }
                                 className={`group inline-flex items-center ${ICON_GAP.tight} rounded px-1 py-0.5 tabular-nums transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
                               >
                                 <span

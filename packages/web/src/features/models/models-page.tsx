@@ -48,9 +48,12 @@
  * user's own models. Nothing else ever rewrites an existing row's catalog facts.
  *
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
- * means keep the existing value); only the owner can edit.
+ * means keep the existing value); only the owner can edit. The config dialog's Save (Add, for a
+ * new model) is live once something changed and nothing is wrong; the dialog waits for the
+ * write and closes only once it landed — a refused one leaves the table as it was and the draft
+ * in the dialog — and closing it with unsaved edits asks first.
  */
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import type {
   CredentialInfo,
@@ -99,6 +102,8 @@ import {
   toastError,
   toastInfo,
   toastSuccess,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -218,7 +223,7 @@ import {
 import type { GroupHeaderAction } from "./group-header";
 import { GroupBalance } from "./group-balance";
 import { DisconnectConfirm, GroupConnection } from "./group-connection";
-import { DetailsFold, MODEL_DIALOG_SLOTS, foldedSlots, revealOnSave } from "./model-dialog-details";
+import { DetailsFold, MODEL_DIALOG_SLOTS, foldedErrors, foldedSlots } from "./model-dialog-details";
 import type { ModelDialogSlot } from "./model-dialog-details";
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
@@ -1042,9 +1047,10 @@ export function ModelsPage() {
   }, [load]);
 
   /**
-   * Changes save immediately (dialog confirm / set default / set vision model / delete):
-   * avoids the trap of "still have to click save after confirming". On failure, the error
-   * is echoed back and local changes are kept so the user can fix and retry.
+   * Writes the whole table (the dialog's Save / Add, set default, set vision model, delete).
+   * Resolves with whether it landed. On failure the table on screen stays as the server last
+   * answered — nothing that was not written shows as if it had been — and the error is a toast;
+   * a dialog that asked keeps its draft open for a retry.
    */
   const persist = async (
     nextRows: RowState[],
@@ -1084,9 +1090,6 @@ export function ModelsPage() {
       toastSuccess(successText ?? S.common.saved);
       return true;
     } catch (e) {
-      setRows(nextRows);
-      if (nextDefault !== undefined) setDefaultModel(nextDefault);
-      if (effectiveVision !== undefined) setVisionModel(effectiveVision);
       toastError(apiErrorText(e));
       return false;
     } finally {
@@ -1200,11 +1203,7 @@ export function ModelsPage() {
    * (base URL, protocol, key — written once, in `[providers.<name>]`) and the appended rows,
    * which store nothing of it and follow the group; then the new group is opened so the result is
    * visible immediately. Returns persist's verdict so the dialog stays up (fields intact) when
-   * saving failed.
-   *
-   * A failed save is rolled back to the table as it stood: persist otherwise keeps the
-   * attempted rows on screen (right for a field edit the user is still holding), which
-   * here would show the whole group as if it existed and make the dialog's own name check
+   * saving failed; the table then stays as it stood, so the dialog's own name check does not
    * report the name as taken on the retry.
    */
   const importGroup = async (
@@ -1215,7 +1214,6 @@ export function ModelsPage() {
     skipped: number,
   ): Promise<boolean> => {
     if (!projectId) return false;
-    const before = rows;
     const ok = await persist(
       nextRows,
       defaultModel,
@@ -1223,10 +1221,7 @@ export function ModelsPage() {
       S.models.groupImported(added, skipped),
       { [name]: connection },
     );
-    if (!ok) {
-      setRows(before);
-      return false;
-    }
+    if (!ok) return false;
     if (!expanded.has(name)) {
       const next = new Set(expanded);
       next.add(name);
@@ -1238,6 +1233,11 @@ export function ModelsPage() {
   };
   const editingRow =
     editing !== null ? rows?.find((r) => sameModelRef(rowRef(r), editing)) : undefined;
+  const closeModelDialog = () => {
+    setEditing(null);
+    setEditingMovedToCustom(false);
+    setAddingTo(null);
+  };
 
   if (!projectId) return null;
 
@@ -2054,40 +2054,38 @@ export function ModelsPage() {
           canEdit={isOwner}
           isDefault={editingRow !== undefined && sameModelRef(rowRef(editingRow), defaultModel)}
           isVisionModel={editingRow !== undefined && sameModelRef(rowRef(editingRow), visionModel)}
-          onClose={() => {
-            setEditing(null);
-            setEditingMovedToCustom(false);
-            setAddingTo(null);
-          }}
-          onSubmit={(next, action) => {
+          onClose={closeModelDialog}
+          // The dialog stays open, its draft intact, until the write answers; it closes only
+          // once the table holds what it sent.
+          onSubmit={async (next, action) => {
             const isNew = addingTo !== null;
-            setEditing(null);
-            setEditingMovedToCustom(false);
-            setAddingTo(null);
+            let ok: boolean;
             if (action === "remove") {
               // Filter by the **identity as loaded**: rows / pointers are both keyed by the
               // paired reference as loaded. If the user edited identity fields before
               // deleting, next's current reference wouldn't match any row -> nothing gets
               // deleted while it still reports "saved".
               const removed = next.original;
-              void persist(
+              ok = await persist(
                 rows.filter((r) => !sameModelRef(rowRef(r), removed)),
                 sameModelRef(removed, defaultModel) ? undefined : defaultModel,
                 sameModelRef(removed, visionModel) ? undefined : visionModel,
               );
-              return;
+            } else {
+              const nextRows = isNew
+                ? [...rows, next]
+                : rows.map((r) => (sameModelRef(rowRef(r), editing) ? next : r));
+              const ptr = nextPointers({
+                editing: isNew ? null : editing,
+                ref: rowRef(next),
+                action,
+                defaultModel,
+                visionModel,
+              });
+              ok = await persist(nextRows, ptr.defaultModel, ptr.visionModel);
             }
-            const nextRows = isNew
-              ? [...rows, next]
-              : rows.map((r) => (sameModelRef(rowRef(r), editing) ? next : r));
-            const ptr = nextPointers({
-              editing: isNew ? null : editing,
-              ref: rowRef(next),
-              action,
-              defaultModel,
-              visionModel,
-            });
-            void persist(nextRows, ptr.defaultModel, ptr.visionModel);
+            if (ok) closeModelDialog();
+            return ok;
           }}
         />
       )}
@@ -2116,7 +2114,9 @@ export function ModelsPage() {
  *
  * Detection failure turns the suffix amber and keeps both ways out usable — pick the
  * protocol by hand, or switch back to create-only. Errors render inside the dialog;
- * nothing persists until a listing succeeded.
+ * nothing persists until a listing succeeded. A name the rule refuses, or one already taken,
+ * is said under the field as it is typed, and holds both actions until it is fixed. Closing
+ * the dialog with anything typed asks first; nothing closes it while an import is running.
  */
 function AddGroupDialog({
   projectId,
@@ -2139,13 +2139,19 @@ function AddGroupDialog({
     skipped: number,
   ) => Promise<boolean>;
 }) {
-  const [name, setName] = useState("");
-  const [nameError, setNameError] = useState<string | null>(null);
+  /**
+   * What is typed or found: the name, and for an import the key, the base URL and the protocol
+   * the import will speak (null until a detection lands or the user picks one). The mode is how
+   * the dialog is used, not something typed, so switching it asks nothing on the way out.
+   */
+  const form = useFormDraft<{
+    name: string;
+    apiKey: string;
+    baseUrl: string;
+    clientType: ProtocolClientType | null;
+  }>({ name: "", apiKey: "", baseUrl: "", clientType: null });
+  const { name, apiKey, baseUrl, clientType } = form.draft;
   const [mode, setMode] = useState<"create" | "import">("create");
-  const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  /** The protocol the import will speak: null until a detection lands or the user picks one. */
-  const [clientType, setClientType] = useState<ProtocolClientType | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [detectFailed, setDetectFailed] = useState(false);
   /** Progress line while list/save runs (null = idle); also gates every action against re-entry. */
@@ -2154,22 +2160,20 @@ function AddGroupDialog({
   /** Detection run counter: a manual pick or an edited URL supersedes an in-flight run (same convention as the model dialog). */
   const detectSeq = useRef(0);
 
-  const validName = (): string | null => {
-    const trimmed = name.trim();
-    if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(trimmed)) {
-      setNameError(S.models.groupNameInvalid);
-      return null;
-    }
-    if (MODEL_PROVIDERS.some((p) => p.id === trimmed) || rows.some((r) => r.provider === trimmed)) {
-      setNameError(S.models.groupNameExists);
-      return null;
-    }
-    return trimmed;
-  };
+  const trimmed = name.trim();
+  /** What is wrong with the name as typed; an empty one is only marked required. */
+  const nameError =
+    trimmed === ""
+      ? null
+      : !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(trimmed)
+        ? S.models.groupNameInvalid
+        : MODEL_PROVIDERS.some((p) => p.id === trimmed) || rows.some((r) => r.provider === trimmed)
+          ? S.models.groupNameExists
+          : null;
+  const nameValid = trimmed !== "" && nameError === null;
 
   const confirmCreate = () => {
-    const n = validName();
-    if (n) onManual(n);
+    if (nameValid) onManual(trimmed);
   };
 
   const detect = async () => {
@@ -2191,13 +2195,13 @@ function AddGroupDialog({
       if (seq !== detectSeq.current) return;
       const detected = res.detected !== undefined ? protocolSelectorValue(res.detected) : null;
       if (detected !== null) {
-        setClientType(detected);
+        form.patch({ clientType: detected });
         const name = S.models.protocolNames[detected] ?? detected;
         // The protocol may have answered on a tidied-up form of the URL (a `/v1` added or
         // dropped, a pasted endpoint path removed); the import must speak to that one, so
         // the field takes it and the toast says so.
         if (res.baseUrl !== undefined && res.baseUrl !== url) {
-          setBaseUrl(res.baseUrl);
+          form.patch({ baseUrl: res.baseUrl });
           toastSuccess(S.models.detectedProtocolAndUrl(name, res.baseUrl));
         } else {
           toastSuccess(S.models.detectedProtocol(name));
@@ -2221,12 +2225,12 @@ function AddGroupDialog({
     setDetecting(false);
     setDetectFailed(false);
     setError(null);
-    setClientType(t);
+    form.patch({ clientType: t });
   };
 
   const runImport = async () => {
-    const n = validName();
-    if (!n || clientType === null) return;
+    if (!nameValid || clientType === null) return;
+    const n = trimmed;
     const url = baseUrl.trim();
     if (!detectableBaseUrl(url)) {
       setError(S.models.groupImportNeedUrl);
@@ -2270,30 +2274,36 @@ function AddGroupDialog({
   };
 
   const busy = importing !== null;
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const suffixLabel =
-    clientType === null ? S.models.protocolUnset : protocolPathForModel(name.trim(), clientType);
+    clientType === null ? S.models.protocolUnset : protocolPathForModel(trimmed, clientType);
 
   return (
     <Modal
       open
       title={S.models.addGroupTitle}
-      onClose={() => !busy && onClose()}
+      onClose={requestClose}
       // The group settings' width: the group's base URL and its protocol path read whole.
       widthClass="sm:max-w-3xl"
       footer={
         <>
-          <Button size="sm" disabled={busy} onClick={onClose}>
+          <Button size="sm" disabled={busy} onClick={requestClose}>
             {S.common.cancel}
           </Button>
           {mode === "create" ? (
-            <Button size="sm" variant="primary" onClick={confirmCreate}>
+            <Button size="sm" variant="primary" disabled={!nameValid} onClick={confirmCreate}>
               {S.common.confirm}
             </Button>
           ) : (
             // The import action exists only once the protocol is determined (detected or
             // hand-picked): before that there is nothing meaningful to run.
             clientType !== null && (
-              <Button size="sm" variant="primary" disabled={busy} onClick={() => void runImport()}>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={busy || !nameValid}
+                onClick={() => void runImport()}
+              >
                 {S.models.groupImportAll}
               </Button>
             )
@@ -2310,11 +2320,8 @@ function AddGroupDialog({
             infoLabel={S.models.groupNameLabel}
             required
             value={name}
-            invalid={Boolean(nameError)}
-            onChange={(e) => {
-              setName(e.target.value);
-              setNameError(null);
-            }}
+            invalid={nameError !== null}
+            onChange={(e) => form.patch({ name: e.target.value })}
             onKeyDown={(e) => {
               if (e.key === "Enter" && mode === "create") confirmCreate();
             }}
@@ -2340,7 +2347,7 @@ function AddGroupDialog({
               label={S.models.apiKey}
               value={apiKey}
               onChange={(e) => {
-                setApiKey(e.target.value);
+                form.patch({ apiKey: e.target.value });
                 setError(null);
               }}
               className="font-mono"
@@ -2380,7 +2387,7 @@ function AddGroupDialog({
                     setDetecting(false);
                     setDetectFailed(false);
                     setError(null);
-                    setBaseUrl(e.target.value);
+                    form.patch({ baseUrl: e.target.value });
                   }}
                   className="font-mono"
                   style={{ paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + 2.25rem)` }}
@@ -2650,19 +2657,33 @@ export function ModelCard({
 
 type DialogAction = "save" | "setDefault" | "setVisionModel" | "remove";
 
-/** Confirmation text per action (S is a live runtime binding, must be read at render time, not frozen at module scope). */
+/**
+ * Confirmation text per action (S is a live runtime binding, must be read at render time, not
+ * frozen at module scope). A save is confirmed only when it cancels the row's running
+ * promotion — the one thing it destroys besides the fields it writes; an ordinary save writes
+ * at once.
+ */
 const CONFIRM_TITLE: Record<DialogAction, () => string> = {
-  save: () => S.models.confirmSaveTitle,
+  save: () => S.models.confirmCancelPromotionTitle,
   setDefault: () => S.models.confirmDefaultTitle,
   setVisionModel: () => S.models.confirmVisionModelTitle,
   remove: () => S.models.confirmDeleteTitle,
 };
-const CONFIRM_BODY: Record<DialogAction, (name: string) => string> = {
-  save: (n) => S.models.confirmSave(n),
+const CONFIRM_BODY: Record<DialogAction, (name: string, promotionPct: number) => string> = {
+  save: (n, pct) => S.models.confirmCancelPromotion(n, pct),
   setDefault: (n) => S.models.confirmDefault(n),
   setVisionModel: (n) => S.models.confirmVisionModel(n),
   remove: (n) => S.models.confirmDelete(n),
 };
+
+/** A draft as a save sends it, for telling a real edit from typing the stored value back. */
+const trimmedRow = (row: RowState): RowState =>
+  Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key,
+      typeof value === "string" ? value.trim() : value,
+    ]),
+  ) as unknown as RowState;
 
 function ModelDialog({
   projectId,
@@ -2695,10 +2716,14 @@ function ModelDialog({
   isDefault: boolean;
   isVisionModel: boolean;
   onClose: () => void;
-  onSubmit: (row: RowState, action: DialogAction) => void;
+  /** Writes the row; resolves with whether it landed (the host closes the dialog when it did). */
+  onSubmit: (row: RowState, action: DialogAction) => Promise<boolean>;
 }) {
-  // Pricing input is displayed/entered in the current currency; converted back to USD storage on submit (RowState always stores USD).
-  const [form, setForm] = useState<RowState>(() => {
+  // What the dialog opens on, and what a close compares the draft with: the stored row, the row
+  // already moved into the custom group when the dialog was opened to make that move, or a blank
+  // model. Pricing input is displayed/entered in the current currency; converted back to USD
+  // storage on submit (RowState always stores USD).
+  const [opening] = useState<RowState>(() => {
     if (row) {
       return {
         ...row,
@@ -2752,28 +2777,20 @@ function ModelDialog({
       clearApiKey: false,
     };
   });
-  /** Field-level validation errors: text below the corresponding input, input highlighted red — closer to the error site than a top-level banner. */
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const draft = useFormDraft(opening, { normalize: trimmedRow });
+  const form = draft.draft;
   /**
    * The Details fold (model-dialog-details.tsx): closed whenever the dialog opens, never
-   * remembered. A refused save opens it when a field with an error sits inside it.
+   * remembered. A wrong field inside it opens it.
    */
   const [detailsOpen, setDetailsOpen] = useState(false);
-  /** The field a refused save moves focus to, once the fold holding it has rendered open. */
-  const [focusField, setFocusField] = useState<keyof FieldErrors | null>(null);
-  const fieldIdBase = useId();
-  const fieldId = (field: keyof FieldErrors) => `${fieldIdBase}-${field}`;
-  useEffect(() => {
-    if (focusField === null) return;
-    document.getElementById(`${fieldIdBase}-${focusField}`)?.focus();
-    setFocusField(null);
-  }, [focusField, fieldIdBase]);
   /** Connectivity test in progress. */
   const [testing, setTesting] = useState(false);
+  /** The write is in flight (its protocol probe included): the dialog waits for its answer. */
+  const [saving, setSaving] = useState(false);
   /**
-   * Action pending confirmation: anything that writes to the Project config goes through a
-   * confirmation step — save config / set as default / set as vision proxy model / delete.
-   * (Adding a new custom model isn't confirmed: opening the dialog is itself a clear intent.)
+   * Action pending confirmation: set as default / set as vision proxy model / delete, and a
+   * save that would cancel the row's running promotion. An ordinary save is not confirmed.
    */
   const [confirming, setConfirming] = useState<DialogAction | null>(null);
   /** Fast mode is being switched ON and awaits the premium-billing warning's confirmation. */
@@ -2828,15 +2845,7 @@ function ModelDialog({
     fastMode: showFastMode,
   });
 
-  const set = (patch: Partial<RowState>) => {
-    setForm((prev) => ({ ...prev, ...patch }));
-    // Clear the error marker for whichever field was changed (keys match RowState field names).
-    setFieldErrors((prev) => {
-      const next = { ...prev };
-      for (const k of Object.keys(patch)) delete next[k as keyof FieldErrors];
-      return next;
-    });
-  };
+  const set = (patch: Partial<RowState>) => draft.patch(patch);
 
   /**
    * What a failed probe says. An entry its group cannot place fails upstream with MMSP's own
@@ -3129,17 +3138,20 @@ function ModelDialog({
 
   const modelLabel = modelLabelOf(form.displayName, form.modelId);
 
-  const validated = (): RowState | null => {
+  /**
+   * What is wrong with the draft, per field — read live, since Save waits until nothing is.
+   * Each error sits below its input, which turns red: closer to the error site than a banner.
+   */
+  const fieldErrors = ((): FieldErrors => {
     const modelId = form.modelId.trim();
     const ref: ModelRefDto = { provider: form.provider, modelId };
-    const baseUrl = form.baseUrl.trim();
     const errs: FieldErrors = {};
     if (!modelId) errs.modelId = S.common.requiredField;
     // A new or renamed (provider, modelId) must not duplicate another entry (renaming back to itself isn't a conflict).
     else if (!sameModelRef(ref, form.original) && existingRefs.some((r) => sameModelRef(r, ref))) {
       errs.modelId = S.models.modelIdExists;
     }
-    if (baseUrlRequired && !baseUrl) errs.baseUrl = S.models.baseUrlRequired;
+    if (baseUrlRequired && !form.baseUrl.trim()) errs.baseUrl = S.models.baseUrlRequired;
 
     // Under PUT full-table replace semantics, omitting pricing means deleting it: all three
     // prices must be either all empty or all filled, to avoid a partial entry silently
@@ -3167,17 +3179,33 @@ function ModelDialog({
     ) {
       errs.maxTokens = S.models.maxTokensInvalid;
     }
+    return errs;
+  })();
+  const valid = Object.keys(fieldErrors).length === 0;
+  /**
+   * Whether the dialog holds a change to save: an edit, or the move to the custom group it was
+   * opened to make (that move is where it opened, so closing asks nothing about it).
+   */
+  const changed = draft.dirty || movedToCustom;
+  // Errors show once there is something to save; an empty model id is marked by its asterisk.
+  const shownErrors: FieldErrors =
+    changed && form.modelId.trim() === ""
+      ? { ...fieldErrors, modelId: undefined }
+      : changed
+        ? fieldErrors
+        : {};
+  // A wrong field inside the closed fold opens it, so Save never waits on something out of view.
+  // Keyed on which fields are wrong: a reader who folds it again is left alone until another one is.
+  const foldedWrong = foldedErrors(shownErrors, isNew).join(" ");
+  useEffect(() => {
+    if (foldedWrong !== "") setDetailsOpen(true);
+  }, [foldedWrong]);
 
-    if (Object.keys(errs).length > 0) {
-      setFieldErrors(errs);
-      // An error inside the closed fold must not stay hidden: open it, then focus the first field
-      // that needs fixing.
-      const reveal = revealOnSave(errs, isNew);
-      if (reveal.openDetails) setDetailsOpen(true);
-      if (reveal.focus !== null) setFocusField(reveal.focus);
-      return null;
-    }
-    setFieldErrors({});
+  /** The row a save sends, from a valid draft: prices back in USD, defaults filled in. */
+  const built = ((): { row: RowState; cancelsPromotion: boolean } | null => {
+    if (!valid) return null;
+    const modelId = form.modelId.trim();
+    const contextWindow = form.contextWindow.trim();
     const cacheRead = priceToSubmit(form.cacheRead, row?.cacheRead, currency);
     const cacheWrite = priceToSubmit(form.cacheWrite, row?.cacheWrite, currency);
     const output = priceToSubmit(form.output, row?.output, currency);
@@ -3191,22 +3219,28 @@ function ModelDialog({
         form.provider !== row.provider ||
         modelId !== row.modelId);
     return {
-      ...form,
-      modelId,
-      // Custom models with an empty context window fall back to the default value (preset models left empty just mean "unknown", not auto-filled).
-      contextWindow:
-        !preset && !contextWindow ? String(CUSTOM_CONTEXT_DEFAULT) : form.contextWindow,
-      cacheRead,
-      cacheWrite,
-      output,
-      ...(cancelsPromotion ? { discount: undefined } : {}),
+      row: {
+        ...form,
+        modelId,
+        // Custom models with an empty context window fall back to the default value (preset models left empty just mean "unknown", not auto-filled).
+        contextWindow:
+          !preset && !contextWindow ? String(CUSTOM_CONTEXT_DEFAULT) : form.contextWindow,
+        cacheRead,
+        cacheWrite,
+        output,
+        ...(cancelsPromotion ? { discount: undefined } : {}),
+      },
+      cancelsPromotion,
     };
-  };
+  })();
+  /** Saving now would cancel the row's running promotion, which is asked about first. */
+  const dropsPromotion = built !== null && built.cancelsPromotion && promotion !== undefined;
 
   /**
-   * Commit one dialog action. Saving a custom-like entry whose protocol is still unset
-   * detects it FIRST and continues with whatever comes back: asking the endpoint is more
-   * reliable than guessing, so it is worth the round-trip.
+   * Commit one dialog action and wait for its answer: the host closes the dialog once the write
+   * lands, and on a failure the dialog stays as it was, draft and all. Saving a custom-like
+   * entry whose protocol is still unset detects it FIRST and continues with whatever comes back:
+   * asking the endpoint is more reliable than guessing, so it is worth the round-trip.
    *
    * A probe that finds nothing no longer blocks (per maintainer: 默认都走兼容类型). The save
    * goes through on the compatible client, with a toast saying that is what happened —
@@ -3215,29 +3249,37 @@ function ModelDialog({
    * either way, because the fallback is a real client.
    *
    * The other actions (set-default / set-vision-proxy / remove) do not probe: they are not
-   * the user saying "this model is ready", and rowToEntry's fallback still applies.
+   * the user saying "this model is ready", and rowToEntry's fallback still applies. Remove
+   * names the row as loaded and writes nothing of the draft; set-default and set-vision-proxy
+   * carry the draft with them, so they wait for it to be valid like Save does.
    */
   const submit = async (action: DialogAction) => {
-    const next = validated();
-    if (!next) return;
-    if (needsProtocolDetectOnSave(action, next.provider, next.clientType, inherited)) {
-      // Joins a run already started from the Detect button rather than probing twice.
-      const detected = await runDetect("save");
-      onSubmit(
-        {
+    let next: RowState;
+    if (action === "remove") next = form;
+    else if (built !== null) next = built.row;
+    else return;
+    setSaving(true);
+    let closed = false;
+    try {
+      if (needsProtocolDetectOnSave(action, next.provider, next.clientType, inherited)) {
+        // Joins a run already started from the Detect button rather than probing twice.
+        const detected = await runDetect("save");
+        next = {
           ...next,
           clientType: detected?.clientType ?? DEFAULT_CUSTOM_CLIENT_TYPE,
           // The draft was snapshotted before the probe, so a base URL the probe corrected
           // has to be carried over by hand — otherwise the entry saves a URL the detected
           // protocol is not served at.
           ...(detected?.baseUrl !== undefined ? { baseUrl: detected.baseUrl } : {}),
-        },
-        action,
-      );
-      return;
+        };
+      }
+      closed = await onSubmit(next, action);
+    } finally {
+      if (!closed) setSaving(false);
     }
-    onSubmit(next, action);
   };
+  /** Every way out — Cancel, Esc, the ×, a press outside — asks first while the draft holds edits. */
+  const requestClose = useGuardedClose(onClose, draft.scope, { locked: saving });
 
   // Provider info for the current group (updates live as the group dropdown
   // changes): the "get model id / API key" links come from it (shown next to
@@ -3289,18 +3331,17 @@ function ModelDialog({
           </span>
         </span>
         <Input
-          id={fieldId("modelId")}
           size="sm"
           required
           value={form.modelId}
           disabled={!canEdit}
-          invalid={Boolean(fieldErrors.modelId)}
+          invalid={Boolean(shownErrors.modelId)}
           onChange={(e) => set({ modelId: e.target.value })}
           className="font-mono"
           autoFocus={isNew}
           placeholder={S.models.modelIdHint}
         />
-        {fieldErrors.modelId && <FieldError>{fieldErrors.modelId}</FieldError>}
+        {shownErrors.modelId && <FieldError>{shownErrors.modelId}</FieldError>}
       </label>
       {routingFix !== null && (
         <NoticeStrip
@@ -3443,8 +3484,10 @@ function ModelDialog({
         <Button size="sm" disabled={testing || !form.modelId.trim()} onClick={() => void runTest()}>
           {testing ? S.models.testing : S.models.testConnection}
         </Button>
+        {/* Setting the default or the vision model writes the draft with it, so those two wait
+            for it to be valid, like Save; removing writes nothing of the draft. */}
         {!isNew && !isDefault && (
-          <Button size="sm" onClick={() => setConfirming("setDefault")}>
+          <Button size="sm" disabled={saving || !valid} onClick={() => setConfirming("setDefault")}>
             {S.models.setDefault}
           </Button>
         )}
@@ -3452,6 +3495,7 @@ function ModelDialog({
           <Button
             size="sm"
             title={S.models.visionModelHint}
+            disabled={saving || !valid}
             onClick={() => setConfirming("setVisionModel")}
           >
             {S.models.setVisionModel}
@@ -3460,7 +3504,12 @@ function ModelDialog({
         {!isNew && (
           <>
             <span className="min-w-0 flex-1" />
-            <Button size="sm" variant="danger" onClick={() => setConfirming("remove")}>
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={saving}
+              onClick={() => setConfirming("remove")}
+            >
               {S.models.remove}
             </Button>
           </>
@@ -3570,13 +3619,12 @@ function ModelDialog({
         )}
         <div className="relative">
           <Input
-            id={fieldId("baseUrl")}
             size="sm"
             aria-label={S.models.baseUrl}
             required={baseUrlRequired}
             value={form.baseUrl}
             disabled={!canEdit}
-            invalid={Boolean(fieldErrors.baseUrl)}
+            invalid={Boolean(shownErrors.baseUrl)}
             // Editing the URL retires the previous run's verdict: it described the old
             // endpoint, and leaving it up would keep asserting a result for a URL that is
             // no longer in the field.
@@ -3615,7 +3663,7 @@ function ModelDialog({
             </span>
           )}
         </div>
-        {fieldErrors.baseUrl && <FieldError>{fieldErrors.baseUrl}</FieldError>}
+        {shownErrors.baseUrl && <FieldError>{shownErrors.baseUrl}</FieldError>}
       </div>
     ),
     // Context window + max output tokens side by side (one row): the "Token" unit sits inside
@@ -3627,13 +3675,12 @@ function ModelDialog({
     limits: (
       <div className="grid grid-cols-2 items-start gap-2">
         <Input
-          id={fieldId("contextWindow")}
           label={S.models.contextWindow}
           size="sm"
           value={form.contextWindow}
           inputMode="numeric"
           disabled={!canEdit}
-          error={fieldErrors.contextWindow}
+          error={shownErrors.contextWindow}
           onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
           // Half-width cell: the placeholder is wider than the box in English, and an input
           // clips at its padding box, so an unclipped one runs past the value area and collides
@@ -3654,13 +3701,12 @@ function ModelDialog({
           }
         />
         <Input
-          id={fieldId("maxTokens")}
           label={S.models.maxTokens}
           size="sm"
           value={form.maxTokens}
           inputMode="numeric"
           disabled={!canEdit}
-          error={fieldErrors.maxTokens}
+          error={shownErrors.maxTokens}
           onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
           // Truncated for the same reason as the context window beside it.
           className="truncate font-mono"
@@ -3688,13 +3734,12 @@ function ModelDialog({
           ).map(([key, label, value]) => (
             <Input
               key={key}
-              id={fieldId(key)}
               label={label}
               size="sm"
               value={value}
               inputMode="decimal"
               disabled={!canEdit}
-              error={fieldErrors[key]}
+              error={shownErrors[key]}
               onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
               className="text-right font-mono"
               affix={{ leading: CURRENCY_SYMBOL[currency], trailing: S.models.priceUnitShort }}
@@ -3814,47 +3859,29 @@ function ModelDialog({
     <Modal
       open
       title={isNew ? S.models.addTitle : S.models.editTitle}
-      onClose={onClose}
+      onClose={requestClose}
       // The group settings' width: the longest catalog endpoint and its protocol path read
       // whole in the base URL field.
       widthClass="sm:max-w-3xl"
       footer={
         <>
-          <Button size="sm" onClick={onClose}>
+          <Button size="sm" disabled={saving} onClick={requestClose}>
             {S.common.cancel}
           </Button>
           {canEdit && (
             <Button
               size="sm"
               variant="primary"
-              // Saving may have to probe the endpoint first (protocol still unset), which
-              // is a network round-trip: the label says so and the button locks, matching
-              // the "test connection" convention used inside this dialog.
-              disabled={detecting}
+              // Live once there is a change and nothing is wrong with it. Saving may have to
+              // probe the endpoint first (protocol still unset), which is a network round-trip:
+              // the label says so, matching the "test connection" convention in this dialog.
+              disabled={!changed || !valid || saving || detecting}
               onClick={() => {
-                // Validate first: if validation fails, the inline field errors show right away without popping the confirm dialog.
-                if (!validated()) return;
-                if (isNew || row === null) {
-                  void submit("save");
-                  return;
-                }
-                // Nothing changed: report it instead of confirming a no-op write (the
-                // baseline is rebuilt exactly like the form's initial state, so a plain
-                // JSON compare is field-exact).
-                const initial: RowState = {
-                  ...row,
-                  cacheRead: usdToInput(row.cacheRead, currency),
-                  cacheWrite: usdToInput(row.cacheWrite, currency),
-                  output: usdToInput(row.output, currency),
-                };
-                if (JSON.stringify(form) === JSON.stringify(initial)) {
-                  toastInfo(S.common.noChangesToSave);
-                  return;
-                }
-                setConfirming("save");
+                if (dropsPromotion) setConfirming("save");
+                else void submit("save");
               }}
             >
-              {detecting ? S.models.detecting : S.common.confirm}
+              {detecting ? S.models.detecting : isNew ? S.models.addAction : S.common.save}
             </Button>
           )}
         </>
@@ -3950,7 +3977,7 @@ function ModelDialog({
 
         {/* Details: the limits, the prices and the capability switches — and, when adding,
             the connection overrides and the connectivity test too (foldedSlots). Closed on
-            every open; a refused save opens it on the field to fix. */}
+            every open; a wrong field inside it opens it. */}
         <DetailsFold open={detailsOpen} onToggle={() => setDetailsOpen((open) => !open)}>
           {isNew && addNote !== undefined && (
             <p className="text-xs text-gray-500 dark:text-gray-400">{addNote}</p>
@@ -3987,23 +4014,31 @@ function ModelDialog({
         </ConfirmModal>
       )}
 
-      {/* Confirmation before writing config (save / set default / set as vision proxy model / remove): stacked on top of the config dialog. */}
+      {/* Confirmation before an action that writes config (set default / set as vision proxy
+          model / remove), or a save that cancels a running promotion: stacked on top of the
+          config dialog. Losing the promotion or the row is what the danger tone marks. */}
       {confirming && (
         <ConfirmModal
           open
           title={CONFIRM_TITLE[confirming]()}
-          tone={confirming === "remove" ? "danger" : "primary"}
+          tone={confirming === "remove" || confirming === "save" ? "danger" : "primary"}
           onClose={() => setConfirming(null)}
           onConfirm={() => {
             const action = confirming;
             setConfirming(null);
             void submit(action);
           }}
-          confirmLabel={confirming === "remove" ? S.common.delete : S.common.confirm}
+          confirmLabel={
+            confirming === "remove"
+              ? S.common.delete
+              : confirming === "save"
+                ? S.common.save
+                : S.common.confirm
+          }
           cancelLabel={S.common.cancel}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
-            {CONFIRM_BODY[confirming](modelLabel)}
+            {CONFIRM_BODY[confirming](modelLabel, Math.round((promotion ?? 0) * 100))}
           </p>
         </ConfirmModal>
       )}

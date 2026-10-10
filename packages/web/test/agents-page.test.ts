@@ -16,7 +16,7 @@
  *   nothing and its name is plain text.
  *
  * vitest runs node-only here, so the card is called as a function and its handler is handed
- * clicks as a browser delivers them, landing on stand-in elements (test/helpers/dom.ts); the
+ * clicks as a browser delivers them, landing on stand-in elements (test/helpers/fake-dom.ts); the
  * name's link is rendered to static markup inside a router.
  */
 import { createElement, isValidElement } from "react";
@@ -27,7 +27,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Button } from "@prismshadow/penguin-ui";
 import { AgentCard, AgentNameLink } from "../src/features/agents/agents-page";
 import { S } from "../src/lib/strings";
-import { clickOn, fakeElement } from "./helpers/dom";
+import { clickOn, fakeElement } from "./helpers/fake-dom";
 
 type CardProps = Record<string, unknown> & { onClick?: (event: never) => void };
 

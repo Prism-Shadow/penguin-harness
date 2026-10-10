@@ -1,7 +1,7 @@
 /**
  * Agent settings page "Vault" tab: an Agent-level key-value vault
- * (agent_state/.vault.toml) — a table (key, masked value, delete) plus an "Add" modal
- * (key + value, value uses a password field). Saving goes through PUT with
+ * (agent_state/.vault.toml) — a table (key, masked value, delete) plus an "Add" dialog
+ * (vault-add-dialog.tsx: key + value, value uses a password field). Saving goes through PUT with
  * whole-table replace semantics: keys absent from the body are deleted, and
  * resending only the key name means keep the original value (plaintext never comes
  * back to the frontend); only owners can edit, members are read-only.
@@ -19,10 +19,7 @@ import {
   Button,
   ConfirmModal,
   HelpFold,
-  Input,
-  Modal,
   NoticeStrip,
-  PasswordInput,
   SettingsEmpty,
   SkeletonList,
   toastError,
@@ -35,9 +32,7 @@ import { useProject } from "../../state/project";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-
-/** Vault key naming rule (consistent with core/server): shell environment variable name. */
-const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+import { VaultAddDialog } from "./vault-add-dialog";
 
 export function VaultTab({
   agentId,
@@ -63,18 +58,12 @@ export function VaultTab({
   // Tab-level error is only the initial load failure; saves/deletes report via toast.
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Add modal: form state and per-field errors travel with the modal (a tab-level error would be hidden behind it).
+  // Add dialog: its form, its errors and its overwrite question travel with it (vault-add-dialog.tsx).
   const [adding, setAdding] = useState(false);
   /** "Add with AI" dialog: its prompt goes to the Project's default agent, naming this agent as the target. */
   const [aiAdding, setAiAdding] = useState(false);
-  const [keyInput, setKeyInput] = useState("");
-  const [valueInput, setValueInput] = useState("");
-  const [addErrors, setAddErrors] = useState<{ key?: string; value?: string }>({});
-  const clearAddErrors = () => setAddErrors((p) => (p.key || p.value ? {} : p));
   // Key pending deletion confirmation (non-null shows the confirm modal).
   const [deleting, setDeleting] = useState<string | null>(null);
-  // Existing key pending overwrite confirmation (adding a key that's already configured replaces its value).
-  const [overwriting, setOverwriting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!projectId || !agentId) return;
@@ -121,40 +110,12 @@ export function VaultTab({
       .filter((e) => e.key !== excludeKey)
       .map((e): VaultUpdateRequest["entries"][number] => ({ key: e.key }));
 
-  /** Open the add modal (reset form and error state). */
-  const openAdd = () => {
-    setKeyInput("");
-    setValueInput("");
-    setAddErrors({});
-    setAdding(true);
-  };
-
-  const addEntry = async () => {
-    const key = keyInput.trim();
-    const next: { key?: string; value?: string } = {};
-    if (!key) next.key = S.common.requiredField;
-    else if (!VAULT_KEY_PATTERN.test(key)) next.key = S.vault.keyInvalid;
-    if (!valueInput) next.value = S.vault.valueRequired;
-    if (next.key || next.value) {
-      setAddErrors(next);
-      return;
-    }
-    setAddErrors({});
-    // Submitting an already-configured key overwrites its value (unrecoverable): confirm first.
-    if (overwriting !== key && (entries ?? []).some((e) => e.key === key)) {
-      setOverwriting(key);
-      return;
-    }
-    setOverwriting(null);
-    // Upsert by same key name: don't resend the existing entry too, to avoid a 400 from PUT's duplicate-key validation.
-    const err = await persist({ entries: [...keepEntries(key), { key, value: valueInput }] });
-    if (err !== null) {
-      // Server rejection (e.g. duplicate key) — surface it on the key field.
-      setAddErrors({ key: err });
-      return;
-    }
-    setAdding(false);
-  };
+  /**
+   * The add dialog's write. Upsert by key name: the existing entry is not resent beside the new
+   * one, which PUT's duplicate-key validation would refuse.
+   */
+  const addEntry = (key: string, value: string) =>
+    persist({ entries: [...keepEntries(key), { key, value }] });
 
   /** Confirm modal's "Confirm": closes the modal after deletion; a failure pops a toast. */
   const confirmRemove = async () => {
@@ -229,61 +190,18 @@ export function VaultTab({
           size="sm"
           disabled={busy}
           onAi={() => setAiAdding(true)}
-          onManual={openAdd}
+          onManual={() => setAdding(true)}
         />
       )}
 
       {promptSection}
 
-      <Modal
+      <VaultAddDialog
         open={adding}
-        title={S.vault.addTitle}
+        existingKeys={(entries ?? []).map((e) => e.key)}
+        onAdd={addEntry}
         onClose={() => setAdding(false)}
-        footer={
-          <>
-            <Button size="sm" onClick={() => setAdding(false)}>
-              {S.common.cancel}
-            </Button>
-            <Button size="sm" variant="primary" disabled={busy} onClick={() => void addEntry()}>
-              {S.vault.add}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <Input
-            size="sm"
-            label={S.vault.key}
-            required
-            hint={S.vault.keyHint}
-            error={addErrors.key}
-            value={keyInput}
-            onChange={(e) => {
-              setKeyInput(e.target.value);
-              clearAddErrors();
-            }}
-            className="font-mono"
-            placeholder="OPENAI_API_KEY"
-            autoComplete="off"
-          />
-          <PasswordInput
-            size="sm"
-            label={S.vault.value}
-            required
-            error={addErrors.value}
-            value={valueInput}
-            onChange={(e) => {
-              setValueInput(e.target.value);
-              clearAddErrors();
-            }}
-            className="font-mono"
-            autoComplete="off"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !busy) void addEntry();
-            }}
-          />
-        </div>
-      </Modal>
+      />
 
       {/* The AI path. Its lead is an honest warning: a value typed into the prompt is recorded in
           the conversation's Trace, whereas a value typed into the form never leaves the vault. The
@@ -303,22 +221,6 @@ export function VaultTab({
         tail={S.vault.aiAddTail(agentId, projectId)}
         agents={agents}
       />
-
-      {/* Overwrite confirmation: the add modal stays underneath, so cancel returns to the form. */}
-      <ConfirmModal
-        open={overwriting !== null}
-        title={S.vault.overwriteTitle}
-        tone="primary"
-        confirmLabel={S.common.save}
-        cancelLabel={S.common.cancel}
-        busy={busy}
-        onClose={() => setOverwriting(null)}
-        onConfirm={() => void addEntry()}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {overwriting !== null ? S.vault.overwriteConfirm(overwriting) : ""}
-        </p>
-      </ConfirmModal>
 
       {/* Delete confirmation (shared ConfirmModal, same pattern as Agent / Session deletion). */}
       <ConfirmModal

@@ -10,7 +10,9 @@
  * direct manipulation with nothing to review before committing, and one staged behind a button
  * is the kind of edit people set and then lose by closing the dialog. Typed text is the one
  * thing here that still needs an explicit commit, so the nickname keeps a Save — beside the
- * field, not under the page. Restore default is a write like any other on both rows, so the
+ * field, not under the page, live only while the trimmed text differs from the stored nickname.
+ * Leaving the page or the dialog with an unsaved nickname asks first (settings-dialog.tsx).
+ * Restore default is a write like any other on both rows, so the
  * two buttons next to one control never disagree about when they act. The avatar's asks first:
  * it deletes the uploaded picture, which only a fresh upload brings back.
  *
@@ -28,7 +30,7 @@
  */
 import { useState } from "react";
 import type { ChangeEvent } from "react";
-import type { UpdateProfileRequest } from "@prismshadow/penguin-server/api";
+import type { UpdateProfileRequest, UserInfo } from "@prismshadow/penguin-server/api";
 import {
   Button,
   ConfirmModal,
@@ -40,12 +42,14 @@ import {
   UserAvatar,
   buttonClass,
   toastSuccess,
+  useFormDraft,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { avatarDataUrlFromFile } from "../../lib/avatar-image";
 import { profileControls } from "../../lib/profile-form";
+import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { useAuth } from "../../state/auth";
 
 /** What the picker offers — the three formats the server stores, spelled the way `accept` wants. */
@@ -67,8 +71,11 @@ type PendingWrite = "avatar" | "nickname";
 
 export function ProfileSection() {
   const { user, setUserInfo } = useAuth();
-  /** The typed nickname; `undefined` means "not edited here", so the field shows what is stored. */
-  const [draftName, setDraftName] = useState<string | undefined>(undefined);
+  /** The typed nickname against the stored one; trimmed before comparing, as Save stores it. */
+  const nickname = useFormDraft(user?.displayName ?? "", {
+    scope: SETTINGS_SCOPE,
+    normalize: (value) => value.trim(),
+  });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingWrite | null>(null);
   const [confirmAvatarReset, setConfirmAvatarReset] = useState(false);
@@ -78,15 +85,15 @@ export function ProfileSection() {
    * the collapsed rail's trigger and the account menu's header all read it, so they change with
    * this call rather than on the next page load.
    */
-  const send = async (patch: UpdateProfileRequest): Promise<boolean> => {
+  const send = async (patch: UpdateProfileRequest): Promise<UserInfo | null> => {
     try {
       const res = await api.updateProfile(patch);
       setUserInfo(res.user);
       toastSuccess(S.common.saved);
-      return true;
+      return res.user;
     } catch (e) {
       setError(apiErrorText(e));
-      return false;
+      return null;
     }
   };
 
@@ -127,7 +134,7 @@ export function ProfileSection() {
   };
 
   if (!user) return null;
-  const controls = profileControls(user, draftName ?? user.displayName ?? "");
+  const controls = profileControls(user, nickname.draft);
   const busy = pending !== null;
 
   return (
@@ -168,12 +175,12 @@ export function ProfileSection() {
               size="sm"
               className="w-48 min-w-0"
               maxLength={32}
-              value={draftName ?? user.displayName ?? ""}
+              value={nickname.draft}
               placeholder={S.profile.displayNamePlaceholder}
               disabled={busy}
               aria-label={S.profile.displayName}
               onChange={(e) => {
-                setDraftName(e.target.value);
+                nickname.setDraft(e.target.value);
                 setError(null);
               }}
             />
@@ -184,11 +191,10 @@ export function ProfileSection() {
               disabled={busy || !controls.canSaveNickname}
               onClick={() =>
                 void run("nickname", async () => {
-                  // Back to "not edited" only once it landed, so a failed save keeps the text
-                  // the user typed instead of snapping the field back to the stored value.
-                  if (await send({ displayName: controls.nicknameToStore })) {
-                    setDraftName(undefined);
-                  }
+                  // The stored value becomes the field's only once it landed, so a failed save
+                  // keeps the text the user typed instead of snapping back.
+                  const stored = await send({ displayName: controls.nicknameToStore });
+                  if (stored !== null) nickname.adopt(stored.displayName ?? "");
                 })
               }
             >
@@ -202,7 +208,8 @@ export function ProfileSection() {
               disabled={busy || !controls.canRestoreNickname}
               onClick={() =>
                 void run("nickname", async () => {
-                  if (await send({ displayName: null })) setDraftName(undefined);
+                  const stored = await send({ displayName: null });
+                  if (stored !== null) nickname.adopt(stored.displayName ?? "");
                 })
               }
             >

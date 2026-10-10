@@ -1,6 +1,13 @@
 /**
  * Project dialogs: create Project, Project settings
  * (member management and deletion, owner only). Invoked from the sidebar's Project switcher.
+ *
+ * Both follow the settings commit model. A typed field commits on its Save (or the create
+ * dialog's Create), which is live only once something changed and nothing is wrong; the command
+ * policy's master switch writes the moment it is flipped. Leaving with unsaved edits asks first,
+ * once, whichever way: the settings dialog's own tab rail, Esc, the ×, a press outside, or
+ * Cancel. Each dialog's forms are mounted only while it is open, so every opening starts from
+ * what is stored.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -27,12 +34,17 @@ import {
   Select,
   SettingRow,
   Switch,
+  discardUnsaved,
+  guardLeave,
   toastError,
   toastSuccess,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { useInstantSetting } from "../../lib/instant-setting";
 import {
   PROJECT_ID_MAX_LENGTH,
   PROJECT_SUFFIX_PATTERN,
@@ -51,6 +63,12 @@ import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
 import { SemanticIdField } from "../../features/semantic-id/semantic-id-field";
 
+/**
+ * Every form on the settings dialog's tabs: a tab switch and the dialog's close ask about these,
+ * and nothing else (a record dialog stacked on top keeps a scope of its own).
+ */
+const PROJECT_SETTINGS_SCOPE = "project-settings";
+
 /** Approval modes offered by the new-chat-defaults select, in the composer menu's order. */
 const APPROVAL_MODES: readonly ApprovalMode[] = [
   "always-ask",
@@ -68,48 +86,55 @@ export function CreateProjectDialog({
   onClose: () => void;
   onCreated: (projectId: string) => void;
 }) {
+  // No draft is kept: the form is mounted only while the dialog is open, so it starts empty.
+  return open ? <CreateProjectForm onClose={onClose} onCreated={onCreated} /> : null;
+}
+
+function CreateProjectForm({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (projectId: string) => void;
+}) {
   const { user } = useAuth();
   const { currentProject } = useProject();
   // Non-admin Project ids are forced to have a "<username>-" prefix: the input locks the prefix segment, only the rest is editable.
   const prefix = user && !user.isAdmin ? `${user.userId}-` : "";
-  const [idInput, setIdInput] = useState("");
-  const [name, setName] = useState("");
-  // The id is the only validated field; format problems and the server's rejection (e.g. duplicate id) both land beside it.
-  const [idError, setIdError] = useState<string | undefined>(undefined);
+  const form = useFormDraft({ name: "", idInput: "" });
+  const { name, idInput } = form.draft;
+  /** What the server refused about the id (a duplicate, say); cleared by the next edit of it. */
+  const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
-  // No draft is kept: the form starts empty every time it opens.
-  useEffect(() => {
-    if (!open) return;
-    setIdInput("");
-    setName("");
-    setIdError(undefined);
-  }, [open]);
+  const suffix = idInput.trim();
+  const id = prefix + suffix;
+  // The id is the only validated field. Non-admin: the suffix segment (the hyphen is a reserved
+  // separator, appearing only once at the prefix join); admin: the whole string. A broken id is
+  // said under the field as it is typed; an empty one is only marked required.
+  const idBroken =
+    suffix !== "" &&
+    !(prefix
+      ? PROJECT_SUFFIX_PATTERN.test(suffix) && id.length <= PROJECT_ID_MAX_LENGTH
+      : SEMANTIC_ID_PATTERN.test(id));
+  const valid = suffix !== "" && !idBroken;
 
   const submit = async () => {
-    const id = prefix + idInput.trim();
-    if (!idInput.trim()) {
-      setIdError(S.common.requiredField);
-      return;
-    }
-    // Non-admin: validate the suffix segment (the hyphen is a reserved separator, appearing only once at the prefix join); admin: validate the whole string.
-    const valid = prefix
-      ? PROJECT_SUFFIX_PATTERN.test(idInput.trim()) && id.length <= PROJECT_ID_MAX_LENGTH
-      : SEMANTIC_ID_PATTERN.test(id);
-    if (!valid) {
-      setIdError(prefix ? S.project.idPrefixHint : S.project.idHint);
-      return;
-    }
+    if (!valid || busy) return;
     setBusy(true);
-    setIdError(undefined);
+    setRefused(undefined);
     try {
       const res = await api.createProject({
         projectId: id,
         ...(name.trim() ? { name: name.trim() } : {}),
       });
+      // Saved: forget the form now, not at unmount. The sidebar switches to the new Project next,
+      // and the leave guard would hold that over a form with nothing left unsaved.
+      discardUnsaved(form.scope);
       onCreated(res.project.projectId);
     } catch (e) {
-      setIdError(apiErrorText(e));
+      setRefused(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -117,15 +142,20 @@ export function CreateProjectDialog({
 
   return (
     <Modal
-      open={open}
+      open
       title={S.project.createTitle}
-      onClose={onClose}
+      onClose={requestClose}
       footer={
         <>
-          <Button size="sm" onClick={onClose}>
+          <Button size="sm" disabled={busy} onClick={requestClose}>
             {S.common.cancel}
           </Button>
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!form.dirty || !valid || busy}
+            onClick={() => void submit()}
+          >
             {S.common.create}
           </Button>
         </>
@@ -141,7 +171,7 @@ export function CreateProjectDialog({
           value={name}
           autoFocus
           disabled={busy}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => form.patch({ name: e.target.value })}
         />
         {/* A Project is not inside a Project: the one this dialog was opened from lends its
             default model to the proposal. A non-admin types only what follows "<username>-". */}
@@ -152,12 +182,14 @@ export function CreateProjectDialog({
           hint={prefix ? S.project.idPrefixHint : S.project.idHint}
           value={idInput}
           source={name}
-          error={idError}
+          error={
+            refused ?? (idBroken ? (prefix ? S.project.idPrefixHint : S.project.idHint) : undefined)
+          }
           disabled={busy}
           {...(prefix ? { lockedPrefix: prefix } : {})}
-          onChange={(id) => {
-            setIdInput(id);
-            setIdError(undefined);
+          onChange={(next) => {
+            form.patch({ idInput: next });
+            setRefused(undefined);
           }}
         />
       </div>
@@ -183,17 +215,20 @@ type SettingsTab = keyof typeof TAB_ICON_PATHS;
  * policy) with a row-styled content pane per tab; on narrow screens the rail degrades to a
  * horizontally scrollable strip above the content. Members does not exist in the
  * single-user desktop app (the server answers desktop_single_user on those routes), so the
- * tab is hidden there outright. Each page component owns its data and save flow; the
- * dialog only routes tabs, resetting to General per open.
+ * tab is hidden there outright. Each page component owns its data and save flow, and every
+ * form on them registers under PROJECT_SETTINGS_SCOPE: a tab switch unmounts the page it
+ * leaves, so it asks first while that page holds unsaved edits, as the dialog's close does. The
+ * body is mounted only while the dialog is open, so it starts on General every time.
  */
 export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return open ? <ProjectSettingsBody onClose={onClose} /> : null;
+}
+
+function ProjectSettingsBody({ onClose }: { onClose: () => void }) {
   const { desktopMode } = useAuth();
   const { currentProject } = useProject();
   const [tab, setTab] = useState<SettingsTab>("general");
-
-  useEffect(() => {
-    if (open) setTab("general");
-  }, [open]);
+  const requestClose = useGuardedClose(onClose, PROJECT_SETTINGS_SCOPE);
 
   const projectId = currentProject?.projectId;
   const isOwner = currentProject?.role === "owner";
@@ -214,7 +249,7 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   const active = tabs.find((t) => t.key === tab) ?? tabs[0]!;
 
   return (
-    <Modal open={open} title={S.project.settingsTitle} onClose={onClose} widthClass="sm:max-w-3xl">
+    <Modal open title={S.project.settingsTitle} onClose={requestClose} widthClass="sm:max-w-3xl">
       <div className="flex flex-col gap-3 sm:min-h-[26rem] sm:flex-row sm:gap-0">
         <NavList
           label={S.project.settingsTitle}
@@ -227,7 +262,11 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
               label={t.label}
               glyph={TAB_ICON_PATHS[t.key]}
               active={active.key === t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => {
+                if (t.key !== active.key) {
+                  void guardLeave(() => setTab(t.key), PROJECT_SETTINGS_SCOPE);
+                }
+              }}
             />
           ))}
         </NavList>
@@ -259,7 +298,8 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
 /**
  * General page: the display name (the Project's only editable field — the id names the
  * directory and every stored reference, so it stays immutable and gets a read-only row),
- * plus the delete zone. Saving the name is explicit; success needs no toast (the switcher,
+ * plus the delete zone. Saving the name is explicit (its Save, or Enter in the field) and live
+ * once the trimmed name differs from the stored one; success needs no toast (the switcher,
  * this field and every Project list re-render once reloadProjects settles, #54), only
  * failures pop one, and the field keeps what was typed so it can be retried.
  */
@@ -275,19 +315,24 @@ function GeneralSection({
   const { currentProject, setCurrentProjectId, projects, reloadProjects } = useProject();
   /** The saved display name, with the same id fallback the switcher shows. */
   const savedName = currentProject ? projectDisplayName(currentProject) : "";
-  /** Display-name edit buffer (owner only); saving is explicit, so it stays dirty until Save or remount. */
-  const [name, setName] = useState(savedName);
+  /** Display-name edit buffer (owner only); saving is explicit, so it stays dirty until Save. */
+  const form = useFormDraft(savedName, {
+    scope: PROJECT_SETTINGS_SCOPE,
+    normalize: (value) => value.trim(),
+  });
+  const name = form.draft;
   const [nameBusy, setNameBusy] = useState(false);
   const [nameError, setNameError] = useState<string | undefined>(undefined);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const saveName = async () => {
     const next = name.trim();
-    if (!next || next === savedName || nameBusy) return;
+    if (!next || !form.dirty || nameBusy) return;
     setNameBusy(true);
     setNameError(undefined);
     try {
       await api.updateProject(projectId, { name: next });
+      form.adopt(next);
       await reloadProjects();
     } catch (e) {
       setNameError(apiErrorText(e));
@@ -320,11 +365,12 @@ function GeneralSection({
               <div className="w-32 sm:w-44">
                 <Input
                   size="sm"
+                  aria-label={S.project.displayName}
                   value={name}
                   invalid={Boolean(nameError)}
                   maxLength={100}
                   onChange={(e) => {
-                    setName(e.target.value);
+                    form.setDraft(e.target.value);
                     if (nameError) setNameError(undefined);
                   }}
                   onKeyDown={(e) => {
@@ -334,7 +380,7 @@ function GeneralSection({
               </div>
               <Button
                 size="sm"
-                disabled={nameBusy || !name.trim() || name.trim() === savedName}
+                disabled={nameBusy || !name.trim() || !form.dirty}
                 onClick={() => void saveName()}
               >
                 {S.common.save}
@@ -526,36 +572,37 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
  * the same top-level `default_model` (via the narrow PUT /models/default route), never a
  * second key; changing it also releases the draft-cached model pin exactly as the models
  * page does (shared clearDraftModelRef helper). Owner edits with ONE explicit Save for the
- * whole section (dialog convention: failures toast, success is silent — the refreshed
- * values are the confirmation); members see the values read-only. Mounted per dialog open
- * (the Modal unmounts its children when closed), so reopening always refetches.
+ * whole section, live once a field differs from what is stored (dialog convention: failures
+ * toast, success toasts saved); members see the values read-only. Mounted per dialog open
+ * and per tab visit, so reopening always refetches.
  */
 function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
   const { user } = useAuth();
   const { agents } = useProject();
-  /** Saved block (null while loading); edit buffers below use "" for "not set". */
+  /** Saved block (null while loading); the draft uses "" for "not set". */
   const [saved, setSaved] = useState<ChatDefaultsDto | null>(null);
   const [models, setModels] = useState<ModelsResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [agentId, setAgentId] = useState("");
-  const [workspace, setWorkspace] = useState("");
-  const [approval, setApproval] = useState("");
-  const [thinking, setThinking] = useState("");
-  /** The default-model pick (paired reference; seeded from the models response's defaultModel). */
-  const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
+  // The selects are fields of this form (they save with it), and the default-model pick is a
+  // paired reference seeded from the models response's defaultModel.
+  const form = useFormDraft(chatDefaultsDraft(saved, models?.defaultModel ?? null), {
+    scope: PROJECT_SETTINGS_SCOPE,
+    normalize: (d) => ({
+      ...d,
+      workspace: d.workspace.trim(),
+      modelRef:
+        d.modelRef === null ? null : { provider: d.modelRef.provider, modelId: d.modelRef.modelId },
+    }),
+  });
+  const { agentId, workspace, approval, thinking, modelRef } = form.draft;
 
   useEffect(() => {
     let cancelled = false;
     api
       .getChatDefaults(projectId)
       .then((res) => {
-        if (cancelled) return;
-        setSaved(res);
-        setAgentId(res.agentId ?? "");
-        setWorkspace(res.workspace ?? "");
-        setApproval(res.approvalMode ?? "");
-        setThinking(res.thinkingLevel ?? "");
+        if (!cancelled) setSaved(res);
       })
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(apiErrorText(e));
@@ -563,9 +610,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
     api
       .getModels(projectId)
       .then((res) => {
-        if (cancelled) return;
-        setModels(res);
-        setModelRef(res.defaultModel ?? null);
+        if (!cancelled) setModels(res);
       })
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(apiErrorText(e));
@@ -575,14 +620,15 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
     };
   }, [projectId]);
 
+  const stored = form.baseline;
   const blockDirty =
     saved !== null &&
-    (agentId !== (saved.agentId ?? "") ||
-      workspace.trim() !== (saved.workspace ?? "") ||
-      approval !== (saved.approvalMode ?? "") ||
-      thinking !== (saved.thinkingLevel ?? ""));
+    (agentId !== stored.agentId ||
+      workspace.trim() !== stored.workspace ||
+      approval !== stored.approval ||
+      thinking !== stored.thinking);
   const modelDirty =
-    models !== null && modelRef !== null && !sameModelRef(models.defaultModel, modelRef);
+    models !== null && modelRef !== null && !sameModelRef(stored.modelRef, modelRef);
 
   /**
    * One Save persists both writes: the `[default_chat]` block (whole-block PUT — a field
@@ -603,6 +649,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
     // model PUT throws, the block change still happened server-side and live views must
     // still reseed from it.
     let changed: ChatDefaultsChangedDetail | null = null;
+    let landed = stored;
     try {
       if (blockDirty) {
         const body: ChatDefaultsDto = {
@@ -611,14 +658,15 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
           ...(approval ? { approvalMode: approval as ApprovalMode } : {}),
           ...(thinking ? { thinkingLevel: thinking as ChatDefaultsDto["thinkingLevel"] } : {}),
         };
-        const stored = await api.putChatDefaults(projectId, body);
-        setSaved(stored);
+        const block = await api.putChatDefaults(projectId, body);
+        setSaved(block);
+        landed = chatDefaultsDraft(block, landed.modelRef);
         // Release the draft-cached Agent / Workspace / approval pins so the next
         // /chat/new seeds from the just-saved block. The model pin is deliberately NOT
         // touched here: it is the switch-becomes-default carry-over, released only below
         // when the default model itself changed.
         if (user) clearDraftChatDefaults(user.userId, projectId);
-        changed = { projectId, defaults: stored };
+        changed = { projectId, defaults: block };
       }
       if (modelDirty && modelRef) {
         const res = await api.putDefaultModel(projectId, {
@@ -626,14 +674,17 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
           modelId: modelRef.modelId,
         });
         setModels((m) => (m ? { ...m, defaultModel: res.defaultModel } : m));
+        landed = { ...landed, modelRef: res.defaultModel ?? null };
         // Same follow-through as the models page: drop the draft-cached model pin so open
         // drafts pick up the new default.
         if (user) clearDraftModelRef(user.userId, projectId);
         changed = { ...(changed ?? { projectId }), defaultModel: res.defaultModel };
       }
-      // Both writes landed (the try didn't throw): confirm it — the dialog stays open, so
-      // without a toast a successful save is silent. `changed` is non-null whenever
-      // anything was actually written (the early-return above guards the no-op case).
+      // Both writes landed (the try didn't throw): what the server stored is the form now, and
+      // a toast says so — the dialog stays open, so without one a successful save is silent.
+      // `changed` is non-null whenever anything was actually written (the early-return above
+      // guards the no-op case). A write that failed leaves the draft as typed.
+      form.adopt(landed);
       if (changed) toastSuccess(S.common.saved);
     } catch (e) {
       toastError(apiErrorText(e));
@@ -672,7 +723,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
               label={S.project.chatDefaultsAgent}
               size="sm"
               value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
+              onChange={(e) => form.patch({ agentId: e.target.value })}
             >
               <option value="">{S.project.chatDefaultsNotSet}</option>
               {agents.map((a) => (
@@ -685,7 +736,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
               label={S.chat.approvalMode}
               size="sm"
               value={approval}
-              onChange={(e) => setApproval(e.target.value)}
+              onChange={(e) => form.patch({ approval: e.target.value })}
             >
               <option value="">{S.project.chatDefaultsApprovalNotSet}</option>
               {APPROVAL_MODES.map((m) => (
@@ -703,7 +754,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
               label={S.chat.thinkingLevel}
               size="sm"
               value={thinking}
-              onChange={(e) => setThinking(e.target.value)}
+              onChange={(e) => form.patch({ thinking: e.target.value })}
             >
               <option value="">{S.project.chatDefaultsThinkingNotSet}</option>
               {SELECTABLE_THINKING_LEVELS.map((l) => (
@@ -725,7 +776,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                     models={models.models}
                     value={modelRef}
                     defaultModel={models.defaultModel}
-                    onChange={setModelRef}
+                    onChange={(next) => form.patch({ modelRef: next })}
                     disabled={busy}
                     variant="form"
                   />
@@ -742,7 +793,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
               <WorkspaceSelect
                 projectId={projectId}
                 workspace={workspace}
-                onChange={setWorkspace}
+                onChange={(next) => form.patch({ workspace: next })}
                 {...(agentId ? { agentId } : {})}
                 variant="form"
               />
@@ -794,6 +845,29 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
   );
 }
 
+/** The Defaults tab's draft: the `[default_chat]` block with "" for "not set", and the default model. */
+interface ChatDefaultsDraft {
+  agentId: string;
+  workspace: string;
+  approval: string;
+  thinking: string;
+  modelRef: ModelRefDto | null;
+}
+
+/** The draft the stored block and default model open as (all "not set" before they load). */
+function chatDefaultsDraft(
+  saved: ChatDefaultsDto | null,
+  modelRef: ModelRefDto | null,
+): ChatDefaultsDraft {
+  return {
+    agentId: saved?.agentId ?? "",
+    workspace: saved?.workspace ?? "",
+    approval: saved?.approvalMode ?? "",
+    thinking: saved?.thinkingLevel ?? "",
+    modelRef,
+  };
+}
+
 /** Field-level equality for the security page's dirty check (description "" ≡ absent). */
 function sameRule(a: CommandPolicyRuleDto, b: CommandPolicyRuleDto): boolean {
   return (
@@ -807,20 +881,34 @@ function sameRule(a: CommandPolicyRuleDto, b: CommandPolicyRuleDto): boolean {
 /**
  * Buffered rule editor, shared by add and edit: local field state, the pattern validated
  * as a compilable regex on apply (the server re-checks — "saved" must equal "enforced").
- * Exported for test/command-policy-add-rule.test.ts, which renders it on its own.
+ * What is typed here counts as unsaved in `scope` until Apply takes it into the rule list (or
+ * Cancel drops it, without asking: Cancel here is the row's own reset). Exported for
+ * test/command-policy-add-rule.test.ts, which renders it on its own.
  */
 export function RuleEditor({
   initial,
+  scope,
   onApply,
   onCancel,
 }: {
   initial: CommandPolicyRuleDto | null;
+  /** The surface whose leave asks about the typing; a scope of its own when left out. */
+  scope?: string;
   onApply: (rule: CommandPolicyRuleDto) => void;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [pattern, setPattern] = useState(initial?.pattern ?? "");
-  const [desc, setDesc] = useState(initial?.description ?? "");
+  const form = useFormDraft(
+    {
+      name: initial?.name ?? "",
+      pattern: initial?.pattern ?? "",
+      desc: initial?.description ?? "",
+    },
+    {
+      ...(scope !== undefined ? { scope } : {}),
+      normalize: (d) => ({ name: d.name.trim(), pattern: d.pattern.trim(), desc: d.desc.trim() }),
+    },
+  );
+  const { name, pattern, desc } = form.draft;
   const [err, setErr] = useState<string | undefined>(undefined);
 
   const apply = () => {
@@ -860,7 +948,7 @@ export function RuleEditor({
             // that click asked for: it puts the caret in the first field for a keyboard user,
             // and the browser's scroll-on-focus keeps the form in view on a short viewport.
             autoFocus
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => form.patch({ name: e.target.value })}
           />
         </div>
         <div className="min-w-0 flex-1">
@@ -873,7 +961,7 @@ export function RuleEditor({
             maxLength={512}
             {...(err !== undefined ? { error: err } : {})}
             onChange={(e) => {
-              setPattern(e.target.value);
+              form.patch({ pattern: e.target.value });
               if (err) setErr(undefined);
             }}
             onKeyDown={(e) => {
@@ -887,7 +975,7 @@ export function RuleEditor({
         label={S.project.commandPolicyRuleDesc}
         value={desc}
         maxLength={300}
-        onChange={(e) => setDesc(e.target.value)}
+        onChange={(e) => form.patch({ desc: e.target.value })}
       />
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onCancel}>
@@ -902,20 +990,39 @@ export function RuleEditor({
 }
 
 /**
- * Security-policy page: the `[command_policy]` block. One unified, fully editable rule
- * list — the factory rules are seeded data with no special status (edit / disable /
- * delete / add all apply), and "restore defaults" re-buffers the factory set served by the
- * API (buffered like every other edit — Save is what writes it). Owner edits buffer
- * locally with ONE explicit Save (dialog convention: failures toast, success toasts
- * saved); members see the effective state read-only. The list dims AND disables while the
- * master switch is off, but Save stays live so the toggle itself can be saved.
+ * Security-policy page: the `[command_policy]` block. The master switch writes the moment it
+ * is flipped — the stored rules go with it, never the rule list being edited, which stays as
+ * it is. Below it, one unified, fully editable rule list — the factory rules are seeded data
+ * with no special status (edit / disable / delete / add all apply), and "restore defaults"
+ * re-buffers the factory set served by the API (buffered like every other edit — Save is what
+ * writes it). The list is a table form: its rows are created in the draft, so each rule's own
+ * switch is a cell of it and saves with it. Owner edits buffer locally with ONE explicit Save,
+ * live once the list differs from what is stored (dialog convention: failures toast, success
+ * toasts saved); members see the effective state read-only. The list dims AND disables while
+ * the master switch is off.
  */
 function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
   const [saved, setSaved] = useState<CommandPolicyDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [enabled, setEnabled] = useState(true);
-  const [rules, setRules] = useState<CommandPolicyRuleDto[]>([]);
+  const form = useFormDraft<CommandPolicyRuleDto[]>(saved?.rules ?? [], {
+    scope: PROJECT_SETTINGS_SCOPE,
+    normalize: (list) =>
+      list.map((r) => ({
+        name: r.name,
+        pattern: r.pattern,
+        description: r.description ?? "",
+        enabled: r.enabled,
+      })),
+  });
+  const rules = form.draft;
+  const setRules = form.setDraft;
+  /** The master switch: written alone, with the stored rules, and adopted as the new stored policy. */
+  const policySwitch = useInstantSetting(saved?.enabled ?? false, async (next) => {
+    if (saved === null) return;
+    setSaved(await api.putCommandPolicy(projectId, { enabled: next, rules: saved.rules }));
+  });
+  const enabled = policySwitch.value;
   /** Index being edited inline, "new" for the add form, null when idle. */
   const [editing, setEditing] = useState<number | "new" | null>(null);
   /** "Restore defaults" awaiting confirmation: it replaces every rule in the list. */
@@ -931,10 +1038,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
     api
       .getCommandPolicy(projectId)
       .then((res) => {
-        if (cancelled) return;
-        setSaved(res);
-        setEnabled(res.enabled);
-        setRules(res.rules);
+        if (!cancelled) setSaved(res);
       })
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(apiErrorText(e));
@@ -943,12 +1047,6 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
       cancelled = true;
     };
   }, [projectId]);
-
-  const dirty =
-    saved !== null &&
-    (enabled !== saved.enabled ||
-      rules.length !== saved.rules.length ||
-      rules.some((r, i) => !sameRule(r, saved.rules[i]!)));
 
   const restoreDefaults = () => {
     if (saved === null) return;
@@ -962,13 +1060,12 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
     rules.every((r, i) => sameRule(r, saved.defaultRules[i]!));
 
   const save = async () => {
-    if (busy || !dirty) return;
+    if (busy || !form.dirty || saved === null) return;
     setBusy(true);
     try {
-      const stored = await api.putCommandPolicy(projectId, { enabled, rules });
+      const stored = await api.putCommandPolicy(projectId, { enabled: saved.enabled, rules });
       setSaved(stored);
-      setEnabled(stored.enabled);
-      setRules(stored.rules);
+      form.adopt(stored.rules);
       toastSuccess(S.common.saved);
     } catch (e) {
       toastError(apiErrorText(e));
@@ -991,7 +1088,12 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
               description={S.project.commandPolicyEnableDesc}
             >
               {isOwner ? (
-                <Switch checked={enabled} onChange={setEnabled} disabled={busy} />
+                <Switch
+                  checked={enabled}
+                  aria-label={S.project.commandPolicyEnable}
+                  onChange={(next) => void policySwitch.set(next)}
+                  disabled={busy || policySwitch.busy}
+                />
               ) : (
                 <span className="text-xs text-gray-400">
                   {enabled ? S.project.commandPolicyOn : S.project.commandPolicyOff}
@@ -1039,6 +1141,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
               {editing === "new" && (
                 <RuleEditor
                   initial={null}
+                  scope={PROJECT_SETTINGS_SCOPE}
                   onApply={(nr) => {
                     setRules([nr, ...rules]);
                     setEditing(null);
@@ -1051,6 +1154,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                   <RuleEditor
                     key={`edit-${i}`}
                     initial={r}
+                    scope={PROJECT_SETTINGS_SCOPE}
                     onApply={(nr) => {
                       setRules(rules.map((x, j) => (j === i ? nr : x)));
                       setEditing(null);
@@ -1121,7 +1225,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                   would leave a stale draft that Apply then writes over the wrong rule. */}
               <Button
                 size="sm"
-                disabled={busy || !dirty || editing !== null}
+                disabled={busy || !form.dirty || editing !== null || policySwitch.busy}
                 onClick={() => void save()}
               >
                 {S.common.save}

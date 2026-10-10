@@ -582,6 +582,8 @@ export const en: Strings = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
+    /** Under the two switches while the address has unsaved edits: they act on the saved address. */
+    saveProxyAddressFirst: "Save the proxy address first",
     /** Reachability test: the block's heading, and its button at rest and while probing. */
     proxyProbe: "Reachability test",
     proxyProbeRun: "Test",
@@ -1071,10 +1073,17 @@ export const en: Strings = {
     confirmSaveTitle: "Save changes",
     confirmSaveBody:
       "Save these changes? They will be written to the configuration files on the server.",
-    /** Leaving or cancelling a form that holds unsaved edits (Agent settings tabs, the handbook editor, the binding dialog). */
+    /**
+     * The one prompt every way of leaving a form with unsaved edits shows (the shared UI
+     * package's UnsavedChangesHost): its accessible name, the question, the danger button that
+     * discards and leaves, and the button that stays with the edits.
+     */
     discardTitle: "Discard unsaved changes",
-    discardBody: "Discard your unsaved changes? They cannot be recovered.",
-    discard: "Discard",
+    discardBody: "Discard unsaved changes? What you typed will be lost.",
+    discard: "Discard changes",
+    keepEditing: "Keep editing",
+    /** A page form's button beside Save: puts every field back to what is stored, without asking. */
+    reset: "Reset",
     none: "(none)",
     retry: "Retry",
     unknownError: "Request failed, please try again later",
@@ -1506,8 +1515,8 @@ export const en: Strings = {
       ],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "prompt (summarization prompt)",
-    maxTurnsInvalid: "max_turns must be > 0 or -1",
-    timeoutInvalid: "timeoutMs must be > 0 or -1",
+    numberInvalid: "Must be a positive integer or -1",
+    numberCannotClear: "A saved value can't be cleared: enter a number, or use Reset to restore it",
     toolFieldInvalid: (name: string, field: string) =>
       `${name}: ${field} must be a positive integer or -1`,
     toolPermission: "permission",
@@ -2068,8 +2077,10 @@ export const en: Strings = {
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
       `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
-    confirmSaveTitle: "Save model settings",
-    confirmSave: (name: string): string => `Save the changes to "${name}"?`,
+    addAction: "Add",
+    confirmCancelPromotionTitle: "Cancel promotion",
+    confirmCancelPromotion: (name: string, pct: number): string =>
+      `Saving ends the ${pct}% promotion on "${name}": a changed price or model identity cancels it. Save anyway?`,
     confirmDefaultTitle: "Set as default model",
     confirmDefault: (name: string): string =>
       `Make "${name}" the default model? New sessions will use it by default.`,
@@ -2205,7 +2216,6 @@ export const en: Strings = {
     readOnlyHint: "Members are read-only; only the owner can edit the vault",
     keyHint: "Letters, digits and underscores; must not start with a digit",
     keyInvalid: "Invalid name: only letters, digits and underscores, not starting with a digit",
-    valueRequired: "Value must not be empty",
     aiAddTitle: "Add secrets with AI",
     aiAddIntro:
       "A secret value typed here is sent to the model provider, recorded in the conversation's Trace, and shown again in the command the agent runs. The safer way is to let AI create only the key names and tell you what each is for, then fill in the values in the vault by hand.",
@@ -4906,16 +4916,10 @@ Scenarios:
       budget: "Monthly budget",
       budgetHint:
         "A monthly cap, leave empty for unbounded; counts the employee plus every subordinate",
-      hireConfirm: (name: string, manager: string): string =>
-        `Add ${name} to the organization, reporting to ${manager}? This rewrites the chart file.`,
       hired: (name: string): string => `Hired ${name}`,
       /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `Set the budget of ${name}`,
-      budgetConfirm: (name: string, budget: string): string =>
-        `Set the monthly budget of ${name} to ${budget}? Past 80% warns; at 100% its automatic triggers pause.`,
       reportsToTitle: (name: string): string => `Change who ${name} reports to`,
-      reportsToConfirm: (name: string, manager: string): string =>
-        `Have ${name} report to ${manager}? Its subordinates move along with it.`,
       reportsToCycle: "Cannot report to itself or to one of its own subordinates",
       renewDeskTitle: (name: string): string => `A new desk session for ${name}`,
       renewDeskExplain:
@@ -4947,13 +4951,12 @@ Scenarios:
       clearBudget: "Set unbounded",
       currentValue: (value: string): string => `Current: ${value}`,
       manager: "Manager",
-      reportsToHint: "Only employees outside its own subtree are listed",
+      reportsToHint:
+        "Only employees outside its own subtree are listed; its subordinates move along with it",
       thinkingLevelTitle: (name: string): string => `Set ${name}'s thinking level`,
       thinkingLevelInfo:
         "Written to the employee's Agent config, the same setting as this Agent's in development mode. The desk session uses it from its next model context and new ticket sessions open on it; a level picked inside the desk session pins only that session.",
       thinkingLevelDefault: (level: string): string => `Project default (${level})`,
-      thinkingLevelConfirm: (name: string, level: string): string =>
-        `Change ${name}'s thinking level to "${level}"? This writes the Agent's config.`,
       thinkingLevelPinned: (level: string): string =>
         `The current desk session is pinned to "${level}" on its own; this setting reaches the desk from its next desk session.`,
     },
@@ -4982,8 +4985,6 @@ Scenarios:
       periodHint: "30m / 12h / 7d, empty for a one-off; 5m at the shortest",
       delete: "Delete event",
       deleteConfirm: (name: string): string => `Delete event "${name}"?`,
-      saveConfirm: (name: string): string =>
-        `Save event "${name}"? This rewrites its calendar file.`,
       outcome: "Outcome",
       lastFired: "Last fired",
       nextFire: "Next fire",
@@ -5109,8 +5110,6 @@ Scenarios:
         "This ticket is invalid: its status disagrees with its column, or its id is duplicated",
       invalidFiles: "Ticket files that failed to parse",
       edit: "Edit fields",
-      saveConfirm: (title: string): string =>
-        `Save the changes to "${title}"? This rewrites the ticket file.`,
       saved: "Ticket saved",
       created: "Ticket created",
       detail: "Ticket detail",

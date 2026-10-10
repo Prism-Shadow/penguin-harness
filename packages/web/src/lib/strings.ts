@@ -676,6 +676,8 @@ export const zh = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
+    /** Under the two switches while the address has unsaved edits: they act on the saved address. */
+    saveProxyAddressFirst: "先保存代理地址",
     /** Reachability test: the block's heading, and its button at rest and while probing. */
     proxyProbe: "连通性测速",
     proxyProbeRun: "测速",
@@ -1159,10 +1161,17 @@ export const zh = {
     /** Confirm-before-save dialog shared by the settings forms (writes go to server-side config files). */
     confirmSaveTitle: "保存修改",
     confirmSaveBody: "确定保存这些修改吗？修改将写入服务器上的配置文件。",
-    /** Leaving or cancelling a form that holds unsaved edits (Agent settings tabs, the handbook editor, the binding dialog). */
+    /**
+     * The one prompt every way of leaving a form with unsaved edits shows (the shared UI
+     * package's UnsavedChangesHost): its accessible name, the question, the danger button that
+     * discards and leaves, and the button that stays with the edits.
+     */
     discardTitle: "放弃未保存的修改",
-    discardBody: "放弃尚未保存的修改？放弃后无法找回。",
-    discard: "放弃",
+    discardBody: "放弃未保存的修改？未保存的内容将丢失。",
+    discard: "放弃修改",
+    keepEditing: "继续编辑",
+    /** A page form's button beside Save: puts every field back to what is stored, without asking. */
+    reset: "重置",
     none: "（无）",
     retry: "重试",
     unknownError: "请求失败，请稍后重试",
@@ -1570,8 +1579,8 @@ export const zh = {
       ["discard", "不生成摘要，直接丢弃旧上下文，下一轮从新窗口重新开始。"],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "prompt（摘要提示词）",
-    maxTurnsInvalid: "max_turns 必须 > 0 或为 -1",
-    timeoutInvalid: "timeoutMs 必须 > 0 或为 -1",
+    numberInvalid: "必须是 > 0 的整数或 -1",
+    numberCannotClear: "已保存的值不能清空：请填写数值，或点「重置」还原",
     toolFieldInvalid: (name: string, field: string) => `${name}: ${field} 必须是 > 0 的整数或 -1`,
     toolPermission: "permission",
     permissionReadLabel: "Read-only",
@@ -2197,8 +2206,12 @@ export const zh = {
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
-    confirmSaveTitle: "保存模型配置",
-    confirmSave: (name: string): string => `确定保存对「${name}」的配置修改？`,
+    /** The add-model dialog's footer verb (the settings dialog's is the common Save). */
+    addAction: "添加",
+    /** A save that changes a promoted row's price or identity: the server then drops the promotion. */
+    confirmCancelPromotionTitle: "取消促销",
+    confirmCancelPromotion: (name: string, pct: number): string =>
+      `保存后「${name}」当前省 ${pct}% 的促销将被取消：修改价格或模型标识会结束促销。确定保存？`,
     confirmDefaultTitle: "设为默认模型",
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
@@ -2332,7 +2345,6 @@ export const zh = {
     readOnlyHint: "member 只读；Vault 修改仅 owner 可执行",
     keyHint: "字母、数字与下划线，不能以数字开头",
     keyInvalid: "键名不合法：仅字母、数字与下划线，且不能以数字开头",
-    valueRequired: "值不能为空",
     /**
      * The tab's "add with AI" entry: the dialog's title and lead (an honest warning — a value
      * typed into the prompt reaches the provider, the Trace and the agent's own command line),
@@ -5045,16 +5057,10 @@ Benchmark：
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
       budget: "月预算",
       budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
-      hireConfirm: (name: string, manager: string): string =>
-        `将 ${name} 加入组织，汇报给 ${manager}？会改写组织图文件。`,
       hired: (name: string): string => `已招募 ${name}`,
       /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `设置 ${name} 的预算`,
-      budgetConfirm: (name: string, budget: string): string =>
-        `将 ${name} 的月预算改为 ${budget}？超过 80% 告警，达到 100% 暂停其自动触发。`,
       reportsToTitle: (name: string): string => `调整 ${name} 的汇报线`,
-      reportsToConfirm: (name: string, manager: string): string =>
-        `让 ${name} 改为汇报给 ${manager}？其下属随之一起移动。`,
       reportsToCycle: "不能汇报给自己或自己的下属",
       renewDeskTitle: (name: string): string => `为 ${name} 换工位`,
       renewDeskExplain: "换工位会开一个新的工位会话并重置上下文；改了工作区就写入员工树。",
@@ -5084,15 +5090,13 @@ Benchmark：
       clearBudget: "设为不限",
       currentValue: (value: string): string => `当前：${value}`,
       manager: "上级",
-      reportsToHint: "只列出不在其下属范围内的员工",
+      reportsToHint: "只列出不在其下属范围内的员工；其下属随之一起移动",
       /** The thinking-level edit: it writes the employee's Agent config, the place a desk reads it from. */
       thinkingLevelTitle: (name: string): string => `设置 ${name} 的思考等级`,
       thinkingLevelInfo:
         "写入该员工 Agent 的配置，与开发模式里这个 Agent 的设置是同一处。工位会话自下一个模型上下文起使用它，新开的工单会话直接使用；在工位会话里选的思考等级只固定那一个会话。",
       /** No level of the Agent's own: the Project default applies, and this is what it resolves to. */
       thinkingLevelDefault: (level: string): string => `Project 默认（${level}）`,
-      thinkingLevelConfirm: (name: string, level: string): string =>
-        `将 ${name} 的思考等级改为「${level}」？会写入该 Agent 的配置。`,
       thinkingLevelPinned: (level: string): string =>
         `当前工位会话已单独固定为「${level}」，此设置自下次换工位起对工位生效。`,
     },
@@ -5121,7 +5125,6 @@ Benchmark：
       periodHint: "30m / 12h / 7d，留空为一次性；最短 5m",
       delete: "删除日程",
       deleteConfirm: (name: string): string => `确认删除日程「${name}」？`,
-      saveConfirm: (name: string): string => `保存日程「${name}」？会改写它的日程文件。`,
       outcome: "结果",
       lastFired: "最近触发",
       nextFire: "下次触发",
@@ -5230,7 +5233,6 @@ Benchmark：
       invalid: "该工单无效：状态与所在列不符，或 id 重复",
       invalidFiles: "无法解析的工单文件",
       edit: "编辑字段",
-      saveConfirm: (title: string): string => `保存对「${title}」的修改？会改写工单文件。`,
       saved: "工单已保存",
       created: "工单已创建",
       detail: "工单详情",

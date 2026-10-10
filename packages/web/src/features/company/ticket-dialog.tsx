@@ -13,8 +13,11 @@
  * criteria, the progress prose with its one-line append, the result, and under them three
  * disclosures folded on every visit: the child tickets with the total cost, the ticket's own
  * sessions, and the operation history, newest first. Each editable section edits in place with
- * its own save / cancel; the footer holds the block / unblock and move actions. Saves confirm
- * first, like every organization write.
+ * its own save / cancel; the footer holds the block / unblock and move actions. A section's
+ * Save writes at once and is live only while the section differs from the ticket and its title
+ * is not empty; leaving a section with unsaved edits — its Cancel, the dialog's close, a parent
+ * or child followed, Back, a session opened — asks first. The move and the unblock still
+ * confirm: they are actions on the ticket, not a form's Save.
  *
  * The parent, a child and a ticket session are each opened by clicking their title — a text
  * button that underlines on hover and names its destination in its tooltip — while the rest of
@@ -56,9 +59,12 @@ import {
   Skeleton,
   Text,
   Textarea,
+  guardLeave,
   toastError,
-  toastInfo,
   toastSuccess,
+  useFormDraft,
+  useGuardedClose,
+  useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -106,6 +112,56 @@ interface SummaryDraft {
   notify: string;
   priority: OrgTicketPriority;
   due: string;
+}
+
+/** The summary section's fields as the ticket opens them. */
+function summaryOf(detail: OrgTicketDetail): SummaryDraft {
+  return {
+    title: detail.title,
+    owner: detail.owner,
+    parent: detail.parent ?? "",
+    notify: detail.notify.join(", "),
+    priority: detail.priority,
+    due: detail.due ?? "",
+  };
+}
+
+/** A text section's stored body. */
+function textOf(detail: OrgTicketDetail, section: Exclude<Section, "summary">): string {
+  return section === "goal"
+    ? detail.goal
+    : section === "acceptance"
+      ? detail.acceptanceCriteria
+      : detail.result;
+}
+
+/**
+ * What the open section changed, as the update body: empty when nothing did. A ticket always
+ * has an owner and a title, so an emptied one is not sent (and holds Save, see the dialog).
+ */
+function sectionUpdate(
+  detail: OrgTicketDetail,
+  editing: Section,
+  summary: SummaryDraft | null,
+  text: string,
+): OrgTicketUpdateRequest {
+  const body: OrgTicketUpdateRequest = {};
+  if (editing === "summary") {
+    if (summary === null) return body;
+    const d = summary;
+    if (d.title.trim() && d.title.trim() !== detail.title) body.title = d.title.trim();
+    if (d.owner !== "" && d.owner !== detail.owner) body.owner = d.owner;
+    if (d.parent !== (detail.parent ?? "")) body.parent = d.parent === "" ? null : d.parent;
+    const notify = splitPrincipalList(d.notify);
+    if (notify.join(",") !== detail.notify.join(",")) body.notify = notify;
+    if (d.priority !== detail.priority) body.priority = d.priority;
+    if (d.due !== (detail.due ?? "")) body.due = d.due === "" ? null : d.due;
+  } else if (text !== textOf(detail, editing)) {
+    if (editing === "goal") body.goal = text;
+    else if (editing === "acceptance") body.acceptanceCriteria = text;
+    else body.result = text;
+  }
+  return body;
 }
 
 /**
@@ -173,11 +229,8 @@ function TicketDialog({
   const [editing, setEditing] = useState<Section | null>(null);
   const [summaryDraft, setSummaryDraft] = useState<SummaryDraft | null>(null);
   const [textDraft, setTextDraft] = useState("");
-  const [pendingSave, setPendingSave] = useState<OrgTicketUpdateRequest | null>(null);
   const [confirmUnblock, setConfirmUnblock] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
-  const [blockReason, setBlockReason] = useState("");
-  const [blockBy, setBlockBy] = useState("");
   const [progressText, setProgressText] = useState("");
   const [moveTarget, setMoveTarget] = useState("");
   const [pendingMove, setPendingMove] = useState<OrgTicketStatus | null>(null);
@@ -187,6 +240,25 @@ function TicketDialog({
   /** Whether the board and roster on hand are this organization's, so the fields can read names. */
   const contextReady = contextOrg === `${projectId}/${orgId}`;
   const { tickets: ticketsVersion, runs: runsVersion } = company.versions;
+  /** The open section's update: what Save would send; empty while nothing changed. */
+  const pendingUpdate =
+    detail === null || editing === null
+      ? {}
+      : sectionUpdate(detail, editing, summaryDraft, textDraft);
+  /** The open section holds an edit; an emptied title is one too, though it holds Save. */
+  const sectionDirty =
+    detail !== null &&
+    editing !== null &&
+    (Object.keys(pendingUpdate).length > 0 ||
+      (editing === "summary" && summaryDraft !== null && summaryDraft.title.trim() === ""));
+  const sectionValid = !(editing === "summary" && summaryDraft?.title.trim() === "");
+  // The dialog's own scope: its close, a section's Cancel and a swap of the ticket ask about the
+  // open section, and nothing on the page beneath.
+  const scope = `ticket-dialog:${projectId}/${orgId}`;
+  useUnsavedChanges(sectionDirty, { scope, discard: () => setEditing(null) });
+  const requestClose = useGuardedClose(onClose, scope, { locked: busy });
+  /** A step that would drop the open section's edits: asks first while there are any. */
+  const leaveSection = (go: () => void) => void guardLeave(go, scope);
 
   const load = useCallback(async () => {
     try {
@@ -251,60 +323,15 @@ function TicketDialog({
 
   const startEdit = (section: Section) => {
     if (detail === null) return;
-    if (section === "summary") {
-      setSummaryDraft({
-        title: detail.title,
-        owner: detail.owner,
-        parent: detail.parent ?? "",
-        notify: detail.notify.join(", "),
-        priority: detail.priority,
-        due: detail.due ?? "",
-      });
-    } else {
-      setTextDraft(
-        section === "goal"
-          ? detail.goal
-          : section === "acceptance"
-            ? detail.acceptanceCriteria
-            : detail.result,
-      );
-    }
+    if (section === "summary") setSummaryDraft(summaryOf(detail));
+    else setTextDraft(textOf(detail, section));
     setEditing(section);
   };
 
-  /** What the open section changed, as the update body; nothing changed → a toast, no dialog. */
-  const requestSave = () => {
-    if (detail === null || editing === null) return;
-    const body: OrgTicketUpdateRequest = {};
-    if (editing === "summary" && summaryDraft !== null) {
-      const d = summaryDraft;
-      if (d.title.trim() && d.title.trim() !== detail.title) body.title = d.title.trim();
-      // A ticket always has an owner: an empty box is no change, never a clearing.
-      if (d.owner !== "" && d.owner !== detail.owner) body.owner = d.owner;
-      if (d.parent !== (detail.parent ?? "")) body.parent = d.parent === "" ? null : d.parent;
-      const notify = splitPrincipalList(d.notify);
-      if (notify.join(",") !== detail.notify.join(",")) body.notify = notify;
-      if (d.priority !== detail.priority) body.priority = d.priority;
-      if (d.due !== (detail.due ?? "")) body.due = d.due === "" ? null : d.due;
-    } else if (editing === "goal" && textDraft !== detail.goal) {
-      body.goal = textDraft;
-    } else if (editing === "acceptance" && textDraft !== detail.acceptanceCriteria) {
-      body.acceptanceCriteria = textDraft;
-    } else if (editing === "result" && textDraft !== detail.result) {
-      body.result = textDraft;
-    }
-    if (Object.keys(body).length === 0) {
-      toastInfo(S.common.noChangesToSave);
-      setEditing(null);
-      return;
-    }
-    setPendingSave(body);
-  };
-
-  const commitSave = () => {
-    if (detail === null || pendingSave === null) return;
-    const body = pendingSave;
-    setPendingSave(null);
+  /** Writes what the open section changed; the section closes once it landed. */
+  const save = () => {
+    if (detail === null || !sectionDirty || !sectionValid) return;
+    const body = pendingUpdate;
     void run(async () => {
       await api.updateOrgTicket(projectId, orgId, detail.ticketId, body);
       setEditing(null);
@@ -363,10 +390,20 @@ function TicketDialog({
   const sectionActions = (section: Section) =>
     editing === section ? (
       <>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(null)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => leaveSection(() => setEditing(null))}
+        >
           {S.common.cancel}
         </Button>
-        <Button size="sm" variant="primary" disabled={busy} onClick={requestSave}>
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={busy || !sectionDirty || !sectionValid}
+          onClick={save}
+        >
           {S.common.save}
         </Button>
       </>
@@ -418,6 +455,8 @@ function TicketDialog({
     onClose();
     navigate(chatPath(session.sessionId));
   };
+  /** Swaps the dialog's ticket for another, asking first while a section holds edits. */
+  const openTicket = (ticketId: string) => leaveSection(() => onOpenTicket(ticketId));
 
   /** One field of the summary list: every row is one line tall, so labels and values line up down the column. */
   const row = (label: string, value: ReactNode) => (
@@ -432,7 +471,7 @@ function TicketDialog({
     <Modal
       open
       title={detail?.title ?? S.company.tickets.detail}
-      onClose={onClose}
+      onClose={requestClose}
       headerless
       bare
       widthClass="sm:max-w-3xl"
@@ -440,7 +479,7 @@ function TicketDialog({
       <div className="flex max-h-[85vh] flex-col">
         <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
           {canGoBack && (
-            <Button size="sm" variant="ghost" onClick={onBack}>
+            <Button size="sm" variant="ghost" onClick={() => leaveSection(onBack)}>
               {S.company.tickets.back}
             </Button>
           )}
@@ -454,7 +493,7 @@ function TicketDialog({
               </span>
             )}
           </h2>
-          <CloseButton onClose={onClose} />
+          <CloseButton onClose={requestClose} />
         </div>
 
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4 sm:px-6">
@@ -616,7 +655,7 @@ function TicketDialog({
                         <TitleButton
                           hint={titledHint(titles.get(detail.parent), detail.parent)}
                           className="truncate"
-                          onClick={() => onOpenTicket(detail.parent!)}
+                          onClick={() => openTicket(detail.parent!)}
                         >
                           {titles.get(detail.parent) ?? detail.parent}
                         </TitleButton>
@@ -756,7 +795,7 @@ function TicketDialog({
                           <TitleButton
                             hint={titledHint(c.title, c.ticketId)}
                             className="truncate"
-                            onClick={() => onOpenTicket(c.ticketId)}
+                            onClick={() => openTicket(c.ticketId)}
                           >
                             {c.title}
                           </TitleButton>
@@ -816,7 +855,7 @@ function TicketDialog({
                             <TitleButton
                               hint={titledHint(s.title, s.sessionId)}
                               className="truncate text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
-                              onClick={() => openSession(s)}
+                              onClick={() => leaveSection(() => openSession(s))}
                             >
                               {s.title ?? s.sessionId}
                             </TitleButton>
@@ -944,20 +983,6 @@ function TicketDialog({
         onConfirm={commitMove}
       />
       <ConfirmModal
-        open={pendingSave !== null}
-        title={S.common.confirmSaveTitle}
-        tone="primary"
-        confirmLabel={S.common.save}
-        cancelLabel={S.common.cancel}
-        busy={busy}
-        onClose={() => (busy ? undefined : setPendingSave(null))}
-        onConfirm={commitSave}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {S.company.tickets.saveConfirm(detail?.title ?? "")}
-        </p>
-      </ConfirmModal>
-      <ConfirmModal
         open={confirmUnblock}
         title={S.company.tickets.unblock}
         tone="primary"
@@ -977,57 +1002,80 @@ function TicketDialog({
           {S.company.tickets.unblockConfirm(detail?.title ?? "")}
         </p>
       </ConfirmModal>
-      <Modal
-        open={blockOpen}
-        title={S.company.tickets.blockTitle}
-        onClose={() => setBlockOpen(false)}
-        footer={
-          <>
-            <Button size="sm" onClick={() => setBlockOpen(false)} disabled={busy}>
-              {S.common.cancel}
-            </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={busy || !blockReason.trim()}
-              onClick={() => {
-                if (detail === null) return;
-                setBlockOpen(false);
-                void run(async () => {
-                  await api.blockOrgTicket(projectId, orgId, detail.ticketId, {
-                    reason: blockReason.trim(),
-                    ...(blockBy.trim() ? { by: blockBy.trim() } : {}),
-                  });
-                  setBlockReason("");
-                  setBlockBy("");
-                });
-              }}
-            >
-              {S.company.tickets.block}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <Input
+      {blockOpen && detail !== null && (
+        <BlockTicketDialog
+          busy={busy}
+          onClose={() => setBlockOpen(false)}
+          onBlock={(body) => {
+            setBlockOpen(false);
+            void run(async () => {
+              await api.blockOrgTicket(projectId, orgId, detail.ticketId, body);
+            });
+          }}
+        />
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * Marking the ticket blocked: why (required) and on whom it waits. The two fields are typed, so
+ * closing the dialog with them filled asks first; the block itself is the dialog's verb.
+ */
+function BlockTicketDialog({
+  busy,
+  onClose,
+  onBlock,
+}: {
+  busy: boolean;
+  onClose: () => void;
+  onBlock: (body: { reason: string; by?: string }) => void;
+}) {
+  const form = useFormDraft({ reason: "", by: "" });
+  const { reason, by } = form.draft;
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
+  return (
+    <Modal
+      open
+      title={S.company.tickets.blockTitle}
+      onClose={requestClose}
+      footer={
+        <>
+          <Button size="sm" onClick={requestClose} disabled={busy}>
+            {S.common.cancel}
+          </Button>
+          <Button
             size="sm"
-            label={S.company.tickets.blockedReason}
-            required
-            value={blockReason}
-            info={S.company.tickets.blockReasonHint}
-            autoFocus
-            onChange={(e) => setBlockReason(e.target.value)}
-          />
-          <Input
-            size="sm"
-            label={S.company.tickets.blockedBy}
-            value={blockBy}
-            info={S.company.tickets.blockByHint}
-            className="font-mono"
-            onChange={(e) => setBlockBy(e.target.value)}
-          />
-        </div>
-      </Modal>
+            variant="primary"
+            disabled={busy || !reason.trim()}
+            onClick={() =>
+              onBlock({ reason: reason.trim(), ...(by.trim() ? { by: by.trim() } : {}) })
+            }
+          >
+            {S.company.tickets.block}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <Input
+          size="sm"
+          label={S.company.tickets.blockedReason}
+          required
+          value={reason}
+          info={S.company.tickets.blockReasonHint}
+          autoFocus
+          onChange={(e) => form.patch({ reason: e.target.value })}
+        />
+        <Input
+          size="sm"
+          label={S.company.tickets.blockedBy}
+          value={by}
+          info={S.company.tickets.blockByHint}
+          className="font-mono"
+          onChange={(e) => form.patch({ by: e.target.value })}
+        />
+      </div>
     </Modal>
   );
 }

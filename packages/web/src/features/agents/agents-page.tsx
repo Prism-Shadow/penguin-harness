@@ -14,46 +14,33 @@
  * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
  * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
  * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
- * (tooltip shows the full name); "Create Agent" fills in name + description and picks what the
- * new Agent starts with — plugins from the library (each one's skills and hook package), and
- * Skills from a project directory's .agents/skills or .claude/skills — through form-variant
- * dropdowns over the shared multi-select panel, with select all / select none. A plain new Agent
- * otherwise starts with none.
+ * (tooltip shows the full name); "Create Agent" (create-agent-dialog.tsx) fills in name +
+ * description and picks what the new Agent starts with — plugins from the library (each one's
+ * skills and hook package), and Skills from a project directory's .agents/skills or
+ * .claude/skills. A plain new Agent otherwise starts with none.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
-import type {
-  AgentCreateRequest,
-  PluginItem,
-  SkillMetadataItem,
-} from "@prismshadow/penguin-server/api";
+import type { PluginItem } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
   Badge,
   Button,
   Card,
-  CloseIcon,
   ConfirmModal,
   EmptyState,
-  FieldError,
-  FieldHint,
-  FieldLabel,
-  FormPicker,
   GlyphIcon,
-  HiddenFileInput,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
   Input,
-  Modal,
   PageFrame,
   PageHeader,
   RuledSection,
   Skeleton,
   SkeletonCard,
   Sparkline,
-  Textarea,
   TodoNotice,
   UpdatePill,
   toastError,
@@ -64,7 +51,6 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { OPENS_DETAIL_CLASS, cardBodyClick } from "../../lib/card-open";
-import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges } from "../../lib/use-update-badges";
@@ -73,26 +59,17 @@ import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/b
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { prepareNewChatDraft } from "../chat/new-chat";
-import {
-  SNAPSHOT_ACCEPT,
-  SNAPSHOT_BUTTON_CLASS,
-  agentIdFromSnapshotName,
-  fileToBase64,
-} from "./snapshot-file";
-import { WorkspaceSelect } from "../chat/workspace-select";
-import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
-import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { mergeAgents } from "../../lib/benchmark-merge";
 import type { AgentSource } from "../../lib/benchmark-merge";
 import { useSessions } from "../../state/sessions";
 import { employmentsOf, splitByEmployment } from "./agent-employment";
+import { CreateAgentDialog } from "./create-agent-dialog";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
 const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
@@ -228,11 +205,6 @@ export function AgentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   /** The "Create with AI" dialog, a separate surface from the form above: neither path is a step of the other. */
   const [aiOpen, setAiOpen] = useState(false);
-  const [agentId, setAgentId] = useState("");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  // The id is the only validated create field; format problems and the server's duplicate-id rejection land beside it.
-  const [idError, setIdError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   /**
    * Plugin library for the create dialog's picker, flattened out of its groups: the picker is a
@@ -243,59 +215,8 @@ export function AgentsPage() {
   const [libraryError, setLibraryError] = useState<string | null>(null);
   /** In-flight guard for that fetch (StrictMode runs the effect twice), released on failure so reopening retries. */
   const libraryPending = useRef(false);
-  /** Library plugins to install into the new Agent (each one's skills and hook package), in pick order. */
-  const [createPlugins, setCreatePlugins] = useState<string[]>([]);
-  const [pluginsOpen, setPluginsOpen] = useState(false);
-  /**
-   * Skills imported from a directory instead of the library, kept as its own field rather than
-   * merged into the list above: the server lets a directory Skill and a library plugin's Skill
-   * share a name (the directory one wins), which one flat list of picked names could not express.
-   */
-  const [skillsDir, setSkillsDir] = useState("");
-  const [dirSkills, setDirSkills] = useState<SkillMetadataItem[] | null>(null);
-  const [dirSkillsError, setDirSkillsError] = useState<string | null>(null);
-  const [createDirSkills, setCreateDirSkills] = useState<string[]>([]);
-  const [dirSkillsOpen, setDirSkillsOpen] = useState(false);
-  /**
-   * Snapshot package to initialize the new Agent from (null = default template). Picking one
-   * hides the two seed fields: the package carries its own skills and hooks, and the server
-   * rejects the combination.
-   */
-  const [snapshotFile, setSnapshotFile] = useState<File | null>(null);
-
-  /** Open the create dialog: don't keep the previous draft, always start from an empty form. */
-  const openCreate = () => {
-    setAgentId("");
-    setName("");
-    setDescription("");
-    setIdError(undefined);
-    setCreatePlugins([]);
-    setPluginsOpen(false);
-    setSkillsDir("");
-    setDirSkills(null);
-    setDirSkillsError(null);
-    setCreateDirSkills([]);
-    setDirSkillsOpen(false);
-    setSnapshotFile(null);
-    setCreateOpen(true);
-  };
-
-  const onPickSnapshot = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setSnapshotFile(file);
-    // Seeding and the package are mutually exclusive; drop any picks made before.
-    setCreatePlugins([]);
-    setSkillsDir("");
-    setCreateDirSkills([]);
-    // Suggest the id from the package name (exported as <agentId>-v<n>.tar.gz) while the
-    // field is still empty; the suggestion stays editable, an unusable derivation is dropped.
-    if (!agentId.trim()) {
-      const derived = agentIdFromSnapshotName(file.name);
-      if (SEMANTIC_ID_PATTERN.test(derived)) setAgentId(derived);
-    }
-  };
+  /** Open the create dialog. Its form mounts with it, so every opening starts empty. */
+  const openCreate = () => setCreateOpen(true);
 
   // The library is fetched the first time the dialog opens, not on page load: the list itself
   // never needs it, and a failure here must not keep the dialog from creating a plain Agent —
@@ -333,91 +254,12 @@ export function AgentsPage() {
 
   const projectId = currentProject?.projectId;
 
-  // Re-read whenever the picked directory changes. A directory that carries no Skills answers with
-  // an empty list, which the field states in place of its hint rather than treating as a failure.
-  useEffect(() => {
-    if (!createOpen || !skillsDir || !projectId) {
-      setDirSkills(null);
-      setDirSkillsError(null);
-      return;
-    }
-    let cancelled = false;
-    // The previous directory's Skills go first: keeping them would leave their rows on offer and
-    // their picked names submittable against the newly picked directory.
-    setDirSkills(null);
-    setDirSkillsError(null);
-    api
-      .listDirectorySkills(projectId, skillsDir)
-      .then((res) => {
-        if (!cancelled) setDirSkills(res.skills);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setDirSkills(null);
-        setDirSkillsError(apiErrorText(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [createOpen, projectId, skillsDir]);
-
-  // Picked names are dropped when they are no longer on offer, so switching directories cannot
-  // submit a name the new one does not carry.
-  useEffect(() => {
-    if (dirSkills === null) {
-      setCreateDirSkills((prev) => (prev.length === 0 ? prev : []));
-      return;
-    }
-    const available = new Set(dirSkills.map((skill) => skill.name));
-    setCreateDirSkills((prev) => {
-      const next = prev.filter((name) => available.has(name));
-      return next.length === prev.length ? prev : next;
-    });
-  }, [dirSkills]);
-
-  const create = async () => {
-    if (!projectId) return;
-    const id = agentId.trim();
-    if (!id) {
-      setIdError(S.common.requiredField);
-      return;
-    }
-    if (!SEMANTIC_ID_PATTERN.test(id)) {
-      setIdError(S.agent.idHint);
-      return;
-    }
-    setBusy(true);
-    setIdError(undefined);
-    try {
-      // Name defaults to the id (leave blank to let the server fill it in from the id).
-      const body: AgentCreateRequest = { agentId: id };
-      if (name.trim()) body.name = name.trim();
-      if (description.trim()) body.description = description.trim();
-      if (snapshotFile !== null) {
-        // Initialize from the picked package; seeding is mutually exclusive (the package
-        // carries its own skills and hooks), and picking the file already cleared those fields.
-        body.dataBase64 = await fileToBase64(snapshotFile);
-      } else {
-        // Picked plugins are seeded server-side inside the same create call, so a failure leaves
-        // no half-equipped Agent behind.
-        if (createPlugins.length > 0) body.plugins = createPlugins;
-        // The pair only means anything together, so it is sent only when a directory actually
-        // contributed something — picking a directory and then no Skills from it is a plain Agent.
-        if (skillsDir && createDirSkills.length > 0) {
-          body.skillsDirectory = skillsDir;
-          body.directorySkills = createDirSkills;
-        }
-      }
-      const res = await api.createAgent(projectId, body);
-      setCreateOpen(false);
-      await reloadAgents();
-      setCurrentAgentId(res.agent.agentId);
-      navigate(`/agents/${res.agent.agentId}`);
-    } catch (e) {
-      setIdError(apiErrorText(e));
-    } finally {
-      setBusy(false);
-    }
+  /** The dialog created an Agent: close it, and land on the new Agent's settings. */
+  const onCreated = async (createdId: string) => {
+    setCreateOpen(false);
+    await reloadAgents();
+    setCurrentAgentId(createdId);
+    navigate(`/agents/${createdId}`);
   };
 
   useEffect(() => {
@@ -915,197 +757,14 @@ export function AgentsPage() {
         </>
       )}
 
-      <Modal
+      <CreateAgentDialog
         open={createOpen}
-        title={S.agent.createTitle}
+        projectId={projectId ?? null}
+        library={library}
+        libraryError={libraryError}
         onClose={() => setCreateOpen(false)}
-        footer={
-          <>
-            <Button size="sm" onClick={() => setCreateOpen(false)}>
-              {S.common.cancel}
-            </Button>
-            <Button size="sm" variant="primary" disabled={busy} onClick={() => void create()}>
-              {S.common.create}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          {/* The name comes first and the id is derived from it: an id is the harder half to
-              invent, and naming the Agent is where anyone starts anyway. */}
-          <Input
-            label={S.common.name}
-            size="sm"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            hint={S.agent.nameHint}
-            autoFocus
-          />
-          <SemanticIdField
-            projectId={projectId ?? null}
-            kind="agent"
-            label={S.agent.id}
-            hint={S.agent.idHint}
-            generateHint={S.agent.idGenerateHint}
-            value={agentId}
-            source={name.trim() || description}
-            error={idError}
-            disabled={busy}
-            onChange={(id) => {
-              setAgentId(id);
-              setIdError(undefined);
-            }}
-          />
-          <Textarea
-            label={S.agent.description}
-            size="sm"
-            rows={3}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          {/* Optional snapshot seed: the new Agent starts from an exported package instead of
-              the default template. Picking one hides the two seed fields below — the package
-              carries its own skills and hooks, and the server rejects the combination. */}
-          <div>
-            <FieldLabel>{S.agent.createSnapshot}</FieldLabel>
-            {snapshotFile === null ? (
-              <label
-                className={`${SNAPSHOT_BUTTON_CLASS} ${busy ? "pointer-events-none opacity-60" : ""}`}
-              >
-                <HiddenFileInput
-                  accept={SNAPSHOT_ACCEPT}
-                  disabled={busy}
-                  onChange={onPickSnapshot}
-                />
-                {S.agent.createSnapshotPick}
-              </label>
-            ) : (
-              <div className="flex min-w-0 items-center gap-1.5">
-                <span className="min-w-0 truncate rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-900">
-                  {snapshotFile.name}
-                </span>
-                <button
-                  type="button"
-                  data-tooltip={S.agent.createSnapshotClear}
-                  aria-label={S.agent.createSnapshotClear}
-                  disabled={busy}
-                  onClick={() => setSnapshotFile(null)}
-                  className="shrink-0 rounded-md p-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <CloseIcon size={12} />
-                </button>
-              </div>
-            )}
-            <FieldHint>
-              {snapshotFile === null ? S.agent.createSnapshotHint : S.agent.createSnapshotSkillsOff}
-            </FieldHint>
-          </div>
-          {snapshotFile === null && (
-            <>
-              {/* Seed plugins: the form-variant picker (same trigger as the schedule dialog's
-              model and workspace pickers) over the shared multi-select panel, so a dialog field
-              and the composer's dropdown offer one list with one set of row semantics. */}
-              <div>
-                <FieldLabel>{S.agent.createPlugins}</FieldLabel>
-                <FormPicker
-                  size="sm"
-                  open={pluginsOpen}
-                  setOpen={setPluginsOpen}
-                  label={
-                    createPlugins.length === 0
-                      ? S.agent.createPluginsPlaceholder
-                      : S.agent.createPluginsPicked(createPlugins.length)
-                  }
-                  muted={createPlugins.length === 0}
-                  ariaLabel={S.agent.createPlugins}
-                  disabled={busy}
-                  menuClass="w-[26rem]"
-                >
-                  <SkillPickList
-                    skills={library ?? []}
-                    selected={createPlugins}
-                    onToggle={(pluginName) =>
-                      setCreatePlugins((prev) => toggleSkillName(prev, pluginName))
-                    }
-                    onSelectAll={(names) => setCreatePlugins((prev) => addSkillNames(prev, names))}
-                    onSelectNone={(names) =>
-                      setCreatePlugins((prev) => removeSkillNames(prev, names))
-                    }
-                    emptyHint={library === null ? S.common.loading : S.agent.createPluginsEmpty}
-                    searchPlaceholder={S.plugins.searchPlaceholder}
-                  />
-                </FormPicker>
-                {libraryError ? (
-                  <FieldError>{libraryError}</FieldError>
-                ) : (
-                  <FieldHint>{S.agent.createPluginsHint}</FieldHint>
-                )}
-              </div>
-              {/* Skills a checkout already carries: pick the project directory, then pick from what
-              its .agents/skills / .claude/skills hold. Separate from the library field because a
-              directory Skill may share a library plugin's Skill name and still be the one installed. */}
-              <div>
-                <FieldLabel>{S.agent.createDirSkills}</FieldLabel>
-                <WorkspaceSelect
-                  projectId={projectId ?? ""}
-                  workspace={skillsDir}
-                  onChange={setSkillsDir}
-                  variant="form"
-                  fieldLabel={S.agent.createDirSkills}
-                  emptyLabel={S.agent.createDirSkillsPick}
-                  clearLabel={S.agent.createDirSkillsClear}
-                />
-                {skillsDir && dirSkills !== null && dirSkills.length > 0 && (
-                  <div className="mt-2">
-                    <FormPicker
-                      size="sm"
-                      open={dirSkillsOpen}
-                      setOpen={setDirSkillsOpen}
-                      label={
-                        createDirSkills.length === 0
-                          ? S.agent.createSkillsPlaceholder
-                          : S.agent.createSkillsPicked(createDirSkills.length)
-                      }
-                      muted={createDirSkills.length === 0}
-                      ariaLabel={S.agent.createDirSkills}
-                      disabled={busy}
-                      menuClass="w-[26rem]"
-                    >
-                      <SkillPickList
-                        skills={dirSkills}
-                        selected={createDirSkills}
-                        onToggle={(skillName) =>
-                          setCreateDirSkills((prev) => toggleSkillName(prev, skillName))
-                        }
-                        onSelectAll={(names) =>
-                          setCreateDirSkills((prev) => addSkillNames(prev, names))
-                        }
-                        onSelectNone={(names) =>
-                          setCreateDirSkills((prev) => removeSkillNames(prev, names))
-                        }
-                        emptyHint={S.agent.createDirSkillsEmpty}
-                      />
-                    </FormPicker>
-                  </div>
-                )}
-                {dirSkillsError ? (
-                  <FieldError>{dirSkillsError}</FieldError>
-                ) : (
-                  <FieldHint>
-                    {!skillsDir
-                      ? S.agent.createDirSkillsHint
-                      : dirSkills === null
-                        ? S.common.loading
-                        : dirSkills.length === 0
-                          ? S.agent.createDirSkillsEmpty
-                          : S.agent.createDirSkillsFound(dirSkills.length)}
-                  </FieldHint>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </Modal>
+        onCreated={onCreated}
+      />
 
       {/* The AI path, its own dialog rather than a mode of the form above: the draft plus the
           fixed tail lands in a new conversation with the Project's default agent, which runs the

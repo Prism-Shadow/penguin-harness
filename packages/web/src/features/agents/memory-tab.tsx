@@ -20,6 +20,11 @@
  * never drags an unrelated half-finished edit along with it. Off keeps every file and this tab
  * fully usable; it only stops Memory from entering the context and from preparing directories
  * for new Sessions.
+ *
+ * The two prompts are one typed form (the settings commit model): Save is live only while one
+ * of them differs from the stored text, Reset puts the stored text back, and leaving the tab
+ * with unsaved edits asks first. A reload of the tab's data moves what they are compared with
+ * and keeps what is being typed.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, RefObject } from "react";
@@ -59,6 +64,7 @@ import {
   toastError,
   toastSuccess,
   useCopied,
+  useFormDraft,
 } from "@prismshadow/penguin-ui";
 import type { SheetSnap } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -68,7 +74,6 @@ import { formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { useReportDirty, useSaveConfirm } from "./save-confirm";
 import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
@@ -123,6 +128,15 @@ interface ScopeGroup {
   files: MemoryFileInfo[];
 }
 
+/** The two memory prompts as one draft: the always-injected half and the Workspace addendum. */
+interface MemoryPrompts {
+  prompt: string;
+  workspace: string;
+}
+
+/** The prompts' baseline until the stored ones arrive. */
+const NO_PROMPTS: MemoryPrompts = { prompt: "", workspace: "" };
+
 /** A memory selected for an action (view drawer / delete confirm). */
 interface Selected {
   scope: MemoryScopeInfo;
@@ -132,13 +146,10 @@ interface Selected {
 export function MemoryTab({
   agentId,
   onConfigChanged,
-  onDirtyChange,
 }: {
   agentId: string;
   /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them (e.g. the inserted placeholder). */
   onConfigChanged?: () => void;
-  /** Whether the two memory prompts hold unsaved edits (the page asks before leaving the tab). */
-  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
@@ -158,22 +169,15 @@ export function MemoryTab({
   const [switchBusy, setSwitchBusy] = useState(false);
   const collapseKey = userId && projectId ? collapsedStoreKey(userId, projectId, agentId) : null;
   const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsedScopes(collapseKey));
-  const [memoryPrompt, setMemoryPrompt] = useState("");
-  const [workspacePrompt, setWorkspacePrompt] = useState("");
-  /** The prompts as last loaded or saved, the baseline the unsaved-edits flag compares against. */
-  const [storedPrompts, setStoredPrompts] = useState<{ prompt: string; workspace: string } | null>(
-    null,
-  );
+  /** The prompts as last loaded or saved: what the draft below is compared with. */
+  const [storedPrompts, setStoredPrompts] = useState<MemoryPrompts | null>(null);
+  // Compared exactly: whitespace is part of a prompt.
+  const prompts = useFormDraft(storedPrompts ?? NO_PROMPTS);
+  const [savingPrompts, setSavingPrompts] = useState(false);
   const mainPromptRef = useRef<HTMLTextAreaElement>(null);
   const workspacePromptRef = useRef<HTMLTextAreaElement>(null);
   // Chip clicks steal focus, so track the last-focused prompt field instead of the current one.
   const [lastPromptField, setLastPromptField] = useState<"main" | "workspace">("main");
-  const { requestSave, element: saveConfirm } = useSaveConfirm();
-  useReportDirty(
-    storedPrompts !== null &&
-      (memoryPrompt !== storedPrompts.prompt || workspacePrompt !== storedPrompts.workspace),
-    onDirtyChange,
-  );
   // Open flag and content are separate: the Sheet animates out on close, and nulling the
   // content with it would empty the panel mid-exit. The stale content is simply kept.
   const [viewOpen, setViewOpen] = useState(false);
@@ -225,8 +229,7 @@ export function MemoryTab({
         api.getMemoryOverview(projectId, agentId),
         api.getAgentConfig(projectId, agentId),
       ]);
-      setMemoryPrompt(configView.config.memory.prompt);
-      setWorkspacePrompt(configView.config.memory.workspacePrompt);
+      // A clean draft follows the stored prompts; one being typed keeps its text.
       setStoredPrompts({
         prompt: configView.config.memory.prompt,
         workspace: configView.config.memory.workspacePrompt,
@@ -323,26 +326,30 @@ export function MemoryTab({
     });
   };
 
-  /** Saves both memory prompts through the ordinary config write (confirm-first, like the other settings tabs). */
-  const savePrompts = () =>
-    requestSave(() => {
-      if (!projectId) return;
-      void api
-        .putAgentConfig(projectId, agentId, {
-          config: { memory: { prompt: memoryPrompt, workspacePrompt } },
-        })
-        .then((res) => {
-          setMemoryPrompt(res.config.memory.prompt);
-          setWorkspacePrompt(res.config.memory.workspacePrompt);
-          setStoredPrompts({
-            prompt: res.config.memory.prompt,
-            workspace: res.config.memory.workspacePrompt,
-          });
-          toastSuccess(S.agent.savedTakesEffect);
-          onConfigChanged?.();
-        })
-        .catch((e: unknown) => toastError(apiErrorText(e)));
-    });
+  /** Saves both memory prompts through the ordinary config write; a refusal keeps them as typed. */
+  const savePrompts = async () => {
+    if (!projectId || !prompts.dirty || savingPrompts) return;
+    setSavingPrompts(true);
+    try {
+      const res = await api.putAgentConfig(projectId, agentId, {
+        config: {
+          memory: { prompt: prompts.draft.prompt, workspacePrompt: prompts.draft.workspace },
+        },
+      });
+      const stored = {
+        prompt: res.config.memory.prompt,
+        workspace: res.config.memory.workspacePrompt,
+      };
+      setStoredPrompts(stored);
+      prompts.adopt(stored);
+      toastSuccess(S.agent.savedTakesEffect);
+      onConfigChanged?.();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setSavingPrompts(false);
+    }
+  };
 
   const openView = async (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
     if (!projectId) return;
@@ -699,9 +706,9 @@ export function MemoryTab({
           mono
           size="sm"
           rows={12}
-          value={memoryPrompt}
+          value={prompts.draft.prompt}
           onFocus={() => setLastPromptField("main")}
-          onChange={(e) => setMemoryPrompt(e.target.value)}
+          onChange={(e) => prompts.patch({ prompt: e.target.value })}
         />
         <Textarea
           ref={workspacePromptRef}
@@ -709,9 +716,9 @@ export function MemoryTab({
           mono
           size="sm"
           rows={6}
-          value={workspacePrompt}
+          value={prompts.draft.workspace}
           onFocus={() => setLastPromptField("workspace")}
-          onChange={(e) => setWorkspacePrompt(e.target.value)}
+          onChange={(e) => prompts.patch({ workspace: e.target.value })}
         />
         {/* Placeholder reference, the Prompt tab's convention — a chip inserts into whichever field was focused last.
             Inside the card it takes the step below the card's radius. */}
@@ -724,11 +731,16 @@ export function MemoryTab({
                   type="button"
                   onClick={() =>
                     lastPromptField === "main"
-                      ? insertPromptToken(mainPromptRef, memoryPrompt, setMemoryPrompt, token!)
+                      ? insertPromptToken(
+                          mainPromptRef,
+                          prompts.draft.prompt,
+                          (prompt) => prompts.patch({ prompt }),
+                          token!,
+                        )
                       : insertPromptToken(
                           workspacePromptRef,
-                          workspacePrompt,
-                          setWorkspacePrompt,
+                          prompts.draft.workspace,
+                          (workspace) => prompts.patch({ workspace }),
                           token!,
                         )
                   }
@@ -742,14 +754,20 @@ export function MemoryTab({
             ))}
           </ul>
         </div>
-        <div className="flex justify-end">
-          <Button size="sm" variant="primary" onClick={savePrompts}>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" disabled={!prompts.dirty || savingPrompts} onClick={prompts.reset}>
+            {S.common.reset}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={storedPrompts === null || !prompts.dirty || savingPrompts}
+            onClick={() => void savePrompts()}
+          >
             {S.common.save}
           </Button>
         </div>
       </Card>
-
-      {saveConfirm}
 
       {/* The view: a right Drawer on desktop, a bottom Sheet below the breakpoint (the same split
           as the chat page's panels — Sheet brings the grab handle, snap points and swipe-down).

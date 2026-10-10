@@ -16,6 +16,12 @@
  * failed refresh keeps the list on screen under one error line with its retry; a document
  * that fails to load says so inside its pane with the list still usable. The selection is
  * component state — the URL stays at the page.
+ *
+ * The editor follows the settings commit model: Save (or `editor.save`) is live only while the
+ * text differs from the document as stored, and every way of leaving unsaved text asks first
+ * through the app's one prompt — Cancel, another document, New document (all in-page, under the
+ * handbook's own scope), and a route change, an organization switch or a reload (the app's
+ * router blocker and unload guard, which find the editor registered).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
@@ -34,8 +40,12 @@ import {
   RuledSection,
   Skeleton,
   Textarea,
+  guardLeave,
   toastError,
   toastSuccess,
+  useFormDraft,
+  useGuardedClose,
+  useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
 import type { TreeToggle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -69,6 +79,9 @@ const PANES_CLASS = "grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-[17rem_minma
 /** The size a listing row would report for content just written, before the listing is re-read. */
 const byteLength = (text: string) => new TextEncoder().encode(text).length;
 
+/** The document editor's unsaved text: what the page's in-place leaves ask about. */
+const HANDBOOK_SCOPE = "handbook";
+
 export function HandbookPage() {
   const { projectId, orgId, org } = useOrg();
   const { locale } = useLocale();
@@ -90,13 +103,11 @@ export function HandbookPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  /** A step that would throw the editor's unsaved draft away, waiting on the discard prompt. */
-  const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
   const dirty = editing && doc !== null && draft !== doc.content;
-  const guardDiscard = (go: () => void) => {
-    if (dirty) setPendingDiscard(() => go);
-    else go();
-  };
+  // While the editor holds unsaved text it is registered with the shared guard: "discard" closes
+  // it, and an in-place step that would throw the text away asks first.
+  useUnsavedChanges(dirty, { scope: HANDBOOK_SCOPE, discard: () => setEditing(false) });
+  const guardDiscard = (go: () => void) => void guardLeave(go, HANDBOOK_SCOPE);
 
   // Another organization's handbook must not linger while this one loads.
   useEffect(() => {
@@ -191,7 +202,7 @@ export function HandbookPage() {
   };
 
   const save = async () => {
-    if (doc === null || saving) return;
+    if (doc === null || saving || !dirty) return;
     setSaving(true);
     try {
       const res = await api.putOrgHandbookFile(projectId, orgId, doc.path, draft);
@@ -399,7 +410,12 @@ export function HandbookPage() {
                   >
                     {S.common.cancel}
                   </Button>
-                  <Button size="sm" variant="primary" disabled={saving} onClick={() => void save()}>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={saving || !dirty}
+                    onClick={() => void save()}
+                  >
                     {saving ? S.common.saving : S.common.save}
                   </Button>
                 </>
@@ -481,36 +497,11 @@ export function HandbookPage() {
           {S.company.handbook.deleteConfirm(selected)}
         </p>
       </ConfirmModal>
-      <ConfirmModal
-        open={pendingDiscard !== null}
-        title={S.common.discardTitle}
-        confirmLabel={S.common.discard}
-        cancelLabel={S.common.cancel}
-        onClose={() => setPendingDiscard(null)}
-        onConfirm={() => {
-          const go = pendingDiscard;
-          setPendingDiscard(null);
-          go?.();
-        }}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.common.discardBody}</p>
-      </ConfirmModal>
     </OrgPage>
   );
 }
 
-/**
- * The new-document dialog: one path field, checked here before the request — the server's
- * own rule, a name already taken — so the failure lands under the field; anything the server
- * still refuses lands in a strip above the footer with its retry.
- */
-function NewDocumentDialog({
-  open,
-  folder,
-  existing,
-  onClose,
-  onCreate,
-}: {
+interface NewDocumentDialogProps {
   open: boolean;
   /** What the field starts with: the selected document's folder as a `<folder>/` prefix, or "". */
   folder: string;
@@ -519,37 +510,47 @@ function NewDocumentDialog({
   onClose: () => void;
   /** Creates the file; a rejection is shown in the dialog. */
   onCreate: (path: string) => Promise<void>;
-}) {
-  const [path, setPath] = useState("");
-  const [pathError, setPathError] = useState<string | undefined>(undefined);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+}
 
+/**
+ * The new-document dialog: one path field, checked here as it is typed — the server's own rule,
+ * a name already taken — so the problem is said under the field and Create waits for a path
+ * that names a document; anything the server still refuses lands in a strip above the footer
+ * with its retry.
+ */
+function NewDocumentDialog({ open, ...props }: NewDocumentDialogProps) {
   // No draft is kept: the field starts from the selected document's folder every time the
   // dialog opens, so a document lands beside its siblings unless the path is typed over.
-  useEffect(() => {
-    if (!open) return;
-    setPath(folder);
-    setPathError(undefined);
-    setFormError(null);
-  }, [open, folder]);
+  return open ? <NewDocumentForm {...props} /> : null;
+}
+
+function NewDocumentForm({
+  folder,
+  existing,
+  onClose,
+  onCreate,
+}: Omit<NewDocumentDialogProps, "open">) {
+  const form = useFormDraft(folder);
+  const path = form.draft;
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
+  const rel = completeHandbookPath(path);
+  // A path that is only a folder names no document: the field starts as one, and completing
+  // `decisions/` to `decisions.md` would create a file beside the folder rather than in it. That
+  // holds Create quietly (the field is required); a path the rule refuses, or one taken, says so.
+  const namesDocument = rel !== "" && !path.trim().endsWith("/");
+  const pathError = !namesDocument
+    ? undefined
+    : !isHandbookPath(rel)
+      ? S.company.handbook.pathInvalid
+      : existing.has(rel)
+        ? S.company.handbook.pathExists
+        : undefined;
+  const valid = namesDocument && pathError === undefined;
 
   const submit = async () => {
-    const rel = completeHandbookPath(path);
-    // A path that is only a folder names no document: the field starts as one, and completing
-    // `decisions/` to `decisions.md` would create a file beside the folder rather than in it.
-    if (rel === "" || path.trim().endsWith("/")) {
-      setPathError(S.common.requiredField);
-      return;
-    }
-    if (!isHandbookPath(rel)) {
-      setPathError(S.company.handbook.pathInvalid);
-      return;
-    }
-    if (existing.has(rel)) {
-      setPathError(S.company.handbook.pathExists);
-      return;
-    }
+    if (!valid || busy) return;
     setBusy(true);
     setFormError(null);
     try {
@@ -563,15 +564,20 @@ function NewDocumentDialog({
 
   return (
     <Modal
-      open={open}
+      open
       title={S.company.handbook.newDocument}
-      onClose={busy ? () => undefined : onClose}
+      onClose={requestClose}
       footer={
         <>
-          <Button size="sm" onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={requestClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy || !valid}
+            onClick={() => void submit()}
+          >
             {busy ? S.company.handbook.creating : S.common.create}
           </Button>
         </>
@@ -589,10 +595,7 @@ function NewDocumentDialog({
           className="font-mono"
           autoFocus
           disabled={busy}
-          onChange={(e) => {
-            setPath(e.target.value);
-            setPathError(undefined);
-          }}
+          onChange={(e) => form.setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();

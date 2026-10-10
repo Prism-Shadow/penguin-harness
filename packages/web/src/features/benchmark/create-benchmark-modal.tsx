@@ -5,6 +5,11 @@
  * the form keeps a first-timer on the rails — format hints stay visible while typing, and the
  * semantics (what a rubric is, why it never reaches the tested agent, what makes one
  * discriminating) sit behind the "?" marks. Mounted fresh on every open.
+ *
+ * Create is live once every required field of the form and of each case is filled and nothing
+ * is malformed — a malformed id or run count is said under its field as it is typed. Closing
+ * the form with anything typed (cases included) asks first; nothing closes it while the write
+ * is in flight.
  */
 import { useRef, useState } from "react";
 import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
@@ -19,7 +24,10 @@ import {
   Modal,
   PlusIcon,
   Textarea,
+  discardUnsaved,
   toastSuccess,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -64,6 +72,52 @@ const digits = (v: string) => v.replace(/[^\d]/g, "");
 const errorProp = (message: string | undefined) =>
   message !== undefined ? { error: message } : {};
 
+/** The form as typed: the Benchmark's own fields and its cases. */
+interface BenchmarkDraft {
+  title: string;
+  id: string;
+  description: string;
+  runs: string;
+  cases: CaseDraft[];
+}
+
+/** A draft as a create compares it: text trimmed, the cases without their React keys. */
+const normalizedDraft = (d: BenchmarkDraft) => ({
+  title: d.title.trim(),
+  id: d.id.trim(),
+  description: d.description.trim(),
+  runs: d.runs,
+  cases: d.cases.map((c) => ({
+    slug: c.slug.trim(),
+    title: c.title.trim(),
+    statement: c.statement.trim(),
+    rubric: c.rubric.trim(),
+  })),
+});
+
+/** What is wrong with the draft, per field and per case; required-and-empty included. */
+function validateDraft(d: BenchmarkDraft): FormErrors {
+  const next: FormErrors = { cases: {} };
+  if (d.title.trim() === "") next.title = S.common.requiredField;
+  if (d.id.trim() === "") next.id = S.common.requiredField;
+  else if (!ID_PATTERN.test(d.id.trim())) next.id = S.benchmark.invalidId;
+  if (!isValidRuns(d.runs)) next.runs = S.benchmark.invalidRuns;
+  for (const c of d.cases) {
+    const e: CaseErrors = {};
+    if (c.slug.trim() === "") e.slug = S.common.requiredField;
+    else if (!ID_PATTERN.test(c.slug.trim())) e.slug = S.benchmark.invalidId;
+    if (c.title.trim() === "") e.title = S.common.requiredField;
+    if (c.statement.trim() === "") e.statement = S.common.requiredField;
+    if (c.rubric.trim() === "") e.rubric = S.common.requiredField;
+    next.cases[c.key] = e;
+  }
+  return next;
+}
+
+/** An error as a field shows it: a malformed value; an empty required field has its asterisk. */
+const shownError = (message: string | undefined) =>
+  message === S.common.requiredField ? undefined : message;
+
 function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmarkModalProps) {
   const keyRef = useRef(0);
   const newCase = (): CaseDraft => ({
@@ -73,45 +127,39 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
     statement: "",
     rubric: "",
   });
-  const [title, setTitle] = useState("");
-  const [id, setId] = useState("");
-  const [description, setDescription] = useState("");
-  const [runs, setRuns] = useState("1");
-  const [cases, setCases] = useState<CaseDraft[]>(() => [newCase()]);
-  const [errors, setErrors] = useState<FormErrors>({ cases: {} });
+  // The blank form, built once: a new case takes the next stable key.
+  const [opening] = useState<BenchmarkDraft>(() => ({
+    title: "",
+    id: "",
+    description: "",
+    runs: "1",
+    cases: [newCase()],
+  }));
+  const form = useFormDraft(opening, { normalize: normalizedDraft });
+  const { title, id, description, runs, cases } = form.draft;
+  /** The id the server refused as taken; cleared by the next edit of the id. */
+  const [idTaken, setIdTaken] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
   const updateCase = (key: number, patch: Partial<CaseDraft>) =>
-    setCases((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+    form.setDraft((prev) => ({
+      ...prev,
+      cases: prev.cases.map((c) => (c.key === key ? { ...c, ...patch } : c)),
+    }));
+  const setCases = (next: (prev: CaseDraft[]) => CaseDraft[]) =>
+    form.setDraft((prev) => ({ ...prev, cases: next(prev.cases) }));
 
-  const validate = (): FormErrors => {
-    const next: FormErrors = { cases: {} };
-    if (title.trim() === "") next.title = S.common.requiredField;
-    if (id.trim() === "") next.id = S.common.requiredField;
-    else if (!ID_PATTERN.test(id.trim())) next.id = S.benchmark.invalidId;
-    if (!isValidRuns(runs)) next.runs = S.benchmark.invalidRuns;
-    for (const c of cases) {
-      const e: CaseErrors = {};
-      if (c.slug.trim() === "") e.slug = S.common.requiredField;
-      else if (!ID_PATTERN.test(c.slug.trim())) e.slug = S.benchmark.invalidId;
-      if (c.title.trim() === "") e.title = S.common.requiredField;
-      if (c.statement.trim() === "") e.statement = S.common.requiredField;
-      if (c.rubric.trim() === "") e.rubric = S.common.requiredField;
-      next.cases[c.key] = e;
-    }
-    return next;
-  };
-  const hasErrors = (e: FormErrors) =>
-    e.id !== undefined ||
-    e.title !== undefined ||
-    e.runs !== undefined ||
-    Object.values(e.cases).some((c) => Object.keys(c).length > 0);
+  const errors = validateDraft(form.draft);
+  const valid =
+    errors.id === undefined &&
+    errors.title === undefined &&
+    errors.runs === undefined &&
+    Object.values(errors.cases).every((c) => Object.keys(c).length === 0);
 
   const submit = async () => {
-    const next = validate();
-    setErrors(next);
-    if (hasErrors(next)) return;
+    if (!valid || busy) return;
     setBusy(true);
     setSubmitError(null);
     try {
@@ -129,11 +177,14 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
         })),
       });
       toastSuccess(S.benchmark.created);
+      // Saved: forget the form now, not at unmount. The page opens the new Benchmark next, and the
+      // leave guard would hold that over a form with nothing left unsaved.
+      discardUnsaved(form.scope);
       onCreated(res.benchmark);
       onClose();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        setErrors((prev) => ({ ...prev, id: S.benchmark.idExists }));
+        setIdTaken(true);
       } else {
         setSubmitError(apiErrorText(e));
       }
@@ -146,14 +197,19 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
     <Modal
       open
       title={S.benchmark.manualCreateTitle}
-      onClose={onClose}
+      onClose={requestClose}
       widthClass="sm:max-w-2xl"
       footer={
         <>
-          <Button size="sm" onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={requestClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy || !valid}
+            onClick={() => void submit()}
+          >
             {busy ? S.common.saving : S.benchmark.createSubmit}
           </Button>
         </>
@@ -167,8 +223,8 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
           label={S.benchmark.titleField}
           required
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          {...errorProp(errors.title)}
+          onChange={(e) => form.patch({ title: e.target.value })}
+          {...errorProp(shownError(errors.title))}
         />
         <SemanticIdField
           projectId={projectId}
@@ -178,11 +234,11 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
           generateHint={S.benchmark.idGenerateHint}
           value={id}
           source={title.trim() || description}
-          error={errors.id}
+          error={idTaken ? S.benchmark.idExists : shownError(errors.id)}
           disabled={busy}
           onChange={(next) => {
-            setId(next);
-            setErrors((prev) => ({ ...prev, id: undefined }));
+            form.patch({ id: next });
+            setIdTaken(false);
           }}
         />
         <Textarea
@@ -190,7 +246,7 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
           hint={S.benchmark.descriptionHint}
           rows={2}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => form.patch({ description: e.target.value })}
         />
         <Input
           label={S.benchmark.runsField}
@@ -199,8 +255,8 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
           infoLabel={S.benchmark.runsField}
           inputMode="numeric"
           value={runs}
-          onChange={(e) => setRuns(digits(e.target.value))}
-          {...errorProp(errors.runs)}
+          onChange={(e) => form.patch({ runs: digits(e.target.value) })}
+          {...errorProp(shownError(errors.runs))}
         />
 
         <div>
@@ -245,7 +301,7 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
                       value={c.slug}
                       className="font-mono"
                       onChange={(event) => updateCase(c.key, { slug: event.target.value })}
-                      {...errorProp(e.slug)}
+                      {...errorProp(shownError(e.slug))}
                     />
                     <Input
                       size="sm"
@@ -253,7 +309,7 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
                       required
                       value={c.title}
                       onChange={(event) => updateCase(c.key, { title: event.target.value })}
-                      {...errorProp(e.title)}
+                      {...errorProp(shownError(e.title))}
                     />
                   </div>
                   <div className="mt-3">
@@ -265,7 +321,7 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
                       rows={4}
                       value={c.statement}
                       onChange={(event) => updateCase(c.key, { statement: event.target.value })}
-                      {...errorProp(e.statement)}
+                      {...errorProp(shownError(e.statement))}
                     />
                   </div>
                   <div className="mt-3">
@@ -279,7 +335,7 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
                       rows={4}
                       value={c.rubric}
                       onChange={(event) => updateCase(c.key, { rubric: event.target.value })}
-                      {...errorProp(e.rubric)}
+                      {...errorProp(shownError(e.rubric))}
                     />
                   </div>
                 </div>
