@@ -1,16 +1,17 @@
 /**
- * The form that adds a host to this server's `~/.ssh/config` from the Machines page, or
- * rewrites one this app wrote: the alias, and what ssh needs to reach it. Validated here
- * the way the server validates it — one word per value, a port in range — so the person
- * hears about a bad value under the field rather than in a toast after a round trip.
- * Writing goes through the server, which appends or rewrites the block and answers the
- * machines list; the caller takes that list as its state.
+ * The ssh host form: the name a machine goes by and what ssh needs to reach it — the fields the
+ * add dialog's manual tab writes a new host with, and the dialog that configures a host this app
+ * wrote. Validated here the way the server validates it — one word per value, a port in range —
+ * so a bad value is said under its field rather than in a toast after a round trip. Only an
+ * invalid value is said in the danger ink; what a field wants is its muted hint.
  *
- * A block written by hand is shown but not saved: it may carry options this form does not
- * know, and rewriting it would drop them. The form says so and points at the file.
+ * Writing goes through the server, which appends or rewrites the block and answers the machines
+ * list; the caller takes that list as its state. A block written by hand is shown but not saved:
+ * it may carry options this form does not know, and rewriting it would drop them. The dialog says
+ * so and points at the file.
  */
 import { useState } from "react";
-import type { ChangeEvent, KeyboardEvent } from "react";
+import type { KeyboardEvent } from "react";
 import type {
   MachinesResponse,
   SshHostRequest,
@@ -21,17 +22,20 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 
-type Field = "alias" | "hostName" | "user" | "port" | "identityFile";
-type Form = Record<Field, string>;
+export type HostField = "alias" | "hostName" | "user" | "port" | "identityFile";
+export type HostForm = Record<HostField, string>;
 
-/** Adding a new host, or configuring one the server read back. */
-export type HostFormMode = { kind: "add" } | { kind: "edit"; host: SshHostResponse };
+/** A new host's form: the port filled in with ssh's own default, so the default is said. */
+export const NEW_HOST_FORM: HostForm = {
+  alias: "",
+  hostName: "",
+  user: "",
+  port: "22",
+  identityFile: "",
+};
 
-const EMPTY: Form = { alias: "", hostName: "", user: "", port: "", identityFile: "" };
-
-function initialForm(mode: HostFormMode): Form {
-  if (mode.kind === "add") return EMPTY;
-  const { host } = mode;
+/** The form a host this app wrote starts from: what its block says. */
+export function hostForm(host: SshHostResponse): HostForm {
   return {
     alias: host.alias,
     hostName: host.hostName,
@@ -45,9 +49,9 @@ function initialForm(mode: HostFormMode): Form {
 const isToken = (value: string) => value !== "" && !/[\s#]/.test(value);
 
 /** The first thing wrong with the form, per field, or nothing. */
-export function validateHostForm(form: Form): Partial<Record<Field, string>> {
+export function validateHostForm(form: HostForm): Partial<Record<HostField, string>> {
   const m = S.machines.host;
-  const errors: Partial<Record<Field, string>> = {};
+  const errors: Partial<Record<HostField, string>> = {};
   if (form.alias.trim() === "") errors.alias = S.common.requiredField;
   else if (!isToken(form.alias.trim()) || /[*?!]/.test(form.alias)) errors.alias = m.oneWord;
   if (form.hostName.trim() === "") errors.hostName = S.common.requiredField;
@@ -63,8 +67,12 @@ export function validateHostForm(form: Form): Partial<Record<Field, string>> {
   return errors;
 }
 
+/** Whether a validation found anything. */
+export const hasErrors = (errors: Partial<Record<HostField, string>>) =>
+  Object.values(errors).some((error) => error !== undefined);
+
 /** The request the server takes, from a form that passed validation. */
-export function hostRequest(form: Form): SshHostRequest {
+export function hostRequest(form: HostForm): SshHostRequest {
   const request: SshHostRequest = { alias: form.alias.trim(), hostName: form.hostName.trim() };
   if (form.user.trim() !== "") request.user = form.user.trim();
   if (form.port.trim() !== "") request.port = Number(form.port);
@@ -73,73 +81,145 @@ export function hostRequest(form: Form): SshHostRequest {
 }
 
 /**
- * Mount with a `key` that changes with the mode (the alias being configured, or "add"), so
- * the form starts from the right values each time it opens; it keeps no state across modes.
+ * The form's fields: the name, the host and the user name, the port beside the user, the key.
+ * `fixedName` shows the name but does not take it (a host being configured keeps its name);
+ * `locked` takes nothing (a block written by hand). `data-field` names each for whatever reads
+ * the markup.
+ */
+export function HostFields({
+  form,
+  errors,
+  onChange,
+  onEnter,
+  fixedName = false,
+  locked = false,
+  autoFocus = "alias",
+}: {
+  form: HostForm;
+  errors: Partial<Record<HostField, string>>;
+  onChange: (field: HostField, value: string) => void;
+  onEnter: () => void;
+  fixedName?: boolean;
+  locked?: boolean;
+  autoFocus?: HostField | null;
+}) {
+  const m = S.machines.host;
+  const field = (name: HostField) => ({
+    "data-field": name,
+    value: form[name],
+    error: errors[name],
+    onChange: (event: { target: { value: string } }) => onChange(name, event.target.value),
+    onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") onEnter();
+    },
+    autoFocus: autoFocus === name,
+    autoComplete: "off",
+    spellCheck: false,
+    className: "font-mono",
+  });
+  return (
+    <div className="space-y-3">
+      <Input
+        size="sm"
+        label={m.name}
+        required
+        hint={fixedName ? undefined : m.nameHint}
+        placeholder="build-box"
+        disabled={fixedName || locked}
+        {...field("alias")}
+      />
+      <Input
+        size="sm"
+        label={m.hostName}
+        required
+        hint={m.hostNameHint}
+        placeholder="192.168.1.20"
+        disabled={locked}
+        {...field("hostName")}
+      />
+      {/* The user name and the port share a line from sm up; a phone gives each its own. */}
+      <div className="grid gap-3 sm:grid-cols-[1fr_7rem]">
+        <Input
+          size="sm"
+          label={m.user}
+          hint={m.userHint}
+          placeholder="ubuntu"
+          disabled={locked}
+          {...field("user")}
+        />
+        <Input
+          size="sm"
+          label={m.port}
+          placeholder="22"
+          inputMode="numeric"
+          disabled={locked}
+          {...field("port")}
+        />
+      </div>
+      <Input
+        size="sm"
+        label={m.identityFile}
+        hint={m.identityFileHint}
+        placeholder="~/.ssh/id_ed25519"
+        disabled={locked}
+        {...field("identityFile")}
+      />
+    </div>
+  );
+}
+
+/**
+ * The dialog that configures a host this app wrote: the same fields, its name fixed. Mount it with
+ * a `key` of the host's name, so it starts from that host's block each time it opens.
  */
 export function SshHostDialog({
-  mode,
+  host,
   projectId,
   onClose,
   onSaved,
 }: {
-  mode: HostFormMode;
+  host: SshHostResponse;
   projectId: string;
   onClose: () => void;
   /** The machines list as the server answered it after the write. */
   onSaved: (state: MachinesResponse) => void;
 }) {
   const m = S.machines.host;
-  const editing = mode.kind === "edit";
-  const locked = mode.kind === "edit" && !mode.host.editable;
-  const [form, setForm] = useState<Form>(() => initialForm(mode));
-  const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
+  const locked = !host.editable;
+  const [form, setForm] = useState<HostForm>(() => hostForm(host));
+  const [errors, setErrors] = useState<Partial<Record<HostField, string>>>({});
   const [busy, setBusy] = useState(false);
 
-  const set = (field: Field) => (event: ChangeEvent<HTMLInputElement>) => {
-    setForm((prev) => ({ ...prev, [field]: event.target.value }));
+  const change = (field: HostField, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => (prev[field] === undefined ? prev : { ...prev, [field]: undefined }));
   };
 
   const submit = async () => {
-    if (locked) return;
+    if (locked || busy) return;
     const found = validateHostForm(form);
-    if (Object.values(found).some((error) => error !== undefined)) {
+    if (hasErrors(found)) {
       setErrors(found);
       return;
     }
     setBusy(true);
     try {
-      const request = hostRequest(form);
-      if (mode.kind === "edit") {
-        const { alias, ...rest } = request;
-        const state = await api.updateSshHost(projectId, alias, rest);
-        toastSuccess(m.saved(alias));
-        onSaved(state);
-      } else {
-        const state = await api.addSshHost(projectId, request);
-        toastSuccess(m.added(request.alias));
-        onSaved(state);
-      }
+      const { alias, ...rest } = hostRequest(form);
+      const state = await api.updateSshHost(projectId, alias, rest);
+      toastSuccess(m.saved(alias));
+      onSaved(state);
       onClose();
     } catch (err) {
-      // A refused alias lands under its field; anything else under the form's first field.
-      const text = apiErrorText(err);
-      setErrors(
-        text.includes("already") || text.includes("已") ? { alias: m.exists } : { alias: text },
-      );
+      setErrors({ hostName: apiErrorText(err) });
     } finally {
       setBusy(false);
     }
   };
 
-  const onEnter = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" && !busy) void submit();
-  };
-
   return (
     <Modal
       open
-      title={editing ? m.editTitle : m.addTitle}
+      title={m.editTitle}
       onClose={onClose}
       footer={
         <>
@@ -152,7 +232,7 @@ export function SshHostDialog({
             disabled={busy || locked}
             onClick={() => void submit()}
           >
-            {busy ? S.common.saving : editing ? S.common.save : m.add}
+            {busy ? S.common.saving : S.common.save}
           </Button>
         </>
       }
@@ -163,77 +243,14 @@ export function SshHostDialog({
             {m.foreign}
           </NoticeStrip>
         )}
-        <Input
-          size="sm"
-          label={m.alias}
-          required
-          hint={editing ? undefined : m.aliasHint}
-          error={errors.alias}
-          value={form.alias}
-          onChange={set("alias")}
-          onKeyDown={onEnter}
-          className="font-mono"
-          placeholder="build-box"
-          autoComplete="off"
-          autoFocus={!editing}
-          disabled={editing}
-        />
-        <Input
-          size="sm"
-          label={m.hostName}
-          required
-          hint={m.hostNameHint}
-          error={errors.hostName}
-          value={form.hostName}
-          onChange={set("hostName")}
-          onKeyDown={onEnter}
-          className="font-mono"
-          placeholder="192.168.1.20"
-          autoComplete="off"
-          autoFocus={editing}
-          disabled={locked}
-        />
-        <div className="grid grid-cols-[1fr_7rem] gap-3">
-          <Input
-            size="sm"
-            label={m.user}
-            hint={m.userHint}
-            error={errors.user}
-            value={form.user}
-            onChange={set("user")}
-            onKeyDown={onEnter}
-            className="font-mono"
-            placeholder="deploy"
-            autoComplete="off"
-            disabled={locked}
-          />
-          <Input
-            size="sm"
-            label={m.port}
-            hint={m.portHint}
-            error={errors.port}
-            value={form.port}
-            onChange={set("port")}
-            onKeyDown={onEnter}
-            className="font-mono"
-            placeholder="22"
-            inputMode="numeric"
-            autoComplete="off"
-            disabled={locked}
-          />
-        </div>
-        <Input
-          size="sm"
-          label={m.identityFile}
-          hint={m.identityFileHint}
-          error={errors.identityFile}
-          value={form.identityFile}
-          onChange={set("identityFile")}
-          onKeyDown={onEnter}
-          className="font-mono"
-          placeholder="~/.ssh/id_ed25519"
-          autoComplete="off"
-          disabled={locked}
+        <HostFields
+          form={form}
+          errors={errors}
+          onChange={change}
+          onEnter={() => void submit()}
+          fixedName
+          locked={locked}
+          autoFocus="hostName"
         />
       </div>
     </Modal>

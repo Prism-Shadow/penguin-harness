@@ -42,6 +42,11 @@ export type MachineReading =
   | { kind: "notConnected" }
   | { kind: "unreachable"; detail: string | null }
   | { kind: "stopped" }
+  /**
+   * Added to this Project and nothing installed there yet: enabling it is the one thing to do.
+   * Also a machine whose last install was undone by hand, until an install corrects the record.
+   */
+  | { kind: "notInstalled" }
   /** Never probed. */
   | { kind: "unknown" };
 
@@ -118,6 +123,8 @@ export function readMachine(
   }
   if (result !== null && job?.kind === "use" && "installed" in result)
     return { kind: "installedOnly" };
+  // On this Project's list, nothing installed by it: a machine added without enabling it.
+  if (!machine.local && machine.installed === null) return { kind: "notInstalled" };
   if (outOfDate(machine, imageVersion)) {
     return { kind: "behind", version: machine.installed!.version };
   }
@@ -163,16 +170,17 @@ export function wantsUse(reading: MachineReading): boolean {
 }
 
 /**
- * The machines in use here: those this server has installed on for this Project, by name.
+ * The machines in use here: this Project's list — machines installed for it, and machines added
+ * to it that nothing is installed on yet (one an enable is working on included) — by name.
  * By name and nothing else, because the order must not move under a person's eyes: an
  * update rewrites the install time, a probe rewrites the status, and a card that jumps to
  * the top on either is a card someone was about to click. Names compare naturally, so
  * `gpu-2` sits before `gpu-10`. The local entry is kept out: it is where you are, not
  * something you did.
  */
-export function installedMachines(state: MachinesResponse): MachineInfo[] {
+export function machinesInUse(state: MachinesResponse): MachineInfo[] {
   return state.machines
-    .filter((machine) => machine.installed != null && !machine.local)
+    .filter((machine) => !machine.local && (machine.member === true || machine.installed != null))
     .sort((a, b) =>
       a.alias.localeCompare(b.alias, undefined, { numeric: true, sensitivity: "base" }),
     );
@@ -195,7 +203,7 @@ export function outOfDate(machine: MachineInfo, imageVersion: string | null): bo
 
 /** The machines in use that carry another build — what "update all" brings forward, in list order. */
 export function behindMachines(state: MachinesResponse): MachineInfo[] {
-  return installedMachines(state).filter((machine) => outOfDate(machine, state.imageVersion));
+  return machinesInUse(state).filter((machine) => outOfDate(machine, state.imageVersion));
 }
 
 /**

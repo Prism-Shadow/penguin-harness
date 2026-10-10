@@ -50,6 +50,7 @@ import type {
   GoalResponse,
   InstallResponse,
   InstalledPluginsResponse,
+  MachineDiagnosis,
   MachinesResponse,
   MachinesUseResponse,
   McpServerTestResponse,
@@ -101,6 +102,7 @@ import type {
   SessionResponse,
   SessionTracesResponse,
   SshHostResponse,
+  SshHostsResponse,
   SubagentMessageResponse,
   TaskCreateResponse,
   TraceAnalysisResponse,
@@ -2139,6 +2141,39 @@ router
     void hostName;
     return json(machinesResponse(store), 201);
   })
+  .get("/api/projects/:projectId/machines/ssh-hosts", ({ store }): SshHostsResponse => ({
+    hosts: store.f.machines.machines
+      .filter((m) => !m.local)
+      .map((m) => ({ alias: m.alias, hostName: `${m.alias}.example.internal`, user: "ubuntu" })),
+  }))
+  .post("/api/projects/:projectId/machines/add", ({ store, body }): MachinesUseResponse => {
+    const ids = record(body).machines;
+    for (const machine of store.f.machines.machines) {
+      if (Array.isArray(ids) && ids.includes(machine.id) && !machine.local) machine.member = true;
+    }
+    return { ...machinesResponse(store), refused: [] };
+  })
+  .post(
+    "/api/projects/:projectId/machines/:machineId/diagnose",
+    ({ params }): MachineDiagnosis => ({
+      machineId: params.machineId!,
+      checkedAt: new Date().toISOString(),
+      checks: [
+        { id: "ssh", state: "pass", user: "ubuntu", host: "gallery-box" },
+        { id: "platform", state: "pass", os: "linux", arch: "x64" },
+        { id: "tools", state: "pass", missing: [] },
+        {
+          id: "download",
+          state: "warn",
+          version: "0.2.13",
+          github: "unreachable",
+          oss: "unreachable",
+        },
+        { id: "disk", state: "pass", freeMb: 52_000, needMb: 800 },
+        { id: "port", state: "pass", port: 7364, holder: "free" },
+      ],
+    }),
+  )
   .get("/api/projects/:projectId/machines/ssh-hosts/:alias", ({ params }): SshHostResponse => ({
     alias: params.alias!,
     hostName: `${params.alias}.example.internal`,

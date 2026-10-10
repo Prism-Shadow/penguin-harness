@@ -18,7 +18,7 @@ import {
   anyJobPending,
   behindMachines,
   imageNotice,
-  installedMachines,
+  machinesInUse,
   jobFor,
   localMachine,
   outOfDate,
@@ -230,42 +230,55 @@ describe("jobs and polling", () => {
   });
 });
 
-describe("installedMachines", () => {
+describe("machinesInUse", () => {
   const older = { version: "9.9.8", at: "2026-08-20T00:00:00.000Z" };
 
-  it("is empty when nothing has been installed", () => {
-    expect(installedMachines(response([]))).toEqual([]);
+  it("is empty when nothing has been installed or added", () => {
+    expect(machinesInUse(response([]))).toEqual([]);
   });
 
-  it("keeps only the installed ones, by name — never by install time, which an update rewrites", () => {
+  it("keeps this Project's machines, by name — never by install time, which an update rewrites", () => {
     const nas = { ...carrying("nas"), installed: older };
     const box = carrying("build-box");
-    expect(
-      installedMachines(response([], { machines: [here(), fresh("spare"), nas, box] })),
-    ).toEqual([box, nas]);
+    expect(machinesInUse(response([], { machines: [here(), fresh("spare"), nas, box] }))).toEqual([
+      box,
+      nas,
+    ]);
     // The same two after nas was just updated: the order does not move.
     const fresher = { ...nas, installed: { version: "9.9.9", at: "2026-09-01T00:00:00.000Z" } };
     expect(
-      installedMachines(response([], { machines: [here(), fresh("spare"), fresher, box] })),
+      machinesInUse(response([], { machines: [here(), fresh("spare"), fresher, box] })),
     ).toEqual([box, fresher]);
+  });
+
+  it("keeps a machine added to this Project that nothing is installed on yet, and it reads as not installed", () => {
+    const added: MachineInfo = { ...fresh("spare"), member: true };
+    expect(machinesInUse(response([], { machines: [here(), added, fresh("other")] }))).toEqual([
+      added,
+    ]);
+    expect(readMachine(added, null, "9.9.9")).toEqual({ kind: "notInstalled" });
+    expect(wantsUse(readMachine(added, null, "9.9.9"))).toBe(true);
+    // Its first enable says how it goes, and how it failed, rather than "not installed".
+    expect(readMachine(added, failed, "9.9.9").kind).toBe("failed");
+    expect(readMachine(added, job(), "9.9.9").kind).toBe("working");
   });
 
   it("compares names naturally, so gpu-2 sits before gpu-10", () => {
     const two = carrying("gpu-2");
     const ten = carrying("gpu-10");
     const one = carrying("GPU-1");
-    expect(installedMachines(response([], { machines: [here(), ten, two, one] }))).toEqual([
+    expect(machinesInUse(response([], { machines: [here(), ten, two, one] }))).toEqual([
       one,
       two,
       ten,
     ]);
   });
 
-  it("does not mutate the response's own machine order (the picker reads it too)", () => {
+  it("does not mutate the response's own machine order (the add dialog reads it too)", () => {
     const nas = { ...carrying("nas"), installed: older };
     const box = carrying("build-box");
     const state = response([], { machines: [nas, box] });
-    installedMachines(state);
+    machinesInUse(state);
     expect(state.machines).toEqual([nas, box]);
   });
 });

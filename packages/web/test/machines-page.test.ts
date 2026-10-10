@@ -34,7 +34,12 @@
  * - repeats the page's last error, since it covers the notice that says it;
  * - is this server's record alone for its own entry: no verb, no steps, no Actions;
  * - folds a job that finished well into one line with its log closed, and opens a running job's
- *   log.
+ *   log;
+ * - for a machine added with nothing installed yet, offers Enable as the one thing to do and holds
+ *   Reconnect and Restart, saying why;
+ * - offers Check connection among the single steps, says a running check is running and holds the
+ *   verb meanwhile, and says the result check by check — ssh's own words under a sign-in that
+ *   failed.
  *
  * Every state renders a card and a dialog, the state said by the card mark's accessible name and
  * by the dialog's status chip, and neither carries a hint that cannot open: none sits on words
@@ -53,6 +58,7 @@ import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type {
+  MachineDiagnosis,
   MachineInfo,
   MachineJob,
   MachinesResponse,
@@ -118,6 +124,8 @@ const unreachable = remote("edge-1", {
 });
 const winBox = remote("win-box");
 const fresh = remote("fresh", { status: null });
+/** Added to the Project, nothing installed there yet: no record, no id, never probed. */
+const added = remote("spare", { installed: null, machineId: null, status: null, member: true });
 const here: MachineInfo = {
   ...remote("penguin-dev"),
   id: "local",
@@ -328,6 +336,7 @@ function dialog(
     error: null,
     busy: false,
     noImage: false,
+    check: null,
     onAct,
     ...over,
   };
@@ -606,6 +615,59 @@ describe("the Machine dialog", () => {
   });
 });
 
+describe("an added machine and the connection check", () => {
+  const DIAGNOSIS: MachineDiagnosis = {
+    machineId: "ssh:edge-1",
+    checkedAt: CHECKED,
+    checks: [
+      {
+        id: "ssh",
+        state: "fail",
+        reason: "auth",
+        said: "edge-1 did not accept any key… (ssh: ubuntu@10.0.0.12: Permission denied (publickey).)",
+      },
+      { id: "platform", state: "skip" },
+      { id: "tools", state: "skip" },
+      { id: "download", state: "skip" },
+      { id: "disk", state: "skip" },
+      { id: "port", state: "skip" },
+    ],
+  };
+
+  it("an added machine's one thing to do is Enable, and Reconnect and Restart wait, saying why", () => {
+    const { verbs, lines } = dialog(added, null);
+    expect(verbs.get("use")).toMatchObject({ variant: "primary", disabled: false });
+    expect(verbs.has("connect")).toBe(false);
+    expect(verbs.get("restart")?.disabled).toBe(true);
+    expect(lines.get("restart")).toBe(S.machines.detail.hold.notInstalled);
+  });
+
+  it("Check connection asks its page, and the verb waits while a check runs, which the dialog says", () => {
+    const idle = dialog(unreachable, null);
+    idle.verbs.get("check")!.press();
+    expect(idle.onAct).toHaveBeenCalledWith("check");
+    const running = dialog(unreachable, null, { check: { state: "running" } });
+    expect(running.verbs.get("check")?.disabled).toBe(true);
+    expect(seenText(readMarkup(running.html))).toContain(S.machines.check.running);
+  });
+
+  it("says the result check by check, ssh's own words under the sign-in that failed", () => {
+    const { html } = dialog(unreachable, null, { check: { state: "done", diagnosis: DIAGNOSIS } });
+    const rows = elementsOf(readMarkup(html)).filter((el) => "data-check" in el.attrs);
+    expect(rows.map((el) => [el.attrs["data-check"], el.attrs["data-state"]])).toEqual([
+      ["ssh", "fail"],
+      ["platform", "skip"],
+      ["tools", "skip"],
+      ["download", "skip"],
+      ["disk", "skip"],
+      ["port", "skip"],
+    ]);
+    const ssh = seenText(rows[0]!);
+    expect(ssh).toContain(S.machines.check.ssh.auth("edge-1"));
+    expect(ssh).toContain("Permission denied (publickey).");
+  });
+});
+
 describe("every state", () => {
   const cases: [string, MachineInfo, MachineJob | null][] = [
     ["this server", here, null],
@@ -622,6 +684,7 @@ describe("every state", () => {
     ["connected, its server stopped", linkedStopped, null],
     ["installed as far as it goes", winBox, installedJob(winBox)],
     ["never probed", fresh, null],
+    ["added, nothing installed", added, null],
   ];
 
   /** The hints in a piece of markup, each with the words of its own a reader sees. */
@@ -633,14 +696,11 @@ describe("every state", () => {
   it.each(cases)(
     "%s: neither the card nor the dialog carries a hint that cannot open — none sits on words already on screen",
     (_, machine, job) => {
-      for (const html of [
-        renderToStaticMarkup(createElement(MachineCard, card(machine, job).props)),
-        dialog(machine, job, { host: HOST, noImage: true }).html,
-      ]) {
-        const hints = hintsIn(html);
-        // The card's state mark and the dialog's copy button carry one each: the markup was read.
-        expect(hints.length).toBeGreaterThan(0);
-        expect(hints.filter((found) => found.words !== "")).toEqual([]);
+      const cardHtml = renderToStaticMarkup(createElement(MachineCard, card(machine, job).props));
+      // The card's state mark always carries one: the markup was read.
+      expect(hintsIn(cardHtml).length).toBeGreaterThan(0);
+      for (const html of [cardHtml, dialog(machine, job, { host: HOST, noImage: true }).html]) {
+        expect(hintsIn(html).filter((found) => found.words !== "")).toEqual([]);
       }
     },
   );

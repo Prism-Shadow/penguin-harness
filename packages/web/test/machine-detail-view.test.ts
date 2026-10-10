@@ -7,7 +7,8 @@
  *   it, ssh's diagnostic, the line a working job is on, the version a machine on another build
  *   would get (none when this server has no build of its own). This server's own entry is running.
  * - The one thing to do: nothing while a job is on its way; Retry after a failure, even on another
- *   build; Update for a machine on another build, connected or not, naming the version; nothing
+ *   build; Enable for a machine added with nothing installed yet; Update for a machine on another
+ *   build, connected or not, naming the version; nothing
  *   for a ready machine or one installed as far as it goes; Start server for a stopped server,
  *   connected or not; Connect for a machine not connected or never checked; Try again for one out
  *   of reach.
@@ -17,7 +18,8 @@
  *   names outside the pipeline is told as it was named.
  * - A verb is held for the first reason that applies: a request in flight holds every verb; a job
  *   on its way holds the single steps but never the ways out or the ssh form; no build holds
- *   Install; nothing connected holds Disconnect; a machine out of reach holds Restart alone. The
+ *   Install; nothing installed holds Reconnect and Restart; a check already running holds Check
+ *   connection; nothing connected holds Disconnect; a machine out of reach holds Restart alone. The
  *   reason a row tells leaves the request in flight out — it holds every verb for a moment — and
  *   still tells the machine's own.
  * - The installed version says whether it is the one this server would install, and is bare when
@@ -29,10 +31,15 @@
  *   alone, and a stamp that cannot be read has no time beside it; one never checked has no
  *   server or last-check row, and one with nothing installed no build rows. This server's own
  *   entry is reached here, without ssh, and says its version and when it started.
+ * - The connection check says each check in a plain sentence: who signed in, the system, what
+ *   the installer lacks (curl alone a caveat: the release is carried), whether the machine
+ *   reaches the release (or is sent it), the room left, and who holds the port; a sign-in that
+ *   failed says what to do, with ssh's own words under it.
  */
 import { describe, expect, it } from "vitest";
-import type { MachineInfo, MachineJob } from "@prismshadow/penguin-server/api";
+import type { MachineCheck, MachineInfo, MachineJob } from "@prismshadow/penguin-server/api";
 import {
+  checkLine,
   holdReason,
   installedText,
   jobSteps,
@@ -40,6 +47,7 @@ import {
   machineChip,
   machineFacts,
   primaryAction,
+  verbGroups,
   verbHold,
 } from "../src/features/machines/machine-detail-view";
 import type { DialogVerb, Fact, VerbContext } from "../src/features/machines/machine-detail-view";
@@ -78,6 +86,7 @@ const READINGS: MachineReading[] = [
   { kind: "notConnected" },
   unreachable,
   { kind: "stopped" },
+  { kind: "notInstalled" },
   { kind: "unknown" },
 ];
 
@@ -146,6 +155,13 @@ describe("the one thing to do", () => {
   it("starts a stopped server, connected or not", () => {
     expect(kindOf({ kind: "stopped" })).toBe("start");
     expect(kindOf({ kind: "linkedStopped" })).toBe("start");
+  });
+
+  it("enables a machine added with nothing installed yet, and offers no separate Reconnect beside it", () => {
+    expect(kindOf({ kind: "notInstalled" })).toBe("enable");
+    const maintenance = verbGroups("enable")[0]!.rows.map((row) => row.verb);
+    expect(maintenance).not.toContain("connect");
+    expect(maintenance).toContain("check");
   });
 
   it("connects a machine not connected or never checked, and tries one out of reach again", () => {
@@ -231,11 +247,14 @@ describe("a held verb", () => {
     noImage: false,
     connected: true,
     unreachable: false,
+    installed: true,
+    checking: false,
   };
   const VERBS: DialogVerb[] = [
     "install",
     "connect",
     "restart",
+    "check",
     "configure",
     "stopUsing",
     "disconnect",
@@ -254,14 +273,16 @@ describe("a held verb", () => {
       noImage: true,
       connected: false,
       unreachable: true,
+      installed: false,
+      checking: true,
     };
     for (const verb of VERBS) expect(verbHold(verb, everything), verb).toBe("busy");
   });
 
   it("is each single step while a job is on its way, never a way out or the ssh form", () => {
     const moving = { ...idle, moving: true, noImage: true, unreachable: true };
-    expect(held(moving)).toEqual(["install", "connect", "restart"]);
-    for (const verb of ["install", "connect", "restart"] as const) {
+    expect(held(moving)).toEqual(["install", "connect", "restart", "check"]);
+    for (const verb of ["install", "connect", "restart", "check"] as const) {
       expect(verbHold(verb, moving), verb).toBe("moving");
     }
   });
@@ -275,11 +296,19 @@ describe("a held verb", () => {
     expect(verbHold("restart", { ...idle, unreachable: true })).toBe("unreachable");
   });
 
+  it("is Reconnect and Restart on a machine with nothing installed, and Check connection while one runs", () => {
+    expect(held({ ...idle, installed: false })).toEqual(["connect", "restart"]);
+    expect(verbHold("connect", { ...idle, installed: false })).toBe("notInstalled");
+    expect(held({ ...idle, checking: true })).toEqual(["check"]);
+    expect(verbHold("check", { ...idle, checking: true })).toBe("checking");
+  });
+
   it("tells in its row the machine's own reason, never the request in flight, which holds every verb for a moment", () => {
     const busy = { ...idle, busy: true };
     for (const verb of VERBS) expect(holdReason(verb, busy), verb).toBeNull();
     const waiting = { ...busy, moving: true, connected: false };
     expect(VERBS.map((verb) => holdReason(verb, waiting))).toEqual([
+      "moving",
       "moving",
       "moving",
       "moving",
@@ -433,5 +462,63 @@ describe("the facts", () => {
     expect(away.value).toBe(S.machines.detail.fact.unreachable);
     expect(away.note).toBeUndefined();
     expect(service({ state: "running", checkedAt }).value).toBe(S.machines.state.serving);
+  });
+});
+
+describe("the connection check", () => {
+  const line = (check: MachineCheck) => checkLine(check, "gpu-1");
+
+  it("says who signed in and the system, and a passing check wears the check mark", () => {
+    const ssh = line({ id: "ssh", state: "pass", user: "ubuntu", host: "gpu-1.lan" });
+    expect(ssh.text).toBe(S.machines.check.sshPass("ubuntu", "gpu-1.lan"));
+    expect(ssh).toMatchObject({ tone: "success", detail: null });
+    expect(line({ id: "platform", state: "pass", os: "darwin", arch: "arm64" }).text).toBe(
+      S.machines.check.platform("macOS", "arm64"),
+    );
+  });
+
+  it("says what to do about a sign-in ssh refused, with ssh's own words under it and only the mark in danger", () => {
+    const refused = line({
+      id: "ssh",
+      state: "fail",
+      reason: "host-key-unknown",
+      said: "This computer has never connected to gpu-1… (ssh: Host key verification failed.)",
+    });
+    expect(refused.text).toBe(S.machines.check.ssh["host-key-unknown"]("gpu-1"));
+    expect(refused.detail).toBe(S.machines.check.sshSaid("Host key verification failed."));
+    expect(refused.tone).toBe("danger");
+  });
+
+  it("calls a missing curl a caveat — the release is carried — and a machine that reaches no source one too", () => {
+    expect(line({ id: "tools", state: "warn", missing: ["curl"] })).toMatchObject({
+      text: S.machines.check.toolsNoCurl,
+      tone: "attention",
+    });
+    expect(
+      line({
+        id: "download",
+        state: "warn",
+        version: "0.2.13",
+        github: "unreachable",
+        oss: "unreachable",
+      }).text,
+    ).toBe(S.machines.check.downloadCarried("0.2.13"));
+    expect(
+      line({ id: "download", state: "pass", version: "0.2.13", github: "unreachable", oss: "ok" })
+        .text,
+    ).toBe(S.machines.check.downloadFrom("0.2.13", "oss"));
+  });
+
+  it("names the room left against what an install needs, and who holds the port", () => {
+    expect(line({ id: "disk", state: "fail", freeMb: 300, needMb: 800 }).text).toBe(
+      S.machines.check.diskLow("300MB", "800MB"),
+    );
+    expect(line({ id: "port", state: "fail", port: 7371, holder: "other" }).text).toBe(
+      S.machines.check.portTaken(7371),
+    );
+    expect(line({ id: "port", state: "pass", port: 7371, holder: "penguin" }).text).toBe(
+      S.machines.check.portOurs(7371),
+    );
+    expect(line({ id: "disk", state: "skip" })).toMatchObject({ glyph: null, tone: "muted" });
   });
 });

@@ -85,8 +85,10 @@ import type {
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   MachinesUseResponse,
+  MachineDiagnosis,
   SshHostRequest,
   SshHostResponse,
+  SshHostsResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   PresetSyncRequest,
@@ -1862,6 +1864,31 @@ export const useMachines = (projectId: string, machineIds: string[], replaceProg
       ? { machines: machineIds, replaceProgram: true }
       : { machines: machineIds },
   });
+
+/**
+ * Puts machines in this Project's list without installing anything there; each gets a card whose
+ * one thing to do is enabling it. `refused` names the ones turned down (not in the ssh config, or
+ * this server's own machine).
+ */
+export const addMachines = (projectId: string, machineIds: string[]) =>
+  apiFetch<MachinesUseResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/add`, {
+    method: "POST",
+    body: { machines: machineIds },
+  });
+
+/** Every host in this server's ssh config with what its own block says: the add dialog's rows. */
+export const getSshHosts = (projectId: string) =>
+  apiFetch<SshHostsResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts`);
+
+/**
+ * The connection check: ssh, platform, the installer's tools, the release download, disk and
+ * port, asked of the machine without writing anything there (409 while a job works on it).
+ */
+export const diagnoseMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachineDiagnosis>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/diagnose`,
+    { method: "POST", body: {} },
+  );
 
 /** Appends a host block to this server's ~/.ssh/config; answers the machines list, which now names it (201). */
 export const addSshHost = (projectId: string, host: SshHostRequest) =>
