@@ -112,11 +112,7 @@ function HostRowItem({
         }`}
       >
         <Checkbox checked={on} onChange={() => onPick(machine.id)} aria-label={machine.alias} />
-        <GlyphIcon
-          d={ICONS.server}
-          size={ICON_SIZE.rowLead}
-          className="ui-icon-decor shrink-0 text-fg-subtle"
-        />
+        <GlyphIcon d={ICONS.server} size={ICON_SIZE.rowLead} className="shrink-0 text-fg-subtle" />
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
           <span className="truncate font-mono text-sm">
             <Alias row={row} />
@@ -157,7 +153,7 @@ function ConfigPanel({
           <GlyphIcon
             d={ICONS.info}
             size={ICON_SIZE.inlineGlyph}
-            className="ui-icon-decor mt-1 shrink-0 text-fg-subtle"
+            className="mt-1 shrink-0 text-fg-subtle"
           />
           {a.noHosts}
         </p>
