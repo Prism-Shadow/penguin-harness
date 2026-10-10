@@ -96,10 +96,11 @@ export interface ProviderGroup<T extends ModelRowLike> {
 }
 
 /**
- * Filter + group by vendor; rows within a group keep their original order. Built-in groups
- * follow MODEL_PROVIDERS order (the custom group is returned even when empty, when there's
- * no search query); user-defined groups each form their own group, sorted by name and
- * appended after custom.
+ * Filter + group by vendor; rows within a group keep their original order (the models page
+ * then orders each group by that group's sort, model-sort.ts; the chat model picker keeps
+ * this order). Built-in groups follow MODEL_PROVIDERS order (the custom group is returned
+ * even when empty, when there's no search query); user-defined groups each form their own
+ * group, sorted by name and appended after custom.
  *
  * `groupOrder` then rearranges that list: groups it names take its order, groups it does
  * not keep their automatic order and TRAIL (orderModelGroups — a group the user just
@@ -346,6 +347,23 @@ export function discountedPrice(
       ? { peak: peakWindows(schedule) }
       : {}),
   };
+}
+
+/**
+ * What the seller bills for one row at `now`, bucket by bucket: the figures its card prints, so
+ * the stored list price less whatever discountedPrice takes off at that moment. Undefined for a
+ * row without a full price (a bucket blank or not a number), the shape that saves as no pricing
+ * at all.
+ */
+export function billedPrice(
+  row: ModelRowLike & PricingBucketsLike,
+  now: Date = new Date(),
+): BucketPrices | undefined {
+  const cacheRead = bucketValue(row.cacheRead);
+  const cacheWrite = bucketValue(row.cacheWrite);
+  const output = bucketValue(row.output);
+  if (cacheRead === undefined || cacheWrite === undefined || output === undefined) return undefined;
+  return discountedPrice(row, now)?.billed ?? { cacheRead, cacheWrite, output };
 }
 
 export interface VisibleChatModelsOptions {

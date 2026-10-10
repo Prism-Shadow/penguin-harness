@@ -218,6 +218,14 @@
 .code-editor > * {
   grid-area: 1 / 1;
 }
+/* Wrapped, the cell is exactly the box's width, as the source view's block is. An `auto` column
+   would grow to its items' min-content width, and `overflow-wrap: break-word` leaves an
+   unbreakable run (a long token, a URL) whole in that measure — so one such line would widen
+   both layers past the box, and Edit would rewrap every line at that width and change the
+   text's height. Unwrapped, the column keeps sizing to the longest line, as the pre does. */
+.code-editor.code-wrap {
+  grid-template-columns: minmax(0, 1fr);
+}
 .code-editor textarea {
   overflow: hidden;
   resize: none;

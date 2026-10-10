@@ -39,9 +39,12 @@ It is a *catalog*, not a routing table — MMSP owns routing.
   with (`gpt-`, `text-embedding-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`,
   `minimax-`), with `openai-official` handing `text-embedding-` ids to `openai-embedding`; a pin
   MMSP does not have, or an id of no family, gives nothing. `resolveModelEnv`,
-  `fastModeProtocol` and the web's protocol path look the result up in `MMSP_CLIENTS`. MMSP does
-  not export its family table, so core keeps a copy: move it only with the MMSP release that
-  changes it, and never let it place an id MMSP refuses.
+  `fastModeProtocol`, the credential rule (`keylessEndpoint`: the `mmsp` client's open-server
+  exception) and the web's protocol path look the result up in `MMSP_CLIENTS`. MMSP does not
+  export its family table, so core keeps a copy: move it only with the MMSP release that
+  changes it, and never let it place an id MMSP refuses. An alias MMSP keeps after a rename
+  (`gemini-official`, `gemini-generate-content`) keeps its row until the MMSP release that drops
+  it, since a stored value is never rewritten.
 
 ## What a change touches
 

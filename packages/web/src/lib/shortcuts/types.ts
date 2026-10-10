@@ -31,6 +31,8 @@ export type CommandId =
   | "palette.toggle"
   | "sessions.search"
   | "chat.new"
+  | "find.open"
+  | "find.all"
   | "sidebar.toggle"
   | "dock.toggleRight"
   | "dock.toggleBottom"

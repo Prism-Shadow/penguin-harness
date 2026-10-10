@@ -396,6 +396,8 @@ export const ICONS = {
    * `ChevronDown` mark on a grid of its own.
    */
   chevronDown: "M6 9l6 6 6-6",
+  /** The same chevron pointing up: more above, the previous match. */
+  chevronUp: "M6 15l6-6 6 6",
   /** Two chevrons closing on each other across the middle (lucide chevrons-down-up). */
   chevronsDownUp: "M7 20l5-5 5 5M7 4l5 5 5-5",
   /**

@@ -1940,6 +1940,7 @@ export class FakeServer {
         session.patches.push(body ?? {});
         if (typeof body?.thinkingLevel === "string") session.thinkingLevel = body.thinkingLevel;
         if (typeof body?.approvalMode === "string") session.approvalMode = body.approvalMode;
+        if (typeof body?.title === "string") session.title = body.title;
         return this.json({ session: this.sessionInfo(session) });
       }
       if (rest === "/messages" && method === "GET") return this.json({ messages: this.history });

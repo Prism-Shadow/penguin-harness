@@ -90,6 +90,8 @@ export interface FileTreeProps<Row extends FileTreeRow> {
   emptyLabel?: string;
   /** Extra classes on the tree container — its own layout and scrolling belong to the caller. */
   className?: string;
+  /** If set, marks the tree as a find-in-page region (lib/find-dom.ts) under this kind. */
+  findRegion?: string;
   /** Shown in place of the rows when there are none: the caller's empty or no-match state. */
   children?: ReactNode;
   onToggleDir: (dir: string) => void;
@@ -109,6 +111,7 @@ export function FileTree<Row extends FileTreeRow>({
   rowTrailing,
   emptyLabel,
   className = "",
+  findRegion,
   children,
   onToggleDir,
   onOpenFile,
@@ -341,6 +344,7 @@ export function FileTree<Row extends FileTreeRow>({
       ref={containerRef}
       role="tree"
       aria-label={label}
+      {...(findRegion === undefined ? {} : { "data-find-region": findRegion })}
       onKeyDown={onKeyDown}
       className={`py-1 ${className}`}
     >
