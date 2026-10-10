@@ -30,6 +30,7 @@ function metaPayload(sessionId: string): SessionMetaPayload {
     system_prompt: "",
     agent_state: "/tmp/a",
     workspace: "/tmp/w",
+    source: "user",
   };
 }
 

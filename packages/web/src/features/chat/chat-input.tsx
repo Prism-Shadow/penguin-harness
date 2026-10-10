@@ -232,7 +232,6 @@ function ThinkingLevelSelect({
   onChange,
   disabled,
   direction = "down",
-  note,
 }: {
   /** Level to display and mark selected ("" = none to show yet); null = the Agent config is still loading (draft). */
   value: string | null;
@@ -240,8 +239,6 @@ function ThinkingLevelSelect({
   disabled: boolean;
   /** Popup direction: down for the draft card (room below), up for the bottom-docked session composer. */
   direction?: "down" | "up";
-  /** Footnote under the rows — the session variant's pre-pick reminder: a change applies right away but invalidates the model's cached context, so compacting first is recommended. */
-  note?: string;
 }) {
   const label =
     value === null ? "…" : (thinkingLevelLabel(S.chat.thinkingLevelNames, value) ?? "—");
@@ -267,7 +264,6 @@ function ThinkingLevelSelect({
       options={options}
       value={value}
       onChange={onChange}
-      note={note}
       direction={direction}
       align="right"
     />
@@ -568,11 +564,13 @@ export interface ComposerControl {
    * anything. `pinnedSkills` is the caller's full list; names the current Agent has not
    * installed are dropped here, where the installed list already lives. Pass an empty list to
    * leave the composer's own Skill selection untouched. Replacing text the user typed asks first.
+   * An empty prompt empties the text body: a reply's choice offers "Other…", and the answer it
+   * asks for is the one the user types here.
    */
   fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
   /**
-   * Move focus to the text body and leave everything in it as it is: a reply's choice offers
-   * "Other…", and the answer it asks for is the one the user types here.
+   * Move focus to the text body and leave everything in it as it is, for a surface that asks
+   * for an answer in the user's own words without clearing what is there.
    */
   focus: () => void;
   /**
@@ -768,8 +766,8 @@ export function ChatInput({
    * user's pick for this session, else the Agent config's level" ("" = neither known yet),
    * so the picker auto-follows the config until touched. A pick is the parent's own state:
    * it pins the level on the Session (PATCH), and core applies it from the next LLM request
-   * (soft-limited; the menu note advises compacting first); nothing rides a task. Never
-   * written through to the Agent config (that behavior stays draft-only).
+   * (soft-limited; a pick mid-chat is confirmed first, offering to compact); nothing rides a
+   * task. Never written through to the Agent config (that behavior stays draft-only).
    */
   turnThinkingLevel?: string;
   /** Session state: pins the thinking level on this session (effective from its next LLM request); also enables the editable picker. */
@@ -1301,14 +1299,16 @@ export function ChatInput({
   );
   /**
    * Every fill passes here, whichever surface sent it (an example task, a saved shortcut, a
-   * schedule's prompt): replacing text the user typed asks first. A fill over an empty box,
-   * over the same prompt, or over what an earlier fill put there untouched (browsing the
-   * examples) goes straight in.
+   * schedule's prompt, a reply's choice or form): replacing text the user typed asks first. A
+   * fill over an empty box, over the same prompt, or over what an earlier fill put there
+   * untouched (browsing the examples, or a pick before the choice's "Other…") goes straight in.
+   * An empty fill is a clear, and its confirmation says so.
    */
   const [pendingFill, setPendingFill] = useState<{
     prompt: string;
     pinnedSkills: readonly string[];
   } | null>(null);
+  const clearingFill = pendingFill?.prompt === "";
   const fillPrompt = useCallback(
     (prompt: string, pinnedSkills: readonly string[]) => {
       const typed = textRef.current;
@@ -2557,16 +2557,15 @@ export function ChatInput({
             {/* Session state: the Session's pinned thinking level (editable) — displays the
               user's pick, else the Agent config's level (auto-follow; the parent resolves
               it). A pick is pinned on the Session (PATCH) and applies from the next LLM
-              request (soft-limited): the menu's footnote reminds, before the pick, that the
-              change costs the model's cached context and compacting first is recommended —
-              never writing through to the Agent config. */}
+              request (soft-limited): a pick mid-chat goes through the parent's confirm
+              dialog, which says the change costs the model's cached context and offers to
+              compact first — never writing through to the Agent config. */}
             {!onChangeModel && onChangeTurnThinkingLevel && (
               <ThinkingLevelSelect
                 value={turnThinkingLevel ?? ""}
                 onChange={onChangeTurnThinkingLevel}
                 disabled={busy}
                 direction="up"
-                note={S.chat.thinkingLevelChangeNote}
               />
             )}
             {/* Left of the send button: the model selector. In draft state it picks the model the
@@ -2623,17 +2622,19 @@ export function ChatInput({
       />
       <ConfirmModal
         open={pendingFill !== null}
-        title={S.chat.replaceTypedTitle}
+        title={clearingFill ? S.chat.clearTypedTitle : S.chat.replaceTypedTitle}
         tone="primary"
         onClose={() => setPendingFill(null)}
         onConfirm={() => {
           if (pendingFill !== null) applyFill(pendingFill.prompt, pendingFill.pinnedSkills);
           setPendingFill(null);
         }}
-        confirmLabel={S.chat.replaceTyped}
+        confirmLabel={clearingFill ? S.chat.clearTyped : S.chat.replaceTyped}
         cancelLabel={S.common.cancel}
       >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.chat.replaceTypedBody}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {clearingFill ? S.chat.clearTypedBody : S.chat.replaceTypedBody}
+        </p>
       </ConfirmModal>
     </div>
   );

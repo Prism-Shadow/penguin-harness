@@ -3,8 +3,8 @@
  * services/trace-index.ts for the cache rules). Pure row access — reconciliation
  * policy (mtime gates, head-reads) lives in the service.
  */
-import type { SessionSource } from "../../api/types.js";
-import { asSessionSource } from "../../runtime/session-sources.js";
+import { normalizeSessionSource } from "@prismshadow/penguin-core";
+import type { RecordedSource } from "../../runtime/session-sources.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
 import type { TraceIndexStore } from "../../mechanisms/traces.js";
@@ -24,7 +24,12 @@ export interface TraceSessionRow {
   sessionId: string;
   projectId: string;
   agentId: string;
-  source: SessionSource | null;
+  /**
+   * The head's session_meta source, narrowed; `null` when the head records none (written before
+   * the source was required; read it with the row's client, `readRecordedSource`). Meaningful
+   * only once `metaRead`.
+   */
+  source: RecordedSource;
   workspace: string;
   title: string | null;
   provider: string | null;
@@ -45,13 +50,15 @@ function mapFile(r: Record<string, unknown>): TraceFileRow {
 }
 
 function mapSession(r: Record<string, unknown>): TraceSessionRow {
-  const source = r.source as string | null;
   return {
     sessionId: r.session_id as string,
     projectId: r.project_id as string,
     agentId: r.agent_id as string,
-    // Narrowed on read as well as write: junk in a hand-edited DB must not leak out as a source.
-    source: asSessionSource(source) ?? null,
+    // Narrowed on read as well as write: a row registered before the source was required holds
+    // `benchmark` (read as `cli`) or NULL, which is what a head without a source registers as,
+    // and junk in a hand-edited DB must not leak out as a source. The cache is derived, so old
+    // rows are read, never migrated.
+    source: r.source === null || r.source === undefined ? null : normalizeSessionSource(r.source),
     workspace: (r.workspace as string | null) ?? "",
     title: (r.title as string | null) ?? null,
     provider: (r.provider as string | null) ?? null,

@@ -147,6 +147,7 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
           system_prompt: "sp",
           agent_state: "/tmp/agents/default_agent/agent_state",
           workspace: "/tmp/w",
+          source: "user",
         });
       }
       return status;

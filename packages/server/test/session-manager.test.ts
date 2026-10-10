@@ -518,6 +518,7 @@ describe("session-manager", () => {
         system_prompt: "sp",
         agent_state: dir,
         workspace: dir,
+        source: "user",
       },
       bootstrap: async () => ({ llm }),
       environment,
@@ -975,6 +976,7 @@ describe("session-manager", () => {
             system_prompt: "sys",
             agent_state: "/root/p1/child_agent/agent_state",
             workspace: "/tmp/w-child",
+            source: "subagent",
           }),
           hop,
         );
@@ -1001,9 +1003,8 @@ describe("session-manager", () => {
     expect(child?.agentId).toBe("child_agent");
     expect(child?.modelId).toBe("m-child");
     expect(child?.workspace).toBe("/tmp/w-child");
-    // The origin lands in the in-process registry (session_meta is the single source of
-    // truth; the row stores no source column) — "subagent" even when the forwarded meta
-    // predates the source field (this fake omits it): the registration path is the fallback.
+    // The source lands in the in-process registry (session_meta is the single source of
+    // truth; the row stores no source column).
     expect(sources.get("child-1")).toBe("subagent");
     expect(child && "source" in child).toBe(false);
     // The row itself is inserted with a blank title: the title generator (faked here) is
@@ -1570,6 +1571,7 @@ describe("session-manager", () => {
             system_prompt: "sys",
             agent_state: "/root/p1/child_agent/agent_state",
             workspace: "/tmp/w-child",
+            source: "subagent",
           }),
           hop,
         );
