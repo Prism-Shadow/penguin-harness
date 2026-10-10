@@ -5,9 +5,10 @@
  * Specialized capabilities are now carried by Skills — agent_creator / agent_optimizer
  * are no longer built-in Agents: neither provisioned nor deletion-protected.
  * A new Project also starts with its Benchmarks — the example and the five built-ins, written
- * once when it is created — which the Benchmark API lists as plain published Benchmarks, each
- * case statement saying how the case is run. A default_project adopted at bootstrap keeps the
- * Benchmarks it holds and is given only the missing ones.
+ * once when it is created — which the Benchmark API lists as plain published Benchmarks seeded
+ * as builtin, each with a date version and each case statement saying how the case is run. A
+ * default_project adopted at bootstrap keeps the Benchmarks it holds and is given only the
+ * missing ones.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -156,6 +157,11 @@ describe("built-in Agent provisioning", () => {
         "example-benchmark",
         ...builtins.map((b) => b.id),
       ]);
+      for (const bench of [example, ...builtins]) {
+        // Seeded, at a revision of their own.
+        expect(bench.origin, bench.id).toEqual({ kind: "builtin" });
+        expect(bench.version, bench.id).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
+      }
       for (const bench of builtins) {
         // Read like any Benchmark: nothing in the summary sets a built-in apart.
         expect(Object.keys(bench).sort(), bench.id).toEqual(Object.keys(example).sort());

@@ -65,7 +65,7 @@ describe("DisclosureRow", () => {
     // The fold's track is the row's sibling and carries the slot, so a recipe's
     // `.ui-activity ~ [data-slot="body"]` still finds it; the body sits in the box inside.
     expect(html).toMatch(
-      /<\/button><div data-layout-motion="true" data-fold="settled" data-slot="body" class="grid"><div class="min-h-0">body<\/div><\/div><\/div>$/,
+      /<\/button><div data-layout-motion="true" data-fold="settled" data-slot="body" class="grid"><div class="min-h-0 min-w-0">body<\/div><\/div><\/div>$/,
     );
     expect(html).toMatch(/class="[^"]*text-tone-danger-fg[^"]*" data-slot="label">Thinking</);
   });

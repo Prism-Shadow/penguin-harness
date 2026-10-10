@@ -21,8 +21,12 @@
  *   all, so a merged history can only be ordered by time — and a benchmark that came from a
  *   single machine is therefore left exactly as that file had it.
  * - **First source wins the description.** The caller lists this server first, so a title, a
- *   `runs` count or a status read here is the one displayed. They describe the same Benchmark;
- *   where two disks disagree, the one the person is looking at is the honest choice.
+ *   `runs` count, a status, a version or an origin read here is the one displayed. They describe
+ *   the same Benchmark; where two disks disagree, the one the person is looking at is the honest
+ *   choice. A source that names no version — its manifest was written before versions, or its
+ *   server predates them — has nothing to disagree with, so the next source that names one
+ *   supplies the version and the origin together; a copy whose manifest cannot be read says so,
+ *   and keeps its own.
  */
 import type {
   AgentSummary,
@@ -118,6 +122,15 @@ export function mergeBenchmarks(sources: readonly BenchmarkSource[]): MergedBenc
       }
       existing.machineIds.push(source.machineId);
       existing.evaluations.push(...evaluations);
+      // A copy that cannot be read is a fact about that copy, not an absence: it keeps its own.
+      if (
+        existing.version === undefined &&
+        existing.manifestError === undefined &&
+        benchmark.version !== undefined
+      ) {
+        existing.version = benchmark.version;
+        existing.origin = benchmark.origin;
+      }
       // The Agents it has tested are those of every scoreboard, first-seen order kept.
       for (const agentId of benchmark.agentIds) {
         if (!existing.agentIds.includes(agentId)) existing.agentIds.push(agentId);

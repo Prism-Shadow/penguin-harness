@@ -1,0 +1,20 @@
+# Benchmarks are packages: benchmark_config.toml gained an id, a date version and an origin
+
+- **Date:** 2026-10-09
+- **Type:** feature
+- **Scope:** `core`, `server`, `web`, `skills`, `tooling`
+- **PR:** [#1008](https://github.com/Prism-Shadow/penguin-harness/pull/1008)
+
+[中文版](2026-10-09-benchmark-package.zh.md)
+
+A Benchmark's `benchmark_config.toml` became its manifest, describing the Benchmark as a package the way `plugin.json` describes a plugin. Beside `title`, `description`, `runs` and `status` it gained three keys: `id` (its directory name), a date `version` (`YYYY.MM.DD.N`) and an `[origin]` table (`kind` `builtin`, `manual`, `agent`, `git` with `url` / `ref` / `path` / `imported_at`, or `zip` with `imported_at`). All three were optional on read: a manifest written before them was read as it was, under its directory name, unversioned and of unknown origin, and nothing rewrote it. A Benchmark's package is the manifest and its `CASE-*` directories; `scoreboard.yaml`, the `.jobs/` trials, other dot-entries and symlinks stay with the copy on disk.
+
+## Details
+
+- Core gained `packages/core/src/state/benchmark-manifest.ts`: the manifest's types; `parseBenchmarkManifest`, which checked the new keys when present (`benchmark_id_mismatch` for an `id` that is not its directory's, `benchmark_manifest_invalid` for a `version` or an `[origin]` out of shape and for text that is not TOML), read the older keys as leniently as before and ignored unknown keys; `checkBenchmarkManifest`, the limits a written manifest keeps (a title of 1 to 200 characters, a description of at most 2,000, runs from 1 to 1,000, one of the three statuses); `readBenchmarkManifest`; `writeBenchmarkManifest` (atomic TOML with the `[origin]` table last, refusing what the check refuses); `nextDateVersion` (the day's `.1`, then the next number the same day, never backwards) and `compareDateVersions`.
+- The example and the five built-in Benchmarks were seeded with their `id`, origin `builtin` and a version kept in core's data (`2026.10.09.1`). `BUILTIN_BENCHMARKS` was exported from core.
+- The server's Benchmark list read through the manifest. A directory whose name is not an id (`.seeding/`, `.harbor/`) was never a Benchmark. One whose manifest could not be used (not TOML, an `id` that is not its directory's, a `version` or an `[origin]` out of shape) was listed under its directory name as `failed`, with `manifestError` giving the code and the reason; a filesystem error reading a manifest failed the request. A Benchmark created by hand was written with its `id`, the day's first version and origin `manual`. `BenchmarkSummary` gained the optional `version`, `origin` (`importedAt` in camelCase) and `manifestError`. An `origin.ref`, when present, had to be a 40-character commit id.
+- The Web App's Benchmark page showed the version beside the directory path when the manifest had one and, for a Benchmark an agent imported from a repository folder, a link to that folder (http and https links only). A Benchmark whose manifest could not be read was masked like a failed one, as **Manifest can't be read**, with the reason as an icon's hover hint on its card and in the notice on its page. The merged list took the version and the origin from the first machine that names them. The Create with AI prompt named the new keys.
+- agent-tuning `2026.10.09.3`: `benchmark-design` wrote `id`, a version and an `[origin]` table with `kind = "agent"` into `benchmark_config.toml`, and moved the version on whenever it changed a case or the status.
+- `scripts/benchmark-packages.mjs --out <dir>` wrote the five built-in Benchmarks as packages, without scoreboards, for the benchmark repository's `packages/`. `scripts/check-plugin-versions.mjs` refused a change to the seeded Benchmarks' data or to the writer of their statements without a new version in the file that holds the versions; lines that are comments or blank did not count.
+- The docs' Benchmark storage section described the manifest, its optional keys, the version rule and the package; the Evaluation Center and server API pages followed, and the gallery's Benchmarks carried versions.

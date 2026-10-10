@@ -1212,7 +1212,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
         ...(opts.workspace !== undefined ? { workspace: String(opts.workspace) } : {}),
       },
     );
-    // Like `run --background`: the bare session id is what `penguin input` / `penguin logs` address later.
+    // Like `run --background`: the bare session id is what `penguin session input` / `penguin session log` address later.
     if (opts.json === true) printJson({ sessionId: res.sessionId });
     else printLine(res.sessionId);
   });

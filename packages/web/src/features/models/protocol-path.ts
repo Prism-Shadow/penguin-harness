@@ -1,7 +1,7 @@
 /**
  * Protocol-path suffix for the config dialog's base URL field: the path the MMSP client
  * appends to a custom base URL, shown inside the field so the user knows which endpoint
- * shape the URL must serve. Verified against the MMSP 0.5.1 clients and the SDKs they
+ * shape the URL must serve. Verified against the MMSP 0.5.2 clients and the SDKs they
  * construct:
  * - `anthropic-official` (`@anthropic-ai/sdk`): POST {base}/v1/messages — the SDK's default
  *   base URL (https://api.anthropic.com) carries no /v1; the request path does, so a custom
@@ -13,10 +13,14 @@
  *   compatible Responses client (`openai-responses`) serves the Responses shape — and it is
  *   what every OpenRouter row pins, OpenRouter serving the Responses API for all of its
  *   upstreams; `openai-embedding` serves the Embeddings shape.
- * - `gemini-official` (`@google/genai`): the Interactions API, {base}/v1beta/interactions.
- *   The compatible `google-genai` client (what the Penguin Go rows pin; `gemini-generate-content`
- *   is its alias) speaks generateContent, {base}/v1beta/models/<id>:… — the SDK joins base URL
- *   + API version (v1beta) + the resource path in both cases.
+ * - `google-official` (`@google/genai`; `gemini-official`, its name before MMSP 0.5.2, is
+ *   kept as an alias): the Interactions API, {base}/v1beta/interactions. The compatible
+ *   `google-genai` client (what the Penguin Go rows pin; `gemini-generate-content` is its
+ *   alias) speaks generateContent, {base}/v1beta/models/<id>:streamGenerateContent — the SDK
+ *   joins base URL + API version (v1beta) + the resource path in both cases, and the suffix
+ *   stops before the model id.
+ * - `mmsp`: an MMSP server, POST {base}/stream (its base URL ends with /v1, as the default
+ *   http://127.0.0.1:25752/v1 does).
  * - `deepseek-official` and `minimax-official`: each vendor's Responses API,
  *   POST {base}/responses (DeepSeek's default base URL https://api.deepseek.com carries no
  *   /v1 and the request path adds none; MiniMax's https://api.minimax.io/v1 already ends in
@@ -27,8 +31,9 @@
  *   an openai-chat subclass that differs only in the thinking switch it sends) —
  *   POST {base}/chat/completions.
  *
- * The three generic protocol clients — `openai-responses`, `ant-messages`,
- * `openai-chat` — are also what the custom-model protocol detection stores.
+ * Of the protocols the in-field menu offers, the first three — `openai-responses`,
+ * `ant-messages`, `openai-chat` — are also what the custom-model protocol detection stores;
+ * `google-genai` and `mmsp` are picked by hand.
  */
 import { MMSP_CLIENTS, routedClientType } from "@prismshadow/penguin-core/model-catalog";
 
@@ -36,7 +41,7 @@ import { MMSP_CLIENTS, routedClientType } from "@prismshadow/penguin-core/model-
 const VENDOR_GROUP_CLIENT_TYPES: Readonly<Record<string, string>> = {
   anthropic: "anthropic-official",
   openai: "openai-official",
-  google: "gemini-official",
+  google: "google-official",
   deepseek: "deepseek-official",
   minimax: "minimax-official",
   zhipu: "zai-official",

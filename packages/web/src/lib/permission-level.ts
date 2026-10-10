@@ -1,7 +1,8 @@
 /**
- * A Session's permission level, as the composer's button shows it: one colour for how much the
- * Agent may do on its own. Derived from the two knobs that decide it — the approval mode, and
- * the Session's sandbox policy — never stored.
+ * A Session's permission level, as the composer's button shows it — and each row of its menu,
+ * for the level that row's pick would set: one colour for how much the Agent may do on its own.
+ * Derived from the two knobs that decide it — the approval mode, and the Session's sandbox
+ * policy — never stored.
  *
  * - `off`: every tool call is denied.
  * - `read-only`: commands cannot write anywhere.
@@ -19,7 +20,10 @@ import type { Tone } from "./tone";
 
 export type PermissionLevel = "all" | "partial" | "read-only" | "off";
 
-export function permissionLevel(approval: ApprovalMode, sandbox: SessionSandbox): PermissionLevel {
+export function permissionLevel(
+  approval: ApprovalMode,
+  sandbox: Pick<SessionSandbox, "mode" | "network">,
+): PermissionLevel {
   if (approval === "deny-all") return "off";
   if (sandbox.mode === "read-only") return "read-only";
   if (
@@ -277,6 +281,20 @@ export function permissionMenu(
     kind: "preset",
     preset,
   }));
+}
+
+/**
+ * The level a menu row would leave the Session at, which the row wears before its name — the
+ * mark the button takes once the row is picked: a preset's own three values, or (switch off) the
+ * approval mode over the policy the Session keeps.
+ */
+export function menuRowLevel(
+  row: PermissionMenuRow,
+  sandbox: Pick<SessionSandbox, "mode" | "network">,
+): PermissionLevel {
+  return row.kind === "preset"
+    ? permissionLevel(row.preset.approvalMode, row.preset)
+    : permissionLevel(row.mode, sandbox);
 }
 
 /**

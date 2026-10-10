@@ -415,6 +415,7 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   chevronLeft: "slate",
   chevronRight: "slate",
   chevronDown: "slate",
+  chevronUp: "slate",
   chevronsDownUp: "slate",
   chevronLeftPipe: "slate",
   chevronRightPipe: "slate",

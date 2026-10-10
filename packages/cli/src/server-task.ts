@@ -12,7 +12,7 @@
  *
  * Reconnects ride Last-Event-ID: the stream keeps the last seen frame id and reopens
  * with it on a dropped connection; `resync_required` (buffer evicted) prints a dim
- * notice — the messages endpoint still holds the full history for `penguin logs`.
+ * notice — the messages endpoint still holds the full history for `penguin session log`.
  */
 import {
   isEventMessage,

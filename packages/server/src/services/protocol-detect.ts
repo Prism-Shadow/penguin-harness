@@ -8,6 +8,10 @@
  *   2. `ant-messages`     — Anthropic Messages API, POST {base}/v1/messages
  *   3. `openai-chat`      — OpenAI Chat Completions, POST {base}/chat/completions
  *
+ * The two other protocols the dialogs offer, `google-genai` (generateContent) and `mmsp` (an
+ * MMSP server), are picked by hand and never probed: generateContent puts the model id in the
+ * path, and a `{}` probe of an MMSP server's `/stream` answers like any other API's 400.
+ *
  * Paths and auth headers mirror exactly what the MMSP clients construct (verified
  * against the SDKs they wrap): the OpenAI SDK appends `/responses` / `/chat/completions`
  * to the base URL and authenticates with `Authorization: Bearer`; the Anthropic SDK
@@ -59,7 +63,10 @@ import type {
   ProtocolProbeOutcome,
 } from "../api/types.js";
 
-/** MMSP compatible client types (one generic protocol each), in the required detection order. */
+/**
+ * The MMSP compatible client types detection probes (one generic protocol each), in the
+ * required order.
+ */
 export const PROTOCOL_CLIENT_TYPES = ["openai-responses", "ant-messages", "openai-chat"] as const;
 export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
 

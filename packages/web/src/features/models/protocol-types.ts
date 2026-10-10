@@ -1,6 +1,6 @@
 /**
- * The generic protocol client family for custom / user-defined model groups, and the pure
- * helpers the config dialog composes around it. Kept out of models-page.tsx so the in-field
+ * The protocol clients custom / user-defined model groups pick from, and the pure
+ * helpers the config dialog composes around them. Kept out of models-page.tsx so the in-field
  * protocol control (protocol-suffix.tsx) can share them without importing the page back.
  *
  * The probing itself is server-side (packages/server/src/services/protocol-detect.ts); these
@@ -14,16 +14,33 @@ import {
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-catalog";
 
 /**
- * MMSP's generic protocol client types (three of its compatible clients), in detection order
- * (custom / user-defined groups select among these; see the in-field protocol menu and the
- * /models/detect probes).
+ * The protocols the in-field protocol menu offers, in its order: five of MMSP's compatible
+ * clients. The first three are the ones the /models/detect probes try, in the same order; the
+ * Google GenAI (generateContent) and MMSP clients after them are picked by hand only, since a
+ * probe could not tell them apart from an OpenAI-compatible endpoint cheaply and safely.
  */
-export const PROTOCOL_CLIENT_TYPES = ["openai-responses", "ant-messages", "openai-chat"] as const;
+export const PROTOCOL_CLIENT_TYPES = [
+  "openai-responses",
+  "ant-messages",
+  "openai-chat",
+  "google-genai",
+  "mmsp",
+] as const;
 export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
 
 /**
+ * Older spellings MMSP still routes, each read as the protocol it names: the bare `openai`
+ * (before 0.4.2) and `gemini-generate-content` (MMSP 0.5.0). Shown as that protocol, never
+ * rewritten unless the user picks one.
+ */
+const PROTOCOL_ALIASES: Readonly<Record<string, ProtocolClientType>> = {
+  openai: "openai-chat",
+  "gemini-generate-content": "google-genai",
+};
+
+/**
  * What a custom / user-defined group falls back to whenever its protocol is undetermined:
- * the compatible client (OpenAI Chat Completions), which is the broadest of the three.
+ * the compatible client (OpenAI Chat Completions), which is the most widely served of them.
  *
  * Per maintainer, this fallback is unconditional for those groups — nothing is ever
  * inferred from the model id there, and a detection that comes back empty resolves here
@@ -33,16 +50,20 @@ export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
 export const DEFAULT_CUSTOM_CLIENT_TYPE = "openai-chat";
 
 /**
- * Whether a stored client_type belongs to the generic protocol family the picker can
- * represent: the three protocol clients, the bare `openai` alias (legacy default for
- * custom groups; routes to openai-chat), or empty. Any other explicit type (a vendor client
- * such as `deepseek-official`, another compatible client such as `google-genai`,
- * or a legacy vendor-pinned config like `deepseek-v4` that MMSP no longer knows) keeps the
+ * Whether a stored client_type belongs to the protocol family the picker can represent: one
+ * of its protocols, an older spelling of one (the bare `openai`, legacy default for custom
+ * groups; `gemini-generate-content`), or empty. Any other explicit type (a vendor client such
+ * as `deepseek-official`, another compatible client such as `openai-chat-vllm-adapter`, or a
+ * legacy vendor-pinned config like `deepseek-v4` that MMSP no longer knows) keeps the
  * read-only note instead — showing the picker there would silently rewrite it.
  */
 export function isGenericProtocolClientType(clientType: string): boolean {
   const t = clientType.trim().toLowerCase();
-  return t === "" || t === "openai" || (PROTOCOL_CLIENT_TYPES as readonly string[]).includes(t);
+  return (
+    t === "" ||
+    Object.hasOwn(PROTOCOL_ALIASES, t) ||
+    (PROTOCOL_CLIENT_TYPES as readonly string[]).includes(t)
+  );
 }
 
 /**
@@ -54,14 +75,17 @@ export function isGenericProtocolClientType(clientType: string): boolean {
  * the field and a checkmark in the menu, i.e. a default the user never chose and could not
  * tell apart from one they did.
  *
- * A stored legacy `openai` still displays as Chat Completions (that IS its routing) without
+ * A stored older spelling displays as the protocol it names (a legacy `openai` as Chat
+ * Completions, `gemini-generate-content` as Google GenAI — that IS their routing) without
  * rewriting the stored value — only an actual selection or a detection hit writes the
- * new-style client type.
+ * new-style client type. Anything else reads as Chat Completions, the custom groups' default.
  */
 export function protocolSelectorValue(clientType: string): ProtocolClientType | null {
   const t = clientType.trim().toLowerCase();
   if (t === "") return null;
-  return t === "openai-responses" || t === "ant-messages" ? t : "openai-chat";
+  const picked = PROTOCOL_CLIENT_TYPES.find((p) => p === t);
+  if (picked !== undefined) return picked;
+  return Object.hasOwn(PROTOCOL_ALIASES, t) ? PROTOCOL_ALIASES[t]! : "openai-chat";
 }
 
 /**
@@ -87,7 +111,7 @@ export function detectableBaseUrl(baseUrl: string): boolean {
 }
 
 /**
- * Custom-like group: the entry picks its own protocol from the generic trio, rather than
+ * Custom-like group: the entry picks its own protocol among the picker's, rather than
  * being auto-routed inside a first-party vendor group or pinned by a gateway preset or a
  * group-level pin. `custom` plus every user-defined group (a provider id the catalog does
  * not know).

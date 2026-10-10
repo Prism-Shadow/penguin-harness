@@ -33,6 +33,9 @@ export default defineConfig({
     "secret-file": "src/secret-file.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
     "version-report": "src/version-report.ts",
+    // "./benchmark-package": a Benchmark folder or zip as the import route's upload, held to the
+    // route's caps — what `penguin benchmark import` sends.
+    "benchmark-package": "src/benchmark-package.ts",
     // "./plugin": the surface plugin PACKAGES compile against. Plugins live outside
     // this bundle entirely — they are configuration resolved from the installation,
     // not platform capability.

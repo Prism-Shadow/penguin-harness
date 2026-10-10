@@ -116,7 +116,7 @@ Benchmarks belong to the Project. Each one is stored in `<root>/<project>/benchm
 
 ```text
 <project>/benchmarks/<id>/
-├── benchmark_config.toml       # Benchmark configuration: title, description, runs (Builder runs is fixed at 1), status
+├── benchmark_config.toml       # the manifest: id, title, description, version, status, runs (Builder runs is fixed at 1), [origin]
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
 │   └── rubric/                 # private scoring rubric, isolated from the Target Agent
@@ -125,7 +125,38 @@ Benchmarks belong to the Project. Each one is stored in `<root>/<project>/benchm
 
 `rubric/` is kept apart from `statement/` on purpose: the Target Agent receives only the task statement and never the scoring rubric.
 
-`benchmark_config.toml` is what makes a directory a Benchmark: a directory under `benchmarks/` without one is not listed. A Benchmark that has never been evaluated still has its config and is listed as usual. Deleting a Benchmark while an evaluation is still running leaves such a config-less directory behind, because the running evaluation keeps writing to its paths; it is safe to delete by hand.
+`benchmark_config.toml` is what makes a directory a Benchmark: a directory under `benchmarks/` without one is not listed. A Benchmark that has never been evaluated still has its manifest and is listed as usual. Deleting a Benchmark while an evaluation is still running leaves such a manifest-less directory behind, because the running evaluation keeps writing to its paths; it is safe to delete by hand.
+
+### The manifest
+
+`benchmark_config.toml` describes a Benchmark the way `plugin.json` describes a plugin:
+
+```toml
+id = "report-writing-v1"
+title = "Report writing"
+description = "Hard cases for the report writer"
+version = "2026.10.09.1"
+status = "published"
+runs = 1
+
+[origin]
+kind = "agent"
+```
+
+| Key | Value |
+| --- | --- |
+| `id` | The directory name. A manifest whose `id` is another directory's is not read |
+| `title`, `description` | The title (without one, the directory name stands in) and an optional description; at most 200 and 2,000 characters when the server writes them |
+| `version` | A date version, `"YYYY.MM.DD.N"` |
+| `status` | `draft`, `published` or `failed`; see [Benchmark status](#benchmark-status) |
+| `runs` | Runs per case, a positive integer, 1 when absent; at most 1,000 when the server writes it |
+| `[origin]` | Where this copy came from, in `kind`: `builtin` (seeded with the Project), `manual` (the create form), `agent` (written by `benchmark-design`), `git` (an agent imported a repository folder: `url`, the 40-character commit `ref` it resolved to, `path` and `imported_at`) or `zip` (an uploaded package: `imported_at`) |
+
+`id`, `version` and `[origin]` are new in this release, and every one of them is optional when the file is read. A manifest written by an earlier release has none of them and is read as it is: under its directory name, unversioned, and with no origin. Nothing rewrites it, and nothing has to be done by hand. An `id`, `version` or `[origin]` that is present but out of shape makes the manifest unreadable (see [Benchmark status](#benchmark-status)). An earlier release that reads a manifest written by this one ignores the keys it does not know.
+
+Whatever an agent may edit on disk carries a date version, Skills and Benchmarks alike. A new Benchmark starts at the day's `.1`, another revision on the same day takes the next number, and `benchmark-design` moves the version on whenever it changes a case or the status. A Benchmark's page shows its version beside the directory path.
+
+A Benchmark's **package** is `benchmark_config.toml` and its case directories. `scoreboard.yaml`, the `.jobs/` trials, other entries whose names start with a dot, and symlinks belong to the copy on this disk and are never part of it. Large source files stay out of a package too: a statement links them in a repository at a pinned commit, as the built-in Benchmarks' statements do. The five built-in Benchmarks are also published in this format under `packages/` in the public repository Prism-Shadow/penguin-harness-benchmark.
 
 ### Benchmark status
 
@@ -137,7 +168,7 @@ Benchmarks belong to the Project. Each one is stored in `<root>/<project>/benchm
 | `published` | The Formal Baseline is recorded | Usable |
 | `failed` | `benchmark-design` reports `calibration_failed` | Masked as a failed creation, with a request to delete it and create it again |
 
-A failed Benchmark cannot be used. A Benchmark created by hand, the built-in example and the built-in Benchmarks are published from the start. A config without the field, or with any value other than `draft` or `failed`, reads as published.
+A failed Benchmark cannot be used. A Benchmark created by hand, the built-in example and the built-in Benchmarks are published from the start. A manifest without the key, or with any value other than `draft` or `failed`, reads as published. A Benchmark whose manifest the server cannot use (not TOML, an `id` that is not its directory's, or a `version` or `[origin]` out of shape) still lists under its directory name, as failed: the Evaluation Center masks it and shows why, and it cannot be used until the file is fixed.
 
 ### Evaluation records
 

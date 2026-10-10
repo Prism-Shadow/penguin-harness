@@ -61,6 +61,8 @@ export interface SidebarFrameProps {
   pinned?: ReactNode;
   /** The scroll area: the page nav and the list. */
   children?: ReactNode;
+  /** If set, marks the scroll area as a find-in-page region of this kind (`data-find-region`). */
+  findRegion?: string;
   /** The account row at the foot: the account menu's trigger. */
   account: ReactNode;
   /** Layers the column opens (its dialogs), mounted after it. */
@@ -75,6 +77,7 @@ export function SidebarFrame({
   collapse,
   pinned,
   children,
+  findRegion,
   account,
   overlays,
   rootRef,
@@ -108,7 +111,10 @@ export function SidebarFrame({
       ) : (
         <div className="shrink-0 px-2 pb-2 pt-2">{pinned}</div>
       )}
-      <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2">
+      <div
+        {...(findRegion === undefined ? {} : { "data-find-region": findRegion })}
+        className="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2"
+      >
         {children}
       </div>
       <div className="shrink-0 border-t border-line p-2">{account}</div>
