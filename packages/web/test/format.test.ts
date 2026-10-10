@@ -334,41 +334,42 @@ describe("formatRelativeShort", () => {
 });
 
 describe("formatRelativeLong (a fact in a dialog: when a machine was last checked)", () => {
-  const NOW = new Date(2026, 6, 15, 12, 0, 0).getTime();
-  const at = (mo: number, d: number, h: number, mi: number) =>
-    new Date(2026, mo, d, h, mi).toISOString();
+  // Local wall-clock times, each read when its case runs: the clock and the times it measures
+  // must share one time zone, and a case may run under another than the file was loaded in
+  // (on Windows, the zone `withTimeZone` set can outlive it).
+  const at = (mo: number, d: number, h: number, mi: number, s = 0) =>
+    new Date(2026, mo, d, h, mi, s).toISOString();
+  const noon = () => new Date(2026, 6, 15, 12, 0, 0).getTime();
 
   it("under a minute reads as just now", () => {
-    expect(formatRelativeLong(new Date(2026, 6, 15, 11, 59, 30).toISOString(), "zh", NOW)).toBe(
-      "刚刚",
-    );
-    expect(formatRelativeLong(at(6, 15, 12, 0), "en", NOW)).toBe("just now");
+    expect(formatRelativeLong(at(6, 15, 11, 59, 30), "zh", noon())).toBe("刚刚");
+    expect(formatRelativeLong(at(6, 15, 12, 0), "en", noon())).toBe("just now");
   });
 
   it("minutes, hours and days in words, floored, one of a unit said in the singular", () => {
-    expect(formatRelativeLong(at(6, 15, 11, 57), "zh", NOW)).toBe("3 分钟前");
-    expect(formatRelativeLong(at(6, 15, 11, 59), "en", NOW)).toBe("1 minute ago");
-    expect(formatRelativeLong(at(6, 15, 11, 1), "en", NOW)).toBe("59 minutes ago");
-    expect(formatRelativeLong(at(6, 15, 9, 30), "zh", NOW)).toBe("2 小时前");
-    expect(formatRelativeLong(at(6, 15, 11, 0), "en", NOW)).toBe("1 hour ago");
-    expect(formatRelativeLong(at(6, 14, 11, 0), "zh", NOW)).toBe("1 天前");
-    expect(formatRelativeLong(at(6, 9, 12, 0), "en", NOW)).toBe("6 days ago");
+    expect(formatRelativeLong(at(6, 15, 11, 57), "zh", noon())).toBe("3 分钟前");
+    expect(formatRelativeLong(at(6, 15, 11, 59), "en", noon())).toBe("1 minute ago");
+    expect(formatRelativeLong(at(6, 15, 11, 1), "en", noon())).toBe("59 minutes ago");
+    expect(formatRelativeLong(at(6, 15, 9, 30), "zh", noon())).toBe("2 小时前");
+    expect(formatRelativeLong(at(6, 15, 11, 0), "en", noon())).toBe("1 hour ago");
+    expect(formatRelativeLong(at(6, 14, 11, 0), "zh", noon())).toBe("1 天前");
+    expect(formatRelativeLong(at(6, 9, 12, 0), "en", noon())).toBe("6 days ago");
   });
 
   it("a week or older — and a future time (clock skew) — is the absolute date and time", () => {
-    expect(formatRelativeLong(at(6, 8, 12, 0), "zh", NOW)).toBe("2026-07-08 12:00");
-    expect(formatRelativeLong(at(6, 15, 12, 5), "en", NOW)).toBe("2026-07-15 12:05");
+    expect(formatRelativeLong(at(6, 8, 12, 0), "zh", noon())).toBe("2026-07-08 12:00");
+    expect(formatRelativeLong(at(6, 15, 12, 5), "en", noon())).toBe("2026-07-15 12:05");
   });
 
   it("unparsable input yields the empty string", () => {
-    expect(formatRelativeLong("not-a-date", "zh", NOW)).toBe("");
-    expect(formatRelativeLong("", "en", NOW)).toBe("");
+    expect(formatRelativeLong("not-a-date", "zh", noon())).toBe("");
+    expect(formatRelativeLong("", "en", noon())).toBe("");
   });
 
   describe("with no clock given", () => {
     beforeEach(() => {
       vi.useFakeTimers();
-      vi.setSystemTime(NOW);
+      vi.setSystemTime(noon());
     });
     afterEach(() => {
       vi.useRealTimers();
