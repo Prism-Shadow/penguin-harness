@@ -249,7 +249,8 @@ mode, machines, workflows:
   `S.messaging.saveBeforeEnable`). Instant controls are never part of a draft and never dirty.
 - **Typed controls commit on Save.** `Input`, `Textarea`, `PasswordInput`, numbers, URLs,
   key-value and lines editors, `TagInput`, table/list editors, prompt editors. Never on blur, never
-  debounced. Build the form on `useFormDraft(loaded, { scope })` from `@prismshadow/penguin-ui`:
+  debounced, and never on Enter in a form of more than one field — Enter may submit a form whose
+  only field it is (the vault value, a rename), and that is still the Save. Build the form on `useFormDraft(loaded, { scope })` from `@prismshadow/penguin-ui`:
   bind `draft`/`patch`, compute inline `errors` from the draft, and render
   `<Button size="sm" variant="primary" disabled={!dirty || errors !== null || busy}>{S.common.save}</Button>`
   plus Cancel (a dialog) or Reset (`S.common.reset` on a page; `disabled={!dirty}`, no confirm).
@@ -264,8 +265,10 @@ mode, machines, workflows:
 - **Leaving a dirty form asks, once, through one card.** `useFormDraft` registers the form while
   it is dirty; the app's `NavigationGuard` (a `useBlocker` on the data router) catches every route
   change, `?tab=` switches, sidebar links and browser back/forward included; a dialog passes
-  `useGuardedClose(onClose, form.scope)` as its `onClose` **and** to its Cancel button, which
-  covers Esc, the ×, the scrim and Cancel; any other state switch that would replace a form (a
+  `useGuardedClose(onClose, form.scope, { locked: busy })` as its `onClose` **and** to its Cancel
+  button, which covers Esc, the ×, the scrim and Cancel — and while its save is in flight
+  (`locked`) none of them does anything, since a close then would "discard" what the request is
+  about to store; any other state switch that would replace a form (a
   rail, a local tab strip, a machine picker, a document switch) goes through
   `guardLeave(action, scope)`. The card is `UnsavedChangesHost` in `App`: 「放弃未保存的修改？」,
   danger 「放弃修改」, 「继续编辑」. Never render a second discard dialog, never offer "save and
@@ -282,8 +285,8 @@ Checklist for a new settings surface:
 2. Typed → `useFormDraft` with the surface's `scope` (one shared scope per dialog or rail, none
    for a record dialog, which gets its own); Save gated on dirty **and** valid; Reset or Cancel;
    errors inline; `adopt` on success only.
-3. Dialog → `useGuardedClose` on `onClose` and Cancel. Page tabs in `?tab=` need nothing more.
-   Non-router switches → `guardLeave`.
+3. Dialog → `useGuardedClose` on `onClose` and Cancel, `locked` while its save is in flight.
+   Page tabs in `?tab=` need nothing more. Non-router switches → `guardLeave`.
 4. Add the module to `FORM_MODULES` in `test/form-commit-guard.test.ts`; it fails on an `onBlur`
    save, a Save form that does not register, and a `Modal` in a form module whose `onClose` is
    not the guarded one.
