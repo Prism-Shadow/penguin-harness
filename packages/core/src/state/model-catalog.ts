@@ -1702,9 +1702,12 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // promotion that lapses is then one field to delete, with the rate to return to still on the
   // row. effectivePricing() applies it; a new Project stores the list price and the fraction as
   // a promotion beside it, which the cost center applies, so it charges what the gateway
-  // charges. Ten rows are promoted as of 2026-10-10: ling-3.0-flash at 65% off, the three
-  // Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50%, deepseek-v4-flash
-  // and glm-5.2 at 20%, and deepseek-v4-pro, glm-5.3, glm-5.3-flash and qwen3.8-max at 10%.
+  // charges. Eight rows are promoted as of 2026-10-10: ling-3.0-flash at 65% off, the three
+  // Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50%, glm-5.2 at 20%, and
+  // glm-5.3, glm-5.3-flash and qwen3.8-max at 10%. The gateway also sells the DeepSeek V4
+  // preview releases under the bare ids deepseek-v4-flash and deepseek-v4-pro ("… Preview");
+  // they are deliberately not presets (the user's call, 2026-10-10): the dated rows below are
+  // the releases that superseded them.
   //
   // Three DeepSeek rows — deepseek-v4.1-flash, deepseek-v4-flash-0731 and deepseek-v4-pro-0813 —
   // are priced by time instead (`pricing.time_pricing`): a peak price on weekdays 09:00-12:00
@@ -1725,21 +1728,6 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // Display names follow the catalog's spelling of a model family where it has one (GLM-5.3,
   // Qwen 3.8 Max, MiMo-V2.5), and otherwise the portal's name without its "Vendor: " prefix
   // (Seed-2.1-Pro, Ling-3.1-flash, Step 5 Preview). Rows are in plain dictionary order by id. --
-  {
-    // TokenDance sells this id as "DeepSeek V4 Flash Preview", the preview release the dated
-    // 0731 row below superseded, and the display name keeps that word: DeepSeek's own API now
-    // serves the bare id from V4.1 Flash. Text only, 1,048,576 window. 20% off a CNY 1 input /
-    // 2 output / 0.2 cache hit list, so the gateway bills 0.8 / 1.6 / 0.16, at every hour.
-    modelId: "deepseek-v4-flash",
-    displayName: "DeepSeek V4 Flash Preview",
-    provider: "tokendance",
-    contextWindow: 1048576,
-    pricing: cny(0.2, 1, 2),
-    discount: 0.2,
-    supportsVision: false,
-    clientType: "openai-chat",
-    baseUrl: TOKENDANCE_BASE_URL,
-  },
   {
     // Text only, 1,048,576 window. Priced by time (see the block comment): a CNY 3 input / 9
     // output / 0.1 cache hit list, billed at 2.4 / 7.2 / 0.08 in the peak windows and at half
@@ -1769,21 +1757,6 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
     retired: true,
-  },
-  {
-    // Sold as "DeepSeek V4 Pro Preview", the preview release the 0813 row below superseded.
-    // Text only, 1,048,576 window. 10% off a CNY 9 input / 27 output / 0.3 cache hit list, so
-    // the gateway bills 8.1 / 24.3 / 0.27 at every hour: unlike the 0813 row it follows no
-    // schedule.
-    modelId: "deepseek-v4-pro",
-    displayName: "DeepSeek V4 Pro Preview",
-    provider: "tokendance",
-    contextWindow: 1048576,
-    pricing: cny(0.3, 9, 27),
-    discount: 0.1,
-    supportsVision: false,
-    clientType: "openai-chat",
-    baseUrl: TOKENDANCE_BASE_URL,
   },
   {
     // Text only, 1,000,000 window. Priced by time like the 0731 row: a CNY 9 input / 27 output

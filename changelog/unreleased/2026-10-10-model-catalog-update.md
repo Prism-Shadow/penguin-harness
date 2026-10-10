@@ -23,9 +23,7 @@ The built-in model catalog was updated on 2026-10-10. The new Claude and GPT mod
 ## TokenDance
 
 - The group was re-read from `tokendance.space/portal/api/models/all` and `tokendance.space/gateway/v1/models`.
-- Added ten rows:
-  - `deepseek-v4-flash` (**DeepSeek V4 Flash Preview**): CNY 0.2 / 1 / 2 at 20% off.
-  - `deepseek-v4-pro` (**DeepSeek V4 Pro Preview**): CNY 0.3 / 9 / 27 at 10% off.
+- Added eight rows:
   - `glm-5.2` (**GLM-5.2**): CNY 2 / 8 / 28 at 20% off.
   - `glm-5.3-flashx` (**GLM-5.3 FlashX**, image input): CNY 0.57 / 2 / 7.
   - `ling-3.0-flash` (**Ling-3.0-flash**): CNY 0.08 / 0.4 / 1.2 at 65% off, with a 256,000-token window.
@@ -34,7 +32,8 @@ The built-in model catalog was updated on 2026-10-10. The new Claude and GPT mod
   - `mimo-v2.6-pro` (**MiMo-V2.6-Pro**): CNY 0.025 / 3 / 6.
   - `mimo-v2.6-ultraspeed` (**MiMo-V2.6-Pro-UltraSpeed**): CNY 0.25 / 30 / 60.
   - `step-5-preview` (**Step 5 Preview**): CNY 0.35 / 7 / 20.
-- The MiMo and Step rows take images. Unless stated otherwise above, each new row has a 1,000,000-token context window, or 1,048,576 for the two Preview DeepSeek rows.
+- The MiMo and Step rows take images. Unless stated otherwise above, each new row has a 1,000,000-token context window.
+- The gateway's DeepSeek V4 preview releases, sold under the bare ids `deepseek-v4-flash` and `deepseek-v4-pro`, are not presets; the dated 0731 and 0813 rows that superseded them are.
 - `deepseek-v4-flash-0731` and `deepseek-v4-pro-0813` moved from a flat 10% promotion to DeepSeek's peak/off-peak schedule. The peak list prices are CNY 0.1 / 3 / 9 and 0.3 / 9 / 27, and both halve outside Beijing weekday 09:00–12:00 and 14:00–18:00.
 - TokenDance also takes 20% off these two rows at peak, and off `deepseek-v4.1-flash` at every hour. A row cannot record a promotion beside a schedule, so those hours are priced at the list rate.
 - `kimi-k3` lost its 40% promotion and now lists at CNY 2 / 20 / 100.

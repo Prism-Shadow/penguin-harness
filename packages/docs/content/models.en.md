@@ -569,11 +569,11 @@ The list is not exhaustive.
   - TokenDance also takes 20% off those three at peak, and off-peak too on `deepseek-v4.1-flash`. A row cannot carry a flat promotion beside a schedule, so those hours are priced at the list rate, 25% above what TokenDance bills.
   - Qwen bills the DeepSeek models it resells on a schedule of its own, half price from 22:00 to 8:00 Beijing time every day. `deepseek-v4.1-flash` in both Qwen groups, and the Token Plan's `deepseek-v4-pro-0813`, declare that one instead, and the tag's tooltip names the windows of whichever schedule the row follows.
   - The stored price is always the peak price, so what is on disk does not depend on the hour a Project was created or synced.
-- **Flat promotions.** Ten TokenDance models are discounted today:
+- **Flat promotions.** Eight TokenDance models are discounted today:
   - `ling-3.0-flash` at 65% off
   - the three Doubao Seed rows (`seed-2.1-pro`, `seed-2.1-turbo`, `seed-evolving`) at 50%
-  - `deepseek-v4-flash` and `glm-5.2` at 20%
-  - `deepseek-v4-pro`, `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
+  - `glm-5.2` at 20%
+  - `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
 
   Gemini 3.8 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model card shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
 - **Your own prices.** Editing a row's price cancels its promotion and takes the discount tag off the card: the figure is then yours, not the seller's.

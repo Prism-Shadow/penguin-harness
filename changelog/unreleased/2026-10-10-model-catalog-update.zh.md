@@ -23,9 +23,7 @@
 ## TokenDance 分组
 
 - 本分组按 `tokendance.space/portal/api/models/all` 与 `tokendance.space/gateway/v1/models` 重新读取。
-- 新增十个条目：
-  - `deepseek-v4-flash`（**DeepSeek V4 Flash Preview**）：CNY 0.2 / 1 / 2，打 8 折。
-  - `deepseek-v4-pro`（**DeepSeek V4 Pro Preview**）：CNY 0.3 / 9 / 27，打 9 折。
+- 新增八个条目：
   - `glm-5.2`（**GLM-5.2**）：CNY 2 / 8 / 28，打 8 折。
   - `glm-5.3-flashx`（**GLM-5.3 FlashX**，支持图像输入）：CNY 0.57 / 2 / 7。
   - `ling-3.0-flash`（**Ling-3.0-flash**）：CNY 0.08 / 0.4 / 1.2，打 3.5 折，上下文窗口 256,000 Token。
@@ -34,7 +32,8 @@
   - `mimo-v2.6-pro`（**MiMo-V2.6-Pro**）：CNY 0.025 / 3 / 6。
   - `mimo-v2.6-ultraspeed`（**MiMo-V2.6-Pro-UltraSpeed**）：CNY 0.25 / 30 / 60。
   - `step-5-preview`（**Step 5 Preview**）：CNY 0.35 / 7 / 20。
-- MiMo 与 Step 条目支持图像输入。除上文另有说明外，新条目的上下文窗口均为 1,000,000 Token，两条 Preview 版 DeepSeek 为 1,048,576 Token。
+- MiMo 与 Step 条目支持图像输入。除上文另有说明外，新条目的上下文窗口均为 1,000,000 Token。
+- 网关以裸 id `deepseek-v4-flash` 与 `deepseek-v4-pro` 出售的 DeepSeek V4 预览版不作为预置条目；取代它们的 0731 与 0813 带日期条目才是。
 - `deepseek-v4-flash-0731` 与 `deepseek-v4-pro-0813` 从固定 9 折改为 DeepSeek 的高峰 / 空闲时段规则。高峰牌价分别为 CNY 0.1 / 3 / 9 与 0.3 / 9 / 27，北京时间工作日 09:00–12:00 和 14:00–18:00 以外的时段减半。
 - TokenDance 还在高峰时段对这两条再打 8 折，对 `deepseek-v4.1-flash` 则全天打 8 折。条目无法在时段规则之外再记录促销，所以这些时段按牌价计费。
 - `kimi-k3` 的 6 折促销已结束，牌价改为 CNY 2 / 20 / 100。

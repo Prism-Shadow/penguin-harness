@@ -917,10 +917,8 @@ describe("model-catalog", () => {
     // Plain dictionary order by upstream id; vision flags and context windows from TokenDance's
     // public catalog API and portal model list.
     expect(td.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
-      ["deepseek-v4-flash", 1048576, false],
       ["deepseek-v4-flash-0731", 1048576, false],
       ["deepseek-v4-flash-vision-exp", 1000000, true],
-      ["deepseek-v4-pro", 1048576, false],
       ["deepseek-v4-pro-0813", 1000000, false],
       ["deepseek-v4.1-flash", 1000000, true],
       ["dots-3-note-preview", 512000, true],
@@ -942,6 +940,9 @@ describe("model-catalog", () => {
       ["seed-evolving", 256000, true],
       ["step-5-preview", 1000000, true],
     ]);
+    // The bare deepseek-v4-flash / deepseek-v4-pro ids, which the gateway sells as the V4
+    // "Preview" releases, are deliberately not presets (the user's call, 2026-10-10).
+    expect(td.some((m) => /^deepseek-v4-(flash|pro)$/.test(m.modelId))).toBe(false);
     for (const m of td) {
       expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://tokendance.space/gateway/v1");
@@ -967,8 +968,6 @@ describe("model-catalog", () => {
       ];
     };
     const discounted: Array<[string, number, [number, number, number]]> = [
-      ["deepseek-v4-flash", 0.2, [0.8, 1.6, 0.16]],
-      ["deepseek-v4-pro", 0.1, [8.1, 24.3, 0.27]],
       ["glm-5.2", 0.2, [6.4, 22.4, 1.6]],
       ["glm-5.3", 0.1, [7.2, 25.2, 1.8]],
       ["glm-5.3-flash", 0.1, [0.72, 2.52, 0.207]],
