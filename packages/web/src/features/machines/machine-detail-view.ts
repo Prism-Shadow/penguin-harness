@@ -7,18 +7,31 @@
  * never disagree about a machine's state: the dialog only says more of it.
  */
 import type {
+  MachineCheck,
   MachineInfo,
   MachineJob,
   MachinePhase,
   SshHostResponse,
 } from "@prismshadow/penguin-server/api";
 import { ICONS } from "@prismshadow/penguin-ui";
-import { formatDateTime, formatRelativeLong, formatShortDateTime } from "../../lib/format";
+import {
+  formatBytes,
+  formatDateTime,
+  formatRelativeLong,
+  formatShortDateTime,
+} from "../../lib/format";
 import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
 import { reasonText } from "./machine-card";
 import type { MachineVerb } from "./machine-detail-dialog";
-import { MACHINE_PHASES, readingTone, stepLabel } from "./machines-view";
+import {
+  MACHINE_PHASES,
+  failureText,
+  isPhase,
+  readingTone,
+  sshWords,
+  stepLabel,
+} from "./machines-view";
 import type { MachineReading } from "./machines-view";
 
 /** The machine's state as one chip: a glyph (or a spinner) and one plain word. */
@@ -47,6 +60,7 @@ const CHIP_GLYPH: Record<MachineReading["kind"], string | null> = {
   queued: ICONS.hourglass,
   working: null,
   failed: ICONS.xCircle,
+  notInstalled: ICONS.download,
   unknown: ICONS.helpCircle,
 };
 
@@ -257,11 +271,14 @@ const failedResult = (job: MachineJob) =>
 /**
  * The six steps in order, each marked by where the job stands: a queued job has every step still
  * to come, a running one is on its phase with the earlier ones done, one that finished well has
- * them all done, and a failed one is marked failed at its phase.
+ * them all done, and a failed one is marked failed at its phase — or, when it stopped before
+ * naming one (ssh refused the sign-in every job opens with), at the step its failure names.
  */
 export function jobSteps(job: MachineJob): JobStep[] {
-  const at = job.phase === null ? -1 : MACHINE_PHASES.indexOf(job.phase);
-  const failed = failedResult(job) !== null;
+  const failure = failedResult(job);
+  const failed = failure !== null;
+  const phase = job.phase ?? (failure !== null && isPhase(failure.step) ? failure.step : null);
+  const at = phase === null ? -1 : MACHINE_PHASES.indexOf(phase);
   const stateOf = (index: number): StepState => {
     if (job.queued) return "pending";
     if (!job.running && !failed) return "done";
@@ -286,8 +303,10 @@ export type JobView =
       steps: JobStep[];
       /** The failed step by name, or the server's own word for a step that is not a phase. */
       stepName: string;
-      /** The far side's own words. */
+      /** Why: an ssh refusal in the reader's language, anything else in the far side's words. */
       message: string;
+      /** ssh's own words under a refusal it caused; null otherwise. */
+      detail: string | null;
       canReplaceProgram: boolean;
     };
 
@@ -304,12 +323,12 @@ export function jobView(job: MachineJob): JobView {
     kind: "failed",
     steps: jobSteps(job),
     stepName: stepLabel(result.step),
-    message: result.message,
+    ...failureText(result, job.alias),
     canReplaceProgram: result.canReplaceProgram === true,
   };
 }
 
-export type PrimaryKind = "update" | "start" | "connect" | "tryAgain" | "retry";
+export type PrimaryKind = "enable" | "update" | "start" | "connect" | "tryAgain" | "retry";
 
 /** The one thing to do for a machine: its button's word and glyph, and what it does. */
 export interface PrimaryAction {
@@ -334,6 +353,9 @@ export function primaryAction(
   if (reading.kind === "queued" || reading.kind === "working") return null;
   if (reading.kind === "failed") {
     return { kind: "retry", label: p.retry, glyph: ICONS.rotateCcw, why: p.retryWhy };
+  }
+  if (reading.kind === "notInstalled") {
+    return { kind: "enable", label: p.enable, glyph: ICONS.plug, why: p.enableWhy };
   }
   if (outOfDate && imageVersion !== null) {
     return {
@@ -384,11 +406,12 @@ export interface VerbGroup {
  */
 export function verbGroups(primary: PrimaryKind | null): VerbGroup[] {
   const m = S.machines;
-  const connects = primary === "connect" || primary === "tryAgain";
+  const connects = primary === "connect" || primary === "tryAgain" || primary === "enable";
   const maintenance: VerbRow[] = [
     { verb: "install", glyph: ICONS.download, label: m.verbs.install, why: m.verbs.installWhy },
     { verb: "connect", glyph: ICONS.chainLink, label: m.verbs.connect, why: m.verbs.connectWhy },
     { verb: "restart", glyph: ICONS.rotateCw, label: m.verbs.restart, why: m.verbs.restartWhy },
+    { verb: "check", glyph: ICONS.gauge, label: m.verbs.check, why: m.verbs.checkWhy },
     {
       verb: "configure",
       glyph: ICONS.gear,
@@ -415,8 +438,12 @@ export function verbGroups(primary: PrimaryKind | null): VerbGroup[] {
   ];
 }
 
-/** Why a verb waits on the machine: a job on its way, no build, no connection, no answer. */
-export type HoldReason = "moving" | "noImage" | "noConnection" | "unreachable";
+/**
+ * Why a verb waits on the machine: a job on its way, a check already running, no build, nothing
+ * installed, no connection, no answer.
+ */
+export type HoldReason =
+  "moving" | "checking" | "noImage" | "notInstalled" | "noConnection" | "unreachable";
 
 /** Why a verb waits: a request in flight, or a reason of the machine's own. */
 export type Hold = "busy" | HoldReason;
@@ -432,13 +459,18 @@ export interface VerbContext {
   connected: boolean;
   /** The last probe could not reach the machine. */
   unreachable: boolean;
+  /** This Project has installed the program there (an added machine has not, yet). */
+  installed: boolean;
+  /** A connection check is running for the machine. */
+  checking: boolean;
 }
 
 /** What of the machine's own can hold each verb, in the order the reasons are told. */
 const HOLDS: Record<DialogVerb, readonly HoldReason[]> = {
   install: ["moving", "noImage"],
-  connect: ["moving"],
-  restart: ["moving", "unreachable"],
+  connect: ["moving", "notInstalled"],
+  restart: ["moving", "notInstalled", "unreachable"],
+  check: ["moving", "checking"],
   configure: [],
   stopUsing: [],
   disconnect: ["noConnection"],
@@ -449,8 +481,12 @@ const holds = (hold: HoldReason, ctx: VerbContext): boolean => {
   switch (hold) {
     case "moving":
       return ctx.moving;
+    case "checking":
+      return ctx.checking;
     case "noImage":
       return ctx.noImage;
+    case "notInstalled":
+      return !ctx.installed;
     case "noConnection":
       return !ctx.connected;
     case "unreachable":
@@ -473,4 +509,92 @@ export function holdReason(verb: DialogVerb, ctx: VerbContext): HoldReason | nul
  */
 export function verbHold(verb: DialogVerb, ctx: VerbContext): Hold | null {
   return ctx.busy ? "busy" : holdReason(verb, ctx);
+}
+
+/** One line of the connection check: its mark, its sentence, and ssh's own words under it. */
+export interface CheckLine {
+  id: MachineCheck["id"];
+  state: MachineCheck["state"];
+  /** A check for pass, an alert for a caveat, a cross for a failure; null (a dot) when not asked. */
+  glyph: string | null;
+  tone: Tone;
+  text: string;
+  /** ssh's own words under a sign-in that failed; null otherwise. */
+  detail: string | null;
+}
+
+const CHECK_MARK: Record<MachineCheck["state"], { glyph: string | null; tone: Tone }> = {
+  pass: { glyph: ICONS.check, tone: "success" },
+  warn: { glyph: ICONS.triangleAlert, tone: "attention" },
+  fail: { glyph: ICONS.xCircle, tone: "danger" },
+  skip: { glyph: null, tone: "muted" },
+};
+
+/** An OS as people name it. */
+const OS_NAME: Record<string, string> = { linux: "Linux", darwin: "macOS", win32: "Windows" };
+
+/**
+ * A check as one plain sentence in the page's language, from the facts the server found — what
+ * the machine has, and when it falls short, what to do. A sign-in that failed carries ssh's own
+ * words under it.
+ */
+export function checkLine(check: MachineCheck, alias: string): CheckLine {
+  const c = S.machines.check;
+  const mark = CHECK_MARK[check.state];
+  const line = (text: string, detail: string | null = null): CheckLine => ({
+    id: check.id,
+    state: check.state,
+    ...mark,
+    text,
+    detail,
+  });
+  if (check.state === "skip") return line(c.skipped(c.name[check.id]));
+  const size = (mb: number) => formatBytes(mb * 1024 * 1024);
+  switch (check.id) {
+    case "ssh":
+      return check.state === "pass"
+        ? line(c.sshPass(check.user, check.host))
+        : line(c.ssh[check.reason](alias), c.sshSaid(sshWords(check.said)));
+    case "platform":
+      if (check.state === "fail") {
+        if (check.reason === "glibc") {
+          return line(c.platformOldGlibc(check.glibc ?? "?", check.need ?? "?"));
+        }
+        if (check.reason === "musl") return line(c.platformMusl);
+        return line(c.platformUnsupported, check.said || null);
+      }
+      if (check.state === "warn" && check.terminalsNeed !== undefined) {
+        return line(c.platformTerminals(check.arch, check.glibc ?? "?", check.terminalsNeed));
+      }
+      return check.state === "warn"
+        ? line(c.platformWindows)
+        : line(c.platform(OS_NAME[check.os] ?? check.os, check.arch));
+    case "tools":
+      if (check.state === "pass") return line(c.toolsPass);
+      return check.state === "warn"
+        ? line(c.toolsNoCurl)
+        : line(c.toolsMissing(check.missing.join(", ")));
+    case "download":
+      if (check.state === "pass") {
+        const github = check.github === "ok";
+        const oss = check.oss === "ok";
+        return line(
+          c.downloadFrom(check.version, github && oss ? "both" : github ? "github" : "oss"),
+        );
+      }
+      return check.state === "warn"
+        ? line(c.downloadCarried(check.version))
+        : line(c.downloadMissing(check.version));
+    case "disk":
+      if (check.state === "pass") return line(c.diskPass(size(check.freeMb)));
+      return check.state === "warn"
+        ? line(c.diskTight(size(check.freeMb)))
+        : line(c.diskLow(size(check.freeMb), size(check.needMb)));
+    case "port":
+      return check.holder === "other"
+        ? line(c.portTaken(check.port))
+        : check.holder === "penguin"
+          ? line(c.portOurs(check.port))
+          : line(c.portFree(check.port));
+  }
 }

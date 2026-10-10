@@ -38,6 +38,7 @@ import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { sessionArgs } from "../commands.js";
 import type { RemoteTarget } from "../commands.js";
+import { sshFailureText } from "../ssh-failure.js";
 
 /**
  * What a command in the session produced. `output` is stdout and stderr merged, with the
@@ -192,14 +193,17 @@ class MachineShell {
     this.#pending = null;
     if (pending !== null) {
       clearTimeout(pending.timer);
-      // ssh's own last words — a refused key, an unknown host — are the diagnosis.
+      // ssh's own last words — a refused key, an unknown host — are the diagnosis, led by
+      // what they mean when ssh has a fixed diagnostic for it: BatchMode turns every question
+      // ssh would have asked a person into a refusal, and the cure is rarely in its words.
       const said = this.#stderr.trim().split("\n").pop() ?? "";
       pending.resolve({
         code: 255,
         output:
-          said === ""
+          sshFailureText(this.#stderr, this.target.alias) ??
+          (said === ""
             ? "the connection to this machine ended"
-            : `the connection to this machine ended: ${said}`,
+            : `the connection to this machine ended: ${said}`),
       });
     }
     this.#stderr = "";
@@ -402,9 +406,18 @@ export function closeAllShells(): void {
   sessions.clear();
 }
 
-/** The session held to a machine, while it is up. */
+/** The session to a machine, while it is up — held, or opened by a command and idling out. */
 export function sessionOf(machineAddress: string): ShellSession | null {
   return sessions.get(machineAddress)?.session() ?? null;
+}
+
+/**
+ * The session HELD to a machine, while it is up: what "connected" means. A session a job's
+ * commands opened stays up until its idle timer closes it, and is not a connection — an
+ * install that failed would otherwise read as connected for as long as its session idles.
+ */
+export function heldSessionOf(machineAddress: string): ShellSession | null {
+  return isHeld(machineAddress) ? sessionOf(machineAddress) : null;
 }
 
 /** Lets go of a machine's session — for a disconnect, or a machine that went away. */

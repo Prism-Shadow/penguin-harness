@@ -119,38 +119,8 @@ export function runWithInput(
   });
 }
 
-/** A local helper's stdout as bytes — a tarball to hand to a machine as a heredoc. */
-export function runBytes(
-  file: string,
-  args: string[],
-): Promise<{ code: number; stdout: Buffer; stderr: string }> {
-  return new Promise((resolve) => {
-    execFile(
-      file,
-      args,
-      { encoding: "buffer", timeout: DEFAULT_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        const code =
-          error && typeof (error as NodeJS.ErrnoException & { code?: number }).code === "number"
-            ? ((error as NodeJS.ErrnoException & { code: number }).code as number)
-            : error
-              ? 1
-              : 0;
-        resolve({ code, stdout: Buffer.from(stdout), stderr: String(stderr) });
-      },
-    );
-  });
-}
-
 /** What a failed ExecResult says, in the transport's words; `whenSilent` when it said nothing. */
 export function execFailureText(result: ExecResult, whenSilent: string): string {
   if (result.timedOut) return "the machine did not answer in time";
   return result.stderr.trim() || whenSilent;
-}
-
-/** True when the failure is "ssh could not authenticate without asking" — the BatchMode wall. */
-export function looksLikeAuthFailure(result: ExecResult): boolean {
-  return /permission denied|no supported authentication|host key verification failed/i.test(
-    result.stderr,
-  );
 }

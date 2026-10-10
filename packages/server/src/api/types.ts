@@ -4740,6 +4740,14 @@ export interface MachineInfo {
    */
   elsewhere?: { version: string; at: string };
   /**
+   * In this Project's list: the Machines page shows a card for it. A machine joins the list when
+   * it is added (`POST …/machines/add`, which installs nothing) or when an install or a use for
+   * this Project runs on it, and leaves it with stop-using or release. Absent for a host that is
+   * only in the ssh config, or only in another Project's list; never set on `local`, which is
+   * always shown.
+   */
+  member?: true;
+  /**
    * The machine's OWN id — 16 base64url characters minted by the server that runs there,
    * stable across renames, re-aliasing and reinstalls. Null until a server has started on
    * that machine, since nothing has minted one yet.
@@ -4841,18 +4849,41 @@ export interface MachineJob {
          * because it restarts a server this Project does not own alone.
          */
         canReplaceProgram?: boolean;
+        /**
+         * Why ssh refused, when the failure is ssh's own (a host key, a key, a host name, a
+         * route), for the page to say in its language; `message` says it in English, with
+         * ssh's own words after `(ssh: …)`.
+         */
+        sshReason?: MachineSshFailure;
       };
 }
+
+/**
+ * A source checkout's install image (machines/checkout-image.ts), built from the checkout
+ * again at each install or use: not built yet, building, built, or failed with the build's
+ * own last words.
+ */
+export type MachinesCheckoutImage =
+  | { state: "unbuilt" }
+  | { state: "building" }
+  | { state: "built" }
+  | { state: "failed"; detail: string };
 
 /** GET /api/machines, and the 202 body of POST /api/machines/:machineId/install. */
 export interface MachinesResponse {
   machines: MachineInfo[];
   /**
    * The version an install would leave on the remote — the base release, plus a `+hmr.<sha>`
-   * suffix when this server carries a pushed version to replicate. Null for a development
-   * checkout, which stands on no release the remote could download.
+   * suffix when this server carries a pushed version to replicate. A source checkout answers
+   * with the image it last built, and null before its first build (see `checkoutImage`).
+   * Null otherwise only for a server that carries no image and builds none.
    */
   imageVersion: string | null;
+  /**
+   * Present only when this server runs from a source checkout: it builds its install image
+   * from the checkout at each install or use, so no image yet is not a reason to refuse one.
+   */
+  checkoutImage?: MachinesCheckoutImage;
   /** The most recently started job, running or finished. */
   job: MachineJob | null;
   /**
@@ -4897,6 +4928,32 @@ export interface SshHostResponse extends SshHostRequest {
   editable: boolean;
 }
 
+/**
+ * `GET /api/projects/:projectId/machines/ssh-hosts`: every host this server's ssh config declares,
+ * its included files' too, with what each one's own block says about reaching it — the literal
+ * lines, not what ssh resolves (no `ssh -G`): a `Host *` default or a `Match` block is not
+ * applied. For the add dialog's rows; an option the block leaves out is absent.
+ */
+export interface SshHostSummary {
+  alias: string;
+  hostName?: string;
+  user?: string;
+  port?: number;
+}
+
+export interface SshHostsResponse {
+  hosts: SshHostSummary[];
+}
+
+/**
+ * `POST /api/projects/:projectId/machines/add`: put these machines in this Project's list without
+ * installing anything there — each then has a card whose one thing to do is enabling it. Answers
+ * like `…/use`, refusals by id (`unknown-machine`, `self`).
+ */
+export interface MachinesAddRequest {
+  machines: string[];
+}
+
 /** `POST /api/projects/:projectId/machines/use`: bring these machines into use, as one queued batch. */
 export interface MachinesUseRequest {
   /** Machine ids (`ssh:<alias>`). Every one is queued; refusals come back by id. */
@@ -4907,6 +4964,95 @@ export interface MachinesUseRequest {
 
 /** Why one machine of a batch was not queued; the rest were. */
 export type MachineUseRefusal = "unknown-machine" | "self" | "no-image";
+
+/**
+ * Why ssh could not get a session to a machine, read from its own diagnostic
+ * (machines/ssh-failure.ts); `other` when it printed none of the ones with a fixed meaning.
+ */
+export type MachineSshFailure =
+  | "host-key-unknown"
+  | "host-key-changed"
+  | "key-file"
+  | "auth"
+  | "host-not-found"
+  | "refused"
+  | "timeout"
+  | "closed"
+  | "ssh-config"
+  | "other";
+
+/** Whether a machine reaches one release source: the package is there, the source answered without it, or no answer. */
+export type MachineSourceReach = "ok" | "missing" | "unreachable";
+
+/**
+ * One check of a machine (machines/diagnose.ts), as facts for the page to word. `pass` is
+ * fine, `warn` works with a caveat, `fail` stops an install or a connect, `skip` could not be
+ * asked (an earlier check failed, or it does not apply).
+ */
+export type MachineCheck =
+  /** A BatchMode session came up, as this account on that host. */
+  | { id: "ssh"; state: "pass"; user: string; host: string }
+  /** It did not; `said` is ssh's own words, led by what they mean. */
+  | { id: "ssh"; state: "fail"; reason: MachineSshFailure; said: string }
+  /**
+   * `warn` for Windows (installable, not connectable yet), and for a Linux whose glibc runs the
+   * release but is older than `terminalsNeed`, the one its terminal binding loads on.
+   */
+  | {
+      id: "platform";
+      state: "pass" | "warn";
+      os: string;
+      arch: string;
+      glibc?: string;
+      terminalsNeed?: string;
+    }
+  /**
+   * What the release's Node cannot run on: an OS or architecture no release is published for
+   * (`unsupported`, `said` what the machine answered), a glibc older than `need` (`glibc`), or
+   * a musl libc such as Alpine's (`musl`).
+   */
+  | {
+      id: "platform";
+      state: "fail";
+      reason: "unsupported" | "glibc" | "musl";
+      os?: string;
+      arch?: string;
+      glibc?: string;
+      need?: string;
+      said?: string;
+    }
+  /**
+   * What the release installer needs and the machine lacks. `warn` when curl alone is missing:
+   * the release is then sent over ssh rather than downloaded there.
+   */
+  | { id: "tools"; state: "pass" | "warn" | "fail"; missing: string[] }
+  /**
+   * Whether the machine itself reaches release `version` for its platform. `warn`: out of
+   * reach, so an install cannot download it there; `fail`: both sources answered and neither
+   * has it (not published).
+   */
+  | {
+      id: "download";
+      state: "pass" | "warn" | "fail";
+      version: string;
+      github: MachineSourceReach;
+      oss: MachineSourceReach;
+    }
+  /** Free space in the machine's home against what an install needs, in MB. */
+  | { id: "disk"; state: "pass" | "warn" | "fail"; freeMb: number; needMb: number }
+  /** The port its server would start on: free, already its PenguinHarness server's, or taken by something else. */
+  | { id: "port"; state: "pass" | "fail"; port: number; holder: "free" | "penguin" | "other" }
+  | { id: "platform" | "tools" | "download" | "disk" | "port"; state: "skip" };
+
+/**
+ * `POST /api/projects/:projectId/machines/:machineId/diagnose`: the checks, in order. Nothing
+ * is written on the machine; 409 `job_running` while a job works on it.
+ */
+export interface MachineDiagnosis {
+  machineId: string;
+  checkedAt: string;
+  checks: MachineCheck[];
+}
 
 export interface MachinesUseResponse extends MachinesResponse {
   refused: { machineId: string; why: MachineUseRefusal }[];

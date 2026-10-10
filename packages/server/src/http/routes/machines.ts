@@ -12,10 +12,14 @@
  * POST /:machineId/connect      — bring that machine's server up and hold a tunnel to it; 202,
  *                                 or 409 when a connect already runs.
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
+ * POST /add                     — put machines in this Project's list, installing nothing.
+ * GET  /ssh-hosts               — every host in the ssh config, with its block's user, host, port.
  * POST /ssh-hosts               — append a host block to this server's ~/.ssh/config; 201.
  * GET  /ssh-hosts/:alias        — that block read back, and whether this app wrote it.
  * PUT  /ssh-hosts/:alias        — rewrite a block this app wrote; 404 none, 409 hand-written.
  * POST /:machineId/restart      — stop that machine's server and start it again; 202, or 409.
+ * POST /:machineId/diagnose     — check what would stop an install or a connect there, writing
+ *                                 nothing on it; 200, or 409 while a job works on it.
  * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh.
  *
  * Under a Project because the page is, and because this Project's Model credentials go to
@@ -30,9 +34,11 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type {
   DirListResponse,
+  MachineDiagnosis,
   MachinesResponse,
   MachinesUseResponse,
   SshHostResponse,
+  SshHostsResponse,
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
@@ -60,12 +66,16 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     await next();
   });
 
-  const state = (c: Context<AppEnv>): MachinesResponse => ({
-    machines: deps.machines.list(requireValidId(c, "projectId")),
-    imageVersion: deps.machines.imageVersion(),
-    job: deps.machines.job(),
-    jobs: deps.machines.jobs(),
-  });
+  const state = (c: Context<AppEnv>): MachinesResponse => {
+    const checkoutImage = deps.machines.checkoutImage();
+    return {
+      machines: deps.machines.list(requireValidId(c, "projectId")),
+      imageVersion: deps.machines.imageVersion(),
+      ...(checkoutImage === null ? {} : { checkoutImage }),
+      job: deps.machines.job(),
+      jobs: deps.machines.jobs(),
+    };
+  };
 
   /**
    * Bring machines into use — the one verb a person needs. Each is queued for the whole
@@ -119,6 +129,27 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       "ssh_host_invalid",
       `${problem.field}: ${problem.why === "required" ? "required" : "must be one word, with no space or #"}`,
     );
+
+  /** Every host in the ssh config, with what its own block says: the add dialog's rows. */
+  app.get("/ssh-hosts", (c) =>
+    c.json({ hosts: deps.machines.sshHosts() } satisfies SshHostsResponse),
+  );
+
+  /**
+   * Add machines to this Project's list without installing anything: each gets a card whose one
+   * thing to do is enabling it. Refusals by id, as `/use` answers them.
+   */
+  app.post("/add", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const machines = Array.isArray(body.machines)
+      ? body.machines.filter((m): m is string => typeof m === "string")
+      : [];
+    if (machines.length === 0) {
+      throw new HttpError(400, "bad_request", "Name at least one machine to add.");
+    }
+    const { refused } = deps.machines.addToProject(requireValidId(c, "projectId"), machines);
+    return c.json({ ...state(c), refused } satisfies MachinesUseResponse);
+  });
 
   app.post("/ssh-hosts", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -221,7 +252,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       throw new HttpError(
         409,
         "no_install_image",
-        "This server has no install image to push. A packaged or installed server carries one; a development checkout gets one from its first hot push.",
+        "This server has no install image to push. A packaged or installed server carries one, and a source checkout builds one for each install; this server is neither.",
       );
     }
     return c.json(state(c), 202);
@@ -315,6 +346,25 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       throw new HttpError(409, "not_installed", "Nothing is installed on that machine yet.");
     }
     return c.json(state(c), 202);
+  });
+
+  /**
+   * The connection check: ssh, platform, the installer's tools, the release download, disk and
+   * port, asked of the machine without writing anything there (machines/diagnose.ts). A POST
+   * because it spends ssh round trips and a few seconds of the machine's network.
+   */
+  app.post("/:machineId/diagnose", async (c) => {
+    const result = await deps.machines.diagnose(c.req.param("machineId"));
+    if (result === "unknown-machine") {
+      throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
+    }
+    if (result === "self") {
+      throw new HttpError(409, "self_diagnose", "That is the machine this server runs on.");
+    }
+    if (result === "busy") {
+      throw new HttpError(409, "job_running", "A job is working on that machine; check it after.");
+    }
+    return c.json(result satisfies MachineDiagnosis);
   });
 
   app.post("/:machineId/disconnect", (c) => {

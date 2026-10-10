@@ -7,17 +7,24 @@
  *   arrive.
  * - There is one session however many ask: commands to one machine queue, two opens spawn
  *   once, and different machines run side by side.
- * - A session that dies says why in ssh's own words and is not kept.
+ * - A session that dies says why — what ssh's diagnostic means and what to do, then its own
+ *   words — and is not kept.
  * - A command that outlasts its timeout answers with the timeout, and the next one gets a
  *   live session; on a held session the corpse is dropped but the hold kept.
  * - A held session that dies comes back on its own after the shortest reconnect wait; a
  *   closed one stays closed; closing lets go, and the next ask opens a new session.
+ * - A session a command opened is up but is not a connection until it is held.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { closeConnectionTo, connectionTo, sessionOf } from "../src/machines/transport/index.js";
+import {
+  closeConnectionTo,
+  connectionTo,
+  heldSessionOf,
+  sessionOf,
+} from "../src/machines/transport/index.js";
 
 // The stub `ssh` below is a shell script, which execFile cannot run on Windows; what stays
 // unmeasured on Windows is listed in ci.yml's test-windows note.
@@ -52,6 +59,16 @@ exit 1
     fs.rmSync(stubBin, { recursive: true, force: true });
   });
   const spawns = () => fs.readFileSync(logFile, "utf8").trim().split("\n");
+
+  it("counts a session a command opened as up, and as a connection only once it is held", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    await conn.exec("true");
+    expect(sessionOf("ssh:nas")).not.toBeNull();
+    expect(heldSessionOf("ssh:nas")).toBeNull();
+    expect((await conn.hold()).ok).toBe(true);
+    expect(heldSessionOf("ssh:nas")).not.toBeNull();
+    expect(heldSessionOf("ssh:nas")).toEqual(sessionOf("ssh:nas"));
+  });
 
   it("runs commands with their exit code, and an `exit` cannot end the session", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
@@ -93,11 +110,14 @@ exit 1
     expect(spawns()).toHaveLength(2);
   });
 
-  it("a session that dies says why, in ssh's own words, and is not kept", async () => {
+  it("a session that dies says what ssh's words mean, then the words, and is not kept", async () => {
     const conn = connectionTo({ alias: "refused", user: "deploy" });
     const opened = await conn.open();
     expect(opened.ok).toBe(false);
-    if (!opened.ok) expect(opened.detail).toContain("Permission denied");
+    if (!opened.ok) {
+      expect(opened.detail).toMatch(/^refused did not accept any key this computer offered/);
+      expect(opened.detail).toContain("Permission denied (publickey)");
+    }
     expect(sessionOf("ssh:refused")).toBeNull();
   });
 

@@ -13,6 +13,7 @@ import type {
   MachineInfo,
   MachineJob,
   MachinePhase,
+  MachineSshFailure,
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
@@ -42,6 +43,11 @@ export type MachineReading =
   | { kind: "notConnected" }
   | { kind: "unreachable"; detail: string | null }
   | { kind: "stopped" }
+  /**
+   * Added to this Project and nothing installed there yet: enabling it is the one thing to do.
+   * Also a machine whose last install was undone by hand, until an install corrects the record.
+   */
+  | { kind: "notInstalled" }
   /** Never probed. */
   | { kind: "unknown" };
 
@@ -69,8 +75,31 @@ const PHASE_COMPLETE: Record<MachinePhase, true> = {
 };
 void PHASE_COMPLETE;
 
-const isPhase = (step: string): step is MachinePhase =>
+export const isPhase = (step: string): step is MachinePhase =>
   (MACHINE_PHASES as readonly string[]).includes(step);
+
+/** ssh's own lines out of what the server said: after its sentence, `(ssh: …)`. */
+export function sshWords(said: string): string {
+  const words = /\(ssh: ([\s\S]*)\)\s*$/.exec(said)?.[1];
+  return (words ?? said).trim();
+}
+
+/**
+ * Why a job failed, as the page says it: an ssh refusal in the reader's language from the
+ * reason the server found, with ssh's own words as its detail; anything else in the far side's
+ * own words, as the server relayed them.
+ */
+export function failureText(
+  result: { message: string; sshReason?: MachineSshFailure },
+  alias: string,
+): { message: string; detail: string | null } {
+  if (result.sshReason === undefined) return { message: result.message, detail: null };
+  const c = S.machines.check;
+  return {
+    message: c.ssh[result.sshReason](alias),
+    detail: c.sshSaid(sshWords(result.message)),
+  };
+}
 
 /**
  * A step as the interface names it: one of the pipeline's six by its name in the reader's
@@ -112,12 +141,14 @@ export function readMachine(
     return {
       kind: "failed",
       step: result.step,
-      message: result.message,
+      message: failureText(result, machine.alias).message,
       canReplaceProgram: result.canReplaceProgram === true,
     };
   }
   if (result !== null && job?.kind === "use" && "installed" in result)
     return { kind: "installedOnly" };
+  // On this Project's list, nothing installed by it: a machine added without enabling it.
+  if (!machine.local && machine.installed === null) return { kind: "notInstalled" };
   if (outOfDate(machine, imageVersion)) {
     return { kind: "behind", version: machine.installed!.version };
   }
@@ -163,16 +194,17 @@ export function wantsUse(reading: MachineReading): boolean {
 }
 
 /**
- * The machines in use here: those this server has installed on for this Project, by name.
+ * The machines in use here: this Project's list — machines installed for it, and machines added
+ * to it that nothing is installed on yet (one an enable is working on included) — by name.
  * By name and nothing else, because the order must not move under a person's eyes: an
  * update rewrites the install time, a probe rewrites the status, and a card that jumps to
  * the top on either is a card someone was about to click. Names compare naturally, so
  * `gpu-2` sits before `gpu-10`. The local entry is kept out: it is where you are, not
  * something you did.
  */
-export function installedMachines(state: MachinesResponse): MachineInfo[] {
+export function machinesInUse(state: MachinesResponse): MachineInfo[] {
   return state.machines
-    .filter((machine) => machine.installed != null && !machine.local)
+    .filter((machine) => !machine.local && (machine.member === true || machine.installed != null))
     .sort((a, b) =>
       a.alias.localeCompare(b.alias, undefined, { numeric: true, sensitivity: "base" }),
     );
@@ -195,7 +227,7 @@ export function outOfDate(machine: MachineInfo, imageVersion: string | null): bo
 
 /** The machines in use that carry another build — what "update all" brings forward, in list order. */
 export function behindMachines(state: MachinesResponse): MachineInfo[] {
-  return installedMachines(state).filter((machine) => outOfDate(machine, state.imageVersion));
+  return machinesInUse(state).filter((machine) => outOfDate(machine, state.imageVersion));
 }
 
 /**
@@ -220,4 +252,20 @@ export function updateNotice(
 /** Whether any job is still to come, which is when the page keeps polling. */
 export function anyJobPending(state: MachinesResponse): boolean {
   return state.jobs.some((job) => job.queued || job.running);
+}
+
+/**
+ * What the page says about this server's install image, if anything. `noImage` is the one
+ * case that stops the page: nothing to install and nothing to build it from, so adding and
+ * enabling machines are off. A source checkout builds its image when an install asks, so no
+ * image yet is no reason to stop — only a build that failed is worth a word, and the word is
+ * the build's own.
+ */
+export type ImageNotice = { kind: "noImage" } | { kind: "buildFailed"; detail: string };
+
+export function imageNotice(state: MachinesResponse): ImageNotice | null {
+  const checkout = state.checkoutImage;
+  if (checkout?.state === "failed") return { kind: "buildFailed", detail: checkout.detail };
+  if (state.imageVersion === null && checkout === undefined) return { kind: "noImage" };
+  return null;
 }

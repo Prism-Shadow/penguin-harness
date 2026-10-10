@@ -63,14 +63,18 @@ function nodePtyDir(): string | null {
   }
 }
 
-let repairAttempted = false;
+/** The package directories already repaired in this process. */
+const repaired = new Set<string>();
 
-/** Idempotent, darwin-only: run the repair once, before the first pty spawn. */
-export function ensureSpawnHelperExecutable(): void {
-  if (process.platform !== "darwin" || repairAttempted) return;
-  repairAttempted = true;
-  const pkgDir = nodePtyDir();
-  if (pkgDir === null) return;
+/**
+ * Idempotent, darwin-only: run the repair once per copy of node-pty, before its first pty
+ * spawn. `pkgDir` is the copy actually loaded (pty-module.ts's loadedNodePtyDir) — on a
+ * machine running a pushed platform that is the installed program's, whose helper the
+ * release ships as 0644 too — and this module's own resolution when it is not given.
+ */
+export function ensureSpawnHelperExecutable(pkgDir: string | null = nodePtyDir()): void {
+  if (process.platform !== "darwin" || pkgDir === null || repaired.has(pkgDir)) return;
+  repaired.add(pkgDir);
   for (const fixed of repairSpawnHelpers(pkgDir)) {
     console.log(`[terminal] restored the exec bit on ${fixed} (node-pty ships it as 0644)`);
   }
@@ -79,11 +83,10 @@ export function ensureSpawnHelperExecutable(): void {
 /**
  * A one-line explanation to append to a spawn failure, when a helper is present but still
  * not executable — the case the repair could not fix. Null when that is not the problem,
- * so an unrelated failure is never mislabelled.
+ * so an unrelated failure is never mislabelled. `pkgDir` as for the repair.
  */
-export function spawnHelperHint(): string | null {
+export function spawnHelperHint(pkgDir: string | null = nodePtyDir()): string | null {
   if (process.platform !== "darwin") return null;
-  const pkgDir = nodePtyDir();
   if (pkgDir === null) return null;
   for (const helper of [
     path.join(pkgDir, "build", "Release", "spawn-helper"),

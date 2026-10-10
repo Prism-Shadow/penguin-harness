@@ -14,6 +14,9 @@
  *   log is folded underneath, open while the job runs. A failed job says at which step and in the
  *   far side's own words, with Retry — and Force install when the failure offers it — listed under
  *   it, each with what it does.
+ * - Connection check, once one was asked for (Check connection, among the single steps): each
+ *   check — ssh, system, the installer's tools, the release download, disk, port — as one line,
+ *   its mark and a plain sentence, ssh's own words under a sign-in that failed.
  * - Actions: the one thing to do next, with what it does beside it; then the single steps and the
  *   ways out, two groups under small ruled captions, each verb on a line of its own: its button,
  *   and beside it what it does. A verb that cannot run now stays in place, disabled, and says why
@@ -27,12 +30,18 @@
  * shows no text of its own, so there it would never open. The hints here sit on marks without
  * words — the chip's glyph and the id's copy button — and everything else is said in text.
  *
- * `MachineDetailBody` is a pure function of its props. The dialog around it adds one read, the
- * host block, which the machines list does not carry: the list is the ssh config's aliases only.
+ * `MachineDetailBody` is a pure function of its props. The dialog around it adds two reads the
+ * machines list does not carry — the host block (the list is the ssh config's aliases only), and
+ * the connection check, which the dialog runs itself and which lasts as long as it is open.
  */
 import { Fragment, useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
-import type { MachineInfo, MachineJob, SshHostResponse } from "@prismshadow/penguin-server/api";
+import type {
+  MachineDiagnosis,
+  MachineInfo,
+  MachineJob,
+  SshHostResponse,
+} from "@prismshadow/penguin-server/api";
 import {
   Badge,
   Button,
@@ -54,9 +63,11 @@ import {
 import type { ButtonVariant } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { DOT_TONE, jobMoving } from "./machine-card";
 import {
+  checkLine,
   holdReason,
   jobView,
   machineChip,
@@ -66,6 +77,7 @@ import {
   verbHold,
 } from "./machine-detail-view";
 import type {
+  CheckLine,
   Fact,
   JobStep,
   MachineChip,
@@ -85,7 +97,14 @@ export type MachineVerb =
   | "restart"
   | "disconnect"
   | "release"
-  | "configure";
+  | "configure"
+  | "check";
+
+/** The connection check, as far as it got: running, its checks, or why it could not run. */
+export type CheckState =
+  | { state: "running" }
+  | { state: "done"; diagnosis: MachineDiagnosis }
+  | { state: "failed"; error: string };
 
 export interface MachineDetailBodyProps {
   machine: MachineInfo;
@@ -101,6 +120,8 @@ export interface MachineDetailBodyProps {
   busy: boolean;
   /** This server has no build to push, so an install has nothing to send. */
   noImage: boolean;
+  /** The connection check this dialog ran; null until one is asked for. */
+  check: CheckState | null;
   onAct: (verb: MachineVerb) => void;
 }
 
@@ -329,6 +350,36 @@ export function LogFold({ job }: { job: MachineJob }) {
 }
 
 /**
+ * One check's line: its mark in a box of one size — a check, an alert, a cross (only the mark takes
+ * the danger ink), or a quiet dot for one not asked — then its sentence, and ssh's own words under
+ * it in the muted ink. `data-check` and `data-state` name it for whatever reads the markup.
+ */
+function CheckRow({ line }: { line: CheckLine }) {
+  return (
+    <li data-check={line.id} data-state={line.state} className="flex items-start gap-2">
+      <span
+        style={{ width: ICON_SIZE.rowLead, height: ICON_SIZE.rowLead }}
+        className="mt-0.5 inline-flex shrink-0 items-center justify-center"
+      >
+        {line.glyph === null ? (
+          <Dot tone="neutral" />
+        ) : (
+          <GlyphIcon d={line.glyph} size={ICON_SIZE.rowLead} className={toneInk[line.tone]} />
+        )}
+      </span>
+      <span className="min-w-0">
+        <span className={line.state === "skip" ? "text-fg-subtle" : "text-fg"}>{line.text}</span>
+        {line.detail !== null && (
+          <span className="mt-0.5 block break-words whitespace-pre-line text-xs text-fg-muted">
+            {line.detail}
+          </span>
+        )}
+      </span>
+    </li>
+  );
+}
+
+/**
  * One verb's button: its glyph before its word, `data-verb` naming the verb for whatever reads
  * the markup. No hint rides on it — the tooltip layer would never open one on a button that shows
  * its word — so what it does, or why it waits, stands beside it as text.
@@ -484,6 +535,7 @@ export function MachineDetailBody({
   error,
   busy,
   noImage,
+  check,
   onAct,
 }: MachineDetailBodyProps) {
   const m = S.machines;
@@ -501,6 +553,8 @@ export function MachineDetailBody({
     noImage,
     connected: machine.connection !== null,
     unreachable: machine.status?.state === "unreachable",
+    installed: machine.installed !== null,
+    checking: check?.state === "running",
   };
   return (
     <div className="space-y-6">
@@ -577,8 +631,16 @@ export function MachineDetailBody({
               {d.lastJobDone}
             </p>
           )}
+          {/* Line by line: an installer's refusal is the program's own error over its own line. */}
           {view.kind === "failed" && (
-            <p className="mt-3 text-sm">{d.failedAtStep(view.stepName, view.message)}</p>
+            <p className="mt-3 text-sm break-words whitespace-pre-line">
+              {d.failedAtStep(view.stepName, view.message)}
+            </p>
+          )}
+          {view.kind === "failed" && view.detail !== null && (
+            <p data-said="ssh" className="mt-1 text-xs break-words text-fg-muted">
+              {view.detail}
+            </p>
           )}
           {/* A failed machine's one thing to do is here, under what went wrong — and only here —
               listed like the verbs of Actions, each with what it does beside it. */}
@@ -608,6 +670,32 @@ export function MachineDetailBody({
             </VerbGrid>
           )}
           {job.log.length > 0 && <LogFold job={job} />}
+        </RuledSection>
+      )}
+
+      {!machine.local && check !== null && (
+        <RuledSection level={3} title={m.check.title}>
+          {check.state === "running" ? (
+            <p className="flex items-center gap-1.5 text-sm text-fg-muted">
+              <Spinner size="xs" tone="success" label={m.check.running} />
+              {m.check.running}
+            </p>
+          ) : check.state === "failed" ? (
+            <p className="flex items-start gap-1.5 text-sm">
+              <GlyphIcon
+                d={ICONS.alertCircle}
+                size={ICON_SIZE.inlineGlyph}
+                className={`mt-1 shrink-0 ${toneInk.attention}`}
+              />
+              <span>{check.error}</span>
+            </p>
+          ) : (
+            <ul className="space-y-2 text-sm" data-diagnosis={check.diagnosis.machineId}>
+              {check.diagnosis.checks.map((one) => (
+                <CheckRow key={one.id} line={checkLine(one, machine.alias)} />
+              ))}
+            </ul>
+          )}
         </RuledSection>
       )}
 
@@ -644,14 +732,35 @@ export function MachineDetailDialog({
   projectId,
   hostEpoch,
   onClose,
+  onAct,
   ...body
-}: Omit<MachineDetailBodyProps, "host"> & {
+}: Omit<MachineDetailBodyProps, "host" | "check"> & {
   projectId: string;
   hostEpoch: number;
   onClose: () => void;
 }) {
-  const { alias, local } = body.machine;
+  const { alias, local, id } = body.machine;
   const [host, setHost] = useState<SshHostResponse | null>(null);
+  // The check is the dialog's own: it reaches the machine and writes nothing, so nothing on the
+  // page waits on it, and closing the dialog lets it go. An answer that lands after the dialog
+  // moved on to another machine is dropped.
+  const [check, setCheck] = useState<CheckState | null>(null);
+  useEffect(() => setCheck(null), [id]);
+  const runCheck = () => {
+    setCheck({ state: "running" });
+    api.diagnoseMachine(projectId, id).then(
+      (diagnosis) =>
+        setCheck((now) =>
+          now?.state === "running" && diagnosis.machineId === id
+            ? { state: "done", diagnosis }
+            : now,
+        ),
+      (err: unknown) =>
+        setCheck((now) =>
+          now?.state === "running" ? { state: "failed", error: apiErrorText(err) } : now,
+        ),
+    );
+  };
   useEffect(() => {
     setHost(null);
     if (local) return;
@@ -669,7 +778,12 @@ export function MachineDetailDialog({
   }, [projectId, alias, local, hostEpoch]);
   return (
     <Modal open title={alias} onClose={onClose} widthClass="sm:max-w-3xl">
-      <MachineDetailBody {...body} host={host} />
+      <MachineDetailBody
+        {...body}
+        host={host}
+        check={check}
+        onAct={(verb) => (verb === "check" ? runCheck() : onAct(verb))}
+      />
     </Modal>
   );
 }

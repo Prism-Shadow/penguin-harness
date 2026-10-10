@@ -234,18 +234,23 @@ export function MachineCard({
     >
       <div className="min-w-[14rem] flex-1">
         <div className="flex min-w-0 items-center gap-2">
+          {/* Wraps rather than squeezes: on a phone the badges go under the name, which would
+              otherwise be truncated to its first letter beside a long version. The glyph stays
+              with the name. */}
           <button
             type="button"
             aria-haspopup="dialog"
             onClick={onOpen}
-            className="flex min-w-0 items-center gap-2 rounded-sm text-left"
+            className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-sm text-left"
           >
-            <GlyphIcon
-              d={ICONS.server}
-              size={ICON_SIZE.navRow}
-              className="shrink-0 text-gray-500 dark:text-gray-400"
-            />
-            <span className="min-w-0 truncate text-base font-bold">{machine.alias}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <GlyphIcon
+                d={ICONS.server}
+                size={ICON_SIZE.navRow}
+                className="shrink-0 text-gray-500 dark:text-gray-400"
+              />
+              <span className="min-w-0 truncate text-base font-bold">{machine.alias}</span>
+            </span>
             {machine.local && (
               <Badge variant="outline" size="sm">
                 {S.machines.localTitle}

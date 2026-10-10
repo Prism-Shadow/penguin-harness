@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyUpgradeAnswer, readPushedBuild, refusalDetail } from "../src/machines/upgrade.js";
-import { machineIdentity, parseHostAliases } from "../src/machines/ssh-config.js";
+import { machineIdentity, parseHostAliases, parseHostEntries } from "../src/machines/ssh-config.js";
 import {
   parseProbe,
   probeServerState,
@@ -78,10 +78,53 @@ describe("parseHostAliases", () => {
     expect(aliases).toEqual(["build-box", "shared", "laptop", "nas"]);
   });
 
+  it("reads every file one Include line names, in order", () => {
+    const files: Record<string, string> = {
+      "config.d/*": "Host gpu-1",
+      "~/.orbstack/ssh/config": "Host orb",
+    };
+    const aliases = parseHostAliases(
+      "Include config.d/*   ~/.orbstack/ssh/config\nHost laptop",
+      (pattern) => (files[pattern] === undefined ? [] : [files[pattern]]),
+    );
+    expect(aliases).toEqual(["gpu-1", "orb", "laptop"]);
+  });
+
   it("survives an include cycle instead of spinning", () => {
     const aliases = parseHostAliases("Include self\nHost top", () => ["Include self\nHost deep"]);
     expect(aliases).toContain("top");
     expect(aliases).toContain("deep");
+  });
+});
+
+describe("parseHostEntries", () => {
+  it("reads each host's own HostName, User and Port, a shared block for both its aliases, through Include", () => {
+    const files: Record<string, string> = {
+      "config.d/*": ["Host jump", "  HostName 203.0.113.5", "  Port=2222"].join("\n"),
+    };
+    const entries = parseHostEntries(
+      [
+        "Include config.d/*",
+        "Host *",
+        "  User everyone",
+        "Host gpu-1 gpu-2",
+        "  HostName gpu.lan",
+        "  User root",
+        "Match host gpu-1",
+        "  Port 2200",
+        "Host gpu-1",
+        "  Port 2201",
+        "  User nobody",
+        "Host bare",
+      ].join("\n"),
+      (pattern) => (files[pattern] === undefined ? [] : [files[pattern]]),
+    );
+    expect(entries).toEqual([
+      { alias: "jump", hostName: "203.0.113.5", port: 2222 },
+      { alias: "gpu-1", hostName: "gpu.lan", user: "root", port: 2201 },
+      { alias: "gpu-2", hostName: "gpu.lan", user: "root" },
+      { alias: "bare" },
+    ]);
   });
 });
 
@@ -591,8 +634,32 @@ describe("startRemoteServer", () => {
         return said("Error: listen EADDRINUSE: address already in use 127.0.0.1:7376\n");
       }),
     );
-    expect(result).toEqual({ ok: false, detail: expect.stringContaining("EADDRINUSE") });
+    expect(result).toMatchObject({ ok: false, detail: expect.stringContaining("EADDRINUSE") });
     expect(asked.filter((c) => c.includes("server status"))).toHaveLength(1);
+  });
+
+  it("a start that dies on a taken port says so plainly, and a crash's stack becomes its error line", async () => {
+    vi.useFakeTimers();
+    const crash = [
+      "node:events:487",
+      "      throw er; // Unhandled 'error' event",
+      "Error: listen EADDRINUSE: address already in use 127.0.0.1:7371",
+      "    at Server.setupListenHandle [as _listen2] (node:net:2009:16)",
+      "Node.js v24.18.0",
+    ].join("\n");
+    const result = await settled(
+      startRemoteServer(target, 7371, DEV, async (_t, command) => {
+        if (command.includes("server --host")) return said("4242\n");
+        if (command.includes("server status")) return status({ running: false });
+        if (command === isAliveCommand(4242)) return said("gone\n");
+        return said(`${crash}\n`);
+      }),
+    );
+    expect(result).toMatchObject({ ok: false, portTaken: true });
+    const { detail } = result as { detail: string };
+    expect(detail).toMatch(/^Port 7371 on that machine is taken by another program/);
+    expect(detail).toContain("Error: listen EADDRINUSE");
+    expect(detail).not.toContain("setupListenHandle");
   });
 
   it("keeps waiting while the process is alive, and succeeds when a server answers", async () => {

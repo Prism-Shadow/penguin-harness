@@ -50,44 +50,52 @@ export const en: Strings = {
     pageTitle: "Machines",
     imageVersion: (version: string) => `This server: ${version}`,
     noImage:
-      "This server has no install image to push. A packaged or tarball install carries one; a source checkout gets one from its first hot push.",
-    empty: "No host in ~/.ssh/config left to add.",
-    search: "Search hosts…",
-    noMatch: "No host matches.",
+      "This server has no install image to push. A packaged or tarball install carries one, and a source checkout builds one for each install; this server is neither.",
+    checkoutImageFailed:
+      "This server runs from a source checkout and could not build the install image it puts on machines. The build said:",
     localTitle: "this server",
     noneInUse: "No machine in use yet.",
     sshHint:
-      "A machine can be added when this server's account can ssh into it by key (`ssh <alias>` works in a terminal here). Whoever set up ssh can put it in ~/.ssh/config.",
-    allHosts: (count: number) => `${count} more in ~/.ssh/config`,
-    expand: "Expand",
-    fewer: "Collapse",
+      "A machine can be added when this server's account can ssh into it by key (`ssh <name>` works in a terminal here). Add machine picks one from the ssh config, or fills in a new one.",
     host: {
-      addTitle: "New ssh host",
-      newVerb: "New",
       configureVerb: "Configure",
-      add: "Write to ssh config",
-      alias: "Alias (Host)",
-      aliasHint: "One word; `ssh <alias>` and this page will call the machine by it.",
-      hostName: "Address (HostName)",
+      name: "Name",
+      nameHint: "One word. This page and `ssh <name>` both call the machine by it.",
+      hostName: "Host",
       hostNameHint: "An IP or a domain name.",
-      user: "User",
+      user: "User name",
       userHint: "Empty means this server account's own user name.",
       port: "Port",
-      portHint: "Empty means 22.",
-      identityFile: "Key file (IdentityFile)",
-      identityFileHint: "Empty means ssh's default key.",
+      identityFile: "Private key file",
+      identityFileHint:
+        "Empty means ssh's default key. A key with a passphrase has to be in ssh-agent first.",
       oneWord: "Must be one word: no space, no #.",
       portRange: "A whole number from 1 to 65535.",
-      exists: "The ssh config already has this alias.",
-      added: (alias: string) => `Wrote ${alias}. Enable it from Add machines….`,
+      exists: "The ssh config already has this name.",
       configure: "Configure ssh host",
       editTitle: "Configure ssh host",
       saved: (alias: string) => `Updated ${alias} in the ssh config.`,
       foreign:
         "This block was not written by PenguinHarness and may carry options this form does not know; edit it in ~/.ssh/config.",
     },
-    add: "Add machines…",
-    addSelected: (count: number) => `Enable these ${count}`,
+    addDialog: {
+      title: "Add machine",
+      intro:
+        "This server installs PenguinHarness on a machine it can reach over ssh, and connects to it.",
+      tabs: { config: "From the ssh config", manual: "Fill in by hand" },
+      search: "Search hosts",
+      noHosts:
+        "This server's ssh config has no host that is not added yet. Fill in a new one by hand instead.",
+      noMatch: (query: string) => `No host matches “${query}”.`,
+      elsewhere: (version: string) => `Another Project installed v${version}`,
+      installNow: "Install and connect right after adding",
+      submit: "Add",
+      submitCount: (count: number) => `Add ${count}`,
+      added: (count: number) => (count === 1 ? "Added 1 machine." : `Added ${count} machines.`),
+      addedInstalling: (count: number) =>
+        count === 1 ? "Added 1 machine; installing." : `Added ${count} machines; installing.`,
+    },
+    add: "Add machine",
     use: "Enable",
     stopUsing: "Disable",
     updateAll: (count: number) => `Update all (${count})`,
@@ -108,6 +116,7 @@ export const en: Strings = {
       unreachable: "Unreachable",
       stopped: "Not running",
       linkedStopped: "Connected, not running",
+      notInstalled: "Not installed",
       unknown: "Not checked",
     },
     phase: {
@@ -190,6 +199,8 @@ export const en: Strings = {
         tryAgainWhy: "Tries ssh again; make sure the machine is on and reachable first.",
         retry: "Retry",
         retryWhy: "Runs the whole job again from the start",
+        enable: "Enable",
+        enableWhy: "Installs PenguinHarness on the machine, starts its server and connects.",
       },
       maintenance: "Maintenance",
       leave: "Stop using",
@@ -198,6 +209,8 @@ export const en: Strings = {
       hold: {
         moving: "The machine is busy with a job; available when it finishes",
         noImage: "This server has no version to install",
+        notInstalled: "Nothing is installed on this machine yet",
+        checking: "Checking…",
         noConnection: "Not connected, so there is nothing to disconnect",
         unreachable: "The machine could not be reached at the last check",
       },
@@ -209,6 +222,8 @@ export const en: Strings = {
       connectWhy: "Connects to the machine again, starting its server if needed",
       restart: "Restart server",
       restartWhy: "Restarts the server on the machine",
+      check: "Check connection",
+      checkWhy: "Checks sign-in, system, download, disk and port, changing nothing there",
       stopUsingWhy: "Disconnects and removes it from this Project; the program stays installed",
       disconnect: "Disconnect",
       disconnectWhy: "Drops the connection only; the server on the machine keeps running",
@@ -217,7 +232,72 @@ export const en: Strings = {
       disconnectConfirm: (alias: string) =>
         `Disconnect from ${alias}? Every Project using it shares this connection, and whatever is running through it is cut off; the server over there keeps running, and you can connect again later.`,
       releaseConfirm: (alias: string) =>
-        `Remove ${alias} from this Project? It is no longer listed here and no longer receives this Project's Model config; the program and the connection over there stay as they are, and you can enable it again from Add machines….`,
+        `Remove ${alias} from this Project? It is no longer listed here and no longer receives this Project's Model config; the program and the connection over there stay as they are, and Add machine can bring it back.`,
+    },
+    check: {
+      title: "Connection check",
+      running: "Checking…",
+      skipped: (what: string) => `${what}: not checked.`,
+      name: {
+        ssh: "ssh sign-in",
+        platform: "System",
+        tools: "Installer tools",
+        download: "Release download",
+        disk: "Disk space",
+        port: "Port",
+      },
+      sshPass: (user: string, host: string) =>
+        user === "" ? "Signs in over ssh." : `Signs in as ${user} on ${host}.`,
+      ssh: {
+        "host-key-unknown": (alias: string) =>
+          `This server has never connected to ${alias}, and a background connection cannot accept a new host key. Run ssh ${alias} once in a terminal on this server and answer yes.`,
+        "host-key-changed": (alias: string) =>
+          `${alias}'s host key is not the one on record, so ssh refuses to connect. If the machine was reinstalled, remove the old key with ssh-keygen -R and connect once again.`,
+        auth: (alias: string) =>
+          `${alias} does not accept this server's key. A background connection cannot type a password or a key passphrase: add this server's public key to ${alias}'s ~/.ssh/authorized_keys, or load the key into ssh-agent.`,
+        "key-file": (alias: string) =>
+          `The private key file set for ${alias} cannot be used: it is missing, unreadable, or readable by others (it needs 600).`,
+        "host-not-found": (alias: string) =>
+          `This server cannot find ${alias}'s host name. Check its HostName in the ssh config.`,
+        refused: (alias: string) =>
+          `${alias} refused the connection: nothing accepts ssh at that address and port.`,
+        timeout: (alias: string) =>
+          `${alias} does not answer. Check its address and port, and that this server can reach it (a VPN, a firewall, a jump host).`,
+        closed: (alias: string) =>
+          `The connection to ${alias} was dropped before signing in, by the machine or by something between (a jump host, a firewall).`,
+        "ssh-config": (alias: string) =>
+          `This server's ssh config has an error, so ssh cannot reach ${alias} with it. Fix the line ssh names.`,
+        other: (alias: string) => `Could not sign in to ${alias} over ssh.`,
+      },
+      platform: (os: string, arch: string) => `System: ${os} ${arch}.`,
+      platformWindows: "Windows: it can be installed on, but not connected yet.",
+      platformUnsupported: "No release is published for this system or architecture.",
+      platformOldGlibc: (glibc: string, need: string) =>
+        `This machine has glibc ${glibc}; the Node that PenguinHarness ships needs ${need} or newer. Use a newer Linux system.`,
+      platformTerminals: (arch: string, glibc: string, need: string) =>
+        `System: Linux ${arch}, glibc ${glibc}. PenguinHarness runs, but terminals need glibc ${need} or newer and will not open on this machine.`,
+      platformMusl:
+        "This machine uses musl libc (Alpine, for example); the Node that PenguinHarness ships needs glibc. Use a glibc-based Linux system.",
+      toolsPass: "It has the tools the installer needs.",
+      toolsNoCurl:
+        "No curl there: the machine cannot download the release itself, so an install sends it from this server over ssh.",
+      toolsMissing: (tools: string) =>
+        `Missing tools the installer needs: ${tools}. Install them there, then try again.`,
+      downloadFrom: (version: string, source: "both" | "github" | "oss") =>
+        `Downloads release ${version} from ${source === "both" ? "GitHub and the mirror" : source === "github" ? "GitHub" : "the mirror"}.`,
+      downloadCarried: (version: string) =>
+        `The machine reaches neither GitHub nor the mirror, so it cannot download release ${version}; an install sends it from this server over ssh (about 95 MB).`,
+      downloadMissing: (version: string) =>
+        `Release ${version} has no package for this machine yet, on GitHub or the mirror.`,
+      diskPass: (free: string) => `${free} free.`,
+      diskTight: (free: string) =>
+        `${free} free: enough for one install, with little room to spare.`,
+      diskLow: (free: string, need: string) => `Only ${free} free; an install needs about ${need}.`,
+      portFree: (port: number) => `Port ${port} is free.`,
+      portOurs: (port: number) => `Its PenguinHarness server runs on port ${port}.`,
+      portTaken: (port: number) =>
+        `Port ${port} is taken by another program. This server starts PenguinHarness on that port, so free it first.`,
+      sshSaid: (words: string) => `ssh: ${words}`,
     },
   },
 

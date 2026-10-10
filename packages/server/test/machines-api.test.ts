@@ -35,13 +35,24 @@
  * - Given an ssh-config edit, a new block is appended, this app's block is rewritten in place,
  *   and a hand-written one is refused.
  * - Given a refusal decidable without ssh (self-install, a second install, an unknown host, no
- *   image), nothing runs.
+ *   image), nothing runs. Given ssh's own refusal, the job ends at the first step with why, for
+ *   the page to say, and no offer to install anyway.
+ * - Given a server running from a source checkout, nothing is refused for want of an image: an
+ *   install or a batch builds one from the checkout (once per batch), installs it under the
+ *   checkout's release with the build's own suffix, and keeps it beside — never in — the
+ *   server's own hmr store; an unchanged tree is the same image, a changed one a new version;
+ *   a failed build ends the job in the build's own words, and the page says so until a build
+ *   succeeds; an image a job is still installing outlives the builds that land meanwhile and
+ *   goes at the next build after; the image outlives a restart; an installed server's own
+ *   image wins.
  */
 import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
+import zlib from "node:zlib";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { VERSION } from "@prismshadow/penguin-core";
 import type {
   MachinesUseResponse,
   MachinesResponse,
@@ -54,8 +65,11 @@ import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects } from "../src/machines/service.js";
 import { remoteLayoutFor } from "../src/machines/layout.js";
 import type { RemoteLayout } from "../src/machines/layout.js";
-import type { RemoteInstallOutcome } from "../src/machines/install-server.js";
+import type { PushPlan, RemoteInstallOutcome } from "../src/machines/install-server.js";
 import type { RemoteIdentity } from "../src/machines/detect.js";
+import type { CheckoutPacker } from "../src/machines/checkout-image.js";
+import { readPushedBuild } from "../src/hmr/pushed-build.js";
+import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import {
   apiClient,
   createTestApp,
@@ -93,6 +107,26 @@ const PUSHED_PLAN = {
   harness: '{"platform":{"bundle":"store/platform/cafe.mjs"}}',
   hmrDir: "/nonexistent",
   version: "9.9.9+hmr.cafe",
+};
+
+/** What a checkout's packer leaves: a whole build, every part inline. */
+const CHECKOUT_BUILD: PushedBuild = {
+  platform: "export const hotPlatform = { id: 'checkout' };\n",
+  cli: "export async function cli() { return 0; }\n",
+  web: {
+    files: { "index.html": Buffer.from("<!doctype html><title>dev</title>").toString("base64") },
+  },
+  assets: {
+    files: {
+      "install.sh": Buffer.from("#!/bin/sh\necho install\n").toString("base64"),
+      "node_modules/node-pty/build/Release/spawn-helper": Buffer.from("helper").toString("base64"),
+    },
+    exec: ["node_modules/node-pty/build/Release/spawn-helper"],
+  },
+  source: {
+    repo: "https://github.com/Prism-Shadow/penguin-harness.git",
+    revision: "v0.2.13-1-gabc1234",
+  },
 };
 
 /** An effects set that names two hosts and installs successfully, with the parts a test cares about overridden. */
@@ -325,17 +359,17 @@ describe("machines API", () => {
       await boot({
         install: async () => ({
           kind: "failed",
-          step: "connect",
-          detail: "Permission denied (publickey).",
+          step: "install",
+          detail: "error: could not move the existing lib directory aside",
         }),
       });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(t.deps.machines.job()?.result).toEqual({
         ok: false,
-        step: "connect",
-        message: "Permission denied (publickey).",
-        // Every failed install offers installing the program anyway.
+        step: "install",
+        message: "error: could not move the existing lib directory aside",
+        // A failed install offers installing the program anyway, unless ssh itself refused.
         canReplaceProgram: true,
       });
     });
@@ -842,6 +876,26 @@ describe("machines API", () => {
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(calls).toEqual([]);
+    });
+
+    it("a port another program holds over there ends the job saying so, with no install offered", async () => {
+      await boot({
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        startServer: async () => ({
+          ok: false,
+          portTaken: true,
+          detail:
+            "Port 7364 on that machine is taken by another program, so its server could not start there.",
+        }),
+      });
+      machinesRepo.patch("ssh:nas", { version: "9.9.9", installedAt: "2026-08-01T00:00:00.000Z" });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "start its server",
+        canReplaceProgram: false,
+      });
     });
 
     it("a restart that fails is the job's outcome, not a line in its log", async () => {
@@ -1575,7 +1629,7 @@ describe("machines API", () => {
       await boot({
         install: async (opts) =>
           opts.target.alias === "build-box"
-            ? { kind: "failed", step: "connect", detail: "Permission denied (publickey)." }
+            ? { kind: "failed", step: "install", detail: "error: checksum mismatch for Bundle." }
             : { kind: "installed", output: "done", identity: IDENTITY },
       });
       await useBody(["ssh:build-box", "ssh:nas"]);
@@ -1583,12 +1637,60 @@ describe("machines API", () => {
       const [box, nas] = jobsOf();
       expect(box?.result).toEqual({
         ok: false,
-        step: "connect",
-        message: "Permission denied (publickey).",
+        step: "install",
+        message: "error: checksum mismatch for Bundle.",
         canReplaceProgram: true,
       });
       expect(nas?.result).toEqual({ ok: true, connected: true });
       expect(connected).toEqual(new Set(["ssh:nas"]));
+    });
+
+    it("a failure ssh itself caused does not offer installing anyway, which would stop at the same door", async () => {
+      await boot({
+        install: async () => ({
+          kind: "failed",
+          step: "connect",
+          detail:
+            "nas did not accept any key this computer offered. (ssh: Permission denied (publickey).)",
+        }),
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toMatchObject({
+        ok: false,
+        step: "connect",
+        canReplaceProgram: false,
+        sshReason: "auth",
+      });
+    });
+
+    it("a machine on this image's version whose web, CLI or assets differ is handed the build, not skipped", async () => {
+      let installs = 0;
+      await boot({
+        resolvePlan: () => PUSHED_PLAN,
+        install: async () => {
+          installs += 1;
+          return { kind: "already-installed", version: PUSHED_PLAN.version, identity: IDENTITY };
+        },
+        runOn: async (_target, command) => ({
+          code: 0,
+          // The machine's probe: same release, a harness naming another CLI bundle.
+          stdout: command.includes("uname -s -m")
+            ? 'Linux x86_64\n---penguin---\n{"version":"9.9.9"}\n---penguin---\n{"platform":{"bundle":"store/platform/cafe.mjs"},"cli":{"bundle":"store/cli/beef.mjs"}}\n'
+            : "---penguin-auth-token---\nremote-token\n",
+          stderr: "",
+          timedOut: false,
+        }),
+      });
+      machinesRepo.patch("ssh:nas", {
+        version: PUSHED_PLAN.version,
+        installedAt: "2026-08-01T00:00:00.000Z",
+      });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(installs).toBe(1);
+      expect(jobsOf()[0]?.log).not.toContain(`Already on ${PUSHED_PLAN.version}.`);
     });
 
     it("refusals that need no ssh come back by id, and the rest of the batch is still queued", async () => {
@@ -1607,6 +1709,62 @@ describe("machines API", () => {
     it("an empty batch is a bad request", async () => {
       await boot();
       expect((await useBody([])).status).toBe(400);
+    });
+
+    it("adding puts machines on this Project's list without reaching them, and stop using takes them off", async () => {
+      let reached = 0;
+      await boot({
+        install: async () => {
+          reached += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+        runOn: async () => {
+          reached += 1;
+          return { code: 0, stdout: "", stderr: "", timedOut: false };
+        },
+      });
+      const added = await admin.post("/api/projects/default_project/machines/add", {
+        machines: ["ssh:nas", "local", "ssh:nope"],
+      });
+      expect(added.status).toBe(200);
+      const body = (await added.json()) as MachinesUseResponse;
+      expect(body.refused).toEqual([
+        { machineId: "local", why: "self" },
+        { machineId: "ssh:nope", why: "unknown-machine" },
+      ]);
+      const nas = body.machines.find((machine) => machine.id === "ssh:nas");
+      expect(nas).toMatchObject({ member: true, installed: null });
+      expect(body.jobs).toEqual([]);
+      expect(reached).toBe(0);
+
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:nas"],
+      });
+      const after = (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+      expect(after.machines.find((machine) => machine.id === "ssh:nas")?.member).toBeUndefined();
+    });
+
+    it("a machine asked for is on the list at once, and stays there with its failed first enable until stop using lets both go", async () => {
+      await boot({
+        install: async () => ({ kind: "failed", step: "install", detail: "error: no space left" }),
+      });
+      const started = (await (await useBody(["ssh:nas"])).json()) as MachinesUseResponse;
+      expect(started.machines.find((machine) => machine.id === "ssh:nas")?.member).toBe(true);
+      await waitFor(settled);
+      expect(jobsOf().map((job) => job.machineId)).toEqual(["ssh:nas"]);
+      const failed = (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+      expect(failed.machines.find((machine) => machine.id === "ssh:nas")).toMatchObject({
+        member: true,
+        installed: null,
+      });
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:nas"],
+      });
+      expect(jobsOf()).toEqual([]);
     });
 
     it("stop using drops the connection and the membership, and keeps the install", async () => {
@@ -1663,6 +1821,23 @@ describe("machines API", () => {
   });
 
   describe("adding a host to the ssh config", () => {
+    it("lists every host with what its own block says, for the add dialog's rows", async () => {
+      await boot({
+        listHosts: () => [
+          { alias: "build-box", hostName: "box.example.net", user: "deploy", port: 2222 },
+          { alias: "nas" },
+        ],
+      });
+      const res = await admin.get("/api/projects/default_project/machines/ssh-hosts");
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        hosts: [
+          { alias: "build-box", hostName: "box.example.net", user: "deploy", port: 2222 },
+          { alias: "nas" },
+        ],
+      });
+    });
+
     const post = (body: Record<string, unknown>) =>
       admin.post("/api/projects/default_project/machines/ssh-hosts", body);
 
@@ -1685,6 +1860,7 @@ describe("machines API", () => {
           "  HostName 10.0.0.9",
           "  User k",
           "  Port 2222",
+          "  StrictHostKeyChecking accept-new",
           "",
         ].join("\n"),
       ]);
@@ -1733,11 +1909,12 @@ describe("machines API", () => {
       });
       expect(ok.status).toBe(200);
       expect(written).toHaveLength(1);
-      expect(written[0]!.split("\n").slice(0, 5)).toEqual([
+      expect(written[0]!.split("\n").slice(0, 6)).toEqual([
         "# Added by PenguinHarness on 2026-08-24T12:00:00.000Z",
         "Host nas",
         "  HostName 10.0.0.3",
         "  User deploy",
+        "  StrictHostKeyChecking accept-new",
         "",
       ]);
       expect(written[0]!.endsWith("  ProxyJump bastion")).toBe(true);
@@ -1762,6 +1939,322 @@ describe("machines API", () => {
       expect(body.error.code).toBe("ssh_host_invalid");
       expect(body.error.message).toContain("alias");
       expect(written).toEqual([]);
+    });
+  });
+
+  describe("a source checkout's install image", () => {
+    /**
+     * The packer's stand-in, the one boundary these scenarios fake: it leaves a build the way
+     * `deploy.mjs --out` does — a gzipped upgrade body — and says what it is doing. Laying the
+     * image down, naming it and reading it back are the real thing.
+     */
+    const packs: string[] = [];
+    /**
+     * Packs `trees` in turn, one per build and the last one again once they run out: the
+     * checkout as each build finds it.
+     */
+    const packing = (...trees: PushedBuild[]): CheckoutPacker => {
+      const builds = trees.length === 0 ? [CHECKOUT_BUILD] : trees;
+      let asked = 0;
+      return async (outFile, onLine) => {
+        const build = builds[Math.min(asked, builds.length - 1)]!;
+        asked += 1;
+        packs.push(outFile);
+        onLine("building the web dist…");
+        fs.writeFileSync(outFile, zlib.gzipSync(Buffer.from(JSON.stringify(build))));
+        return { ok: true };
+      };
+    };
+    /** A server running from a checkout: no installed release, and a packer to build with. */
+    const checkout = (over: Partial<MachinesEffects> = {}) =>
+      boot({ resolvePlan: () => null, packCheckout: packing(), ...over });
+    const listed = async () =>
+      (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+    const useBody = (machines: string[]) =>
+      admin.post("/api/projects/default_project/machines/use", { machines });
+    const jobsOf = () => t.deps.machines.jobs();
+    const settled = () => jobsOf().every((job) => !job.queued && !job.running);
+    beforeEach(() => {
+      packs.length = 0;
+    });
+
+    it("before its first build it is told to the page as built on demand, and nothing is refused", async () => {
+      await checkout();
+      const body = await listed();
+      expect(body.imageVersion).toBeNull();
+      expect(body.checkoutImage).toEqual({ state: "unbuilt" });
+      // Listing builds nothing; only an install or a use does.
+      expect(packs).toEqual([]);
+
+      const used = (await (await useBody(["ssh:nas"])).json()) as MachinesUseResponse;
+      expect(used.refused).toEqual([]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+    });
+
+    it("the first install builds the image, installs it, and records its version — the server's own store untouched", async () => {
+      const plans: PushPlan[] = [];
+      const installers: (string | null)[] = [];
+      await checkout({
+        install: async (opts) => {
+          plans.push(opts.plan);
+          installers.push(opts.assets?.() ?? null);
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      const job = t.deps.machines.job()!;
+      expect(job.result).toMatchObject({ ok: true, installed: "installed" });
+      // The packer's own narration is the job's while it builds.
+      expect(job.log).toContain("building the web dist…");
+      const version = (job.result as { version: string }).version;
+      // The checkout's release, plus the build it carries: the form a hot-pushed server reports.
+      expect(version.startsWith(`${VERSION}+hmr.`)).toBe(true);
+      expect(plans).toHaveLength(1);
+      expect(plans[0]).toMatchObject({ baseVersion: VERSION, version });
+      // What is replicated is the image's own store, a whole build — never the server's live
+      // `<root>/hmr`, which a dev server would restore in place of its source.
+      const image = path.dirname(plans[0]!.hmrDir!);
+      expect(image.startsWith(path.join(machinesRoot, "machines", "checkout-image"))).toBe(true);
+      expect(readPushedBuild(image)).not.toBeNull();
+      expect(fs.existsSync(path.join(machinesRoot, "hmr"))).toBe(false);
+      // The installer the far side runs is the one packed into this image: a checkout run
+      // under tsx has no built copy of its own.
+      expect(installers[0]?.startsWith(image)).toBe(true);
+      expect(fs.readFileSync(path.join(installers[0]!, "install.sh"), "utf8")).toContain("install");
+
+      expect(recordsInStore()["ssh:nas"]?.version).toBe(version);
+      const body = await listed();
+      expect(body.imageVersion).toBe(version);
+      expect(body.checkoutImage).toEqual({ state: "built" });
+    });
+
+    it("a machine whose ssh refuses this computer fails at once, at the first step, and no image is built for it", async () => {
+      await checkout({
+        runOn: async () => ({
+          code: 255,
+          stdout:
+            "This computer has never connected to nas, and connections here cannot answer ssh's question about a new host key. (ssh: Host key verification failed.)",
+          stderr: "",
+          timedOut: false,
+        }),
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toMatchObject({
+        ok: false,
+        step: "check",
+        canReplaceProgram: false,
+        sshReason: "host-key-unknown",
+      });
+      expect((jobsOf()[0]?.result as { message: string }).message).toContain("ssh nas");
+      expect(packs).toEqual([]);
+    });
+
+    it("a batch builds once, and every machine in it gets that image", async () => {
+      await checkout();
+      await useBody(["ssh:build-box", "ssh:nas"]);
+      await waitFor(settled);
+      expect(packs).toHaveLength(1);
+      const versions = Object.values(recordsInStore()).map((record) => record.version);
+      expect(versions).toHaveLength(2);
+      expect(new Set(versions).size).toBe(1);
+    });
+
+    it("a build that fails ends the job in its own words, installs nothing, and the page says the same until a build succeeds", async () => {
+      let installs = 0;
+      const said = "vite: build failed in src/app.tsx (3:7): Unexpected token";
+      // The tree breaks, then is mended: the first build fails, the next one packs.
+      let broken = true;
+      const mended = packing();
+      await checkout({
+        packCheckout: async (outFile, onLine) =>
+          broken ? { ok: false, detail: said } : mended(outFile, onLine),
+        install: async () => {
+          installs += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      // No forced install on offer: reinstalling would send nothing this server lacks.
+      expect(jobsOf()[0]?.result).toEqual({
+        ok: false,
+        step: "build the install image",
+        message: said,
+        canReplaceProgram: false,
+      });
+      expect(installs).toBe(0);
+      expect(recordsInStore()).toEqual({});
+      expect((await listed()).checkoutImage).toEqual({ state: "failed", detail: said });
+
+      broken = false;
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+      expect(installs).toBe(1);
+      expect((await listed()).checkoutImage).toEqual({ state: "built" });
+    });
+
+    it("an image a job is still installing outlives the builds that land meanwhile, and goes at the next build after", async () => {
+      // The far side downloads its release before the image is copied over: minutes in which
+      // other machines get enabled, each building from the tree as it is by then.
+      let release = () => {};
+      const downloading = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let nasImage: string | null = null;
+      let copied: Buffer | null = null;
+      // A web-only edit after the first build: the dev server keeps running, and the image moves on.
+      const edited: PushedBuild = {
+        ...CHECKOUT_BUILD,
+        web: {
+          files: {
+            "index.html": Buffer.from("<!doctype html><title>edited</title>").toString("base64"),
+          },
+        },
+      };
+      await checkout({
+        packCheckout: packing(CHECKOUT_BUILD, edited),
+        install: async (opts) => {
+          if (opts.target.alias === "nas") {
+            nasImage = path.dirname(opts.plan.hmrDir!);
+            await downloading;
+            // What the copy reads, once the release is down.
+            copied = readPushedBuild(nasImage);
+          }
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      const doneOn = (machineId: string) =>
+        jobsOf().some((job) => job.machineId === machineId && !job.queued && !job.running);
+
+      await useBody(["ssh:nas"]);
+      await waitFor(() => nasImage !== null);
+      // Two more enables while nas downloads: the first builds the edited tree, the second
+      // lands on that same image again.
+      await useBody(["ssh:build-box"]);
+      await waitFor(() => doneOn("ssh:build-box"));
+      await useBody(["ssh:build-box"]);
+      await waitFor(() => doneOn("ssh:build-box"));
+      expect(packs).toHaveLength(3);
+
+      release();
+      await waitFor(settled);
+      expect(copied).not.toBeNull();
+      expect(jobsOf().find((job) => job.machineId === "ssh:nas")?.result).toEqual({
+        ok: true,
+        connected: true,
+      });
+      // Nothing holds it any more: the next build sweeps it, and keeps the image in use.
+      await useBody(["ssh:build-box"]);
+      await waitFor(settled);
+      expect(fs.existsSync(nasImage!)).toBe(false);
+      expect((await listed()).checkoutImage).toEqual({ state: "built" });
+    });
+
+    it("rebuilding an unchanged checkout lands on the image already there: the machine on it gets nothing new", async () => {
+      let installs = 0;
+      await checkout({
+        install: async () => {
+          installs += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      const first = (await listed()).imageVersion;
+
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      // Each ask builds from the checkout as it is then; the same tree is the same image.
+      expect(packs).toHaveLength(2);
+      expect(installs).toBe(1);
+      expect((await listed()).imageVersion).toBe(first);
+      expect(jobsOf()[0]?.log).toContain(`Already on ${first}.`);
+    });
+
+    it("a changed checkout is a new version, and the machine on the old one reads as behind it", async () => {
+      await checkout();
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      const first = (await listed()).imageVersion;
+
+      // The same server after an edit to the platform: its next build is another image.
+      service = new MachinesService(
+        machinesRoot,
+        LOCAL_ID,
+        machinesRepo,
+        effects({
+          resolvePlan: () => null,
+          packCheckout: packing({
+            ...CHECKOUT_BUILD,
+            platform: `${CHECKOUT_BUILD.platform}// edited\n`,
+          }),
+        }),
+      );
+      await useBody(["ssh:build-box"]);
+      await waitFor(settled);
+
+      const body = await listed();
+      expect(body.imageVersion).not.toBe(first);
+      expect(body.imageVersion?.startsWith(`${VERSION}+hmr.`)).toBe(true);
+      // What the page compares to raise "update": the record against the image, both true.
+      expect(recordsInStore()["ssh:nas"]?.version).toBe(first);
+      expect(recordsInStore()["ssh:build-box"]?.version).toBe(body.imageVersion);
+    });
+
+    it("outlives a restart: a fresh service over the same root names the image it built, without building", async () => {
+      await checkout();
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      const version = (await listed()).imageVersion;
+
+      const reborn = new MachinesService(
+        machinesRoot,
+        LOCAL_ID,
+        machinesRepo,
+        effects({ resolvePlan: () => null, packCheckout: packing() }),
+      );
+      expect(reborn.imageVersion()).toBe(version);
+      expect(reborn.checkoutImage()).toEqual({ state: "built" });
+      expect(packs).toHaveLength(1);
+    });
+
+    it("a machine carrying the release but not this image is handed the image through its update channel", async () => {
+      let handed: PushedBuild | null = null;
+      await checkout({
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async (opts) => {
+          const body = readPushedBuild(opts.dataRoot);
+          handed =
+            body === null ? null : (JSON.parse(zlib.gunzipSync(body).toString()) as PushedBuild);
+          return { kind: "upgraded", detail: "", persisted: true };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true });
+      expect(handed).toMatchObject({
+        platform: CHECKOUT_BUILD.platform,
+        cli: CHECKOUT_BUILD.cli,
+        web: CHECKOUT_BUILD.web,
+      });
+    });
+
+    it("an installed server's own image wins: the checkout is neither built nor mentioned", async () => {
+      await boot({ packCheckout: packing() });
+      const body = await listed();
+      expect(body.imageVersion).toBe("9.9.9");
+      expect(body.checkoutImage).toBeUndefined();
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, version: "9.9.9" });
+      expect(packs).toEqual([]);
     });
   });
 

@@ -66,12 +66,13 @@ describe("validateHostEntry", () => {
 });
 
 describe("renderHostBlock", () => {
-  it("writes the lines ssh reads, led by who wrote them and when, and nothing blank", () => {
+  it("writes the lines ssh reads, led by who wrote them and when, and nothing blank; a new host's key is accepted on first use", () => {
     expect(renderHostBlock({ alias: "nas", hostName: "10.0.0.2" }, AT)).toBe(
       [
         "# Added by PenguinHarness on 2026-09-05T12:00:00.000Z",
         "Host nas",
         "  HostName 10.0.0.2",
+        "  StrictHostKeyChecking accept-new",
         "",
       ].join("\n"),
     );
@@ -97,6 +98,7 @@ describe("renderHostBlock", () => {
         "  User deploy",
         "  Port 2222",
         "  IdentityFile ~/.ssh/id_ed25519",
+        "  StrictHostKeyChecking accept-new",
         "",
       ].join("\n"),
     );
@@ -155,11 +157,12 @@ describe("replaceHostBlock", () => {
       new Date("2026-09-06T00:00:00.000Z"),
     );
     const next = replaceHostBlock(CONFIG, found, block);
-    expect(next.split("\n").slice(6, 11)).toEqual([
+    expect(next.split("\n").slice(6, 12)).toEqual([
       "# Added by PenguinHarness on 2026-09-06T00:00:00.000Z",
       "Host orchid-2",
       "  HostName 10.0.0.10",
       "  Port 22",
+      "  StrictHostKeyChecking accept-new",
       "",
     ]);
     expect(next.split("\n").slice(0, 6)).toEqual(CONFIG.split("\n").slice(0, 6));

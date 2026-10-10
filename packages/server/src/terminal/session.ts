@@ -18,7 +18,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import xterm, { type Terminal } from "@xterm/headless";
 import type { IPty } from "node-pty";
-import { loadNodePty } from "./pty-module.js";
+import { loadNodePty, loadedNodePtyDir } from "./pty-module.js";
 import { defaultTerminalShell } from "./shell.js";
 import { shellLaunch, type TerminalPathFirst } from "./shell-startup.js";
 import { TerminalInputModeTracker } from "./input-mode.js";
@@ -179,10 +179,13 @@ export class TerminalSession {
       buildTerminalEnv(options.env, options.cwd),
       options.pathFirst ?? null,
     );
+    // Loaded first, so the repair below reaches the copy that will spawn — which on a
+    // machine running a pushed platform is the installed program's (pty-module.ts).
+    const pty = loadNodePty(options.assets);
     // Before the first spawn on macOS: node-pty's prebuilt spawn-helper ships without an
     // exec bit, and posix_spawnp refuses it (see spawn-helper.ts).
-    ensureSpawnHelperExecutable();
-    this.ptyProcess = loadNodePty(options.assets).spawn(shell, launch.args, {
+    ensureSpawnHelperExecutable(loadedNodePtyDir());
+    this.ptyProcess = pty.spawn(shell, launch.args, {
       name: "xterm-256color",
       cols,
       rows,

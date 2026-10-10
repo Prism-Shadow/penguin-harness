@@ -18,8 +18,14 @@ export {
   connectionTo,
 } from "./connection.js";
 export type { MachineChannel } from "./connection.js";
-export { sessionOf } from "./ssh-session.js";
+export { heldSessionOf, sessionOf } from "./ssh-session.js";
 export type { ShellSession } from "./ssh-session.js";
-export { execFailureText, looksLikeAuthFailure, runBytes } from "./exec.js";
+export { execFailureText } from "./exec.js";
 export type { ExecResult } from "./exec.js";
-export { appendHostBlock, listHostAliases, readSshConfig, writeSshConfig } from "./targets.js";
+export {
+  appendHostBlock,
+  listHostAliases,
+  listHostEntries,
+  readSshConfig,
+  writeSshConfig,
+} from "./targets.js";

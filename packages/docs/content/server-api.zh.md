@@ -190,7 +190,9 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/machines` | 本机以及服务器自身 `~/.ssh/config` 中的主机别名，连同本 Project 的安装记录、最近状态和当前任务：`{machines: [{id, alias, machineId, installed, elsewhere?, local, connection, api, status}], imageVersion, job}` |
+| GET | `/api/projects/:projectId/machines` | 本机以及服务器自身 `~/.ssh/config` 中的主机别名，连同本 Project 的安装记录、最近状态和当前任务：`{machines: [{id, alias, machineId, installed, elsewhere?, member?, local, connection, api, status}], imageVersion, job}` |
+| GET | `/api/projects/:projectId/machines/ssh-hosts` | ssh 配置（包括 Include 的文件）中的每台主机，以及它自己的配置段原样写明的 `user`、`hostName` 与 `port`：`{hosts: [{alias, hostName?, user?, port?}]}` |
+| POST | `/api/projects/:projectId/machines/add` | 把 `{machines: [id…]}` 加入本 Project 的列表，不安装任何东西；返回列表，以及按 id 列出的 `refused` |
 | POST | `/api/projects/:projectId/machines/probe` | 逐台询问本 Project 已安装机器正在做什么（每台一次 ssh 往返，最多 5 台并发），返回携带最新状态的列表 |
 | POST | `/api/projects/:projectId/machines/:machineId/install` | 开始在这台主机上安装当前构建，并将这台主机分配给本 Project；任务运行期间返回 `202`，响应体相同 |
 | POST | `/api/projects/:projectId/machines/:machineId/connect` | 启动那台机器的服务器，并维持那条唯一的连接；connect 任务运行期间返回 `202`，响应体相同 |
@@ -198,19 +200,24 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 | POST | `/api/projects/:projectId/machines/:machineId/restart` | 停止那台机器的服务器，并在同一端口重新启动；返回 `202`，任务运行期间返回 `409` |
 | GET | `/api/projects/:projectId/machines/:machineId/dirs?path=` | 那台机器上 `path` 的子目录，经由保持中的连接读取；Workspace 选择器浏览的就是这些目录 |
 | POST | `/api/projects/:projectId/machines/:machineId/release` | 将那台机器移出本 Project；机器上的安装保持不变 |
+| POST | `/api/projects/:projectId/machines/:machineId/diagnose` | 检查有什么会妨碍安装或连接，不改动那台机器：`{machineId, checkedAt, checks: [{id, state, …}]}`；有任务在处理它时返回 `409` |
 
-无论个人服务器还是多用户服务器，这组路由都仅限管理员：安装会以服务器账号的密钥运行 ssh，并在另一台机器上写入程序目录——这是所有者才有的能力，不是访客该有的。服务器从不写入自己的 ssh 配置，也从不解析它。机器列表就是配置文件的原文，不管声明了多少台主机都只读取一次；每个别名都按原样传给 ssh，因此每次都由 ssh 套用自己的配置。
+无论个人服务器还是多用户服务器，这组路由都仅限管理员：安装会以服务器账号的密钥运行 ssh，并在另一台机器上写入程序目录——这是所有者才有的能力，不是访客该有的。服务器只在有人从页面上添加或配置主机时写入自己的 ssh 配置，也从不解析它。机器列表就是配置文件的原文，不管声明了多少台主机都只读取一次；每个别名都按原样传给 ssh，因此每次都由 ssh 套用自己的配置。
 
 - `POST …/install` 可以携带请求体 `{replaceProgram: true}`，用来回应任务过程中提出的这个要求：即使版本已经一致，服务器也会重新安装程序并重启它。
 - `POST …/connect` 维持一条 `ssh -T -D` 会话：空闲时永不超时，断开后自动重连，服务器重启或热推送后也会自动恢复。Windows 机器返回 `409` `connect_unsupported`，因为没有 shell 可以维持会话。
 - `POST …/disconnect` 断开后远端服务器继续运行：它属于那台机器，其他人可能还在使用。
 - `POST …/restart` 之所以是独立操作，是因为机器上的文件可以在运行期间更新，只有重启才能让进程与文件保持一致。
+- `POST …/diagnose` 依次做六项检查，每项为 `pass`、`warn`、`fail` 或 `skip`：`ssh`（以 BatchMode 登录，失败时附原因与 ssh 的原话）、`platform`（`fail` 时带 `reason`：`unsupported`、`glibc`——低于发布版 Node 所需的 `need`——或 `musl`；机器的 `glibc` 能运行发布版但打不开终端时为 `warn`，带 `terminalsNeed`）、`tools`（发布版安装脚本要用的工具；只缺 `curl` 时为 `warn`）、`download`（那台机器能否从 GitHub 或镜像拿到 `version` 发布版；两边都连不上时为 `warn`，因为安装会改由本服务器经 ssh 发送安装包）、`disk`（主目录的可用空间，以 MB 计，对照安装所需）与 `port`（`free`、`penguin` 或 `other`）。
+- 无法自行下载发布版的机器，由本服务器为它取安装包：只下载一次，核对发布时附带的校验和，存放在 `<root>/machines/releases/v<version>/`，经 ssh 会话发送过去。
 - `GET …/dirs` 与下文的 API 代理一样，用机器自身的 id 寻址。机器未连接时返回 `404`，因为读取操作绝不会自行建立 ssh 连接；那台机器拒绝列出的目录返回 `403 dir_permission_denied`。其条目只有文件夹，不带 `kind` 与 `mtime`。
 
 ### 机器字段
 
 - `elsewhere`：这台主机已由其他 Project 安装，可以直接接管，而不必重新安装。
-- `imageVersion`：将要推送的版本；本服务器完全没有安装镜像时为 `null`。只有从未接收过热推送的开发检出属于这种情况，此时每次安装都会失败，返回 `409` `no_install_image`。这个版本就是当前运行安装自身的版本：热推送的服务器发送它正在运行的 bundle（`0.0.0-hmr.<cli>.<web>`），tarball 或打包安装则发送自己的目录树，所以两端天然一致。
+- `member`：机器在本 Project 的列表中时为 `true`，机器管理页为它显示一张卡片。`POST …/add` 只把它加入列表而不安装；`POST …/use` 在被要求时就把它加入列表，因此首次安装失败的机器连同它的任务留在列表中，直到停用。
+- `checkoutImage`：仅当本服务器从源码检出运行（`pnpm dev`、`pnpm desktop`）时出现。这样的服务器在每次安装或启用机器时，用与热推送相同的打包器（`scripts/deploy.mjs --out`）从检出构建安装镜像，存放在 `<root>/machines/checkout-image/` 下，从不写进自己的 `hmr/`。字段为 `{state}`：`unbuilt`、`building`、`built`，或 `failed` 并在 `detail` 中带上构建输出的最后几行。构建失败时，该任务停在 `build the install image` 这一步。
+- `imageVersion`：安装会在机器上留下的版本，即基础发布版本，带有推送构建时再加上 `+hmr.<平台 bundle 哈希>`。tarball 或打包安装报告自己的发布版本与推送状态；源码检出报告检出的发布版本加上最近一次构建的镜像，第一次构建之前为 `null`。除此之外，`null` 表示本服务器既没有安装镜像也不会构建，此时每次安装都会失败，返回 `409` `no_install_image`。
 - `installed`：本服务器最近一次在那台机器上执行的安装，格式为 `{version, at}`；从未安装过则为 `null`。它保存在数据根目录下，因此重启、热推送和其他机器上的安装都不会使它丢失。它记录的是实际执行过的操作，并不核对远端状态，所以手动清空过的机器仍会显示为已安装，直到下一次安装把它纠正过来。安装失败不会留下任何记录。
 - `machineId`：机器自身的 id，由运行在那台机器上的服务器生成（记录在它的 `machine` 表中），共 16 个 base64url 字符。重命名、修改别名和重新安装都不会改变它，持久化引用应指向它。在那台机器上启动过服务器之前，它为 `null`，因为还没有任何东西生成过它。本服务器在与 `status` 同一次往返中获知它，并把它与安装记录存放在一起。同一主机的两个别名报告相同的 `machineId`。
 - `local`：标记本服务器所在的机器。由于应答请求的正是它，这条记录始终在列表中，始终显示为已安装且正在运行；它也永远不会成为安装目标：对它调用 `POST …/install` 返回 `409` `self_install`。
@@ -232,9 +239,9 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 
 - 安装：`{ok: true, installed: "installed" | "already-installed", version}`
 - 连接或重启：`{ok: true, connected: true}`
-- 失败：`{ok: false, step, message, canReplaceProgram?}`
+- 失败：`{ok: false, step, message, canReplaceProgram?, sshReason?}`
 
-`canReplaceProgram` 表示这次失败的后续步骤可以是强行安装程序：调用 `POST …/install` 并附带 `{replaceProgram: true}`。服务器只提供这一步而不擅自执行，因为它会重启一台可能还有其他人在使用的服务器。
+`canReplaceProgram` 表示这次失败的后续步骤可以是强行安装程序：调用 `POST …/install` 并附带 `{replaceProgram: true}`。服务器只提供这一步而不擅自执行，因为它会重启一台可能还有其他人在使用的服务器。ssh 本身拒绝时带 `sshReason`（取值与连接检查中 `ssh` 一项相同）；这种拒绝发生在任何操作之前时，任务失败于 `step: "check"`，且不提供 `canReplaceProgram`。
 
 同一时刻只运行一个任务。任务只存于内存，热推送或重启后就会丢失。要恢复就重新执行一遍：每一步都是幂等的。
 

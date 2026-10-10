@@ -25,6 +25,8 @@
  */
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DEFAULT_PROJECT_ID,
   VERSION,
@@ -33,11 +35,15 @@ import {
 } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type {
+  SshHostSummary,
+  MachineCheck,
+  MachineDiagnosis,
   MachineInfo,
   MachineJob,
   MachinePhase,
   MachineServerStatus,
   MachineUseRefusal,
+  MachinesCheckoutImage,
 } from "../api/types.js";
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
@@ -47,9 +53,10 @@ import {
   closeAllConnections,
   closeConnectionTo,
   connectionTo,
+  heldSessionOf,
   listHostAliases,
+  listHostEntries,
   readSshConfig,
-  sessionOf,
   writeSshConfig,
 } from "./transport/index.js";
 import type { ExecResult, MachineConnection, ShellSession } from "./transport/index.js";
@@ -63,7 +70,15 @@ import {
 import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
-import { installOnRemote, resolvePushPlan } from "./install-server.js";
+import { detectRemote, installOnRemote, resolvePushPlan, sameBuild } from "./install-server.js";
+import { parseProbeOutput, posixProbe } from "./detect.js";
+import { explainSshFailure, sshRefusal } from "./ssh-failure.js";
+import type { SshFailureReason } from "./ssh-failure.js";
+import { diagnoseCommand, parseDiagnosis, sshFailureChecks } from "./diagnose.js";
+import type { CarryRelease, PushPlan } from "./install-server.js";
+import { releaseCache } from "./release-cache.js";
+import { CheckoutImage, deployPacker, findCheckout, imageAssets } from "./checkout-image.js";
+import type { CheckoutBuild, CheckoutPacker } from "./checkout-image.js";
 import { probeServerState } from "./server-state.js";
 import { upgradeRemote } from "./upgrade.js";
 import type { UpgradeOutcome } from "./upgrade.js";
@@ -103,6 +118,15 @@ type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
 type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported";
 
 /**
+ * Runs a job's work with what its batch installs — a plan and where its installers are —
+ * held for as long as the work runs; or answers with the failure that left the batch without.
+ */
+type WithImage = (
+  say: Say,
+  work: (image: { plan: PushPlan; assets: () => string | null }) => Promise<MachineJob["result"]>,
+) => Promise<MachineJob["result"]>;
+
+/**
  * What this service does to the world, injectable as a set. Production passes none of them;
  * tests fake the reaching-out, because the real ones read the developer's own ~/.ssh/config
  * and spawn ssh against whatever it names. The push path itself is covered where it belongs
@@ -111,12 +135,21 @@ type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "u
  */
 export interface MachinesEffects {
   listAliases: typeof listHostAliases;
+  /** The hosts with what each one's own block says (user, host, port): the add dialog's rows. */
+  listHosts: typeof listHostEntries;
   /** The writes to the ssh config: appending a host block a person composed in the page, and rewriting one this app wrote. */
   appendHost: typeof appendHostBlock;
   readConfig: typeof readSshConfig;
   writeConfig: typeof writeSshConfig;
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
+  /** What a machine is, asked in either shell's dialect (install-server.ts). */
+  detect: typeof detectRemote;
+  /**
+   * The release package for a machine that cannot download it itself, fetched on this side
+   * (release-cache.ts) to be carried over the session.
+   */
+  carryRelease: CarryRelease;
   probe: typeof probeServerState;
   /** One command on a machine, over its shared shell. */
   runOn: (target: RemoteTarget, command: string) => Promise<ExecResult>;
@@ -135,6 +168,11 @@ export interface MachinesEffects {
   upgrade: typeof upgradeRemote;
   /** This server's own Project config, credentials in plaintext — the source of a model sync. */
   loadConfig: (projectId: string) => Promise<ProjectConfig>;
+  /**
+   * Packs this server's checkout into an install image (checkout-image.ts) — or null when it
+   * does not run from a checkout, which is every server but a development one.
+   */
+  packCheckout: CheckoutPacker | null;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
 }
@@ -198,6 +236,8 @@ export class MachinesService {
   /** Per machine, when the next re-hold may be tried (epoch ms) and how many tries have failed in a row. */
   readonly #reholdNotBefore = new Map<string, number>();
   readonly #reholdFailures = new Map<string, number>();
+  /** The image a source checkout builds for its installs; null for every other server. */
+  readonly #checkout: CheckoutImage | null;
 
   constructor(
     private readonly dataRoot: string,
@@ -212,24 +252,35 @@ export class MachinesService {
     this.#layout = layout;
     this.#effects = {
       listAliases: listHostAliases,
+      listHosts: listHostEntries,
       appendHost: appendHostBlock,
       readConfig: readSshConfig,
       writeConfig: writeSshConfig,
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
+      detect: (target, layout) => detectRemote(target, layout),
+      carryRelease: releaseCache(path.join(dataRoot, "machines", "releases")),
       probe: probeServerState,
       runOn: (target, command) => connectionTo(target).exec(command),
       startServer: (target, port) => startRemoteServer(target, port, layout, this.#effects.runOn),
       hold: (target) => connectionTo(target).hold(),
-      session: (address) => sessionOf(address),
+      session: (address) => heldSessionOf(address),
       agent: (target, remotePort) => connectionTo(target).agent(remotePort),
       stopServer: (target) => stopRemoteServer(target, layout, this.#effects.runOn),
       mintToken: (target, runOn) => mintTokenOnRemote(target, layout, runOn),
       upgrade: upgradeRemote,
       loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
+      packCheckout: null,
       now: () => new Date(),
       ...effects,
     };
+    const pack = this.#effects.packCheckout;
+    this.#checkout =
+      pack === null
+        ? null
+        : new CheckoutImage(path.join(dataRoot, "machines", "checkout-image"), VERSION, pack, () =>
+            this.#effects.now(),
+          );
   }
 
   // --- what is known -----------------------------------------------------------------------
@@ -381,9 +432,44 @@ export class MachinesService {
       return {
         ...machine,
         installed: mine ? machine.installed : null,
+        ...(mine ? { member: true as const } : {}),
         ...(!mine && machine.installed !== null ? { elsewhere: machine.installed } : {}),
       };
     });
+  }
+
+  /**
+   * The hosts in this server's ssh config with what each one's own block says — for the page's
+   * add dialog, which shows `user@host:port` beside an alias. Read on request, like the list.
+   */
+  sshHosts(): SshHostSummary[] {
+    return this.#effects.listHosts();
+  }
+
+  /**
+   * Puts machines in a Project's list without installing anything there: each then has a card,
+   * whose one thing to do is enabling it. Refusals by id, as `startUse` answers them; nothing
+   * reaches a machine.
+   */
+  addToProject(
+    projectId: string,
+    addresses: readonly string[],
+  ): { refused: { machineId: string; why: MachineUseRefusal }[] } {
+    const refused: { machineId: string; why: MachineUseRefusal }[] = [];
+    for (const address of new Set(addresses)) {
+      const machine = this.#allMachines().find((entry) => entry.id === address);
+      if (machine === undefined) {
+        refused.push({ machineId: address, why: "unknown-machine" });
+      } else if (
+        machine.local ||
+        (machine.machineId !== null && machine.machineId === this.#machineId)
+      ) {
+        refused.push({ machineId: address, why: "self" });
+      } else {
+        this.#setMember(projectId, address, true);
+      }
+    }
+    return { refused };
   }
 
   /** Drops a machine from a Project. The program stays installed; only the membership goes. */
@@ -409,12 +495,121 @@ export class MachinesService {
   }
 
   /**
-   * The version this server would install, or null when it has no image to push — a dev
-   * checkout that has never been pushed to is the one shape with none. The page asks for it
-   * so it can say so up front, rather than letting every install fail at the same step.
+   * The version this server would install, or null when it has none to name. A source
+   * checkout names the image it last built — its next install builds again, from the checkout
+   * as it is then — and null before the first build; a server that is neither installed nor
+   * a checkout has no image at all. The page asks so it can say so up front, rather than
+   * letting every install fail at the same step.
    */
   imageVersion(): string | null {
-    return this.#effects.resolvePlan(this.dataRoot)?.version ?? null;
+    return this.#plan()?.version ?? null;
+  }
+
+  /** The checkout's image, for the page to speak of; null unless this server runs from a checkout. */
+  checkoutImage(): MachinesCheckoutImage | null {
+    if (this.#checkout === null || this.#effects.resolvePlan(this.dataRoot) !== null) return null;
+    return this.#checkout.status();
+  }
+
+  /** What an install would put on a machine now: this install's own plan, else the checkout's last image. */
+  #plan(): PushPlan | null {
+    return this.#effects.resolvePlan(this.dataRoot) ?? this.#checkout?.plan() ?? null;
+  }
+
+  /**
+   * What the jobs of one batch install. An installed server's plan is fixed; a checkout builds
+   * its image from the source as the batch finds it, once for the whole batch — the first job
+   * to ask starts the build, the others hear it out, and a job that starts after it is done
+   * takes its result rather than building again — and each job holds that image until its
+   * work is done. Null when this server has nothing to install and no checkout to build it
+   * from.
+   */
+  #imageForBatch(): WithImage | null {
+    const installed = this.#effects.resolvePlan(this.dataRoot);
+    if (installed !== null) return (_say, work) => work({ plan: installed, assets: this.#assets });
+    const checkout = this.#checkout;
+    if (checkout === null) return null;
+    let built: CheckoutBuild | null = null;
+    return async (say, work) => {
+      if (built === null) {
+        say("Building the install image from this checkout…", "check");
+        built = await checkout.build((line) => say(line));
+      }
+      if (!built.ok) {
+        return {
+          ok: false,
+          step: "build the install image",
+          message: built.detail,
+          // This server's own lack: installing the program anyway would send nothing new.
+          canReplaceProgram: false,
+        };
+      }
+      const { plan } = built;
+      // The installers this image was packed with travel in it.
+      const assets = imageAssets(plan);
+      // Held while the job works: the copy comes after the far side has downloaded its
+      // release, and the builds other batches run meanwhile must not prune the image.
+      return checkout.holding(plan, () => work({ plan, assets: () => assets }));
+    };
+  }
+
+  /**
+   * Checks a machine without writing anything there (machines/diagnose.ts): can this server
+   * sign in, is it a platform a release exists for, does it have what the installer runs,
+   * can it download the release itself, is there room, is the port free. Refused while a job
+   * works on that machine — the checks would queue behind the job's commands on its session.
+   */
+  async diagnose(address: string): Promise<MachineDiagnosis | "unknown-machine" | "self" | "busy"> {
+    const machine = this.#allMachines().find((entry) => entry.id === address);
+    if (machine === undefined) return "unknown-machine";
+    if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
+      return "self";
+    }
+    if (this.#busy.has(address)) return "busy";
+    const target = this.#targetOf(machine.alias);
+    const checkedAt = this.#effects.now().toISOString();
+    const done = (checks: MachineCheck[]): MachineDiagnosis => ({
+      machineId: address,
+      checkedAt,
+      checks,
+    });
+    const skipped = (["tools", "download", "disk", "port"] as const).map((id): MachineCheck => ({
+      id,
+      state: "skip",
+    }));
+    const probe = await this.#effects.runOn(target, posixProbe(this.#layout));
+    let identity = probe.code === 0 ? parseProbeOutput(probe.stdout) : null;
+    if (identity === null) {
+      if (probe.code !== 0 && explainSshFailure(probe.stdout, target.alias) !== null) {
+        return done(sshFailureChecks(probe.stdout, target.alias));
+      }
+      // No POSIX answer and no ssh refusal: a Windows shell, or a platform with no release.
+      const detected = await this.#effects.detect(target, this.#layout);
+      if ("error" in detected) {
+        if (explainSshFailure(detected.error, target.alias) !== null) {
+          return done(sshFailureChecks(detected.error, target.alias));
+        }
+        return done([
+          { id: "ssh", state: "pass", user: "", host: "" },
+          {
+            id: "platform",
+            state: "fail",
+            reason: "unsupported",
+            said: probe.stdout.trim().slice(0, 600),
+          },
+          ...skipped,
+        ]);
+      }
+      identity = detected.identity;
+    }
+    // The release the image stands on: this install's own, or a checkout's VERSION.
+    const version =
+      this.#effects.resolvePlan(this.dataRoot)?.baseVersion ??
+      (this.#checkout === null ? null : VERSION);
+    const port = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
+    if (identity.platform === "win32") return done(parseDiagnosis(identity, "", { version, port }));
+    const answer = await this.#effects.runOn(target, diagnoseCommand(this.#layout, version, port));
+    return done(parseDiagnosis(identity, answer.stdout, { version, port }));
   }
 
   /** The running or last job; null before the first one. */
@@ -598,6 +793,50 @@ export class MachinesService {
     );
   }
 
+  /**
+   * What a failure ssh itself caused — a host key, a key, a name, a route — adds to the job's
+   * result: why, for the page to say in its own language, and no offer to install the program
+   * anyway (`canReplaceProgram`). An install reaches the machine through the same ssh and
+   * would stop at the same door, so the offer would be a second way to fail rather than a way
+   * out.
+   */
+  #sshCause(
+    target: RemoteTarget,
+    message: string,
+  ): { canReplaceProgram?: false; sshReason?: SshFailureReason } {
+    const failure = explainSshFailure(message, target.alias);
+    return failure === null ? {} : { canReplaceProgram: false, sshReason: failure.reason };
+  }
+
+  /**
+   * Whether ssh lets this server in at all, asked before anything else a job does — before a
+   * checkout spends a minute building its image for a machine that refuses the key. One `:`
+   * over the session, which the work after it reuses. Null when it gets in, or when the
+   * answer is the far side's own (a Windows shell has no `sh`: the work finds that out); the
+   * job's failure when ssh itself refused, at the first step — checking the machine.
+   */
+  async #refusedAtTheDoor(machine: MachineInfo): Promise<MachineJob["result"] | null> {
+    const target = this.#targetOf(machine.alias);
+    const answer = await this.#effects.runOn(target, ":");
+    const refused = answer.code === 0 ? null : sshRefusal(answer.stdout, target.alias);
+    return refused === null
+      ? null
+      : { ok: false, step: "check", message: refused, ...this.#sshCause(target, refused) };
+  }
+
+  /**
+   * Whether the machine already carries the build `plan` names, asked of the machine: the
+   * version names the platform bundle only, so an image whose web, CLI or assets changed reads
+   * as the version the machine is recorded at. One probe over the session. Unknown — no answer,
+   * a Windows shell — reads as current, which is what the record said.
+   */
+  async #carries(target: RemoteTarget, plan: PushPlan): Promise<boolean> {
+    if (plan.harness === null) return true;
+    const answer = await this.#effects.runOn(target, posixProbe(this.#layout));
+    const identity = answer.code === 0 ? parseProbeOutput(answer.stdout) : null;
+    return identity === null || sameBuild(identity.harness, plan.harness);
+  }
+
   // --- jobs ---------------------------------------------------------------------------------
 
   /**
@@ -726,11 +965,18 @@ export class MachinesService {
     if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
       return { ok: false, why: "self" };
     }
-    const plan = this.#effects.resolvePlan(this.dataRoot);
-    if (plan === null) return { ok: false, why: "no-image" };
+    const withImage = this.#imageForBatch();
+    if (withImage === null) return { ok: false, why: "no-image" };
 
-    this.#startJob("install", machine, { offerReplaceProgram: !replaceProgram }, (say) =>
-      this.#installWork(projectId, machine, plan, replaceProgram, say),
+    this.#startJob(
+      "install",
+      machine,
+      { offerReplaceProgram: !replaceProgram },
+      async (say) =>
+        (await this.#refusedAtTheDoor(machine)) ??
+        withImage(say, (image) =>
+          this.#installWork(projectId, machine, image, replaceProgram, say),
+        ),
     );
     return { ok: true };
   }
@@ -739,7 +985,7 @@ export class MachinesService {
   async #installWork(
     projectId: string,
     machine: MachineInfo,
-    plan: NonNullable<ReturnType<MachinesEffects["resolvePlan"]>>,
+    { plan, assets }: { plan: PushPlan; assets: () => string | null },
     replaceProgram: boolean,
     say: Say,
   ): Promise<MachineJob["result"]> {
@@ -764,12 +1010,18 @@ export class MachinesService {
       target,
       plan,
       onProgress: say,
-      assets: this.#assets,
+      assets,
       layout: this.#layout,
+      carryRelease: this.#effects.carryRelease,
       ...(replaceProgram ? { forceInstaller: true } : {}),
     });
     if (outcome.kind === "failed") {
-      return { ok: false, step: outcome.step, message: outcome.detail };
+      return {
+        ok: false,
+        step: outcome.step,
+        message: outcome.detail,
+        ...this.#sshCause(target, outcome.detail),
+      };
     }
     // What the machine is, before anything below asks it again: the hand-over and the
     // restart both probe, and they should already speak its dialect.
@@ -789,7 +1041,7 @@ export class MachinesService {
       // asks the machine itself, so a runtime that cannot claim this platform refuses in
       // words rather than restarting into a silent fallback.
       say("Handing this build to its own update channel…", "handover");
-      const pushed = await this.#handOverBuild(address, target, say);
+      const pushed = await this.#handOverBuild(address, target, plan, say);
       if (pushed.kind === "no-server") {
         say("Its server is not running; this build will be used when it next starts.");
       } else if (pushed.kind !== "upgraded") {
@@ -917,7 +1169,7 @@ export class MachinesService {
     replaceProgram = false,
   ): { refused: { machineId: string; why: MachineUseRefusal }[] } {
     const refused: { machineId: string; why: MachineUseRefusal }[] = [];
-    const plan = this.#effects.resolvePlan(this.dataRoot);
+    const withImage = this.#imageForBatch();
     for (const address of new Set(addresses)) {
       const machine = this.#allMachines().find((entry) => entry.id === address);
       if (machine === undefined) {
@@ -928,12 +1180,20 @@ export class MachinesService {
         refused.push({ machineId: address, why: "self" });
         continue;
       }
-      if (plan === null) {
+      if (withImage === null) {
         refused.push({ machineId: address, why: "no-image" });
         continue;
       }
-      this.#startJob("use", machine, { offerReplaceProgram: !replaceProgram }, (say) =>
-        this.#useWork(projectId, address, plan, replaceProgram, say),
+      // On the Project's list from the moment it is asked for, so its card shows the job — and
+      // keeps showing a first install that failed, with its Retry, rather than vanishing with it.
+      this.#setMember(projectId, address, true);
+      this.#startJob(
+        "use",
+        machine,
+        { offerReplaceProgram: !replaceProgram },
+        async (say) =>
+          (await this.#refusedAtTheDoor(machine)) ??
+          withImage(say, (image) => this.#useWork(projectId, address, image, replaceProgram, say)),
       );
     }
     return { refused };
@@ -943,19 +1203,24 @@ export class MachinesService {
   async #useWork(
     projectId: string,
     address: string,
-    plan: NonNullable<ReturnType<MachinesEffects["resolvePlan"]>>,
+    image: { plan: PushPlan; assets: () => string | null },
     replaceProgram: boolean,
     say: Say,
   ): Promise<MachineJob["result"]> {
+    const { plan } = image;
     // Read at run time, not at queue time: a batch's later rows see what the earlier ones did.
     const machine = this.#allMachines().find((entry) => entry.id === address);
     if (machine === undefined) {
       return { ok: false, step: "use", message: "that host is no longer in the ssh config." };
     }
-    const needsInstall =
+    let needsInstall =
       replaceProgram || machine.installed === null || machine.installed.version !== plan.version;
+    if (!needsInstall && this.repo.get(address)?.platform !== "win32") {
+      // Same version, maybe not the same build: a web, CLI or asset change keeps the version.
+      needsInstall = !(await this.#carries(this.#targetOf(machine.alias), plan));
+    }
     if (needsInstall) {
-      const installed = await this.#installWork(projectId, machine, plan, replaceProgram, say);
+      const installed = await this.#installWork(projectId, machine, image, replaceProgram, say);
       if (installed !== null && !installed.ok) return installed;
     } else {
       say(`Already on ${plan.version}.`, "check");
@@ -980,6 +1245,10 @@ export class MachinesService {
     for (const address of new Set(addresses)) {
       this.disconnect(address);
       this.release(projectId, address);
+      // A finished job is what keeps a card for a machine that never got as far as an install
+      // (the page shows every machine with a job): letting it go lets that card go too.
+      const job = this.#jobs.get(address);
+      if (job !== undefined && !job.queued && !job.running) this.#jobs.delete(address);
     }
   }
 
@@ -1023,7 +1292,13 @@ export class MachinesService {
       // The same dead end an install reaches, and the same way out — installing anyway,
       // which every failed job offers (#startJob): the machine cannot answer because the
       // CLI in its store is not one this server can talk to, and the installer replaces it.
-      return { ok: false, step: "connect", message: probed.state.detail };
+      // Unless ssh itself got nowhere: then an install would stop at the same door.
+      return {
+        ok: false,
+        step: "connect",
+        message: probed.state.detail,
+        ...this.#sshCause(target, probed.state.detail),
+      };
     }
     // The refusal startConnect made from the record, made again from what was just heard: an
     // alias never probed before, or one repointed here since, answers this server's own id
@@ -1044,7 +1319,15 @@ export class MachinesService {
       remotePort = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
       say(`Starting its server on port ${remotePort}…`);
       const started = await this.#effects.startServer(target, remotePort);
-      if (!started.ok) return { ok: false, step: "start its server", message: started.detail };
+      if (!started.ok) {
+        return {
+          ok: false,
+          step: "start its server",
+          message: started.detail,
+          // Another program's port is not something installing the program frees.
+          ...(started.portTaken === true ? { canReplaceProgram: false as const } : {}),
+        };
+      }
       // A machine mints its id when its server starts, so one that was down had none — and
       // its port and pid are now the freshest fact about it. The port is taken from what the
       // machine says, not from what was asked for: the two differ when an earlier, slower
@@ -1056,7 +1339,14 @@ export class MachinesService {
 
     say("Opening the connection…", "connect");
     const connection = await this.#connection(address, target);
-    if (!connection.ok) return { ok: false, step: "connect", message: connection.detail };
+    if (!connection.ok) {
+      return {
+        ok: false,
+        step: "connect",
+        message: connection.detail,
+        ...this.#sshCause(target, connection.detail),
+      };
+    }
     this.repo.patch(address, { remotePort });
     say(`Connected; its server is on port ${remotePort} over there.`);
     // An Agent started over there resolves its model against THAT machine's config, so a
@@ -1241,8 +1531,17 @@ export class MachinesService {
     };
   }
 
-  /** Hands a machine this server's pushed build, through the connection held to it. */
-  async #handOverBuild(address: string, target: RemoteTarget, say: Say): Promise<UpgradeOutcome> {
+  /**
+   * Hands a machine the build a plan carries, through the connection held to it: this
+   * server's own pushed build, or a checkout's image — read from the plan's own store, never
+   * from a checkout's `<root>/hmr`, which holds nothing of it.
+   */
+  async #handOverBuild(
+    address: string,
+    target: RemoteTarget,
+    plan: PushPlan,
+    say: Say,
+  ): Promise<UpgradeOutcome> {
     const probed = await this.#effects.probe(
       target,
       this.#layout,
@@ -1266,7 +1565,9 @@ export class MachinesService {
       agent: this.#effects.agent(target, port),
       port,
       cookie: session.cookie,
-      dataRoot: this.dataRoot,
+      // The root the plan's store sits in: `<root>/hmr` for this server's own, and the
+      // image's directory for a checkout's.
+      dataRoot: plan.hmrDir === null ? this.dataRoot : path.dirname(plan.hmrDir),
       onProgress: say,
     });
   }
@@ -1393,25 +1694,33 @@ export class MachinesService {
     await Promise.all(workers);
   }
 
-  /** Hands this server's build to every machine carrying a different one. */
+  /**
+   * Hands this server's build to every machine carrying a different one. A checkout hands
+   * over the image it last built and builds nothing here: this runs at every start, and a
+   * dev server restarts on every edit.
+   */
   async syncOutOfDate(): Promise<void> {
-    const plan = this.#effects.resolvePlan(this.dataRoot);
+    const plan = this.#plan();
     if (plan === null) return;
     const behind = this.repo
       .all()
       .filter((row) => row.version !== null && row.version !== plan.version)
       .map((row) => row.address);
-    await this.#sweep(behind, async (address, target) => {
-      const outcome = await this.#handOverBuild(address, target, () => {});
-      // Recorded only when the machine also wrote it down: a swap it could not persist is
-      // gone at its next restart, and a record of it would outlive the thing it records.
-      if (outcome.kind === "upgraded" && outcome.persisted) {
-        this.repo.patch(address, {
-          version: plan.version,
-          installedAt: this.#effects.now().toISOString(),
-        });
-      }
-    });
+    const sweep = () =>
+      this.#sweep(behind, async (address, target) => {
+        const outcome = await this.#handOverBuild(address, target, plan, () => {});
+        // Recorded only when the machine also wrote it down: a swap it could not persist is
+        // gone at its next restart, and a record of it would outlive the thing it records.
+        if (outcome.kind === "upgraded" && outcome.persisted) {
+          this.repo.patch(address, {
+            version: plan.version,
+            installedAt: this.#effects.now().toISOString(),
+          });
+        }
+      });
+    // A checkout's image is held for the sweep as for a job: builds the page starts meanwhile
+    // must not prune what is being handed over.
+    await (this.#checkout?.holding(plan, sweep) ?? sweep());
   }
 
   /**
@@ -1500,6 +1809,9 @@ export abstract class Machines extends Interface<
     | "addSshHost"
     | "sshHost"
     | "updateSshHost"
+    | "diagnose"
+    | "sshHosts"
+    | "addToProject"
   >
 >() {}
 
@@ -1536,8 +1848,16 @@ export class MachinesModule {
     // after — every stored reference to this machine, here and on the machines it reaches,
     // points at it. A test that supplies its own service mints none.
     const repo = new MachinesRepo(this.db as unknown as DatabaseSync);
-    const machines = new MachinesService(this.paths.root, repo.ownId(), repo, {}, () =>
-      this.hmr.assetsDir(),
+    // A server running from a checkout builds the image its installs need (checkout-image.ts);
+    // asked of this module's own file, which a packaged program or a pushed platform keeps
+    // outside any checkout.
+    const checkout = findCheckout(path.dirname(fileURLToPath(import.meta.url)));
+    const machines = new MachinesService(
+      this.paths.root,
+      repo.ownId(),
+      repo,
+      checkout === null ? {} : { packCheckout: deployPacker(checkout) },
+      () => this.hmr.assetsDir(),
     );
     this.machines = machines;
     this.routes = machinesRoutes({ machines, access: this.access });

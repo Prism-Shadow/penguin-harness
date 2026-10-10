@@ -190,7 +190,9 @@ Installs this server's build on other hosts over ssh and manages the connections
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/machines` | This machine and the host aliases in the server's own `~/.ssh/config`, with this Project's installs, the last statuses and the current job: `{machines: [{id, alias, machineId, installed, elsewhere?, local, connection, api, status}], imageVersion, job}` |
+| GET | `/api/projects/:projectId/machines` | This machine and the host aliases in the server's own `~/.ssh/config`, with this Project's installs, the last statuses and the current job: `{machines: [{id, alias, machineId, installed, elsewhere?, member?, local, connection, api, status}], imageVersion, job}` |
+| GET | `/api/projects/:projectId/machines/ssh-hosts` | Every host in the ssh config (included files too) with the `user`, `hostName` and `port` its own block names, literally: `{hosts: [{alias, hostName?, user?, port?}]}` |
+| POST | `/api/projects/:projectId/machines/add` | Puts `{machines: [id…]}` on this Project's list without installing anything; answers the list and `refused` by id |
 | POST | `/api/projects/:projectId/machines/probe` | Asks this Project's installed machines what they are doing (one ssh round trip each, five at a time) and returns the list with fresh statuses |
 | POST | `/api/projects/:projectId/machines/:machineId/install` | Starts installing this build on that host and assigns the host to this Project; `202` with the same body while the job runs |
 | POST | `/api/projects/:projectId/machines/:machineId/connect` | Starts that machine's server and holds the one connection to it; `202` with the same body while the connect job runs |
@@ -198,19 +200,24 @@ Installs this server's build on other hosts over ssh and manages the connections
 | POST | `/api/projects/:projectId/machines/:machineId/restart` | Stops that machine's server and starts it again on the same port; `202`, or `409` while a job runs |
 | GET | `/api/projects/:projectId/machines/:machineId/dirs?path=` | The subdirectories of `path` on that machine, read over the held connection; the Workspace picker browses these |
 | POST | `/api/projects/:projectId/machines/:machineId/release` | Removes that machine from this Project; the install on it stays |
+| POST | `/api/projects/:projectId/machines/:machineId/diagnose` | Checks what would stop an install or a connect, writing nothing on the machine: `{machineId, checkedAt, checks: [{id, state, …}]}`; `409` while a job works on it |
 
-These routes are admin only on a personal server as much as on a multi-user one: an install runs ssh with the server account's keys and writes a program directory on another machine, which is an owner's capability rather than a visitor's. The server never writes to its ssh config and never resolves it. The list is the config's text, read once however many hosts it declares, and each alias goes to ssh exactly as written, so ssh applies its own config every time.
+These routes are admin only on a personal server as much as on a multi-user one: an install runs ssh with the server account's keys and writes a program directory on another machine, which is an owner's capability rather than a visitor's. The server writes to its ssh config only when someone adds or configures a host from the page, and never resolves it. The list is the config's text, read once however many hosts it declares, and each alias goes to ssh exactly as written, so ssh applies its own config every time.
 
 - `POST …/install` accepts the body `{replaceProgram: true}` to answer a job that came back asking for it: the server installs the program even though its version already matches, and restarts it.
 - `POST …/connect` holds an `ssh -T -D` session that never times out when idle, reconnects on its own if it drops, and is restored after a restart or a hot push. A Windows machine returns `409` `connect_unsupported`, because there is no shell to hold a session on.
 - `POST …/disconnect` leaves the remote server running because it belongs to that machine, and other people may be using it.
 - `POST …/restart` exists as its own action because a machine's files can be updated while it runs, and only a restart makes the process match them.
+- `POST …/diagnose` runs six checks in order, each `pass`, `warn`, `fail` or `skip`: `ssh` (a BatchMode sign-in, with the reason and ssh's own words when it fails), `platform` (`fail` with a `reason`: `unsupported`, `glibc` — older than the `need` the release's Node runs on — or `musl`; `warn` with `terminalsNeed` when the machine's `glibc` runs the release but not its terminals), `tools` (what the release installer runs; a missing `curl` alone is a `warn`), `download` (whether the machine reaches release `version` on GitHub or the mirror; `warn` when it reaches neither, since an install then sends the package over ssh), `disk` (free MB in the home against what an install needs) and `port` (`free`, `penguin`, or `other`).
+- A machine that cannot download its release itself gets the package from this server: fetched once, checked against its published checksum, kept under `<root>/machines/releases/v<version>/`, and sent over the ssh session.
 - `GET …/dirs` addresses the machine by its own id, like the API proxy below. It returns `404` when the machine is not connected, because a read never opens ssh by itself, and `403 dir_permission_denied` for a directory that machine refuses to list. Its entries are folders only, without `kind` or `mtime`.
 
 ### Machine fields
 
 - `elsewhere`: the host was installed by another Project, so it can be adopted instead of installed.
-- `imageVersion`: the version that would be pushed, or `null` when this server has no install image at all. A development checkout that was never hot-pushed to is the only such case, and every install then fails with `409` `no_install_image`. The version is the running install's own: a hot-pushed server sends the bundle it runs (`0.0.0-hmr.<cli>.<web>`), and a tarball or packaged install sends its own tree, so both ends match by construction.
+- `member`: `true` when the machine is on this Project's list, its Machines page showing a card for it. `POST …/add` puts it there without installing; `POST …/use` puts it there as soon as it is asked for, so a first install that fails stays on the list with its job until stop-using.
+- `checkoutImage`: present only when this server runs from a source checkout (`pnpm dev`, `pnpm desktop`). Such a server builds its install image from the checkout at every install or use, with the hot push's own packer (`scripts/deploy.mjs --out`), and keeps it under `<root>/machines/checkout-image/`, never in its own `hmr/`. The field is `{state}`: `unbuilt`, `building`, `built`, or `failed` with the build's last lines in `detail`. A failed build ends its job at the step `build the install image`.
+- `imageVersion`: the version an install would leave on a machine: the base release, plus `+hmr.<platform sha>` when a pushed build goes with it. A tarball or packaged install answers with its own release and its own pushed state. A source checkout answers with the checkout's release plus the image it last built, and `null` before its first build. Otherwise `null` means this server carries no image and builds none, and every install fails with `409` `no_install_image`.
 - `installed`: the last install this server carried out on that machine, as `{version, at}`, or `null` if there was none. It is stored under the data root, so it survives a restart, a hot push and installs on other machines. It records what was done rather than checking the far side, so a machine wiped by hand still shows as installed until the next install corrects it. A failed install records nothing.
 - `machineId`: the machine's own id, 16 base64url characters minted by the server running there (in its `machine` table). It stays the same across renames, alias changes and reinstalls, and stored references should point at it. It is `null` until a server has started on that machine, since nothing has minted it yet. The server learns it on the same round trip as `status` and stores it beside the install record. Two aliases for one host report the same `machineId`.
 - `local`: marks the machine this server runs on. It is always listed, always installed and always running, since it is the one answering, and it is never an install target: `POST …/install` on it returns `409` `self_install`.
@@ -232,9 +239,9 @@ A connect (`POST …/connect`) and a restart (`POST …/restart`) are jobs of th
 
 - `{ok: true, installed: "installed" | "already-installed", version}` for an install
 - `{ok: true, connected: true}` for a connect or a restart
-- `{ok: false, step, message, canReplaceProgram?}` for a failure
+- `{ok: false, step, message, canReplaceProgram?, sshReason?}` for a failure
 
-`canReplaceProgram` marks a failure whose next step is to install the program anyway, with `POST …/install` and `{replaceProgram: true}`. The server offers this step instead of taking it, because it restarts a server other people may be using.
+`canReplaceProgram` marks a failure whose next step is to install the program anyway, with `POST …/install` and `{replaceProgram: true}`. The server offers this step instead of taking it, because it restarts a server other people may be using. `sshReason` is set when ssh itself refused (the same reasons as the connection check's `ssh` check); such a job fails at `step: "check"` when the refusal comes before anything else, and never offers `canReplaceProgram`.
 
 Only one job runs at a time. Jobs live in memory and do not survive a hot push or a restart. To recover, run the job again: every step is idempotent.
 

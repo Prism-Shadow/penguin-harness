@@ -22,13 +22,95 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as tar from "tar";
 import { runInstallScriptCommand, unpackStoreCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, posixProbe, windowsProbe } from "./detect.js";
 import type { RemoteIdentity, RemotePlatform } from "./detect.js";
 import type { RemoteLayout } from "./layout.js";
-import { connectionTo, looksLikeAuthFailure, runBytes } from "./transport/index.js";
+import { connectionTo } from "./transport/index.js";
+import { sshFailureText, sshRefusal } from "./ssh-failure.js";
+import { parseReleaseReach, releaseReachCommand } from "./diagnose.js";
 import type { MachineChannel } from "./transport/index.js";
+
+/**
+ * The hmr state an install replicates — `harness.json` and `store/` of `hmrDir` — as one
+ * tar.gz, packed in this process rather than by this machine's `tar`.
+ *
+ * In process because the far side is another kind of machine. macOS's bsdtar adds an
+ * AppleDouble `._<name>` member for every file that carries extended attributes (which
+ * files written on a Mac usually do: `com.apple.provenance`), and the far side extracts
+ * those as files: an `archives/._node-pty.tgz` beside the real archive is then "an
+ * archive" the platform tries to unpack at boot. `portable` also drops this machine's
+ * owners and ids, which mean nothing over there. Modes are kept: an exec bit is the one
+ * piece of metadata the store needs (hmr/pushed-build.ts).
+ */
+export async function packHmrState(hmrDir: string): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  const stream = tar.c({ gzip: true, cwd: hmrDir, portable: true }, ["harness.json", "store"]);
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
+  return Buffer.concat(chunks);
+}
+
+/** The uplink a transfer's deadline is sized for: a slow home line, 256 kbit/s. */
+const SLOW_UPLINK_BYTES_PER_SECOND = 32 * 1024;
+
+/**
+ * How long sending `payload` over the session may take before it counts as hung: the bulk
+ * default, or longer for a payload that would not cross a slow uplink in it — base64 on the
+ * wire (4/3), which is how the session carries stdin (transport/ssh-session.ts).
+ */
+export function transferTimeoutMs(payload: Buffer): number {
+  const seconds = (payload.byteLength * 4) / 3 / SLOW_UPLINK_BYTES_PER_SECOND;
+  return Math.max(10 * 60_000, Math.ceil(seconds * 1000));
+}
+
+/**
+ * One line of the installer's output as a person should see it in the job log, or null for
+ * none. curl's progress bar redraws itself with carriage returns, so its whole run arrives as
+ * one "line" of bars and percentages: what a terminal would show is the last redraw, and a
+ * bare bar says nothing the next line ("Bundle checksum OK.") does not.
+ */
+export function installerLine(raw: string): string | null {
+  const shown = raw
+    .split("\r")
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .pop();
+  if (shown === undefined) return null;
+  if (/^[#=O\-\s]*\d+(?:\.\d+)?%$/.test(shown) || /^[#=O\-\s]+$/.test(shown)) return null;
+  return shown;
+}
+
+/**
+ * Why the installer stopped, as its own words: its `error:` lines when it said any (every
+ * refusal it makes is one — install.sh's `fail`), else its last few lines. When the refusal
+ * points at "the error above" — the program it unpacked would not run — the lines just before
+ * it lead: they are the program's own error, such as a C library too old for its Node. The
+ * whole transcript is already in the job log, line by line; a failure's message is what it says.
+ */
+export function installerFailure(output: string): string {
+  const lines = output
+    .split("\n")
+    .map((line) => installerLine(line))
+    .filter((line): line is string => line !== null);
+  const isError = (line: string) => /^error:/i.test(line);
+  const first = lines.findIndex(isError);
+  if (first === -1) {
+    const said = lines.slice(-3).join("\n");
+    return said === "" ? "the installer stopped without a message." : said;
+  }
+  const errors = lines.filter(isError);
+  // The installer's own "… checksum OK." lines come just before the program runs; a line
+  // that says something went well is not the error it points at.
+  const above = errors.some((line) => /\bthe error above\b/i.test(line))
+    ? lines.slice(Math.max(0, first - ABOVE_LINES), first).filter((line) => !/\bOK\.?$/.test(line))
+    : [];
+  return [...above, ...errors].join("\n");
+}
+
+/** How many lines above an installer refusal that points above itself may be the program's own. */
+const ABOVE_LINES = 3;
 
 /** Which installer runs the far side; also the asset keys deploy.mjs pushes. */
 const installerFileFor = (platform: RemotePlatform): string =>
@@ -81,12 +163,44 @@ function harnessSuffix(harnessText: string): string {
 }
 
 /**
+ * Whether two harness.json texts name the same build: the same platform, CLI, web and assets
+ * files — the parts, not the record. A machine that took a build through its update channel
+ * writes a harness.json of its own, with its own `pushedAt`, so one build reads as two texts
+ * on two machines while the content-named files they point at are the same. A text this build
+ * cannot read as a harness is compared as text.
+ */
+export function sameBuild(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  const parts = (text: string): string => {
+    try {
+      const h = JSON.parse(text) as {
+        platform?: { bundle?: unknown };
+        cli?: { bundle?: unknown };
+        web?: { manifest?: unknown };
+        assets?: { dir?: unknown };
+      };
+      if (typeof h.platform?.bundle !== "string") return text;
+      return JSON.stringify([
+        h.platform.bundle,
+        h.cli?.bundle ?? null,
+        h.web?.manifest ?? null,
+        h.assets?.dir ?? null,
+      ]);
+    } catch {
+      return text;
+    }
+  };
+  return parts(a) === parts(b);
+}
+
+/**
  * Resolves what this server would install elsewhere.
  *
  * The base release is read from the running install's own tree — the tarball layout
  * (`<root>/lib/dist/penguin.js` under a `lib/`) or the desktop app's staged payload — the
  * same way `penguin --version` would answer. A development checkout has neither, and
- * answers null: it stands on no release the remote could download.
+ * answers null here: it stands on no installed release, and builds its image on demand
+ * instead (checkout-image.ts).
  */
 export function resolvePushPlan(
   dataRoot: string | null,
@@ -94,16 +208,20 @@ export function resolvePushPlan(
 ): PushPlan | null {
   const baseVersion = baseReleaseVersion(argv1);
   if (baseVersion === null) return null;
+  return planOver(baseVersion, dataRoot === null ? null : path.join(dataRoot, "hmr"));
+}
+
+/**
+ * A plan for this base release plus whatever hmr state `hmrDir` holds — the bare release
+ * when it holds none. The one place a plan's version is spelled, for a packaged server's own
+ * store and a checkout's image alike.
+ */
+export function planOver(baseVersion: string, hmrDir: string | null): PushPlan {
   let harness: string | null = null;
-  let hmrDir: string | null = null;
-  if (dataRoot !== null) {
-    const dir = path.join(dataRoot, "hmr");
+  if (hmrDir !== null) {
     try {
-      const text = fs.readFileSync(path.join(dir, "harness.json"), "utf8").trim();
-      if (text !== "") {
-        harness = text;
-        hmrDir = dir;
-      }
+      const text = fs.readFileSync(path.join(hmrDir, "harness.json"), "utf8").trim();
+      if (text !== "") harness = text;
     } catch {
       /* never pushed to: the plan is the bare release */
     }
@@ -111,7 +229,7 @@ export function resolvePushPlan(
   return {
     baseVersion,
     harness,
-    hmrDir,
+    hmrDir: harness === null ? null : hmrDir,
     version: harness === null ? baseVersion : baseVersion + harnessSuffix(harness),
   };
 }
@@ -159,19 +277,17 @@ export async function detectRemote(
   if (identity) return { identity };
   // The session's output is merged, so ssh's own words arrive as stdout.
   const said = posix.stdout.trim();
-  if (posix.code !== 0 && looksLikeAuthFailure({ ...posix, stderr: said })) {
-    return {
-      error: `${said}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
-    };
-  }
+  // ssh itself got no session — a host key, a key, a name, a route — so there is no shell to
+  // ask in either dialect, and a second connection would only wait for the same refusal. The
+  // transport leads such words with what they mean (ssh-session.ts); said again here only
+  // when they did not come through it.
+  const refused = posix.code !== 0 ? sshRefusal(said, target.alias) : null;
+  if (refused !== null) return { error: refused };
   const windows = await conn.oneShot(windowsProbe(layout), { timeoutMs: 30_000 });
   const identityWin = parseProbeOutput(windows.stdout);
   if (identityWin) return { identity: identityWin };
-  if (windows.code !== 0 && looksLikeAuthFailure(windows)) {
-    return {
-      error: `${windows.stderr.trim()}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
-    };
-  }
+  const refusedWin = windows.code !== 0 ? sshFailureText(windows.stderr, target.alias) : null;
+  if (refusedWin !== null) return { error: refusedWin };
   const words = said || windows.stderr.trim();
   return {
     error:
@@ -179,6 +295,18 @@ export async function detectRemote(
       (words === "" ? "" : ` It said: ${words}`),
   };
 }
+
+/**
+ * Fetches release `version`'s package for `target` (`linux-x64`, `darwin-arm64`…) on this
+ * side: its file, or why there is none.
+ */
+export type CarryRelease = (
+  version: string,
+  target: string,
+) => Promise<{ ok: true; file: string } | { ok: false; detail: string }>;
+
+/** A scratch directory name mktemp made over there: absolute, and nothing a shell would read. */
+const SCRATCH_DIR = /^\/[A-Za-z0-9._/-]+$/;
 
 export type RemoteInstallOutcome =
   | { kind: "already-installed"; version: string; identity: RemoteIdentity }
@@ -220,6 +348,12 @@ export async function installOnRemote(opts: {
   forceInstaller?: boolean;
   /** Which installation on that machine this is: the profile's program directory and root. */
   layout: RemoteLayout;
+  /**
+   * The release package for a machine that cannot download it itself — fetched (or read
+   * from cache) on THIS side, as a local file (machines/release-cache.ts). Absent, a POSIX
+   * install is not checked for reach: the installer downloads, or fails in its own words.
+   */
+  carryRelease?: CarryRelease;
 }): Promise<RemoteInstallOutcome> {
   const { target, plan, layout } = opts;
   const conn = opts.channel ?? connectionTo(target);
@@ -236,7 +370,7 @@ export async function installOnRemote(opts: {
 
   const baseCurrent =
     identity.installedVersion === plan.baseVersion && opts.forceInstaller !== true;
-  if (baseCurrent && identity.harness === plan.harness) {
+  if (baseCurrent && sameBuild(identity.harness, plan.harness)) {
     return { kind: "already-installed", version: plan.version, identity };
   }
   if (baseCurrent) {
@@ -263,6 +397,8 @@ export async function installOnRemote(opts: {
   }
 
   let windowsTmp: { local: string; remote: string } | null = null;
+  /** A scratch directory over there holding a carried release package, removed on the way out. */
+  let scratch: string | null = null;
   try {
     const output: string[] = [];
     if (!baseCurrent) {
@@ -283,7 +419,7 @@ export async function installOnRemote(opts: {
         };
       }
 
-      say(`Installing release ${plan.baseVersion} (downloaded on the remote)…`);
+      say(`Installing release ${plan.baseVersion}…`);
       // Where the script ends up decides how it is invoked, so resolve that first and let the
       // command itself say whether stdin has to carry it.
       let where: Parameters<typeof runInstallScriptCommand>[1];
@@ -301,47 +437,69 @@ export async function installOnRemote(opts: {
       } else {
         where = { platform: identity.platform };
       }
-      const step = runInstallScriptCommand(`v${plan.baseVersion}`, where, layout);
+      // Where the release comes from. The machine downloads it itself when it reaches GitHub
+      // or the mirror; when it reaches neither — an air-gapped host, a network that blocks
+      // both — this side fetches the package and carries it over the session, and the
+      // installer installs that file (`--archive`) with no network at all.
+      let release: string | { archive: string } = `v${plan.baseVersion}`;
+      if (identity.platform !== "win32" && opts.carryRelease !== undefined) {
+        const carried = await carryOver(
+          conn,
+          target,
+          plan.baseVersion,
+          identity,
+          opts.carryRelease,
+          say,
+        );
+        if ("failed" in carried) return { kind: "failed", ...carried.failed };
+        if (carried.archive !== null) {
+          scratch = carried.scratch;
+          release = { archive: carried.archive };
+        }
+      }
+      const step = runInstallScriptCommand(release, where, layout);
       // The script rides the session's stdin as a heredoc, and the far side's own progress
       // is relayed as it arrives rather than after the minutes an install can take. A Windows
       // host runs its copied script on a connection of its own (no session to ride).
       const install = step.scriptOnStdin
-        ? await conn.stream(step.command, { input: installer, onLine: say })
+        ? await conn.stream(step.command, {
+            input: installer,
+            onLine: (line) => {
+              const shown = installerLine(line);
+              if (shown !== null) say(shown);
+            },
+          })
         : await conn.oneShot(step.command);
       if (install.code !== 0) {
         return {
           kind: "failed",
           step: "install",
-          detail: `${install.stdout.trim()}\n${install.stderr.trim()}`.trim(),
+          detail: installerFailure(`${install.stdout}\n${install.stderr}`),
         };
       }
       output.push(install.stdout.trim());
     }
 
-    if (plan.hmrDir !== null && identity.harness !== plan.harness) {
+    if (plan.hmrDir !== null && !sameBuild(identity.harness, plan.harness)) {
       say("Replicating the pushed version…");
       // harness.json and store/ only: uploads/ is this machine's scratch, not state. Packed
       // here, then handed to the machine's tar on the session's stdin.
-      const packed = await runBytes("tar", [
-        "-czf",
-        "-",
-        "-C",
-        plan.hmrDir,
-        "harness.json",
-        "store",
-      ]);
-      if (packed.code !== 0) {
+      let packed: Buffer;
+      try {
+        packed = await packHmrState(plan.hmrDir);
+      } catch (err) {
         return {
           kind: "failed",
           step: "replicate the pushed version",
-          detail: packed.stderr.trim() || `tar exited ${packed.code}`,
+          detail: err instanceof Error ? err.message : String(err),
         };
       }
+      say(`Sending it (${(packed.byteLength / 1048576).toFixed(1)} MB)…`);
       const unpack = unpackStoreCommand(identity.platform, layout);
       const sync =
         identity.platform === "win32"
-          ? await conn.oneShot(unpack, { input: packed.stdout })
-          : await conn.stream(unpack, { input: packed.stdout });
+          ? await conn.oneShot(unpack, { input: packed })
+          : await conn.stream(unpack, { input: packed, timeoutMs: transferTimeoutMs(packed) });
       if (sync.code !== 0) {
         return {
           kind: "failed",
@@ -387,7 +545,7 @@ export async function installOnRemote(opts: {
     // has to still make it true afterwards. Scoped to a plan that HAD a pushed state: a
     // base-only install neither carries nor removes one, and must not be failed for a remote
     // hmr directory it was never asked to touch.
-    if (plan.hmrDir !== null && after.identity.harness !== plan.harness) {
+    if (plan.hmrDir !== null && !sameBuild(after.identity.harness, plan.harness)) {
       return {
         kind: "failed",
         step: "verify the install",
@@ -399,8 +557,85 @@ export async function installOnRemote(opts: {
 
     return { kind: "installed", output: output.join("\n").trim(), identity: after.identity };
   } finally {
-    // Nothing to clean on a POSIX remote: the installer was never a file there. A Windows
-    // one deletes its own copy as part of the install command; this is the local original.
+    // Nothing else to clean on a POSIX remote: the installer was never a file there. A
+    // Windows one deletes its own copy as part of the install command; this is the local
+    // original.
     if (windowsTmp !== null) fs.rmSync(windowsTmp.local, { force: true });
+    if (scratch !== null) await conn.exec(`rm -rf "${scratch}"`);
   }
+}
+
+/**
+ * Settles where a POSIX machine's release comes from: nothing to carry when it reaches a
+ * source (`archive: null`), a refusal when both sources answered and neither has the release,
+ * else the package fetched here and sent into a scratch directory there.
+ */
+async function carryOver(
+  conn: MachineChannel,
+  target: RemoteTarget,
+  version: string,
+  identity: RemoteIdentity,
+  carryRelease: CarryRelease,
+  say: (line: string) => void,
+): Promise<
+  | { archive: null }
+  | { archive: string; scratch: string }
+  | { failed: { step: string; detail: string } }
+> {
+  const platform = `${identity.platform}-${identity.arch}`;
+  const asked = await conn.exec(releaseReachCommand(version));
+  const reach = parseReleaseReach(asked.stdout);
+  if (reach.oss === "ok" || reach.github === "ok") return { archive: null };
+  if (reach.oss === "missing" && reach.github === "missing") {
+    return {
+      failed: {
+        step: "download the release",
+        detail:
+          `release v${version} has no ${platform} package on GitHub or the mirror — it is not ` +
+          `published (yet). A source checkout installs the release its VERSION names.`,
+      },
+    };
+  }
+  say(
+    `${target.alias} cannot reach GitHub or the release mirror; fetching release ${version} ` +
+      `for ${platform} here to send it over ssh…`,
+  );
+  const fetched = await carryRelease(version, platform);
+  if (!fetched.ok) {
+    return {
+      failed: {
+        step: "download the release",
+        detail:
+          `${target.alias} cannot reach GitHub or the release mirror, and this computer could ` +
+          `not fetch release ${version} for it either: ${fetched.detail}`,
+      },
+    };
+  }
+  const made = await conn.exec(`mktemp -d "\${TMPDIR:-/tmp}/penguin-release.XXXXXX"`);
+  const scratch = made.stdout.trim().split("\n").pop()?.trim() ?? "";
+  if (made.code !== 0 || !SCRATCH_DIR.test(scratch)) {
+    return {
+      failed: {
+        step: "send the release",
+        detail: `could not make a scratch directory there: ${made.stdout.trim() || "mktemp said nothing"}`,
+      },
+    };
+  }
+  const bytes = fs.readFileSync(fetched.file);
+  const archive = `${scratch}/${path.basename(fetched.file)}`;
+  say(`Sending release ${version} (${(bytes.byteLength / 1048576).toFixed(1)} MB)…`);
+  const sent = await conn.stream(`cat > "${archive}"`, {
+    input: bytes,
+    timeoutMs: transferTimeoutMs(bytes),
+  });
+  if (sent.code !== 0) {
+    await conn.exec(`rm -rf "${scratch}"`);
+    return {
+      failed: {
+        step: "send the release",
+        detail: sent.stdout.trim() || `the copy exited ${sent.code}`,
+      },
+    };
+  }
+  return { archive, scratch };
 }

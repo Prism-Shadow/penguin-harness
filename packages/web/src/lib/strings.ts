@@ -57,51 +57,56 @@ export const zh = {
     /** Tooltip on the version in the header: what this server would install. */
     imageVersion: (version: string) => `本服务端版本：${version}`,
     noImage:
-      "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像；源码检出则在第一次热推后获得。",
-    empty: "~/.ssh/config 中没有可添加的主机。",
-    /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
-    search: "搜索主机…",
-    noMatch: "没有匹配的主机。",
+      "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像，源码检出会在每次安装时自行构建；本服务端两者都不是。",
+    /** A source checkout builds the image it installs; the build's own last lines follow this sentence. */
+    checkoutImageFailed: "本服务端从源码检出运行，未能构建要装到机器上的安装镜像。构建输出：",
     /** The tag on this server's own row. */
     localTitle: "本服务端",
     noneInUse: "还没有在用的机器。",
     sshHint:
-      "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
-    /** The chevron row at the foot of the picker's list: the matches it has not shown yet. */
-    allHosts: (count: number) => `ssh 配置中另有 ${count} 台`,
-    expand: "展开",
-    fewer: "收起",
-    /** The form that appends a host block to this server's ~/.ssh/config. */
+      "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <名称>` 能直接进）。用「添加机器」从 ssh 配置里选一台，或手动填写一台新的。",
+    /** The ssh host form — the add dialog's manual tab, and configuring a host this app wrote. */
     host: {
-      addTitle: "新建 ssh 主机",
-      /** The one-word verbs on the buttons; the titles above say what they do in full. */
-      newVerb: "新建",
       configureVerb: "配置",
-      add: "写入 ssh 配置",
-      alias: "别名（Host）",
-      aliasHint: "一个词，之后 `ssh <别名>` 和这里都用它称呼这台机器。",
-      hostName: "地址（HostName）",
+      name: "名称",
+      nameHint: "一个词。之后在这里和 `ssh <名称>` 里都用它称呼这台机器。",
+      hostName: "主机地址",
       hostNameHint: "IP 或域名。",
-      user: "用户（User）",
+      user: "用户名",
       userHint: "留空则用本服务端账户的用户名。",
-      port: "端口（Port）",
-      portHint: "留空为 22。",
-      identityFile: "密钥文件（IdentityFile）",
-      identityFileHint: "留空则用 ssh 的默认密钥。",
+      port: "端口",
+      identityFile: "私钥文件",
+      identityFileHint: "留空则用 ssh 的默认密钥。带口令的密钥要先加入 ssh-agent。",
       oneWord: "必须是一个词：不能有空格或 #。",
       portRange: "1 到 65535 之间的整数。",
-      exists: "ssh 配置里已有这个别名。",
-      added: (alias: string) => `已写入 ${alias}。现在可以从「添加机器…」里启用它。`,
-      /** Configuring a host this app wrote: the same form, the alias fixed. */
+      exists: "ssh 配置里已有这个名称。",
+      /** Configuring a host this app wrote: the same form, the name fixed. */
       configure: "配置 ssh 主机",
       editTitle: "配置 ssh 主机",
       saved: (alias: string) => `已更新 ${alias} 的 ssh 配置。`,
       foreign:
         "这一段不是由 PenguinHarness 写入的，可能带有这里不认识的选项；请直接编辑 ~/.ssh/config。",
     },
+    /** The add dialog (add-machine-dialog.tsx): a host from the ssh config, or a new one by hand. */
+    addDialog: {
+      title: "添加机器",
+      intro: "本服务端会在一台能经 ssh 登录的机器上安装 PenguinHarness，并连上它。",
+      tabs: { config: "从 ssh 配置选择", manual: "手动填写" },
+      search: "搜索主机",
+      /** No host in the config that is not on the page yet: the other tab is the way in. */
+      noHosts: "本服务端的 ssh 配置里没有还没添加的主机。可以在「手动填写」里新建一台。",
+      noMatch: (query: string) => `没有匹配「${query}」的主机。`,
+      /** A host another Project of this server already installed: adding it costs no transfer. */
+      elsewhere: (version: string) => `其他 Project 已安装 v${version}`,
+      installNow: "添加后立即安装并连接",
+      submit: "添加",
+      submitCount: (count: number) => `添加 ${count} 台`,
+      added: (count: number) => (count === 1 ? "已添加 1 台机器。" : `已添加 ${count} 台机器。`),
+      addedInstalling: (count: number) =>
+        count === 1 ? "已添加 1 台机器，正在安装。" : `已添加 ${count} 台机器，正在安装。`,
+    },
     /** The verbs. */
-    add: "添加机器…",
-    addSelected: (count: number) => `启用这 ${count} 台`,
+    add: "添加机器",
     use: "启用",
     stopUsing: "停用",
     /** One tap brings every machine behind this build forward (and reconnects it). */
@@ -127,6 +132,7 @@ export const zh = {
       unreachable: "连不上",
       stopped: "未运行",
       linkedStopped: "已连接，服务未运行",
+      notInstalled: "未安装",
       unknown: "未检查",
     },
     /** The stepper's steps, in pipeline order, as the caption under a working row. */
@@ -224,6 +230,8 @@ export const zh = {
         tryAgainWhy: "再次通过 ssh 连接；请先确认那台机器开着、网络通。",
         retry: "重试",
         retryWhy: "从头再跑一遍整个流程",
+        enable: "启用",
+        enableWhy: "在这台机器上安装 PenguinHarness，启动服务并连接。",
       },
       /** The captions of the two groups of Actions: the single steps, and the ways out. */
       maintenance: "维护",
@@ -237,6 +245,8 @@ export const zh = {
       hold: {
         moving: "这台机器正在处理任务，完成后可用",
         noImage: "本服务端没有可安装的版本",
+        notInstalled: "这台机器上还没有安装",
+        checking: "正在检查…",
         noConnection: "当前没有连接，无需断开",
         unreachable: "上次检查时连不上这台机器",
       },
@@ -249,6 +259,8 @@ export const zh = {
       connectWhy: "重新连上这台机器，必要时先启动它的服务",
       restart: "重启服务",
       restartWhy: "重启这台机器上的服务",
+      check: "检查连接",
+      checkWhy: "检查登录、系统、下载、磁盘和端口，不改动那台机器",
       stopUsingWhy: "断开连接并移出本 Project，程序仍留在这台机器上",
       disconnect: "断开",
       disconnectWhy: "只断开连接，这台机器上的服务继续运行",
@@ -257,7 +269,70 @@ export const zh = {
       disconnectConfirm: (alias: string) =>
         `断开与 ${alias} 的连接？这条连接由使用它的所有 Project 共用，正在经它进行的工作会中断；那台机器上的服务继续运行，之后可以重新连接。`,
       releaseConfirm: (alias: string) =>
-        `把 ${alias} 移出本 Project？它不再列在这里，本 Project 的模型配置也不再同步给它；那台机器上的程序与连接保持不变，之后可以从「添加机器…」重新启用。`,
+        `把 ${alias} 移出本 Project？它不再列在这里，本 Project 的模型配置也不再同步给它；那台机器上的程序与连接保持不变，之后可以用「添加机器」把它加回来。`,
+    },
+    /** The connection check's results in the Machine dialog, one plain sentence per check. */
+    check: {
+      title: "连接检查",
+      running: "正在检查…",
+      skipped: (what: string) => `${what}：未检查。`,
+      /** Each check by name, for the line that says it was not asked. */
+      name: {
+        ssh: "ssh 登录",
+        platform: "系统",
+        tools: "安装工具",
+        download: "下载发布版",
+        disk: "磁盘空间",
+        port: "端口",
+      },
+      sshPass: (user: string, host: string) =>
+        user === "" ? "能经 ssh 登录。" : `能以 ${user} 登录 ${host}。`,
+      ssh: {
+        "host-key-unknown": (alias: string) =>
+          `本服务端还没连接过 ${alias}，后台连接无法确认新的主机密钥。请在本服务端的终端里运行一次 ssh ${alias}，并回答 yes。`,
+        "host-key-changed": (alias: string) =>
+          `${alias} 的主机密钥和记录的不一致，ssh 拒绝连接。如果那台机器重装过，请用 ssh-keygen -R 删掉旧密钥，再连接一次。`,
+        auth: (alias: string) =>
+          `${alias} 不接受本服务端的密钥。后台连接无法输入密码或密钥口令：请把本服务端的公钥加入 ${alias} 的 ~/.ssh/authorized_keys，或把密钥加入 ssh-agent。`,
+        "key-file": (alias: string) =>
+          `为 ${alias} 设置的私钥文件用不了：不存在、读不了，或权限过宽（需要 600）。`,
+        "host-not-found": (alias: string) =>
+          `找不到 ${alias} 的主机地址，请检查 ssh 配置里的 HostName。`,
+        refused: (alias: string) => `${alias} 拒绝了连接：那个地址和端口上没有 ssh 服务。`,
+        timeout: (alias: string) =>
+          `${alias} 没有响应。请检查地址和端口，以及本服务端能否访问它（VPN、防火墙、跳板机）。`,
+        closed: (alias: string) =>
+          `与 ${alias} 的连接在登录前被断开：可能是那台机器、跳板机或防火墙断开的。`,
+        "ssh-config": (alias: string) =>
+          `本服务端的 ssh 配置有错误，ssh 无法用它连接 ${alias}。请改正 ssh 指出的那一行。`,
+        other: (alias: string) => `无法经 ssh 登录 ${alias}。`,
+      },
+      platform: (os: string, arch: string) => `系统：${os} ${arch}。`,
+      platformWindows: "Windows：可以安装，但暂时还不能连接。",
+      platformUnsupported: "这个系统或架构没有发布版。",
+      platformOldGlibc: (glibc: string, need: string) =>
+        `这台机器的 glibc 是 ${glibc}，PenguinHarness 自带的 Node 需要 ${need} 或更新：请换一台较新的 Linux 系统。`,
+      platformTerminals: (arch: string, glibc: string, need: string) =>
+        `系统：Linux ${arch}，glibc ${glibc}。PenguinHarness 可以运行，但终端需要 glibc ${need} 或更新，在这台机器上打不开。`,
+      platformMusl:
+        "这台机器用的是 musl libc（如 Alpine），PenguinHarness 自带的 Node 需要 glibc：请换一台基于 glibc 的 Linux 系统。",
+      toolsPass: "安装所需的工具齐全。",
+      toolsNoCurl: "没有 curl：那台机器无法自己下载，安装时本服务端会经 ssh 把发布版送过去。",
+      toolsMissing: (tools: string) => `缺少安装所需的工具：${tools}。请在那台机器上装好后再试。`,
+      downloadFrom: (version: string, source: "both" | "github" | "oss") =>
+        `能从${source === "both" ? " GitHub 和镜像" : source === "github" ? " GitHub " : "镜像"}下载发布版 ${version}。`,
+      downloadCarried: (version: string) =>
+        `那台机器连不上 GitHub 和镜像，下载不到发布版 ${version}；安装时本服务端会经 ssh 把它送过去（约 95 MB）。`,
+      downloadMissing: (version: string) =>
+        `发布版 ${version} 还没有这台机器用的安装包（GitHub 和镜像上都没有）。`,
+      diskPass: (free: string) => `可用空间 ${free}。`,
+      diskTight: (free: string) => `可用空间 ${free}，够装一次，余量不多。`,
+      diskLow: (free: string, need: string) => `可用空间只有 ${free}，安装需要约 ${need}。`,
+      portFree: (port: number) => `端口 ${port} 空闲。`,
+      portOurs: (port: number) => `端口 ${port} 上运行着它的 PenguinHarness 服务。`,
+      portTaken: (port: number) =>
+        `端口 ${port} 被另一个程序占用。本服务端要在这个端口启动服务，请先释放它。`,
+      sshSaid: (words: string) => `ssh：${words}`,
     },
   },
 

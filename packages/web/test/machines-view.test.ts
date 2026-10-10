@@ -5,13 +5,20 @@
  * word; a held connection settles "ready" over an older failed job, since a re-hold that
  * brought the machine back must not leave the row saying it failed; and "in use" comes from
  * the machine's own persisted record, never from the job slot.
+ *
+ * The image notice:
+ * - Given a server with no image and no checkout, the page says so and stops adding machines.
+ * - Given a source checkout that has not built its image yet, nothing stops the page.
+ * - Given a checkout whose last build failed, the page shows the build's own words, and still
+ *   lets a person try again.
  */
 import { describe, expect, it } from "vitest";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 import {
   anyJobPending,
   behindMachines,
-  installedMachines,
+  imageNotice,
+  machinesInUse,
   jobFor,
   localMachine,
   outOfDate,
@@ -19,6 +26,7 @@ import {
   readingTone,
   wantsUse,
 } from "../src/features/machines/machines-view";
+import { S } from "../src/lib/strings";
 
 const INSTALLED = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
 
@@ -143,6 +151,26 @@ describe("readMachine", () => {
     });
   });
 
+  it("a job ssh refused reads in the page's language, from the reason the server found", () => {
+    const refused = job({
+      running: false,
+      result: {
+        ok: false,
+        step: "check",
+        message:
+          "This computer cannot find nas's host name. Check its HostName in the ssh config. (ssh: Could not resolve hostname nas.lan)",
+        canReplaceProgram: false,
+        sshReason: "host-not-found",
+      },
+    });
+    expect(readMachine(carrying("nas"), refused, "9.9.9")).toEqual({
+      kind: "failed",
+      step: "check",
+      message: S.machines.check.ssh["host-not-found"]("nas"),
+      canReplaceProgram: false,
+    });
+  });
+
   it("a machine on another build is behind, whatever its server is doing", () => {
     const nas: MachineInfo = {
       ...carrying("nas"),
@@ -223,42 +251,55 @@ describe("jobs and polling", () => {
   });
 });
 
-describe("installedMachines", () => {
+describe("machinesInUse", () => {
   const older = { version: "9.9.8", at: "2026-08-20T00:00:00.000Z" };
 
-  it("is empty when nothing has been installed", () => {
-    expect(installedMachines(response([]))).toEqual([]);
+  it("is empty when nothing has been installed or added", () => {
+    expect(machinesInUse(response([]))).toEqual([]);
   });
 
-  it("keeps only the installed ones, by name — never by install time, which an update rewrites", () => {
+  it("keeps this Project's machines, by name — never by install time, which an update rewrites", () => {
     const nas = { ...carrying("nas"), installed: older };
     const box = carrying("build-box");
-    expect(
-      installedMachines(response([], { machines: [here(), fresh("spare"), nas, box] })),
-    ).toEqual([box, nas]);
+    expect(machinesInUse(response([], { machines: [here(), fresh("spare"), nas, box] }))).toEqual([
+      box,
+      nas,
+    ]);
     // The same two after nas was just updated: the order does not move.
     const fresher = { ...nas, installed: { version: "9.9.9", at: "2026-09-01T00:00:00.000Z" } };
     expect(
-      installedMachines(response([], { machines: [here(), fresh("spare"), fresher, box] })),
+      machinesInUse(response([], { machines: [here(), fresh("spare"), fresher, box] })),
     ).toEqual([box, fresher]);
+  });
+
+  it("keeps a machine added to this Project that nothing is installed on yet, and it reads as not installed", () => {
+    const added: MachineInfo = { ...fresh("spare"), member: true };
+    expect(machinesInUse(response([], { machines: [here(), added, fresh("other")] }))).toEqual([
+      added,
+    ]);
+    expect(readMachine(added, null, "9.9.9")).toEqual({ kind: "notInstalled" });
+    expect(wantsUse(readMachine(added, null, "9.9.9"))).toBe(true);
+    // Its first enable says how it goes, and how it failed, rather than "not installed".
+    expect(readMachine(added, failed, "9.9.9").kind).toBe("failed");
+    expect(readMachine(added, job(), "9.9.9").kind).toBe("working");
   });
 
   it("compares names naturally, so gpu-2 sits before gpu-10", () => {
     const two = carrying("gpu-2");
     const ten = carrying("gpu-10");
     const one = carrying("GPU-1");
-    expect(installedMachines(response([], { machines: [here(), ten, two, one] }))).toEqual([
+    expect(machinesInUse(response([], { machines: [here(), ten, two, one] }))).toEqual([
       one,
       two,
       ten,
     ]);
   });
 
-  it("does not mutate the response's own machine order (the picker reads it too)", () => {
+  it("does not mutate the response's own machine order (the add dialog reads it too)", () => {
     const nas = { ...carrying("nas"), installed: older };
     const box = carrying("build-box");
     const state = response([], { machines: [nas, box] });
-    installedMachines(state);
+    machinesInUse(state);
     expect(state.machines).toEqual([nas, box]);
   });
 });
@@ -289,5 +330,32 @@ describe("outOfDate", () => {
     expect(outOfDate(carrying("nas"), null)).toBe(false);
     expect(outOfDate(fresh("nas"), "9.9.10")).toBe(false);
     expect(outOfDate(here(), "9.9.10")).toBe(false);
+  });
+});
+
+describe("the image notice", () => {
+  it("a server with no image and nothing to build one from stops the page", () => {
+    expect(imageNotice(response([], { imageVersion: null }))).toEqual({ kind: "noImage" });
+    expect(imageNotice(response([]))).toBeNull();
+  });
+
+  it("a source checkout that has not built its image yet stops nothing", () => {
+    const unbuilt: MachinesResponse = {
+      ...response([], { imageVersion: null }),
+      checkoutImage: { state: "unbuilt" },
+    };
+    expect(imageNotice(unbuilt)).toBeNull();
+    expect(imageNotice({ ...unbuilt, checkoutImage: { state: "building" } })).toBeNull();
+  });
+
+  it("a checkout whose last build failed shows the build's own words, not the no-image refusal", () => {
+    const state: MachinesResponse = {
+      ...response([], { imageVersion: null }),
+      checkoutImage: { state: "failed", detail: "[deploy] spawnSync pnpm ENOENT" },
+    };
+    expect(imageNotice(state)).toEqual({
+      kind: "buildFailed",
+      detail: "[deploy] spawnSync pnpm ENOENT",
+    });
   });
 });
