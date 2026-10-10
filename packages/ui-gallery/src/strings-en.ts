@@ -105,15 +105,8 @@ export const en: GalleryStrings = {
     },
     plugins: {
       title: "Plugins",
-      description:
-        "The plugin library by category, with search and filters; installed Skills and hooks per Agent.",
+      description: "Every plugin by category, to regroup or search; a card opens its details.",
       how: "Sidebar › Plugins.",
-    },
-    "plugin-detail": {
-      title: "Plugin detail",
-      description:
-        "One plugin's page: its description, the Skills it brings, its file browser and the install action.",
-      how: "Plugins › any plugin.",
     },
     models: {
       title: "Models",

@@ -5,7 +5,7 @@
  * goal mode for a demo that is a goal.
  */
 import { describe, expect, it } from "vitest";
-import { libraryQuickStart } from "../src/features/plugins/plugins-page";
+import { libraryQuickStart } from "../src/features/plugins/plugin-card";
 import { draftFromUnknown } from "../src/features/chat/draft-cache";
 
 const skill = (name: string) => ({ name, description: "", version: "2026.08.01.1" });

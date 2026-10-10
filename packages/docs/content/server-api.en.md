@@ -402,7 +402,7 @@ A flow id that names no live flow is `404 platform_auth_flow_not_found`. `sync` 
 
 ## Agents
 
-The paths below omit the `/api/projects/:projectId` prefix, except the two global `/api/plugins` routes.
+The paths below omit the `/api/projects/:projectId` prefix, except the three global `/api/plugins` routes.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -437,6 +437,7 @@ The paths below omit the `/api/projects/:projectId` prefix, except the two globa
 | DELETE | `/agents/:agentId/api/keys/:keyId` | Deletes an API key (owner only) |
 | GET | `/api/plugins` (global) | The plugin library by category (any signed-in user) |
 | GET | `/api/plugins/:plugin/files` (global) | The files one library plugin ships, as text keyed by path (any signed-in user) |
+| GET | `/api/plugins/:plugin/readme` (global) | A library plugin's `README.md`, from its package root: `{name, readme}`; 404 without one (any signed-in user) |
 
 ### Agent routes
 
@@ -460,8 +461,9 @@ The paths below omit the `/api/projects/:projectId` prefix, except the two globa
 - `POST …/plugins` installs each named plugin's Skills and hook package, and reinstalling updates them. An unknown name returns 404 `unknown_plugin`, and nothing is written.
 - `GET …/hooks` returns each installed hook package's name, description, version, hook points and plugin icon.
 - `POST …/hooks/archive` expects `hooks.json` and its scripts at the root of the zip or inside one top-level directory, and every listed command must name a file inside the package. Without `overwrite`, an installed package of the same name returns 409 `hook_exists`. The zip that `GET …/hooks/:name/archive` exports can be installed again through this route.
-- `GET /api/plugins` returns every library plugin by category, with its Skills' metadata and hook points.
-- `GET /api/plugins/:plugin/files` returns everything one library plugin ships, as text keyed by path: each Skill's installable `SKILL.md` and reference files under `skills/<name>/`, and the hook scripts under `hooks/`. The plugin detail view's file browser uses it.
+- `GET /api/plugins` returns every library plugin by category: its npm `version` and `source`, its Skills' metadata with each Skill's own date `version`, its hook points and the hook package's `hookVersion`.
+- `GET /api/plugins/:plugin/files` returns everything one library plugin ships, as text keyed by path: each Skill's installable `SKILL.md` and reference files under `skills/<name>/`, and the hook scripts under `hooks/`. The plugin detail dialog's file browser uses it.
+- `GET /api/plugins/:plugin/readme` returns the `README.md` at a library plugin's package root, for the detail dialog. A plugin that ships none returns 404 `readme_not_found`, and a name the library does not carry 404 `unknown_plugin`.
 
 ### Agent API settings
 
@@ -508,7 +510,7 @@ The plugins in this section are server-side packages: modules the server loads i
 | PUT | `/api/projects/:projectId/plugins/installed` | Admin only. Replaces the list: `{plugins}` |
 | DELETE | `/api/projects/:projectId/plugins/installed?specifier=…` | Admin only. Removes a plugin from the list |
 
-- The index follows the schema of typst/packages' `index.json`: a flat array of per-version entries with `name`, `version`, `description`, `authors` and `license`, plus optional `repository`, `homepage`, `keywords`, `categories` and `updatedAt`. An entry's `name` is the package name a Project's list uses. Two sources are merged: the index built into the server package, and the one the index repository publishes — a release asset on a fixed tag (`releases/download/nightly/index.json`), fetched at most every 30 minutes and replaced by a six-hourly workflow. A source that cannot be read shortens the listing rather than emptying it, and is named in `failures`; inside one document, though, a single malformed entry still fails that whole index. `PENGUIN_PLUGIN_INDEX=off` turns the published lookup off (no outbound request), and any other value replaces its URL. A registry is for discovery only and never imports plugin code.
+- The index follows the schema of typst/packages' `index.json`: a flat array of per-version entries with `name`, `version`, `description`, `authors` and `license`, plus optional `repository`, `homepage`, `keywords`, `categories` and `updatedAt`, and the optional card fields `descriptionZh`, `shortDescription`, `shortDescriptionZh` and `icon` (raw SVG). For a package on this machine the listing takes those card fields from the package's own `plugin.json` and `icon.svg` instead. The published index never supplies `icon`: the server drops it from every remote entry, since the Web App inlines the SVG into the page. An entry's `name` is the package name a Project's list uses. Two sources are merged: the index built into the server package, and the one the index repository publishes — a release asset on a fixed tag (`releases/download/nightly/index.json`), fetched at most every 30 minutes and replaced by a six-hourly workflow. A source that cannot be read shortens the listing rather than emptying it, and is named in `failures`; inside one document, though, a single malformed entry still fails that whole index. `PENGUIN_PLUGIN_INDEX=off` turns the published lookup off (no outbound request), and any other value replaces its URL. A registry is for discovery only and never imports plugin code.
 - `GET …/readme` returns the package's own `README.md`, read from the copy on this machine; `readme` is `null` when there is none. A name the index does not list returns `404` `not_found`, and a request without `name` returns `400` `bad_request`.
 - `GET …/installed` is open to any member of the Project. Each entry in `plugins` is `{specifier, active, builtin, modules, replaces, error?}`: `active` means the process has loaded the package, `builtin` that it ships with this build, `modules` and `replaces` are the nodes its generated `ifaces.json` declares, and `error` says why it is not running, such as a package that is not on this machine or a load that failed. `shipped` lists every plugin package the build ships, asked for or not. `file` names the file that holds the list. `restartPending` is true when a listed plugin is neither running nor failed, which a server restart resolves. A Project whose `.project_config.toml` cannot be read returns `400` `invalid_plugins_file`.
 - The writes answer with the same body as the GET. A specifier must be a package name, never a path, a URL or a version range (`400` `bad_request`). A name that enters the list must be a package the build ships, otherwise the route returns `400` `plugin_not_shipped`: nothing is downloaded. `PUT` sends names only, and a name that stays in the list keeps the requirement the file records for it. `DELETE` edits the list only and removes nothing from disk.

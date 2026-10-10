@@ -61,17 +61,6 @@
         }
       },
       {
-        "id": "web.pages.plugin-detail",
-        "key": "plugin-detail",
-        "path": "/plugins/registry/*",
-        "nav": "none",
-        "admin": false,
-        "released": true,
-        "renderer": {
-          "builtin": "PluginDetailPage"
-        }
-      },
-      {
         "id": "web.machines",
         "key": "machines",
         "path": "/machines",

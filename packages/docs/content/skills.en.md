@@ -16,21 +16,32 @@ A **Skill** is a set of reusable instructions that an agent reads when a task ca
 ## Browse plugins
 
 1. In the sidebar, select **Plugins**.
-2. Browse the lists. **Installed plugins** comes first and starts folded; select its header to unfold it. It holds the plugin library, followed by the server plugins the current Project asks for. **Available** lists the server plugins the Project can still add.
-3. To narrow the lists, type in the search box, or pick options in the filter column beside them: **Categories**, **Contains** and **Status**. **Clear filters** clears the picks and the search box. Both lists unfold while a search or filter is active.
-4. Select a library plugin's card to open its details.
+2. Browse the cards. Every plugin has one, a plugin of Skills and hooks and a [server plugin](#server-plugins) alike, and they are grouped by category: Office Productivity, Software Development, AI App Development, **Agent Sandbox** for the sandbox backends, and Other. Select a category's header to fold or unfold it; the page remembers which ones are folded.
+3. To group the cards another way, use the select beside the search box: **Group by category** (the default), **Group by status**, **Group by content** or **No grouping**. The page remembers your choice.
+4. To narrow the cards, type in the search box. Every section opens while a search is active.
+5. Select a card to open its details.
 
-Each card shows the plugin's name, a short description, and a line in the form `v<version> · updated N days ago · used by N agents`. The agent count covers the agents in the current Project that have any part of the plugin installed. The tags below that line give the plugin's category (Office Productivity, Software Development, AI App Development, Agent Company or Other), **built in**, and how many Skills and hook packages it ships.
+Each card shows the plugin's icon, name and short description, a line in the form `v<version> · <status> · used by N agents`, and tags such as **built in**, plus the category when the cards are grouped another way. The version is the plugin's npm version. The agent count, shown for a plugin with Skills or hooks, covers the agents in the current Project that have the whole plugin installed, or a copy the update check lists as behind. The status is an icon and a word; point at it for what it means for that plugin:
 
-The details show the full description, the hook points the plugin's hook package runs at, and a file browser. The tree on the left has one folder per Skill, with its `SKILL.md` first and its reference files after it, and a **Hooks** folder for the hook scripts. The preview on the right shows the selected file.
+| Status | A plugin with Skills or hooks | A server plugin |
+| --- | --- | --- |
+| **Installed** | At least one agent in the Project has it | The server has installed and loaded it |
+| **Update available** | An agent's copy is behind the library | — |
+| **Restart to load** | — | Added; it loads when the server restarts |
+| **Failed to load** | — | The server could not load it; point at the status for the reason |
+| **Not on this server** | — | It runs on other machines only |
+| **Available** | No agent in the Project has it | The Project has not added it |
+
+The details open in a dialog: the version, status and tags, then **About**, with the full description and, when the plugin's package ships a README, that README. Every server plugin has one; for a package that is not on this server yet, the dialog says the README shows once it is installed. A plugin with Skills or hooks also has **Files**, a file browser: the tree on the left has one folder per Skill, with its `SKILL.md` first and its reference files after it, and a **Hooks** folder for the hook scripts; the preview on the right shows the selected file. The dialog's buttons are the card's.
 
 The buttons on the right of a card:
 
 | Button | When it appears | What it does |
 | --- | --- | --- |
-| **Manage installs** | Always | Installs the plugin on an agent, or uninstalls it. |
-| **Quick start** | The plugin ships at least one Skill | Opens a new chat draft that uses the Skill. It is available only when the current agent has one of the plugin's Skills installed. |
+| **Manage installs** | The plugin has Skills or hooks | Installs the plugin on an agent, or uninstalls it. |
+| **Quick start** | The plugin ships at least one Skill | Opens a new chat draft with the plugin's demo. On an agent that does not have the plugin yet, it offers to install it first. |
 | Update | An agent's install is behind the library | Updates those installs. See [Update installed plugins](#update-installed-plugins). |
+| **Install** / **Remove** | A server plugin, for an admin | Installs the plugin on the server, or removes it. See [Server plugins](#server-plugins). |
 
 ## Install a plugin on an agent
 
@@ -63,7 +74,7 @@ To update:
    - To update every outdated plugin, select **Update now** in the notice.
    - To update one plugin on every agent, select the update button on its card.
    - To update one plugin on one agent, select **Update** next to the agent in **Manage installs**.
-2. Review what the update will touch, then select **Update**.
+2. Review what the update will touch, then select **Update**. For each agent, the dialog lists the Skills and the hook package whose installed version differs from the library's, with both versions.
 
 > [!WARNING]
 > Updating reinstalls the library copy over each agent's installed Skill and hook files. Any local edits are lost, so export a backup first if you need them. See [Manage an agent's Skills](#manage-an-agents-skills).
@@ -145,18 +156,18 @@ To upload a zip file:
 
 ## Server plugins
 
-A server plugin extends the server itself rather than an agent: it is an npm package of server modules, such as a sandbox backend. A Project asks for the server plugins it needs, and the server runs every plugin that any of its Projects asks for, so what a plugin contributes is available to every Project.
+A server plugin extends the server itself rather than an agent: it is an npm package of server modules, such as an Agent Sandbox backend. It is installed on the whole server and shared by every Project: a Project asks for the server plugins it needs, and the server runs every plugin that any of its Projects asks for, so what a plugin contributes is available to every Project.
 
-On the **Plugins** page, a server plugin's row shows its package name, description, version and status, with tags for its categories, **built in** when it ships with PenguinHarness, and its keywords. Select a row to open the plugin's page, with its license, authors, links and documentation. A plugin the registry has no entry for has no page.
+On the **Plugins** page, a server plugin has a card like any other. The four Agent Sandbox backends are in the **Agent Sandbox** category: `sandbox-bwrap` for Linux, `sandbox-seatbelt` for macOS, `sandbox-wsl` for Windows, and `sandbox-dsh` for all three, which confines file writes only. A server plugin's details show its package name, with a button to copy it, and the package's README.
 
-To add a server plugin to the current Project:
+To install a server plugin:
 
-1. Under **Available**, select **Install** on the plugin's row.
-2. Confirm. Adding or removing a server plugin stops the agent runs in progress in every Project.
+1. Select **Install** on its card or in its details.
+2. The dialog says the plugin is installed on the whole server and shared by every Project, and, in small type below, that installing reloads the server's plugins, which stops the agent runs in progress in every Project. Confirm.
 
-To remove one, select **Remove** on its row under **Installed plugins**, and confirm. The plugin leaves the Project's list; nothing is deleted from disk.
+To remove one, select **Remove** and confirm. The plugin leaves the Project's list, and a package installed from npm is uninstalled once no Project asks for it. Removing stops the runs in progress the same way.
 
-Only admins see **Install** and **Remove**. Only plugins that ship with PenguinHarness can be added, so nothing is downloaded. A change applies without restarting the server: the server rebuilds its business surface around the new list, which is why runs in progress stop. Afterwards the row's status reads **running**, **restart to load** when the server could not apply the change without a restart, or **failed to load** with the reason.
+Only admins see **Install** and **Remove**; everyone else sees the cards and their details. A plugin that ships with PenguinHarness installs without a download. A change applies without restarting the server: the server rebuilds its business surface around the new list, which is why runs in progress stop. Afterwards the card's status reads **Installed**, **Restart to load** when the server could not apply the change without a restart, or **Failed to load**, with the reason when you point at it.
 
 The list is the `[plugins]` table of the Project's config; see [Configuration Reference](/configuration#plugins). For the routes, see [Server API](/server-api#plugin-registry-and-project-plugins), and for how the server loads plugins, see [Server Boot and Subsystems](/server-boot#re-assembly).
 
@@ -203,13 +214,14 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plu
 | | `humanizer` | Strip AI-writing tells from prose in any language and rewrite it into the register of books, newspapers and encyclopedias (not preinstalled: install from the library when needed) |
 | | `goal` | The stop hook behind [goal mode](/goal-mode): keeps the Session working toward an objective until it is complete, blocked, or out of Token budget (preinstalled) |
 | | `continual-learning` | When a Task ends after more than 30 turns, hands its condensed excerpt to a background subagent that folds the durable findings into the agent's Skills (not preinstalled) |
+| | `agent-company` | The whole toolkit of [company mode](/company-mode), with seven Skills: `company-setup` (create an organization with the user: one question at a time, a summary to confirm, then `penguin org create`; it never hires or files tickets), `company-employee` (the protocol every desk and ticket Session follows: trigger blocks, the ticket board, blocking, asking the board before heavy or irreversible work, channel etiquette, budgets), `company-ceo` (mission to tickets, hiring, Workspace partitioning, review, reporting to the board), `company-hr` (calendar coverage, hiring and offboarding, evaluation), `company-finance` (budgets, the daily audit, alerts and pauses), `company-research` (a research organization's authors and reviewers: freeze the evaluation harness and the metric, run the experiment loop inside a resource envelope the board approved, keep only what improves the metric, and put every claim through a reviewer who tries to break it) and `company-mirror` (a company of digital twins: one twin per real colleague, bound to that colleague's bot, relaying instead of filing tickets). Not preinstalled: the organization installs it when it creates the CEO and hires employees, and an agent that should be able to create an organization installs it from the library |
 | Software Development | `software-development` | Software development end to end, with two Skills: `software-engineering` (investigate, implement and validate with minimal scope) and `web-design` (the Penguin visual language for generated web UIs) |
 | | `use-claude-code` | Run Claude Code on a remote host over SSH: a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI and multi-turn continuity (not preinstalled: install from the library when needed) |
 | AI App Development | `agent-development` | Agent development on PenguinHarness, with four Skills: `penguin-sdk` (build agent/AI/RAG apps on the SDK, or connect a program to an agent over the Agent API; it asks which way first), `unified-llm-api` (call model APIs through `@prismshadow/mmsp`), `penguin-config` (manage model keys, defaults and Vault secrets) and `penguin-orchestration` (drive agents, Sessions, costs and schedules from a shell) |
 | | `model-development` | Model development on your own hardware, with three Skills: `llamafactory` (fine-tune), `ollama` (run local models) and `vllm` (serve behind an OpenAI-compatible endpoint) |
 | | `skill-porting` | Port Skills from external sources (plugin marketplaces, skills.sh registries, GitHub repos or local folders) into the agent after review and normalization |
 | | `agent-tuning` | The tuning loop as four Skills: `agent-initialization` (set an agent up from a requirement), `benchmark-design` (design and calibrate a capability Benchmark), `agent-evaluation` (execute and score one isolated case) and `agent-optimization` (improve the agent from measured results) |
-| Agent Company | `agent-company` | The whole toolkit of [company mode](/company-mode), with seven Skills: `company-setup` (create an organization with the user: one question at a time, a summary to confirm, then `penguin org create`; it never hires or files tickets), `company-employee` (the protocol every desk and ticket Session follows: trigger blocks, the ticket board, blocking, asking the board before heavy or irreversible work, channel etiquette, budgets), `company-ceo` (mission to tickets, hiring, Workspace partitioning, review, reporting to the board), `company-hr` (calendar coverage, hiring and offboarding, evaluation), `company-finance` (budgets, the daily audit, alerts and pauses), `company-research` (a research organization's authors and reviewers: freeze the evaluation harness and the metric, run the experiment loop inside a resource envelope the board approved, keep only what improves the metric, and put every claim through a reviewer who tries to break it) and `company-mirror` (a company of digital twins: one twin per real colleague, bound to that colleague's bot, relaying instead of filing tickets). Not preinstalled: the organization installs it when it creates the CEO and hires employees, and an agent that should be able to create an organization installs it from the library |
+| Agent Sandbox | `sandbox-bwrap`, `sandbox-seatbelt`, `sandbox-wsl`, `sandbox-dsh` | Server plugins rather than library content: the backends that confine every command an agent runs, installed on the server by an admin. See [Server plugins](#server-plugins) and [Settings](/settings#sandbox) |
 
 ## How it works
 
@@ -221,9 +233,10 @@ A plugin is a directory with a `plugin.json` manifest and the content it ships:
 
 ```text
 plugins/<plugin>/
-├── plugin.json                # manifest — the plugin's single metadata holder
+├── package.json               # the npm package; its version is the plugin's version
+├── plugin.json                # manifest — the plugin's metadata besides its version
 ├── icon.svg                   # the plugin's icon (every built-in plugin ships one)
-├── skills/<name>/SKILL.md     # zero or more skills (reference/… alongside)
+├── skills/<name>/SKILL.md     # zero or more skills, each with its own date version
 └── hooks/*.mjs                # at most one hook package: plain Node scripts
 ```
 
@@ -233,38 +246,40 @@ plugins/<plugin>/
 | --- | --- |
 | `description` / `description_zh` | One-line description (English required) |
 | `short_description` / `short_description_zh` | Card labels (optional; the full description stands in) |
-| `version` | `YYYY.MM.DD.N`: the date plus a sequence number for that day |
-| `category` | One of `office-productivity`, `software-development`, `ai-app-development`, `agent-company`; a missing or unknown category lands in "Other" |
+| `category` | One of `office-productivity`, `software-development`, `ai-app-development`, or `sandbox` for an Agent Sandbox backend; a missing or unknown category lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set, so it is installed only manually from the library |
 | `quick_start` | The demo the Plugins page pre-fills into a new-chat draft: `{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }` — a prompt that shows the plugin working once sent, the plugin's own skills to pre-select, and whether the draft opens in goal mode. The page never sends it; without it, quick start pre-selects the first skill |
+| `hooks.version` | The hook package's date version, `YYYY.MM.DD.N`; required when the plugin ships `hooks/`, and written into the installed `hooks.json` |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds. A `user_prompt` command may add `"trigger"`: `"prompt"` (the default) runs it on every prompt the user submits, `"host"` only when a host starts the package's flow by name |
 
 ### Plugin naming and versioning
 
 - The plugin name is its directory name and must match `^[A-Za-z0-9_-]+$`.
 - A plugin built around someone else's product carries a `use-` prefix (`use-firecrawl`), so the name says what it is for rather than claiming the product.
-- Versions are compared by date, then by sequence number: `2026.08.29.10` follows `2026.08.29.9`.
-- The manifest's `version` is the version of everything the plugin ships. It is separate from the package's npm version, which follows the release. There is no other version scheme.
+- A plugin's version is its npm version, the `version` of its `package.json`, which follows the release. `plugin.json` has no `version`; one left there is ignored.
+- Date versions, `YYYY.MM.DD.N` (the date plus a sequence number for that day), belong to what an agent may edit locally: each Skill's `SKILL.md` carries its own `version`, and the hook package's is `hooks.version`. Change a Skill and raise its `version`; change a hook script or the `hooks` commands and raise `hooks.version`. CI checks both on every pull request (`scripts/check-plugin-versions.mjs`).
+- Date versions are compared by date, then by sequence number: `2026.08.29.10` follows `2026.08.29.9`. An installed copy is behind when one of its parts carries an older version than the library's same part; the update notice and buttons count it once per plugin.
 - Every plugin is its own npm package, `@penguinharness/<name>`, at `plugins/<name>/` in the repository. The loader in `@prismshadow/penguin-core` reads the plugin names from the host package's dependency list and resolves each package through Node. The desktop app declares the same packages as dependencies, and its installer packs them. At runtime the plugin files are the source of truth for library content and are read on every call.
 
 ### Skill file format
 
 A Skill's directory name is its authoritative name and must match `^[A-Za-z0-9_-]+$`; it overrides any `name` in the frontmatter.
 
-A library `SKILL.md` has only two frontmatter fields. Everything else lives in `plugin.json`.
+A library `SKILL.md` has three frontmatter fields. The short descriptions live in `plugin.json`.
 
 | Field | Meaning |
 | --- | --- |
 | `name` | Skill name, matching the directory name |
 | `description` | English one-liner injected into the system prompt |
+| `version` | The Skill's own date version, `YYYY.MM.DD.N` |
 
-The installed copy describes itself. At load time the library regenerates each Skill's frontmatter with the plugin's `short_description`, `short_description_zh` and `version` added, the same way an installed hook package's `hooks.json` is generated from the manifest, and writes that into `agent_state/skills/`. Update checks read the installed frontmatter's `version`, and the Web App reads its short descriptions.
+The installed copy describes itself. At load time the library regenerates each Skill's frontmatter with the plugin's `short_description` and `short_description_zh` added and the Skill's own `version` kept, the same way an installed hook package's `hooks.json` is generated from the manifest, and writes that into `agent_state/skills/`. Update checks read the installed frontmatter's `version`, and the Web App reads its short descriptions.
 
 Parsing is tolerant: only `key: value` scalar lines inside the first `---` block count. A `version` that is neither `YYYY.MM.DD.N` nor the legacy `YYYY-MM-DD.N` of an older installed copy reads as empty. An empty version is older than any library version, so the library's copy counts as an update.
 
 ### Hook package manifest
 
-An installed hook package is the plugin's `hooks/` directory, installed as `agent_state/hooks/<plugin>/` with a generated `hooks.json` beside the scripts. The manifest holds the plugin's identity fields (`name`, `description`, `description_zh`, `version`) and one command list per hook point:
+An installed hook package is the plugin's `hooks/` directory, installed as `agent_state/hooks/<plugin>/` with a generated `hooks.json` beside the scripts. The manifest holds the plugin's identity fields (`name`, `description`, `description_zh`), the package's own `version` (the plugin's `hooks.version`) and one command list per hook point:
 
 ```json
 {

@@ -3,6 +3,7 @@
  * Agent has installed.
  *   GET    /api/plugins                                   # the built-in library by category (any logged-in user)
  *   GET    /api/plugins/:plugin/files                     # the files a library plugin ships, for the detail view's browser
+ *   GET    /api/plugins/:plugin/readme                    # a library plugin's README.md, from its package root (404 without one)
  *   GET    /api/plugins/registry                          # the merged plugin index: the builtin entries and the published ones
  *   GET    /api/plugins/registry/readme?name=…            # one indexed entry's long-form readme
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
@@ -26,6 +27,7 @@ import {
   listInstalledHooks,
   listInstalledSkills,
   libraryPlugin,
+  libraryPluginReadme,
   loadPluginGroups,
 } from "@prismshadow/penguin-core";
 import type {
@@ -49,7 +51,9 @@ import {
   builtinPluginRegistry,
   cachedRegistry,
   httpPluginRegistry,
+  localPluginDisplay,
   mergeIndexes,
+  withoutIcon,
   NIGHTLY_INDEX_URL,
 } from "../../plugin/registry.js";
 import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
@@ -98,6 +102,20 @@ export function pluginLibraryRoutes(): Hono<AppEnv> {
       throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
     }
     return c.json({ files: pluginFiles(plugin) } satisfies PluginFilesResponse);
+  });
+  // The package's own README.md, for the detail dialog's description section — the file npm
+  // shipped with the package, never a copy. Separate from the files above, which are what an
+  // install writes into an Agent; a readme is about the package, and none of it is installed.
+  app.get("/:plugin/readme", (c) => {
+    const pluginName = c.req.param("plugin");
+    const readme = libraryPluginReadme(pluginName);
+    if (readme === undefined) {
+      throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
+    }
+    if (readme === null) {
+      throw new HttpError(404, "readme_not_found", `Plugin ${pluginName} ships no README.md`);
+    }
+    return c.json({ name: pluginName, readme } satisfies PluginReadmeResponse);
   });
   return app;
 }
@@ -186,7 +204,7 @@ export interface PluginRoutesOptions {
    * Undefined = unset, which reads the index repository's published document.
    */
   indexUrl?: string | null;
-  /** Where the builtin packages are on this machine, for their readmes (plugin/loader.ts's pluginBases). */
+  /** Where packages are on this machine (plugin/loader.ts's pluginBases): for the builtin readmes, and for every listed package's own display fields (localPluginDisplay). */
   bases?: () => readonly PluginBase[];
   /** Overrides the resolved source list entirely; tests pass registries directly. */
   registries?: readonly PluginRegistry[];
@@ -201,10 +219,18 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   const app = new Hono<AppEnv>();
   // Built once per App, so the cache outlives a request rather than being rebuilt per page load.
   const registries = options.registries ?? resolveRegistries(options);
+  const bases = options.bases ?? (() => []);
 
   app.get("/", async (c) => {
     const { entries, failures } = await mergeIndexes(registries);
-    const body: PluginIndexResponse = { plugins: entries, failures };
+    // A package on this machine describes itself: its own plugin.json and icon.svg win over
+    // what an index row says, so an installed package's card shows its icon and both languages
+    // even where its index row carries neither.
+    const here = bases();
+    const plugins = await Promise.all(
+      entries.map(async (entry) => ({ ...entry, ...(await localPluginDisplay(entry.name, here)) })),
+    );
+    const body: PluginIndexResponse = { plugins, failures };
     return c.json(body);
   });
   app.get("/readme", async (c) => {
@@ -239,8 +265,11 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   // and gets the default index, while `off` resolves to null and means builtin entries only.
   const url = options.indexUrl === undefined ? NIGHTLY_INDEX_URL : options.indexUrl;
   if (url === null) return [builtin];
+  // The parked document goes through the remote rule too: it was fetched by a previous App,
+  // which may not have dropped the icons.
+  const seed = options.seed ?? null;
   const cache = cachedRegistry(httpPluginRegistry(url, { fetchImpl: options.fetchImpl ?? fetch }), {
-    seed: options.seed ?? null,
+    seed: seed === null ? null : { at: seed.at, entries: seed.entries.map(withoutIcon) },
   });
   options.onCache?.(cache);
   return [builtin, cache];

@@ -100,9 +100,8 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await expect(generalAgent).toBeVisible();
   await page.getByRole("link", { name: "插件市场" }).click();
   await expect(page).toHaveURL(/\/plugins$/);
-  // The installed section is folded on entry; its cards are inert until it is opened. The
-  // library's plugin is agent-tuning; agent-initialization is one of its skills.
-  await page.getByRole("button", { name: /已安装的插件|Installed plugins/ }).click();
+  // The category sections are open on entry. The library's plugin is agent-tuning;
+  // agent-initialization is one of its skills.
   await page.getByRole("button", { name: "管理安装 agent-tuning" }).click();
   await expect(page.getByRole("button", { name: "卸载 default_agent" })).toBeVisible();
   await page.keyboard.press("Escape");

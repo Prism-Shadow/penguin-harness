@@ -16,21 +16,32 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 ## 浏览插件
 
 1. 在侧边栏选择**插件市场**。
-2. 浏览列表。**已安装的插件**排在最前，默认折叠，点击标题即可展开。其中先是插件库，然后是当前 Project 要求的服务端插件。**可安装**列出 Project 还可以添加的服务端插件。
-3. 要缩小范围，可以在搜索框中输入，或在列表旁的筛选栏中勾选选项：**分类**、**包含**和**状态**。**清除筛选**会清空已选的选项和搜索框。有搜索词或筛选条件时，两个列表都会展开。
-4. 点击插件库插件的卡片打开详情。
+2. 浏览卡片。每个插件都有一张卡片，含 Skill 与钩子的插件和[服务端插件](#服务端插件)同样如此，并按分类分组：办公效率、软件开发、AI 应用开发、存放沙箱后端的 **Agent 运行沙箱**，以及其他。点击分类标题可以折叠或展开该分组，页面会记住哪些分组折叠了。
+3. 要换一种分组方式，使用搜索框旁的下拉框：**按类别分组**（默认）、**按状态分组**、**按内容分组**或**不分组**。页面会记住你的选择。
+4. 要缩小范围，在搜索框中输入。有搜索词时，所有分组都会展开。
+5. 点击卡片打开详情。
 
-每张卡片显示插件名称、简短描述，以及一行形如 `v<版本> · N 天前更新 · N 个 Agent 在用` 的信息。其中的 Agent 数量，统计的是当前 Project 里装了这个插件任意部分的 Agent。这一行下方的标签依次标出插件的分类（办公效率、软件开发、AI 应用开发、Agent 公司或其他）、**内置**，以及插件包含的 Skill 和钩子包数量。
+每张卡片显示插件的图标、名称和简短描述，一行形如 `v<版本> · <状态> · N 个 Agent 在用` 的信息，以及**内置**等标签；按其他方式分组时，还会标出分类。版本就是插件的 npm 版本。Agent 数量只对含 Skill 或钩子的插件显示，统计的是当前 Project 里完整装有这个插件、或已装副本被更新检查列为落后的 Agent。状态是一个图标加一个词，指向它可以看到它对这个插件意味着什么：
 
-详情里有完整描述、插件的钩子包在哪些钩子点运行，以及一个文件浏览器。左侧目录树中，每个 Skill 对应一个文件夹，`SKILL.md` 排在最前，参考文件跟在后面；另有一个**钩子**文件夹存放钩子脚本。右侧预览区显示选中的文件。
+| 状态 | 含 Skill 或钩子的插件 | 服务端插件 |
+| --- | --- | --- |
+| **已安装** | Project 里至少有一个 Agent 装有它 | 服务端已安装并载入它 |
+| **可更新** | 有 Agent 的已装副本落后于插件库 | — |
+| **待重启** | — | 已添加，服务器重启后载入 |
+| **加载失败** | — | 服务端无法载入它；指向状态可看到原因 |
+| **不在本机** | — | 只在其他机器上运行 |
+| **可安装** | Project 里还没有 Agent 装它 | Project 还没有添加它 |
+
+详情在弹窗中打开：先是版本、状态和标签，然后是**说明**——完整描述，以及插件包自带 README 时的 README。每个服务端插件都有 README；包还不在本服务器上时，弹窗会说明安装后可查看 README。含 Skill 或钩子的插件还有**文件**一节，是一个文件浏览器：左侧目录树中，每个 Skill 对应一个文件夹，`SKILL.md` 排在最前，参考文件跟在后面；另有一个**钩子**文件夹存放钩子脚本。右侧预览区显示选中的文件。弹窗底部的按钮与卡片上的相同。
 
 卡片右侧的按钮：
 
 | 按钮 | 出现时机 | 作用 |
 | --- | --- | --- |
-| **管理安装** | 始终显示 | 把插件安装到 Agent 上，或者卸载。 |
-| **快捷调用** | 插件至少包含一个 Skill | 打开一个使用该 Skill 的新对话草稿。只有当前 Agent 装了这个插件的某个 Skill 时才可用。 |
+| **管理安装** | 插件含 Skill 或钩子 | 把插件安装到 Agent 上，或者卸载。 |
+| **快速开始** | 插件至少包含一个 Skill | 打开一个带插件演示的新对话草稿。当前 Agent 还没装这个插件时，会先询问是否安装。 |
 | 更新 | 有 Agent 上的安装落后于插件库 | 更新这些安装，见[更新已安装的插件](#更新已安装的插件)。 |
+| **安装** / **移除** | 服务端插件，仅管理员可见 | 把插件安装到服务端，或者移除，见[服务端插件](#服务端插件)。 |
 
 ## 在 Agent 上安装插件
 
@@ -63,7 +74,7 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
    - 更新所有落后的插件：点击提示里的**现在升级**。
    - 更新某个插件在所有 Agent 上的安装：点击它卡片上的更新按钮。
    - 更新某个插件在某个 Agent 上的安装：在**管理安装**里点击 Agent 旁的**更新**。
-2. 确认更新会涉及的范围，然后点击**更新**。
+2. 确认更新会涉及的范围，然后点击**更新**。对话框为每个 Agent 列出已装版本与插件库不同的 Skill 和钩子包，并标出前后两个版本。
 
 > [!WARNING]
 > 更新会用插件库里的副本重装每个 Agent 上已安装的 Skill 和钩子文件，本地修改会全部丢失。需要保留的话，先导出备份，见[管理 Agent 的 Skill](#管理-agent-的-skill)。
@@ -145,18 +156,18 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 
 ## 服务端插件
 
-服务端插件扩展的是服务器本身，而不是 Agent：它是一个由服务端模块组成的 npm 包，例如沙箱后端。每个 Project 声明自己需要的服务端插件，服务器运行任一 Project 要求的全部插件，因此插件提供的能力对所有 Project 都可用。
+服务端插件扩展的是服务器本身，而不是 Agent：它是一个由服务端模块组成的 npm 包，例如 Agent 运行沙箱后端。它安装到整个服务端、由所有 Project 共用：每个 Project 声明自己需要的服务端插件，服务器运行任一 Project 要求的全部插件，因此插件提供的能力对所有 Project 都可用。
 
-在**插件市场**页面上，服务端插件的一行显示包名、描述、版本和状态，标签标出它的分类、随 PenguinHarness 发布时的**内置**，以及关键词。点击这一行打开插件页面，查看许可证、作者、链接和说明文档。市场里没有条目的插件没有页面。
+在**插件市场**页面上，服务端插件和其他插件一样有一张卡片。四个 Agent 运行沙箱后端在 **Agent 运行沙箱**分类下：用于 Linux 的 `sandbox-bwrap`、用于 macOS 的 `sandbox-seatbelt`、用于 Windows 的 `sandbox-wsl`，以及三者通用、只限制文件写入的 `sandbox-dsh`。服务端插件的详情显示它的包名（旁边有复制按钮）和包自带的 README。
 
-为当前 Project 添加服务端插件：
+安装服务端插件：
 
-1. 在**可安装**下，点击插件那一行的**安装**。
-2. 确认。添加或移除服务端插件会中止所有 Project 中正在进行的 Agent 运行。
+1. 在它的卡片或详情里点击**安装**。
+2. 弹窗说明该插件将安装到整个服务端、由所有 Project 共用，下方小字注明安装会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。确认即可。
 
-移除插件：在**已安装的插件**下点击它那一行的**移除**，然后确认。插件会从 Project 的列表中去掉，磁盘上的文件不会被删除。
+移除插件：点击**移除**，然后确认。插件会从 Project 的列表中去掉；从 npm 安装的包在没有 Project 再要求它时卸载。移除同样会中止正在进行的运行。
 
-只有管理员能看到**安装**和**移除**。只能添加随 PenguinHarness 发布的插件，因此不会下载任何东西。改动无需重启服务器即可生效：服务器围绕新列表重建业务面，所以正在进行的运行会被中止。之后，这一行的状态显示为**运行中**；服务器无法免重启应用改动时显示**待重启**；加载失败时显示**加载失败**并附上原因。
+只有管理员能看到**安装**和**移除**，其他人只能查看卡片和详情。随 PenguinHarness 发布的插件安装时无需下载。改动无需重启服务器即可生效：服务器围绕新列表重建业务面，所以正在进行的运行会被中止。之后，卡片上的状态显示为**已安装**；服务器无法免重启应用改动时显示**待重启**；加载失败时显示**加载失败**，指向状态可看到原因。
 
 列表就是 Project 配置中的 `[plugins]` 表，见[配置参考](/configuration#插件)。路由见 [Server API](/server-api#插件注册表与-project-插件)，服务器如何加载插件见 [Server 启动与子系统](/server-boot#重组)。
 
@@ -203,13 +214,14 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装） |
 | | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
+| | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
 | AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含四个 Skill：`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent |
 | | `agent-tuning` | 用四个 Skill 构成调优闭环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent） |
-| Agent 公司 | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
+| Agent 运行沙箱 | `sandbox-bwrap`、`sandbox-seatbelt`、`sandbox-wsl`、`sandbox-dsh` | 服务端插件，不属于插件库内容：封禁 Agent 执行的每条命令的后端，由管理员安装到服务端。见[服务端插件](#服务端插件)和[设置](/settings#沙盒) |
 
 ## 工作原理
 
@@ -221,9 +233,10 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 ```text
 plugins/<plugin>/
-├── plugin.json                # manifest — the plugin's single metadata holder
+├── package.json               # the npm package; its version is the plugin's version
+├── plugin.json                # manifest — the plugin's metadata besides its version
 ├── icon.svg                   # the plugin's icon (every built-in plugin ships one)
-├── skills/<name>/SKILL.md     # zero or more skills (reference/… alongside)
+├── skills/<name>/SKILL.md     # zero or more skills, each with its own date version
 └── hooks/*.mjs                # at most one hook package: plain Node scripts
 ```
 
@@ -233,38 +246,40 @@ plugins/<plugin>/
 | --- | --- |
 | `description` / `description_zh` | 一行描述（英文必填） |
 | `short_description` / `short_description_zh` | 卡片上显示的简短文案（可选；不填则使用完整描述） |
-| `version` | `YYYY.MM.DD.N`：日期加当天的序号 |
-| `category` | `office-productivity`、`software-development`、`ai-app-development`、`agent-company` 之一；缺失或未知的分类归入「其他」 |
+| `category` | `office-productivity`、`software-development`、`ai-app-development` 之一，Agent 运行沙箱后端用 `sandbox`；缺失或未知的分类归入「其他」 |
 | `preinstall` | 可选；设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
 | `quick_start` | 插件页「快速开始」预填进新对话草稿的演示：`{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
+| `hooks.version` | 钩子包的日期版本 `YYYY.MM.DD.N`；插件带 `hooks/` 时必填，安装时写进 `hooks.json` |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各个[钩子点](/agent-loop#stop-hook)运行的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径以 `hooks/` 为起点，timeout 单位为秒。`user_prompt` 命令可以另加 `"trigger"`：`"prompt"`（缺省）表示用户每次提交 Prompt 时运行，`"host"` 表示只在宿主按包名启动该包的流程时运行 |
 
 ### 插件命名与版本
 
 - 插件名就是目录名，必须匹配 `^[A-Za-z0-9_-]+$`。
 - 围绕他人产品打造的插件带 `use-` 前缀（如 `use-firecrawl`），名称只表明用途，而不冒充产品本身。
-- 版本先按日期比较，再按序号比较：`2026.08.29.10` 排在 `2026.08.29.9` 之后。
-- 清单里的 `version` 是插件所含全部内容的版本，与 npm 包版本相互独立；npm 版本跟随产品发布。除此之外没有其他版本方案。
+- 插件的版本就是它的 npm 版本，即 `package.json` 的 `version`，随产品发布递增。`plugin.json` 不含 `version`，留在那里的会被忽略。
+- 日期版本 `YYYY.MM.DD.N`（日期加当天的序号）属于 Agent 可能在本地改动的事物：每个 Skill 的 `SKILL.md` 自带 `version`，钩子包的版本是 `hooks.version`。改了 Skill 就递增它的 `version`；改了钩子脚本或 `hooks` 中的命令就递增 `hooks.version`。CI 对每个 PR 校验这两点（`scripts/check-plugin-versions.mjs`）。
+- 日期版本先按日期比较，再按序号比较：`2026.08.29.10` 排在 `2026.08.29.9` 之后。已安装副本只要有一个部件的版本比插件库中同名部件旧，就算落后；更新提示与更新按钮按插件计一次。
 - 每个插件都是一个独立的 npm 包 `@penguinharness/<name>`，位于仓库的 `plugins/<name>/`。`@prismshadow/penguin-core` 中的加载器从宿主包的依赖列表读取插件名，并通过 Node 解析各个包。桌面应用把同样的包声明为依赖，安装器会将它们打包。运行时，插件文件就是插件库内容的唯一事实来源，每次调用都直接读取。
 
 ### Skill 文件格式
 
 Skill 的目录名是权威名称，必须匹配 `^[A-Za-z0-9_-]+$`，并覆盖 frontmatter 中的任何 `name`。
 
-插件库中的 `SKILL.md` 只有两个 frontmatter 字段，其余信息都在 `plugin.json` 里。
+插件库中的 `SKILL.md` 有三个 frontmatter 字段，简短描述在 `plugin.json` 里。
 
 | 字段 | 含义 |
 | --- | --- |
 | `name` | Skill 名称，与目录名一致 |
 | `description` | 注入系统提示词的英文单行描述 |
+| `version` | 该 Skill 自己的日期版本 `YYYY.MM.DD.N` |
 
-已安装的副本自带描述。加载时，插件库会重新生成每个 Skill 的 frontmatter，加上插件的 `short_description`、`short_description_zh` 和 `version`，然后写入 `agent_state/skills/`，做法与已安装钩子包的 `hooks.json` 由清单生成时一致。更新检查读取安装副本 frontmatter 里的 `version`，Web App 则读取其中的简短描述。
+已安装的副本自带描述。加载时，插件库会重新生成每个 Skill 的 frontmatter，加上插件的 `short_description` 与 `short_description_zh`，保留 Skill 自己的 `version`，然后写入 `agent_state/skills/`，做法与已安装钩子包的 `hooks.json` 由清单生成时一致。更新检查读取安装副本 frontmatter 里的 `version`，Web App 则读取其中的简短描述。
 
 解析很宽容：只有第一个 `---` 块里的 `key: value` 标量行才算数。`version` 既不是 `YYYY.MM.DD.N`、也不是旧版安装副本使用的 `YYYY-MM-DD.N` 时，就按空值处理。空版本比任何插件库版本都旧，所以插件库里的副本算作可用的更新。
 
 ### 钩子包清单
 
-安装后的钩子包就是插件的 `hooks/` 目录，安装为 `agent_state/hooks/<plugin>/`，脚本旁边附带一份生成的 `hooks.json`。清单保存插件的标识字段（`name`、`description`、`description_zh`、`version`），以及每个钩子点各自的命令列表：
+安装后的钩子包就是插件的 `hooks/` 目录，安装为 `agent_state/hooks/<plugin>/`，脚本旁边附带一份生成的 `hooks.json`。清单保存插件的标识字段（`name`、`description`、`description_zh`）、钩子包自己的 `version`（即插件的 `hooks.version`），以及每个钩子点各自的命令列表：
 
 ```json
 {

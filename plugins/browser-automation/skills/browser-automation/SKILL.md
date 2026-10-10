@@ -1,6 +1,7 @@
 ---
 name: browser-automation
 description: Drive the PenguinHarness agent browser — the desktop app's built-in browser or the user's own Chrome — from the shell with `penguin browser`: open pages, read them as simplified HTML or text, act with JavaScript and trusted clicks and typing, and pull structured data out of them (orders, search results, tables), signed in with the user's own accounts. Use it for any task on a website that needs a real browser or the user's sign-in, such as finding an Amazon order.
+version: 2026.10.04.1
 ---
 
 # Browser automation

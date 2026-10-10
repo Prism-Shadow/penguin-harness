@@ -1,0 +1,8 @@
+{
+  "description": "DeepSeek Harness sandbox adaptor for PenguinHarness: the DSH local backend chain behind the harness's own sandbox interface.",
+  "description_zh": "PenguinHarness 的 DeepSeek Harness 沙箱适配器：把 DSH 的本地后端链接入本框架自己的沙箱接口。",
+  "short_description": "Linux, macOS and Windows: confine file writes only.",
+  "short_description_zh": "Linux、macOS 与 Windows：只限制文件写入。",
+  "category": "sandbox",
+  "preinstall": false
+}

@@ -665,11 +665,11 @@ export const en: Strings = {
       does === undefined ? `${column}: ${value}` : `${column}: ${value}. ${does}`,
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
-      title: "Install a sandbox backend",
+      title: "Install an Agent Sandbox backend",
       body: (machine: string, pkgs: readonly string[]) =>
-        `${machine} has no sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkgs.join(" and ")}?` +
+        `${machine} has no Agent Sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkgs.join(" and ")} on the whole server, shared by every Project?` +
         (pkgs.length > 1 ? " Where both work, the one that confines more is used." : ""),
-      cost: "Installing reloads the server's plugins, which stops agent runs in progress in every Project. The switch stays on either way.",
+      cost: "Installing reloads the server's plugins, which stops the agent runs in progress in every Project. The switch stays on either way.",
       install: "Install",
       installing: "Installing…",
       later: "Not now",
@@ -2426,17 +2426,9 @@ export const en: Strings = {
 
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on agents as a whole. */
   plugins: {
-    installedTitle: "Installed plugins",
-    installedDesc:
-      "What this Project asks for, and which of those this process is running. A change applies without a restart where the server can re-assemble itself; re-assembling stops the agent runs in progress in every Project.",
-    installedEmpty: "No plugins installed yet.",
-    stateActive: "running",
     builtin: "built in",
     builtinHint:
       "Ships with this build: installing it downloads nothing, and it loads only once you install it.",
-    installedRestart: "restart to load",
-    stateFailed: "failed to load",
-    replacesLabel: "replaces",
     restartPending:
       "A listed plugin is not running and this server could not apply it without a restart: restart the server to load it.",
     uninstall: "Remove",
@@ -2446,9 +2438,15 @@ export const en: Strings = {
     deploymentInstalledToast: (name: string) => `Installed ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} failed to load: ${reason}`,
-    applyConfirmInstall: (name: string) => `Install ${name}?`,
-    applyConfirmRemove: (name: string) => `Remove ${name}?`,
-    applyConfirmBody: "Agent runs in progress in every Project will be stopped.",
+    /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    applyConfirmInstall: (name: string) => `Install ${name}`,
+    applyConfirmRemove: (name: string) => `Remove ${name}`,
+    applyConfirmInstallBody: (name: string) =>
+      `Installs ${name} on the whole server, shared by every Project.`,
+    applyConfirmRemoveBody: (name: string) =>
+      `Removes ${name} from the server; it stays while another Project still uses it.`,
+    applyConfirmWarning: (install: boolean) =>
+      `${install ? "Installing" : "Removing"} reloads the server's plugins, which stops the agent runs in progress in every Project.`,
     pageTitle: "Plugins",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "Machine",
@@ -2456,35 +2454,50 @@ export const en: Strings = {
     thisServer: "This server",
     /** A row listed for some machines only, by alias. */
     onlyOn: (names: string) => `only on ${names}`,
-    /** An all-machines row listed only for other machines. */
-    notHere: "not on this server",
-    /** A row the Project lists for a machine that has not reported it running yet. */
-    notSynced: "not on that machine yet",
     /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
     sharedCannotRemove: "Enabled on all machines: remove it in the All machines view.",
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
-    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "Settings",
     pageDesc:
-      "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",
-    /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
-    installedSection: (n: number): string => `Installed plugins (${n})`,
-    /** The second list: registry entries this Project does not ask for yet. */
-    availableSection: (n: number): string => `Available (${n})`,
-    notInstalled: "not installed",
-    /** The filter column beside the lists, and the empty result. */
-    filterCategories: "Categories",
-    filterKind: "Contains",
-    filterState: "Status",
-    filterClear: "Clear filters",
-    kindLabel: { skills: "Skills", hooks: "Hooks", modules: "Modules" },
-    stateLabel: {
+      "Every plugin, by category. Plugins of skills and/or a hook package ship with this build and are installed on agents; server-module plugins, such as the Agent Sandbox backends, are installed on the whole server by an admin.",
+    /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
+    groupByLabel: "Group by",
+    groupBy: {
+      category: "Group by category",
+      status: "Group by status",
+      kind: "Group by content",
+      none: "No grouping",
+    },
+    /** What a plugin carries: the section titles of the grouping by content. */
+    kindLabel: { skills: "Skills", hooks: "Hooks", modules: "Server modules" },
+    /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
+    sandboxCategory: "Agent Sandbox",
+    otherCategory: "Other",
+    /** A plugin's install status: the word beside the status glyph, and the grouping's section titles. */
+    status: {
+      update: "Update available",
       installed: "Installed",
-      available: "Available",
-      running: "Running",
       restart: "Restart to load",
       failed: "Failed to load",
+      "not-here": "Not on this server",
+      available: "Available",
+    },
+    /** What a status means for this plugin, on hover over its glyph. */
+    statusHint: {
+      libraryInstalled: "An agent in this Project has it",
+      libraryAvailable: "No agent in this Project has it yet",
+      update: (n: number) =>
+        n === 1
+          ? "1 agent's copy is behind the library"
+          : `${n} agents' copies are behind the library`,
+      moduleInstalled: "Installed on the server and loaded",
+      moduleAvailable: "Not installed on the server",
+      restart: "Installed; loads after a server restart",
+      failed: (reason: string) => `Failed to load: ${reason}`,
+      elsewhere: (machines: string) => `Runs only on ${machines}, not on this server`,
+      unsynced: "Installed, not on that machine yet",
     },
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */
@@ -2493,9 +2506,13 @@ export const en: Strings = {
     libraryBuiltinHint: "Ships with this build; install it to an agent to use it there.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
     searchPlaceholder: "Search plugins",
-    /** Section labels of the plugin detail Modal. */
+    /** Sections of the plugin detail dialog: the description (and the package's README), then the files it installs. */
+    detailDescription: "About",
+    detailFiles: "Files",
     detailSkills: "Skills",
     detailHooks: "Hooks",
+    /** In place of the README of a package that is not on this server. */
+    readmeAfterInstall: "The README shows once the plugin is installed",
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
     /** Quick start's tooltip: what pressing it does, and what it does not. */
@@ -2578,25 +2595,14 @@ export const en: Strings = {
   },
 
   pluginRegistry: {
-    pageTitle: "Plugins",
     empty: "No plugins yet",
     specifierHint: "Package name, as a Project's plugin list names it",
-    back: "Back to Plugins",
-    readme: "Documentation",
-    noReadme: "This plugin has no documentation yet.",
-    notFound: "No such plugin.",
     /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
     sourceUnavailable: (count: number): string =>
       count === 1
         ? "One plugin source could not be reached, so this list may be incomplete."
         : `${count} plugin sources could not be reached, so this list may be incomplete.`,
-    repository: "Repository",
-    homepage: "Homepage",
-    authors: "Authors",
-    license: "License",
     copySpecifier: "Copy specifier",
-    installHint:
-      "Install from the Plugins page: the row's Install button asks the current Project for it.",
   },
 
   skills: {

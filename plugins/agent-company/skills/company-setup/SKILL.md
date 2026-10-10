@@ -1,6 +1,7 @@
 ---
 name: company-setup
 description: Create a company-mode organization together with the user — collect its id, name, mission, shared workspace, model and CEO budget one question at a time, confirm the whole thing in one summary, then run penguin org create and hand the user over to company mode.
+version: 2026.10.10.1
 ---
 
 # Company Setup

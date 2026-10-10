@@ -756,11 +756,11 @@ export const zh = {
       does === undefined ? `${column}：${value}` : `${column}：${value}。${does}`,
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
-      title: "安装沙盒后端",
+      title: "安装 Agent 运行沙箱后端",
       body: (machine: string, pkgs: readonly string[]) =>
-        `${machine} 没有适用于其操作系统的沙盒后端，新会话暂时无法进入沙盒。是否安装 ${pkgs.join(" 和 ")}？` +
+        `${machine} 没有适用于其操作系统的 Agent 运行沙箱后端，新会话暂时无法被封禁。是否把 ${pkgs.join(" 和 ")} 安装到整个服务端、供所有 Project 共用？` +
         (pkgs.length > 1 ? "两者都可用时，使用封禁范围更大的那个。" : ""),
-      cost: "安装会重新装载服务器的插件，所有项目中正在进行的 Agent 运行都会停止。无论是否安装，开关都保持打开。",
+      cost: "安装会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。无论是否安装，开关都保持打开。",
       install: "安装",
       installing: "正在安装…",
       later: "暂不",
@@ -2548,16 +2548,8 @@ export const zh = {
 
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
-    installedTitle: "已安装的插件",
-    installedDesc:
-      "当前 Project 要求的插件，以及其中哪些正在被本进程运行。服务器能自行重组时，改动无需重启即可生效；重组会中止所有 Project 正在进行的 Agent 运行。",
-    installedEmpty: "还没有安装任何插件。",
-    stateActive: "运行中",
     builtin: "内置",
     builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
-    installedRestart: "待重启",
-    stateFailed: "加载失败",
-    replacesLabel: "替换",
     restartPending: "有已列出但未运行的插件，且本服务器无法免重启应用：重启服务器后加载。",
     uninstall: "移除",
     install: "安装",
@@ -2566,9 +2558,14 @@ export const zh = {
     deploymentInstalledToast: (name: string) => `已安装 ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
-    applyConfirmInstall: (name: string) => `安装 ${name}？`,
-    applyConfirmRemove: (name: string) => `移除 ${name}？`,
-    applyConfirmBody: "所有 Project 中正在进行的 Agent 运行都会被中止。",
+    /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    applyConfirmInstall: (name: string) => `安装 ${name}`,
+    applyConfirmRemove: (name: string) => `移除 ${name}`,
+    applyConfirmInstallBody: (name: string) => `将把 ${name} 安装到整个服务端，所有 Project 共用。`,
+    applyConfirmRemoveBody: (name: string) =>
+      `将从服务端移除 ${name}；仍有其他 Project 使用它时会保留。`,
+    applyConfirmWarning: (install: boolean) =>
+      `${install ? "安装" : "移除"}会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。`,
     pageTitle: "插件",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
@@ -2576,34 +2573,46 @@ export const zh = {
     thisServer: "本机",
     /** A row listed for some machines only, by alias. */
     onlyOn: (names: string) => `仅在 ${names}`,
-    /** An all-machines row listed only for other machines. */
-    notHere: "本机不运行",
-    /** A row the Project lists for a machine that has not reported it running yet. */
-    notSynced: "尚未同步到该机器",
     /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
     sharedCannotRemove: "已对所有机器启用：请在「所有机器」视图中移除。",
     machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
-    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "设置",
     pageDesc:
-      "所有插件在一个列表里。插件库里的随本次构建自带（技能和／或钩子包——快捷调用，或安装到 Agent）；当前 Project 要求的模块插件在服务端运行，市场里其余的可以为它安装。",
-    /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
-    installedSection: (n: number): string => `已安装的插件 (${n})`,
-    /** The second list: registry entries this Project does not ask for yet. */
-    availableSection: (n: number): string => `可安装 (${n})`,
-    notInstalled: "未安装",
-    /** The filter column beside the lists, and the empty result. */
-    filterCategories: "分类",
-    filterKind: "包含",
-    filterState: "状态",
-    filterClear: "清除筛选",
-    kindLabel: { skills: "技能", hooks: "钩子", modules: "模块" },
-    stateLabel: {
+      "所有插件按分类列出。只含技能和／或钩子包的插件随本次构建自带，装到 Agent 上使用；服务端模块插件（如 Agent 运行沙箱后端）由管理员安装到整个服务端。",
+    /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
+    groupByLabel: "分组方式",
+    groupBy: {
+      category: "按类别分组",
+      status: "按状态分组",
+      kind: "按内容分组",
+      none: "不分组",
+    },
+    /** What a plugin carries: the section titles of the grouping by content. */
+    kindLabel: { skills: "技能", hooks: "钩子", modules: "服务端模块" },
+    /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
+    sandboxCategory: "Agent 运行沙箱",
+    otherCategory: "其他",
+    /** A plugin's install status: the word beside the status glyph, and the grouping's section titles. */
+    status: {
+      update: "可更新",
       installed: "已安装",
-      available: "可安装",
-      running: "运行中",
       restart: "待重启",
       failed: "加载失败",
+      "not-here": "不在本机",
+      available: "可安装",
+    },
+    /** What a status means for this plugin, on hover over its glyph. */
+    statusHint: {
+      libraryInstalled: "本 Project 有 Agent 装有它",
+      libraryAvailable: "本 Project 还没有 Agent 装它",
+      update: (n: number) => `${n} 个 Agent 的已装副本落后于插件库`,
+      moduleInstalled: "已安装到服务端并已载入",
+      moduleAvailable: "尚未安装到服务端",
+      restart: "已安装，重启服务器后载入",
+      failed: (reason: string) => `加载失败：${reason}`,
+      elsewhere: (machines: string) => `只在 ${machines} 上运行，本机不运行`,
+      unsynced: "已安装，尚未同步到该机器",
     },
     noMatch: "没有匹配的插件。",
     /** The description of a shipped package the registry has no entry for. */
@@ -2614,10 +2623,14 @@ export const zh = {
     pluginCount: (n: number): string => `${n} 个插件`,
     /** Search box of the create dialog's plugin picker. */
     searchPlaceholder: "搜索插件",
-    /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
-    /** Section labels of the plugin detail Modal. */
+    /** Sections of the plugin detail dialog: the description (and the package's README), then the files it installs. */
+    detailDescription: "说明",
+    detailFiles: "文件",
     detailSkills: "技能",
     detailHooks: "钩子",
+    /** In place of the README of a package that is not on this server. */
+    readmeAfterInstall: "安装后可查看 README",
+    /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
     /** Quick start's tooltip: what pressing it does, and what it does not. */
     quickStartHint: "快速开始：打开一份带该插件演示的草稿——点发送之前什么都不会运行",
@@ -2696,25 +2709,15 @@ export const zh = {
   },
 
   pluginRegistry: {
-    pageTitle: "插件市场",
     empty: "暂无插件",
     /** Card metadata: the entry's package specifier doubles as the install string. */
     specifierHint: "包名，即 Project 插件列表里写的那串",
-    back: "返回插件市场",
-    readme: "说明文档",
-    noReadme: "该插件暂无说明文档。",
-    notFound: "找不到这个插件。",
     /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
     sourceUnavailable: (count: number): string =>
       count === 1
         ? "有 1 个插件来源无法访问，下面的列表可能不完整。"
         : `有 ${count} 个插件来源无法访问，下面的列表可能不完整。`,
-    repository: "源码仓库",
-    homepage: "主页",
-    authors: "作者",
-    license: "许可证",
     copySpecifier: "复制包名",
-    installHint: "在插件市场页安装：该行的「安装」按钮会为当前 Project 要求它。",
   },
 
   skills: {

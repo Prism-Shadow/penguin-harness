@@ -1,6 +1,7 @@
 ---
 name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline.
+version: 2026.10.09.5
 ---
 
 # Benchmark Design

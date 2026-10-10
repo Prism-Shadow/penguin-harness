@@ -1894,6 +1894,14 @@ router
     const name = query.get("name") ?? "";
     return { name, readme: store.f.readmes[name] ?? null };
   })
+  // A library plugin's own README.md: the demo's plugins ship none unless the store has one.
+  .get("/api/plugins/:plugin/readme", ({ store, params }): PluginReadmeResponse => {
+    const name = params.plugin!;
+    if (!libraryPlugins(store).some((p) => p.name === name)) notFound("Plugin");
+    const readme = store.f.readmes[name];
+    if (readme === undefined) notFound("README");
+    return { name, readme };
+  })
   .get("/api/plugins/:plugin/files", ({ store, params }): PluginFilesResponse => {
     const files = store.f.pluginFiles[params.plugin!];
     if (!files) {

@@ -1,6 +1,7 @@
 ---
 name: skill-porting
 description: Install skills from external ecosystems into this agent's agent_state/skills/ — resolve Claude Code plugin marketplaces, the Codex plugin repo, skills.sh registry names, GitHub repos, or local folders to their skill directories, review every file, and normalize SKILL.md frontmatter to the Penguin format.
+version: 2026.10.09.1
 ---
 
 # Skill Porting
@@ -41,8 +42,7 @@ name: <skill_name>                        # must equal the directory name
 description: <one line, English>          # injected into the prompt; keep it specific
 short_description: <shorter than description>  # optional UI blurb
 short_description_zh: <its Chinese variant>    # optional
-version: 1                                # natural number; bump on every content change
-updated: 2026-08-04T11:40:00Z             # ISO 8601 UTC; move it together with version
+version: <YYYY.MM.DD.N>                   # the UTC date, then a sequence number (2026.08.04.1); raise it on every content change
 ---
 ```
 
@@ -179,7 +179,7 @@ Shape each skill in `$WORK`, then copy the finished directory into `agent_state/
 
 1. **Directory name**: keep the upstream name when it already matches `[A-Za-z0-9_-]+` (lowercase-hyphen preferred); otherwise rename and note it. One directory per skill — a plugin with several skills becomes several installs (or one merged skill if the user prefers).
 2. **Keep** `name` (set it to the directory name) and `description` (flatten to one line; keep or make it English).
-3. **Add** `short_description` and `short_description_zh` (write them yourself, each shorter than the description), `version: 1` (bump on every later edit), and `updated:` from `date -u +%Y-%m-%dT%H:%M:%SZ`.
+3. **Add** `short_description` and `short_description_zh` (write them yourself, each shorter than the description) and `version:` today's UTC date with sequence number 1, from `date -u +%Y.%m.%d.1`. Raise it on every later edit: the next sequence number on the same day, else that day's date with `.1`. Versions compare by date, then by number, so `.10` follows `.9`. Drop an `updated:` line; the version carries the date.
 4. **Drop foreign frontmatter fields** (`allowed-tools`, `disable-model-invocation`, `context`, `model`, `hooks`, `license`, `metadata`, `when_to_use`, …). Penguin ignores unknown single-line keys, but multi-line values corrupt the parse — flattening is mandatory, dropping keeps files honest. When a dropped field carries real information — required tools, trigger phrases — move it into the body text (`when_to_use` usually merges into `description`).
 5. **Components with no Penguin runtime**:
    - `commands/*.md` flat skills → each can become its own skill directory (file body → SKILL.md body), or a section of the main skill.
@@ -197,7 +197,7 @@ cp -r "$WORK/<skill_name>" "$SKILLS_DIR/"
 
 ## Verify and report
 
-- Re-read the installed `SKILL.md`: first line `---`, every frontmatter line a single `key: value`, `name` equal to the directory name, `version` a natural number, `updated` ISO 8601 UTC.
+- Re-read the installed `SKILL.md`: first line `---`, every frontmatter line a single `key: value`, `name` equal to the directory name, `version` in the form `YYYY.MM.DD.N`.
 - The skill's metadata line joins the system prompt's skill list from the next task on; within this session, `ls "$SKILLS_DIR"` plus the frontmatter check above is the confirmation.
 - Test-invoke it: run a small task that names the skill and confirm the body's paths, commands and file references resolve.
 - Report per skill: source (URL plus pinned sha or tag), what it does, what was dropped or rewritten during normalization, and your review verdict.

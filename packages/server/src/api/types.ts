@@ -1218,11 +1218,15 @@ export interface VaultUpdateRequest {
 // Agent and its config (system_config.yaml + AGENTS.md)
 // ---------------------------------------------------------------------------
 
-/** One installed plugin (a skill or a hook package) the library carries a higher version of (see {@link AgentSummary.pluginUpdates}). */
+/** One library plugin an Agent's installed copy is behind on — one of its skills or its hook package carries an older dated version than the library's same part (see {@link AgentSummary.pluginUpdates}). */
 export interface PluginUpdateRef {
   /** Plugin name — what `POST …/plugins` reinstalls to bring the Agent up to date. */
   name: string;
-  /** The LIBRARY's version (`YYYY.MM.DD.N`), i.e. what installing again would bring, not what is on disk. */
+  /**
+   * The LIBRARY's content version: the newest dated version (`YYYY.MM.DD.N`) among the plugin's
+   * parts, i.e. the date of what installing again would bring, not what is on disk. A label —
+   * it moves whenever any part changes, so a dismissed update comes back for the next one.
+   */
   version: string;
 }
 
@@ -1255,11 +1259,12 @@ export interface AgentSummary {
   hookCount: number;
   /**
    * Installed plugins the built-in library has moved past — a skill or a hook package whose
-   * on-disk version is behind the library plugin that ships it — each with the library version
-   * on offer: the plugin-library update gate, riding along on the Agent list so a badge over
-   * that page costs no request of its own. Empty when nothing is behind. Skills the library
-   * does not carry (installed from a zip or a picked directory) are never listed: there is no
-   * library version for them to be behind.
+   * on-disk dated version is behind the library's same part (compared part by part, never
+   * against the plugin's npm version) — each with the library's content version on offer: the
+   * plugin-library update gate, riding along on the Agent list so a badge over that page costs
+   * no request of its own. Empty when nothing is behind. Skills the library does not carry
+   * (installed from a zip or a picked directory) are never listed: there is no library version
+   * for them to be behind.
    */
   pluginUpdates: PluginUpdateRef[];
   /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
@@ -4211,7 +4216,7 @@ export interface SkillMetadataItem {
    * which the plugin item carries once. Absent, the frontend draws the book glyph.
    */
   icon?: string;
-  /** Version (`YYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
+  /** The skill's own dated version (`YYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
   version: string;
 }
 
@@ -4236,12 +4241,16 @@ export interface PluginItem {
   descriptionZh?: string;
   shortDescription?: string;
   shortDescriptionZh?: string;
-  /** `YYYY.MM.DD.N`. */
+  /** The plugin's npm version (its package.json, following the release) — what the card shows. Installed copies are compared part by part instead: each skill's `version`, and {@link hookVersion}. */
   version: string;
-  /** The plugin's skills (metadata only). */
+  /** Where the plugin comes from: `builtin` — a package this build ships. */
+  source: "builtin";
+  /** The plugin's skills (metadata only), each with its own dated `version`. */
   skills: SkillMetadataItem[];
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
+  /** The hook package's own dated version (plugin.json `hooks.version`, `YYYY.MM.DD.N`); absent without a hook package. */
+  hookVersion?: string;
   /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
   /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`); absent = pre-select its first skill. */
@@ -4351,6 +4360,17 @@ export interface PluginIndexEntry {
   /** Semantic version of this entry. */
   version: string;
   description: string;
+  /** Chinese description (optional; the UI picks per language, English without it). */
+  descriptionZh?: string;
+  /** One-line descriptions for the card (optional; the card falls back to `description`). */
+  shortDescription?: string;
+  shortDescriptionZh?: string;
+  /**
+   * The plugin's raw icon.svg (optional; the card draws the puzzle piece without it). The
+   * listing fills these display fields from the package's own `plugin.json` and `icon.svg`
+   * when the package is on this server, over whatever the index row says.
+   */
+  icon?: string;
   authors: string[];
   /** SPDX license identifier. */
   license: string;
@@ -4376,7 +4396,12 @@ export interface PluginIndexResponse {
   failures: { source: string; error: string }[];
 }
 
-/** GET /api/plugins/registry/readme — long-form docs for one entry; `readme` is null when none exists. */
+/**
+ * A plugin's long-form docs: the README.md at its package root, as npm ships it.
+ * GET /api/plugins/registry/readme?name= answers for an index entry, with `readme` null when
+ * the package is not on this server or has none; GET /api/plugins/:plugin/readme answers for a
+ * library plugin, 404 when it ships none.
+ */
 export interface PluginReadmeResponse {
   name: string;
   /** Markdown, rendered by the Web App. Null when this entry has no readme. */

@@ -699,7 +699,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             descriptionZh: "基于 Claude Code 文档回答问题，并给出引用。",
             shortDescription: "Claude Code docs, with citations",
             shortDescriptionZh: "带引用的 Claude Code 文档问答",
-            version: "2026.09.20.1",
+            version: "0.2.13",
+            source: "builtin",
             skills: [
               skill(
                 "claude-code-expert",
@@ -717,7 +718,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
               "Build with the PenguinHarness SDK: the Session, Agent State and OmniMessage APIs.",
             descriptionZh:
               "使用 PenguinHarness SDK 开发：Session、Agent State 与 OmniMessage 接口。",
-            version: "2026.09.11.1",
+            version: "0.2.13",
+            source: "builtin",
             skills: [
               skill("penguin-sdk", "PenguinHarness SDK 用法", "How to use the PenguinHarness SDK"),
             ],
@@ -727,7 +729,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             name: "web-design",
             description: "Design and build web pages that do not read as templated defaults.",
             descriptionZh: "设计并实现不像模板默认值的网页。",
-            version: "2026.09.11.1",
+            version: "0.2.13",
+            source: "builtin",
             skills: [skill("web-design", "网页视觉设计", "Web visual design")],
             hooks: [],
           },
@@ -743,15 +746,18 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             description:
               "Run a Session round after round until an objective is met, within a token budget.",
             descriptionZh: "在 Token 预算内一轮轮推进，直到达成目标。",
-            version: "2026.09.02.1",
+            version: "0.2.13",
+            source: "builtin",
             skills: [],
             hooks: ["stop"],
+            hookVersion: "2026.09.02.1",
           },
           {
             name: "continual-learning",
             description: "Write what a Session learned into the Agent's memory when it ends.",
             descriptionZh: "会话结束时把学到的东西写进智能体记忆。",
-            version: "2026.09.02.1",
+            version: "0.2.13",
+            source: "builtin",
             skills: [
               skill(
                 "continual-learning",
@@ -760,13 +766,15 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
               ),
             ],
             hooks: ["stop"],
+            hookVersion: "2026.09.02.1",
           },
           {
             name: "report-writer",
             description:
               "Turn findings into a structured report with a summary, sections and an appendix.",
             descriptionZh: "把调查结果整理成带摘要、分节和附录的报告。",
-            version: "2026.09.02.1",
+            version: "0.2.13",
+            source: "builtin",
             skills: [skill("report-writer", "撰写结构化报告", "Write structured reports")],
             hooks: [],
           },
@@ -846,12 +854,22 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     machineId: "demo-machine-0001",
     restartPending: false,
   };
+  // The sandbox backends' cards: their rows carry the bilingual descriptions and the shield
+  // icons the packages' own plugin.json and icon.svg hold.
+  const shield = (inner: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`;
   const pluginIndex: PluginIndexResponse = {
     plugins: [
       {
         name: "@penguinharness/sandbox-bwrap",
         version: "0.2.13",
         description: "Confines agent commands with bubblewrap on Linux.",
+        descriptionZh: "在 Linux 上用 bubblewrap 封禁 Agent 的命令。",
+        shortDescription: "Linux: confine file writes, cut the network, mask paths.",
+        shortDescriptionZh: "Linux：限制文件写入、断开网络、屏蔽路径。",
+        icon: shield(
+          '<circle cx="10.4" cy="10.3" r="1.7" /><circle cx="14.2" cy="12.3" r="1.1" /><circle cx="11.3" cy="14.9" r="0.8" />',
+        ),
         authors: ["PenguinHarness"],
         license: "MIT",
         repository: "https://github.com/prismshadow/penguin-harness",
@@ -863,6 +881,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         name: "@penguinharness/sandbox-seatbelt",
         version: "0.2.13",
         description: "Confines agent commands with Seatbelt on macOS.",
+        descriptionZh: "在 macOS 上用 Seatbelt 封禁 Agent 的命令。",
+        shortDescription: "macOS: confine file writes, cut the network, mask paths.",
+        shortDescriptionZh: "macOS：限制文件写入、断开网络、屏蔽路径。",
+        icon: shield(
+          '<path d="M8.6 15.4l6.8-6.8" /><rect x="10.4" y="10.4" width="3.2" height="3.2" rx="0.6" />',
+        ),
         authors: ["PenguinHarness"],
         license: "MIT",
         repository: "https://github.com/prismshadow/penguin-harness",
@@ -1412,8 +1436,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     {
       name: "sandbox",
       configuration: {
-        title: "Sandbox",
-        titleZh: "沙箱",
+        title: "Agent Sandbox",
+        titleZh: "Agent 运行沙箱",
         description: "How agent commands are confined on this machine.",
         descriptionZh: "这台机器上智能体命令的隔离方式。",
         properties: {

@@ -3,12 +3,20 @@
  * (manifest fields, the skills and hook packages they ship), the version scheme, the
  * category grouping, the preinstall filter, the name lookups, the doc conventions every
  * shipped skill follows, and the README tables that repeat the library for human readers.
+ *
+ * Versions, on a fixture library a temp host package carries (usePushedPluginLibrary):
+ * - A plugin's version is the npm version beside its plugin.json; a version left in
+ *   plugin.json is ignored, not refused.
+ * - Each skill keeps its own dated version through the loader's stamp, and the hook package
+ *   carries `hooks.version`.
+ * - A skill without a dated version, or a hook package without `hooks.version`, fails the
+ *   load naming the file, rather than reading as a version every install is behind.
  */
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   PLUGIN_CATEGORIES,
   PLUGIN_VERSION_PATTERN,
@@ -20,6 +28,7 @@ import {
   loadPluginGroups,
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
+  usePushedPluginLibrary,
   workspacePluginRoot,
   type LibraryPlugin,
   type PluginCategory,
@@ -31,19 +40,28 @@ const pluginsRoot = path.resolve(import.meta.dirname, "../../../plugins");
 const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
   name,
   description: `Do ${name}.`,
-  version: "2026.08.29.1",
+  version: "0.2.13",
   preinstall: true,
   skills: [],
   ...(category !== undefined ? { category } : {}),
 });
 
 describe("loadLibraryPlugins", () => {
-  it("loads every plugin directory sorted by name, each with a date-sequence version and a category", () => {
+  it("loads every plugin directory sorted by name: its npm version, a category, and a dated version on every part", async () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
     expect(plugins.length).toBe(15);
     for (const plugin of plugins) {
-      expect(plugin.version, plugin.name).toMatch(PLUGIN_VERSION_PATTERN);
+      const pkg = JSON.parse(
+        await fs.readFile(path.join(pluginsRoot, plugin.name, "package.json"), "utf8"),
+      ) as { version: string };
+      expect(plugin.version, plugin.name).toBe(pkg.version);
+      for (const skill of plugin.skills) {
+        expect(skill.version, `${plugin.name}/${skill.name}`).toMatch(PLUGIN_VERSION_PATTERN);
+      }
+      if (plugin.hooks !== undefined) {
+        expect(plugin.hooks.manifest.version, plugin.name).toMatch(PLUGIN_VERSION_PATTERN);
+      }
       expect(
         PLUGIN_CATEGORIES.map((c) => c.id),
         plugin.name,
@@ -70,7 +88,7 @@ describe("loadLibraryPlugins", () => {
     expect(libraryPlugin("goal")?.quickStart?.goal).toBe(true);
   });
 
-  it("stamps the plugin's metadata into each skill: slim file frontmatter, full installable frontmatter", async () => {
+  it("stamps the plugin's metadata into each skill: its own version in the file, full installable frontmatter", async () => {
     for (const plugin of loadLibraryPlugins()) {
       // Chinese in a manifest is written as real characters, not \uXXXX escapes.
       const rawManifest = await fs.readFile(
@@ -85,16 +103,22 @@ describe("loadLibraryPlugins", () => {
       for (const skill of plugin.skills) {
         const dir = path.join(pluginsRoot, plugin.name, "skills", skill.name);
         const file = await fs.readFile(path.join(dir, "SKILL.md"), "utf8");
-        // The library file carries only name + description; plugin.json is the metadata holder.
+        // The library file carries name, description and the skill's own dated version; the
+        // short descriptions are plugin.json's, stamped in by the loader.
         const fileFront = /^---\n([\s\S]*?)\n---/.exec(file)![1]!;
         expect(fileFront, `${plugin.name}/${skill.name} file frontmatter`).not.toMatch(
-          /^(version|short_description|short_description_zh):/m,
+          /^(short_description|short_description_zh):/m,
         );
-        // The installable content regenerates the frontmatter with the plugin's fields and
-        // keeps the body verbatim.
+        expect(parseSkillFrontmatter(file)!.version, `${plugin.name}/${skill.name}`).toMatch(
+          PLUGIN_VERSION_PATTERN,
+        );
+        // The installable content regenerates the frontmatter with the plugin's fields, keeps
+        // the skill's own version, and keeps the body verbatim.
         const meta = parseSkillFrontmatter(skill.content)!;
-        expect(meta.version, `${plugin.name}/${skill.name} version`).toBe(plugin.version);
-        expect(skill.version).toBe(plugin.version);
+        expect(meta.version, `${plugin.name}/${skill.name} version`).toBe(
+          parseSkillFrontmatter(file)!.version,
+        );
+        expect(skill.version).toBe(meta.version);
         expect(meta.shortDescriptionZh).toBe(plugin.shortDescriptionZh);
         expect(skill.content.endsWith(file.replace(/^---\n[\s\S]*?\n---/, ""))).toBe(true);
         // A skill's icon is its plugin's, stamped by the loader — no skill directory ships
@@ -118,11 +142,14 @@ describe("loadLibraryPlugins", () => {
     expect(Object.keys(files).some((rel) => rel.startsWith("reference/"))).toBe(true);
   });
 
-  it("a hook plugin carries a manifest naming its scripts and the hooks/ files to install; goal's start runs only when the host starts a goal", () => {
+  it("a hook plugin carries a manifest naming its scripts and the hooks/ files to install; goal's start runs only when the host starts a goal", async () => {
     const goal = libraryPlugin("goal");
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(pluginsRoot, "goal", "plugin.json"), "utf8"),
+    ) as { hooks: { version: string } };
     expect(goal?.hooks?.manifest).toMatchObject({
       name: "goal",
-      version: goal!.version,
+      version: manifest.hooks.version,
       stop: [{ command: "stop.mjs", timeout: 60 }],
       pre_tool_use: [],
       user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
@@ -194,12 +221,16 @@ describe("groupPlugins / loadPluginGroups", () => {
     expect(groups[2]).toMatchObject({ title: "Other", titleZh: "其他" });
   });
 
-  it("the library itself fills every category and leaves no Other group; hook packages sit with their audience", () => {
+  it("the library itself fills every category but Agent Sandbox and leaves no Other group; hook packages sit with their audience", () => {
     const groups = loadPluginGroups();
-    expect(groups.map((g) => g.id)).toEqual(PLUGIN_CATEGORIES.map((c) => c.id));
+    // The sandbox backends are server modules the registry lists, not library content.
+    expect(groups.map((g) => g.id)).toEqual(
+      PLUGIN_CATEGORIES.map((c) => c.id).filter((id) => id !== "sandbox"),
+    );
     const names = (id: string) => groups.find((g) => g.id === id)?.plugins.map((p) => p.name);
     expect(names("office-productivity")).toEqual([
       "a2ui",
+      "agent-company",
       "browser-automation",
       "continual-learning",
       "data-analysis",
@@ -214,7 +245,6 @@ describe("groupPlugins / loadPluginGroups", () => {
       "model-development",
       "skill-porting",
     ]);
-    expect(names("agent-company")).toEqual(["agent-company"]);
   });
 });
 
@@ -225,6 +255,88 @@ describe("lookups", () => {
     expect(libraryPlugin("../etc")).toBeUndefined();
     expect(librarySkill("goal")).toBeUndefined();
     expect(librarySkill("..")).toBeUndefined();
+  });
+});
+
+describe("plugin versions, on a fixture library", () => {
+  let root: string | null = null;
+
+  afterEach(async () => {
+    usePushedPluginLibrary(null);
+    if (root !== null) await fs.rm(root, { recursive: true, force: true });
+    root = null;
+  });
+
+  /** A host package holding one plugin, `@penguinharness/sample`, made of `files` (paths relative to the plugin directory); the library is pointed at it. */
+  async function library(files: Record<string, string>): Promise<void> {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-versions-"));
+    await fs.writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "fixture-host", dependencies: { "@penguinharness/sample": "*" } }),
+    );
+    const dir = path.join(root, "node_modules", "@penguinharness", "sample");
+    for (const [rel, text] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+      await fs.writeFile(path.join(dir, rel), text);
+    }
+    usePushedPluginLibrary(root);
+  }
+
+  const skillFile = (name: string, version?: string) =>
+    `---\nname: ${name}\ndescription: Do ${name}.\n${version === undefined ? "" : `version: ${version}\n`}---\n\n## Before you start\n`;
+  const PACKAGE = JSON.stringify({ name: "@penguinharness/sample", version: "3.1.4" });
+
+  it("takes a plugin's version from the npm package beside plugin.json, ignoring a version left in plugin.json", async () => {
+    await library({
+      "package.json": PACKAGE,
+      "plugin.json": JSON.stringify({ description: "Sample.", version: "2026.01.01.1" }),
+      "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
+    });
+    expect(libraryPlugin("sample")?.version).toBe("3.1.4");
+  });
+
+  it("keeps each skill's own dated version through the stamp, and gives the hook package hooks.version", async () => {
+    await library({
+      "package.json": PACKAGE,
+      "plugin.json": JSON.stringify({
+        description: "Sample.",
+        short_description: "Short.",
+        hooks: { version: "2026.09.02.3", stop: [{ command: "stop.mjs" }] },
+      }),
+      "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
+      "skills/two/SKILL.md": skillFile("two", "2026.08.15.1"),
+      "hooks/stop.mjs": "export {};\n",
+    });
+    const plugin = libraryPlugin("sample")!;
+    expect(plugin.skills.map((s) => [s.name, s.version])).toEqual([
+      ["one", "2026.09.01.2"],
+      ["two", "2026.08.15.1"],
+    ]);
+    // What an install writes carries the same version, beside the stamped short description.
+    for (const skill of plugin.skills) {
+      expect(parseSkillFrontmatter(skill.content)).toMatchObject({
+        version: skill.version,
+        shortDescription: "Short.",
+      });
+    }
+    expect(plugin.hooks?.manifest.version).toBe("2026.09.02.3");
+  });
+
+  it("refuses a skill without a dated version, and a hook package without hooks.version, naming the file", async () => {
+    await library({
+      "package.json": PACKAGE,
+      "plugin.json": JSON.stringify({ description: "Sample." }),
+      "skills/one/SKILL.md": skillFile("one"),
+    });
+    expect(() => libraryPlugin("sample")).toThrow(/skills[/\\]one[/\\]SKILL\.md: version/);
+    await fs.rm(root!, { recursive: true, force: true });
+
+    await library({
+      "package.json": PACKAGE,
+      "plugin.json": JSON.stringify({ description: "Sample.", hooks: { stop: [] } }),
+      "hooks/stop.mjs": "export {};\n",
+    });
+    expect(() => libraryPlugin("sample")).toThrow(/plugin\.json: hooks\.version/);
   });
 });
 

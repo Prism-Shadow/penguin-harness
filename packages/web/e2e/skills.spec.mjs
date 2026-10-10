@@ -5,8 +5,8 @@
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
  *   group name it's "办公效率 / 软件开发 / AI 应用开发 / Agent 调优", falling back to
  *   English by default); cards carry a custom icon (the plugin's first skill's icon.svg,
- *   sanitized then inlined, not the book fallback), with metadata showing the `YYYY.MM.DD.N`
- *   version and usage count (worded semantically, not a bare number badge);
+ *   sanitized then inlined, not the book fallback), with metadata showing the plugin's npm
+ *   version, its install status and usage count (worded semantically, not a bare number badge);
  * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
  *   Uninstall) button, with optimistic updates on install/uninstall;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
@@ -35,15 +35,15 @@ const U = "skillsuser";
 const P = "password123";
 
 // Category names follow the UI language: Chinese when the server dist ships titleZh, otherwise
-// falling back to English (both states are asserted). A category is a tag on each library
-// plugin's row now; the page is one flat list, with the installed section folded by default.
+// falling back to English (both states are asserted). The page groups its cards by category by
+// default, each category a collapsible section, open on entry.
 const CATEGORIES = [
   /Office Productivity|办公效率/,
   /Software Development|软件开发/,
   /AI App Development|AI 应用开发/,
 ];
-// The "Installed plugins (N)" section header: a collapsible button, folded on entry.
-const INSTALLED_HEADER = /已安装的插件|Installed plugins/;
+// The "Office Productivity" section header: a collapsible button, open on entry.
+const SECTION_HEADER = /^(Office Productivity|办公效率)/;
 // Library plugin cards the page renders (merged plugins carry several skills each).
 const PLUGINS = [
   "agent-tuning",
@@ -102,30 +102,26 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
-  // —— Plugin library page: sidebar nav entry + one list of cards under a folded "Installed plugins" header ——
+  // —— Plugin library page: sidebar nav entry + cards in category sections, open on entry ——
   await page.goto(`${BASE}/chat`);
   const navLink = page.getByRole("link", { name: "插件市场" });
   await expect(navLink).toBeVisible();
   await navLink.click();
   await expect(page).toHaveURL(/\/plugins$/);
-  const installedHeader = page.getByRole("button", { name: INSTALLED_HEADER });
-  await expect(installedHeader).toBeVisible();
-  await expect(installedHeader).toHaveAttribute("aria-expanded", "false");
-  await installedHeader.click();
-  await expect(installedHeader).toHaveAttribute("aria-expanded", "true");
+  const sectionHeader = page.getByRole("button", { name: SECTION_HEADER });
+  await expect(sectionHeader).toBeVisible();
+  await expect(sectionHeader).toHaveAttribute("aria-expanded", "true");
   // The section header carries no icon: the book path must not appear in it.
-  await expect(installedHeader.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
+  await expect(sectionHeader.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
   for (const c of CATEGORIES) {
     await expect(page.getByText(c).first()).toBeVisible();
   }
   for (const s of PLUGINS) {
     await expect(page.getByText(s, { exact: true })).toBeVisible();
   }
-  // Card metadata is worded semantically: `v<YYYY.MM.DD.N>` + how long ago that date is +
-  // usage count (default_agent has every preinstalled plugin -> at least 1 in use).
-  await expect(
-    page.getByText(/v\d{4}\.\d{2}\.\d{2}\.\d+ · .*更新 · .*Agent 在用/).first(),
-  ).toBeVisible();
+  // Card metadata is worded semantically: `v<npm version>` + the install status + usage count
+  // (default_agent has every preinstalled plugin -> at least 1 in use).
+  await expect(page.getByText(/v\d+\.\d+\.\d+.*已安装.*Agent 在用/).first()).toBeVisible();
 
   // Quick invoke opens a draft on the currently selected Agent (default_agent here), so it's
   // gated on that Agent having one of the plugin's skills: default_agent ships every preinstalled
@@ -149,13 +145,13 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   // becomes inert (a zero-height card can't be interacted with); clicking again unfolds it.
   // The folded content is still in the DOM (a grid-rows 0fr height transition), so assert
   // inert rather than visibility.
-  const installedSection = page.locator("section").filter({ has: installedHeader });
-  await installedHeader.click();
-  await expect(installedHeader).toHaveAttribute("aria-expanded", "false");
-  await expect(installedSection.locator("[inert]")).toHaveCount(1);
-  await installedHeader.click();
-  await expect(installedHeader).toHaveAttribute("aria-expanded", "true");
-  await expect(installedSection.locator("[inert]")).toHaveCount(0);
+  const section = page.locator("section").filter({ has: sectionHeader });
+  await sectionHeader.click();
+  await expect(sectionHeader).toHaveAttribute("aria-expanded", "false");
+  await expect(section.locator("[inert]")).toHaveCount(1);
+  await sectionHeader.click();
+  await expect(sectionHeader).toHaveAttribute("aria-expanded", "true");
+  await expect(section.locator("[inert]")).toHaveCount(0);
 
   // —— Manage installation Modal: an Agent row + Install/Installed (clicking Installed uninstalls) ——
   await page.getByRole("button", { name: "管理安装 data-analysis" }).click();

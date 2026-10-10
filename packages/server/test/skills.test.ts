@@ -25,7 +25,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { skillsDir, librarySkill, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
+import {
+  hooksDir,
+  libraryPlugin,
+  librarySkill,
+  loadPreinstalledPlugins,
+  pluginContentVersion,
+  skillsDir,
+  usePushedPluginLibrary,
+} from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
   AgentsResponse,
@@ -121,7 +129,6 @@ describe("skills api", () => {
       "office-productivity",
       "software-development",
       "ai-app-development",
-      "agent-company",
     ]);
     for (const group of body.groups) {
       expect(group.title.length).toBeGreaterThan(0);
@@ -135,21 +142,25 @@ describe("skills api", () => {
     const plugins = body.groups.flatMap((g) => g.plugins);
     for (const plugin of plugins) {
       expect(plugin.description.length, plugin.name).toBeGreaterThan(0);
-      expect(plugin.version, plugin.name).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
+      // The version a card shows is the plugin's npm version, its package.json's.
+      expect(plugin.version, plugin.name).toBe(libraryPlugin(plugin.name)!.version);
+      expect(plugin.version, plugin.name).toMatch(/^\d+\.\d+\.\d+/);
+      expect(plugin.source, plugin.name).toBe("builtin");
       expect(plugin.skills.length > 0 || plugin.hooks.length > 0, plugin.name).toBe(true);
       for (const skill of plugin.skills) {
         // The short description (preferred in compact spots like cards) is passed through for
         // every returned skill; a skill's icon is its plugin's, sent once on the plugin item;
-        // bodies never are.
+        // bodies never are. Each skill carries its own dated version.
         expect(skill.shortDescription, skill.name).toBeTruthy();
         expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
         expect(skill.icon, skill.name).toBeUndefined();
-        expect(skill.version).toBe(plugin.version);
+        expect(skill.version, skill.name).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
         expect("content" in skill).toBe(false);
       }
     }
     const goal = plugins.find((p) => p.name === "goal")!;
     expect(goal).toMatchObject({ hooks: ["user_prompt", "stop"], skills: [] });
+    expect(goal.hookVersion).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
     expect(goal.descriptionZh).toBeTruthy();
     expect("files" in goal).toBe(false);
     expect(plugins.find((p) => p.name === "continual-learning")).toMatchObject({
@@ -707,12 +718,16 @@ describe("skills api", () => {
       expect(fresh.skillCount).toBe(4);
       expect(fresh.pluginUpdates).toEqual([]);
 
-      // Age one installed copy: the library now carries a higher version than the disk does.
-      // The update is reported once, by PLUGIN, however many of its skills lag.
+      // Age one installed copy: the library's same skill now carries a higher version than the
+      // disk does. The update is reported once, by PLUGIN, however many of its skills lag, and
+      // labelled with the library's content version (its newest part).
       await setInstalledVersion("bare_updates", "penguin-sdk", "2000.01.01.1");
       const behind = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
       expect(behind.pluginUpdates).toEqual([
-        { name: "agent-development", version: librarySkill("penguin-sdk")!.plugin.version },
+        {
+          name: "agent-development",
+          version: pluginContentVersion(librarySkill("penguin-sdk")!.plugin),
+        },
       ]);
       // Reinstalling IS the update, so the badge clears with the same request the trail ends on.
       expect(
@@ -728,9 +743,9 @@ describe("skills api", () => {
       expect(
         (await owner.post(plugins("legacy_updates"), { names: ["agent-development"] })).status,
       ).toBe(201);
-      // The library's own version as it was spelled before the rename: same date, same sequence
-      // number, so the installed copy is current and nothing is reported behind.
-      const legacy = librarySkill("penguin-sdk")!.plugin.version.replace(
+      // The library skill's own version as it was spelled before the rename: same date, same
+      // sequence number, so the installed copy is current and nothing is reported behind.
+      const legacy = librarySkill("penguin-sdk")!.skill.version.replace(
         /^(\d{4})\.(\d{2})\.(\d{2})\./,
         "$1-$2-$3.",
       );
@@ -764,6 +779,143 @@ describe("skills api", () => {
       const agent = (await listAgents()).find((a) => a.agentId === "broken_updates")!;
       expect(agent.skillCount).toBe(0);
       expect(agent.pluginUpdates).toEqual([]);
+    });
+  });
+
+  /**
+   * Versions part by part, on a library of one fixture plugin (`sample`: npm 1.0.0, two skills
+   * and a hook package, each starting at the date version its plugin.json used to carry) that a
+   * temp host package holds — so a part can be bumped the way a later release bumps it.
+   *
+   * - Right after the upgrade, an Agent whose copy the previous release wrote — every part
+   *   stamped with the plugin's one date version — is current: nothing is offered.
+   * - A newer version of one skill, or of the hook package, is an update for that plugin, named
+   *   once; a new npm version alone is not. Reinstalling clears it.
+   * - The org runtime's per-plugin answer pairs the part that is behind with its library side.
+   * - The listing shows the npm version, whatever plugin.json still says.
+   * - A library plugin's README.md is served from its package root; none, or no such plugin, is 404.
+   */
+  describe("versions part by part, on a fixture library", () => {
+    let host: string;
+    const sampleDir = () => path.join(host, "node_modules", "@penguinharness", "sample");
+    const write = async (rel: string, text: string) => {
+      await fs.mkdir(path.dirname(path.join(sampleDir(), rel)), { recursive: true });
+      await fs.writeFile(path.join(sampleDir(), rel), text);
+    };
+    const skillMd = (name: string, version: string) =>
+      `---\nname: ${name}\ndescription: Do ${name}.\nversion: ${version}\n---\n\n## Before you start\n`;
+    const manifest = (hooksVersion: string) =>
+      JSON.stringify({
+        description: "A sample plugin.",
+        category: "office-productivity",
+        // What manifests carried before the npm version became the plugin's: ignored.
+        version: "2026.10.04.1",
+        hooks: { version: hooksVersion, stop: [{ command: "stop.mjs" }] },
+      });
+    const updatesOf = async (agentId: string) =>
+      (
+        (await (await owner.get(`/api/projects/${projectId}/agents`)).json()) as AgentsResponse
+      ).agents.find((a) => a.agentId === agentId)!.pluginUpdates;
+
+    beforeEach(async () => {
+      host = await fs.mkdtemp(path.join(t.root, "fixture-library-"));
+      await fs.writeFile(
+        path.join(host, "package.json"),
+        JSON.stringify({ name: "fixture-host", dependencies: { "@penguinharness/sample": "*" } }),
+      );
+      await write(
+        "package.json",
+        JSON.stringify({ name: "@penguinharness/sample", version: "1.0.0" }),
+      );
+      await write("plugin.json", manifest("2026.10.04.1"));
+      await write("skills/one/SKILL.md", skillMd("one", "2026.10.04.1"));
+      await write("skills/two/SKILL.md", skillMd("two", "2026.10.04.1"));
+      await write("hooks/stop.mjs", "export {};\n");
+      usePushedPluginLibrary(host);
+    });
+    afterEach(async () => {
+      usePushedPluginLibrary(null);
+      await fs.rm(host, { recursive: true, force: true });
+    });
+
+    it("offers nothing right after the upgrade, then names the plugin once a skill moves on", async () => {
+      await createPlainAgent("parts_skill");
+      expect((await owner.post(plugins("parts_skill"), { names: ["sample"] })).status).toBe(201);
+      // What the previous release wrote: every part at the plugin's one date version.
+      const installed = path.join(skillsDir(t.root, projectId, "parts_skill"), "two", "SKILL.md");
+      expect(await fs.readFile(installed, "utf8")).toContain("version: 2026.10.04.1");
+      expect(await updatesOf("parts_skill")).toEqual([]);
+
+      await write("skills/two/SKILL.md", skillMd("two", "2026.10.09.1"));
+      expect(await updatesOf("parts_skill")).toEqual([{ name: "sample", version: "2026.10.09.1" }]);
+
+      expect((await owner.post(plugins("parts_skill"), { names: ["sample"] })).status).toBe(201);
+      expect(await updatesOf("parts_skill")).toEqual([]);
+    });
+
+    it("names the plugin when its hook package moves on, and never for a new npm version alone", async () => {
+      await createPlainAgent("parts_hook");
+      expect((await owner.post(plugins("parts_hook"), { names: ["sample"] })).status).toBe(201);
+      await write(
+        "package.json",
+        JSON.stringify({ name: "@penguinharness/sample", version: "2.0.0" }),
+      );
+      expect(await updatesOf("parts_hook")).toEqual([]);
+
+      await write("plugin.json", manifest("2026.10.09.2"));
+      expect(await updatesOf("parts_hook")).toEqual([{ name: "sample", version: "2026.10.09.2" }]);
+      const hooksJson = JSON.parse(
+        await fs.readFile(
+          path.join(hooksDir(t.root, projectId, "parts_hook"), "sample", "hooks.json"),
+          "utf8",
+        ),
+      ) as { version: string };
+      expect(hooksJson.version).toBe("2026.10.04.1");
+    });
+
+    it("answers the org runtime with the part that is behind, paired with its library side", async () => {
+      await createPlainAgent("parts_org");
+      expect((await owner.post(plugins("parts_org"), { names: ["sample"] })).status).toBe(201);
+      const ask = () => t.deps.agentService.pluginVersion(projectId, "parts_org", "sample");
+      // Current: the library side is no newer, so a pass leaves it alone.
+      expect(await ask()).toEqual({ installed: "2026.10.04.1", library: "2026.10.04.1" });
+
+      await write("skills/one/SKILL.md", skillMd("one", "2026.10.09.3"));
+      expect(await ask()).toEqual({ installed: "2026.10.04.1", library: "2026.10.09.3" });
+      // An Agent carrying none of it has nothing installed to compare.
+      expect(await t.deps.agentService.pluginVersion(projectId, "default_agent", "sample")).toEqual(
+        {
+          installed: null,
+          library: "2026.10.09.3",
+        },
+      );
+    });
+
+    it("lists the npm version, whatever plugin.json still says", async () => {
+      const body = (await (await member.get("/api/plugins")).json()) as PluginLibraryResponse;
+      const sample = body.groups.flatMap((g) => g.plugins).find((p) => p.name === "sample")!;
+      expect(sample).toMatchObject({ version: "1.0.0", hookVersion: "2026.10.04.1" });
+      expect(sample.skills.map((s) => s.version)).toEqual(["2026.10.04.1", "2026.10.04.1"]);
+    });
+
+    it("serves a library plugin's README.md, and 404 without one or for no such plugin", async () => {
+      const readme = `/api/plugins/sample/readme`;
+      const missing = await member.get(readme);
+      expect(missing.status).toBe(404);
+      expect(((await missing.json()) as { error: { code: string } }).error.code).toBe(
+        "readme_not_found",
+      );
+
+      await write("README.md", "# Sample\n\nWhat it does.\n");
+      const found = await member.get(readme);
+      expect(found.status).toBe(200);
+      expect(await found.json()).toEqual({ name: "sample", readme: "# Sample\n\nWhat it does.\n" });
+
+      const unknown = await member.get("/api/plugins/no-such-plugin/readme");
+      expect(unknown.status).toBe(404);
+      expect(((await unknown.json()) as { error: { code: string } }).error.code).toBe(
+        "unknown_plugin",
+      );
     });
   });
 });
