@@ -20,5 +20,5 @@ chat was back at its prompt and took input, without matching the prompt text.
   `/switch-model` and `/goal`, and `D;0` when it ended, or `D;1` when it ended in an error.
   Commands answered locally, such as `/thinking` and `/verbose`, ran no turn and were not
   enclosed.
-- Nothing was written when stdin was not a terminal.
-- The CLI page described the marks, in both languages.
+- Nothing was written unless both stdin and stdout were a terminal and `TERM` was not `dumb`.
+- The CLI page described the marks and noted that they were advisory, in both languages.

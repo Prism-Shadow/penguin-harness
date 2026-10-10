@@ -86,7 +86,8 @@ const CONT_PROMPT = "… ";
  * prompt's turn starts, `D;<0|1>` when it ends (1 = it ended in an error). Terminals that know
  * them can jump between prompts and select a turn's output; a host embedding the chat can tell
  * that it is back at its prompt and takes input. Zero-width and ignored by terminals that do
- * not know them; written on a TTY only.
+ * not know them; written only when stdin and stdout are both a terminal and `TERM` is not
+ * `dumb`. Advisory: model output reaches the terminal unfiltered and can carry them too.
  */
 function promptMark(kind: "A" | "B" | "C" | "D", exitCode?: number): string {
   return `\x1b]133;${kind}${exitCode === undefined ? "" : `;${exitCode}`}\x07`;
@@ -246,8 +247,11 @@ export function registerChatCommand(program: Command, t: Messages): void {
 
       let state: ChatState = "idle";
       let closed = false;
+      // The marks are output: a TTY stdin is not enough when stdout is redirected to a file or
+      // a pipe, or the terminal is a dumb one.
+      const marksOn = isTTY && out.isTTY === true && process.env.TERM !== "dumb";
       const mark = (kind: "A" | "B" | "C" | "D", exitCode?: number): void => {
-        if (isTTY) out.write(promptMark(kind, exitCode));
+        if (marksOn) out.write(promptMark(kind, exitCode));
       };
       /** Set while a turn runs; SIGINT posts /abort through it exactly once per turn. */
       let abortTurn: (() => void) | null = null;
