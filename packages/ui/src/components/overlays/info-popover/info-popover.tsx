@@ -1,6 +1,14 @@
 /**
  * Circled "?" that discloses an explanation on demand.
  *
+ * Hovering opens it: a mouse resting on the "?" shows the panel after the tooltip's delay, the
+ * panel stays while the pointer moves into it (so its text can be selected and a link in it
+ * followed), and it closes a moment after the pointer leaves both. A click pins it open until an
+ * outside click, Esc, a scroll or a resize, and a second click closes it. Touch has no hover, so
+ * there a tap is the way in; the keyboard toggles it with Enter or Space, and focus alone opens
+ * nothing, or tabbing through a form of "?"s would spray panels. Those rules are
+ * `useHoverDisclosure`'s, where any other hover-to-explain trigger gets them too.
+ *
  * Explanatory prose falls into two kinds, and only one of them belongs here. **Semantics** —
  * what a section is, what a field means, what it affects, when a change takes effect — is read
  * once and then never again, so leaving it on screen costs every later visit a paragraph of
@@ -16,15 +24,19 @@
  * a portaled node sits in the root stacking context and must clear the modal overlay's z-50.
  *
  * The trigger's accessible name is the interface's "More info" (`UiStrings.moreInfo`), with the
- * subject folded in when the caller names one (`UiStrings.moreInfoAbout`).
+ * subject folded in when the caller names one (`UiStrings.moreInfoAbout`). It carries no tooltip:
+ * a circled "?" beside a title already reads as help for that title, and hovering it shows the
+ * explanation itself, so a tooltip saying "More info" would only stand in the way. The name
+ * exists for assistive technology only.
  */
-import { useId, useState } from "react";
+import { useId } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ICON_SIZE } from "../../../icon-scale";
 import { useUiStrings } from "../../../strings";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
+import { useHoverDisclosure } from "../hover-disclosure/use-hover-disclosure";
 import { usePortalPanel } from "../portal-panel/use-portal-panel";
 
 const PANEL_WIDTH = 288; // w-72, the OptionMenu panel width
@@ -48,11 +60,11 @@ export function InfoPopover({
   className?: string;
 }) {
   const strings = useUiStrings();
-  const [open, setOpen] = useState(false);
+  const { open, close, triggerProps, panelProps } = useHoverDisclosure();
   const panelId = useId();
   const { triggerRef, panelRef, position } = usePortalPanel({
     open,
-    onClose: () => setOpen(false),
+    onClose: close,
     // Panel geometry: a fixed 288px column whose height is two to six lines of text.
     estimatedHeight: 160,
     panelWidth: PANEL_WIDTH,
@@ -64,13 +76,12 @@ export function InfoPopover({
         ref={triggerRef}
         type="button"
         aria-label={name}
-        data-tooltip={name}
         aria-expanded={open}
         aria-controls={panelId}
         // While open the panel is also the trigger's description, so a screen reader reads the
         // explanation on focus rather than only announcing that something expanded.
         aria-describedby={open ? panelId : undefined}
-        onClick={() => setOpen((v) => !v)}
+        {...triggerProps}
         className={`inline-flex shrink-0 items-center justify-center rounded-full text-fg-subtle transition-colors duration-150 hover:text-fg-muted ${className}`}
       >
         <GlyphIcon d={ICONS.helpCircle} size={size} />
@@ -82,6 +93,7 @@ export function InfoPopover({
             ref={panelRef}
             id={panelId}
             role="tooltip"
+            {...panelProps}
             style={{
               position: "fixed",
               top: position.topPx,

@@ -82,6 +82,24 @@ describe("FolderSection and MoreRow", () => {
     expect(html).toContain("rows");
   });
 
+  it("folds its rows and its paging rows away together, through the shared fold", () => {
+    const folder = (open: boolean) =>
+      inZh(
+        createElement(
+          FolderSection,
+          { label: "Archived", open, onToggle: () => {}, more: true },
+          createElement("ul", null, "rows"),
+        ),
+      );
+    expect(folder(true)).toContain(
+      'data-fold="settled" class="grid"><div class="min-h-0 min-w-0"><ul>',
+    );
+    const folded = folder(false);
+    expect(folded).toContain('aria-expanded="false"');
+    expect(folded).not.toContain("rows");
+    expect(folded).not.toContain('aria-label="更多"');
+  });
+
   it("disables a pending row and shows the loading label in place of its text", () => {
     const html = inZh(
       createElement(MoreRow, { label: "Show 7 more", pending: true, onClick: () => {} }),

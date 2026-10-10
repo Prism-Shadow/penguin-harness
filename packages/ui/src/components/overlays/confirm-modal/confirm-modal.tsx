@@ -18,7 +18,9 @@
  */
 import type { ReactNode } from "react";
 import { Button } from "../../actions/button/button";
+import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
+import { ICON_SIZE } from "../../../icon-scale";
 import { Modal } from "../modal/modal";
 
 /**
@@ -26,12 +28,8 @@ import { Modal } from "../modal/modal";
  * overwrite or save. The tone is carried by the glyph's ink alone, on the same neutral disc for
  * both — an icon never sits in a tint of its own tone.
  */
-function ToneMark({ tone }: { tone: "danger" | "primary" }) {
-  const glyph =
-    tone === "danger"
-      ? ICONS.triangleAlert
-      : // Pencil-line (lucide): writing changes down.
-        "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
+function ToneMark({ tone, glyph: own }: { tone: "danger" | "primary"; glyph?: string }) {
+  const glyph = own ?? (tone === "danger" ? ICONS.triangleAlert : ICONS.penLine);
   return (
     <span
       aria-hidden
@@ -39,18 +37,7 @@ function ToneMark({ tone }: { tone: "danger" | "primary" }) {
         tone === "danger" ? "text-tone-danger-fg" : "text-tone-neutral-fg"
       }`}
     >
-      <svg
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d={glyph} />
-      </svg>
+      <GlyphIcon d={glyph} size={ICON_SIZE.sectionMark} />
     </span>
   );
 }
@@ -73,6 +60,11 @@ export interface ConfirmModalProps {
   onSecondary?: () => void;
   /** Confirm button variant: danger for deletions, primary for saves and other overwrites. */
   tone?: "danger" | "primary";
+  /**
+   * The leading mark's drawing (an `ICONS` path) when the tone's default does not say what the
+   * action does — a download for an install, say. The tone still picks its ink.
+   */
+  glyph?: string;
   busy?: boolean;
   children: ReactNode;
 }
@@ -88,13 +80,14 @@ export function ConfirmModal({
   secondaryLabel,
   onSecondary,
   tone = "danger",
+  glyph,
   busy = false,
   children,
 }: ConfirmModalProps) {
   return (
     <Modal open={open} title={title} onClose={onClose} headerless widthClass="sm:max-w-sm">
       <div className="flex items-start gap-3">
-        <ToneMark tone={tone} />
+        <ToneMark tone={tone} {...(glyph !== undefined ? { glyph } : {})} />
         <div className="min-w-0 flex-1 pt-1.5">{children}</div>
       </div>
       {/* Wraps rather than overflows: three choices with long labels don't fit one row inside

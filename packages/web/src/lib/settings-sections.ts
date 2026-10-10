@@ -3,16 +3,15 @@
  *
  * Server-global pages write through /api/admin/settings (or the admin user routes) and
  * belong to admins alone; the personal pages are per-user preferences every signed-in user
- * owns (the credits page is one of them, open to everyone). Two pages additionally depend on
- * how this session runs: the account page only
+ * owns. Two pages additionally depend on how this session runs: the account page only
  * exists where a password can be changed (see offersChangePassword), and user management
  * disappears in desktop mode, where the app is single-user. The profile page is neither — an
  * avatar and a nickname are display data, so every signed-in session may set them. Updating
- * is not a page here at all — both the server check and the desktop client's live in the
- * sidebar user menu, under the entry that opens this dialog. The rules live here rather than
- * inside the dialog because this package's vitest runs in Node with no DOM — a pure function
- * is the only thing a test can pin directly — and because rail and content have to apply the
- * same rule to avoid a visible-but-forbidden entry.
+ * and the credits are not pages here — both live in the App info dialog, opened from the
+ * sidebar user menu. The rules live here rather than inside the dialog because this package's
+ * vitest runs in Node with no DOM — a pure function is the only thing a test can pin directly
+ * — and because rail and content have to apply the same rule to avoid a visible-but-forbidden
+ * entry.
  *
  * A page the viewer may not open is dropped from the list entirely rather than rendered
  * disabled: a greyed-out "Proxy" row still tells a non-admin the setting exists and that
@@ -31,10 +30,12 @@ export type SettingsSectionKey =
   | "appearance"
   | "shortcuts"
   | "account"
-  | "credits"
+  | "browser"
   | "proxy"
   | "uploads"
   | "company"
+  | "chromeExtension"
+  | "agentApi"
   | "plugins"
   | "users";
 
@@ -68,13 +69,17 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     // The desktop shell's own window has no password to change; a password-established
     // session against the same server still does. Same predicate as the old menu row.
     { key: "account", group: "personal", visible: (v) => offersChangePassword(v) },
-    // The bundled fonts and their licences. Every session, the desktop shell's own window
-    // included: MiSans's licence asks the app to credit it wherever it runs.
-    { key: "credits", group: "personal", visible: () => true },
+    // The user's agent browser: the desktop app's choice of backend, and the Chromes paired to
+    // the account. Every user may pair their own Chrome, so every session has it.
+    { key: "browser", group: "personal", visible: () => true },
     { key: "proxy", group: "server", visible: (v) => v.isAdmin },
     { key: "uploads", group: "server", visible: (v) => v.isAdmin },
     // The company-mode master switch: server-global like the proxy and upload limits.
     { key: "company", group: "server", visible: (v) => v.isAdmin },
+    // Whether users may connect their own Chrome at all: server-global, like company mode.
+    { key: "chromeExtension", group: "server", visible: (v) => v.isAdmin },
+    // Whether any Agent's public API answers at all: server-global, like the Chrome switch.
+    { key: "agentApi", group: "server", visible: (v) => v.isAdmin },
     // The sandbox, and the options loaded plugins declare (server-global, like the plugins themselves).
     { key: "plugins", group: "server", visible: (v) => v.isAdmin },
     // Single-user under the desktop shell: the server rejects the admin user routes there.

@@ -103,7 +103,7 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
           pricing: { cacheRead: 1, cacheWrite: 5, output: 10 },
         },
         { provider: "openai", modelId: "gpt-5.5", apiKey: "sk-mock2" },
-        { provider: "google", modelId: "gemini-3-pro" },
+        { provider: "google", modelId: "gemini-3.1-pro-preview" },
       ],
     },
   });
@@ -274,29 +274,42 @@ test("models: group header actions collapse to icons instead of disappearing", a
 
   // The 900px viewport still renders the desktop sidebar, leaving only ~560px for a group
   // header. That is the issue #294 case: viewport breakpoints alone report plenty of room.
-  const openRouter = page.getByRole("button", { name: /OpenRouter \d+ 个模型/ });
-  await openRouter.waitFor();
+  const tokenDance = page.getByRole("button", { name: /TokenDance\s*\d+ 个模型/ });
+  await tokenDance.waitFor();
 
   // Every group-level action, addressed by its accessible name (aria-label = "action vendor",
   // stable across widths). Narrow rows must never hide an action: it keeps its icon (with a
-  // title tooltip) and sheds only the visible text label.
+  // tooltip) and sheds only the visible text label. TokenDance, not yet connected, offers
+  // its status as the connect button (words at every width: a grey dot alone would not read as
+  // a button) and Add model, then the speed test and the group settings — icons at every
+  // width, the settings last.
   const actions = [
-    { role: "button", name: "新增模型 OpenRouter", label: "新增模型" },
-    { role: "button", name: "统一配置 API key OpenRouter", label: "统一配置 API key" },
-    { role: "button", name: "测速 OpenRouter", label: "测速" },
-    { role: "link", name: "获取 API key OpenRouter", label: "获取 API key" },
+    { name: "未连接 · 连接 TokenDance", words: "未连接" },
+    { name: "添加模型 TokenDance", label: null },
+    { name: "测速 TokenDance", label: null },
+    { name: "设置 TokenDance", label: null },
   ];
+  // The header row: the collapse button sits in its left cluster, beside the group's star.
+  const header = tokenDance.locator("xpath=../..");
+  // The header's last action is the settings gear, on this group as on every other. A menu's
+  // trigger stands inside the box that anchors its panel, so the last item may hold the button.
+  const lastAction = await header.evaluate((header) => {
+    const last = header.querySelector("div.ml-auto > :last-child");
+    const button = last?.matches("button") ? last : last?.querySelector("button");
+    return button?.getAttribute("aria-label");
+  });
+  expect(lastAction, "settings stands last in the header").toBe("设置 TokenDance");
 
-  // The expected label regime is derived from the row's measured width against the
-  // container thresholds — @3xl (48rem) admits the button labels, @4xl (56rem) the link
-  // label — because how wide the row is at a given viewport depends on the environment's
-  // root font size (the sidebar, page padding, viewport breakpoints and the thresholds are
-  // all rem-based). A row hugging a threshold (±16px) skips the label assertions; the
-  // coverage checks after the sweep guarantee both extreme regimes were exercised anyway.
+  // The expected label regime is derived from the row's measured width against the @3xl
+  // container threshold (48rem) that admits the labels, because how wide the row is at a
+  // given viewport depends on the environment's root font size (the sidebar, page padding,
+  // viewport breakpoints and the thresholds are all rem-based). A row hugging the threshold
+  // (±16px) skips the label assertions; the coverage checks after the sweep guarantee both
+  // regimes were exercised anyway.
   const seen = { iconOnly: false, fullyLabeled: false };
   for (const width of [390, 900, 1180, 1280, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
-    const { rowWidth, rem } = await openRouter.locator("xpath=..").evaluate((header) => {
+    const { rowWidth, rem } = await header.evaluate((header) => {
       // Container queries resolve against the content box, so strip the row's padding.
       const s = getComputedStyle(header);
       return {
@@ -306,34 +319,38 @@ test("models: group header actions collapse to icons instead of disappearing", a
     });
     const regime = (remThreshold) =>
       Math.abs(rowWidth - remThreshold * rem) <= 16 ? null : rowWidth >= remThreshold * rem;
-    const buttonLabels = regime(48);
-    const linkLabel = regime(56);
-    if (buttonLabels === false && linkLabel === false) seen.iconOnly = true;
-    if (buttonLabels === true && linkLabel === true) seen.fullyLabeled = true;
+    const labels = regime(48);
+    if (labels === false) seen.iconOnly = true;
+    if (labels === true) seen.fullyLabeled = true;
 
-    for (const { role, name, label } of actions) {
-      const action = page.getByRole(role, { name });
-      await expect(action, `${label} action reachable @${width}`).toBeVisible();
-      await expect(action, `${label} action has a tooltip @${width}`).toHaveAttribute(
-        "title",
-        /.+/,
-      );
-      const expectLabel = role === "link" ? linkLabel : buttonLabels;
-      if (expectLabel === null) continue;
+    for (const { name, label, words } of actions) {
+      const action = page.getByRole("button", { name, exact: true });
+      await expect(action, `${name} reachable @${width}`).toBeVisible();
+      await expect(action, `${name} has a tooltip @${width}`).toHaveAttribute("data-tooltip", /.+/);
+      if (words !== undefined) {
+        await expect(
+          action.getByText(words, { exact: true }),
+          `${name} words @${width}`,
+        ).toBeVisible();
+        continue;
+      }
+      // The glyph's outer <svg>: a theme draws its own icon sets inside it.
+      const icon = action.locator("svg").first();
+      if (label === null) {
+        await expect(icon, `${name} icon shown @${width}`).toBeVisible();
+        continue;
+      }
+      if (labels === null) continue;
+      // A labelled action keeps its glyph and adds its words where the row has room.
       const text = action.locator("span", { hasText: label });
-      const icon = action.locator("svg");
-      if (expectLabel) {
+      await expect(icon, `${label} icon shown @${width}`).toBeVisible();
+      if (labels) {
         await expect(text, `${label} label shown @${width}`).toBeVisible();
-        // The link swaps between glyph and text; the buttons keep their glyph alongside.
-        if (role === "link") {
-          await expect(icon, `${label} icon swapped out @${width}`).toBeHidden();
-        }
       } else {
         await expect(text, `${label} label hidden @${width}`).toBeHidden();
-        await expect(icon, `${label} icon shown @${width}`).toBeVisible();
       }
     }
-    const metrics = await openRouter.locator("xpath=..").evaluate((header) => {
+    const metrics = await header.evaluate((header) => {
       const visible = (el) => {
         for (let node = el; node; node = node.parentElement) {
           const s = getComputedStyle(node);
@@ -533,7 +550,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
           modelId: "anthropic/claude-sonnet-4-5-thinking-preview",
           apiKey: "sk-mock3",
         },
-        { provider: "google", modelId: "gemini-3-pro" },
+        { provider: "google", modelId: "gemini-3.1-pro-preview" },
       ],
     },
   });

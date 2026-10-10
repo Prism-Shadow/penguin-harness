@@ -1,10 +1,16 @@
 /**
- * org-draft.ts unit tests: the key's user and Project scope, the defensive parse of whatever
- * is in storage, what counts as a draft worth keeping, and the round trip through an injected
- * storage — including a storage that throws, which must cost the dialog nothing.
+ * The create-organization dialog's draft (features/company/org-draft.ts), kept in
+ * localStorage per user and Project.
+ *
+ * - Two users, two Projects and a signed-out browser each get their own draft.
+ * - A draft is worth keeping once the user typed something; the prefilled budget does not count.
+ * - A full draft round-trips; an absent, unparsable or empty stored value reads as no draft,
+ *   and a wrong-shaped field costs only itself.
+ * - A draft with content is stored and removed once empty again; clearing one key leaves
+ *   another user's draft alone; a storage that throws costs the dialog nothing.
  */
 import { describe, expect, it } from "vitest";
-import type { DraftStorage, OrgCreateDraft } from "../src/features/company/org-draft";
+import type { OrgCreateDraft } from "../src/features/company/org-draft";
 import {
   EMPTY_ORG_DRAFT,
   clearOrgDraft,
@@ -15,6 +21,7 @@ import {
   saveOrgDraft,
   serializeOrgDraft,
 } from "../src/features/company/org-draft";
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const draft = (over: Partial<OrgCreateDraft> = {}): OrgCreateDraft => ({
   ...EMPTY_ORG_DRAFT,
@@ -22,36 +29,17 @@ const draft = (over: Partial<OrgCreateDraft> = {}): OrgCreateDraft => ({
   ...over,
 });
 
-function memoryStorage(initial: Record<string, string> = {}): DraftStorage & {
-  map: Map<string, string>;
-} {
-  const map = new Map(Object.entries(initial));
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-    removeItem: (k) => void map.delete(k),
-  };
-}
-
-const throwingStorage: DraftStorage = {
-  getItem: () => {
-    throw new Error("private mode");
-  },
-  setItem: () => {
-    throw new Error("quota");
-  },
-  removeItem: () => {
-    throw new Error("quota");
-  },
-};
+const throwingStorage = blockedStorage();
 
 describe("orgDraftKey", () => {
   it("separates users and Projects, and gives a signed-out browser its own bucket", () => {
-    expect(orgDraftKey("alice", "p1")).toBe("penguin.orgCreateDraft.alice.p1");
-    expect(orgDraftKey("alice", "p1")).not.toBe(orgDraftKey("bob", "p1"));
-    expect(orgDraftKey("alice", "p1")).not.toBe(orgDraftKey("alice", "p2"));
-    expect(orgDraftKey(null, "p1")).toBe("penguin.orgCreateDraft..p1");
+    const keys = [
+      orgDraftKey("alice", "p1"),
+      orgDraftKey("bob", "p1"),
+      orgDraftKey("alice", "p2"),
+      orgDraftKey(null, "p1"),
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
 

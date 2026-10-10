@@ -1,11 +1,12 @@
 /**
  * Small pieces every organization page shares: the organization's status pill and dot, the
  * budget bar and ring, the budget field and the two marks a budget box wears (its unit, and
- * what a converted amount will be stored as), the ticket status and priority pills, the
- * blocked badge, the failed-refresh line, the two ways out of a summary — the title that
- * opens what it names, and the corner button a titleless card or row uses instead — and
- * principal naming. The bordered KPI tile is the shared UI package's `StatTile`.
- * Every status colour here is a tone from lib/tone.ts, picked by meaning.
+ * what a converted amount will be stored as), a field title with its "?" for a control that
+ * has no info slot of its own, the ticket status and priority pills, the blocked badge, the
+ * failed-refresh line, the two ways out of a summary — the title that opens what it names, and
+ * the corner button a titleless card or row uses instead — and principal naming. The bordered
+ * KPI tile is the shared UI package's `StatTile`. Every status colour here is a tone from
+ * lib/tone.ts, picked by meaning.
  */
 import { useId } from "react";
 import type { ReactNode } from "react";
@@ -18,10 +19,11 @@ import {
   AgentAvatar,
   Badge,
   FieldError,
-  FieldHint,
   FieldLabel,
   GlyphIcon,
+  ICONS,
   ICON_SIZE,
+  InfoPopover,
   Input,
   Notice,
   ProgressBar,
@@ -39,11 +41,8 @@ import { parsePrincipal } from "./principals";
 import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
 import type { OrgStatusKind } from "./shell-org-status";
 
-/** Circled exclamation (lucide circle-alert): the mark of an invalid chart entry or ticket file, and of the finance page's alert count. */
-export const INVALID_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01";
-
-/** Arrow leaving to the upper right (lucide arrow-up-right): the mark of a jump to another page. */
-const JUMP_ICON = "M7 7h10v10M7 17 17 7";
+/** Circled exclamation: the mark of an invalid chart entry or ticket file, and of the finance page's alert count. */
+export const INVALID_ICON = ICONS.alertCircle;
 
 /**
  * The way out of a card or a row that has no title to click: a flat glyph button that opens the
@@ -75,7 +74,7 @@ export function JumpButton({
       aria-label={label}
       className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${className}`}
     >
-      <GlyphIcon d={JUMP_ICON} size={ICON_SIZE.inlineGlyph} />
+      <GlyphIcon d={ICONS.arrowUpRight} size={ICON_SIZE.inlineGlyph} />
     </button>
   );
 }
@@ -87,18 +86,22 @@ export function JumpButton({
  * inert. Where a row has no natural title, JumpButton is the way out instead. (The ticket
  * board's card is the one surface that is a button whole: see tickets-page.tsx.)
  *
- * The visible text is the accessible name; `title` carries the destination as the tooltip, so
- * the name is still the thing the reader sees.
+ * The visible text is the accessible name. Its tooltip opens only when a row cuts that text off,
+ * so `hint` is the text whole, never the verb of the click.
  */
 export function TitleButton({
   onClick,
-  title,
+  hint,
   className = "",
   children,
 }: {
   onClick: () => void;
-  /** The tooltip: what a click opens, e.g. 「打开工单」. */
-  title?: string;
+  /**
+   * The whole of what the button shows, for when the row cuts it (a long ticket title), with
+   * the id when the reader may need it ("<title> · <id>"). Shown as text, so it wraps at words.
+   * The click needs no hint: the underline on hover already says the title opens something.
+   */
+  hint?: string;
   className?: string;
   children: ReactNode;
 }) {
@@ -106,12 +109,20 @@ export function TitleButton({
     <button
       type="button"
       onClick={onClick}
-      {...(title !== undefined ? { "data-tooltip": title } : {})}
+      {...(hint !== undefined ? { "data-tooltip": hint, "data-tooltip-content": "text" } : {})}
       className={`min-w-0 text-left hover:underline focus-visible:underline ${className}`}
     >
       {children}
     </button>
   );
+}
+
+/**
+ * A cut-off line's whole text for its hint: the title with the id after it, or the id alone when
+ * no title is known (a blank title, or a stand-in that is the id itself, counts as none).
+ */
+export function titledHint(title: string | undefined, id: string): string {
+  return title === undefined || title.trim() === "" || title === id ? id : `${title} · ${id}`;
 }
 
 /** The label of an organization's headline state. */
@@ -315,10 +326,41 @@ export function StoredUsdNote({ usd, currency }: { usd: number | null; currency:
 }
 
 /**
- * A budget field: a number box in the reader's currency with the unit after it, the hint (or
- * the error) beneath, and the stored amount under that while the two currencies differ. The
- * three dialogs that set a budget share it; the finance table edits inside a cell and wears
- * the two marks above on their own.
+ * A field's title with its "?" beside it, for a control that has no `info` slot of its own: a
+ * `Select`, a picker, the budget box. The "?" is a `<button>`, so it cannot sit inside a
+ * wrapping `<label>` (it would take the title's name, the trap the UI package's field.tsx
+ * documents); this row stands above the control instead. Pass `htmlFor` when the control has
+ * an id, otherwise the control names itself with `aria-label`. `required` draws the mark here
+ * only: the control's own `required` is what sets `aria-required`, and the caller keeps the two
+ * in step.
+ */
+export function InfoFieldLabel({
+  label,
+  info,
+  required,
+  htmlFor,
+}: {
+  label: string;
+  /** What the field means, disclosed by the "?". */
+  info: ReactNode;
+  required?: boolean;
+  htmlFor?: string;
+}) {
+  return (
+    <span className="mb-1 flex items-center gap-1">
+      <FieldLabel block={false} required={required} htmlFor={htmlFor}>
+        {label}
+      </FieldLabel>
+      <InfoPopover label={label}>{info}</InfoPopover>
+    </span>
+  );
+}
+
+/**
+ * A budget field: a number box in the reader's currency with the unit after it, what the cap
+ * means behind the title's "?", the error beneath, and the stored amount under that while the
+ * two currencies differ. The three dialogs that set a budget share it; the finance table edits
+ * inside a cell and wears the two marks above on their own.
  *
  * The box is bare — an `Input` with no title of its own — and the title is associated by
  * `htmlFor`, because a wrapping `<label>` names its first labelable descendant and this
@@ -328,7 +370,7 @@ export function MoneyPerMonthInput({
   label,
   currency,
   value,
-  hint,
+  info,
   error,
   placeholder,
   disabled = false,
@@ -339,7 +381,7 @@ export function MoneyPerMonthInput({
   currency: Currency;
   /** The typed text, in the reader's currency; budget-input.ts converts it to what is stored. */
   value: string;
-  hint?: string;
+  info?: ReactNode;
   error?: string;
   placeholder?: string;
   disabled?: boolean;
@@ -350,7 +392,11 @@ export function MoneyPerMonthInput({
   const errorId = `${controlId}-error`;
   return (
     <div>
-      <FieldLabel htmlFor={controlId}>{label}</FieldLabel>
+      {info !== undefined ? (
+        <InfoFieldLabel label={label} info={info} htmlFor={controlId} />
+      ) : (
+        <FieldLabel htmlFor={controlId}>{label}</FieldLabel>
+      )}
       <div className="flex items-center gap-2">
         <Input
           id={controlId}
@@ -370,11 +416,7 @@ export function MoneyPerMonthInput({
         />
         <MoneyPerMonthUnit currency={currency} />
       </div>
-      {error !== undefined ? (
-        <FieldError id={errorId}>{error}</FieldError>
-      ) : hint !== undefined ? (
-        <FieldHint>{hint}</FieldHint>
-      ) : null}
+      {error !== undefined && <FieldError id={errorId}>{error}</FieldError>}
       <StoredUsdNote usd={toStoredUsd(value, currency)} currency={currency} />
     </div>
   );

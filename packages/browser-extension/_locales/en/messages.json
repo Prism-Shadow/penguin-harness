@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "PenguinHarness Browser",
+    "description": "The extension's name, in Chrome and on the Chrome Web Store. A product name: keep it as it is."
+  },
+  "extDescription": {
+    "message": "Lets PenguinHarness agents drive the Chrome tabs you hand them: the Penguin tab group and tabs you add with this icon.",
+    "description": "The extension's one-line description in chrome://extensions and the Chrome Web Store; at most 132 characters. \"Penguin\" is the name of the extension's tab group."
+  }
+}

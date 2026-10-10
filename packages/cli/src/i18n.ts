@@ -44,10 +44,12 @@ export interface Messages {
     json: string;
     /** --server: explicit server URL (overrides PENGUIN_API_URL, the local lock and auto-start). */
     server: string;
-    /** --timeout: soft-yield wait budget on run/input/logs -f (30s / 5m / 2h / bare seconds). */
+    /** --timeout: soft-yield wait budget on run / session input / session log -f (30s / 5m / 2h / bare seconds). */
     timeout: string;
-    /** input/logs' --agent-id: whose most recent session the omitted session argument means. */
+    /** The session group's --agent-id: whose most recent session the omitted session argument means. */
     latestAgentId: string;
+    /** run's --title and session rename's -t/--title: empty or over `max` characters once whitespace is collapsed. */
+    titleInvalid(length: number, max: number): string;
   };
   /** Commander's own parse failures, rebuilt in the user's language (see usage-error.ts). */
   usage: {
@@ -70,11 +72,15 @@ export interface Messages {
     addDesc: string;
     addModelId: string;
     addProvider: string;
+    /** `model add`'s connection flags: the model's own value with --model-id, the group's without. */
     addApiKey: string;
+    addClearApiKey: string;
     addBaseUrl: string;
+    addClearBaseUrl: string;
     addContextWindow: string;
     addMaxTokens: string;
     addClientType: string;
+    addClearClientType: string;
     addVision: string;
     addNoVision: string;
     addFastMode: string;
@@ -92,6 +98,8 @@ export interface Messages {
     refProvider: string;
     listDesc: string;
     removeDesc: string;
+    /** `model remove`'s --model-id: optional there; without it the command removes the group's connection. */
+    removeModelId: string;
     langDesc: string;
     langArg: string;
     vaultDesc: string;
@@ -108,16 +116,31 @@ export interface Messages {
     goal: string;
     /** run's --session: reuse an existing Session (full id or unique fragment). */
     session: string;
-    /** run's --source: mark the NEW Session as created by a Benchmark evaluation. */
-    source: string;
     /** run's --background: POST the task and exit immediately, printing the session id. */
     background: string;
-    /** --session combined with --workspace / the model pair / --source: all fixed at creation. */
+    /** --session combined with --workspace / the model pair: both fixed at creation. */
     sessionNoOverride(): string;
-    /** --source given a value other than `benchmark` (the only origin a client may set). */
+    /** The retired --source given a value other than `benchmark`. Removed at 0.3.0 with the flag. */
     sourceInvalid(value: string): string;
+    /** The retired `--source benchmark`, accepted as a no-op until 0.3.0: why it is ignored. */
+    sourceIgnored(): string;
     /** --background never waits, so a wait budget cannot apply to it. */
     timeoutWithBackground(): string;
+    /** run's --title: name the Session being run (manual rename; the auto-title never overwrites it; with --session it renames the reused Session). */
+    title: string;
+  };
+  /** `penguin session`: the group that lists, reads, messages and renames sessions. */
+  session: {
+    /** Group description. */
+    desc: string;
+    /** `penguin session rename`'s own description. */
+    renameDesc: string;
+    /** rename's optional session_id argument. */
+    renameSessionId: string;
+    /** rename's required -t/--title option. */
+    renameTitle: string;
+    /** The success line (short id form; the full id is what --json prints). */
+    renamed(sessionId: string, title: string): string;
   };
   chat: {
     desc: string;
@@ -125,7 +148,7 @@ export interface Messages {
     /** chat's --verbose: start with full tool output (collapsing off). */
     verbose: string;
   };
-  /** `penguin ls`: session listing. */
+  /** `penguin session ls`: session listing. */
   ls: {
     desc: string;
     /** -a/--all: include archived sessions. */
@@ -143,15 +166,15 @@ export interface Messages {
     stateIdle(): string;
     stateRunning(): string;
   };
-  /** `penguin input`: send a message into an existing session (steer when running, task when idle). */
+  /** `penguin session input`: send a message into an existing session (steer when running, task when idle). */
   input: {
     desc: string;
     message: string;
     /** Poll form on a session that has produced no assistant text yet. */
     noReplyYet(): string;
   };
-  /** `penguin logs`: render a session's history, optionally following the live stream. */
-  logs: {
+  /** `penguin session log`: render a session's history, optionally following the live stream. */
+  log: {
     desc: string;
     tail: string;
     follow: string;
@@ -174,6 +197,58 @@ export interface Messages {
     colName(): string;
     colSessions(): string;
     colDescription(): string;
+    /** `penguin agent api …`: an agent's public API (this server's switches, approval mode and keys). */
+    apiDesc: string;
+    apiStatusDesc: string;
+    apiEnableDesc: string;
+    apiDisableDesc: string;
+    apiSetDesc: string;
+    /** --open / --no-open: keyless access on or off. */
+    apiOpen: string;
+    apiNoOpen: string;
+    /** --approve on enable/set: the mode API conversations are created with. */
+    apiApprove: string;
+    /** `set` given nothing to change. */
+    apiNothingToSet(): string;
+    apiKeysDesc: string;
+    apiKeysLsDesc: string;
+    apiKeysCreateDesc: string;
+    apiKeysRmDesc: string;
+    /** --name of `keys create`. */
+    apiKeyName: string;
+    apiServerDesc: string;
+    /** `server <state>` given something other than on/off. */
+    apiServerStateInvalid(value: string): string;
+    /** The status block: its heading, then one labelled line per fact. */
+    apiStatusTitle(agentRef: string): string;
+    apiFieldEnabled(): string;
+    apiFieldOpen(): string;
+    apiFieldApproval(): string;
+    apiFieldBaseUrl(): string;
+    apiFieldAgentId(): string;
+    apiFieldKeys(): string;
+    apiFieldServer(): string;
+    apiYes(): string;
+    apiNo(): string;
+    apiServerOn(): string;
+    apiServerOff(): string;
+    /** `keys ls` columns, and the line for an agent with none. */
+    apiColKeyId(): string;
+    apiColKeyName(): string;
+    apiColPrefix(): string;
+    apiColCreated(): string;
+    apiColLastUsed(): string;
+    apiKeyNever(): string;
+    apiKeysEmpty(agentRef: string): string;
+    /** stderr beside the bare secret on stdout. */
+    apiKeyCreated(name: string, prefix: string, agentRef: string): string;
+    apiKeyDeleted(keyId: string, agentRef: string): string;
+    /** After `server on|off`. */
+    apiServerSet(on: boolean): string;
+    /** A write refused 403 human_required: it carried the local API token, and no stored sign-in stood in. */
+    apiSignInRequired(): string;
+    /** On stderr after `--open` switched keyless access on. */
+    apiOpenWarning(): string;
   };
   /** `penguin project`: project listing. */
   project: {
@@ -589,6 +664,7 @@ export interface Messages {
       screenshot: string;
       dialog: string;
       memory: string;
+      backend: string;
     };
     /** `label: value`, in the language's punctuation. */
     line(label: string, value: string): string;
@@ -598,8 +674,19 @@ export interface Messages {
     noTabs(): string;
     available(): string;
     unavailable(reason: string): string;
-    /** Why the browser cannot be driven, and what to do: it lives in the desktop app, which must be open. */
+    /**
+     * The value of `backend:` on the status line: `builtin` or `chrome` as the API names them, then
+     * the user's Chrome when one is paired (its name and the extension's version).
+     */
+    backendValue(backend: string, extension?: { name: string; version: string }): string;
+    /**
+     * Why the browser cannot be driven, and what to do: the built-in browser lives in the desktop
+     * app, which must be open; the user's own Chrome needs the extension paired, connected and
+     * allowed on the server. Undefined: no server could be reached at all.
+     */
     unavailableHint(reason: string | undefined): string;
+    /** `not_supported`: what only the built-in browser has (import, history), asked of the user's Chrome. */
+    notSupported(): string;
     /**
      * The value of `memory:`: what the browser's pages hold together and how many tabs, then this
      * computer's free and total memory when the server reports them.
@@ -683,9 +770,9 @@ export interface Messages {
     stillRunning(shortId: string): string;
     /** Caller-context lookup failed (PENGUIN_SESSION_ID names a session this server cannot answer for): plain defaults apply. */
     callerDefaultsFailed(sessionId: string): string;
-    /** Dim stderr note naming the session a bare `logs` / `input` resolved to (the agent's most recent). */
+    /** Dim stderr note naming the session a bare `session log` / `input` / `rename` resolved to (the agent's most recent). */
     latestSession(sessionId: string): string;
-    /** Bare `logs` / `input` when the agent has no session at all: what to run to get one. */
+    /** Bare `session log` / `input` / `rename` when the agent has no session at all: what to run to get one. */
     noSessionsYet(agentId: string, projectId: string): string;
   };
   /** `/thinking` display when the Session pins no level: the Agent's configured default applies. */
@@ -904,6 +991,22 @@ export interface Messages {
   thinkingSet(level: string): string;
   /** Invalid `--thinking` / `/thinking` value (lists the selectable levels). */
   thinkingInvalid(value: string): string;
+  /** Bare `/switch-model`: the Session's current model (a formatted label) plus the usage; a switch compacts first. */
+  switchModelCurrent(model: string): string;
+  /** `/switch-model` with anything but exactly `<provider> <model_id>`. */
+  switchModelUsage(): string;
+  /** After `/switch-model` completed: the model the Session was on and the one it is on now (formatted labels). */
+  switchModelDone(previous: string, next: string): string;
+  /** 409 `task_in_progress` / `compacting`: the Session is busy (possibly driven from another surface). */
+  switchModelBusy(): string;
+  /** 409 `same_model`: the Session already runs on the target. */
+  switchModelSame(model: string): string;
+  /** 409 `model_not_configured`: the target is not in the Project config; names the `penguin config model` commands to list and add models. */
+  switchModelNotConfigured(model: string, listCommand: string, addCommand: string): string;
+  /** 409 `model_unavailable`: the target is configured but cannot be constructed (e.g. no credential); `detail` is the server's message, verbatim (may be empty). */
+  switchModelUnavailable(model: string, detail: string): string;
+  /** 409 `compaction_not_configured`: a switch always compacts first, and this Session has no compaction. */
+  switchModelNoCompaction(): string;
   /** `/verbose` toggled on: tool output renders in full from here on. */
   verboseOn(): string;
   /** `/verbose` toggled off: long tool output is collapsed again from here on. */
@@ -916,7 +1019,7 @@ export interface Messages {
   approvalDecision(decision: "allow" | "deny" | "forbidden"): string;
   /** run/chat given only one of --model-id / --provider: a model reference is always an explicit pair, never a lookup. */
   modelRefIncomplete(): string;
-  /** --resume is mutually exclusive with --workspace/--model-id (neither can change once the Session is created). */
+  /** --resume is mutually exclusive with --workspace/--model-id/--provider (the resumed Session keeps its own); points at `/switch-model` for changing the model inside the chat. */
   resumeNoOverride(): string;
   /** --resume given without a session id, and the current Agent has no Session at all. */
   resumeNoSession(): string;
@@ -939,12 +1042,37 @@ export interface Messages {
   modelRemoved(model: string, defaultModel: string | undefined): string;
   /** `model remove` on a pair the Project config doesn't have. */
   modelNotConfigured(model: string): string;
-  /** `model add` refused: a new entry in a first-party vendor group under a model id AgentHub cannot route. */
+  /** `model add` refused: a new entry in a first-party vendor group under a model id MMSP cannot route (it begins with no known vendor prefix). */
   modelNotRoutable(model: string): string;
+  /** A new entry in a built-in group that takes no hand-added models (every one but custom, vLLM, OpenRouter, TokenDance and SiliconFlow). */
+  modelNotAddable(model: string, group: string): string;
   /** Follows modelRemoved when the removed entry was also the vision model. */
   visionModelCleared(): string;
+  /** `model list`: heads the models block. */
   modelListTitle(): string;
   modelListEmpty(): string;
+  /** `model list`: heads the groups' stored connections, printed above the models. */
+  groupListTitle(): string;
+  /** `model add` without --model-id refused: a flag that describes one model (context window, output cap, vision, fast mode, prices, --set-default) was given. */
+  modelGroupOnlyFlags(group: string): string;
+  /** `model add` without --model-id refused: --provider is no built-in group, names no model, and breaks the group-name rule. */
+  providerInvalidGroup(group: string): string;
+  /** `model add` refused: a connection field was both set and cleared. */
+  providerFlagConflict(flag: string, clearFlag: string): string;
+  /** `model add` refused: a connection field was given an empty value (clearing takes its --clear-* flag). */
+  providerBlankValue(flag: string, clearFlag: string): string;
+  /** `model add` without --model-id refused: --base-url is not an absolute http(s) URL. */
+  providerInvalidBaseUrl(baseUrl: string): string;
+  /** `model add` without --model-id refused: no field to set or clear. */
+  providerNothingToSet(group: string): string;
+  /** `model add` without --model-id done; `overriding` = the group's models a changed field passes by (their own value, or a group key that does not reach their base URL). */
+  providerSaved(group: string, overriding: number): string;
+  /** Follows providerSaved for a group of the user's own that has no model yet. */
+  providerNoModels(group: string): string;
+  /** `model remove` without --model-id refused: the group stores no connection. */
+  providerNothingToRemove(group: string): string;
+  /** `model remove` without --model-id done; `models` = the group's models, which all stay. */
+  providerRemoved(group: string, models: number): string;
   vaultSet(key: string): string;
   vaultRemoved(key: string): string;
   vaultKeyMissing(key: string): string;
@@ -1011,6 +1139,7 @@ const en: Messages = {
     timeout:
       "Wait at most this long (30s / 5m / 2h, or bare seconds), then detach and leave the task running (exit 0)",
     latestAgentId: "Agent whose most recent session is used when no session id is given",
+    titleInvalid: (length, max) => `--title must be 1–${max} characters (got ${length}).`,
   },
   usage: {
     missingArgument: (name) => `missing required argument <${name}>`,
@@ -1024,25 +1153,35 @@ const en: Messages = {
   },
   config: {
     desc: "Manage Project configuration",
-    modelDesc: "Manage model credentials and the default model",
-    addDesc: "Add or update a model, optionally writing a credential",
-    addModelId: "Upstream model id sent to AgentHub as-is (e.g. claude-sonnet-4-6)",
+    modelDesc: "Manage models, their groups' connections and the default model",
+    addDesc:
+      "Add or update a model; without --model-id, set a group's connection (API key, base URL, protocol)",
+    addModelId:
+      "Upstream model id sent to MMSP as-is (e.g. claude-sonnet-4-6); omit it to set the group's connection",
     addProvider:
-      "Provider group stored alongside model_id; required, never inferred (use custom for anything without a vendor group)",
-    addApiKey: "API key, stored inline in the Project's hidden .project_config.toml",
-    addBaseUrl: "Custom base URL",
+      "Provider group: the model's, or the one whose connection to set; required, never inferred (use custom for anything without a vendor group)",
+    addApiKey:
+      "API key, stored in the Project's hidden .project_config.toml: the model's own with --model-id, else the group key (used by the group's models without a key of their own that go to the group's endpoint)",
+    addClearApiKey:
+      "Remove the stored API key: the model's own with --model-id (it then uses the group key), else the group key",
+    addBaseUrl:
+      "Base URL: the model's own with --model-id, else the group's; a model without one follows its group, then the client's default endpoint",
+    addClearBaseUrl:
+      "Remove the stored base URL: the model's own with --model-id, else the group's",
     addContextWindow: "Context window size (tokens)",
     addMaxTokens:
       "Per-model max output tokens (positive integer); when set it overrides the Agent's max_tokens, omit to inherit — lower it for small-context models",
     addClientType:
-      "AgentHub client type (e.g. openai-chat); defaults by provider group when omitted",
+      "MMSP client type (openai-responses, ant-messages, openai-chat, google-genai or mmsp, or a vendor's official client such as google-official): the model's own with --model-id, else the group's; a model without one follows its group, else MMSP routes it by id (a new custom or own-group model gets openai-chat when its group sets none)",
+    addClearClientType:
+      "Remove the stored client type: the model's own with --model-id, else the group's",
     addVision: "Mark the model as supporting image input (vision)",
     addNoVision: "Mark the model as NOT supporting image input; omit both to keep current",
     addFastMode:
       "Enable fast mode: faster output at premium pricing (models without a fast tier reject requests carrying it)",
     addNoFastMode: "Disable fast mode (the default); omit both to keep current",
     fastModeUnsupported: (ref: string): string =>
-      `Warning: ${ref} cannot serve fast mode — AgentHub's client for it rejects the parameter, so its requests will fail. Re-run with --no-fast-mode to turn it off.`,
+      `Warning: ${ref} cannot serve fast mode — MMSP's client for it rejects the parameter, so its requests will fail. Re-run with --no-fast-mode to turn it off.`,
     addPriceCacheRead: "Price per 1M tokens: cache read (USD)",
     addPriceCacheWrite: "Price per 1M tokens: cache write (USD)",
     addPriceOutput: "Price per 1M tokens: output (USD)",
@@ -1052,8 +1191,12 @@ const en: Messages = {
       "Set the vision model that reads images for non-vision session models (read_file hands images to it)",
     refModelId: "Upstream model id; forms the (provider, model_id) pair reference with --provider",
     refProvider: "Provider group of the referenced entry (see `penguin config model list`)",
-    listDesc: "List the Project's models (API keys hidden)",
-    removeDesc: "Remove a model from the Project (clears the default / vision pointers naming it)",
+    listDesc:
+      "List the groups' connections, then the Project's models with the connection each one uses: (provider) marks a group value, (env) an environment key (API keys hidden)",
+    removeDesc:
+      "Remove a model from the Project (clears the default / vision pointers naming it); without --model-id, remove the group's connection",
+    removeModelId:
+      "Upstream model id of the entry to remove; omit it to remove the group's connection instead (its models stay)",
     langDesc:
       "Set the interface language (en|zh); persists PENGUIN_LANG to your shell startup file",
     langArg: "Language: en or zh",
@@ -1069,20 +1212,22 @@ const en: Messages = {
     message: "Prompt for this Task",
     goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
     session: "Reuse an existing Session (full id or a unique fragment, e.g. the 8-hex tail)",
-    source:
-      "Mark the new session as created by a Benchmark evaluation (`benchmark`); the Web App files it under the Evaluations folder",
     background: "Post the task and exit immediately, printing the session id",
+    title:
+      "Name the Session (manual rename; the auto-generated title never overwrites it; with --session, renames the reused Session)",
     sessionNoOverride: () =>
-      "--session reuses an existing Session: --workspace, --model-id, --provider and --source cannot be combined with it (none can change after creation).",
+      "--session reuses an existing Session: --workspace, --model-id and --provider cannot be combined with it (the Session keeps its own; /switch-model inside penguin chat --resume changes its model, compacting first).",
     sourceInvalid: (value) =>
-      `Invalid --source value "${value}". The only accepted value is benchmark.`,
+      `Invalid --source value "${value}". penguin run takes no --source: every Session it creates is a CLI Session.`,
+    sourceIgnored: () =>
+      "--source benchmark is no longer needed and is ignored: every Session penguin run creates is a CLI Session, listed in the Web App's Background folder.",
     timeoutWithBackground: () =>
       "--timeout bounds the wait, and --background does not wait: drop one of them.",
   },
   chat: {
     desc: "Open the interactive REPL",
     resume:
-      "Resume an existing Session (defaults to the agent's most recent one); workspace and model follow the original Session",
+      "Resume an existing Session (defaults to the agent's most recent one); workspace and model follow the original Session (/switch-model changes the model inside the chat, compacting first)",
     verbose:
       "Show full tool output (by default long tool outputs are collapsed to their first and last lines; /verbose toggles it mid-chat)",
   },
@@ -1106,13 +1251,22 @@ const en: Messages = {
     message: "Message text (omit to poll the session's last assistant reply instead)",
     noReplyYet: () => "(no assistant reply yet)",
   },
-  logs: {
+  session: {
+    desc: "Work with the project's sessions: list them, read a session's history, send it a message, rename it",
+    renameDesc:
+      "Set a session's title (the manual rename; the auto-generated title never overwrites it)",
+    renameSessionId:
+      "The session to rename (full id or a unique fragment, e.g. the 8-hex tail; default: PENGUIN_SESSION_ID, else the agent's most recent session)",
+    renameTitle: "The new title",
+    renamed: (sessionId, title) => `Renamed ${sessionId} to \u201c${title}\u201d`,
+  },
+  log: {
     desc: "Render a session's history (defaults to the agent's most recent session)",
     tail: "Show only the last <n> entries",
     follow: "Keep following the live stream after the history",
     tailInvalid: (value) => `Invalid --tail value "${value}": expected a positive integer.`,
     timeoutNeedsFollow: () =>
-      "--timeout only applies to -f/--follow: without it, logs never waits.",
+      "--timeout only applies to -f/--follow: without it, session log never waits.",
   },
   agent: {
     desc: "Manage the project's agents",
@@ -1128,6 +1282,53 @@ const en: Messages = {
     colName: () => "NAME",
     colSessions: () => "SESSIONS",
     colDescription: () => "DESCRIPTION",
+    apiDesc: "Manage an agent's public API: the switch, keyless access, approval mode and keys",
+    apiStatusDesc: "Show the agent's API settings, its address and the server-wide switch",
+    apiEnableDesc: "Turn the agent's API on",
+    apiDisableDesc: "Turn the agent's API off (settings and keys are kept)",
+    apiSetDesc: "Change keyless access or the approval mode without turning the API on or off",
+    apiOpen: "Allow keyless access: anything that can reach the server can talk to the agent",
+    apiNoOpen: "Require a key",
+    apiApprove:
+      "Approval mode new API conversations start with: allow-all, deny-all, read-only or always-ask (asks go to the caller)",
+    apiNothingToSet: () => "Nothing to change: pass --open, --no-open or --approve <mode>.",
+    apiKeysDesc: "Manage the agent's API keys",
+    apiKeysLsDesc: "List the agent's API keys",
+    apiKeysCreateDesc: "Create an API key; the key is printed once, alone on stdout",
+    apiKeysRmDesc: "Delete an API key; programs using it are refused from then on",
+    apiKeyName: "Name of the key (1-64 characters)",
+    apiServerDesc: "Turn the Agent API on or off for the whole server (admins only)",
+    apiServerStateInvalid: (value) => `Invalid state "${value}": expected on or off.`,
+    apiStatusTitle: (agentRef) => `Agent API of ${agentRef}`,
+    apiFieldEnabled: () => "Enabled",
+    apiFieldOpen: () => "Keyless access",
+    apiFieldApproval: () => "Approval mode",
+    apiFieldBaseUrl: () => "Base URL",
+    apiFieldAgentId: () => "Agent ID",
+    apiFieldKeys: () => "Keys",
+    apiFieldServer: () => "Server switch",
+    apiYes: () => "yes",
+    apiNo: () => "no",
+    apiServerOn: () => "on",
+    apiServerOff: () => "off (every API request is refused)",
+    apiColKeyId: () => "ID",
+    apiColKeyName: () => "NAME",
+    apiColPrefix: () => "PREFIX",
+    apiColCreated: () => "CREATED",
+    apiColLastUsed: () => "LAST USED",
+    apiKeyNever: () => "never",
+    apiKeysEmpty: (agentRef) => `${agentRef} has no API keys.`,
+    apiKeyCreated: (name, prefix, agentRef) =>
+      `Created key "${name}" (${prefix}…) for ${agentRef}. It is shown once, above; store it now.`,
+    apiKeyDeleted: (keyId, agentRef) => `Deleted key ${keyId} of ${agentRef}.`,
+    apiServerSet: (on) =>
+      on
+        ? "The Agent API is on for this server."
+        : "The Agent API is off for this server: every request is refused; per-agent settings and keys are kept.",
+    apiSignInRequired: () =>
+      "Sign in first: `penguin auth login` (or `penguin auth token` on the server's machine). The local API token may not change an Agent's exposure.",
+    apiOpenWarning: () =>
+      "Warning: keyless access is on. Anything that can reach this server's address can now talk to the agent without a key, on the Project's models and credentials. Keep it on only for a server that listens on loopback; `--no-open` turns it off.",
   },
   project: {
     desc: "Manage projects",
@@ -1448,8 +1649,8 @@ const en: Messages = {
     colPrincipal: () => "PRINCIPAL",
   },
   browser: {
-    desc: "The desktop app's built-in browser: read pages, run JavaScript, click and type, import sign-ins",
-    statusDesc: "Whether the built-in browser is available, and its tabs",
+    desc: "The agent browser: read pages, run JavaScript, click and type, import sign-ins",
+    statusDesc: "Whether the agent browser is available, which backend it is, and its tabs",
     tabsDesc: "List the open tabs (* marks the active one)",
     openDesc:
       "Open a URL in the active tab (in a new one when none is open), or in a new tab with --new-tab",
@@ -1518,6 +1719,7 @@ const en: Messages = {
       screenshot: "screenshot",
       dialog: "dialog",
       memory: "memory",
+      backend: "backend",
     },
     line: (label, value) => `${label}: ${value}`,
     tabHead: (id, title, url, loading) =>
@@ -1525,6 +1727,10 @@ const en: Messages = {
     noTabs: () => "none",
     available: () => "available",
     unavailable: (reason) => `unavailable (${reason})`,
+    backendValue: (backend, extension) =>
+      extension === undefined
+        ? backend
+        : `${backend} (${extension.name}, extension ${extension.version})`,
     unavailableHint: (reason) => {
       const base =
         "The built-in browser needs the PenguinHarness desktop app, and the app must be open";
@@ -1532,8 +1738,16 @@ const en: Messages = {
         return `${base}: this desktop app is too old for it, so update the app.`;
       if (reason === "no_window") return `${base}: it has no open window, so open it.`;
       if (reason === "not_desktop") return `${base}: this server is not running inside it.`;
-      return `${base}.`;
+      if (reason === "extension_not_paired")
+        return "No Chrome is paired for this user. Ask the user to install the PenguinHarness Browser extension and pair it: Browser panel → Connect your Chrome.";
+      if (reason === "extension_disconnected")
+        return "The user's Chrome is not connected. Ask the user to open Chrome with the PenguinHarness Browser extension enabled, or to pair it again in the Browser panel.";
+      if (reason === "extension_disabled")
+        return "An admin has turned off Chrome extension connections on this server, so the user's Chrome cannot be driven.";
+      return "The browser is driven through a running PenguinHarness server, and none was reached: open the desktop app, or point --server or PENGUIN_API_URL at the server.";
     },
+    notSupported: () =>
+      "This belongs to the built-in browser; this user's agents drive their own Chrome, which keeps its own sign-ins and history. Ask the user to sign in in the Penguin tab in Chrome instead.",
     memoryLine: (total, tabs, system) =>
       `${total} across ${tabs} ${tabs === 1 ? "tab" : "tabs"}` +
       (system !== undefined ? ` · this computer: ${system.free} free of ${system.total}` : ""),
@@ -1611,16 +1825,16 @@ const en: Messages = {
     httpError: (status, code, message) =>
       `Server error ${status} (${code})${message ? `: ${message}` : ""}`,
     sessionNotFound: (ref, projectId) =>
-      `No session matching "${ref}" in project ${projectId} (try \`penguin ls\`).`,
+      `No session matching "${ref}" in project ${projectId} (try \`penguin session ls\`).`,
     sessionAmbiguous: (ref, candidates) =>
       `"${ref}" matches ${candidates.length} sessions:\n  ${candidates.join("\n  ")}\nUse a longer fragment or the full id.`,
     streamLost: (detail) => `Lost the server stream and reconnecting failed: ${detail}`,
     streamResynced: () =>
-      "[stream] reconnected past the server's replay buffer; some output may be missing here (penguin logs shows the full history)",
+      "[stream] reconnected past the server's replay buffer; some output may be missing here (penguin session log shows the full history)",
     timeoutInvalid: (value) =>
       `Invalid --timeout value "${value}": expected 30s, 5m, 2h, or a bare number of seconds.`,
     stillRunning: (shortId) =>
-      `[still running] session ${shortId} continues on the server — follow with \`penguin logs -f ${shortId}\` or poll with \`penguin input ${shortId}\``,
+      `[still running] session ${shortId} continues on the server — follow with \`penguin session log -f ${shortId}\` or poll with \`penguin session input ${shortId}\``,
     callerDefaultsFailed: (sessionId) =>
       `[caller context] could not read calling session ${sessionId}; using the plain defaults`,
     latestSession: (sessionId) => `[latest] session ${sessionId}`,
@@ -1772,7 +1986,7 @@ const en: Messages = {
 
   header: headerEn,
   chatHints: () =>
-    "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /goal runs a goal to completion; /compact to compact the context; /clear to start a fresh session; /thinking changes the thinking level; /verbose toggles full tool output; /exit to quit; and Ctrl-C interrupts the current conversation.",
+    "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /goal runs a goal to completion; /compact to compact the context; /clear to start a fresh session; /thinking changes the thinking level; /switch-model <provider> <model_id> switches the model (compacting the context first); /verbose toggles full tool output; /exit to quit; and Ctrl-C interrupts the current conversation.",
   confirmExit: () => "Exit penguin? [y/N] ",
   taskInterrupted: () => "[current conversation interrupted]",
   steerQueued: (text) => `» steering queued (delivered with the next turn): ${text}`,
@@ -1861,6 +2075,20 @@ const en: Messages = {
     `[thinking] level pinned to ${level} for this Session, effective from the next request — changing it invalidates the model's cached context, so /compact first is recommended (the Agent config is unchanged)`,
   thinkingInvalid: (value) =>
     `Invalid thinking level "${value}". Use low, medium, high, xhigh, or max.`,
+  switchModelCurrent: (model) =>
+    `[model switch] current model: ${model} — switch with /switch-model <provider> <model_id> (the context is compacted on the current model first)`,
+  switchModelUsage: () =>
+    "Usage: /switch-model <provider> <model_id>  (e.g. /switch-model deepseek deepseek-v4-pro; penguin config model list shows the configured models)",
+  switchModelDone: (previous, next) => `[model switch] model: ${previous} → ${next}`,
+  switchModelBusy: () =>
+    "[model switch] the Session is busy (a task or a compaction is running); switch once it finishes",
+  switchModelSame: (model) => `[model switch] already on ${model}; nothing to switch`,
+  switchModelNotConfigured: (model, listCommand, addCommand) =>
+    `[model switch] ${model} is not in the Project config: ${listCommand} lists the configured models, ${addCommand} adds it`,
+  switchModelUnavailable: (model, detail) =>
+    `[model switch] ${model} is configured but cannot be used${detail ? `: ${detail}` : ""}`,
+  switchModelNoCompaction: () =>
+    "[model switch] context compaction is not configured for this Session, and a model switch always compacts first",
   verboseOn: () => "[verbose] on — tool output from here on shows in full",
   verboseOff: () =>
     "[verbose] off — long tool output from here on is collapsed (/verbose to toggle)",
@@ -1876,7 +2104,7 @@ const en: Messages = {
   modelRefIncomplete: () =>
     "--model-id and --provider must be given together: a model reference is always an explicit (provider, model_id) pair. Omit both to use the Project default model.",
   resumeNoOverride: () =>
-    "--resume does not accept --workspace, --model-id or --provider: they follow the original Session and cannot change.",
+    "--resume does not accept --workspace, --model-id or --provider: the resumed Session keeps its own. To change its model, run /switch-model <provider> <model_id> inside the chat (it compacts the context first).",
   resumeNoSession: () => "No session to resume: this agent has no recorded sessions yet.",
   resumedBanner: (sessionId, messageCount) =>
     `[resumed] ${sessionId} · ${messageCount} message${messageCount === 1 ? "" : "s"} in the current context`,
@@ -1896,12 +2124,49 @@ const en: Messages = {
   modelRemoved: (model, def) => `Removed model ${model}. Default model: ${def ?? "(unset)"}`,
   modelNotConfigured: (model) => `Model ${model} is not in the Project config.`,
   modelNotRoutable: (model) =>
-    `Model ${model} cannot be routed: a vendor group carries built-in models only. ` +
+    `Model ${model} cannot be routed: a vendor group routes a model by the vendor prefix its id ` +
+    `begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). ` +
     `Add it under a custom group (--provider custom) with --client-type and --base-url, ` +
     `or pass --client-type to pin the protocol this model speaks.`,
+  modelNotAddable: (model, group) =>
+    `Model ${model} cannot be added: the ${group} group carries its built-in models only. ` +
+    `Add it under a custom group (--provider custom, or a group name of your own) ` +
+    `with --client-type and --base-url.`,
   visionModelCleared: () => "It was also the vision model; that setting is now unset.",
-  modelListTitle: () => "Configured models:",
+  modelListTitle: () => "Models:",
   modelListEmpty: () => "No models configured yet. Add one with `penguin config model add`.",
+  groupListTitle: () => "Groups:",
+  modelGroupOnlyFlags: (group) =>
+    `--context-window, --max-tokens, --vision, --fast-mode, the --price-* flags and --set-default ` +
+    `describe one model: add --model-id <upstream id>, or drop them to set the ${group} group's connection.`,
+  providerInvalidGroup: (group) =>
+    `Invalid group "${group}": a group name starts with a lowercase letter or digit and uses ` +
+    `only lowercase letters, digits, - and _ (at most 32 characters).`,
+  providerFlagConflict: (flag, clearFlag) => `${flag} and ${clearFlag} cannot be combined.`,
+  providerBlankValue: (flag, clearFlag) =>
+    `${flag} is empty. Pass a value, or ${clearFlag} to remove the stored one.`,
+  providerInvalidBaseUrl: (baseUrl) =>
+    `Invalid --base-url "${baseUrl}": a group's base URL must be a full URL starting with http:// or https://.`,
+  providerNothingToSet: (group) =>
+    `Nothing to change for group ${group}: pass --api-key, --base-url or --client-type, or one of the --clear-* flags.`,
+  providerSaved: (group, overriding) =>
+    `Saved the ${group} group's connection; its models without a value of their own follow it.` +
+    (overriding === 0
+      ? ""
+      : overriding === 1
+        ? " 1 model sets its own value and is unaffected."
+        : ` ${overriding} models set their own value and are unaffected.`),
+  providerNoModels: (group) =>
+    `Group ${group} has no models yet; the models you add to it will follow this connection.`,
+  providerNothingToRemove: (group) =>
+    `Group ${group} has no connection to remove. To remove a model, add --model-id <upstream id>.`,
+  providerRemoved: (group, models) =>
+    `Removed the ${group} group's connection.` +
+    (models === 0
+      ? ""
+      : models === 1
+        ? " Its 1 model stays; where it has no value of its own, it now uses the client defaults."
+        : ` Its ${models} models stay; the ones without a value of their own now use the client defaults.`),
   vaultSet: (key) =>
     `Saved vault entry ${key}. New conversations pick it up right away; running ones after their next compaction.`,
   vaultRemoved: (key) =>
@@ -1951,6 +2216,7 @@ const zh: Messages = {
     timeout:
       "最长等待时长（30s / 5m / 2h，或纯数字秒数）；到时脱开、任务继续在服务端运行（退出码 0）",
     latestAgentId: "省略 session id 时，取哪个 Agent 的最近一次会话",
+    titleInvalid: (length, max) => `--title 须为 1–${max} 个字符（实际 ${length} 个）。`,
   },
   usage: {
     missingArgument: (name) => `缺少必填参数 <${name}>`,
@@ -1964,22 +2230,30 @@ const zh: Messages = {
   },
   config: {
     desc: "管理 Project 配置",
-    modelDesc: "管理模型 credential 与默认模型",
-    addDesc: "新增或更新一个模型，并可写入 credential",
-    addModelId: "上游模型 id（如 claude-sonnet-4-6，原样发给 AgentHub）",
-    addProvider: "与 model_id 分列存储的 provider 分组；必填，不作推断（无厂商分组时填 custom）",
-    addApiKey: "API key，内联存入 Project 的隐藏文件 .project_config.toml",
-    addBaseUrl: "自定义 base url",
+    modelDesc: "管理模型、分组连接信息与默认模型",
+    addDesc: "新增或更新一个模型；不带 --model-id 即设置分组的连接信息（API key、base URL、协议）",
+    addModelId: "上游模型 id（如 claude-sonnet-4-6，原样发给 MMSP）；不给即设置分组的连接信息",
+    addProvider:
+      "provider 分组：模型所属的分组，或要设置连接信息的分组；必填，不作推断（无厂商分组时填 custom）",
+    addApiKey:
+      "API key，存入 Project 的隐藏文件 .project_config.toml：带 --model-id 为该模型自己的，否则为分组密钥（组内没有自己 key、访问分组端点的模型使用它）",
+    addClearApiKey:
+      "清除已存的 API key：带 --model-id 为该模型自己的（之后改用分组密钥），否则为分组密钥",
+    addBaseUrl:
+      "base URL：带 --model-id 为该模型自己的，否则为分组的；模型没有自己的即跟随分组，分组也没有即用客户端缺省端点",
+    addClearBaseUrl: "清除已存的 base URL：带 --model-id 为该模型自己的，否则为分组的",
     addContextWindow: "上下文窗口大小（token 数）",
     addMaxTokens:
       "该模型的最大输出长度（正整数）；设置后覆盖 Agent 的 max_tokens，缺省沿用——小上下文模型建议调低",
-    addClientType: "AgentHub 客户端协议（如 openai-chat）；缺省按 provider 分组的语义取值",
+    addClientType:
+      "MMSP 客户端协议（openai-responses、ant-messages、openai-chat、google-genai 或 mmsp，或厂商的官方客户端，如 google-official）：带 --model-id 为该模型自己的，否则为分组的；模型没有自己的即跟随分组，分组也没有即由 MMSP 按 id 路由（custom 与自建分组的新模型在分组未设协议时取 openai-chat）",
+    addClearClientType: "清除已存的协议：带 --model-id 为该模型自己的，否则为分组的",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",
     addFastMode: "开启快速模式：输出更快、按溢价计费（不支持 fast 档位的模型会拒绝请求）",
     addNoFastMode: "关闭快速模式（缺省即关闭）；两者都不给则保留原值",
     fastModeUnsupported: (ref: string): string =>
-      `警告：${ref} 不支持快速模式——AgentHub 为它选用的 client 会拒绝该参数，其请求都会失败。请用 --no-fast-mode 重新执行以关闭。`,
+      `警告：${ref} 不支持快速模式——MMSP 为它选用的 client 会拒绝该参数，其请求都会失败。请用 --no-fast-mode 重新执行以关闭。`,
     addPriceCacheRead: "每百万 token 价格：缓存命中（USD）",
     addPriceCacheWrite: "每百万 token 价格：缓存未命中（USD）",
     addPriceOutput: "每百万 token 价格：输出（USD）",
@@ -1988,8 +2262,11 @@ const zh: Messages = {
     visionDesc: "设置代读图片的视觉模型（不支持图片的会话模型用 read_file 读图时由它代读）",
     refModelId: "上游模型 id；与 --provider 构成 (provider, model_id) 成对引用",
     refProvider: "引用条目的 provider 分组（见 `penguin config model list`）",
-    listDesc: "列出当前 Project 的模型（API key 隐藏）",
-    removeDesc: "从当前 Project 删除一个模型（指向它的默认模型 / 视觉模型设置一并清空）",
+    listDesc:
+      "先列各分组的连接信息，再列当前 Project 的模型及其生效的连接信息：(provider) 标出取自分组的值，(env) 标出来自环境变量的 key（API key 隐藏）",
+    removeDesc:
+      "从当前 Project 删除一个模型（指向它的默认模型 / 视觉模型设置一并清空）；不带 --model-id 即移除分组的连接信息",
+    removeModelId: "要删除条目的上游模型 id；不给即只移除分组的连接信息（组内模型保留）",
     langDesc: "设置界面语言（en|zh）；将 PENGUIN_LANG 写入 shell 启动文件并持久化",
     langArg: "语言：en 或 zh",
     vaultDesc: "管理 Agent vault（注入该 Agent shell 命令的环境变量）",
@@ -2004,17 +2281,21 @@ const zh: Messages = {
     message: "本次 Task 的 Prompt",
     goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
     session: "复用既有 Session（完整 id 或唯一片段，如末尾 8 位十六进制）",
-    source: "把新建会话标记为 Benchmark 评估创建（`benchmark`）；Web App 将其归入「评估任务」子夹",
     background: "提交任务后立即退出，打印 session id",
+    title:
+      "为 Session 命名（手动重命名；自动生成的标题不会覆盖它；配合 --session 时重命名被复用的 Session）",
     sessionNoOverride: () =>
-      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider、--source 同时使用（Workspace、模型与来源创建后不可更换）。",
-    sourceInvalid: (value) => `无效的 --source 取值 "${value}"。唯一可用取值为 benchmark。`,
+      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider 同时使用（均沿用该 Session；如需换模型，在 penguin chat --resume 内用 /switch-model，会先压缩上下文）。",
+    sourceInvalid: (value) =>
+      `无效的 --source 取值 "${value}"。penguin run 不再接受 --source：它创建的每个会话都是 CLI 会话。`,
+    sourceIgnored: () =>
+      "--source benchmark 已不再需要，已忽略：penguin run 创建的每个会话都是 CLI 会话，列在 Web App 的「后台会话」折叠夹中。",
     timeoutWithBackground: () => "--timeout 限定等待，而 --background 不等待：二者去其一。",
   },
   chat: {
     desc: "打开交互式 REPL",
     resume:
-      "恢复既有 Session 继续对话（缺省恢复当前 Agent 最近一次）；Workspace 与模型沿用原 Session",
+      "恢复既有 Session 继续对话（缺省恢复当前 Agent 最近一次）；Workspace 与模型沿用原 Session（会话内可用 /switch-model 切换模型，会先压缩上下文）",
     verbose: "显示完整工具输出（缺省折叠过长的工具输出、只保留首尾数行；/verbose 可随时切换）",
   },
   ls: {
@@ -2037,12 +2318,20 @@ const zh: Messages = {
     message: "消息文本（省略时改为轮询该会话的最近助手回复）",
     noReplyYet: () => "（还没有助手回复）",
   },
-  logs: {
+  session: {
+    desc: "管理 Project 的会话：列出会话、查看历史、发送消息、重命名",
+    renameDesc: "设置会话标题（手动重命名；自动生成的标题不会覆盖它）",
+    renameSessionId:
+      "要重命名的会话，完整 id 或唯一片段（如末尾 8 位十六进制；缺省 PENGUIN_SESSION_ID，再缺省取当前 Agent 最近一次会话）",
+    renameTitle: "新标题",
+    renamed: (sessionId, title) => `已将 ${sessionId} 重命名为「${title}」`,
+  },
+  log: {
     desc: "渲染会话的历史消息（省略 session id 即取当前 Agent 最近一次会话）",
     tail: "只显示最后 <n> 条",
     follow: "渲染历史后继续跟随实时输出流",
     tailInvalid: (value) => `--tail 值「${value}」无效：应为正整数。`,
-    timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 logs 不等待。",
+    timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 session log 不等待。",
   },
   agent: {
     desc: "管理 Project 的 Agent",
@@ -2057,6 +2346,53 @@ const zh: Messages = {
     colName: () => "名称",
     colSessions: () => "会话数",
     colDescription: () => "描述",
+    apiDesc: "管理 Agent 的对外 API：开关、无密钥访问、审批模式与密钥",
+    apiStatusDesc: "查看 Agent 的 API 设置、访问地址与服务器总开关",
+    apiEnableDesc: "开启 Agent 的 API 访问",
+    apiDisableDesc: "关闭 Agent 的 API 访问（设置与密钥保留）",
+    apiSetDesc: "更改无密钥访问或审批模式，不改变开关",
+    apiOpen: "允许无密钥访问：任何能访问服务器的程序都能与该 Agent 对话",
+    apiNoOpen: "要求密钥",
+    apiApprove:
+      "新建 API 会话使用的审批模式：allow-all、deny-all、read-only 或 always-ask（需要确认时发给调用方）",
+    apiNothingToSet: () => "没有要更改的内容：请给出 --open、--no-open 或 --approve <mode>。",
+    apiKeysDesc: "管理 Agent 的 API 密钥",
+    apiKeysLsDesc: "列出 Agent 的 API 密钥",
+    apiKeysCreateDesc: "新建 API 密钥；密钥只输出一次，单独占据 stdout",
+    apiKeysRmDesc: "删除 API 密钥；使用它的程序此后会被拒绝",
+    apiKeyName: "密钥名称（1–64 个字符）",
+    apiServerDesc: "为整个服务器开启或关闭 Agent API（仅管理员）",
+    apiServerStateInvalid: (value) => `状态「${value}」无效：应为 on 或 off。`,
+    apiStatusTitle: (agentRef) => `${agentRef} 的 Agent API`,
+    apiFieldEnabled: () => "已开启",
+    apiFieldOpen: () => "无密钥访问",
+    apiFieldApproval: () => "审批模式",
+    apiFieldBaseUrl: () => "Base URL",
+    apiFieldAgentId: () => "Agent ID",
+    apiFieldKeys: () => "密钥数",
+    apiFieldServer: () => "服务器总开关",
+    apiYes: () => "是",
+    apiNo: () => "否",
+    apiServerOn: () => "开",
+    apiServerOff: () => "关（所有 API 请求均被拒绝）",
+    apiColKeyId: () => "ID",
+    apiColKeyName: () => "名称",
+    apiColPrefix: () => "前缀",
+    apiColCreated: () => "创建时间",
+    apiColLastUsed: () => "最近使用",
+    apiKeyNever: () => "从未",
+    apiKeysEmpty: (agentRef) => `${agentRef} 还没有 API 密钥。`,
+    apiKeyCreated: (name, prefix, agentRef) =>
+      `已为 ${agentRef} 新建密钥「${name}」（${prefix}…）。密钥只在上方显示这一次，请立即保存。`,
+    apiKeyDeleted: (keyId, agentRef) => `已删除 ${agentRef} 的密钥 ${keyId}。`,
+    apiServerSet: (on) =>
+      on
+        ? "这台服务器的 Agent API 已开启。"
+        : "这台服务器的 Agent API 已关闭：所有请求均被拒绝，各 Agent 的设置与密钥保留。",
+    apiSignInRequired: () =>
+      "请先登录：`penguin auth login`（或在服务器本机运行 `penguin auth token`）。本机 API token 不能改变 Agent 的对外暴露。",
+    apiOpenWarning: () =>
+      "警告：已开启无密钥访问。任何能访问此服务器地址的程序现在都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据。仅建议在只监听本机的服务器上保持开启；`--no-open` 可关闭。",
   },
   project: {
     desc: "管理 Project",
@@ -2352,8 +2688,8 @@ const zh: Messages = {
     colPrincipal: () => "主体",
   },
   browser: {
-    desc: "桌面应用的内置浏览器：读取页面、运行 JavaScript、点击与输入、导入登录状态",
-    statusDesc: "内置浏览器是否可用，以及它的标签页",
+    desc: "Agent 浏览器：读取页面、运行 JavaScript、点击与输入、导入登录状态",
+    statusDesc: "Agent 浏览器是否可用、使用哪种后端，以及它的标签页",
     tabsDesc: "列出打开的标签页（* 标出当前标签页）",
     openDesc: "在当前标签页打开 URL（没有标签页时新开一个）；--new-tab 则在新标签页打开",
     switchDesc: "把一个标签页设为当前标签页",
@@ -2418,6 +2754,7 @@ const zh: Messages = {
       screenshot: "截图",
       dialog: "对话框",
       memory: "内存",
+      backend: "后端",
     },
     line: (label, value) => `${label}：${value}`,
     tabHead: (id, title, url, loading) =>
@@ -2425,13 +2762,25 @@ const zh: Messages = {
     noTabs: () => "无",
     available: () => "可用",
     unavailable: (reason) => `不可用（${reason}）`,
+    backendValue: (backend, extension) =>
+      extension === undefined
+        ? backend
+        : `${backend}（${extension.name}，扩展 ${extension.version}）`,
     unavailableHint: (reason) => {
       const base = "内置浏览器需要 PenguinHarness 桌面应用，且应用必须处于打开状态";
       if (reason === "shell_unsupported") return `${base}：当前桌面应用版本过旧，请更新应用。`;
       if (reason === "no_window") return `${base}：应用当前没有打开的窗口，请打开它。`;
       if (reason === "not_desktop") return `${base}：当前服务器不是在桌面应用中运行的。`;
-      return `${base}。`;
+      if (reason === "extension_not_paired")
+        return "该用户还没有配对 Chrome。请用户安装 PenguinHarness Browser 扩展并完成配对：浏览器面板 →「连接你的 Chrome…」。";
+      if (reason === "extension_disconnected")
+        return "该用户的 Chrome 未连接。请用户打开装有 PenguinHarness Browser 扩展的 Chrome 并确认扩展已启用，或在浏览器面板中重新配对。";
+      if (reason === "extension_disabled")
+        return "管理员已在本服务器上关闭 Chrome 扩展连接，无法驱动该用户的 Chrome。";
+      return "浏览器要经由正在运行的 PenguinHarness 服务器驱动，但没有连上任何服务器：请打开桌面应用，或用 --server 或 PENGUIN_API_URL 指向该服务器。";
     },
+    notSupported: () =>
+      "这项功能只属于内置浏览器；该用户的 Agent 驱动的是用户自己的 Chrome，它自己保存登录状态和历史记录。需要登录时，请用户在 Chrome 的 Penguin 标签页中自行登录。",
     memoryLine: (total, tabs, system) =>
       `${total}（${tabs} 个标签页）` +
       (system !== undefined ? ` · 本机可用 ${system.free}，共 ${system.total}` : ""),
@@ -2506,15 +2855,15 @@ const zh: Messages = {
     httpError: (status, code, message) =>
       `服务器错误 ${status}（${code}）${message ? `：${message}` : ""}`,
     sessionNotFound: (ref, projectId) =>
-      `Project ${projectId} 中没有匹配「${ref}」的会话（可用 \`penguin ls\` 查看）。`,
+      `Project ${projectId} 中没有匹配「${ref}」的会话（可用 \`penguin session ls\` 查看）。`,
     sessionAmbiguous: (ref, candidates) =>
       `「${ref}」匹配到 ${candidates.length} 个会话：\n  ${candidates.join("\n  ")}\n请使用更长的片段或完整 id。`,
     streamLost: (detail) => `与服务器的输出流断开且重连失败：${detail}`,
     streamResynced: () =>
-      "[stream] 重连时已超出服务端回放缓冲，此处可能缺少部分输出（penguin logs 可查看完整历史）",
+      "[stream] 重连时已超出服务端回放缓冲，此处可能缺少部分输出（penguin session log 可查看完整历史）",
     timeoutInvalid: (value) => `--timeout 值「${value}」无效：应为 30s、5m、2h 或纯数字秒数。`,
     stillRunning: (shortId) =>
-      `[仍在运行] 会话 ${shortId} 继续在服务端执行——可用 \`penguin logs -f ${shortId}\` 跟随，或 \`penguin input ${shortId}\` 轮询`,
+      `[仍在运行] 会话 ${shortId} 继续在服务端执行——可用 \`penguin session log -f ${shortId}\` 跟随，或 \`penguin session input ${shortId}\` 轮询`,
     callerDefaultsFailed: (sessionId) =>
       `[调用方上下文] 无法读取调用方会话 ${sessionId}，改用普通缺省值`,
     latestSession: (sessionId) => `[latest] 会话 ${sessionId}`,
@@ -2657,7 +3006,7 @@ const zh: Messages = {
 
   header: headerZh,
   chatHints: () =>
-    "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/goal 以目标模式运行至完成；/compact 压缩上下文；/clear 开启全新会话；/thinking 调整思考等级；/verbose 切换完整工具输出；/exit 退出；Ctrl-C 中断对话。",
+    "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/goal 以目标模式运行至完成；/compact 压缩上下文；/clear 开启全新会话；/thinking 调整思考等级；/switch-model <provider> <model_id> 切换模型（先压缩上下文）；/verbose 切换完整工具输出；/exit 退出；Ctrl-C 中断对话。",
   confirmExit: () => "确认退出 penguin？[y/N] ",
   taskInterrupted: () => "[已中断当前对话]",
   steerQueued: (text) => `» 插话已排队（随下一轮送达）：${text}`,
@@ -2711,7 +3060,8 @@ const zh: Messages = {
       : status === "aborted"
         ? "[压缩] 已中断，保留当前上下文"
         : `[压缩] 失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}，保留当前上下文${
-            // retryable = 本次放弃、下次触发自动重试；fatal = 需先修复模型配置或凭据。旧 Trace 两者都拼作 "failed"。
+            // retryable = abandoned this time, retried at the next trigger; fatal = a config
+            // or credential change has to come first. Legacy Traces spell both "failed".
             status === "retryable"
               ? "，下次触发时重试"
               : status === "fatal"
@@ -2741,6 +3091,19 @@ const zh: Messages = {
   thinkingSet: (level) =>
     `[思考] 本 Session 的等级已钉为 ${level}，下一轮请求起生效——更换思考等级会使模型缓存失效，建议先 /compact 压缩上下文（不改动 Agent 配置）`,
   thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 low、medium、high、xhigh 或 max。`,
+  switchModelCurrent: (model) =>
+    `[切换模型] 当前模型：${model}——用 /switch-model <provider> <model_id> 切换（会先用当前模型压缩上下文）`,
+  switchModelUsage: () =>
+    "用法：/switch-model <provider> <model_id>（例如 /switch-model deepseek deepseek-v4-pro；penguin config model list 列出已配置的模型）",
+  switchModelDone: (previous, next) => `[切换模型] 模型：${previous} → ${next}`,
+  switchModelBusy: () => "[切换模型] 会话正忙（任务或压缩进行中），请待其结束后再切换",
+  switchModelSame: (model) => `[切换模型] 已在使用 ${model}，无需切换`,
+  switchModelNotConfigured: (model, listCommand, addCommand) =>
+    `[切换模型] Project 配置中没有 ${model}：${listCommand} 列出已配置的模型，${addCommand} 可添加它`,
+  switchModelUnavailable: (model, detail) =>
+    `[切换模型] ${model} 已配置但无法使用${detail ? `：${detail}` : ""}`,
+  switchModelNoCompaction: () =>
+    "[切换模型] 本 Session 未配置上下文压缩，而切换模型必须先压缩，因此无法切换",
   verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",
   verboseOff: () => "[详细输出] 已关闭——后续过长的工具输出将折叠（/verbose 切换）",
   toolOutputElided: (hidden) => `……（另有 ${hidden} 行，/verbose 显示完整输出）`,
@@ -2751,7 +3114,7 @@ const zh: Messages = {
   modelRefIncomplete: () =>
     "--model-id 与 --provider 必须成对给出：模型引用始终是显式的 (provider, model_id) 组合。两者都不给则使用 Project 默认模型。",
   resumeNoOverride: () =>
-    "--resume 不接受 --workspace、--model-id 与 --provider：均沿用原 Session，创建后不可更换。",
+    "--resume 不接受 --workspace、--model-id 与 --provider：均沿用原 Session。如需换模型，请在会话内使用 /switch-model <provider> <model_id>（会先压缩上下文）。",
   resumeNoSession: () => "没有可恢复的 Session：当前 Agent 还没有任何会话记录。",
   resumedBanner: (sessionId, messageCount) =>
     `[已恢复] ${sessionId} · 当前上下文共 ${messageCount} 条消息`,
@@ -2771,12 +3134,39 @@ const zh: Messages = {
   modelRemoved: (model, def) => `已删除模型 ${model}。当前默认模型：${def ?? "(未设置)"}`,
   modelNotConfigured: (model) => `模型 ${model} 不在当前 Project 配置中。`,
   modelNotRoutable: (model) =>
-    `模型 ${model} 无法路由：厂商分组只承载内置模型。` +
+    `模型 ${model} 无法路由：厂商分组按模型 id 开头的厂商前缀` +
+    `（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由。` +
     `请改用自定义分组（--provider custom）并附上 --client-type 与 --base-url，` +
     `或用 --client-type 指定该模型所用的协议。`,
+  modelNotAddable: (model, group) =>
+    `模型 ${model} 无法添加：${group} 分组只承载内置模型。` +
+    `请改用自定义分组（--provider custom，或自己命名的分组）并附上 --client-type 与 --base-url。`,
   visionModelCleared: () => "它同时是视觉模型，该设置已一并清空。",
-  modelListTitle: () => "已配置的模型：",
+  modelListTitle: () => "模型：",
   modelListEmpty: () => "尚未配置任何模型。用 `penguin config model add` 添加。",
+  groupListTitle: () => "分组：",
+  modelGroupOnlyFlags: (group) =>
+    `--context-window、--max-tokens、--vision、--fast-mode、各 --price-* 选项与 --set-default 只描述单个模型：` +
+    `请加上 --model-id <上游 id>，或去掉它们以设置分组 ${group} 的连接信息。`,
+  providerInvalidGroup: (group) =>
+    `分组名「${group}」无效：分组名以小写字母或数字开头，只含小写字母、数字、- 与 _，长度不超过 32。`,
+  providerFlagConflict: (flag, clearFlag) => `${flag} 与 ${clearFlag} 不能同时使用。`,
+  providerBlankValue: (flag, clearFlag) =>
+    `${flag} 为空。请给出取值，或用 ${clearFlag} 清除已存的值。`,
+  providerInvalidBaseUrl: (baseUrl) =>
+    `--base-url「${baseUrl}」无效：分组的 base URL 须为以 http:// 或 https:// 开头的完整地址。`,
+  providerNothingToSet: (group) =>
+    `分组 ${group} 没有要修改的内容：请给出 --api-key、--base-url 或 --client-type，或其中某一项的 --clear-* 选项。`,
+  providerSaved: (group, overriding) =>
+    `已保存分组 ${group} 的连接信息，组内没有自己设置对应项的模型随之使用。` +
+    (overriding === 0 ? "" : `另有 ${overriding} 个模型单独设置了对应项，不受影响。`),
+  providerNoModels: (group) =>
+    `分组 ${group} 下还没有模型；之后添加到该分组的模型将跟随这份连接信息。`,
+  providerNothingToRemove: (group) =>
+    `分组 ${group} 没有可移除的连接信息。要删除模型，请加上 --model-id <上游 id>。`,
+  providerRemoved: (group, models) =>
+    `已移除分组 ${group} 的连接信息。` +
+    (models === 0 ? "" : `组内 ${models} 个模型保留，没有自己设置对应项的模型改用客户端缺省。`),
   vaultSet: (key) => `已保存 vault 条目 ${key}。新对话立即生效；进行中的对话在下一次压缩后生效。`,
   vaultRemoved: (key) =>
     `已删除 vault 条目 ${key}。新对话立即生效；进行中的对话在下一次压缩后生效。`,

@@ -9,6 +9,10 @@
  *
  * MiSans's licence asks the software to credit the font; the sentence that does so is UI copy
  * and lives in the app's dictionaries, on the same page.
+ *
+ * The icon families the package's drawings come from are credited on the same page
+ * (`ICON_CREDITS`, below), their licence texts in `components/icons/sets/LICENSES/`, imported
+ * whole the same way.
  */
 import { THEME_IDS } from "../tokens";
 import type { ThemeId } from "../tokens";
@@ -20,6 +24,8 @@ import jetbrainsMono from "./LICENSES/jetbrains-mono.txt?raw";
 import misans from "./LICENSES/misans.txt?raw";
 import monaSans from "./LICENSES/mona-sans.txt?raw";
 import notoSansSc from "./LICENSES/noto-sans-sc.txt?raw";
+import lucide from "../components/icons/sets/LICENSES/lucide.txt?raw";
+import octicons from "../components/icons/sets/LICENSES/octicons.txt?raw";
 
 export interface FontCredit {
   /** The licence file's name in `LICENSES/`, without the extension. */
@@ -93,5 +99,45 @@ export const FONT_CREDITS: readonly FontCredit[] = [
     source: "@fontsource-variable/noto-sans-sc",
     licenseTitle: OFL,
     licenseText: notoSansSc,
+  },
+];
+
+export interface IconCredit {
+  /** The licence file's name in `components/icons/sets/LICENSES/`, without the extension. */
+  readonly id: string;
+  /** The icon family's display name. */
+  readonly name: string;
+  /** The themes that draw the family's icons. */
+  readonly themes: readonly ThemeId[];
+  /** Where the drawings come from. */
+  readonly source: string;
+  readonly licenseTitle: string;
+  readonly licenseText: string;
+}
+
+/**
+ * The icon families the package's drawings come from, credited beside the fonts. The Octicons set
+ * is GitHub's path data copied verbatim (`components/icons/sets/octicons.ts`), and no theme draws
+ * it today; the line set's glyphs are drawn after Lucide's and Feather's, whose one licence text
+ * covers both, and Frost and Primer draw them. The pixel set is drawn for this package and
+ * credits nobody.
+ */
+export const ICON_CREDITS: readonly IconCredit[] = [
+  {
+    // Drawn by no theme since 2026-10-02; the set still ships, so it is still credited.
+    id: "octicons",
+    name: "Octicons",
+    themes: [],
+    source: "https://github.com/primer/octicons",
+    licenseTitle: "MIT License",
+    licenseText: octicons,
+  },
+  {
+    id: "lucide",
+    name: "Lucide",
+    themes: ["modern", "github"],
+    source: "https://github.com/lucide-icons/lucide",
+    licenseTitle: "ISC License",
+    licenseText: lucide,
   },
 ];

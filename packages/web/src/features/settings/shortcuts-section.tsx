@@ -2,17 +2,23 @@
  * Shortcuts page of the System settings dialog: every rebindable command, grouped, each row a
  * recorder showing the current chord. Everything applies on the spot — the store writes the
  * browser mirror and the account's prefs — so there is no Save button; the trailing action row
- * only holds "Reset all". The rows form a dense list: small type, no rule between rows, the group
- * heading the only divider. A row's hint is a fact about its current state, kept on screen: a
- * conflict with another command first, then a claim on the chord from outside the page (a browser
- * tab never receives ⌘W; ⌘P takes over the browser's Print; the desktop menu also carries ⌘R).
+ * only holds "Reset all", which asks first however many shortcuts it would put back: what it
+ * undoes is the user's own setup, and nothing brings it back. Each group is a titled run of the
+ * settings rows every other page uses (`SettingsGroup`, `PrefRow`), so the page keeps their
+ * pitch. A row's hint is a fact about its current state, kept on screen: a conflict with another
+ * command first, then a claim on the chord from outside the page (a browser tab never receives
+ * ⌘W; ⌘P takes over the browser's Print; the desktop menu also carries ⌘R).
  */
 import { useState } from "react";
 import {
   Button,
   ConfirmModal,
   GlyphIcon,
+  ICONS,
   ICON_SIZE,
+  IconButton,
+  PrefRow,
+  SettingsGroup,
   SettingsSection,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -23,11 +29,7 @@ import { browserCommon, browserReserved, desktopReserved } from "../../lib/short
 import { isOverridden, resetAll, resetBinding, setBinding } from "../../lib/shortcuts/store";
 import type { Chord, CommandId, ShortcutCommand } from "../../lib/shortcuts/types";
 import { useKeymap } from "../../lib/shortcuts/use-keymap";
-import { toneInk } from "../../lib/tone";
 import { ShortcutRecorder } from "./shortcut-recorder";
-
-/** Counter-clockwise arrow: back to the default. */
-const RESET_ICON = "M3 12a9 9 0 1 0 2.64-6.36M3 4v5h5";
 
 interface RowHint {
   text: string;
@@ -85,35 +87,31 @@ function ShortcutRow({
 }) {
   const hint = rowHint(cmd, chord, conflicts);
   const overridden = isOverridden(cmd.id);
+  // The row draws a hint in the muted ink; a conflict or a chord the browser keeps says so in
+  // the attention tone instead.
+  const hintNode =
+    hint === null ? undefined : hint.tone === "attention" ? (
+      <span className="text-tone-attention-fg">{hint.text}</span>
+    ) : (
+      hint.text
+    );
   return (
-    <div className="flex items-center justify-between gap-4 py-1.5">
-      <div className="min-w-0">
-        <p className="text-xs font-medium">{S.shortcuts.commands[cmd.id]}</p>
-        {hint !== null && (
-          <p
-            className={`mt-0.5 text-[11px] ${
-              hint.tone === "attention" ? toneInk.attention : "text-gray-500 dark:text-gray-400"
-            }`}
-          >
-            {hint.text}
-          </p>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+    <PrefRow label={S.shortcuts.commands[cmd.id]} hint={hintNode}>
+      <div className="flex items-center gap-1.5">
         {overridden && (
-          <button
-            type="button"
-            data-tooltip={S.shortcuts.resetRow}
-            aria-label={`${S.shortcuts.resetRow}: ${S.shortcuts.commands[cmd.id]}`}
+          <IconButton
+            variant="ghost"
+            size="sm"
+            label={`${S.shortcuts.resetRow}: ${S.shortcuts.commands[cmd.id]}`}
+            title={S.shortcuts.resetRow}
             onClick={() => resetBinding(cmd.id)}
-            className="flex h-6 w-6 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
           >
-            <GlyphIcon d={RESET_ICON} size={ICON_SIZE.iconButton} />
-          </button>
+            <GlyphIcon d={ICONS.rotateCcw} size={ICON_SIZE.iconButton} />
+          </IconButton>
         )}
         <ShortcutRecorder chord={chord} onCommit={(next) => setBinding(cmd.id, next)} />
       </div>
-    </div>
+    </PrefRow>
   );
 }
 
@@ -130,34 +128,25 @@ export function ShortcutsSection() {
   return (
     <SettingsSection
       actions={
-        <Button
-          size="sm"
-          disabled={overriddenCount === 0}
-          onClick={() => {
-            // One override goes back without a question; several are worth a look first.
-            if (overriddenCount > 1) setConfirmReset(true);
-            else resetAll();
-          }}
-        >
+        <Button size="sm" disabled={overriddenCount === 0} onClick={() => setConfirmReset(true)}>
           {S.shortcuts.resetAll}
         </Button>
       }
     >
-      {groups.map(({ group, commands }) => (
-        <div key={group}>
-          <h3 className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
-            {S.shortcuts.groups[group]}
-          </h3>
-          {commands.map((cmd) => (
-            <ShortcutRow
-              key={cmd.id}
-              cmd={cmd}
-              chord={keymap.get(cmd.id) ?? null}
-              conflicts={conflicts}
-            />
-          ))}
-        </div>
-      ))}
+      <div className="space-y-6">
+        {groups.map(({ group, commands }) => (
+          <SettingsGroup key={group} title={S.shortcuts.groups[group]}>
+            {commands.map((cmd) => (
+              <ShortcutRow
+                key={cmd.id}
+                cmd={cmd}
+                chord={keymap.get(cmd.id) ?? null}
+                conflicts={conflicts}
+              />
+            ))}
+          </SettingsGroup>
+        ))}
+      </div>
       {confirmReset && (
         <ConfirmModal
           open

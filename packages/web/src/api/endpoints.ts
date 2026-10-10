@@ -9,6 +9,10 @@ import type {
   AdminUserCreateRequest,
   AdminUserCreateResponse,
   AdminUsersResponse,
+  AgentApiKeyCreateRequest,
+  AgentApiKeyCreateResponse,
+  AgentApiResponse,
+  AgentApiUpdateRequest,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
   AgentCreateRequest,
@@ -47,6 +51,7 @@ import type {
   FeishuBindingResponse,
   FeishuTestRequest,
   FeishuTestResponse,
+  FilesCreateRequest,
   FilesMoveRequest,
   FilesStatRequest,
   FilesStatResponse,
@@ -69,6 +74,7 @@ import type {
   MessagingBindingsResponse,
   MessagingChannel,
   MessagingTestMessageResponse,
+  ModelBalanceResponse,
   ModelOAuthCodeResponse,
   ModelOAuthStartRequest,
   ModelOAuthStartResponse,
@@ -83,6 +89,9 @@ import type {
   SshHostResponse,
   ModelsResponse,
   ModelsUpdateRequest,
+  PresetSyncRequest,
+  PresetSyncResponse,
+  ProviderConnectionUpdate,
   ModelTestRequest,
   ModelTestResponse,
   ModelVisionDetectRequest,
@@ -168,8 +177,10 @@ import type {
   PluginConfigResponse,
   PluginConfigActionResponse,
   PluginConfigUpdateRequest,
+  LanguageIndexResponse,
   PluginReadmeResponse,
   SessionsResponse,
+  SessionSwitchModelRequest,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
   SteerRequest,
@@ -223,12 +234,19 @@ import type {
   BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
+  BrowserBackend,
+  BrowserBackendResponse,
+  BrowserExtensionPairingResponse,
+  BrowserExtensionsResponse,
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta } from "./client";
+import type { RunRequest } from "@prismshadow/amsp";
+import { apiFetch, apiFetchStream, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
+import { activityCursorParam } from "../lib/session-grouping";
+import type { ActivityKey } from "../lib/session-grouping";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -395,12 +413,46 @@ export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
     body,
   });
 
+/**
+ * One group's connection (`[providers.<id>]`, owner): only the fields the update names change;
+ * the models that store none of their own follow it. Answers with the whole table, re-read.
+ */
+export const putProviderConnection = (
+  projectId: string,
+  provider: string,
+  body: ProviderConnectionUpdate,
+) =>
+  apiFetch<ModelsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/providers/${encodeURIComponent(provider)}`,
+    { method: "PUT", body },
+  );
+
+/**
+ * The built-in catalog against the table (owner): `add` adds the presets it lacks and touches
+ * nothing else; `restore` puts every built-in model back to the catalog, keeping keys and the
+ * user's own models. Answers with the table and the two counts.
+ */
+export const syncPresets = (projectId: string, body: PresetSyncRequest) =>
+  apiFetch<PresetSyncResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/sync-presets`,
+    { method: "POST", body },
+  );
+
 /** Narrow default-model switch (owner): flips the same default_model the models page maintains, without resending the table. */
 export const putDefaultModel = (projectId: string, body: DefaultModelUpdateRequest) =>
   apiFetch<DefaultModelResponse>(`/api/projects/${encodeURIComponent(projectId)}/models/default`, {
     method: "PUT",
     body,
   });
+
+/**
+ * A group's account balance, read by the server with the group's stored key (the key never
+ * comes back). `force` skips the server's 60 s cache — the page's refresh click.
+ */
+export const getModelBalance = (projectId: string, provider: string, force = false) =>
+  apiFetch<ModelBalanceResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/balance?provider=${encodeURIComponent(provider)}${force ? "&force=1" : ""}`,
+  );
 
 /** Connectivity test: model reference (provider, modelId) is passed in the request body (may include an unsaved apiKey / baseUrl). */
 export const testModel = (projectId: string, body: ModelTestRequest) =>
@@ -661,6 +713,53 @@ export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
     { method: "POST" },
   );
 
+// An Agent's public API (the stream itself is AMSP under /api/amsp/v1; these are its settings) ---
+
+const agentApiBase = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/api`;
+
+/** The Agent's API switch, keyless switch, approval mode and keys (any member may read them). */
+export const getAgentApi = (projectId: string, agentId: string) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId));
+
+/** Changes the given settings and keeps the rest (owner only). */
+export const putAgentApi = (projectId: string, agentId: string, body: AgentApiUpdateRequest) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId), { method: "PUT", body });
+
+/** Mints a key (owner only): the answer is the one place the secret is ever shown. */
+export const createAgentApiKey = (
+  projectId: string,
+  agentId: string,
+  body: AgentApiKeyCreateRequest,
+) =>
+  apiFetch<AgentApiKeyCreateResponse>(`${agentApiBase(projectId, agentId)}/keys`, {
+    method: "POST",
+    body,
+  });
+
+/** Deletes a key for good (owner only): a program presenting it is refused from the next request on. */
+export const deleteAgentApiKey = (projectId: string, agentId: string, keyId: string) =>
+  apiFetch<void>(`${agentApiBase(projectId, agentId)}/keys/${encodeURIComponent(keyId)}`, {
+    method: "DELETE",
+  });
+
+/**
+ * Runs the Agent once through its API for the owner's sign-in (the API tab's Try it): the body is
+ * the public runs route's, and the answer the same AMSP event stream, handed back unread for
+ * `readSse` (or the same JSON refusal, as an ApiError).
+ */
+export const tryAgentApi = (
+  projectId: string,
+  agentId: string,
+  body: RunRequest,
+  opts: { signal?: AbortSignal } = {},
+) =>
+  apiFetchStream(`${agentApiBase(projectId, agentId)}/try`, {
+    method: "POST",
+    body,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+  });
+
 // Session ---------------------------------------------------------------------
 
 /**
@@ -668,13 +767,23 @@ export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
  * detect "has more". `category` filters server-side (paging applies within the category);
  * `workspaceGroup` narrows the same way to one Workspace group, so a group can page its own
  * stream; `withCounts` asks for per-category totals over the whole list alongside the page.
+ *
+ * The sidebar pages in activity order with a cursor (`order: "activity"` + `before`), never by
+ * offset: activity reorders the list while it is being read, and an offset page would skip a row
+ * that moved above it. A server that predates `order` ignores both parameters and answers in
+ * creation order — the next page then repeats rows the pool already holds, deduplicated by id.
  */
 export const listSessions = (
   projectId: string,
   agentId: string,
   opts?: {
-    offset: number;
+    /** Rows to skip, in creation order. Exclusive with `before`. */
+    offset?: number;
     limit: number;
+    /** `activity`: last activity first, ties by id descending (code-point order) — the sidebar's order. Omitted: creation order. */
+    order?: "created" | "activity";
+    /** Activity order only: rows strictly below this key — the last row of the previous page. */
+    before?: ActivityKey;
     category?: SessionCategory;
     /** One Workspace group's rows only: its path, or the merged temporary group's sentinel (session-grouping.ts). */
     workspaceGroup?: string;
@@ -690,7 +799,10 @@ export const listSessions = (
   machineId?: string | null,
 ) => {
   const qs = opts
-    ? `?limit=${opts.limit}&offset=${opts.offset}` +
+    ? `?limit=${opts.limit}` +
+      (opts.offset !== undefined ? `&offset=${opts.offset}` : "") +
+      (opts.order ? `&order=${opts.order}` : "") +
+      (opts.before ? `&before=${encodeURIComponent(activityCursorParam(opts.before))}` : "") +
       (opts.category ? `&category=${opts.category}` : "") +
       (opts.workspaceGroup ? `&workspaceGroup=${encodeURIComponent(opts.workspaceGroup)}` : "") +
       (opts.withCounts ? "&counts=1" : "") +
@@ -707,15 +819,26 @@ export const listSessions = (
  * Browses directories. With no machine, this server's own filesystem; with one, THAT
  * machine's — listed by this server over ssh, so picking a workspace on another machine
  * needs no second login to that machine's own server.
+ *
+ * `places` asks a home request (empty `path`) for the machine's standard folders and its
+ * locations (drives, volumes, mounts) as well. Only this server discovers them, so the flag
+ * goes on the local route alone; a machine reached over ssh answers with its folders only.
  */
-export const listDirs = (projectId: string, path = "", machineId?: string | null) =>
-  machineId === undefined || machineId === null
+export const listDirs = (
+  projectId: string,
+  path = "",
+  machineId?: string | null,
+  opts?: { places?: boolean },
+) => {
+  const places = opts?.places === true ? "&places=1" : "";
+  return machineId === undefined || machineId === null
     ? apiFetch<DirListResponse>(
-        `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
+        `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}${places}`,
       )
     : apiFetch<DirListResponse>(
         `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/dirs?path=${encodeURIComponent(path)}`,
       );
+};
 
 /**
  * Asks the desktop shell to read a folder macOS refused, in the app's own name — what makes
@@ -770,8 +893,16 @@ export const forkSession = (sessionId: string, body: SessionForkRequest) =>
     body,
   });
 
-export const getSession = (sessionId: string) =>
-  apiFetch<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`);
+/**
+ * One Session's row. `machineId` names the server to ask when the caller knows and the id map
+ * does not yet — a Session the list has never fetched, announced by a machine's own event
+ * stream. Omitted, the id routes itself (lib/session-machines.ts).
+ */
+export const getSession = (sessionId: string, machineId?: string | null) =>
+  apiFetch<SessionResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}`,
+    machineId === undefined ? {} : { server: machineId },
+  );
 
 export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
   apiFetch<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
@@ -1060,6 +1191,19 @@ export const postCompact = (sessionId: string) =>
   });
 
 /**
+ * Switch this Session to another model in place. Two success shapes: **202** with a
+ * {@link TaskCreateResponse} — the switch compacts on the current model first and streams like
+ * `/compact`; the new context's `session_meta` follows a completed compaction, and it is what
+ * says the Session switched — or **200** with a {@link SessionResponse} when the Session never
+ * ran and switched inside the request. Only the latter carries `session`.
+ */
+export const switchSessionModel = (sessionId: string, body: SessionSwitchModelRequest) =>
+  apiFetch<TaskCreateResponse | SessionResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/switch-model`,
+    { method: "POST", body },
+  );
+
+/**
  * Composition of the Session's current model context (the chat page's context-ring detail panel).
  * A snapshot read from the newest Trace shard on each call, not a live counter: the figures are
  * estimates whose value is the *shares* they give the measured occupancy.
@@ -1303,26 +1447,36 @@ export const revealWorkspaceFile = (sessionId: string, path: string) =>
  * `ETag`: pass it and the write is refused with 409 `file_changed` unless the file is still
  * the one that was read (the editor's save); leave it out and the write creates or replaces
  * unconditionally (uploads, which read no version).
+ *
+ * Resolves to the version the write produced — the marker the next save of the same file
+ * carries — or null from a server that does not say.
  */
 export const uploadWorkspaceFile = (
   sessionId: string,
   path: string,
   dataBase64: string,
   ifVersion?: string,
-) =>
-  apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {
+): Promise<string | null> =>
+  apiFetchWithMeta<void>(`/api/sessions/${sessionId}/files/content`, {
     method: "PUT",
     body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
     query: { path },
-  });
+  }).then((res) => res.etag);
 
 /**
- * Moves or renames a Workspace file. `ifVersion` (see {@link uploadWorkspaceFile}) guards the
- * SOURCE: pass it and the move is refused with 409 `file_changed` unless the file is still the
- * one that was read. The destination has no such marker — nothing read it — so an occupied
- * destination is 409 `target_exists` rather than an overwrite. Files only: a directory is a
- * 400, since nothing could express a precondition over a whole tree. `to`'s parent directory
- * is created when it is missing.
+ * Creates one empty text file or one folder. Missing parent directories are made; anything
+ * already at the path is refused with 409 `target_exists` and nothing is written.
+ */
+export const createWorkspaceEntry = (sessionId: string, body: FilesCreateRequest) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/create`, { method: "POST", body });
+
+/**
+ * Moves or renames a Workspace file or folder. `ifVersion` (see {@link uploadWorkspaceFile})
+ * guards a file SOURCE: pass it and the move is refused with 409 `file_changed` unless the file
+ * is still the one that was read. A folder moves whole and takes none. The destination has no
+ * such marker — nothing read it — so an occupied destination is 409 `target_exists` rather than
+ * an overwrite, and a folder cannot move into itself. `to`'s parent directory is created when it
+ * is missing.
  */
 export const moveWorkspaceFile = (sessionId: string, body: FilesMoveRequest) =>
   apiFetch<void>(`/api/sessions/${sessionId}/files/move`, { method: "POST", body });
@@ -1346,6 +1500,96 @@ export const deleteWorkspaceFile = (sessionId: string, path: string, ifVersion?:
  */
 export const searchWorkspaceFiles = (sessionId: string, q: string) =>
   apiFetch<WorkspaceSearchResponse>(`/api/sessions/${sessionId}/files/search`, { query: { q } });
+
+// Workspace files by directory ----------------------------------------------------------------
+
+/**
+ * A directory the Files panel addresses by its absolute path rather than through a Session: the
+ * new-chat draft's chosen folder and a sidebar Workspace group, where no Session exists yet.
+ * Access is the Project's; the directory must exist. `machineId` is the machine it is on (null:
+ * this server) — a path names a directory only together with it.
+ */
+export interface WorkspaceDir {
+  projectId: string;
+  workspace: string;
+  machineId: string | null;
+}
+
+const workspaceDirBase = (dir: WorkspaceDir): string =>
+  `/api/projects/${encodeURIComponent(dir.projectId)}/workspace-files`;
+
+export const listWorkspaceDirFiles = (dir: WorkspaceDir, path: string) =>
+  apiFetch<WorkspaceFilesResponse>(workspaceDirBase(dir), {
+    query: { workspace: dir.workspace, path },
+    server: dir.machineId,
+  });
+
+/** File content URL, as {@link workspaceFileUrl}; the machine's proxy prefix rides in the URL itself. */
+export const workspaceDirFileUrl = (dir: WorkspaceDir, path: string, download = false): string =>
+  apiUrl(
+    `${workspaceDirBase(dir)}/content?workspace=${encodeURIComponent(dir.workspace)}&path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`,
+    dir.machineId,
+  );
+
+/**
+ * "Open in a new tab" for an HTML file of a directory: the same-origin sandboxed preview, since
+ * the separate preview origin's tokens name a Session.
+ */
+export const workspaceDirPreviewUrl = (dir: WorkspaceDir, path: string): string =>
+  apiUrl(
+    `${workspaceDirBase(dir)}/content?workspace=${encodeURIComponent(dir.workspace)}&path=${encodeURIComponent(path)}&preview=1`,
+    dir.machineId,
+  );
+
+/** As {@link uploadWorkspaceFile}: resolves to the version written, or null when the server does not say. */
+export const writeWorkspaceDirFile = (
+  dir: WorkspaceDir,
+  path: string,
+  dataBase64: string,
+  ifVersion?: string,
+): Promise<string | null> =>
+  apiFetchWithMeta<void>(`${workspaceDirBase(dir)}/content`, {
+    method: "PUT",
+    body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
+    query: { workspace: dir.workspace, path },
+    server: dir.machineId,
+  }).then((res) => res.etag);
+
+export const createWorkspaceDirEntry = (dir: WorkspaceDir, body: FilesCreateRequest) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/create`, {
+    method: "POST",
+    body,
+    query: { workspace: dir.workspace },
+    server: dir.machineId,
+  });
+
+export const moveWorkspaceDirFile = (dir: WorkspaceDir, body: FilesMoveRequest) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/move`, {
+    method: "POST",
+    body,
+    query: { workspace: dir.workspace },
+    server: dir.machineId,
+  });
+
+export const deleteWorkspaceDirFile = (dir: WorkspaceDir, path: string, ifVersion?: string) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/content`, {
+    method: "DELETE",
+    query: { workspace: dir.workspace, path, ifVersion },
+    server: dir.machineId,
+  });
+
+export const searchWorkspaceDirFiles = (dir: WorkspaceDir, q: string) =>
+  apiFetch<WorkspaceSearchResponse>(`${workspaceDirBase(dir)}/search`, {
+    query: { workspace: dir.workspace, q },
+    server: dir.machineId,
+  });
+
+export const revealWorkspaceDirFile = (dir: WorkspaceDir, path: string) =>
+  apiFetch<void>(`${workspaceDirBase(dir)}/reveal`, {
+    method: "POST",
+    query: { workspace: dir.workspace, path },
+    server: dir.machineId,
+  });
 
 /** Batch file-existence check (message file cards): both out-of-bounds and missing paths simply don't appear in `existing`; always returns 200. */
 export const statSessionFiles = (sessionId: string, paths: string[]) =>
@@ -1416,6 +1660,9 @@ export const installAgentPlugins = (projectId: string, agentId: string, names: s
 
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
 export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
+
+/** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
+export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
 
 export const getPluginReadme = (name: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
@@ -2126,9 +2373,10 @@ export const putInstalledPlugins = (projectId: string, plugins: readonly string[
     body: { plugins },
   });
 /**
- * Admin only: asks this Project for a plugin the build ships — in the shared table, or with
- * `machineId` in that machine's own table — refused for one it does not, so the list never
- * names a package that is not on the machine; then re-assembles the App where it runs here.
+ * Admin only: lists the package in the shared table, or with `machineId` in that machine's
+ * own table. The machines that will run it install it — this server npm-installs it into its
+ * data root unless the build ships it, and only when it runs it itself — then the App is
+ * re-assembled. Slow for a cold registry fetch.
  */
 export const installPlugin = (
   projectId: string,
@@ -2141,7 +2389,7 @@ export const installPlugin = (
   });
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that
- * machine's own table; nothing on disk changes.
+ * machine's own table; the package leaves this server's disk once nothing asks it to run here.
  */
 export const uninstallPlugin = (
   projectId: string,
@@ -2155,10 +2403,11 @@ export const uninstallPlugin = (
     { method: "DELETE" },
   );
 
-// ---- The built-in browser (desktop app only; every route is admin-only) ----
+// ---- The agent browser: the desktop's built-in browser, or the user's own Chrome ----
 /**
- * Always this server's: the pages live in the desktop shell this server was spawned by, so a
- * machine's browser routes would drive a shell that is not on this screen.
+ * Always this server's: the built-in browser's pages live in the desktop shell this server was
+ * spawned by, and a user's Chrome is paired to this server, so a machine's browser routes would
+ * drive a browser that is not on this screen.
  */
 const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
 
@@ -2168,9 +2417,37 @@ export type BuiltinBrowserStorage = Extract<
   { op: "clear-data" }
 >["storages"][number];
 
-/** Whether the browser can be driven at all, and its tabs as they stand. */
+/**
+ * The caller's backend — whether it can be driven now, its tabs — and every backend the server
+ * offers them (`backends`).
+ */
 export const getBuiltinBrowserStatus = () =>
   apiFetch<BuiltinBrowserStatus>(builtinBrowserPath("/status"), { server: null });
+/** The caller's backend and the ones they may choose (both only on the desktop, for an admin). */
+export const getBrowserBackend = () =>
+  apiFetch<BrowserBackendResponse>(builtinBrowserPath("/backend"), { server: null });
+/** Chooses the backend; 409 `action_in_flight` while an agent acts in the one being left. */
+export const putBrowserBackend = (backend: BrowserBackend) =>
+  apiFetch<BrowserBackendResponse>(builtinBrowserPath("/backend"), {
+    method: "PUT",
+    body: { backend },
+    server: null,
+  });
+/** A one-time pairing code for the signed-in user (ten minutes, one use; a new one replaces it). */
+export const createBrowserPairingCode = () =>
+  apiFetch<BrowserExtensionPairingResponse>(builtinBrowserPath("/extension/pairings"), {
+    method: "POST",
+    server: null,
+  });
+/** The Chromes paired to the caller's account, the connected one, and the admin's switch. */
+export const getBrowserExtensions = () =>
+  apiFetch<BrowserExtensionsResponse>(builtinBrowserPath("/extension"), { server: null });
+/** Forgets a paired Chrome; its connection closes and it must be paired again. */
+export const revokeBrowserExtension = (extensionId: string) =>
+  apiFetch<void>(builtinBrowserPath(`/extension/${encodeURIComponent(extensionId)}`), {
+    method: "DELETE",
+    server: null,
+  });
 /**
  * A new tab, at `url` or else at the homepage (blank without one). The server asks this window
  * (over the user channel) to create the page, and answers once the page is claimed — so this
@@ -2204,6 +2481,16 @@ export const setBuiltinBrowserOnScreen = (tabId: number | null) =>
   });
 export const closeBuiltinBrowserTab = (tabId: number) =>
   apiFetch<void>(builtinBrowserPath(`/tabs/${tabId}`), { method: "DELETE", server: null });
+/**
+ * Loads `url` in a tab through the server, and answers once it loaded: the address bar of a tab
+ * this window does not host (one in the user's Chrome).
+ */
+export const navigateBuiltinBrowserTab = (tabId: number, url: string) =>
+  apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath(`/tabs/${tabId}/navigate`), {
+    method: "POST",
+    body: { url },
+    server: null,
+  });
 /** The system browsers' profiles on this computer that can be imported from. */
 export const getBuiltinBrowserImportSources = () =>
   apiFetch<BuiltinBrowserImportSourcesResponse>(builtinBrowserPath("/import/sources"), {

@@ -77,6 +77,7 @@ import {
   TicketStatusBadge,
   TitleButton,
   principalLabel,
+  titledHint,
 } from "./shared";
 import { agentPrincipal, splitPrincipalList } from "./principals";
 import {
@@ -595,6 +596,7 @@ function TicketDialog({
                         label={S.company.tickets.notify}
                         value={summaryDraft.notify}
                         hint={S.company.tickets.notifyHint}
+                        info={S.company.tickets.notifyInfo}
                         className="font-mono"
                         onChange={(e) =>
                           setSummaryDraft({ ...summaryDraft, notify: e.target.value })
@@ -612,7 +614,7 @@ function TicketDialog({
                       S.company.tickets.parent,
                       detail.parent !== undefined ? (
                         <TitleButton
-                          title={`${S.company.tickets.openTicket} · ${detail.parent}`}
+                          hint={titledHint(titles.get(detail.parent), detail.parent)}
                           className="truncate"
                           onClick={() => onOpenTicket(detail.parent!)}
                         >
@@ -752,7 +754,7 @@ function TicketDialog({
                       <li key={c.ticketId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
                         <span className="flex min-w-0 flex-1">
                           <TitleButton
-                            title={`${S.company.tickets.openTicket} · ${c.ticketId}`}
+                            hint={titledHint(c.title, c.ticketId)}
                             className="truncate"
                             onClick={() => onOpenTicket(c.ticketId)}
                           >
@@ -805,14 +807,14 @@ function TicketDialog({
                             // becomes a Temporary entry.
                             <span
                               className="truncate text-gray-400 dark:text-gray-500"
-                              data-tooltip={s.sessionId}
+                              data-tooltip={titledHint(s.title, s.sessionId)}
                               data-tooltip-content="text"
                             >
                               {s.title ?? s.sessionId}
                             </span>
                           ) : (
                             <TitleButton
-                              title={S.company.tickets.openSession}
+                              hint={titledHint(s.title, s.sessionId)}
                               className="truncate text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
                               onClick={() => openSession(s)}
                             >
@@ -1012,7 +1014,7 @@ function TicketDialog({
             label={S.company.tickets.blockedReason}
             required
             value={blockReason}
-            hint={S.company.tickets.blockReasonHint}
+            info={S.company.tickets.blockReasonHint}
             autoFocus
             onChange={(e) => setBlockReason(e.target.value)}
           />
@@ -1020,7 +1022,7 @@ function TicketDialog({
             size="sm"
             label={S.company.tickets.blockedBy}
             value={blockBy}
-            hint={S.company.tickets.blockByHint}
+            info={S.company.tickets.blockByHint}
             className="font-mono"
             onChange={(e) => setBlockBy(e.target.value)}
           />
@@ -1085,7 +1087,7 @@ export function MoveTicketConfirm({
             label={S.company.tickets.rejectReason}
             required
             value={reason}
-            hint={S.company.tickets.rejectReasonHint}
+            info={S.company.tickets.rejectReasonHint}
             autoFocus
             onChange={(e) => setReason(e.target.value)}
           />

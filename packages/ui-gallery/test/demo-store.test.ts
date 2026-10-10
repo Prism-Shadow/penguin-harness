@@ -5,8 +5,21 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
+import {
+  parseBackgroundTaskDoneMessage,
+  parseHandoffMessage,
+  parseOrgTriggerMessage,
+  parseScheduledMessage,
+  parseSkillsMessage,
+} from "@prismshadow/penguin-core/markers";
 import { catalogEntryFor } from "../../core/dist/state/model-catalog.js";
 import { catalogDelta } from "../../web/src/features/models/catalog-sync";
+import { splitAttachments } from "../../web/src/lib/attachments";
+import {
+  createStreamModel,
+  finalizeHistory,
+  pushMessages,
+} from "../../web/src/lib/omni/stream-model";
 import { buildFixtures } from "../src/app/mock/fixtures";
 import { ALL_SESSION_IDS, IDS } from "../src/app/mock/ids";
 import { REPLY_CLOSE_MS, REPLY_HOLD_MS, REPLY_LEAD_MS, resetStore } from "../src/app/mock/store";
@@ -86,14 +99,14 @@ describe("the fixtures", () => {
     );
   });
 
-  it("carry the whole built-in catalog, settled: the app's sync check finds nothing to add or update", () => {
+  it("carry the whole built-in catalog: the app's catalog check finds nothing to add", () => {
     const f = buildFixtures("en", NOW);
     for (const m of f.models.models) {
       if (m.provider === "custom") continue;
       expect(catalogEntryFor(m.provider, m.modelId), `${m.provider}/${m.modelId}`).toBeDefined();
     }
     expect(f.models.models.length).toBeGreaterThan(100);
-    expect(catalogDelta(f.models.models)).toEqual({ added: 0, updated: 0, refs: [] });
+    expect(catalogDelta(f.models.models)).toEqual({ added: 0, refs: [] });
     expect(f.models.defaultModel).toEqual({ provider: "deepseek", modelId: "deepseek-flash" });
     expect(f.models.models.filter((m) => m.isDefault).map((m) => m.modelId)).toEqual([
       "deepseek-flash",
@@ -213,6 +226,60 @@ describe("the running states", () => {
     expect(sub.events.at(-1)).toEqual({ type: "task_state", state: "idle" });
     expect(store.session(IDS.sessions.approval)?.status).toBe("idle");
     expect(store.session(IDS.sessions.approval)?.pendingApprovalCount).toBe(0);
+  });
+});
+
+describe("the harness Session", () => {
+  it("reads, through the chat's own stream model, as every row the harness writes", () => {
+    const store = resetStore({ lang: "zh", signedIn: true, now: NOW });
+    const model = createStreamModel();
+    pushMessages(model, store.transcript(IDS.sessions.harness)!.history, NOW);
+    finalizeHistory(model);
+    const kinds = model.items.map((item) => item.kind);
+    for (const kind of [
+      "mcp_connect",
+      "background_notice",
+      "reconnect",
+      "abort",
+      "llm_error",
+      "compaction",
+      "model_change",
+      "user_steering",
+      "task_stats",
+    ]) {
+      expect(kinds, kind).toContain(kind);
+    }
+    const sent = model.items.flatMap((item) => (item.kind === "user_text" ? [item] : []));
+    expect(parseHandoffMessage(sent[0]!.text)?.sessionId).toBe(IDS.sessions.notes[0]);
+    const prompt = parseSkillsMessage(sent[1]!.text)!;
+    expect(prompt.skills).toEqual(["claude-code-expert", "docs-sync"]);
+    expect(splitAttachments(prompt.rest).files).toHaveLength(1);
+    expect(sent.filter((t) => t.sender === "harness")).toHaveLength(3);
+    const done = sent.map((t) => parseBackgroundTaskDoneMessage(t.text)?.done.status);
+    expect(done).toContain("completed");
+    const fired = sent.map((t) => parseScheduledMessage(t.text)?.origin.name);
+    expect(fired).toContain("weekly-link-check");
+    const mcp = model.items.find((item) => item.kind === "mcp_connect");
+    expect(mcp?.kind === "mcp_connect" && mcp.failed).toEqual(["docs-search"]);
+    const compaction = model.items.find((item) => item.kind === "compaction");
+    expect(compaction).toMatchObject({ status: "completed", mode: "summarize" });
+    expect(compaction?.kind === "compaction" && compaction.thinkingText).toBeTruthy();
+    expect(compaction?.kind === "compaction" && compaction.summaryText).toBeTruthy();
+    expect(kinds.at(-1)).toBe("task_stats");
+
+    // The goal banner: a fresh subscription is told the goal run and its outcome.
+    const sub = collector();
+    store.onSubscribe(IDS.sessions.harness, sub);
+    expect(sub.events.map((e) => e.type)).toEqual(["task_state", "goal_started", "goal_finished"]);
+  });
+
+  it("opens the organization's desk Session with its trigger block", () => {
+    const store = resetStore({ lang: "en", signedIn: true, now: NOW });
+    const history = store.transcript(IDS.sessions.orgDesk)!.history;
+    const first = history.find((m) => payloadOf(m)?.type === "text")!;
+    const text = (payloadOf(first) as { text: string }).text;
+    expect(parseOrgTriggerMessage(text)?.origin.kind).toBe("event");
+    expect(store.session(IDS.sessions.orgDesk)?.client).toBe("org");
   });
 });
 

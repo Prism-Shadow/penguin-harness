@@ -59,6 +59,9 @@ describe("ActivityIcon", () => {
       expect.arrayContaining(["bg-tone-success-emphasis", "rounded-full"]),
     );
     expect(unread).toContain("width:6px;height:6px");
+    // A row that mounts finished (a list loading) brings nothing in: the reveal is for a run
+    // the reader watched finish.
+    expect(unread).not.toContain("data-reveal");
   });
 
   it("names every state with the caller's label, live ones as a status", () => {

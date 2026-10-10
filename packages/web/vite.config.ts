@@ -85,6 +85,11 @@ export default defineConfig({
     // Fixed PenguinHarness dev port (stands alone — vite configs cannot import core TS,
     // so the numbers are literals here; the allocation table lives in core's internal/ports.ts).
     port: 7365,
+    // Cross-origin requests to /api are the server's to answer, not Vite's: the Chrome extension
+    // pairs from its own chrome-extension:// origin through this port, and Vite's default CORS
+    // rule (localhost pages only) answered its preflight itself and refused it, so the request
+    // never reached the server's pairing route. Off, the preflight is proxied like everything else.
+    cors: false,
     proxy: {
       "/api": {
         target: apiProxyTarget(),

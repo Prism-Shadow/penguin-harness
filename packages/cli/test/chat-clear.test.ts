@@ -103,6 +103,15 @@ describe("chat /clear (fresh Session in place, server-backed)", () => {
     expect(server.requests.some((r) => r.method === "DELETE")).toBe(false);
   });
 
+  it("creates a person's conversation, for the chat and for /clear: no create request names a source", async () => {
+    await driveChat(["/clear", "/exit"]);
+    const creates = server.requests.filter(
+      (r) => r.method === "POST" && r.path.endsWith("/sessions"),
+    );
+    expect(creates).toHaveLength(2);
+    expect(creates.every((r) => r.body !== undefined && !("source" in r.body))).toBe(true);
+  });
+
   it("/clear before any Task prints no resume hint (neither Session has history yet)", async () => {
     const out = await driveChat(["/clear", "/exit"]);
     expect(server.sessions.size).toBe(2);

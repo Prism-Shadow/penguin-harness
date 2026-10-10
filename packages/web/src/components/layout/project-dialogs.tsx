@@ -165,16 +165,15 @@ export function CreateProjectDialog({
   );
 }
 
-/** Path data for the settings tabs' small icons (24px viewBox, stroked like NAV_ICONS). */
+/** The settings tabs' small icons (stroked like NAV_ICONS). */
 const TAB_ICON_PATHS = {
   general: ICONS.gear,
-  /** Two people (lucide users). Project members are humans — the Agent glyph used to stand in here. */
-  members:
-    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
-  /** Sliders (lucide sliders-vertical). */
-  defaults: "M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6",
-  /** Shield (lucide shield). */
-  security: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+  /** Two people: Project members are humans, so the Agent glyph does not stand in here. */
+  members: ICONS.users,
+  /** Three sliders set at different heights. */
+  defaults: ICONS.sliders,
+  /** The shield with a check: the policy that guards the Project. */
+  security: ICONS.shieldCheck,
 } as const;
 
 type SettingsTab = keyof typeof TAB_ICON_PATHS;
@@ -315,20 +314,24 @@ function GeneralSection({
         {isOwner ? (
           <div className="flex flex-col items-end gap-1">
             <div className="flex items-stretch gap-2">
-              <Input
-                size="sm"
-                className="w-44"
-                value={name}
-                invalid={Boolean(nameError)}
-                maxLength={100}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (nameError) setNameError(undefined);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void saveName();
-                }}
-              />
+              {/* The width sits on a box around the field: the control's own `w-full` outranks
+                  a width passed to it, and a field as wide as the row leaves the button
+                  beside it no room. Narrower on a phone, where the row's title needs the room. */}
+              <div className="w-32 sm:w-44">
+                <Input
+                  size="sm"
+                  value={name}
+                  invalid={Boolean(nameError)}
+                  maxLength={100}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (nameError) setNameError(undefined);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveName();
+                  }}
+                />
+              </div>
               <Button
                 size="sm"
                 disabled={nameBusy || !name.trim() || name.trim() === savedName}
@@ -371,7 +374,7 @@ function GeneralSection({
         title={S.project.deleteProject}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void doDelete()}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
@@ -390,6 +393,8 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
   const [members, setMembers] = useState<MemberInfo[] | null>(null);
   const [newMemberId, setNewMemberId] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** The member whose removal awaits confirmation: it revokes their access at once. */
+  const [removing, setRemoving] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -436,59 +441,76 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
     // Member permission table: username / role / actions; cells never wrap. Last row
     // (owner only) = add member: small username input + add button (new members are
     // always the member role).
-    <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
-            <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.username}</th>
-            <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.role}</th>
-            <th className="w-20 whitespace-nowrap px-2.5 py-1.5 text-right font-medium">
-              {S.common.actions}
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
-          {members.map((m) => (
-            <tr key={m.userId}>
-              <td className="whitespace-nowrap px-2.5 py-1.5">{m.userId}</td>
-              <td className="whitespace-nowrap px-2.5 py-1.5">
-                <Badge>{m.role}</Badge>
-              </td>
-              <td className="whitespace-nowrap px-2.5 py-1 text-right">
-                {isOwner && m.role !== "owner" && m.userId !== user?.userId && (
-                  <Button size="sm" variant="ghost" onClick={() => void doRemove(m.userId)}>
-                    {S.project.removeMember}
+    <>
+      <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
+              <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.username}</th>
+              <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.role}</th>
+              <th className="w-20 whitespace-nowrap px-2.5 py-1.5 text-right font-medium">
+                {S.common.actions}
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+            {members.map((m) => (
+              <tr key={m.userId}>
+                <td className="whitespace-nowrap px-2.5 py-1.5">{m.userId}</td>
+                <td className="whitespace-nowrap px-2.5 py-1.5">
+                  <Badge>{m.role}</Badge>
+                </td>
+                <td className="whitespace-nowrap px-2.5 py-1 text-right">
+                  {isOwner && m.role !== "owner" && m.userId !== user?.userId && (
+                    <Button size="sm" variant="ghost" onClick={() => setRemoving(m.userId)}>
+                      {S.project.removeMember}
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {isOwner && (
+              <tr>
+                <td className="px-2.5 py-1.5">
+                  <Input
+                    placeholder={S.common.username}
+                    size="sm"
+                    value={newMemberId}
+                    onChange={(e) => setNewMemberId(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void addMember();
+                    }}
+                  />
+                </td>
+                <td className="whitespace-nowrap px-2.5 py-1.5">
+                  <Badge>member</Badge>
+                </td>
+                <td className="whitespace-nowrap px-2.5 py-1 text-right">
+                  <Button size="sm" disabled={!newMemberId.trim()} onClick={() => void addMember()}>
+                    {S.project.addMember}
                   </Button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {isOwner && (
-            <tr>
-              <td className="px-2.5 py-1.5">
-                <Input
-                  placeholder={S.common.username}
-                  size="sm"
-                  value={newMemberId}
-                  onChange={(e) => setNewMemberId(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void addMember();
-                  }}
-                />
-              </td>
-              <td className="whitespace-nowrap px-2.5 py-1.5">
-                <Badge>member</Badge>
-              </td>
-              <td className="whitespace-nowrap px-2.5 py-1 text-right">
-                <Button size="sm" disabled={!newMemberId.trim()} onClick={() => void addMember()}>
-                  {S.project.addMember}
-                </Button>
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <ConfirmModal
+        open={removing !== null}
+        title={S.project.removeMemberTitle}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => {
+          if (removing !== null) void doRemove(removing);
+          setRemoving(null);
+        }}
+        confirmLabel={S.project.removeMember}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {removing !== null ? S.project.removeMemberConfirm(removing) : ""}
+        </p>
+      </ConfirmModal>
+    </>
   );
 }
 
@@ -896,6 +918,8 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
   const [rules, setRules] = useState<CommandPolicyRuleDto[]>([]);
   /** Index being edited inline, "new" for the add form, null when idle. */
   const [editing, setEditing] = useState<number | "new" | null>(null);
+  /** "Restore defaults" awaiting confirmation: it replaces every rule in the list. */
+  const [confirmRestore, setConfirmRestore] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -925,6 +949,17 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
     (enabled !== saved.enabled ||
       rules.length !== saved.rules.length ||
       rules.some((r, i) => !sameRule(r, saved.rules[i]!)));
+
+  const restoreDefaults = () => {
+    if (saved === null) return;
+    setRules(saved.defaultRules.map((r) => ({ ...r })));
+    setConfirmRestore(false);
+  };
+  /** Already the factory set: there is nothing to restore, so the button rests disabled. */
+  const atDefaults =
+    saved !== null &&
+    rules.length === saved.defaultRules.length &&
+    rules.every((r, i) => sameRule(r, saved.defaultRules[i]!));
 
   const save = async () => {
     if (busy || !dirty) return;
@@ -977,8 +1012,8 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy || !enabled || editing !== null}
-                    onClick={() => setRules(saved.defaultRules.map((r) => ({ ...r })))}
+                    disabled={busy || !enabled || editing !== null || atDefaults}
+                    onClick={() => setConfirmRestore(true)}
                   >
                     {S.project.commandPolicyRestore}
                   </Button>
@@ -1095,6 +1130,18 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
           )}
         </>
       )}
+      <ConfirmModal
+        open={confirmRestore}
+        title={S.project.commandPolicyRestore}
+        onClose={() => setConfirmRestore(false)}
+        onConfirm={restoreDefaults}
+        confirmLabel={S.project.commandPolicyRestore}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.project.commandPolicyRestoreConfirm}
+        </p>
+      </ConfirmModal>
     </div>
   );
 }

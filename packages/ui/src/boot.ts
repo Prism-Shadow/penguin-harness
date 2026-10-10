@@ -3,15 +3,15 @@
  * (inlined into the app's index.html), and from then on by the app's theme provider through
  * {@link applyThemeAttributes}.
  *
- * The pre-paint pass is what keeps a dark or non-default-theme page from flashing the light
- * default while the bundle loads, keeps the first frame from rendering at the browser's 16px
- * root and reflowing once React applies the stored text size, and keeps a chosen font pairing
- * from swapping in after the first paint.
+ * The pre-paint pass is what keeps a dark page, or one in any theme but the stylesheet's
+ * fallback, from flashing that fallback while the bundle loads, keeps the first frame from
+ * rendering at the browser's 16px root and reflowing once React applies the stored text size,
+ * and keeps a chosen font pairing from swapping in after the first paint.
  *
  * The inline copy in index.html must equal {@link BOOT_SCRIPT} byte for byte; a test asserts it.
  * Change the constants here, then paste the regenerated string there.
  */
-import { ACCENT_PRESET_IDS, DEFAULT_THEME_ID, THEME_IDS } from "./tokens";
+import { ACCENT_PRESET_IDS, DEFAULT_THEME_ID, INITIAL_THEME_ID, THEME_IDS } from "./tokens";
 import type { AccentPreset, ThemeId } from "./tokens";
 
 /**
@@ -162,7 +162,7 @@ export interface ThemeFonts {
  * first (`System` = a stack that names no bundled family).
  */
 export const THEME_FONTS: Readonly<Record<ThemeId, ThemeFonts>> = {
-  github: { latin: "Mona Sans", cjk: "Noto Sans SC", mono: "JetBrains Mono" },
+  github: { latin: SYSTEM_FONT, cjk: SYSTEM_FONT, mono: "JetBrains Mono" },
   modern: { latin: "MiSans", cjk: "MiSans", mono: "JetBrains Mono" },
   geek: { latin: "IBM Plex Sans", cjk: "Noto Sans SC", mono: "JetBrains Mono" },
 };
@@ -194,8 +194,8 @@ export interface ThemeAttributes {
 
 /**
  * The three `data-*` attributes share one rule: the value that means "the theme's own" (the
- * default theme, no preset, the theme's face) is the ABSENCE of the attribute, so a theme file's
- * plain selectors match it and nothing has to name a default.
+ * stylesheet's fallback theme, no preset, the theme's face) is the ABSENCE of the attribute, so a
+ * theme file's plain selectors match it and nothing has to name a default.
  */
 function setOrDrop(root: HTMLElement, key: string, value: string, own: string): void {
   if (value === own) delete root.dataset[key];
@@ -219,7 +219,6 @@ export function applyThemeAttributes(root: HTMLElement, attrs: Partial<ThemeAttr
 // The pre-paint script
 // ---------------------------------------------------------------------------
 
-const NON_DEFAULT_THEMES = THEME_IDS.filter((id) => id !== DEFAULT_THEME_ID);
 /** The ids that write an attribute: every option but `theme`, which is the attribute's absence. */
 const chosenFaces = (options: readonly FontOption[]) =>
   optionIds(options).filter((id) => id !== "theme");
@@ -238,7 +237,7 @@ export const BOOT_SCRIPT =
   "(function(){try{" +
   `var d=document.documentElement,s=localStorage,m=s.getItem(${j(K.mode)});` +
   'if(m==="dark"||(m!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))d.classList.add("dark");' +
-  `var t=s.getItem(${j(K.themeId)});if(${j(NON_DEFAULT_THEMES)}.indexOf(t)>=0)d.dataset.theme=t;` +
+  `var t=s.getItem(${j(K.themeId)});if(${j(THEME_IDS)}.indexOf(t)<0)t=${j(INITIAL_THEME_ID)};if(t!==${j(DEFAULT_THEME_ID)})d.dataset.theme=t;` +
   `var a=s.getItem(${j(K.accent)});if(${j(ACCENT_PRESET_IDS)}.indexOf(a)>=0)d.dataset.accent=a;` +
   `var l=s.getItem(${j(K.fontLatin)});if(${j(chosenFaces(FONT_LATIN_OPTIONS))}.indexOf(l)>=0)d.dataset.fontLatin=l;` +
   `var c=s.getItem(${j(K.fontCjk)});if(${j(chosenFaces(FONT_CJK_OPTIONS))}.indexOf(c)>=0)d.dataset.fontCjk=c;` +

@@ -86,17 +86,37 @@ export function Modal({
             : "rounded-t-lg"
         } border border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0`}
       >
+        {/* The head, the body and the foot name themselves (the glass hook's dialog anatomy), so
+            a theme may draw or drop the rules that part them, and close up the space a dropped
+            rule leaves between the title and the content. A `bare` body is the caller's own and
+            carries no slot. */}
         {!headerless && (
-          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <div
+            data-slot="head"
+            className="flex items-center justify-between border-b border-line px-4 py-3"
+          >
             <h2 id={titleId} className="text-base font-semibold">
               {title}
             </h2>
             <CloseButton onClose={onClose} label={closeLabel} />
           </div>
         )}
-        {bare ? children : <div className="max-h-[70vh] overflow-y-auto px-4 py-4">{children}</div>}
+        {bare ? (
+          children
+        ) : (
+          <div data-slot="body" className="max-h-[70vh] overflow-y-auto px-4 py-4">
+            {children}
+          </div>
+        )}
+        {/* The buttons keep their labels whole, so when a phone-width foot cannot hold them in
+            one row it starts another rather than squeezing one. */}
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-line px-4 py-3">{footer}</div>
+          <div
+            data-slot="foot"
+            className="flex flex-wrap justify-end gap-2 border-t border-line px-4 py-3"
+          >
+            {footer}
+          </div>
         )}
       </div>
     </div>,

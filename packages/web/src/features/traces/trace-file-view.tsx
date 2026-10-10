@@ -7,6 +7,12 @@
  * output, showing both usage ratio and composition, with exact numbers on
  * hover), followed by that round's execution timeline and all of its messages.
  *
+ * Loading is per round: opening a file reads only its analysis — every number on the panel and
+ * every round's message index range — and the file's newest round is open, read and scrolled into view. The other
+ * rounds show their chips collapsed; opening one reads that round's range alone
+ * (trace-rounds.ts). Round cards are drawn from the newest end, TRACE_ROUNDS_PAGE at a time,
+ * behind an "earlier rounds" control, so a file of thousands of rounds is still a short list.
+ *
  * Token usage here is **broken down by category** rather than given as one
  * lump sum (a total alone doesn't show where the money went): this round's
  * input (with the portion that was a **cache hit** in parentheses, target
@@ -18,12 +24,13 @@
  * so the file's total is what the toolbar shows for the same requests.
  *
  * Task attribution: model segments/tool spans carry their own taskIndex
- * (computed by the server), and messages fall into a Task's time range by
- * timestamp. Timeline ↔ message linked highlighting: hovering either side
+ * (computed by the server), and a round's messages are the events in its
+ * server-given index range. Timeline ↔ message linked highlighting: hovering either side
  * highlights the other (only one bar / one message lights up at a time);
  * clicking a bar scrolls to the corresponding message and pins the highlight for PIN_MS.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type {
   TraceAnalysisResponse,
@@ -37,6 +44,7 @@ import {
   Card,
   CardHeader,
   Chevron,
+  Fold,
   GlyphIcon,
   Skeleton,
   StatChip,
@@ -57,8 +65,19 @@ import {
 } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { resolveContextWindow } from "../../lib/context";
+import { toneInk } from "../../lib/tone";
 import { useTheme } from "../../state/theme";
-import { TRACE_EVENT_PAGE_SIZE, loadTraceEventPages } from "./trace-events-loader";
+import type { Currency } from "../../state/theme";
+import {
+  TRACE_ROUNDS_PAGE,
+  expandedAfterAnalysis,
+  loadRoundEvents,
+  revealAfterAnalysis,
+  roundSpan,
+  roundsToRead,
+  visibleRounds,
+} from "./trace-rounds";
+import type { RoundRange, TraceEventsSignal } from "./trace-rounds";
 import { TimelineChart } from "./timeline-chart";
 import type { TraceHighlight } from "./timeline-chart";
 import { EventRow } from "./trace-event-row";
@@ -90,26 +109,51 @@ interface Buckets {
 }
 const zeroBuckets = (): Buckets => ({ cacheRead: 0, cacheWrite: 0, output: 0 });
 
-interface TaskData {
-  taskIndex: number;
+/** A round's timeline as the analysis gives it: everything a card draws without reading events. */
+interface TaskTimeline {
   segments: TraceModelSegment[];
   spans: TraceToolSpan[];
   otherSpans: TraceOtherSpan[];
-  messages: OmniMessage[];
-  toolCalls: number;
-  durationMs: number;
 }
 
-const msOf = (ts: string): number => {
-  const n = Date.parse(ts);
-  return Number.isFinite(n) ? n : 0;
-};
+/**
+ * One round's events as the view holds them, tagged with the range they were read for — a
+ * refresh compares that range with the fresh analysis to find the round that grew. `rows` are
+ * the round's own messages: a subagent's messages (`origin` set) are not this file's rounds.
+ */
+export type RoundEntry =
+  | (RoundRange & { status: "loaded"; rows: OmniMessage[] })
+  | (RoundRange & { status: "failed"; error: string });
 
 /** How long the target message row stays pinned highlighted after a bar-click jump (milliseconds). */
 const PIN_MS = 2500;
 
 /** Unique key for a message row (also the DOM scroll anchor). */
 const rowKeyOf = (taskIndex: number, i: number): string => `${taskIndex}-${i}`;
+
+const isMainSession = (msg: OmniMessage): boolean => !(msg.origin && msg.origin.length > 0);
+
+/** Identity of the range a read was issued for, so a read the analysis has since moved past is dropped. */
+const rangeKey = (r: RoundRange): string => `${r.messageFrom}:${r.messageTo}`;
+
+/**
+ * The **first** message row at that instant among the open rounds' read rows; a bar-initiated
+ * highlight/jump uses this to hit only one row.
+ */
+function firstRowKeyAt(
+  rounds: ReadonlyMap<number, RoundEntry>,
+  expanded: ReadonlySet<number>,
+  ts: string,
+): string | null {
+  const open = [...expanded].sort((a, b) => a - b);
+  for (const ti of open) {
+    const entry = rounds.get(ti);
+    if (entry?.status !== "loaded") continue;
+    const i = entry.rows.findIndex((m) => m.timestamp === ts);
+    if (i >= 0) return rowKeyOf(ti, i);
+  }
+  return null;
+}
 
 /**
  * One row of the global summary: name on the left, value on the right
@@ -203,6 +247,37 @@ function durationSplit(apiMs: number, toolMs: number): string {
   )}${S.chat.statParenClose}`;
 }
 
+/** A file's analysis and what it decided: the view's state per file, reset on a switch to another file. */
+export interface FileState {
+  analysis: TraceAnalysisResponse | null;
+  /** Open rounds, by taskIndex. Held beside the analysis: a fresh analysis decides which new round opens. */
+  expanded: ReadonlySet<number>;
+  /**
+   * The round the latest analysis asks to scroll into view: the newest one on the analysis that
+   * opened the file, null on every refresh. The view scrolls when this becomes non-null.
+   */
+  reveal: number | null;
+}
+
+/** What the view shows before a file's analysis lands, and after a switch to another file. */
+export const EMPTY_FILE: FileState = { analysis: null, expanded: new Set(), reveal: null };
+
+/** The view's state once an analysis of its file lands, from the state it held before. */
+export function fileAfterAnalysis(prev: FileState, analysis: TraceAnalysisResponse): FileState {
+  const previous = prev.analysis?.tasks ?? null;
+  return {
+    analysis,
+    expanded: expandedAfterAnalysis(previous, analysis.tasks, prev.expanded),
+    reveal: revealAfterAnalysis(previous, analysis.tasks),
+  };
+}
+
+/** `rounds` without its failed reads: a refresh retries them. The same map when there are none. */
+function withoutFailures(rounds: ReadonlyMap<number, RoundEntry>): ReadonlyMap<number, RoundEntry> {
+  if (![...rounds.values()].some((e) => e.status === "failed")) return rounds;
+  return new Map([...rounds].filter(([, e]) => e.status !== "failed"));
+}
+
 export function TraceFileView({
   projectId,
   agentId,
@@ -227,11 +302,10 @@ export function TraceFileView({
   onHighlight: (h: TraceHighlight | null) => void;
 }) {
   const { currency } = useTheme();
-  const [analysis, setAnalysis] = useState<TraceAnalysisResponse | null>(null);
-  const [events, setEvents] = useState<OmniMessage[]>([]);
-  const [total, setTotal] = useState(0);
+  const [file, setFile] = useState<FileState>(EMPTY_FILE);
+  const [rounds, setRounds] = useState<ReadonlyMap<number, RoundEntry>>(new Map());
+  const [shownRounds, setShownRounds] = useState(TRACE_ROUNDS_PAGE);
   const [error, setError] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set());
   /** Message row pinned highlighted after a bar-click jump; auto-clears when its timer fires (independent of hover highlighting, and can stack with it). */
   const [pinnedRow, setPinnedRow] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -244,241 +318,130 @@ export function TraceFileView({
     [],
   );
 
-  // Switching to a DIFFERENT file clears the view — back to the skeleton, with the collapsed
-  // rounds and the pinned row forgotten because they name rounds this file does not have.
-  // Reset during render (React's documented "adjust state when a prop changes" pattern), which
-  // is what keeps it out of the load effect below: that effect also runs for a REFRESH of the
-  // file already on screen, and blanking there would flash a skeleton, drop the highlight and
-  // reopen every round card the user collapsed, several times per run.
+  // Switching to a DIFFERENT file clears the view — back to the skeleton, with the open
+  // rounds, the read rounds, the revealed earlier rounds and the pinned row forgotten because
+  // they name rounds this file does not have. Reset during render (React's documented "adjust
+  // state when a prop changes" pattern), which is what keeps it out of the load effect below:
+  // that effect also runs for a REFRESH of the file already on screen, and blanking there
+  // would flash a skeleton, drop the highlight and close every round the reader opened.
   const fileKey = `${projectId}/${agentId}/${sessionId}/${index}`;
   const [renderedFileKey, setRenderedFileKey] = useState(fileKey);
   if (renderedFileKey !== fileKey) {
     setRenderedFileKey(fileKey);
-    setAnalysis(null);
-    setEvents([]);
+    setFile(EMPTY_FILE);
+    setRounds(new Map());
+    setShownRounds(TRACE_ROUNDS_PAGE);
     setError(null);
-    setCollapsed(new Set());
     setPinnedRow(null);
   }
 
-  // Load the file, and re-load it whenever the panel's signal moves. Results overwrite what is
-  // on screen in place — an in-flight refresh keeps the current content readable, and its
-  // outcome is what clears or sets the error, since nothing was cleared up front.
-  //
-  // The events are paged through to the END of the file, not fetched once: the analysis
-  // describes every round by index range, so a round whose messages sit past the first page
-  // would render an empty message list. Each page lands at its own offset, so a long file is
-  // readable from its start while the rest of it arrives, and a REFRESH of a file already on
-  // screen updates the list in place instead of shrinking it back to one page per settled turn.
+  // Round reads belong to the file they were issued for: switching files (or unmounting)
+  // cancels them all, and the registry of reads in flight starts over with the new file.
+  const fileSignal = useRef<TraceEventsSignal>({ cancelled: false });
+  const inflight = useRef(new Map<number, string>());
   useEffect(() => {
     const signal = { cancelled: false };
-    const fail = (err: unknown) => {
-      if (!signal.cancelled) setError(apiErrorText(err));
+    fileSignal.current = signal;
+    inflight.current = new Map();
+    return () => {
+      signal.cancelled = true;
     };
-    // The error is cleared only once BOTH halves of the first load have landed: cleared on
-    // either one alone, a failure on one side would be wiped by the other side's success.
-    let haveAnalysis = false;
-    let haveFirstPage = false;
-    const clearErrorWhenBothLanded = () => {
-      if (haveAnalysis && haveFirstPage) setError(null);
-    };
+  }, [fileKey]);
+
+  // Load the analysis, and re-load it whenever the panel's signal moves. It overwrites what is
+  // on screen in place — an in-flight refresh keeps the current content readable, and its
+  // outcome is what clears or sets the error, since nothing was cleared up front. No event is
+  // read here: the rounds to read follow from the analysis (the effect below).
+  useEffect(() => {
+    const signal = { cancelled: false };
     api
       .getAgentTraceAnalysis(projectId, agentId, sessionId, index)
       .then((a) => {
         if (signal.cancelled) return;
-        setAnalysis(a);
-        haveAnalysis = true;
-        clearErrorWhenBothLanded();
+        setFile((prev) => fileAfterAnalysis(prev, a));
+        setRounds(withoutFailures);
+        setError(null);
       })
-      .catch(fail);
-    loadTraceEventPages(
-      (offset, limit) =>
-        api.getAgentTraceEvents(projectId, agentId, sessionId, index, offset, limit),
-      {
-        pageSize: TRACE_EVENT_PAGE_SIZE,
-        signal,
-        onPage: (page) => {
-          // `total` comes from the latest page: the file is appended to while the Session runs.
-          setTotal(page.total);
-          // The page is spliced in AT ITS OFFSET rather than replacing or appending: a refresh
-          // re-walks a file already on screen (the panel re-reads on every settled turn), and
-          // a first page that replaced the list would drop a 2500-event file back to 1000 rows
-          // and empty its later rounds for a moment, once per turn. A file SWITCH starts from
-          // an empty list instead — the renderedFileKey reset above — so nothing is spliced
-          // into another file's rows.
-          setEvents((prev) => {
-            const next = prev.slice();
-            next.splice(page.offset, page.events.length, ...page.events);
-            return next;
-          });
-          haveFirstPage = true;
-          clearErrorWhenBothLanded();
-        },
-      },
-    )
-      .then((loaded) => {
-        // The completed walk's last word on the file's length: rows past it are an earlier
-        // walk's leftovers, from a file that came back shorter than it was read as before.
-        if (!signal.cancelled) {
-          setEvents((prev) => (prev.length > loaded ? prev.slice(0, loaded) : prev));
-        }
-      })
-      .catch(fail);
+      .catch((err: unknown) => {
+        if (!signal.cancelled) setError(apiErrorText(err));
+      });
     return () => {
       signal.cancelled = true;
     };
   }, [projectId, agentId, sessionId, index, reloadSignal]);
 
-  // Cost is not priced here: the analysis carries each round's cost (and the file's), priced by
-  // the server with the cost center's own rule — the Project's current rates for the file's
-  // model, at the tier each Request's timestamp fell in — so what this file adds up to is what
-  // the conversation toolbar shows for the same requests. An unpriced model (or a legacy head
-  // naming no provider) simply carries no cost, and formatMoney renders that as a dash.
-
-  // Session context window (the upper bound for each round's donut ring): read once from session_meta, falling back to 128000 if unconfigured.
-  const contextMax = useMemo(() => {
-    const meta = events.find((m) => m.type === "session_meta");
-    return resolveContextWindow(
-      meta
-        ? (meta.payload as { model_context_window?: number | string }).model_context_window
-        : undefined,
-    );
-  }, [events]);
-
-  const { tasks, global, statsByTask, globalLlmMs } = useMemo(() => {
-    const g = { buckets: zeroBuckets(), toolCalls: 0 };
-    const empty = new Map<number, TraceTaskStats>();
-    if (!analysis)
-      return {
-        tasks: [] as TaskData[],
-        global: g,
-        statsByTask: empty,
-        globalLlmMs: 0,
+  // Read the open rounds that need it: a round opened for the first time, and an open round
+  // whose range the latest analysis moved (the running round, which grows every turn). A
+  // re-read keeps the rows already on screen until it lands. A round being read for the same
+  // range is not asked for twice, and a read the analysis has since moved past is dropped when
+  // it lands — the newer read is the one that counts.
+  const { analysis, expanded } = file;
+  useEffect(() => {
+    if (analysis === null) return;
+    const signal = fileSignal.current;
+    for (const round of roundsToRead(analysis.tasks, shownRounds, expanded, rounds)) {
+      const range: RoundRange = {
+        taskIndex: round.taskIndex,
+        messageFrom: round.messageFrom,
+        messageTo: round.messageTo,
       };
+      const key = rangeKey(range);
+      if (inflight.current.get(range.taskIndex) === key) continue;
+      inflight.current.set(range.taskIndex, key);
+      const land = (entry: RoundEntry) => {
+        if (signal.cancelled || inflight.current.get(range.taskIndex) !== key) return;
+        inflight.current.delete(range.taskIndex);
+        setRounds((prev) => new Map(prev).set(range.taskIndex, entry));
+      };
+      loadRoundEvents(
+        (offset, limit) =>
+          api.getAgentTraceEvents(projectId, agentId, sessionId, index, offset, limit),
+        range,
+        { signal },
+      )
+        .then((events) => land({ ...range, status: "loaded", rows: events.filter(isMainSession) }))
+        .catch((err: unknown) => land({ ...range, status: "failed", error: apiErrorText(err) }));
+    }
+  }, [analysis, expanded, shownRounds, rounds, projectId, agentId, sessionId, index]);
 
-    // A round's duration range always comes from the server (analysis.tasks,
-    // computed over the whole file; the start is that round's first
-    // request_begin). For a degenerate round with no Request, startTs is an
-    // empty string → no range is built, and the duration counts as 0.
-    const boundsByTask = new Map<number, { min: number; max: number }>();
-    for (const t of analysis.tasks) {
-      const min = Date.parse(t.startTs);
-      const max = Date.parse(t.endTs);
-      if (Number.isFinite(min) && Number.isFinite(max)) {
-        boundsByTask.set(t.taskIndex, { min, max });
-      }
-    }
-
-    const map = new Map<number, TaskData>();
-    const ensure = (ti: number): TaskData => {
-      let d = map.get(ti);
-      if (!d) {
-        const b = boundsByTask.get(ti);
-        d = {
-          taskIndex: ti,
-          segments: [],
-          spans: [],
-          otherSpans: [],
-          messages: [],
-          toolCalls: 0,
-          durationMs: b ? Math.max(0, b.max - b.min) : 0,
-        };
-        map.set(ti, d);
-      }
-      return d;
-    };
-    for (const t of analysis.tasks) ensure(t.taskIndex); // empty rounds still need to appear in the list
-    for (const s of analysis.modelSegments) ensure(s.taskIndex).segments.push(s);
-    for (const s of analysis.toolSpans) {
-      const d = ensure(s.taskIndex);
-      d.spans.push(s);
-      d.toolCalls += 1;
-    }
-    // Non-tool auxiliary phases (MCP connect); pre-otherSpans analysis payloads (cached
-    // responses) may omit the field.
-    for (const s of analysis.otherSpans ?? []) ensure(s.taskIndex).otherSpans.push(s);
-    // Message attribution: **by the server-given index range**, never guessed
-    // from timestamps. The same millisecond can be crowded with "the previous
-    // round's last reply, compaction_begin, the compaction prompt, the next
-    // round's request_begin" — splitting by a time boundary can't tell them
-    // apart, and this round's reply would get misattributed to the next
-    // round (the server already knows this message-by-message from its
-    // sequential scan, no need to re-guess it here).
-    // events is only used to populate the message list (a list view that
-    // names its loading progress at the bottom); no **numeric value** is ever
-    // derived from it: the pages arrive one after another, so aggregating over
-    // events would undercount Token/cost for as long as a long Trace is still loading.
-    const taskOfIndex = (k: number): number | null => {
-      for (const t of analysis.tasks) {
-        if (k >= t.messageFrom && k <= t.messageTo) return t.taskIndex;
-      }
-      return null;
-    };
-    for (let i = 0; i < events.length; i++) {
-      const msg = events[i]!;
-      if (msg.origin && msg.origin.length > 0) continue; // sub-session messages don't enter this file's grouping
-      const ti = taskOfIndex(i); // events is paged from the file's start, so i IS the index within the file
-      if (ti !== null) ensure(ti).messages.push(msg);
-    }
-    g.toolCalls = analysis.toolSpans.length;
-    // Numeric values always come from analysis.tasks, computed by the server
-    // over **the whole file**. Note the differing conventions:
-    //   - context: a **snapshot** (usage at that round's last non-compaction Request), not an accumulated value;
-    //   - tokens: this round's **throughput** (sum across Requests), used for
-    //     Token / cost; `tokens.output` doubles as the TPS numerator;
-    //   - llmMs: the TPS denominator (this round's LLM generation time, with human approval wait already deducted).
-    // The global summary and the per-round cards below share **the same
-    // scope** (including compaction rounds): every global figure is the sum
-    // across rounds, and they must add up.
-    const statsByTask = new Map(analysis.tasks.map((t) => [t.taskIndex, t]));
-    for (const t of analysis.tasks) {
-      g.buckets.cacheRead += t.tokens.cacheRead;
-      g.buckets.cacheWrite += t.tokens.cacheWrite;
-      g.buckets.output += t.tokens.output;
-    }
-    const gLlm = analysis.tasks.reduce((s, t) => s + t.llmMs, 0);
-    const tasks = [...map.values()].sort((a, b) => a.taskIndex - b.taskIndex);
-    return { tasks, global: g, statsByTask, globalLlmMs: gLlm };
-  }, [analysis, events]);
+  // Opening a file brings its open newest round into view: it is the last card, under the
+  // summary and the collapsed rounds drawn before it, so without this the panel opens on
+  // everything but the round it just opened. The card's top goes to the top of the panel, so
+  // its body — still being read — unfolds below it without moving it. Instant, not smooth: a
+  // smooth scroll would sweep past every card above it. Only the analysis that opened the file
+  // sets `reveal`; a refresh clears it, so a settled turn never moves the reader's scroll.
+  const reveal = file.reveal;
+  useLayoutEffect(() => {
+    if (reveal === null) return;
+    rootRef.current?.querySelector(`[data-round="${reveal}"]`)?.scrollIntoView({ block: "start" });
+  }, [reveal]);
 
   // The error takes the whole view only while there is nothing to take it from: this re-reads
   // on every settled turn now, so a blip mid-read would otherwise blank a file the user is in
-  // the middle of. With a file already rendered the failure is a line above it (below).
+  // the middle of. With a file already rendered the failure is a line above it.
   if (error !== null && analysis === null)
-    return <p className="text-xs text-red-600 dark:text-red-400">{error}</p>;
+    return <p className={`text-xs ${toneInk.danger}`}>{error}</p>;
   if (!analysis) return <Skeleton className="h-40" />;
 
-  // Duration is likewise "the sum across rounds" computed by the server over
-  // the whole file (including compaction rounds, same scope as the per-round
-  // display below): events is paginated, so subtracting first from last
-  // would truncate a long Trace's duration (a 90s span where the first 1000 events only cover the first 30s → showing 30s).
-  const globalMs = analysis.elapsedMs;
-
-  const toggle = (ti: number) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
+  const toggle = (ti: number) => {
+    setFile((prev) => {
+      const next = new Set(prev.expanded);
       if (next.has(ti)) next.delete(ti);
       else next.add(ti);
+      return { ...prev, expanded: next };
+    });
+    // A failed read is not kept: closing and reopening the round is how it is retried.
+    setRounds((prev) => {
+      if (prev.get(ti)?.status !== "failed") return prev;
+      const next = new Map(prev);
+      next.delete(ti);
       return next;
     });
-
-  /** The **first** message row at that instant; a bar-initiated highlight/jump uses this to hit only one row. */
-  const firstRowKeyAt = (ts: string): string | null => {
-    for (const t of tasks) {
-      const i = t.messages.findIndex((m) => m.timestamp === ts);
-      if (i >= 0) return rowKeyOf(t.taskIndex, i);
-    }
-    return null;
   };
-
-  // Target row for hover highlighting: use the highlight's own rowKey (from a
-  // message row) if it has one; otherwise, with only ts (from a bar), take the first row.
-  const hoveredRow =
-    highlight?.rowKey ?? (highlight?.ts !== undefined ? firstRowKeyAt(highlight.ts) : null);
 
   /** Click a bar: scroll to the corresponding message row and pin the highlight — the mouse moving away afterward shouldn't clear it, so this is stored separately from hover highlighting. */
   const jumpTo = (ts: string) => {
-    const rk = firstRowKeyAt(ts);
+    const rk = firstRowKeyAt(rounds, expanded, ts);
     if (rk === null) return;
     setPinnedRow(rk);
     // The target row may have just re-rendered from the highlight; wait for this frame to commit before scrolling.
@@ -492,31 +455,148 @@ export function TraceFileView({
   };
 
   return (
+    <TraceFileBody
+      rootRef={rootRef}
+      analysis={analysis}
+      currency={currency}
+      expanded={expanded}
+      rounds={rounds}
+      shownRounds={shownRounds}
+      error={error}
+      highlight={highlight}
+      pinnedRow={pinnedRow}
+      onHighlight={onHighlight}
+      onToggle={toggle}
+      onShowEarlier={() => setShownRounds((n) => n + TRACE_ROUNDS_PAGE)}
+      onJump={jumpTo}
+    />
+  );
+}
+
+/**
+ * The file as drawn from what the view holds: the analysis, which rounds are open, which have
+ * been read. Separate from the loading so it renders to static markup with a given state.
+ */
+export function TraceFileBody({
+  rootRef,
+  analysis,
+  currency,
+  expanded,
+  rounds,
+  shownRounds,
+  error,
+  highlight,
+  pinnedRow,
+  onHighlight,
+  onToggle,
+  onShowEarlier,
+  onJump,
+}: {
+  rootRef?: RefObject<HTMLDivElement | null>;
+  analysis: TraceAnalysisResponse;
+  currency: Currency;
+  expanded: ReadonlySet<number>;
+  rounds: ReadonlyMap<number, RoundEntry>;
+  /** How many of the newest round cards are drawn. */
+  shownRounds: number;
+  /** A refresh that failed: what is drawn is the last read that succeeded. */
+  error: string | null;
+  highlight: TraceHighlight | null;
+  pinnedRow: string | null;
+  onHighlight: (h: TraceHighlight | null) => void;
+  onToggle: (taskIndex: number) => void;
+  onShowEarlier: () => void;
+  onJump: (ts: string) => void;
+}) {
+  // Cost is not priced here: the analysis carries each round's cost (and the file's), priced by
+  // the server with the cost center's own rule — the Project's current rates for the file's
+  // model, at the tier each Request's timestamp fell in — so what this file adds up to is what
+  // the conversation toolbar shows for the same requests. An unpriced model (or a legacy head
+  // naming no provider) simply carries no cost, and formatMoney renders that as a dash.
+
+  // Session context window (the upper bound for each round's donut ring): the analysis reads it
+  // off the file's head session_meta; an older server sends none, and the ring falls back to 128000.
+  const contextMax = resolveContextWindow(analysis.modelContextWindow);
+
+  const { timelines, global, globalLlmMs } = useMemo(() => {
+    const g = { buckets: zeroBuckets(), toolCalls: analysis.toolSpans.length };
+    const byTask = new Map<number, TaskTimeline>();
+    const ensure = (ti: number): TaskTimeline => {
+      let d = byTask.get(ti);
+      if (!d) {
+        d = { segments: [], spans: [], otherSpans: [] };
+        byTask.set(ti, d);
+      }
+      return d;
+    };
+    for (const s of analysis.modelSegments) ensure(s.taskIndex).segments.push(s);
+    for (const s of analysis.toolSpans) ensure(s.taskIndex).spans.push(s);
+    // Non-tool auxiliary phases (MCP connect); pre-otherSpans analysis payloads (cached
+    // responses) may omit the field.
+    for (const s of analysis.otherSpans ?? []) ensure(s.taskIndex).otherSpans.push(s);
+    // Numeric values always come from analysis.tasks, computed by the server
+    // over **the whole file** — never from the events, which are read one
+    // open round at a time. Note the differing conventions:
+    //   - context: a **snapshot** (usage at that round's last non-compaction Request), not an accumulated value;
+    //   - tokens: this round's **throughput** (sum across Requests), used for
+    //     Token / cost; `tokens.output` doubles as the TPS numerator;
+    //   - llmMs: the TPS denominator (this round's LLM generation time, with human approval wait already deducted).
+    // The global summary and the per-round cards below share **the same
+    // scope** (including compaction rounds): every global figure is the sum
+    // across rounds, and they must add up.
+    for (const t of analysis.tasks) {
+      g.buckets.cacheRead += t.tokens.cacheRead;
+      g.buckets.cacheWrite += t.tokens.cacheWrite;
+      g.buckets.output += t.tokens.output;
+    }
+    const gLlm = analysis.tasks.reduce((s, t) => s + t.llmMs, 0);
+    return { timelines: byTask, global: g, globalLlmMs: gLlm };
+  }, [analysis]);
+
+  const shown = useMemo(() => visibleRounds(analysis.tasks, shownRounds), [analysis, shownRounds]);
+  const earlier = analysis.tasks.length - shown.length;
+
+  // Duration is likewise "the sum across rounds" computed by the server over
+  // the whole file (including compaction rounds, same scope as the per-round
+  // display below).
+  const globalMs = analysis.elapsedMs;
+
+  // Target row for hover highlighting: use the highlight's own rowKey (from a
+  // message row) if it has one; otherwise, with only ts (from a bar), take the first row.
+  const hoveredRow =
+    highlight?.rowKey ??
+    (highlight?.ts !== undefined ? firstRowKeyAt(rounds, expanded, highlight.ts) : null);
+
+  return (
     <div ref={rootRef} className="space-y-4">
       {/* A re-read that failed: what follows is the last read that succeeded, so it may be a
           turn or two behind. */}
-      {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error !== null && <p className={`text-xs ${toneInk.danger}`}>{error}</p>}
       {/* Global summary: split into three groups by nature (count / Token
           usage / duration·cost·TPS), separated by vertical rules — a dozen
           metrics laid out in one row would read as a blur of digits; grouping lets you spot the kind you want at a glance. */}
-      <Card>
+      <Card className="@container">
         <CardHeader title={S.traces.globalSummary} />
         {/* Three groups side by side as columns, each item within a group
             taking its own row (name on the left, value on the right): laid
             out in one row it's a blur of digits, while giving each group a
             full row only uses a small strip on the left and wastes the rest.
-            Splitting into columns fills the width and keeps it to three rows tall. */}
-        <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+            Splitting into columns fills the width and keeps it to three rows tall.
+            Side by side only where the card itself has the room — it is the container
+            queried, not the viewport: the Trace tab is a dock panel, a few hundred pixels
+            wide on a wide screen, where three columns cut every value short. `@2xl` leaves
+            each column about a third wider than its longest label and value need; narrower,
+            the groups stack. */}
+        <div className="grid grid-cols-1 gap-x-6 gap-y-4 @2xl:grid-cols-3">
           {/* Counts */}
           <div>
-            {/* Rounds = number of cards below (a compaction round counts as
-                a round too): the global summary and the per-round display
-                below share **the same scope** — every figure is the sum
-                across rounds and must add up. The average is exactly the two
-                rows above it divided, tool calls ÷ rounds, so it holds that
-                same scope and a reader can check the division by eye — a
-                denominator that skipped compaction rounds would no longer
-                match the round count printed here. */}
+            {/* Rounds = every round in the file (a compaction round counts as
+                a round too), drawn or not: the global summary and the per-round
+                cards share **the same scope** — every figure is the sum across
+                rounds and must add up. The average is exactly the two rows above
+                it divided, tool calls ÷ rounds, so it holds that same scope and a
+                reader can check the division by eye — a denominator that skipped
+                compaction rounds would no longer match the round count printed here. */}
             <SummaryRow label={S.traces.tasksLabel} value={String(analysis.tasks.length)} />
             <SummaryRow label={S.traces.toolCalls} value={String(global.toolCalls)} />
             <SummaryRow
@@ -556,29 +636,51 @@ export function TraceFileView({
         </div>
       </Card>
 
+      {/* The rounds before the drawn ones: each click draws the next page of them above. */}
+      {earlier > 0 && (
+        <button
+          type="button"
+          data-slot="earlier"
+          onClick={onShowEarlier}
+          className="w-full rounded-md py-1 text-center text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800/60 dark:hover:text-gray-200"
+        >
+          {S.traces.earlierRounds(earlier)}
+        </button>
+      )}
+
       {/* Grouped by Task */}
-      {tasks.map((t) => {
-        const open = !collapsed.has(t.taskIndex);
+      {shown.map((st) => {
+        const open = expanded.has(st.taskIndex);
+        const timeline = timelines.get(st.taskIndex);
+        // A round's duration range always comes from the server (computed over
+        // the whole file; the start is that round's first request_begin). For a
+        // degenerate round with no Request, startTs is an empty string → the
+        // duration counts as 0.
+        const startMs = Date.parse(st.startTs);
+        const endMs = Date.parse(st.endTs);
+        const durationMs =
+          Number.isFinite(startMs) && Number.isFinite(endMs) ? Math.max(0, endMs - startMs) : 0;
         // This round's convention as computed by the server over the whole
         // file: ctx = context snapshot at the end of this round (last
         // non-compaction Request), tokens = this round's throughput (used
         // for Token and cost, output doubles as the TPS numerator), llmMs = the TPS denominator.
-        const st = statsByTask.get(t.taskIndex);
-        const ctx = st?.context;
-        const tokens = st?.tokens ?? zeroBuckets();
+        const ctx = st.context;
+        const tokens = st.tokens;
         const compactionBadge = compactionBadgeLabel(st);
         return (
-          <Card key={t.taskIndex} padding="none">
+          // `data-round` is what a file's first open scrolls to; the margin keeps the card off
+          // the panel's top edge once it is there.
+          <Card key={st.taskIndex} padding="none" data-round={st.taskIndex} className="scroll-mt-3">
             <button
               type="button"
               data-slot="head"
-              onClick={() => toggle(t.taskIndex)}
+              onClick={() => onToggle(st.taskIndex)}
               aria-expanded={open}
               className="flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-800/60"
             >
               <Chevron open={open} size={13} className="text-gray-400" />
               <span className="shrink-0 text-sm font-semibold">
-                {S.traces.task(t.taskIndex + 1)}
+                {S.traces.task(st.taskIndex + 1)}
               </span>
               {/* Compaction rounds are explicitly flagged: their Token /
                   cost / duration / TPS count toward the global summary just
@@ -597,12 +699,12 @@ export function TraceFileView({
               >
                 <StatChip
                   glyph={STAT_ICONS.toolCalls}
-                  value={String(t.toolCalls)}
+                  value={String(timeline?.spans.length ?? 0)}
                   label={S.traces.toolCalls}
                 />
                 {/* Token usage broken down by category: this round's input
                     (parenthesized portion is the cache hit) + this round's
-                    output. Uses the server's this-round throughput tokens (whole file, including compaction), not computed from truncated events. */}
+                    output. Uses the server's this-round throughput tokens (whole file, including compaction). */}
                 <InputChip buckets={tokens} />
                 <StatChip
                   glyph={STAT_ICONS.output}
@@ -611,17 +713,17 @@ export function TraceFileView({
                 />
                 <StatChip
                   glyph={STAT_ICONS.cost}
-                  value={formatMoney(st?.cost ?? null, currency)}
+                  value={formatMoney(st.cost ?? null, currency)}
                   label={`${S.common.cost}（${currency}）`}
                 />
                 <StatChip
                   glyph={STAT_ICONS.elapsed}
-                  value={humanizeDuration(t.durationMs)}
-                  label={`${S.chat.statElapsed}${durationSplit(st?.llmMs ?? 0, st?.toolMs ?? 0)}`}
+                  value={humanizeDuration(durationMs)}
+                  label={`${S.chat.statElapsed}${durationSplit(st.llmMs, st.toolMs)}`}
                 />
                 <StatChip
                   glyph={STAT_ICONS.tps}
-                  value={formatTps(computeTps(tokens.output, st?.llmMs ?? 0))}
+                  value={formatTps(computeTps(tokens.output, st.llmMs))}
                   label={S.chat.statTps}
                 />
               </div>
@@ -631,7 +733,7 @@ export function TraceFileView({
                   title). The exact figures are given by the chips on the
                   left; the ring is only a peripheral hint of the usage
                   ratio, hence its small size. It's fed the snapshot ctx
-                  rather than the accumulated t.buckets — the latter
+                  rather than the accumulated tokens — the latter
                   recounts the history each round carries forward, so a few
                   rounds of tool calls alone could fill the ring. A pure compaction Task has no snapshot and draws no ring. */}
               {ctx && (
@@ -652,56 +754,105 @@ export function TraceFileView({
               )}
             </button>
 
-            {open && (
-              <div data-slot="body" className="space-y-3 p-3">
-                {/* This round's timeline */}
-                {(t.segments.length > 0 || t.spans.length > 0 || t.otherSpans.length > 0) && (
-                  <div className="rounded-md border border-gray-100 p-2 dark:border-gray-800/60">
-                    <p className="mb-1.5 text-xs font-medium text-gray-500">{S.traces.timeline}</p>
-                    <TimelineChart
-                      segments={t.segments}
-                      toolSpans={t.spans}
-                      otherSpans={t.otherSpans}
-                      highlight={highlight}
-                      onHighlight={onHighlight}
-                      onJump={jumpTo}
-                      hideTaskLabel
-                    />
-                  </div>
-                )}
+            {/* The round's body folds under the theme's layout motion, and is built only while
+                it shows: a round's timeline and its rows are the costly part of this page. */}
+            <Fold open={open} data-slot="body" bodyClassName="space-y-3 p-3">
+              {() => (
+                <>
+                  {/* This round's timeline: drawn from the analysis, so it is there before the messages are read. */}
+                  {timeline !== undefined &&
+                    (timeline.segments.length > 0 ||
+                      timeline.spans.length > 0 ||
+                      timeline.otherSpans.length > 0) && (
+                      <div className="rounded-md border border-gray-100 p-2 dark:border-gray-800/60">
+                        <p className="mb-1.5 text-xs font-medium text-gray-500">
+                          {S.traces.timeline}
+                        </p>
+                        <TimelineChart
+                          segments={timeline.segments}
+                          toolSpans={timeline.spans}
+                          otherSpans={timeline.otherSpans}
+                          highlight={highlight}
+                          onHighlight={onHighlight}
+                          onJump={onJump}
+                          hideTaskLabel
+                        />
+                      </div>
+                    )}
 
-                {/* This round's messages */}
-                <div>
-                  <p className="mb-1.5 text-xs font-medium text-gray-500">
-                    {S.traces.messages}（{t.messages.length}）
-                  </p>
-                  {t.messages.length === 0 ? (
-                    <p className="text-xs text-gray-400">{S.common.none}</p>
-                  ) : (
-                    <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800/60 dark:border-gray-800">
-                      {t.messages.map((msg, i) => {
-                        const rk = rowKeyOf(t.taskIndex, i);
-                        return (
-                          <EventRow
-                            key={i}
-                            msg={msg}
-                            rowKey={rk}
-                            matched={rk === hoveredRow || rk === pinnedRow}
-                            onHighlight={(h) => onHighlight(h)}
-                          />
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            )}
+                  {/* This round's messages */}
+                  <RoundMessages
+                    round={st}
+                    entry={rounds.get(st.taskIndex)}
+                    hoveredRow={hoveredRow}
+                    pinnedRow={pinnedRow}
+                    onHighlight={onHighlight}
+                  />
+                </>
+              )}
+            </Fold>
           </Card>
         );
       })}
+    </div>
+  );
+}
 
-      {events.length < total && (
-        <p className="text-xs text-gray-400">{S.traces.loadingNote(events.length, total)}</p>
+/**
+ * An open round's messages: its rows once read, a placeholder while the first read is out,
+ * and the failure in their place when it did not come back. A re-read of a round already read
+ * keeps the rows on screen until it lands.
+ */
+function RoundMessages({
+  round,
+  entry,
+  hoveredRow,
+  pinnedRow,
+  onHighlight,
+}: {
+  round: TraceTaskStats;
+  entry: RoundEntry | undefined;
+  hoveredRow: string | null;
+  pinnedRow: string | null;
+  onHighlight: (h: TraceHighlight | null) => void;
+}) {
+  // Before the read lands the count is the range's, known from the analysis alone.
+  const count = entry?.status === "loaded" ? entry.rows.length : roundSpan(round);
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-gray-500">
+        {S.traces.messages}（{count}）
+      </p>
+      {entry === undefined ? (
+        count === 0 ? (
+          <p className="text-xs text-gray-400">{S.common.none}</p>
+        ) : (
+          <div role="status" aria-busy="true" className="space-y-1.5">
+            <span className="sr-only">{S.traces.roundLoading}</span>
+            {Array.from({ length: Math.min(3, count) }, (_, i) => (
+              <Skeleton key={i} className="h-7 w-full" />
+            ))}
+          </div>
+        )
+      ) : entry.status === "failed" ? (
+        <p className={`text-xs ${toneInk.danger}`}>{entry.error}</p>
+      ) : entry.rows.length === 0 ? (
+        <p className="text-xs text-gray-400">{S.common.none}</p>
+      ) : (
+        <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800/60 dark:border-gray-800">
+          {entry.rows.map((msg, i) => {
+            const rk = rowKeyOf(round.taskIndex, i);
+            return (
+              <EventRow
+                key={i}
+                msg={msg}
+                rowKey={rk}
+                matched={rk === hoveredRow || rk === pinnedRow}
+                onHighlight={(h) => onHighlight(h)}
+              />
+            );
+          })}
+        </ul>
       )}
     </div>
   );

@@ -223,6 +223,24 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.modelsGroupsFolded",
+    scope: "browser",
+    why: "Whether the models page's collapsible groups are folded; one flag, names nothing on the server.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelsPinnedGroups",
+    scope: "browser",
+    why: "Which model groups stay out of the fold, as differences from the built-in default set; a view preference, and a pinned user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelsGroupSort",
+    scope: "browser",
+    why: "How each model group orders its models, as differences from price low to high; a view preference, and a user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
     key: "penguin.steerMode",
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",
@@ -272,6 +290,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "The Sessions each machine was last seen holding, shown until its connection is held again. Project id and machine id in the key, Session ids in the value — a new root knows none of them.",
   },
   {
+    kind: "exact",
+    key: "penguin.sandboxBackendPromptDismissed",
+    scope: "install",
+    why: "The machines whose Sandbox card no longer offers to install a backend — machine ids of this root.",
+  },
+  {
     kind: "family",
     key: "penguin.machineAgents.",
     scope: "install",
@@ -314,6 +338,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "Pinned sidebar groups, same key space.",
   },
   {
+    kind: "family",
+    key: "penguin.a2uiDraft.",
+    scope: "install",
+    why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
+  },
+  {
     kind: "exact",
     key: "penguin.lastProjectId",
     scope: "install",
@@ -336,6 +366,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.companyBetaNoticeShown",
     scope: "browser",
     why: "That company mode's beta notice has been shown in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.tokenDanceBannerDismissed",
+    scope: "browser",
+    why: "That the models page's TokenDance banner was dismissed in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
   },
   {
     kind: "exact",

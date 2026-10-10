@@ -1,5 +1,5 @@
 /**
- * @prismshadow/penguin-plugin-sandbox-seatbelt — a macOS Seatbelt sandbox backend.
+ * @penguinharness/sandbox-seatbelt — a macOS Seatbelt sandbox backend.
  *
  * A PLUGIN PACKAGE, not part of the platform: a Project asks for it on the Plugins page
  * and the harness resolves it from the installation. It compiles against the
@@ -232,7 +232,7 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
   const settings = internals.settings ?? (() => ({ runner: internals.runner ?? defaultRunner() }));
   const usable = new Map<string, boolean>();
   return {
-    dimensions: ["fs-write", "network", "network-local", "mask-paths"],
+    dimensions: ["fs-write", "network", "network-local", "mask-paths", "closed-temp"],
     confine(argv, policy): ConfinedArgv {
       const { runner } = settings();
       if (!usable.has(runner)) usable.set(runner, probe(PROBE_TIMEOUT_MS, runner));
@@ -266,7 +266,7 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
       {
         id: "sandbox-seatbelt.provider",
         name: "penguin-seatbelt",
-        dimensions: ["fs-write", "network", "network-local", "mask-paths"],
+        dimensions: ["fs-write", "network", "network-local", "mask-paths", "closed-temp"],
       },
     ],
     "PluginConfigProvider.groups": [

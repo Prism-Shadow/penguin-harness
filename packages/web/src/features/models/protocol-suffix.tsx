@@ -3,12 +3,13 @@
  * field — it is the grey protocol-path suffix that field always had, promoted from a
  * passive label into the protocol picker itself.
  *
- * The suffix already displayed the very thing this control selects: the path the AgentHub
- * client appends to the base URL (`/responses` / `/v1/messages` / `/chat/completions`),
- * which is one-to-one with the three generic protocol clients. So protocol selection
- * reuses that component rather than occupying a form row of their own: the trigger keeps
- * showing the live path, and clicking it opens a menu of the three protocols (name as the
- * row title, the appended path as its description) — the manual override.
+ * The suffix already displayed the very thing this control selects: the path the MMSP
+ * client appends to the base URL (`/responses` / `/v1/messages` / `/chat/completions` /
+ * `/v1beta/models` / `/stream`), which is one-to-one with the protocol clients it offers. So
+ * protocol selection reuses that component rather than occupying a form row of their own: the
+ * trigger keeps showing the live path, and clicking it opens a menu of the protocols
+ * (PROTOCOL_CLIENT_TYPES; name as the row title, the appended path as its description) — the
+ * manual override.
  *
  * Selection only. The detect ACTION lives at the base URL field's top-right, next to its
  * label (per maintainer: same placement idiom as the API key field's "get API key" link),
@@ -40,33 +41,62 @@ import { PROTOCOL_CLIENT_TYPES } from "./protocol-types";
 import type { ProtocolClientType } from "./protocol-types";
 import { toneInk } from "../../lib/tone";
 
+/** Whether a value is one of the protocols the menu always lists. */
+function isPickerProtocol(value: string): value is ProtocolClientType {
+  return (PROTOCOL_CLIENT_TYPES as readonly string[]).includes(value);
+}
+
 /** Whether the last detection run left something to warn about (drives the amber trigger). */
 export type ProtocolDetectTone = "ok" | "warn" | null;
+
+/**
+ * The menu's optional first row, which sets no protocol of its own: "Not set" in the group
+ * settings (each model then decides, by its own protocol or its id), "Follow group" in a model
+ * dialog whose group decides a protocol. It is the checked row while the value is null.
+ */
+export interface ProtocolFollowOption {
+  label: string;
+  /** What following resolves to, as the row's second line (a protocol's name, say). */
+  description?: string;
+  onPick: () => void;
+}
 
 export function ProtocolSuffixMenu({
   value,
   path,
   detecting,
   tone,
+  follow,
   onPick,
 }: {
   /**
-   * Protocol the selector currently represents, or null when none has been chosen yet
-   * (a fresh custom model). Null renders the placeholder label and leaves every menu row
-   * unchecked — nothing may look selected that the user did not select.
+   * Protocol the selector currently represents, or null when none is set. With no `follow` row
+   * that means none has been chosen yet (a fresh custom model): null renders the placeholder
+   * label and leaves every menu row unchecked — nothing may look selected that the user did not
+   * select. With one, null is that row's choice, and it is the row shown checked.
+   *
+   * A stored protocol outside the menu's (a group's `client_type` set from the CLI, say) gets a
+   * row of its own, checked, under the follow row: the menu shows what is stored rather than
+   * misstating it, and picking that row changes nothing.
    */
-  value: ProtocolClientType | null;
+  value: ProtocolClientType | string | null;
   /** Trigger text: the live protocol path, or the "pick one" placeholder while unset. */
   path: string;
   /** A detection run is in flight (started from the field's top-right button). */
   detecting: boolean;
   /** `warn` paints the trigger amber (nothing matched / detection failed); the wording lives below the field. */
   tone: ProtocolDetectTone;
+  follow?: ProtocolFollowOption | undefined;
   onPick: (clientType: ProtocolClientType) => void;
 }) {
   const [open, setOpen] = useState(false);
-  // Unset reads as "not selected" everywhere it is announced, not as a default.
-  const name = value === null ? S.models.protocolUnset : (S.models.protocolNames[value] ?? value);
+  const stored = value !== null && !isPickerProtocol(value) ? value : null;
+  // Unset reads as "not selected" everywhere it is announced, not as a default — unless there
+  // is something to follow, which is then what null chose.
+  const name =
+    value === null
+      ? (follow?.label ?? S.models.protocolUnset)
+      : (S.models.protocolNames[value] ?? value);
   return (
     <Dropdown
       open={open}
@@ -100,6 +130,27 @@ export function ProtocolSuffixMenu({
       }
     >
       <Menu density="sm">
+        {follow !== undefined && (
+          <MenuRadioItem
+            checked={value === null}
+            onSelect={() => {
+              setOpen(false);
+              follow.onPick();
+            }}
+            label={follow.label}
+            description={follow.description}
+          />
+        )}
+        {stored !== null && (
+          <MenuRadioItem
+            checked
+            onSelect={() => setOpen(false)}
+            label={S.models.protocolNames[stored] ?? stored}
+            description={
+              <span className="font-mono">{protocolPathForModel("custom", stored)}</span>
+            }
+          />
+        )}
         {PROTOCOL_CLIENT_TYPES.map((t) => (
           <MenuRadioItem
             key={t}

@@ -28,6 +28,10 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
   error?: string;
   /** Same size tier as Input: sm is for filter bars, keeps the toolbar from growing taller. */
   size?: ControlSize;
+  /** Semantic explanation behind a "?" beside the label (see Field's `info`). */
+  info?: ReactNode;
+  /** Accessible name for that "?" (defaults to the generic "More info"). */
+  infoLabel?: string;
 }
 
 interface Opt {
@@ -59,6 +63,8 @@ export function Select({
   error,
   required,
   size = "sm",
+  info,
+  infoLabel,
   className,
   children,
   value,
@@ -73,6 +79,8 @@ export function Select({
   const current = String(value ?? "");
   const selected = options.find((o) => o.value === current);
   const errorId = useId();
+  // The info layout associates the label by htmlFor (see Field), so the trigger needs an id.
+  const controlId = useId();
 
   const [open, setOpen] = useState(false);
   const { triggerRef, panelRef, position } = usePortalPanel({
@@ -94,6 +102,7 @@ export function Select({
       <button
         ref={triggerRef}
         type="button"
+        {...(info !== undefined ? { id: controlId } : {})}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -148,7 +157,16 @@ export function Select({
   );
 
   return (
-    <Field label={label} hint={hint} error={error} errorId={errorId} required={required}>
+    <Field
+      label={label}
+      hint={hint}
+      error={error}
+      errorId={errorId}
+      required={required}
+      info={info}
+      {...(infoLabel !== undefined ? { infoLabel } : {})}
+      controlId={controlId}
+    >
       {control}
     </Field>
   );

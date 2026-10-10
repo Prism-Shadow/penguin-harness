@@ -69,6 +69,7 @@ import {
   PriorityBadge,
   TitleButton,
   principalLabel,
+  titledHint,
 } from "./shared";
 import {
   TICKET_COLUMNS,
@@ -282,7 +283,7 @@ export function TicketsPage() {
         {t.parent !== undefined && (
           <span
             className="mt-2 block truncate text-xs text-gray-400 dark:text-gray-500"
-            data-tooltip={t.parent}
+            data-tooltip={titledHint(titles.get(t.parent), t.parent)}
             data-tooltip-content="text"
           >
             {S.company.tickets.parentLine(titles.get(t.parent) ?? t.parent)}
@@ -455,7 +456,6 @@ export function TicketsPage() {
                 {invalids.map((t) => (
                   <li key={t.ticketId} className="flex items-baseline">
                     <TitleButton
-                      title={S.company.tickets.openTicket}
                       className="shrink-0 font-mono"
                       onClick={() => openTicket(t.ticketId)}
                     >
@@ -677,13 +677,13 @@ function CreateTicketDialog({
           size="sm"
           label={S.company.tickets.slug}
           value={slug}
-          hint={S.company.tickets.slugHint}
+          info={S.company.tickets.slugHint}
           error={slugError}
           className="font-mono"
           onChange={(e) => {
             const next = e.target.value;
             setSlug(next);
-            // The rule is short and the box is small: say so while it is typed, not on submit.
+            // The rule sits behind the "?", so a slug that breaks it says so as it is typed.
             setSlugError(
               next.trim() === "" || isTicketSlug(next.trim())
                 ? undefined
@@ -696,7 +696,7 @@ function CreateTicketDialog({
           label={S.company.tickets.goal}
           rows={3}
           value={goal}
-          hint={S.company.tickets.goalHint}
+          info={S.company.tickets.goalHint}
           onChange={(e) => setGoal(e.target.value)}
         />
         <Textarea
@@ -704,7 +704,7 @@ function CreateTicketDialog({
           label={S.company.tickets.acceptance}
           rows={3}
           value={acceptance}
-          hint={S.company.tickets.acceptanceHint}
+          info={S.company.tickets.acceptanceHint}
           onChange={(e) => setAcceptance(e.target.value)}
         />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -712,7 +712,6 @@ function CreateTicketDialog({
             size="sm"
             label={S.company.tickets.owner}
             value={owner}
-            hint={S.company.tickets.ownerSelfHint}
             onChange={(e) => setOwner(e.target.value)}
           >
             <option value="">{S.company.tickets.ownerSelf}</option>
@@ -758,6 +757,7 @@ function CreateTicketDialog({
           label={S.company.tickets.notify}
           value={notify}
           hint={S.company.tickets.notifyHint}
+          info={S.company.tickets.notifyInfo}
           className="font-mono"
           onChange={(e) => setNotify(e.target.value)}
         />

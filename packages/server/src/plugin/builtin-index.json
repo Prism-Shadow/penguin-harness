@@ -1,7 +1,7 @@
 [
   {
-    "name": "@prismshadow/penguin-plugin-sandbox-bwrap",
-    "version": "0.2.2",
+    "name": "@penguinharness/sandbox-bwrap",
+    "version": "0.2.3",
     "description": "Bubblewrap sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
     "authors": ["Prism Shadow"],
     "license": "Apache-2.0",
@@ -10,8 +10,8 @@
     "categories": ["sandbox"]
   },
   {
-    "name": "@prismshadow/penguin-plugin-sandbox-seatbelt",
-    "version": "0.2.2",
+    "name": "@penguinharness/sandbox-seatbelt",
+    "version": "0.2.3",
     "description": "macOS Seatbelt sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
     "authors": ["Prism Shadow"],
     "license": "Apache-2.0",
@@ -20,8 +20,8 @@
     "categories": ["sandbox"]
   },
   {
-    "name": "@prismshadow/penguin-plugin-sandbox-wsl",
-    "version": "0.2.2",
+    "name": "@penguinharness/sandbox-wsl",
+    "version": "0.2.3",
     "description": "WSL sandbox backend for PenguinHarness on Windows: commands run in a dedicated WSL2 distro under bubblewrap, with Windows interop switched off.",
     "authors": ["Prism Shadow"],
     "license": "Apache-2.0",
@@ -30,8 +30,8 @@
     "categories": ["sandbox"]
   },
   {
-    "name": "@prismshadow/penguin-plugin-sandbox-dsh",
-    "version": "0.2.2",
+    "name": "@penguinharness/sandbox-dsh",
+    "version": "0.2.3",
     "description": "DeepSeek Harness sandbox adaptor for PenguinHarness: the DSH local backend chain behind the harness's own sandbox interface.",
     "authors": ["Prism Shadow"],
     "license": "Apache-2.0",

@@ -31,8 +31,8 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 
 - `PENGUIN_TRUST_PROXY`：只在反向代理终结 TLS、并由代理自己设置或清除这个请求头时启用。启用后，会话 Cookie 会带上 `Secure` 标记，热更新的网络检查也能识别出 HTTPS。
 - `PENGUIN_SEED_ADMIN_PASSWORD`：不设置时，预置管理员时会生成一个随机密码，哈希后立即丢弃，没有人见过；账号通过首次登录链接认领。
-- `PENGUIN_GO_ORIGIN`：它是服务端配置，不接受浏览器指定的端点。取值必须是不带路径的 HTTPS 源；只有 `localhost`、`127.0.0.1` 和 `[::1]` 这类集成环境可以用明文 HTTP。带路径、凭据、查询参数或 fragment 的取值会在启动时被拒绝。见[授权获取新 API key](/models#授权获取新-api-key)。
-- `MODELSCOPE_BRIDGE_URL`：与 `PENGUIN_GO_ORIGIN` 一样是服务端配置，不接受浏览器指定的端点。它必须是不带凭据、查询参数或 fragment 的 HTTPS 地址。不同之处是**它允许带路径前缀**，因为生产环境的中转层就挂在 `https://go.penguin.ooo/modelscope` 下。见[授权获取新 API key](/models#授权获取新-api-key)。
+- `PENGUIN_GO_ORIGIN`：它是服务端配置，不接受浏览器指定的端点。取值必须是不带路径的 HTTPS 源；只有 `localhost`、`127.0.0.1` 和 `[::1]` 这类集成环境可以用明文 HTTP。带路径、凭据、查询参数或 fragment 的取值会在启动时被拒绝。见[连接账户](/models#连接账户)。
+- `MODELSCOPE_BRIDGE_URL`：与 `PENGUIN_GO_ORIGIN` 一样是服务端配置，不接受浏览器指定的端点。它必须是不带凭据、查询参数或 fragment 的 HTTPS 地址。不同之处是**它允许带路径前缀**，因为生产环境的中转层就挂在 `https://go.penguin.ooo/modelscope` 下。见[连接账户](/models#连接账户)。
 - `PENGUIN_UPDATE_CHECK`：设为 `off` 只关闭自动的版本检查，不影响其他对外请求：模型请求、已启用的远程控制连接、Key 授权和代理测试照常联网。
 - `PENGUIN_NO_LOGIN_SHELL_ENV`：不设置时，导入只填补启动过程没有设置的变量。见[桌面应用快速开始](/quickstart-desktop)。
 - `PENGUIN_CLI_ENTRY`：服务器从源码检出启动时，会回退到检出目录中的 `packages/cli/dist/penguin.js`。
@@ -51,6 +51,8 @@ Agent 用 `exec_command` 运行的命令继承宿主环境，但有以下改动�
 
 Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin`。服务器启动时会在 `<root>/bin/penguin` 写入一个启动脚本：脚本用服务器自己的 Node 运行 `PENGUIN_CLI_ENTRY` 指向的 CLI 入口，并把这个目录放到每条命令 PATH 的最前面。这样，命令里调用的 `penguin` 就是 Agent 正在运行的这套 harness，无论机器上全局装的是什么版本。
 
+终端面板打开的终端也会在你自己的 shell 启动文件运行之后，把同一个目录放到 PATH 最前面，因此在终端里输入的 `penguin` 同样是本安装的。
+
 这个目录既前置到环境变量里，也前置到 shell 内部，因为命令通过登录 shell 运行，而登录 shell 的 profile 常常随后重写 PATH。这也让它排在[密钥保险柜](#vault)里设置的 `PATH` 之前，而保险柜里的 `PATH` 原本会整体替换继承来的值。
 
 启动脚本在每次启动时都会重写，因此安装位置移动后，下次启动会自动跟上。没有可指向的入口时就不写启动脚本，`penguin` 的解析结果与没有启动脚本时相同。
@@ -66,7 +68,7 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 ### 供应商凭证变量
 
-模型条目没有内联 `api_key` 时，**只在请求确实发往该供应商的官方端点时**回退到供应商的环境变量：条目没有 `base_url`，或 `base_url` 是厂商自己的端点。`*_BASE_URL` 的值只在条目没有内联 `base_url` 时才会使用；自带 `base_url` 的条目一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。其余条目——网关分组预置的端点、带自己端点的 custom、vLLM 与自建分组——必须有自己的 `api_key`，否则 PenguinHarness 拒绝为它构建客户端；见[设置 API key](/models#设置-api-key)。
+模型条目没有 `api_key`、分组也没有能借给它的 `api_key` 时，**只在请求确实发往该供应商的官方端点时**回退到供应商的环境变量：条目解析不出任何 `base_url`（见[分组连接信息](#分组连接信息)），或解析出的 `base_url` 是厂商自己的端点。`*_BASE_URL` 的值只在解析不出 `base_url` 时才会使用；条目自己的或分组的 `base_url` 指向别处时，一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。其余条目——网关分组预置的端点、带自己端点的 custom、vLLM 与自建分组——必须有自己的或分组的 `api_key`，否则 PenguinHarness 拒绝为它构建客户端；见[设置 API key](/models#设置-api-key)。
 
 | 供应商 | API key | Base URL |
 | --- | --- | --- |
@@ -79,11 +81,11 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。opencode-go 分组中走 Anthropic Messages 的模型同理，其客户端读取的是 `ANTHROPIC_*`。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，三条预置都固定使用通用 Responses 客户端；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
+openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。opencode-go 分组中走 Anthropic Messages 的模型同理，其客户端读取的是 `ANTHROPIC_*`。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，分组上存的是通用 Responses 客户端；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）的模型只在解析不出 `base_url` 时读取 `MMSP_API_KEY` 与 `MMSP_BASE_URL`（缺省为 `http://127.0.0.1:25752/v1`）；有 `base_url` 而没有 `api_key` 时不发送任何 key，开放的 MMSP 服务器正是这样接受请求。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 
-`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，以 0600 权限写入，凭证内联在模型条目上。模型的标识始终是 `(provider, model_id)` 这一对，绝不把字符串拼接成单个 id；指向这个文件的每处引用都同时带上两部分，也绝不会只凭 `model_id` 推断供应商。
+`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，以 0600 权限写入，凭证内联在文件里：每个分组在 `[providers.<id>]` 存一份，模型条目上只存覆盖分组的值。模型的标识始终是 `(provider, model_id)` 这一对，绝不把字符串拼接成单个 id；指向这个文件的每处引用都同时带上两部分，也绝不会只凭 `model_id` 推断供应商。
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -93,6 +95,7 @@ openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-yo
 | `[default_chat]` | 表 | — | 新对话的预填默认值；见[新对话默认值](#新对话默认值) |
 | `[command_policy]` | 表 | 出厂规则集 | shell 命令的拒绝规则，先于审批模式生效；见[命令策略](#命令策略) |
 | `[plugins]` | 表 | — | Project 要求的服务端插件；见[插件](#插件) |
+| `[providers.<id>]` | 表 | — | 分组的连接信息，组内模型跟随它；见[分组连接信息](#分组连接信息) |
 | `[[models]]` | 表数组 | — | 可用的模型条目 |
 
 ### 模型条目
@@ -100,51 +103,83 @@ openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-yo
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `provider` | 字符串 | — | 供应商分组；与 `model_id` 一起构成条目的唯一键 |
-| `model_id` | 字符串 | — | 上游请求 id，原样发给 AgentHub |
+| `model_id` | 字符串 | — | 上游请求 id，原样发给 MMSP |
 | `context_window` | 数字 | — | 上下文窗口大小 |
-| `client_type` | 字符串 | 从 `model_id` 推断 | AgentHub 客户端协议 |
+| `client_type` | 字符串 | 分组的；两者都没有时按 `model_id` 开头的厂商系列路由 | 该模型自己的 MMSP 客户端类型 |
 | `display_name` | 字符串 | 内置模型目录中的名称 | 显示名；与模型目录不同时才会持久化 |
 | `vision` | 布尔 | `true` | 模型是否接受图像输入 |
 | `max_tokens` | 数字 | Agent 的 `model.max_tokens` | 单个模型的最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens` |
 | `fast_mode` | 布尔 | 关闭 | 单个模型的快速模式（供应商收取溢价的快速服务档位） |
 | `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`）。这里记的始终是牌价 |
-| `api_key` | 字符串 | 供应商的环境变量，仅限厂商自己的端点 | 内联凭证 |
-| `base_url` | 字符串 | 部分模型目录条目有预设 | 自定义 base URL |
+| `api_key` | 字符串 | 分组密钥（以能借给该条目为限）；没有时为供应商的环境变量，仅限厂商自己的端点 | 该模型自己的内联凭证 |
+| `base_url` | 字符串 | 分组的；两者都没有时为客户端的缺省端点 | 该模型自己的 base URL |
 | `created_at` | 字符串 | — | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
 
 字段说明：
 
-- `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages` 或 `openai-chat`。Web 对话框能根据 base URL 识别用的是哪一种。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。
-- `fast_mode`：只持久化 `true`。只有 AgentHub 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
+- `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages`、`openai-chat`、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）。Web 对话框能根据 base URL 识别前三种中的哪一种；后两种需手动选择。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。MMSP 的其他客户端类型同样可用：厂商的官方客户端（`openai-official`、`anthropic-official`、`google-official`、`zai-official`、`moonshot-official`、`deepseek-official`、`minimax-official`），以及其余通用客户端（`openai-chat-vllm-adapter`、`openai-embedding`）。`gemini-official` 是 MMSP 0.5.2 之前 `google-official` 的名称，仍然可用，并按原样保留。不设置时，模型 id 路由到它开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）的官方客户端；其他系列的 id 必须设置 `client_type`。
+- `fast_mode`：只持久化 `true`。只有 MMSP 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
 - `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
-- `base_url`：内置模型目录为网关以及固定客户端的直连条目预设了这个字段，即 MiniMax M3 和 DeepSeek 的 `deepseek-flash`。
-- `api_key`：为空时，只在条目的端点是厂商自己的地址时回退到供应商的环境变量（见[供应商凭证变量](#供应商凭证变量)）；网关、custom 与 vLLM 条目需要自己的 key。
+- `base_url`：新建 Project 时，各网关的端点存在其分组上；预置条目只在与分组不同时才存自己的（OpenCode Go 的 Anthropic Messages 条目、custom 里的 Atria Dawn Preview）。使用模型时不会补上缺少的值：直连厂商的条目没有 base URL，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。
+- `api_key`：为空时使用分组密钥，除非条目自己的 `base_url` 与分组的不同 origin（见[分组连接信息](#分组连接信息)）。两者都没有时，只在条目的端点是厂商自己的地址时回退到供应商的环境变量（见[供应商凭证变量](#供应商凭证变量)）；网关、custom 与 vLLM 条目需要自己的或分组的 key。
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
+
+[providers.deepseek]
+api_key = "sk-..."
+created_at = "2026-10-02T08:00:00.000Z"
+
+[providers.openrouter]
+base_url = "https://proxy.example.com/openrouter/v1"
+client_type = "openai-responses"
 
 [[models]]
 provider = "deepseek"
 model_id = "deepseek-flash"
 context_window = 1000000
-vision = true
-client_type = "deepseek-v4"
-base_url = "https://api.deepseek.com"
-api_key = "sk-..."
 
 [models.pricing]
 unit = "usd_per_mtok"
 cache_read = 0.005714
 cache_write = 0.285714
 output = 1.142857
+
+[[models]]
+provider = "openrouter"
+model_id = "openrouter/free"
+context_window = 128000
+vision = false
+api_key = "sk-or-..."
 ```
 
-`pricing.unit` 目前始终是 `usd_per_mtok`（美元每百万 Token）。三档价格对应 `token_usage` 的三个计数器。
+deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分组设置的代理，使用分组的协议和自己的 key。`pricing.unit` 目前始终是 `usd_per_mtok`（美元每百万 Token）。三档价格对应 `token_usage` 的三个计数器。
 
 通过 CLI（`penguin config model …`）或 Web App 的「模型库」页面编辑这个文件。
 
 > [!WARNING]
 > 服务运行期间不要手动编辑 `.project_config.toml`。模型无权读写这个文件。
+
+### 分组连接信息
+
+`[providers.<id>]` 存一个分组的连接信息，以 provider id 为键：内置分组或你创建的分组。新建 Project 的文件为目录给出端点或协议的每个内置分组写好这张表：网关的 base URL 与协议、Penguin Go 的中转 base URL、vLLM 的协议；一方厂商分组与 custom 没有。模型库页面的分组设置与连接分组时都会写入它，不带 `--model-id` 的 `penguin config model add --provider <分组>` 同样写入。自建分组的这张表随该分组最后一个模型一并删除。
+
+| 键 | 类型 | 说明 |
+| --- | --- | --- |
+| `api_key` | 字符串 | 分组密钥，组内没有自己 key、访问分组端点的模型都使用它 |
+| `base_url` | 字符串 | 分组的 base URL |
+| `client_type` | 字符串 | 分组的 MMSP 客户端类型；模型自己的 `client_type` 优先于它 |
+| `created_at` | 字符串 | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
+
+模型的每个连接字段各自解析，取第一个非空值：
+
+| 字段 | 解析顺序 |
+| --- | --- |
+| `base_url` | 模型条目 → 分组 → 无：客户端的缺省端点 |
+| `client_type` | 模型条目 → 分组 → 无：按 `model_id` 路由 |
+| `api_key` | 模型条目 → 分组（以能借给该模型为限）→ 无：在[供应商凭证变量](#供应商凭证变量)允许时取环境变量 |
+
+这些值的唯一来源是这个文件。内置模型目录只是参考：新建 Project 时，以及模型库页面的**同步新增模型**与**恢复默认**会把目录写进文件，构建请求时从不读目录。key 属于签发它的端点：分组密钥只借给没有自己 `base_url` 的模型，或自己的 `base_url` 与分组 `base_url` 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 条目位于 `https://opencode.ai/zen/go`，与分组的 `https://opencode.ai/zen/go/v1` 同 origin，能借到；custom 里自带端点的 Atria Dawn Preview 借不到。环境变量规则按模型解析出的 `base_url` 判定，所以分组 `base_url` 指向代理时，组内所有模型都不再回退到环境变量。
 
 ### 新对话默认值
 
@@ -165,7 +200,7 @@ output = 1.142857
 
 ```toml
 [plugins]
-"@prismshadow/penguin-plugin-sandbox-bwrap" = "*"
+"@penguinharness/sandbox-bwrap" = "*"
 "@scope/name" = "1.2.3"
 "@scope/other" = { version = "1.2" }
 ```

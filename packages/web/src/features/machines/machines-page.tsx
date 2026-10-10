@@ -26,9 +26,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 import {
+  Badge,
   Button,
   ChevronDown,
+  ConfirmModal,
   Dropdown,
+  Fold,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -68,19 +71,15 @@ import type { HostFormMode } from "./ssh-host-dialog";
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
 
-/**
- * Enable: a plug seated in its socket, cord trailing. Disable: the plug lifted clear of the
- * socket — prongs in the air, a gap, and the empty socket cup below. The two must differ in
- * silhouette, not in detail: at icon size a detail is invisible.
- */
-const PLUG_PATH = "M9 2v4M15 2v4M6 6h12v4a6 6 0 0 1-12 0V6zM12 16v6";
-const UNPLUG_PATH = "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17 22v-4";
+/** Enable: the plug, cord trailing. Disable: the same plug lifted clear of its socket. */
+const PLUG_PATH = ICONS.plug;
+const UNPLUG_PATH = ICONS.plugLifted;
 
-/** The expand verb's glyph, on the 24-grid like the others; turned over when unfolded. */
-const CHEVRON_PATH = "M6 9l6 6 6-6";
+/** The expand verb's glyph; turned over when unfolded. */
+const CHEVRON_PATH = ICONS.chevronDown;
 /** Select all: a box with a check. Select none: the empty box. */
-const SELECT_ALL_PATH = "M4 5h16v14H4zM8 12l3 3 5-6";
-const SELECT_NONE_PATH = "M4 5h16v14H4z";
+const SELECT_ALL_PATH = ICONS.rectangleCheck;
+const SELECT_NONE_PATH = ICONS.rectangle;
 
 const MONO = "font-mono text-xs tabular-nums";
 
@@ -127,6 +126,16 @@ function stepIndex(job: MachineJob | null): number {
   return MACHINE_PHASES.indexOf(job.phase);
 }
 
+/**
+ * A verb that interrupts someone, waiting on its confirmation: letting machines go (their
+ * connection drops), a forced install (the service there restarts), and updating every
+ * machine that is behind (each reinstalls and reconnects).
+ */
+type PendingVerb =
+  | { kind: "stopUsing"; ids: string[] }
+  | { kind: "replaceProgram"; id: string }
+  | { kind: "updateAll"; ids: string[] };
+
 function toggled(set: Set<string>, id: string): Set<string> {
   const next = new Set(set);
   if (next.has(id)) next.delete(id);
@@ -152,6 +161,7 @@ export function MachinesPage() {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   /** The form that adds a host to the ssh config, or configures one; null while closed. */
   const [hostForm, setHostForm] = useState<HostFormMode | null>(null);
+  const [pendingVerb, setPendingVerb] = useState<PendingVerb | null>(null);
 
   /** The picker panel; closing it always clears the query and its picks, so it reopens fresh. */
   const [pickerOpen, setPickerOpenState] = useState(false);
@@ -309,6 +319,39 @@ export function MachinesPage() {
       return answer;
     });
   const stopUsing = (ids: string[]) => post((project) => api.stopUsingMachines(project, ids));
+  const runPendingVerb = () => {
+    const verb = pendingVerb;
+    setPendingVerb(null);
+    if (verb === null) return;
+    if (verb.kind === "stopUsing") void stopUsing(verb.ids);
+    else if (verb.kind === "replaceProgram") void use([verb.id], true);
+    else void use(verb.ids);
+  };
+  const aliasOf = (id: string) => machines.find((machine) => machine.id === id)?.alias ?? id;
+  /** The confirmation's verb, body and tone: interrupting work is danger, the update primary. */
+  const verbPrompt =
+    pendingVerb === null
+      ? null
+      : pendingVerb.kind === "stopUsing"
+        ? {
+            label: S.machines.stopUsing,
+            body:
+              pendingVerb.ids.length === 1
+                ? S.machines.stopUsingOne(aliasOf(pendingVerb.ids[0]!))
+                : S.machines.stopUsingMany(pendingVerb.ids.length),
+            tone: "danger" as const,
+          }
+        : pendingVerb.kind === "replaceProgram"
+          ? {
+              label: S.machines.replaceProgram,
+              body: S.machines.replaceProgramConfirm(aliasOf(pendingVerb.id)),
+              tone: "danger" as const,
+            }
+          : {
+              label: S.machines.updateAll(pendingVerb.ids.length),
+              body: S.machines.updateAllConfirm(pendingVerb.ids.length),
+              tone: "primary" as const,
+            };
   const configure = async (alias: string) => {
     if (projectId === null) return;
     try {
@@ -339,7 +382,9 @@ export function MachinesPage() {
                 size="sm"
                 variant="secondary"
                 disabled={posting || pending}
-                onClick={() => void use(behind.map((machine) => machine.id))}
+                onClick={() =>
+                  setPendingVerb({ kind: "updateAll", ids: behind.map((machine) => machine.id) })
+                }
               >
                 {S.machines.updateAll(behind.length)}
               </Button>
@@ -496,6 +541,17 @@ export function MachinesPage() {
           }}
         />
       )}
+      <ConfirmModal
+        open={verbPrompt !== null}
+        title={verbPrompt?.label ?? ""}
+        tone={verbPrompt?.tone ?? "danger"}
+        onClose={() => setPendingVerb(null)}
+        onConfirm={runPendingVerb}
+        confirmLabel={verbPrompt?.label ?? ""}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{verbPrompt?.body}</p>
+      </ConfirmModal>
 
       {/* The selection bar: a fixed slot between the title and the cards, so the cards
           never move when a selection appears or goes. The count is the slot's label; on the
@@ -531,7 +587,7 @@ export function MachinesPage() {
             label={S.machines.stopUsing}
             d={UNPLUG_PATH}
             disabled={selectedIds.length === 0 || posting}
-            onClick={() => void stopUsing(selectedIds)}
+            onClick={() => setPendingVerb({ kind: "stopUsing", ids: selectedIds })}
           />
         </span>
       </div>
@@ -560,8 +616,12 @@ export function MachinesPage() {
               open={expanded.has(machine.id)}
               onToggleOpen={() => toggleExpanded(machine.id)}
               busy={posting}
-              onUse={(replaceProgram) => void use([machine.id], replaceProgram)}
-              onStopUsing={() => void stopUsing([machine.id])}
+              onUse={(replaceProgram) =>
+                replaceProgram
+                  ? setPendingVerb({ kind: "replaceProgram", id: machine.id })
+                  : void use([machine.id])
+              }
+              onStopUsing={() => setPendingVerb({ kind: "stopUsing", ids: [machine.id] })}
               onConfigure={() => void configure(machine.alias)}
             />
           ))}
@@ -725,17 +785,21 @@ function LocalCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className={`${MONO} truncate font-medium`}>{machine.alias}</span>
-            <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-xs text-gray-500 dark:border-gray-700">
+            <Badge variant="outline" size="sm">
               {S.machines.localTitle}
-            </span>
+            </Badge>
           </div>
           <div className="mt-0.5 truncate text-xs text-gray-500">{S.machines.state.serving}</div>
         </div>
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.link}`} aria-hidden="true" />
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
-      <div id={id} hidden={!open}>
-        <Record machine={machine} locale={locale} />
+      {/* The box the chevron's `aria-controls` names stays in the DOM, empty while folded, so the
+          reference resolves in every state; the details inside it fold through `Fold`. */}
+      <div id={id}>
+        <Fold open={open}>
+          <Record machine={machine} locale={locale} />
+        </Fold>
       </div>
     </li>
   );
@@ -817,42 +881,47 @@ function MachineCard({
         />
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
-      <div id={id} hidden={!open} onClick={(event) => event.stopPropagation()}>
-        <Record machine={machine} locale={locale} />
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {reading.kind === "failed" && reading.canReplaceProgram && (
+      {/* The box the chevron's `aria-controls` names stays in the DOM, empty while folded, so the
+          reference resolves in every state; the details inside it fold through `Fold`. A click
+          in the details must not select the card, so the box swallows it. */}
+      <div id={id} onClick={(event) => event.stopPropagation()}>
+        <Fold open={open}>
+          <Record machine={machine} locale={locale} />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {reading.kind === "failed" && reading.canReplaceProgram && (
+              <Verb
+                label={S.machines.replaceProgram}
+                title={S.machines.replaceProgramWhy}
+                d={PLUG_PATH}
+                variant="danger"
+                disabled={busy}
+                onClick={() => onUse(true)}
+              />
+            )}
+            {wantsUse(reading) && (
+              <Verb
+                label={S.machines.use}
+                d={PLUG_PATH}
+                disabled={busy}
+                onClick={() => onUse(false)}
+              />
+            )}
             <Verb
-              label={S.machines.replaceProgram}
-              title={S.machines.replaceProgramWhy}
-              d={PLUG_PATH}
-              variant="danger"
+              label={S.machines.stopUsing}
+              d={UNPLUG_PATH}
               disabled={busy}
-              onClick={() => onUse(true)}
+              onClick={onStopUsing}
             />
-          )}
-          {wantsUse(reading) && (
             <Verb
-              label={S.machines.use}
-              d={PLUG_PATH}
+              label={S.machines.host.configureVerb}
+              title={S.machines.host.configure}
+              d={ICONS.gear}
               disabled={busy}
-              onClick={() => onUse(false)}
+              onClick={onConfigure}
             />
-          )}
-          <Verb
-            label={S.machines.stopUsing}
-            d={UNPLUG_PATH}
-            disabled={busy}
-            onClick={onStopUsing}
-          />
-          <Verb
-            label={S.machines.host.configureVerb}
-            title={S.machines.host.configure}
-            d={ICONS.gear}
-            disabled={busy}
-            onClick={onConfigure}
-          />
-        </div>
-        <Output job={job} />
+          </div>
+          <Output job={job} />
+        </Fold>
       </div>
     </li>
   );

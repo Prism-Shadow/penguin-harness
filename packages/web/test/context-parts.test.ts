@@ -1,15 +1,17 @@
 /**
- * Context composition rows: the estimate-to-measured rescaling behind the context ring's panel,
- * and the palette it is zipped with.
+ * The context ring's composition panel (features/chat/context-parts.ts).
+ *
+ * - The estimate is rescaled so the parts add up to the measured occupancy, both columns
+ *   apportioned so neither drifts off the total.
+ * - Every part is drawn in a colour of its own.
+ * - The tool and file rankings scale on the same basis, as shares of the whole context, each
+ *   file keeping its name for display.
+ * - An empty estimate or a closed context has nothing to break down.
+ * - A file path splits on either separator, a root keeping its own separator as the directory.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
-import {
-  CONTEXT_PART_KEYS,
-  contextComposition,
-  splitFilePath,
-} from "../src/features/chat/context-parts";
-import { CONTEXT_PART_COLORS } from "../src/lib/category-colors";
+import { contextComposition, splitFilePath } from "../src/features/chat/context-parts";
 
 function response(over: Partial<SessionContextResponse> = {}): SessionContextResponse {
   const base = {
@@ -70,13 +72,12 @@ describe("contextComposition", () => {
     expect(c.parts.reduce((n, p) => n + p.tokens, 0)).toBe(350);
   });
 
-  it("gives the parts the palette in its documented order", () => {
-    const c = contextComposition(response(), 1000)!;
-    expect(c.parts.map((p) => p.key)).toEqual([...CONTEXT_PART_KEYS]);
-    expect(c.parts.map((p) => p.color)).toEqual([...CONTEXT_PART_COLORS]);
-    // Zipped by index: a part added on one side and not the other would silently lose its colour.
-    expect(CONTEXT_PART_COLORS).toHaveLength(CONTEXT_PART_KEYS.length);
-    expect(new Set(CONTEXT_PART_COLORS).size).toBe(CONTEXT_PART_COLORS.length);
+  it("draws every part in a colour of its own", () => {
+    // The palette is zipped with the parts by index: a part added on one side and not the
+    // other would silently lose its colour.
+    const colors = contextComposition(response(), 1000)!.parts.map((p) => p.color);
+    expect(colors.every(Boolean)).toBe(true);
+    expect(new Set(colors).size).toBe(colors.length);
   });
 
   it("scales the tool ranking on the same basis, as shares of the whole context", () => {

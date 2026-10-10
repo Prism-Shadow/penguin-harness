@@ -38,6 +38,7 @@
  * always survive.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
   AgentModelConfigDto,
@@ -62,7 +63,8 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { UNCONFINED } from "../../lib/permission-level";
+import { UNCONFINED, draftSandboxAfter } from "../../lib/permission-level";
+import type { PermissionPick } from "../../lib/permission-level";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { rememberSessionMachine } from "../../lib/session-machines";
@@ -73,7 +75,7 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { versionBadgeFor } from "../../lib/update-flow";
-import { openUpdateModal, useUpdateFlow } from "../../lib/use-update-flow";
+import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import { APPROVAL_MODES } from "./approval-mode";
@@ -97,8 +99,10 @@ import {
   type ChatDefaultsChangedDetail,
 } from "./chat-defaults-event";
 import { newChatAgentId } from "./new-chat";
+import { onPluginConfigSaved } from "../../lib/plugin-config-event";
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
+import { FilesPanelToggle } from "./dock-toggles";
 import { sameModelRef } from "../models/model-grouping";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
@@ -143,22 +147,30 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
  * "fires on a timer", and distinct from the hourglass that already means a Session is waiting.
  */
 const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
-  webapps:
-    "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
+  webapps: ICONS.appWindow,
   agents: ICONS.robot,
-  schedules: "M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 6.5V12l3.5 2",
+  schedules: ICONS.clock,
 };
 
 export function DraftView({
   projectId,
   models,
   draftId,
+  composerRef: pageComposerRef,
+  onWorkspaceChange,
 }: {
   projectId: string;
   /** Project model config (already fetched by ChatPage): candidate list and default model. */
   models: ModelsResponse | null;
   /** Parked draft conversation id (`/chat/draft-…` — see draft-sessions.ts); absent = the ordinary active draft (`/chat/new`). */
   draftId?: string;
+  /**
+   * The page's handle on the composer, so what the dock's panels hand the conversation (the
+   * Files panel's references) reaches this draft's composer as it reaches a live Session's.
+   */
+  composerRef?: RefObject<ComposerControl | null>;
+  /** The Workspace picked here ("" = a temporary one) and its machine, for the Files panel. */
+  onWorkspaceChange?: (path: string, machineId: string | null) => void;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -217,7 +229,8 @@ export function DraftView({
   // that case falls back to home (setDockCwd's null).
   useEffect(() => {
     setDockCwd(workspace || null, workspaceMachine);
-  }, [workspace, workspaceMachine]);
+    onWorkspaceChange?.(workspace, workspaceMachine);
+  }, [workspace, workspaceMachine, onWorkspaceChange]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
@@ -385,12 +398,10 @@ export function DraftView({
     ) {
       setWorkspace(chatDefaults.workspace);
     }
-    if (
-      chatDefaults.approvalMode !== undefined &&
-      cached.approvalMode === undefined &&
-      !touchedRef.current.approval
-    ) {
-      setApprovalMode(chatDefaults.approvalMode);
+    // The Project's own default wins; else the Sandbox card's default preset, while it is on.
+    const seeded = chatDefaults.approvalMode ?? chatDefaults.sandbox?.defaultApprovalMode;
+    if (seeded !== undefined && cached.approvalMode === undefined && !touchedRef.current.approval) {
+      setApprovalMode(seeded);
     }
   }, [chatDefaults, stateWorkspace, cached.workspace, cached.approvalMode]);
 
@@ -427,7 +438,7 @@ export function DraftView({
         setChatDefaults(d);
         touchedRef.current = { workspace: false, approval: false };
         setWorkspace(d.workspace ?? "");
-        setApprovalMode(d.approvalMode ?? "allow-all");
+        setApprovalMode(d.approvalMode ?? d.sandbox?.defaultApprovalMode ?? "allow-all");
         // The Agent a fresh mount would now start on (the new block's default while it names
         // an Agent, then default_agent, then the first).
         setAgentId(newChatAgentId(agents, d));
@@ -442,6 +453,25 @@ export function DraftView({
   /** Latest-closure mirror for the window listener (same convention as persistRef). */
   const onDefaultsChangedRef = useRef(onDefaultsChanged);
   onDefaultsChangedRef.current = onDefaultsChanged;
+  // The Sandbox card was saved (from the composer's More…, say): the permission menu reads the
+  // sandbox view again, and an approval mode nobody picked follows the new default preset.
+  useEffect(
+    () =>
+      onPluginConfigSaved("sandbox", () => {
+        void api.getChatDefaults(projectId).then(
+          (res) => {
+            setChatDefaults((prev) => ({
+              ...(prev ?? {}),
+              ...(res.sandbox !== undefined ? { sandbox: res.sandbox } : {}),
+            }));
+            const seeded = res.approvalMode ?? res.sandbox?.defaultApprovalMode;
+            if (seeded !== undefined && !touchedRef.current.approval) setApprovalMode(seeded);
+          },
+          () => undefined,
+        );
+      }),
+    [projectId],
+  );
   useEffect(() => {
     const onEvent = (e: Event) => {
       const detail = chatDefaultsChangedDetail(e, projectId);
@@ -558,9 +588,6 @@ export function DraftView({
     // Carried through every write, so a reload finds the prefill still marked as composed
     // rather than resuming it as if it had been typed here.
     if (aiPrefillRef.current) data.aiPrefill = true;
-    // The evaluation mark the Evaluation Center's Use dialog set on this draft rides along for
-    // the same reason: after a reload the Session must still be created as an evaluation run.
-    if (cached.source !== undefined) data.source = cached.source;
     // A parked draft writes back into its own list entry; the active draft into its slot.
     if (draftId !== undefined) saveDraftSession(userId, projectId, draftId, data);
     else saveDraft(draftKey(userId, projectId), data);
@@ -575,7 +602,6 @@ export function DraftView({
     approvalMode,
     sandboxPick,
     modelRef,
-    cached.source,
   ]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
@@ -726,12 +752,12 @@ export function DraftView({
     // home, or the next Session would be created on the machine the previous pick named.
     setWorkspaceMachine(machineId ?? null);
   }, []);
-  const changeApprovalMode = useCallback((mode: ApprovalMode) => {
+  // A preset sets both halves of the draft's level at once, as it does on a Session; an
+  // approval-mode pick (switch off) leaves the sandbox half unpicked, so the settings decide it.
+  const changePermission = useCallback((pick: PermissionPick) => {
     touchedRef.current.approval = true;
-    setApprovalMode(mode);
-  }, []);
-  const changeSandbox = useCallback((pick: Partial<SessionSandbox>) => {
-    setSandboxPick((prev) => ({ ...prev, ...pick }));
+    setApprovalMode(pick.approvalMode);
+    setSandboxPick((prev) => draftSandboxAfter(prev, pick));
   }, []);
 
   // Synchronous in-flight guard for the one send entry point (the composer): a second
@@ -757,9 +783,6 @@ export function DraftView({
           body.provider = modelRef.provider;
         }
         if (workspace.trim()) body.workspace = workspace.trim();
-        // A draft the Evaluation Center's Use dialog composed creates its Session as an
-        // evaluation run, which the sidebar files under the Evaluations folder.
-        if (cached.source !== undefined) body.source = cached.source;
         // Created ON the machine that owns the workspace: that server runs the agent in it.
         const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
@@ -805,7 +828,6 @@ export function DraftView({
       sandboxPick,
       modelRef,
       workspace,
-      cached.source,
       add,
       discardDraft,
       navigate,
@@ -821,7 +843,8 @@ export function DraftView({
    * in-flight guard to keep here, and everything else — where the prompt goes when text is
    * already typed, focus, the caret — is the composer's, reached through this handle.
    */
-  const composerRef = useRef<ComposerControl | null>(null);
+  const ownComposerRef = useRef<ComposerControl | null>(null);
+  const composerRef = pageComposerRef ?? ownComposerRef;
   const fillExample = useCallback((task: ExampleTask) => {
     // S is a live binding swapped on locale change: read the prompt at click time, not at render.
     composerRef.current?.fillPrompt(S.chat.exampleTasks[task.id].prompt, task.skills);
@@ -899,15 +922,15 @@ export function DraftView({
           approvalMode={approvalMode}
           // A draft becomes an ordinary conversation, never an organization's: every mode.
           approvalModes={APPROVAL_MODES}
-          onChangeApprovalMode={changeApprovalMode}
           sandbox={{ ...(chatDefaults?.sandbox ?? UNCONFINED), ...sandboxPick }}
-          onChangeSandbox={changeSandbox}
+          onChangePermission={changePermission}
           modeSaving={false}
           autoFocus
           agents={agents}
           {...(agentId ? { currentAgentId: agentId } : {})}
           skills={agentSkills}
           {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
+          {...(cached.goal === true ? { initialGoal: true } : {})}
           onSkillsChange={onSkillsChange}
           initialText={cached.text ?? ""}
           onTextChange={onTextChange}
@@ -933,6 +956,9 @@ export function DraftView({
             chooseMachine
             {...(agentId ? { agentId } : {})}
           />
+          {/* The dock's Files panel on the folder picked beside it; a temporary Workspace has
+              none yet (see FilesPanelToggle). */}
+          <FilesPanelToggle available={workspace.trim() !== ""} />
         </div>
 
         {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
@@ -1020,7 +1046,7 @@ const versionBadgeClass =
  * dev builds and releases that predate the stamping (v0.1.2 and earlier) carry null
  * and show the version alone. When the update flow has something waiting — a release
  * offered, a download in the background, a restart pending — a small superscript badge
- * follows, a button into the update modal (the same modal the sidebar's update row opens).
+ * follows, a button into the App info dialog (the same dialog the sidebar's App info row opens).
  * Fetching starts on mount — useVersionInfo caches at module level, so after the first
  * resolution anywhere in the app this renders instantly and never refetches. Nothing
  * renders until the version resolves (no placeholder flicker under the brand).
@@ -1041,8 +1067,8 @@ function VersionLine() {
 }
 
 /**
- * The superscript on the version line: a button into the update modal, worded by where the
- * flow stands. Its title and accessible name carry the update row's own sentence, so the
+ * The superscript on the version line: a button into the App info dialog, worded by where the
+ * flow stands. Its title and accessible name carry the App info row's own sentence, so the
  * two surfaces say the same thing about the same release.
  */
 function VersionBadge() {
@@ -1066,7 +1092,7 @@ function VersionBadge() {
   return (
     <button
       type="button"
-      onClick={openUpdateModal}
+      onClick={openAppInfo}
       data-tooltip={note}
       aria-label={note}
       className={`${versionBadgeClass} hover:underline`}

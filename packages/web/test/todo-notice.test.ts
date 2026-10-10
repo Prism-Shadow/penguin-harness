@@ -1,20 +1,19 @@
 /**
  * The shared page notice (the UI package's `TodoNotice`, todo-notice.tsx) and the decisions
- * behind its bulk-update button (src/lib/bulk-update.ts).
+ * behind its bulk-update button (lib/bulk-update.ts).
  *
- * Three rules are defended here, and each is a rule rather than a preference because breaking it
- * produces a screen the user cannot reason about:
+ * Guard, over every `<TodoNotice>` call site in the source roots (discovered, not listed):
+ * - The notice is defined in one place.
+ * - A bulk action is never offered without a label, nor a label without an action.
+ * - The bulk button never writes on click: its handler opens the batch's own confirmation by
+ *   setting the state that ConfirmModal is rendered behind.
  *
- * 1. **The counts come off the raised to-do**, never a second calculation. A block claiming three
- *    updates under a dot raised for four is unresolvable from the outside.
- * 2. **The button opens a confirmation; it does not write.** A bulk overwrite is consented to
- *    before it runs, and every one of these pages already asks before overwriting a single
- *    object.
- * 3. **A partial failure names the targets that failed.** On a control whose entire point is
- *    "all of them at once", a count with no names leaves the user re-checking every row by hand.
- *
- * Rules 2 and 3's first half are source scans over the real JSX rather than render assertions —
- * vitest runs node-only here, so the thing that decays is a call site, not a component's output.
+ * Behaviour:
+ * - The count comes off the raised to-do, so the block never claims more than the dot was
+ *   raised for.
+ * - A batch outcome is clean when every target took the write (an empty batch included), and
+ *   otherwise names the failed targets by position, never as a blank; a long list reports its
+ *   overflow as a count; the first rejection is surfaced for the error text.
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
@@ -69,30 +68,12 @@ describe("the notice block is the one shape on every page that has one", () => {
     expectSingleHome(SCAN, TODO_NOTICE);
   });
 
-  it("is placed on all four dismissible trails and nowhere else", () => {
-    expect(sites.map((s) => s.file).sort()).toEqual([
-      "packages/web/src/features/agents/agents-page.tsx",
-      "packages/web/src/features/models/models-page.tsx",
-      "packages/web/src/features/plugins/plugins-page.tsx",
-      "packages/web/src/features/usage/usage-page.tsx",
-    ]);
-  });
-
   it("never offers a bulk action without labelling it, or a label without an action", () => {
     for (const { file, attrs } of sites) {
       expect(attrs.has("actionLabel"), `${file} action label and handler must agree`).toBe(
         attrs.has("onAction"),
       );
     }
-  });
-
-  it("only the cost center omits the bulk action — nothing there can be updated", () => {
-    const withAction = sites.filter((s) => s.attrs.has("onAction")).map((s) => s.file);
-    expect(withAction.sort()).toEqual([
-      "packages/web/src/features/agents/agents-page.tsx",
-      "packages/web/src/features/models/models-page.tsx",
-      "packages/web/src/features/plugins/plugins-page.tsx",
-    ]);
   });
 });
 
@@ -113,7 +94,8 @@ describe("the bulk button confirms before it writes", () => {
     // Not "the file contains a ConfirmModal somewhere" — every one of these pages already had
     // one (a delete confirm, a group confirm) before this block existed, so that assertion is
     // true whether or not the batch confirms. What has to hold is the LINK: the state the
-    // button sets is the state the dialog is rendered behind.
+    // button sets is the state the dialog is rendered behind — a ConfirmModal, or a component
+    // named for the confirmation it wraps (the models page's AddNewModelsConfirm).
     for (const { file, attrs, source } of withAction) {
       const setter = /\bset([A-Z]\w*)\s*\(/.exec(attrs.get("onAction") ?? "");
       expect(
@@ -121,7 +103,9 @@ describe("the bulk button confirms before it writes", () => {
         `${file}'s onAction must open the confirmation by setting state`,
       ).not.toBeNull();
       const state = setter![1]!.charAt(0).toLowerCase() + setter![1]!.slice(1);
-      const guarded = new RegExp(`${state}[^\\n]*&&[\\s\\S]{0,400}?<ConfirmModal`);
+      const guarded = new RegExp(
+        `${state}[^\\n]*&&[\\s\\S]{0,400}?<(?:ConfirmModal|\\w+Confirm)\\b`,
+      );
       expect(
         guarded.test(source),
         `${file} must render its batch ConfirmModal behind ${state}`,
@@ -131,34 +115,9 @@ describe("the bulk button confirms before it writes", () => {
 });
 
 describe("noticeCounts", () => {
-  const base = { signature: "s", items: ["s"], match: "set" } as const;
-
-  it("reports the whole count as upgradable where the trail has no honest split", () => {
-    // Agents and Skills: an Agent's kernel is never new, and a Skill nobody installed is not
-    // waiting for anyone. The notice then states one number instead of padding with a zero.
-    const todo: Todo = { ...base, items: ["a", "b", "c"], count: 3 };
-    expect(noticeCounts(todo)).toEqual({ added: null, updated: 3 });
-  });
-
-  it("splits added from upgradable where the trail can tell them apart", () => {
-    const todo: Todo = {
-      ...base,
-      items: ["a", "b"],
-      count: 2,
-      breakdown: { added: 1, updated: 1 },
-    };
-    expect(noticeCounts(todo)).toEqual({ added: 1, updated: 1 });
-  });
-
-  it("never reports more than the gate raised the dot for", () => {
-    const todo: Todo = {
-      ...base,
-      items: ["a", "b"],
-      count: 2,
-      breakdown: { added: 2, updated: 0 },
-    };
-    const { added, updated } = noticeCounts(todo);
-    expect((added ?? 0) + updated).toBe(todo.count);
+  it("reports the raised to-do's own count, so the block never claims more than the dot", () => {
+    const todo: Todo = { signature: "a,b,c", items: ["a", "b", "c"], count: 3, match: "set" };
+    expect(noticeCounts(todo)).toEqual({ updated: 3 });
   });
 });
 

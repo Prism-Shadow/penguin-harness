@@ -48,6 +48,7 @@ import type {
   ToolDetachResult,
   ToolExecutionRequest,
   ToolPermission,
+  VisionDescriberService,
 } from "../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
@@ -79,7 +80,7 @@ const TOOL_EMPTY_NOTE = "[no output]";
 
 /**
  * Explanation for a failed argument JSON parse. The normal pipeline never reaches this: bad
- * JSON already throws during AgentHub's parsing stage, and the LLM layer finalizes it as
+ * JSON already throws during MMSP's parsing stage, and the LLM layer finalizes it as
  * malformed for the engine to reconnect (see generative-model.ts) — it's never dispatched into
  * Environment as a completed tool_call. This function is only a defensive fallback for the
  * public interface.
@@ -291,14 +292,28 @@ export class Environment implements EnvironmentInterface {
    * started with. The Session-lifetime parts — background command processes, subagent child
    * sessions, the listeners, the Workspace and the scratchpad — are untouched. Concrete-class
    * surface, not part of EnvironmentInterface.
+   *
+   * `visionDescriber` is the new context's answer to "does the session model view images"
+   * (see EnvironmentServices.visionDescriber): a service when that context's model has no
+   * vision, `null` when it views images itself — a model switch can move either way — and
+   * absent leaves the running answer in place. Applied before the toolset is re-equipped, so
+   * the new context's read_file is built on it.
    */
-  reconfigure(config: { toolConfig: ToolConfig; vault: Record<string, string> }): void {
+  reconfigure(config: {
+    toolConfig: ToolConfig;
+    vault: Record<string, string>;
+    visionDescriber?: VisionDescriberService | null;
+  }): void {
     const servers = config.toolConfig.mcpServers;
     if (this.mcp && servers.length > 0) {
       this.mcp.reconfigure(servers);
     } else {
       this.mcp?.closeQuietly();
       this.mcp = this.newMcpProvider(servers);
+    }
+    if (config.visionDescriber !== undefined) {
+      if (config.visionDescriber === null) delete this.services.visionDescriber;
+      else this.services.visionDescriber = config.visionDescriber;
     }
     this.equip(config.toolConfig);
     this.commandSessions.setVault(config.vault);

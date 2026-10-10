@@ -44,7 +44,7 @@ describe("UpdateDot", () => {
 });
 
 describe("UpdatePill", () => {
-  it("is a real button in the danger tint and ink, on the small rung and the pill radius", () => {
+  it("is a real button in the danger tint and ink, on the badge's type and the pill radius", () => {
     const html = renderStatic(
       createElement(UpdatePill, { onClick: () => undefined, children: "Update available" }),
     );
@@ -54,7 +54,8 @@ describe("UpdatePill", () => {
       expect.arrayContaining([
         "bg-tone-danger-bg",
         "text-tone-danger-fg",
-        "text-xs",
+        "text-[length:var(--ui-badge-size)]",
+        "leading-[var(--ui-badge-lh)]",
         "rounded-[var(--ui-radius-pill)]",
       ]),
     );

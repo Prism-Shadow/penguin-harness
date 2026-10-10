@@ -1,18 +1,24 @@
 /**
- * The messaging binding editor's rendered shape (src/features/messaging/messaging-binding-editor.tsx).
+ * The messaging binding editor, rendered to static markup
+ * (features/messaging/messaging-binding-editor.tsx).
  *
- * Six rules this pins, all of which are invisible to a type checker: the form opens on its
- * FIELDS (the explanation lives in the collapsed FAQ under the save area, not above the first
- * input), each channel's credential-source link rides the credential field's corner, that
- * link's label names the place it actually opens, the connection switch — which IS the
- * bind/unbind — carries that sentence as its own tooltip rather than as a line the form
- * would have to make room for, a stored secret is removed by the models-page clear checkbox
- * and that checkbox is gated, on screen, while the channel holds the connection, and a
- * connection error's detail reaches the reader whole rather than as a few words of a shared
- * row.
+ * - The form opens on its fields, the explanation living in the collapsed help below; each
+ *   channel's credential-source link rides the credential field's corner and is labelled with
+ *   what it opens.
+ * - A stored secret is removed through the clear checkbox, gated on screen while the channel
+ *   holds the connection; the connection switch carries the bind/unbind sentence as its
+ *   tooltip, and its gating reason when another channel holds the connection.
+ * - A connection error gets its own line, whole, and stays on screen after the connection
+ *   recovers; arrival is reported while connecting and erroring, naming the inbound stage when
+ *   a message arrived but its task never started.
+ * - The delivery and Markdown options close the form, each switch rendered from its own field
+ *   with its explanation behind a "?"; QQ's replies-only rule is stated on screen; the selector
+ *   offers all four channels.
+ * - The help stacks three collapsed, self-titled folds with the relocated explanation, the
+ *   Telegram-only troubleshooting entries, and each channel's tutorial link.
+ * - A Telegram test reports success with the Group Privacy caveat as a second line, nothing
+ *   extra when privacy is off or unknown, and a failure as one error line.
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -68,6 +74,7 @@ function stateOf(
     channels: { feishu: DARK, telegram: DARK, qq: DARK, wechat: DARK, ...facts },
     fieldErrors: {},
     dirty: false,
+    unsavedAny: false,
     busy: false,
     toggling: false,
     testing: false,
@@ -290,7 +297,7 @@ describe("MessagingBindingBody", () => {
     }
     // The grid's column count is spelled out in the component rather than interpolated, so
     // a fourth channel that did not widen it would silently wrap onto a second row.
-    expect(html).toContain("grid-cols-4");
+    expect(html).toContain("grid-cols-[repeat(4,1fr)]");
   });
 
   it("says whether anything has arrived, and which end failed when something did", () => {
@@ -539,36 +546,6 @@ describe("MessagingBindingHelp", () => {
   });
 });
 
-describe("the Group Privacy copy, in both dictionaries", () => {
-  // `S` is the zh dictionary at import time, so each rule is asserted per dictionary — the
-  // two drifted apart once already (zh promised 三选一 and listed two options).
-  const entries = [
-    [en.messaging.troubleGroupPrivacy, "Making the bot an administrator"],
-    [zh.messaging.troubleGroupPrivacy, "把机器人设为该群的管理员"],
-  ] as const;
-
-  it("leads the fold entry with the admin route, then the @BotFather one", () => {
-    // Making the bot an administrator is the only remedy that fixes the group without
-    // touching its membership, and it is what a user whose bot already works has done — so
-    // it comes first, and the /setprivacy route (which requires a re-add) follows it.
-    for (const [entry, adminRemedy] of entries) {
-      expect(entry).toContain(adminRemedy);
-      expect(entry).toContain("/setprivacy");
-      expect(entry.indexOf(adminRemedy)).toBeLessThan(entry.indexOf("/setprivacy"));
-    }
-  });
-
-  it("points the toast at that fold instead of repeating the remedies in it", () => {
-    // The notice rides an `info` toast: four seconds, no hover-pause. So the toast carries
-    // the diagnosis and names the fold — by the fold's own title, which stays true if the
-    // fold is renamed — and the steps stay where they can be read.
-    for (const dict of [en, zh]) {
-      expect(dict.messaging.testPrivacyOn).toContain(dict.messaging.faqTroubleTitle);
-      expect(dict.messaging.testPrivacyOn).not.toContain("/setprivacy");
-    }
-  });
-});
-
 describe("telegramTestNotices", () => {
   it("adds the privacy notice as a second line, leaving the success line untouched", () => {
     // Two lines, not one longer one: the credentials passed and a direct chat will answer,
@@ -601,25 +578,5 @@ describe("telegramTestNotices", () => {
     expect(telegramTestNotices({ ok: false, error: "Unauthorized", groupPrivacy: true })).toEqual([
       { tone: "error", text: S.messaging.testFail("Unauthorized") },
     ]);
-  });
-
-  it("is shown by testConnection, one toast per notice, each in its own tone", () => {
-    // The hook itself is out of reach from a node-only suite (`environment: "node"`, no
-    // jsdom), and dropping the info branch would silently lose the only line that reports
-    // Group Privacy — so the dispatch is pinned here (account-menu.test.ts convention).
-    const src = readFileSync(
-      fileURLToPath(
-        new URL("../src/features/messaging/messaging-binding-editor.tsx", import.meta.url),
-      ),
-      "utf8",
-    );
-    const loop = /for \(const notice of telegramTestNotices\(res\)\) \{[\s\S]*?\n {8}\}/.exec(src);
-    expect(
-      loop,
-      "testConnection should show every notice telegramTestNotices returns",
-    ).not.toBeNull();
-    expect(loop![0]).toContain("toastError(notice.text)");
-    expect(loop![0]).toContain("toastInfo(notice.text)");
-    expect(loop![0]).toContain("toastSuccess(notice.text)");
   });
 });

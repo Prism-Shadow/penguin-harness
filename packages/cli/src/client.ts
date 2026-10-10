@@ -19,12 +19,21 @@
  * Token resolution: PENGUIN_API_TOKEN, else `<root>/api-token` (written by the server
  * each boot). A 401 with a file-sourced token re-reads the file once and retries — the
  * server may have restarted (and rotated the token) since the first read.
+ *
+ * A 403 `human_required` — a write the server takes only from a person's sign-in, such as
+ * those that change an Agent's exposure — retries the same request once as the person's
+ * stored sign-in (`<root>/cli-session.json`, written by `penguin auth login` or
+ * `penguin auth token`), sent as the `penguin_session` cookie in place of the token. Only for
+ * a loopback target, only for a sign-in made to a loopback server, and only outside a Session
+ * (PENGUIN_SESSION_ID unset): inside one the command is an Agent's, and the refusal is the
+ * point. Every other request goes exactly as above.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
+import { readSession } from "./auth-session.js";
 import type { Messages } from "./i18n.js";
 
 /** Session-id shape (core's convention); a full id needs no directory search. */
@@ -35,6 +44,12 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
 /** How the auth token was obtained; decides whether a 401 retries after re-reading the file. */
 export type TokenSource = "env" | "file" | "none";
+
+/** The server's session cookie (auth/middleware.ts SESSION_COOKIE): a stored sign-in goes as it. */
+const SESSION_COOKIE = "penguin_session";
+
+/** The server's refusal of the local API token on a write only a person may make (requireHuman). */
+const HUMAN_REQUIRED = "human_required";
 
 export interface Connection {
   /** Normalized base URL, no trailing slash. */
@@ -81,6 +96,32 @@ function readTokenFile(root: string): string | null {
   try {
     const value = fs.readFileSync(apiTokenPath(root), "utf8").trim();
     return value === "" ? null : value;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The person's stored sign-in on this data root, for the one retry after a `human_required`
+ * refusal (see the module doc); null inside a Session, where the command is an Agent's, and for a
+ * sign-in to a server elsewhere, whose session must not be sent to this one.
+ */
+function readStoredSignIn(root: string): string | null {
+  if (process.env.PENGUIN_SESSION_ID?.trim()) return null;
+  const session = readSession(root);
+  if (session === null) return null;
+  try {
+    return isLoopbackUrl(new URL(session.server)) ? session.token : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The error code of a JSON error body (`{error: {code}}`), or null for any other body. */
+async function errorCodeOf(res: Response): Promise<string | null> {
+  try {
+    const body = (await res.json()) as { error?: { code?: unknown } } | null;
+    return typeof body?.error?.code === "string" ? body.error.code : null;
   } catch {
     return null;
   }
@@ -195,6 +236,13 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
+
+  /** The server's own message, unwrapped (empty when the body carried none) — for a caller that localizes the code and still needs the specifics. */
+  get detail(): string {
+    const message = (this.body as { error?: { message?: unknown } } | null | undefined)?.error
+      ?.message;
+    return typeof message === "string" ? message : "";
+  }
 }
 
 export class ServerClient {
@@ -227,8 +275,9 @@ export class ServerClient {
 
   /**
    * One JSON request. 401 with a file-sourced token re-reads the file once (the server
-   * may have restarted and rotated it) and retries; every other non-2xx becomes an
-   * ApiError carrying the server's code and message.
+   * may have restarted and rotated it) and retries; 403 `human_required` retries once as the
+   * person's stored sign-in (see fetchAuthed); every other non-2xx becomes an ApiError
+   * carrying the server's code and message.
    */
   async request<T>(method: string, apiPath: string, body?: unknown): Promise<T> {
     const res = await this.fetchAuthed(apiPath, {
@@ -245,8 +294,17 @@ export class ServerClient {
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 
-  /** The authenticated fetch with the one-shot 401 file-token refresh. */
+  /**
+   * The authenticated fetch: the one-shot 401 file-token refresh, then the one-shot retry of a
+   * 403 `human_required` as the person's stored sign-in.
+   */
   private async fetchAuthed(apiPath: string, init: RequestInit): Promise<Response> {
+    const res = await this.fetchWithToken(apiPath, init);
+    return res.status === 403 ? this.retryAsPerson(apiPath, init, res) : res;
+  }
+
+  /** The token's fetch, with the one-shot 401 file-token refresh. */
+  private async fetchWithToken(apiPath: string, init: RequestInit): Promise<Response> {
     const res = await fetch(`${this.conn.baseUrl}${apiPath}`, init);
     if (res.status !== 401) return res;
     if (this.tokenSource === "env" || !this.conn.loopback) return res;
@@ -257,6 +315,35 @@ export class ServerClient {
     this.tokenSource = "file";
     const headers = { ...(init.headers as Record<string, string>), ...this.headers() };
     return fetch(`${this.conn.baseUrl}${apiPath}`, { ...init, headers });
+  }
+
+  /**
+   * `refused` was a 403. When it is `human_required` and there is a stored sign-in to use (see the
+   * module doc), sends the same request once more as that sign-in — the session cookie, no
+   * Bearer, since the server reads a Bearer first — and answers with that. The refusal stands
+   * when there is no usable sign-in, and when the server does not accept the sign-in either (a
+   * 401: it expired or was revoked), so the caller still sees `human_required`.
+   */
+  private async retryAsPerson(
+    apiPath: string,
+    init: RequestInit,
+    refused: Response,
+  ): Promise<Response> {
+    if (!this.conn.loopback) return refused;
+    const signIn = readStoredSignIn(this.conn.root);
+    if (signIn === null) return refused;
+    if ((await errorCodeOf(refused.clone())) !== HUMAN_REQUIRED) return refused;
+    const headers: Record<string, string> = { cookie: `${SESSION_COOKIE}=${signIn}` };
+    for (const [name, value] of Object.entries((init.headers ?? {}) as Record<string, string>)) {
+      if (name.toLowerCase() !== "authorization") headers[name] = value;
+    }
+    const retried = await fetch(`${this.conn.baseUrl}${apiPath}`, { ...init, headers });
+    if (retried.status === 401) {
+      void retried.body?.cancel();
+      return refused;
+    }
+    void refused.body?.cancel();
+    return retried;
   }
 
   private async toError(res: Response): Promise<ApiError> {
@@ -377,7 +464,7 @@ export async function* parseSseBody(
 // Session references
 // ---------------------------------------------------------------------------
 
-/** The 8-hex tail of a session id — the short form `penguin ls` prints. */
+/** The 8-hex tail of a session id — the short form `penguin session ls` prints. */
 export function shortSessionId(sessionId: string): string {
   const m = /-([0-9a-f]{8})$/.exec(sessionId);
   return m === null ? sessionId : m[1]!;

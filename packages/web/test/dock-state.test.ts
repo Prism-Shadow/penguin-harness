@@ -1,30 +1,52 @@
 /**
- * The dock store (features/dock/dock-state.ts): two docks (right/bottom) of uniform tabs
- * — singleton panels plus per-shell terminal tabs — SCOPED per conversation like browser
- * windows managing their own tabs: switching Sessions switches the whole arrangement, and
- * no conversation's tabs depend on another's. An open dock with no tabs is still visible
- * (it shows the picker); closing a tab removes it, and the last tab closing puts the dock
- * away; a dock's own toggle hides it keeping its tabs — and, through closedDockView, the
- * mounted bodies behind them.
+ * The dock store (features/dock/dock-state.ts): two docks (right and bottom) of uniform tabs —
+ * singleton panels and per-shell terminal tabs — scoped per conversation, the way browser
+ * windows manage their own tabs. The module reads localStorage at import time, so the storage
+ * is installed first (for the whole file: a reload reads it back) and the module imported after.
  *
- * The module reads localStorage at import time, so the stub is installed first and the
- * module imported dynamically.
+ * - A panel opens as a right-dock tab by default and stays a singleton: opening it in the other
+ *   dock moves the tab, and reopening shows it where it lives; the scheduled-tasks panel and the
+ *   built-in browser open like any other. Closing a tab removes it, and the last one puts the
+ *   dock away.
+ * - An open dock with no tabs is visible (the picker); toggling a dock closed keeps its tabs.
+ * - Terminal tabs are one per shell, bottom by default, shown where they live rather than
+ *   duplicated, and mix freely with panel tabs.
+ * - The whole arrangement switches with the Session and comes back on return; one Session's
+ *   terminals never appear in another's docks; a placeholder scope's arrangement passes to the
+ *   first Session chosen (a draft's to the Session it becomes, never clobbering); dead shells'
+ *   tabs are pruned in every scope.
+ * - A tab moves to the other dock and activates there (the only tab closes its source dock); a
+ *   whole dock moves, merging after the target's tabs; a strip reorders only with a complete,
+ *   matching key list.
+ * - The terminal toggle reports no tab so the caller adopts or creates one, hides and restores,
+ *   and brings the terminal to the front when a panel covers it.
+ * - Each scope's arrangement round-trips across a reload (sizes are one preference); a stored
+ *   tab key that is no well-formed id is dropped, not the dock, while a well-formed id nothing
+ *   has registered (a plugin's panel not loaded yet) is kept; a malformed entry reads as empty
+ *   docks.
+ * - Scope switches and moves are instant (no animation); toggles animate.
+ * - A detached terminal tab returns to the scope it left, unless a conversation already holds
+ *   the shell again.
+ * - There is one view per open dock; a hidden dock keeps its view to stay mounted on, an empty
+ *   one has none.
+ * - At most one surface is fullscreen, and only an open dock with tabs enters it. It lasts while
+ *   that dock is open with tabs and no dock it covers comes forward: the right dock's cover is its
+ *   own row, so the bottom dock opening or activating leaves it, while the bottom dock's cover
+ *   reaches the right dock, so the right dock opening or activating ends it. Hiding the surface or
+ *   closing its last tab ends either; switching tabs within it does not. A scope switch ends it
+ *   too, and it is never stored.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { memoryStorage } from "./helpers/storage";
 
 let dock: typeof import("../src/features/dock/dock-state");
-/** The stub's backing map, so a test can assert what a RELOAD would read back. */
-let store: Map<string, string>;
 
 beforeAll(async () => {
-  store = new Map<string, string>();
+  // Not vi.stubGlobal: the package config unstubs globals before every test, and the module
+  // (and the reload below) must keep reading this one storage for the whole file.
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
-    value: {
-      getItem: (key: string) => store.get(key) ?? null,
-      setItem: (key: string, value: string) => void store.set(key, value),
-      removeItem: (key: string) => void store.delete(key),
-    },
+    value: memoryStorage(),
   });
   dock = await import("../src/features/dock/dock-state");
 });
@@ -61,15 +83,13 @@ describe("panel tabs", () => {
     expect(dock.dockActiveKey("bottom")).toBe("agents");
   });
 
-  it("lists the scheduled-tasks panel as a kind and opens it like any other", () => {
-    expect(dock.PANEL_KINDS).toContain("schedules");
+  it("opens the scheduled-tasks panel like any other", () => {
     dock.openPanel("schedules", "right");
     expect(dock.panelDock("schedules")).toBe("right");
     expect(dock.dockActiveKey("right")).toBe("schedules");
   });
 
-  it("lists the built-in browser as a kind and opens it like any other", () => {
-    expect(dock.PANEL_KINDS).toContain("builtin-browser");
+  it("opens the built-in browser like any other", () => {
     dock.openPanel("builtin-browser");
     expect(dock.panelDock("builtin-browser")).toBe("right");
     expect(dock.isTabShown("builtin-browser")).toBe(true);
@@ -299,18 +319,23 @@ describe("persistence", () => {
     expect(reloaded.dockActiveKey("bottom")).toBe("memory");
   });
 
-  it("reads a stored schedules tab back and drops a tab key it does not know", async () => {
-    // A layout written by a newer build may name a kind this build lacks; the known tab
-    // survives and the stranger is dropped, never the whole dock.
-    store.set(
+  it("keeps a well-formed stored tab id, a plugin's namespaced one too, and drops the rest", async () => {
+    // A stored id nothing has registered (a plugin's panel not loaded yet) stays, to render a
+    // placeholder; a key that is no id at all is dropped, never the whole dock.
+    const tabs = ["schedules", "acme.kanban", "Bad Key!", "terminal:", "terminal:t1"];
+    localStorage.setItem(
       "penguin.dock.layout",
-      '{"scopes": {"s": {"right": {"tabs": ["schedules", "someday"], "active": "schedules", "open": true}}}}',
+      JSON.stringify({ scopes: { s: { right: { tabs, active: "acme.kanban", open: true } } } }),
     );
     vi.resetModules();
     const reloaded = await import("../src/features/dock/dock-state");
     reloaded.setDockScope("s");
-    expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["schedules"]);
-    expect(reloaded.dockActiveKey("right")).toBe("schedules");
+    expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual([
+      "schedules",
+      "acme.kanban",
+      "terminal:t1",
+    ]);
+    expect(reloaded.dockActiveKey("right")).toBe("acme.kanban");
     expect(reloaded.isDockVisible("right")).toBe(true);
   });
 
@@ -326,7 +351,7 @@ describe("persistence", () => {
   });
 
   it("degrades a malformed stored entry to empty docks", async () => {
-    store.set(
+    localStorage.setItem(
       "penguin.dock.layout",
       '{"scopes": {"s": {"right": {"tabs": [42]}}}, "bottomRatio": "x"}',
     );
@@ -412,5 +437,116 @@ describe("view models", () => {
     dock.closePanel("workspace");
     dock.closePanel("memory");
     expect(dock.closedDockView("right")).toBeNull();
+  });
+});
+
+describe("fullscreen", () => {
+  it("enters only on an open dock with tabs: closed, hidden or the picker is a no-op", () => {
+    dock.setDockFullscreen("right"); // nothing open
+    expect(dock.fullscreenDock()).toBeNull();
+    dock.toggleDock("right"); // the picker: open, no tabs
+    dock.setDockFullscreen("right");
+    expect(dock.fullscreenDock()).toBeNull();
+    dock.openPanel("workspace", "right");
+    dock.toggleDock("right"); // hidden, its tab kept
+    dock.setDockFullscreen("right");
+    expect(dock.fullscreenDock()).toBeNull();
+
+    dock.toggleDock("right");
+    const before = dock.dockVersion();
+    dock.setDockFullscreen("right");
+    expect(dock.fullscreenDock()).toBe("right");
+    expect(dock.dockVersion()).toBeGreaterThan(before); // subscribers re-render
+    dock.setDockFullscreen(null);
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("exits when its dock hides, and does not come back when the dock reopens", () => {
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.toggleDock("right");
+    expect(dock.fullscreenDock()).toBeNull();
+    dock.toggleDock("right");
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("outlives closing one of its tabs and exits with the last", () => {
+    dock.openPanel("workspace", "bottom");
+    dock.openPanel("memory", "bottom");
+    dock.setDockFullscreen("bottom");
+    dock.closePanel("memory");
+    expect(dock.fullscreenDock()).toBe("bottom");
+    dock.closePanel("workspace");
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("keeps covering while another tab of the same dock activates or opens there", () => {
+    dock.openPanel("workspace", "right");
+    dock.openPanel("memory", "right");
+    dock.setDockFullscreen("right");
+    dock.activateTab("workspace");
+    dock.openPanel("trace"); // a new panel lands in the right dock by default
+    expect(dock.fullscreenDock()).toBe("right");
+  });
+
+  it("right: survives the bottom dock opening, activating and receiving a panel", () => {
+    dock.openPanel("memory", "bottom");
+    dock.openPanel("builtin-browser", "bottom");
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.toggleDock("bottom"); // hidden
+    dock.toggleDock("bottom"); // open again, focused — it shows below the covered row
+    dock.activateTab("memory");
+    // The agent opens the browser, whose tab lives at the bottom: shown there, under nothing.
+    dock.openPanel("builtin-browser");
+    expect(dock.fullscreenDock()).toBe("right");
+  });
+
+  it("bottom: ends when the right dock is toggled open", () => {
+    dock.openPanel("workspace", "bottom");
+    dock.setDockFullscreen("bottom");
+    dock.toggleDock("right");
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("bottom: ends when a tab of the right dock activates or a panel lands there", () => {
+    dock.openPanel("memory", "right");
+    dock.openPanel("workspace", "bottom");
+    dock.setDockFullscreen("bottom");
+    dock.activateTab("memory"); // the covered dock takes the stage
+    expect(dock.fullscreenDock()).toBeNull();
+
+    dock.setDockFullscreen("bottom");
+    dock.openPanel("trace"); // a new panel lands in the right dock by default
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("is cleared by a scope switch and not restored on return", () => {
+    const a = `scope-fullscreen-a-${scopeSeq}`;
+    const b = `scope-fullscreen-b-${scopeSeq}`;
+    dock.setDockScope(b);
+    dock.openPanel("workspace", "right");
+    dock.setDockScope(a);
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.setDockScope(b); // the same dock is open and touched last here too
+    expect(dock.fullscreenDock()).toBeNull();
+    dock.setDockScope(a);
+    expect(dock.fullscreenDock()).toBeNull();
+  });
+
+  it("is never written to storage", () => {
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.openPanel("memory", "right"); // a persisted change made while it still covers
+    expect(dock.fullscreenDock()).toBe("right");
+    const stored = JSON.parse(localStorage.getItem("penguin.dock.layout")!) as {
+      scopes: Record<string, { right: object; bottom: object }>;
+    };
+    const entry = stored.scopes[dock.currentDockScope()]!;
+    expect(Object.keys(stored).sort()).toEqual(["bottomRatio", "scopes"]);
+    expect(Object.keys(entry).sort()).toEqual(["bottom", "focus", "right"]);
+    for (const area of [entry.right, entry.bottom])
+      expect(Object.keys(area).sort()).toEqual(["active", "open", "tabs"]);
   });
 });

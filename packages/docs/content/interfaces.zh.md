@@ -26,13 +26,13 @@ description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签�
         LLMInterface │            │ EnvironmentInterface
                      ▼            ▼
         GenerativeModel        Environment
-         └─ AgentHub gateway    └─ BuiltinTool registry (exec_command …)
+         └─ MMSP gateway        └─ BuiltinTool registry (exec_command …)
 ```
 
 | 接口 | 契约 | 内置实现 |
 | --- | --- | --- |
 | Human | `session.run` 的输入与流式输出 | CLI、Server（SSE） |
-| LLM | `LLMInterface.streamGenerate` | `GenerativeModel`（经由 AgentHub） |
+| LLM | `LLMInterface.streamGenerate` | `GenerativeModel`（经由 MMSP） |
 | Environment | `EnvironmentInterface.executeTool` 等 | `Environment` 与内置工具注册表 |
 
 每个接口都遵守两条规则：
@@ -146,12 +146,12 @@ interface GenerativeModelConfig {
   modelId: string;
   apiKey?: string;
   baseUrl?: string;
-  clientType?: string;             // AgentHub client protocol (openai-chat / openai-responses / …); inferred from modelId when omitted
+  clientType?: string;             // MMSP client type (openai-chat / openai-responses / …); when omitted, routed by the vendor family modelId begins with (gpt-, claude-, …)
   tools: ToolDefinition[];
   systemPrompt?: string;           // fully assembled system prompt, placeholders substituted
   contextWindow?: number;
   maxTokens?: number;
-  fastMode?: boolean;              // per-model fast mode (AgentHub fast_mode; premium faster tier), off by default
+  fastMode?: boolean;              // per-model fast mode (MMSP fast_mode; premium faster tier), off by default
   thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh" | "max"
   requestTimeoutMs?: number;       // Request idle budget: the longest wait for the next upstream event, default 300000; <=0 disables
   sessionId?: string;              // the Session's id, sent only to endpoints whose attribution header names the conversation
@@ -161,16 +161,15 @@ interface GenerativeModelConfig {
 
 ### 内置实现：GenerativeModel
 
-`GenerativeModel`（`packages/core/src/llm/generative-model.ts`）基于 `@prismshadow/agenthub` 模型网关的 `AutoLLMClient` 实现这份契约。
+`GenerativeModel`（`packages/core/src/llm/generative-model.ts`）基于 MMSP 模型网关（[`@prismshadow/mmsp`](https://www.npmjs.com/package/@prismshadow/mmsp)）的 `AutoLLMClient` 实现这份契约。
 
 **历史。** 网关**有状态地**维护对话历史，每轮只接收新消息。恢复 Session 时，通过一次性的 `setHistory` 重放已提交的历史。
 
-**事件转换。** 内部的 `EventTranslator` 把网关流事件转换成 `partial_*` 片段和完整消息，并逐字保留每一项的不透明 `fidelity` 负载。分块方式与网关自身的聚合规则一致：
+**事件转换。** 内部的 `EventTranslator` 把网关流事件转换成 `partial_*` 片段和完整消息，并逐字保留每一项的不透明 `fidelity` 负载。网关一次只流式输出一项：先是若干 `.delta` 片段，再以该项的 `.done` 收尾；每个响应最后都以一个 `stop` 事件结束。因此转换是一一对应的，不做任何重组：
 
-- thinking 块由自己的 fidelity 负载收尾。
-- fidelity 相同的连续内容保持在同一个块里。OpenAI 兼容客户端会给每个 delta 打上相同的 `{ reasoning_field }`，不能因此把块切开。
-- 文本段在 `fidelity.phase` 出现差异时拆分，出现 `fidelity.signature` 时结束。合并时 fidelity 键会累积。
-- 完整消息按 thinking → text → tool_call 的顺序落定。
+- `.delta` 转成 `partial_*` 的 delta；该项的第一个片段之前先发出 `start`。
+- `.done` 转成 `partial_*` 的 `stop` 和完整消息（thinking、text 或 tool call），内容只取自 `.done` 项本身。
+- `stop` 事件带来这次请求的 Token 用量和结束原因。结束原因为 `length`（在输出上限处被截断）或 `unknown` 的响应，其最后一项以 `fatal` 结束；没有收到 `stop` 事件就中断的流按 `retryable` 处理。
 
 **思考摘要。** 每次请求都会向网关索取思考摘要（`thinking_summary`）。没有供应商会拒绝这个标记：对没有这项能力的模型家族，网关直接丢弃它；Claude 家族则把它理解为摘要式思考。除了让读者看到模型如何推理，它还能让推理阶段持续有事件到达。
 
@@ -279,6 +278,7 @@ type SpawnConfiner = (
 interface ConfinedSpawn {
   argv: readonly string[];                  // spawned instead of the original argv
   env?: Readonly<Record<string, string>>;   // entries the sandbox runner itself needs, laid over the command's env
+  runnerLines?: readonly string[];          // lines the runner prints before the command; dropped from the head of its stderr
 }
 
 // The policy itself (@prismshadow/penguin-core/plugin). "danger-full-access" with no network cut

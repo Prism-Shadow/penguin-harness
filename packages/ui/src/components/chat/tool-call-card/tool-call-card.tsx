@@ -6,40 +6,43 @@
  * row) is always shown below the details.
  *
  * The row names no outcome in words: the status icon, with the caller's state label as its
- * accessible name and tooltip, is the one carrier of how the call ended or was decided, and a
- * waiting call's hourglass is enough because its approval block is on screen. The row's right end
- * holds one thing at a time: a marker saying where the call's work went ("background"), or an
- * action the caller offers on a running call (send it to the background). An action is a text
- * button with no padding of its own, so a row carrying one measures like a row without.
+ * accessible name and tooltip, carries how the call ended or was decided (a failure also turns
+ * the name to the danger ink), and a waiting call's hourglass is enough because its approval
+ * block is on screen. The row's right end holds one thing at a time: a marker saying where the
+ * call's work went ("background"), or an action the caller offers on a running call (send it to
+ * the background). An action is a text button with no padding of its own, so a row carrying one
+ * measures like a row without.
  *
- * Stacked sticky, the second level (the thinking row's): while the expanded output scrolls, the
- * row pins right below the stuck work-group header, on an opaque ground. Collapsing from stuck
- * lands the view back on the row. As a step of the agent's work the row carries the activity
- * hook: the tool's name is its label, the subtitle and the duration its details.
+ * The row is the shared `DisclosureRow` in its two-button form (the end parts and an action
+ * cannot sit inside the row's button, so the chevron follows them as a button of its own), so a
+ * tool call reads, folds and pins exactly like a thinking row: stacked sticky, the second level,
+ * pinning right below the stuck group head while the expanded output scrolls, and landing the
+ * view back on the row when collapsed from stuck. As a step of the agent's work it carries the
+ * activity hook: the tool's name is its label, the subtitle and the duration its details.
+ *
+ * The output streams through `StreamText` in its plain format, so it arrives the way a reply
+ * does (the theme's pace, veil and caret) and grows with the transcript while it streams; it
+ * takes the output block's height cap back once settled.
  *
  * Copy is the caller's: the name (an alias, when it resolves one), the subtitle, the state label,
  * the marker, the action, the approval buttons' words and the images' alt text all arrive as
  * props. What the caller decides from the call's own data — the preview, the payload, the
  * duration's segments — does too; this component only lays them out.
  */
-import { useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useUiStrings } from "../../../strings";
 import { Button } from "../../actions/button/button";
-import { Chevron } from "../../icons/chevron/chevron";
 import { StatusIcon } from "../../icons/status-icon/status-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
 import { LiveDuration, formatDuration } from "../../feedback/duration-slot/duration-slot";
 import {
-  ActivityProgress,
-  DISCLOSURE_OUTPUT_PRE_CLASS,
-  DISCLOSURE_ROW_CLASS,
-  DISCLOSURE_ROW_STICKY_CLASS,
+  DISCLOSURE_OUTPUT_CAP_CLASS,
+  DISCLOSURE_OUTPUT_CLASS,
+  DisclosureRow,
   activityState,
 } from "../../layout/disclosure-row/disclosure-row";
 import { ZoomableImage } from "../../overlays/lightbox/lightbox";
 import { ApprovalBlock } from "../approval-block/approval-block";
-import { StreamingCaret } from "../assistant-text/streaming-caret";
+import { StreamText } from "../stream-text/stream-text";
 import type { ApprovalRequest } from "../approval-block/approval-block";
 
 /**
@@ -71,9 +74,9 @@ export interface ToolCallCardProps {
   argumentsText?: string;
   /** The call's output so far. */
   output?: string;
-  /** The output is still arriving: a caret follows it. */
+  /** The output is still arriving: it streams, the theme's caret after it. */
   outputStreaming?: boolean;
-  /** Images the call returned, shown as thumbnails that zoom when pressed. */
+  /** Images the call returned, shown as thumbnails that zoom when pressed (fetched lazily, as they near the viewport). */
   images?: { srcs: readonly string[]; alt: string };
   /** Always shown below the details, whatever the collapsed state (a subagent's row). */
   footer?: ReactNode;
@@ -101,41 +104,24 @@ export function ToolCallCard({
   expandLabel,
   collapseLabel,
 }: ToolCallCardProps) {
-  const strings = useUiStrings();
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  // Shared by the row and the chevron beside it: two buttons, one disclosure. Collapsing while
-  // the row is stuck lands the view back on the row.
-  const toggleOpen = (): void => {
-    const willClose = open;
-    setOpen((v) => !v);
-    if (willClose) {
-      requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
-    }
-  };
-
-  return (
-    <div ref={rootRef}>
-      <div
-        className={`ui-activity ${DISCLOSURE_ROW_STICKY_CLASS} ${DISCLOSURE_ROW_CLASS}`}
-        data-kind="tool"
-        data-state={activityState(state)}
-      >
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={toggleOpen}
-          className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left"
-        >
-          <span data-slot="mark" className="flex shrink-0">
-            <StatusIcon state={state} label={stateLabel} />
-          </span>
+  const row = (
+    <DisclosureRow
+      sticky
+      activity={{ kind: "tool", state: activityState(state) }}
+      // A waiting call is running work, but nothing executes until it is decided.
+      inFlight={state === "running"}
+      icon={<StatusIcon state={state} label={stateLabel} />}
+      // The tool's name is the label slot but not a fixed phrase, so it is set here, in the
+      // code face and the body ink (the danger ink once the call failed).
+      trailing={
+        <>
           <span
             data-tooltip={nameTooltip}
             data-tooltip-content="code"
             data-slot="label"
-            className="shrink-0 truncate font-mono text-xs font-semibold text-fg"
+            className={`shrink-0 truncate font-mono text-xs font-semibold ${
+              state === "failed" ? "text-tone-danger-fg" : "text-fg"
+            }`}
           >
             {name}
           </span>
@@ -151,79 +137,77 @@ export function ToolCallCard({
               formatDuration(duration.ms)
             )}
           </span>
-          <ActivityProgress running={state === "running"} />
-          {/* A theme that keeps the chevron beside the words shows this one and hides the button
-              at the row's end; by default it is hidden and that button is the chevron. */}
-          <span data-slot="toggle" aria-hidden className="hidden shrink-0">
-            <Chevron open={open} className="text-fg-subtle" />
-          </span>
-          <span className="min-w-0 flex-1" />
-        </button>
-        {marker !== undefined && (
-          <span className="shrink-0 font-mono text-xs text-fg-subtle">{marker}</span>
+        </>
+      }
+      end={{
+        parts: (
+          <>
+            {marker !== undefined && (
+              <span className="shrink-0 font-mono text-xs text-fg-subtle">{marker}</span>
+            )}
+            {action !== undefined && (
+              // The row's own type size and no padding, so the row measures the same with it.
+              <Button
+                variant="link"
+                size="sm"
+                title={action.hint}
+                onClick={action.onClick}
+                className="shrink-0"
+              >
+                {action.label}
+              </Button>
+            )}
+          </>
+        ),
+        ...(expandLabel !== undefined ? { expandLabel } : {}),
+        ...(collapseLabel !== undefined ? { collapseLabel } : {}),
+      }}
+      under={
+        pending !== undefined ? (
+          <ApprovalBlock name={name} nameTooltip={nameTooltip} {...pending} />
+        ) : undefined
+      }
+    >
+      {/* The parts sit directly in the row's body, each ruled off the one above, so a theme
+          that draws no rules finds every one of them where it finds a row body's top rule. */}
+      <>
+        {argumentsText && (
+          // Wrapped in full, no height cap and no scrollbar: the arguments are what the call
+          // means, and an inner scroll would fight the transcript's own.
+          <pre className="anim-fade whitespace-pre-wrap break-all border-t border-line-muted bg-surface-inset px-3 py-2 text-xs text-fg-muted">
+            {argumentsText}
+          </pre>
         )}
-        {action !== undefined && (
-          // The row's own type size and no padding, so the row measures the same with it; a
-          // sibling of the row button, since a button cannot hold another.
-          <Button
-            variant="link"
-            size="sm"
-            title={action.hint}
-            onClick={action.onClick}
-            className="shrink-0"
-          >
-            {action.label}
-          </Button>
+        {(output || outputStreaming) && (
+          <StreamText
+            format="plain"
+            className={DISCLOSURE_OUTPUT_CLASS}
+            settledClassName={DISCLOSURE_OUTPUT_CAP_CLASS}
+            text={output ?? ""}
+            streaming={outputStreaming}
+          />
         )}
-        {/* Named for what it does, like every chevron toggle: naming it after the tool would give
-            the row two buttons under one name. */}
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-label={open ? (collapseLabel ?? strings.collapse) : (expandLabel ?? strings.expand)}
-          onClick={toggleOpen}
-          data-slot="toggle-end"
-          className="flex shrink-0 items-center self-stretch"
-        >
-          <Chevron open={open} className="text-fg-subtle" />
-        </button>
-      </div>
-
-      {pending !== undefined && (
-        <ApprovalBlock name={name} nameTooltip={nameTooltip} {...pending} />
-      )}
-
-      {open && (
-        <div className="anim-fade">
-          {argumentsText && (
-            // Wrapped in full, no height cap and no scrollbar: the arguments are what the call
-            // means, and an inner scroll would fight the transcript's own.
-            <pre className="whitespace-pre-wrap break-all border-t border-line-muted bg-surface-inset px-3 py-2 text-xs text-fg-muted">
-              {argumentsText}
-            </pre>
-          )}
-          {(output || outputStreaming) && (
-            <pre className={DISCLOSURE_OUTPUT_PRE_CLASS}>
-              {output}
-              {outputStreaming && <StreamingCaret />}
-            </pre>
-          )}
-          {images !== undefined && images.srcs.length > 0 && (
-            <div className="flex flex-wrap gap-2 border-t border-line-muted px-3 py-2">
-              {images.srcs.map((src, i) => (
-                <ZoomableImage
-                  key={i}
-                  src={src}
-                  alt={images.alt}
-                  className="max-h-40 max-w-full rounded-md border border-line"
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {footer !== undefined && footer !== null && <div className="px-3 py-2">{footer}</div>}
+        {images !== undefined && images.srcs.length > 0 && (
+          <div className="anim-fade flex flex-wrap gap-2 border-t border-line-muted px-3 py-2">
+            {images.srcs.map((src, i) => (
+              <ZoomableImage
+                key={i}
+                src={src}
+                alt={images.alt}
+                lazy
+                className="max-h-40 max-w-full rounded-md border border-line"
+              />
+            ))}
+          </div>
+        )}
+      </>
+    </DisclosureRow>
+  );
+  if (footer === undefined || footer === null) return row;
+  return (
+    <div>
+      {row}
+      <div className="px-3 py-2">{footer}</div>
     </div>
   );
 }

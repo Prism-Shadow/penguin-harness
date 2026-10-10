@@ -284,10 +284,7 @@ export function SkillsTab({
                 </p>
               </div>
               {metaLine(skill) !== "" && (
-                <span
-                  className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500"
-                  data-tooltip={metaLine(skill)}
-                >
+                <span className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500">
                   {metaLine(skill)}
                 </span>
               )}
@@ -393,6 +390,7 @@ export function SkillsTab({
       <ConfirmModal
         open={overwriting !== null}
         title={S.skills.importOverwriteTitle}
+        tone="primary"
         confirmLabel={S.skills.importOverwriteAction}
         cancelLabel={S.common.cancel}
         busy={uploading}
@@ -413,7 +411,7 @@ export function SkillsTab({
         busy={busy}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.skills.uninstall}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">

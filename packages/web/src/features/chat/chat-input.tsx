@@ -7,9 +7,10 @@
  * indicator) + Model + send (up arrow);
  * In draft state (Session not yet created), when models/onChangeModel are supplied, the model
  * selector sits to the left of the send button (provider logo + name; it opens the model-picker
- * dialog — search, provider-group rail, configured-key-first listing — see ModelCatalogSelect)
- * — once the Session is created the model is locked, and the same spot switches to a read-only
- * logo + name display;
+ * dialog — search, provider-group rail, configured-key-first listing — see ModelCatalogSelect). Once
+ * the Session exists the same selector switches the conversation's model in place (the parent
+ * confirms and compacts on the current model first); the subagent composer shows a read-only
+ * logo + name there instead;
  * Draft state also renders a thinking-level picker left of the model selector (backed by the
  * Agent settings: picking a level writes through to the Agent config and applies to the session
  * created on first send); in session state the level is fixed (llmConfig is assembled once per
@@ -25,11 +26,12 @@
  * and opens a picker (agents / models), and the pick becomes a highlighted chip above the text
  * body instead of switching on the spot. The user
  * keeps typing; **Enter/Send** performs the switch — an agent chip hands the conversation off to
- * a new chat for that agent (the current Session is not sent to), a model chip forks this
- * conversation onto the picked model. A model fork additionally waits for this Session to be
- * idle (it branches off a Trace that a run or a compaction is still appending to) and says so
- * above the composer rather than just disabling Send. With an empty text body the default
- * auto-message is filled in. Only one chip at a time (picking either clears the other, picking
+ * a new chat for that agent (the current Session is not sent to), a model chip opens a new
+ * conversation on the picked model that continues this one, which itself stays as it is (the
+ * toolbar's model picker is the in-place switch). A model fork additionally waits for this
+ * Session to be idle (it branches off a Trace that a run or a compaction is still appending
+ * to) and says so above the composer rather than just disabling Send. With an empty text body
+ * the default auto-message is filled in. Only one chip at a time (picking either clears the other, picking
  * the model already in use clears the staging, and both are exclusive with goal mode); a chip is
  * removed via backspace at the start of the text or its x button, and both are cached with the
  * draft so they survive a session switch or reload along with the text they belong to;
@@ -101,6 +103,7 @@ import {
   Chip,
   ChipRow,
   ComposerCard,
+  ConfirmModal,
   Dropdown,
   GlyphIcon,
   ICONS,
@@ -125,6 +128,7 @@ import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
+import type { PermissionPick } from "../../lib/permission-level";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { SkillPickList } from "../skills/skill-pick-list";
 import { toggleSkillName } from "../skills/skill-selection";
@@ -132,6 +136,7 @@ import { sameModelRef } from "../models/model-grouping";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { ModelCatalogSelect, modelLabel } from "./model-select";
 import { ModelPickerModal } from "./model-picker-modal";
+import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
@@ -151,6 +156,7 @@ import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
 import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { splitDroppedFiles } from "../../lib/file-drop";
+import { isLongPaste, longPasteFileName } from "../../lib/long-paste";
 import { splitBySize } from "../../lib/upload-limits";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
@@ -226,7 +232,6 @@ function ThinkingLevelSelect({
   onChange,
   disabled,
   direction = "down",
-  note,
 }: {
   /** Level to display and mark selected ("" = none to show yet); null = the Agent config is still loading (draft). */
   value: string | null;
@@ -234,8 +239,6 @@ function ThinkingLevelSelect({
   disabled: boolean;
   /** Popup direction: down for the draft card (room below), up for the bottom-docked session composer. */
   direction?: "down" | "up";
-  /** Footnote under the rows — the session variant's pre-pick reminder: a change applies right away but invalidates the model's cached context, so compacting first is recommended. */
-  note?: string;
 }) {
   const label =
     value === null ? "…" : (thinkingLevelLabel(S.chat.thinkingLevelNames, value) ?? "—");
@@ -261,7 +264,6 @@ function ThinkingLevelSelect({
       options={options}
       value={value}
       onChange={onChange}
-      note={note}
       direction={direction}
       align="right"
     />
@@ -305,7 +307,7 @@ function SteerModeRow({
       data-tooltip={hint}
       aria-pressed={steerMode === mode}
       onClick={() => onChangeSteerMode(mode)}
-      className={`h-5 rounded px-1.5 text-xs transition-colors duration-150 ${
+      className={`h-5 whitespace-nowrap rounded px-1.5 text-xs transition-colors duration-150 ${
         steerMode === mode
           ? "bg-gray-200 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-100"
           : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
@@ -552,18 +554,25 @@ function withReferences(references: readonly ComposerReference[], typed: string)
 
 /**
  * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
- * Two entries: a surface that composes a whole prompt puts it in this composer instead of
- * submitting it on its own, and a surface that contributes one reference stages it beside
- * whatever is already being typed.
+ * Three entries: a surface that composes a whole prompt puts it in this composer instead of
+ * submitting it on its own, a surface that contributes one reference stages it beside
+ * whatever is already being typed, and a surface that only asks for an answer sends focus here.
  */
 export interface ComposerControl {
   /**
    * Put a composed prompt in the text body and preselect the skills it pins — without sending
    * anything. `pinnedSkills` is the caller's full list; names the current Agent has not
    * installed are dropped here, where the installed list already lives. Pass an empty list to
-   * leave the composer's own Skill selection untouched.
+   * leave the composer's own Skill selection untouched. Replacing text the user typed asks first.
+   * An empty prompt empties the text body: a reply's choice offers "Other…", and the answer it
+   * asks for is the one the user types here.
    */
   fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
+  /**
+   * Move focus to the text body and leave everything in it as it is, for a surface that asks
+   * for an answer in the user's own words without clearing what is there.
+   */
+  focus: () => void;
   /**
    * Stage a contribution as a chip rather than typing it into the draft — a file, a directory
    * or a quoted range from the Files panel, or an excerpt selected in the conversation. The
@@ -601,6 +610,7 @@ export function ChatInput({
   models,
   onChangeModel,
   onSwitchModel,
+  onPickSessionModel,
   defaultModel,
   thinkingLevel,
   onChangeThinkingLevel,
@@ -616,15 +626,15 @@ export function ChatInput({
   vision,
   approvalMode,
   approvalModes,
-  onChangeApprovalMode,
   sandbox,
-  onChangeSandbox,
+  onChangePermission,
   modeSaving,
   autoFocus,
   agents,
   currentAgentId,
   skills,
   initialSkills,
+  initialGoal,
   onSkillsChange,
   onHandoff,
   initialText,
@@ -715,20 +725,28 @@ export function ChatInput({
   modelRef: ModelRefDto | null;
   /**
    * Candidate model list: when supplied together with onChangeModel, renders the model selector
-   * to the left of the send button (draft state); when only models is supplied (session state),
-   * it's used to look up the locked model's display name (read-only display).
+   * to the left of the send button (draft state); with onPickSessionModel instead (session
+   * state), the same selector switches this conversation's model; with neither (the subagent
+   * composer), it only looks up the model's display name for the read-only badge.
    */
   models?: ModelInfo[];
-  /** Changes the selected model in draft state; no longer passed once the Session is created and the model is locked. */
+  /** Changes the selected model in draft state; not passed once the Session exists. */
   onChangeModel?: (ref: ModelRefDto) => void;
   /**
-   * Session state: model switch via the `/model` command — forks the session onto the picked
-   * model (a NEW session carrying this conversation) and navigates there; the draft written
-   * after the pick is posted as the new session's first task. Returns whether it succeeded
+   * Session state: the `/model` handoff — opens a NEW session on the picked model carrying this
+   * conversation and navigates there; the draft written after the pick is posted as the new
+   * session's first task, and this conversation stays as it is. Returns whether it succeeded
    * (draft kept on failure). Only passed for an active session (the command is additionally
    * gated on not running/compacting); picking the current model is a no-op.
    */
   onSwitchModel?: (ref: ModelRefDto, input: TaskInputPart[]) => Promise<boolean>;
+  /**
+   * Session state: a pick in the toolbar's model picker, which switches THIS conversation onto
+   * the picked model (compacting on the current one first). The parent owns the decision and
+   * the confirm dialog; the picker only reports the pick, and is disabled while a Task runs or
+   * a compaction is under way. Not passed to the subagent composer, whose badge stays display-only.
+   */
+  onPickSessionModel?: (ref: ModelRefDto) => void;
   /** Project default model (marked "default" on the selector's candidate item). */
   defaultModel?: ModelRefDto;
   /**
@@ -748,8 +766,8 @@ export function ChatInput({
    * user's pick for this session, else the Agent config's level" ("" = neither known yet),
    * so the picker auto-follows the config until touched. A pick is the parent's own state:
    * it pins the level on the Session (PATCH), and core applies it from the next LLM request
-   * (soft-limited; the menu note advises compacting first); nothing rides a task. Never
-   * written through to the Agent config (that behavior stays draft-only).
+   * (soft-limited; a pick mid-chat is confirmed first, offering to compact); nothing rides a
+   * task. Never written through to the Agent config (that behavior stays draft-only).
    */
   turnThinkingLevel?: string;
   /** Session state: pins the thinking level on this session (effective from its next LLM request); also enables the editable picker. */
@@ -784,16 +802,16 @@ export function ChatInput({
   vision: boolean;
   approvalMode: ApprovalMode;
   /**
-   * The modes the permission button's Approval section lists, in order (`approvalModeChoices`):
-   * all four, except that an organization's Session leaves out `always-ask` unless it is the
-   * current value. The button's level and title follow `approvalMode` whatever the list holds.
+   * The approval modes the permission button may offer, in order (`approvalModeChoices`): all
+   * four, except that an organization's Session leaves out `always-ask` unless it is the current
+   * value. A preset whose approval mode is not listed is left out of the menu, unless it is the
+   * current preset. The button's level and title follow `approvalMode` whatever the list holds.
    */
   approvalModes: readonly ApprovalMode[];
-  /** A returned promise keeps the permission button's pick on screen until the save settles. */
-  onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<unknown>;
   /** The Session's own sandbox policy (the draft's pick before there is a Session). */
   sandbox: SessionSandbox;
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void | Promise<unknown>;
+  /** Saves a preset's approval mode and sandbox together; a returned promise keeps the permission button's pick on screen until the save settles. */
+  onChangePermission: (pick: PermissionPick) => void | Promise<unknown>;
   modeSaving: boolean;
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
@@ -815,6 +833,8 @@ export function ChatInput({
    * in that list are pruned.
    */
   initialSkills?: string[];
+  /** Start in goal mode (a plugin's quick start whose demo is a goal): read once on mount. */
+  initialGoal?: boolean;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
   onSkillsChange?: (names: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
@@ -852,7 +872,7 @@ export function ChatInput({
    * — minus what a child has no semantics for (goal mode, image/file attachments and the "+"
    * menu carrying them, paste/drop file intake; /compact and the follow-up queue are already
    * gated by their absent callbacks). The model badge is inert here: a child cannot switch
-   * model or agent, so there is no locked-model hint to click for.
+   * model or agent.
    */
   variant?: "session" | "subagent";
   /**
@@ -933,7 +953,7 @@ export function ChatInput({
   // images and selected skills ride the round-1 message exactly as in a normal send: the images
   // as image input (path lines only on a model without vision), the skills as a [use_skills]
   // block. Later rounds restate the objective text alone.
-  const [goalOn, setGoalOn] = useState(false);
+  const [goalOn, setGoalOn] = useState(initialGoal === true);
   const [goalBudgetText, setGoalBudgetText] = useState("");
   const [goalBudgetOpen, setGoalBudgetOpen] = useState(false);
   const [goalBudgetDraft, setGoalBudgetDraft] = useState("");
@@ -1090,8 +1110,8 @@ export function ChatInput({
   const canMidRunSend = steerAction || queueAction;
   const midRunSendLabel = midRun === "queue" ? S.chat.followUpSend : S.chat.steerSend;
   const stopAction = isStopAction(status, midRun);
-  // Locked-model badge text (session and subagent variants): the catalog's display name when
-  // the model is known, the raw id otherwise.
+  // Display-only model badge text (see the badge below): the catalog's display name when the
+  // model is known, the raw id otherwise.
   const lockedModelLabel = (() => {
     const m = models?.find((x) => sameModelRef(x, modelRef));
     return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
@@ -1237,13 +1257,15 @@ export function ChatInput({
     [selectedSkills, onSkillsChange],
   );
 
+  /** The text the last fill put in the box, so a fill over it untouched does not ask (fillPrompt). */
+  const lastFillRef = useRef<string | null>(null);
   /**
    * Fill from a surface that composed a prompt, without sending (see ComposerControl): the
    * prompt REPLACES the text body — any draft is cleared first — and the pinned installed
    * skills join the selection, so pressing Send builds exactly the `[use_skills]` message the
    * caller used to submit on its own. Why text replaces while skills merge is buildExampleFill.
    */
-  const fillPrompt = useCallback(
+  const applyFill = useCallback(
     (prompt: string, pinnedSkills: readonly string[]) => {
       const fill = buildExampleFill({
         prompt,
@@ -1253,6 +1275,7 @@ export function ChatInput({
       });
       setText(fill.text);
       onTextChange?.(fill.text);
+      lastFillRef.current = fill.text;
       setCaret(0);
       // The merge only ever appends, so an unchanged length means an unchanged selection —
       // and calling back for nothing would rewrite the cached draft on every repeat click.
@@ -1274,13 +1297,39 @@ export function ChatInput({
     },
     [skills, selectedSkills, onTextChange, onSkillsChange],
   );
+  /**
+   * Every fill passes here, whichever surface sent it (an example task, a saved shortcut, a
+   * schedule's prompt, a reply's choice or form): replacing text the user typed asks first. A
+   * fill over an empty box, over the same prompt, or over what an earlier fill put there
+   * untouched (browsing the examples, or a pick before the choice's "Other…") goes straight in.
+   * An empty fill is a clear, and its confirmation says so.
+   */
+  const [pendingFill, setPendingFill] = useState<{
+    prompt: string;
+    pinnedSkills: readonly string[];
+  } | null>(null);
+  const clearingFill = pendingFill?.prompt === "";
+  const fillPrompt = useCallback(
+    (prompt: string, pinnedSkills: readonly string[]) => {
+      const typed = textRef.current;
+      if (typed.trim() !== "" && typed !== prompt && typed !== lastFillRef.current) {
+        setPendingFill({ prompt, pinnedSkills });
+      } else applyFill(prompt, pinnedSkills);
+    },
+    [applyFill],
+  );
   const addReference = useCallback((reference: ComposerReference) => {
     setReferences((prev) => [...prev, reference]);
     // The chip is above the text body, so the caret stays where it was; focus follows the
     // gesture back to the composer, which is where the sentence about it gets typed.
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
-  useImperativeHandle(controlRef, () => ({ fillPrompt, addReference }), [fillPrompt, addReference]);
+  const focusBody = useCallback(() => textareaRef.current?.focus(), []);
+  useImperativeHandle(controlRef, () => ({ fillPrompt, addReference, focus: focusBody }), [
+    fillPrompt,
+    addReference,
+    focusBody,
+  ]);
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
@@ -1872,6 +1921,17 @@ export function ChatInput({
     if (files.length > 0) {
       e.preventDefault();
       addFiles(files);
+      return;
+    }
+    // A paste too long for the text box (a whole log) is attached as a text file instead:
+    // inserted, it makes every later keystroke re-render the whole text and the tab hangs.
+    // Goal mode takes no file attachments, so there the text goes in as it always did.
+    const text = e.clipboardData.getData("text/plain");
+    if (!goalOn && isLongPaste(text)) {
+      e.preventDefault();
+      const name = longPasteFileName(new Date());
+      addAttachments([new File([text], name, { type: "text/plain" })]);
+      toastInfo(S.chat.longPasteAttached(name));
     }
   };
 
@@ -2054,7 +2114,6 @@ export function ChatInput({
             aria-invalid={goalBudgetDraftInvalid}
             aria-describedby="goal-budget-hint"
             {...noAutofill}
-            data-tooltip={goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint}
             className={`min-w-0 flex-1 rounded-md border bg-white px-2 py-1 font-mono text-xs leading-5 placeholder:text-gray-400 focus:outline-none focus:ring-2 dark:bg-gray-950 dark:placeholder:text-gray-500 ${
               goalBudgetDraftInvalid
                 ? "border-red-400 text-red-600 focus:border-red-500 focus:ring-red-400/20 dark:border-red-500 dark:text-red-400"
@@ -2107,12 +2166,12 @@ export function ChatInput({
         />
       )}
 
-      {/* /model switch picker (session state): the same model-picker dialog the draft's model
+      {/* /model handoff picker (session state): the same model-picker dialog the draft's model
           selector opens, on the session's model; picking it is a no-op. The /model token was
           already consumed when the command ran, so cancelling (Escape / overlay click) keeps
           the remaining draft and cannot re-open the slash menu, and the dialog hands focus back
-          to the textarea it was opened from. A pick only stages the chip below — the switch
-          happens on send. */}
+          to the textarea it was opened from. A pick only stages the chip below — the new
+          conversation opens on send. */}
       {models && (
         <ModelPickerModal
           open={modelSwitchOpen}
@@ -2187,17 +2246,20 @@ export function ChatInput({
           waiting on the user. Dismissible, because keeping the threshold high on purpose is a
           legitimate answer and a notice with no way down stops being read. */}
       {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
+        // The buttons keep their labels whole, so where the sentence would be left a few
+        // characters a line beside them (a phone at a large text size), they drop to a row
+        // of their own instead; the sentence keeps a readable width either way.
         <NoticeStrip
           tone="attention"
-          className="anim-fade mb-1 flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs"
+          className="anim-fade mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-2.5 py-2 text-xs"
         >
-          <p className="min-w-0">
+          <p className="min-w-0 grow basis-56">
             {S.chat.contextWindowUnderThreshold(
               humanizeTokens(contextWindow),
               humanizeTokens(compactionLimit),
             )}
           </p>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               onClick={() => {
@@ -2452,8 +2514,7 @@ export function ChatInput({
               approvalMode={approvalMode}
               approvalModes={approvalModes}
               sandbox={sandbox}
-              onChangeApprovalMode={onChangeApprovalMode}
-              onChangeSandbox={onChangeSandbox}
+              onChange={onChangePermission}
               disabled={modeSaving}
               direction={models && onChangeModel ? "down" : "up"}
             />
@@ -2496,19 +2557,21 @@ export function ChatInput({
             {/* Session state: the Session's pinned thinking level (editable) — displays the
               user's pick, else the Agent config's level (auto-follow; the parent resolves
               it). A pick is pinned on the Session (PATCH) and applies from the next LLM
-              request (soft-limited): the menu's footnote reminds, before the pick, that the
-              change costs the model's cached context and compacting first is recommended —
-              never writing through to the Agent config. */}
+              request (soft-limited): a pick mid-chat goes through the parent's confirm
+              dialog, which says the change costs the model's cached context and offers to
+              compact first — never writing through to the Agent config. */}
             {!onChangeModel && onChangeTurnThinkingLevel && (
               <ThinkingLevelSelect
                 value={turnThinkingLevel ?? ""}
                 onChange={onChangeTurnThinkingLevel}
                 disabled={busy}
                 direction="up"
-                note={S.chat.thinkingLevelChangeNote}
               />
             )}
-            {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
+            {/* Left of the send button: the model selector. In draft state it picks the model the
+                Session will be created on; in session state it switches this conversation's
+                model (the parent confirms, then compacts on the current model first), so it is
+                disabled whenever a compaction could not start. */}
             {models && onChangeModel ? (
               <ModelCatalogSelect
                 models={models}
@@ -2517,9 +2580,19 @@ export function ChatInput({
                 onChange={onChangeModel}
                 disabled={busy}
               />
-            ) : variant === "subagent" ? (
-              /* Subagent composer: the child runs whatever model it was spawned with, and no
-                 /model command exists here — so the badge is pure display, nothing to click. */
+            ) : models && onPickSessionModel && variant === "session" ? (
+              <ModelCatalogSelect
+                models={models}
+                value={modelRef}
+                {...(defaultModel !== undefined ? { defaultModel } : {})}
+                onChange={onPickSessionModel}
+                disabled={busy || sessionModelPickerDisabled(status)}
+              />
+            ) : (
+              /* Display-only badge: the subagent composer (a child runs whatever model it was
+                 spawned with and has no switch surface), and a session composer until its
+                 model list has loaded. Both the logo and the name come from the DTO's paired
+                 fields (no prefix parsing). */
               <span
                 data-tooltip={modelRef?.modelId ?? ""}
                 className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-md px-1 text-gray-400 dark:text-gray-500"
@@ -2530,27 +2603,6 @@ export function ChatInput({
                 />
                 <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
               </span>
-            ) : (
-              /* Read-only display in session state: both the logo and the name come from the
-                 Session DTO's paired fields (no prefix parsing). A button rather than a plain
-                 span: the model is locked here, and clicking it explains the one way to switch
-                 (the /model command) instead of doing nothing. */
-              <button
-                type="button"
-                data-tooltip={modelRef?.modelId ?? ""}
-                // Short accessible name (the toast carries the full hint): the long copy
-                // contains the literal "发送"/"Send", which would collide with the send
-                // button's accessible name for assistive tech and name-based test queries.
-                aria-label={`${S.chat.model} ${modelRef?.modelId ?? ""}`}
-                onClick={() => toastInfo(S.chat.modelLockedHint)}
-                className="flex h-8 min-w-0 max-w-44 shrink cursor-pointer items-center gap-1.5 rounded-md px-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-              >
-                <ProviderLogo
-                  provider={modelRef?.provider ?? "custom"}
-                  className="h-4 w-4 shrink-0"
-                />
-                <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
-              </button>
             )}
             {/* One action button, never two: while running an empty composer means "Stop"
               (abort), and typing turns the very same button into "Send" — which, mid-run,
@@ -2568,6 +2620,22 @@ export function ChatInput({
           </>
         }
       />
+      <ConfirmModal
+        open={pendingFill !== null}
+        title={clearingFill ? S.chat.clearTypedTitle : S.chat.replaceTypedTitle}
+        tone="primary"
+        onClose={() => setPendingFill(null)}
+        onConfirm={() => {
+          if (pendingFill !== null) applyFill(pendingFill.prompt, pendingFill.pinnedSkills);
+          setPendingFill(null);
+        }}
+        confirmLabel={clearingFill ? S.chat.clearTyped : S.chat.replaceTyped}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {clearingFill ? S.chat.clearTypedBody : S.chat.replaceTypedBody}
+        </p>
+      </ConfirmModal>
     </div>
   );
 }

@@ -18,7 +18,6 @@ import {
 } from "../../lib/settings-sections";
 import type { SettingsGroupKey, SettingsSectionKey } from "../../lib/settings-sections";
 import { useAuth } from "../../state/auth";
-import { Icon } from "../../components/ui/group-list";
 import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
@@ -27,39 +26,39 @@ import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
+import { BrowserSection } from "./browser-section";
+import { ChromeExtensionSection } from "./chrome-extension-section";
+import { AgentApiSection } from "./agent-api-section";
 import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
-import { CreditsSection } from "./credits-section";
 
-/** Rail glyphs, on the shared 24x24 stroke grid (see NAV_ICONS' conventions). */
+/** Rail glyphs (see NAV_ICONS' conventions). */
 const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   /** Person in a circle: the account's own identity, distinct from the bust used for credentials. */
-  profile:
-    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6.2 18.4a6 6 0 0 1 11.6 0",
+  profile: ICONS.userCircle,
   general: ICONS.gear,
   /** Sun: appearance. */
-  appearance:
-    "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4l1.4-1.4",
-  /** Keyboard: a rounded plate, two rows of keys and a space bar. */
-  shortcuts:
-    "M3 6h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM6 9.5h.01M9.5 9.5h.01M13 9.5h.01M16.5 9.5h.01M6 12.5h.01M9.5 12.5h.01M13 12.5h.01M16.5 12.5h.01M8.5 15.5h7",
+  appearance: ICONS.sun,
+  /** Keyboard: shortcuts. */
+  shortcuts: ICONS.keyboard,
   /** Single person: the signed-in account. */
-  account: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
-  /** Circled C: credits and licences. */
-  credits: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM15 9.5a3.5 3.5 0 1 0 0 5",
+  account: ICONS.user,
+  /** A browser window: the agent browser. */
+  browser: ICONS.appWindow,
   /** Globe: outbound traffic. */
-  proxy:
-    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 0 0 18M12 3a15 15 0 0 1 0 18",
+  proxy: ICONS.globe,
   /** Up arrow over a base: uploads. */
-  uploads: "M12 15V4m0 0L7 9m5-5l5 5M4 20h16",
+  uploads: ICONS.arrowUpFromLine,
   /** The building the mode switch wears: company mode. */
   company: ICONS.building,
-  /** Puzzle piece: plugins. */
-  plugins:
-    "M10 4a2 2 0 1 1 4 0v2h3a1 1 0 0 1 1 1v3h-2a2 2 0 1 0 0 4h2v3a1 1 0 0 1-1 1h-3v-2a2 2 0 1 0-4 0v2H7a1 1 0 0 1-1-1v-3h2a2 2 0 1 0 0-4H6V7a1 1 0 0 1 1-1h3V4z",
+  /** Plug: whether users may connect their Chrome. */
+  chromeExtension: ICONS.plug,
+  /** Angle brackets: programs calling the Agents. The plug that marks the API elsewhere is taken here, by the Chrome page above. */
+  agentApi: ICONS.angleBrackets,
+  /** Puzzle piece: plugins, the plugin library's own mark. */
+  plugins: ICONS.puzzle,
   /** Two people: user management. */
-  users:
-    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
+  users: ICONS.users,
 };
 
 export function SettingsDialog({
@@ -102,10 +101,12 @@ export function SettingsDialog({
     appearance: S.settings.appearanceTitle,
     shortcuts: S.settings.shortcutsTitle,
     account: S.settings.accountTitle,
-    credits: S.settings.creditsTitle,
+    browser: S.settings.browserTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
     company: S.settings.companyModeTitle,
+    chromeExtension: S.settings.chromeExtensionTitle,
+    agentApi: S.settings.agentApiTitle,
     plugins: S.settings.pluginsTitle,
     users: S.admin.users,
   };
@@ -120,6 +121,8 @@ export function SettingsDialog({
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
+    chromeExtension: S.settings.chromeExtensionInfo,
+    agentApi: S.settings.agentApiHint,
     plugins: S.settings.pluginsInfo,
   };
 
@@ -132,7 +135,7 @@ export function SettingsDialog({
         .map((s) => ({
           key: s.key,
           label: sectionLabel[s.key],
-          icon: <Icon d={SECTION_ICONS[s.key]} size={16} />,
+          icon: SECTION_ICONS[s.key],
           ...(sectionInfo[s.key] !== undefined ? { info: sectionInfo[s.key] } : {}),
         })),
     }),
@@ -152,10 +155,12 @@ export function SettingsDialog({
       {current === "appearance" && <AppearanceSection />}
       {current === "shortcuts" && <ShortcutsSection />}
       {current === "account" && <AccountSection />}
-      {current === "credits" && <CreditsSection />}
+      {current === "browser" && <BrowserSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}
+      {current === "chromeExtension" && <ChromeExtensionSection />}
+      {current === "agentApi" && <AgentApiSection />}
       {current === "plugins" && (
         <PluginsSection {...(pluginFocus !== undefined ? { focus: pluginFocus } : {})} />
       )}

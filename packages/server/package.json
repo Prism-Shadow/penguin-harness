@@ -66,11 +66,12 @@
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
     "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
-    "build": "pnpm gen:ifaces && tsup"
+    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
     "@larksuiteoapi/node-sdk": "^1.73.0",
+    "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@xterm/headless": "^5.5.0",
     "dotenv": "^17.0.0",
@@ -92,6 +93,7 @@
     "@types/mdast": "^4.0.4",
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^3.2.6",
     "tsup": "^8.3.0",
     "tsx": "^4.20.0",
     "vitest": "^3.2.6"

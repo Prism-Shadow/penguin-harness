@@ -21,6 +21,10 @@ export default defineConfig({
     "src/llm/context-limits.ts",
     // Hot-update kernel: zero-dependency subpath so web can bundle it directly.
     "src/kernel/index.ts",
+    // A2UI block grammar: pure TypeScript, no Node dependency, so the web renderer bundles the
+    // same parser and fallback the checker script uses (cli.ts is bundled separately by
+    // scripts/build-a2ui-check.mjs and is deliberately not an entry here).
+    "src/a2ui/index.ts",
   ],
   format: ["esm"],
   target: "node24",

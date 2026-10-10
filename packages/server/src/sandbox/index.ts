@@ -19,14 +19,17 @@
  * The backends shipped in this repo:
  *
  *   plugin                            platform   fs-write  network  mask-paths
- *   penguin-plugin-sandbox-bwrap      Linux      yes       yes      yes
- *   penguin-plugin-sandbox-seatbelt   macOS      yes       yes      yes
- *   penguin-plugin-sandbox-wsl        Windows    yes       yes      yes
- *   penguin-plugin-sandbox-dsh        all three  yes       —        —
+ *   @penguinharness/sandbox-bwrap     Linux      yes       yes      yes
+ *   @penguinharness/sandbox-seatbelt  macOS      yes       yes      yes
+ *   @penguinharness/sandbox-wsl       Windows    yes       yes      yes
+ *   @penguinharness/sandbox-dsh       all three  yes       —        —
  *
  * The DSH adaptor is the portable floor covering file effects only (its own chain picks
  * bwrap/Landlock, Seatbelt or the Windows ACL runner per host); the three native
- * backends add the other two dimensions, one per platform. Windows is served by bubblewrap
+ * backends add the other two dimensions, one per platform, and serve every policy they cover
+ * when the adaptor is mounted beside them. On Linux the adaptor is the floor where bubblewrap
+ * is refused (Ubuntu 23.10 and later restrict unprivileged user namespaces to AppArmor-profiled
+ * programs): it confines files through Landlock, which needs neither. Windows is served by bubblewrap
  * inside a dedicated WSL2 distro, so commands there run in Linux (see sandbox-wsl's README).
  * Where none implements a requested dimension, service.ts fails closed naming what each
  * covers rather than quietly confining less than was asked.

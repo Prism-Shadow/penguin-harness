@@ -23,6 +23,8 @@
  * these draw it.
  */
 import type { ReactNode, Ref, TextareaHTMLAttributes } from "react";
+import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import { ICONS } from "../../icons/icons";
 import { menuPanelClass } from "../../overlays/menu-panel/menu-panel";
 import { TagInput } from "../../forms/tag-input/tag-input";
 import { MenuTitle } from "../menu-select/menu-select";
@@ -123,20 +125,9 @@ export function SendButton({
           <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
         </svg>
       ) : (
-        <svg
-          width="17"
-          height="17"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden
-          className="block"
-        >
-          <path d="M12 19V5M5 12l7-7 7 7" />
-        </svg>
+        // The send arrow on its filled button keeps a heavier line than the family's, whatever
+        // the theme's weight: it is the one glyph the eye looks for in the composer.
+        <GlyphIcon d={ICONS.arrowUp} size={17} className="[--ui-icon-stroke:2]" />
       )}
     </button>
   );

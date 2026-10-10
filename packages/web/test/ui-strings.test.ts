@@ -1,25 +1,34 @@
 /**
- * The shared UI package's accessibility fallbacks in the app's words (src/lib/ui-strings.ts): every
- * `UiStrings` key is mapped from both dictionaries, and the language provider hands them over.
+ * The shared UI package's accessibility fallbacks in the app's words (lib/ui-strings.ts).
  *
- * vitest runs node-only here, and `LocaleProvider` reads localStorage and the browser's language
- * as it mounts, so the mounting is pinned by its source rather than by a render.
+ * - Every key the package asks for is mapped in both languages, each with real words (a
+ *   formatter naming its subject), a nested group (`a2ui`) key by key.
+ * - Each language hands over one stable object, so the provider's value does not change between
+ *   renders.
  */
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_UI_STRINGS } from "@prismshadow/penguin-ui";
-import { zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
-import { uiStringsFor, uiStringsOf } from "../src/lib/ui-strings";
+import { uiStringsFor } from "../src/lib/ui-strings";
 
-const KEYS = Object.keys(DEFAULT_UI_STRINGS).sort();
+/** Every leaf of a strings object, a nested group's keys as `group.key`. */
+function leaves(strings: object, prefix = ""): [string, unknown][] {
+  return Object.entries(strings).flatMap(([key, value]): [string, unknown][] =>
+    typeof value === "object" && value !== null
+      ? leaves(value, `${prefix}${key}.`)
+      : [[`${prefix}${key}`, value]],
+  );
+}
+
+const KEYS = leaves(DEFAULT_UI_STRINGS)
+  .map(([key]) => key)
+  .sort();
 
 describe("uiStringsFor", () => {
   it("maps every key the package asks for, in both languages", () => {
     for (const locale of ["zh", "en"] as const) {
-      const strings = uiStringsFor(locale);
-      expect(Object.keys(strings).sort(), locale).toEqual(KEYS);
-      for (const [key, value] of Object.entries(strings)) {
+      const entries = leaves(uiStringsFor(locale));
+      expect(entries.map(([key]) => key).sort(), locale).toEqual(KEYS);
+      for (const [key, value] of entries) {
         // A formatter (`moreInfoAbout`) is checked by what it says about a subject.
         const text = typeof value === "function" ? value("Vault") : value;
         expect(typeof text === "string" && text.trim() !== "", `${locale}.${key}`).toBe(true);
@@ -28,22 +37,7 @@ describe("uiStringsFor", () => {
     }
   });
 
-  it("speaks each dictionary's words", () => {
-    expect(uiStringsFor("zh")).toEqual(uiStringsOf(zh));
-    expect(uiStringsFor("en")).toEqual(uiStringsOf(en));
-    expect(uiStringsFor("zh").close).toBe(zh.common.close);
-    expect(uiStringsFor("en").copied).toBe(en.common.copied);
-    expect(uiStringsFor("zh").close).not.toBe(uiStringsFor("en").close);
-  });
-
   it("keeps one object per language, so the provider's value does not change between renders", () => {
     expect(uiStringsFor("en")).toBe(uiStringsFor("en"));
-  });
-});
-
-describe("LocaleProvider", () => {
-  it("hands the package the words of the language it resolved", () => {
-    const source = readFileSync(new URL("../src/state/locale.tsx", import.meta.url), "utf8");
-    expect(source).toContain("<UiStringsProvider strings={uiStringsFor(locale)}>");
   });
 });

@@ -280,6 +280,22 @@
 .dark .outline-flash {
   animation-name: outline-flash-dark;
 }
+/* Find-in-page highlights (lib/find-dom.ts): the CSS Custom Highlight API, so a search paints
+   ranges without wrapping them in elements — nothing in the DOM changes, which is what lets
+   React re-render a streaming transcript without noticing or fighting the paint. Two names:
+   every hit, and the one hit the bar is currently on. Only `background-color` and `color` are
+   allowed in `::highlight()`, and both rules must stand alone (no selector lists, no nesting).
+   The wash is deliberately translucent so the text under it keeps its own weight; `color:
+   inherit` is spelled out because a highlight otherwise inherits the highlight pseudo's own
+   (user-agent) colour. Theme-independent: the same blue reads on white and on black. */
+::highlight(penguin-find) {
+  background-color: color-mix(in srgb, var(--color-brand-500) 32%, transparent);
+  color: inherit;
+}
+::highlight(penguin-find-current) {
+  background-color: color-mix(in srgb, var(--color-brand-500) 70%, transparent);
+  color: inherit;
+}
 /* Drawer slide-in. */
 .anim-drawer-left {
   animation: drawer-in-left 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
@@ -346,6 +362,42 @@
 .browser-agent-ring {
   box-shadow: inset 0 0 0 2px currentColor;
   animation: browser-agent-ring 1.6s ease-in-out infinite;
+}
+
+/* The models page's TokenDance banner (features/models/tokendance-banner.tsx): a slow highlight
+   sweeps across the brand name alone every 6 s — the page's single decoration, asked for by
+   name; the rest of the banner stands still. The word is painted by a gradient clipped to its
+   glyphs: its own ink on both sides of a narrow bright band, three times the word's width. The
+   band sweeps from before the word to past its end, and the word's own resting position shows
+   ink only, so under the global `animation: none` below it is plain text. */
+@keyframes banner-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  30%,
+  100% {
+    background-position: 0% 0;
+  }
+}
+.banner-shimmer {
+  --banner-ink: var(--color-gray-700);
+  --banner-glow: var(--color-gray-300);
+  background-image: linear-gradient(
+    100deg,
+    var(--banner-ink) 42%,
+    var(--banner-glow) 50%,
+    var(--banner-ink) 58%
+  );
+  background-size: 300% 100%;
+  background-position: 0% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: banner-shimmer 6s ease-in-out infinite;
+}
+.dark .banner-shimmer {
+  --banner-ink: var(--color-gray-300);
+  --banner-glow: var(--color-white);
 }
 
 /* Login page circuit traces (login-circuit.tsx): pathLength=1 normalization, draw-in -> hold -> fade-out

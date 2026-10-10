@@ -36,7 +36,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { FocusEvent, MouseEvent, RefObject } from "react";
-import { Dot, Dropdown, GlyphIcon } from "@prismshadow/penguin-ui";
+import { Dot, Dropdown, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { OutlineEntry } from "./outline-model";
 import {
@@ -47,10 +47,6 @@ import {
   railWindowHalf,
   windowOutline,
 } from "./outline-model";
-
-/** Panel-with-list glyph (24×24 line path) for the toolbar menu button. */
-const OUTLINE_ICON =
-  "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm4 0v16M12 9h5m-5 4h5";
 
 /** Distance of the scrollspy "reading line" below the scrollport top: the entry whose anchor last crossed it counts as active. */
 const READING_LINE_PX = 96;
@@ -423,7 +419,7 @@ export function OutlineMenuButton({
           onClick={() => setOpenComputing(!open)}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          <GlyphIcon d={OUTLINE_ICON} size={15} />
+          <GlyphIcon d={ICONS.panelLeftText} size={15} />
         </button>
       }
     >

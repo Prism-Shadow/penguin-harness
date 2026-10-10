@@ -88,9 +88,8 @@ describe("the mocked API", () => {
     expect(first.sessions.length).toBe(3);
     expect(first.counts?.active).toBeGreaterThan(3);
     expect(first.counts?.archived).toBe(1);
-    expect(first.counts?.schedule).toBe(1);
-    expect(first.counts?.subagent).toBe(1);
-    expect(first.counts?.benchmark).toBe(1);
+    // The scheduled, subagent and CLI rows share the Background folder.
+    expect(first.counts?.background).toBe(3);
     expect(first.workspaceCounts).toBeDefined();
     const rest = await api.listSessions(project, agent, {
       offset: 3,
@@ -107,6 +106,46 @@ describe("the mocked API", () => {
       category: "archived",
     });
     expect(archived.sessions.every((s) => s.archived)).toBe(true);
+    // An organization's desk Session reaches neither the user's own page nor its totals.
+    const notes = await api.listSessions(project, store.f.agents[1]!.agentId, {
+      offset: 0,
+      limit: 10,
+      withCounts: true,
+      excludeOrg: true,
+    });
+    expect(notes.sessions.some((s) => s.client === "org")).toBe(false);
+    expect(notes.counts?.active).toBe(notes.sessions.length);
+    // Without the flag too, as the server does: a company Session is in no category, so a
+    // counted page leaves it out; only the plain list serves it.
+    const counted = await api.listSessions(project, store.f.agents[1]!.agentId, {
+      offset: 0,
+      limit: 10,
+      withCounts: true,
+    });
+    expect(counted.sessions.some((s) => s.source === "company")).toBe(false);
+    expect(counted.counts?.active).toBe(counted.sessions.length);
+    const plain = await api.listSessions(project, store.f.agents[1]!.agentId);
+    expect(plain.sessions.some((s) => s.source === "company")).toBe(true);
+  });
+
+  it("pages the list by last activity with a cursor, as the sidebar asks for it", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    const opts = { limit: 3, order: "activity" as const, category: "active" as const };
+    const first = await api.listSessions(project, agent, opts);
+    const rest = await api.listSessions(project, agent, {
+      ...opts,
+      limit: 100,
+      before: first.sessions.at(-1)!,
+    });
+    const all = await api.listSessions(project, agent, { ...opts, limit: 100 });
+    // The two pages are the whole list, in one order and with no row twice.
+    expect([...first.sessions, ...rest.sessions].map((s) => s.sessionId)).toEqual(
+      all.sessions.map((s) => s.sessionId),
+    );
+    const stamps = all.sessions.map((s) => s.lastActiveAt);
+    expect(stamps).toEqual([...stamps].sort().reverse());
   });
 
   it("serves a running Session's history with its live tail, and a finished one without", async () => {
@@ -172,6 +211,92 @@ describe("the mocked API", () => {
     });
     expect(models.defaultModel).toEqual({ provider: "anthropic", modelId: "claude-sonnet-5" });
     expect(store.f.models.models.find((m) => m.isDefault)?.modelId).toBe("claude-sonnet-5");
+  });
+
+  it("keeps an Agent's API settings without reaching into an answer the app already holds", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[1]!.agentId;
+    const before = await api.getAgentApi(project, agent);
+    expect(before.api).toMatchObject({ enabled: false, keys: [] });
+    const on = await api.putAgentApi(project, agent, { enabled: true, approvalMode: "read-only" });
+    expect(on.api).toMatchObject({ enabled: true, approvalMode: "read-only" });
+    expect((await api.listAgents(project)).agents[1]!.apiEnabled).toBe(true);
+    const created = await api.createAgentApiKey(project, agent, { name: "ci" });
+    // The app appends the new key to what it read: the earlier answers must not already hold it.
+    expect(before.api.keys).toEqual([]);
+    expect(on.api.keys).toEqual([]);
+    expect(created.secret.startsWith(created.key.prefix)).toBe(true);
+    await api.deleteAgentApiKey(project, agent, created.key.keyId);
+    expect((await api.getAgentApi(project, agent)).api.keys).toEqual([]);
+  });
+
+  it("tells an Agent's API tab when the admin has turned the Agent API off server-wide", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    expect((await api.getAgentApi(project, agent)).serverEnabled).toBe(true);
+    await api.adminPutSettings({ agentApiEnabled: false });
+    expect((await api.getAgentApi(project, agent)).serverEnabled).toBe(false);
+    expect((await api.putAgentApi(project, agent, { open: true })).serverEnabled).toBe(false);
+  });
+
+  it("streams a Try run as the try route does: the example run, then a continued one", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    /** The body's `data:` payloads, in order. */
+    const payloads = async (res: Response) =>
+      (await res.text())
+        .split("\n\n")
+        .filter((block) => block !== "")
+        .map((block) => block.replace(/^data: /, ""));
+    const typeOf = (payload: string) => (JSON.parse(payload) as { type: string }).type;
+
+    const first = await api.tryAgentApi(project, agent, { input: "What time is it now?" });
+    expect(first.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    const run = await payloads(first);
+    expect(run.at(-1)).toBe("[DONE]");
+    const types = run.slice(0, -1).map(typeOf);
+    expect(types[0]).toBe("run.started");
+    expect(types).toContain("tool_call.done");
+    expect(types).toContain("tool_result.done");
+    expect(types.at(-1)).toBe("run.done");
+
+    const sessionId = (JSON.parse(run[0]!) as { session_id: string }).session_id;
+    const next = await payloads(
+      await api.tryAgentApi(project, agent, { input: "And now?", session_id: sessionId }),
+    );
+    expect(next.slice(0, -1).map(typeOf)).toEqual([
+      "run.started",
+      "request.started",
+      "text.done",
+      "request.done",
+      "run.done",
+    ]);
+    expect(JSON.parse(next[0]!)).toMatchObject({ session_id: sessionId });
+  });
+
+  it("serves the group tables a new Project writes, and takes a protocol or a cleared key on any group", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const models = await api.getModels(project);
+    // A gateway row stores nothing of its own and follows its group's table.
+    expect(models.providers.openrouter?.baseUrl).toMatch(/^https:\/\//);
+    const gateway = models.models.find((m) => m.provider === "openrouter")!;
+    expect(gateway.credential?.baseUrl).toBeUndefined();
+    expect(gateway.effective.baseUrlSource).toBe("provider");
+    // Atria stores its own endpoint in custom, which has no table.
+    const atria = models.models.find((m) => m.modelId === "Atria-Dawn-Preview")!;
+    expect(atria.effective.baseUrlSource).toBe("model");
+    // Every group takes a protocol, Penguin Go included.
+    const go = await api.putProviderConnection(project, "penguin-go", {
+      clientType: "openai-chat",
+    });
+    expect(go.providers["penguin-go"]?.clientType).toBe("openai-chat");
+    // Disconnect clears the group key and leaves the group without one.
+    const cleared = await api.putProviderConnection(project, "deepseek", { clearApiKey: true });
+    expect(cleared.providers.deepseek?.apiKeyMasked).toBeUndefined();
   });
 
   it("serves a Workspace file with its version marker through the fetch path", async () => {

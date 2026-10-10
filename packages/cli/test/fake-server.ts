@@ -1,11 +1,17 @@
 /**
  * In-process fake PenguinHarness server for CLI tests: stubs `globalThis.fetch` with a
  * handler covering exactly the endpoints the server-backed commands touch (the current
- * user, session create/get/patch, tasks/steer/compact/abort, SSE stream, messages, agents,
- * projects, usage, schedules, organizations and their channels, and — through the
- * `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
+ * user, session create/get/patch, tasks/steer/compact/switch-model/abort, SSE stream,
+ * messages, agents and their public API settings, projects, usage, schedules, the admin settings,
+ * organizations and their channels, and — through
+ * the `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
  * (a loopback URL, so no token gate) and PENGUIN_HOME points at a scratch directory so
  * nothing of the developer's real data root is read.
+ *
+ * Credentials, as the server reads them: a request without one is let through (the token gate
+ * above); a Bearer header is the local API token, which the agent API writes and the admin's
+ * `agentApiEnabled` refuse with 403 `human_required`; a `penguin_session` cookie is a sign-in,
+ * accepted only when it is one of `logins` (401 otherwise). Each request records what it sent.
  *
  * The SSE stream is real: a ReadableStream whose frames follow the server's wire shape
  * (default-event OmniMessage frames, `event: server_event` control frames, incrementing
@@ -101,6 +107,14 @@ export interface FakeOrgState {
   unpriced: boolean;
 }
 
+/** One agent's public API settings: the management DTO's shape, keys included. */
+export interface FakeAgentApiState {
+  enabled: boolean;
+  open: boolean;
+  approvalMode: string;
+  keys: Json[];
+}
+
 /** Who a fake request is attributed to, or the error response that settles it. */
 type FakeCaller =
   | { ok: true; principal: string; agentId: string | null; sessionId?: string }
@@ -170,8 +184,19 @@ const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value !== "";
 
 export class FakeServer {
-  /** Every request, in order: the path without its query, the query on its own, and the parsed body. */
-  readonly requests: Array<{ method: string; path: string; search: string; body?: Json }> = [];
+  /**
+   * Every request, in order: the path without its query, the query on its own, the parsed body,
+   * and the credential it carried (`authorization` / `cookie`, each only when sent).
+   */
+  readonly requests: Array<{
+    method: string;
+    path: string;
+    search: string;
+    body?: Json;
+    credential?: { authorization?: string; cookie?: string };
+  }> = [];
+  /** Sign-in tokens a `penguin_session` cookie is accepted with; any other cookie is a 401. */
+  readonly logins = new Set<string>();
   readonly sessions = new Map<string, FakeSessionState>();
   agents: Array<Json> = [
     {
@@ -194,6 +219,22 @@ export class FakeServer {
   history: unknown[] = [];
   /** POST /compact behavior: "reject" -> 409 nothing_to_compact; a function emits its messages like a task. */
   compact: "reject" | ((session: FakeSessionState) => unknown[]) = "reject";
+  /**
+   * POST /switch-model behavior. "inline" (default): the Session never ran, so it switches
+   * inside the request and answers 200 with the updated SessionResponse; "inline-rebuilt" does
+   * the same for a Session the server had to rebuild first, which comes back under a new id.
+   * `{ refuse }`: 409 with that code. A function streams like /compact (202): its `messages`
+   * are emitted between running and idle, and the Session's model changes only when
+   * `completed`.
+   */
+  switchModel:
+    | "inline"
+    | "inline-rebuilt"
+    | { refuse: string }
+    | ((
+        session: FakeSessionState,
+        target: { provider: string; modelId: string },
+      ) => { messages: unknown[]; completed: boolean }) = "inline";
   /** POST /steer behavior: accept (202) or reject (409 not_running). */
   steerMode: "accept" | "reject" = "accept";
   /** When true, a task POST emits `running` + the script's messages but never `idle` — the turn hangs (soft-yield timeout tests). */
@@ -219,6 +260,30 @@ export class FakeServer {
   readonly scheduleItems = new Map<string, Json>();
   /** Company mode: organizations keyed by org id. */
   readonly orgs = new Map<string, FakeOrgState>();
+  /**
+   * Each agent's public API settings, keyed `<projectId>/<agentId>`; an agent missing here reads
+   * as the server reads one never configured (off, keyed, allow-all, no keys).
+   */
+  readonly agentApi = new Map<string, FakeAgentApiState>();
+  /**
+   * What GET /api/admin/settings answers. Its `agentApiEnabled` is also every agent API settings
+   * answer's `serverEnabled`, which any member reads.
+   */
+  adminSettings: Json = {
+    proxyForApp: true,
+    proxyForAgent: true,
+    proxyUrl: null,
+    attachmentMaxMb: 100,
+    attachmentTotalMb: 120,
+    companyMode: false,
+    browserExtensionsEnabled: true,
+    agentApiEnabled: true,
+  };
+  /** The admin settings routes answer 403, as for an account that is not an admin. */
+  adminForbidden = false;
+  /** Every secret POST …/api/keys minted, in order: short and obviously fake, never key-shaped. */
+  readonly mintedSecrets: string[] = [];
+  private nextKeyOrdinal = 1;
   /**
    * The built-in browser (`/api/builtin-browser/*`): answers each request from its method, its
    * path below that prefix, its query and its body. The default is what a server outside the
@@ -383,6 +448,65 @@ export class FakeServer {
 
   private badRequest(message: string): Response {
     return this.error(400, "bad_request", message);
+  }
+
+  /** The server's refusal of the local API token on a write only a person may make. */
+  private humanRequired(): Response {
+    return this.error(
+      403,
+      "human_required",
+      "Only the signed-in user can do this, in the app; an API token cannot.",
+    );
+  }
+
+  // ---- an agent's public API ----
+
+  private handleAgentApi(
+    method: string,
+    ref: string,
+    isKeys: boolean,
+    keyId: string | undefined,
+    body: Json | undefined,
+  ): Response {
+    let api = this.agentApi.get(ref);
+    if (!api) {
+      api = { enabled: false, open: false, approvalMode: "allow-all", keys: [] };
+      this.agentApi.set(ref, api);
+    }
+    if (!isKeys) {
+      if (method === "PUT") {
+        if (typeof body?.enabled === "boolean") api.enabled = body.enabled;
+        if (typeof body?.open === "boolean") api.open = body.open;
+        if (typeof body?.approvalMode === "string") api.approvalMode = body.approvalMode;
+      }
+      return this.json({ api, serverEnabled: this.adminSettings.agentApiEnabled !== false });
+    }
+    if (keyId === undefined && method === "POST") {
+      const name = typeof body?.name === "string" ? body.name.trim() : "";
+      if (name.length < 1 || name.length > 64) return this.badRequest("name is 1-64 characters.");
+      const n = this.nextKeyOrdinal++;
+      const secret = `penguin_fake-${n}`;
+      this.mintedSecrets.push(secret);
+      const key = {
+        keyId: `key${n}`,
+        name,
+        prefix: secret.slice(0, 12),
+        createdBy: this.userId,
+        createdAt: "2026-10-07T10:00:00.000Z",
+        lastUsedAt: null,
+      };
+      api.keys.push(key);
+      return this.json({ key, secret }, 201);
+    }
+    if (keyId !== undefined && method === "DELETE") {
+      const kept = api.keys.filter((k) => k.keyId !== keyId);
+      if (kept.length === api.keys.length) {
+        return this.error(404, "key_not_found", `No key ${keyId}.`);
+      }
+      api.keys = kept;
+      return new Response(null, { status: 204 });
+    }
+    return this.error(404, "not_found", `No fake route for ${method} …/api/keys`);
   }
 
   // ---- company mode: state ----
@@ -1600,12 +1724,31 @@ export class FakeServer {
     if (typeof init?.body === "string" && init.body.length > 0) {
       body = JSON.parse(init.body) as Json;
     }
+    const headers = new Headers(init?.headers);
+    const authorization = headers.get("authorization") ?? undefined;
+    const cookie = headers.get("cookie") ?? undefined;
     this.requests.push({
       method,
       path: apiPath,
       search: url.search,
       ...(body !== undefined ? { body } : {}),
+      ...(authorization !== undefined || cookie !== undefined
+        ? {
+            credential: {
+              ...(authorization !== undefined ? { authorization } : {}),
+              ...(cookie !== undefined ? { cookie } : {}),
+            },
+          }
+        : {}),
     });
+    // The server reads a Bearer first; a cookie alone must be a sign-in it knows.
+    if (authorization === undefined && cookie !== undefined) {
+      const login = /(?:^|;\s*)penguin_session=([^;]+)/.exec(cookie)?.[1];
+      if (login === undefined || !this.logins.has(login)) {
+        return this.error(401, "unauthorized", "Not signed in or the sign-in has expired.");
+      }
+    }
+    const viaToken = authorization !== undefined;
 
     if (apiPath.startsWith("/api/builtin-browser/")) {
       const answer = this.builtinBrowser({
@@ -1683,6 +1826,28 @@ export class FakeServer {
       });
     }
 
+    // An agent's public API settings and keys
+    m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/api(\/keys(?:\/([^/]+))?)?$/.exec(apiPath);
+    if (m) {
+      if (viaToken && method !== "GET") return this.humanRequired();
+      return this.handleAgentApi(
+        method,
+        `${decodeURIComponent(m[1]!)}/${decodeURIComponent(m[2]!)}`,
+        m[3] !== undefined,
+        m[4] === undefined ? undefined : decodeURIComponent(m[4]),
+        body,
+      );
+    }
+
+    if (apiPath === "/api/admin/settings") {
+      if (this.adminForbidden) return this.error(403, "forbidden", "Admins only.");
+      if (viaToken && method === "PUT" && body?.agentApiEnabled !== undefined) {
+        return this.humanRequired();
+      }
+      if (method === "PUT") this.adminSettings = { ...this.adminSettings, ...body };
+      return this.json({ settings: this.adminSettings });
+    }
+
     m = /^\/api\/projects\/([^/]+)\/usage$/.exec(apiPath);
     if (m) {
       const groupBy = url.searchParams.get("groupBy") ?? "date";
@@ -1750,6 +1915,7 @@ export class FakeServer {
         session.patches.push(body ?? {});
         if (typeof body?.thinkingLevel === "string") session.thinkingLevel = body.thinkingLevel;
         if (typeof body?.approvalMode === "string") session.approvalMode = body.approvalMode;
+        if (typeof body?.title === "string") session.title = body.title;
         return this.json({ session: this.sessionInfo(session) });
       }
       if (rest === "/messages" && method === "GET") return this.json({ messages: this.history });
@@ -1804,6 +1970,29 @@ export class FakeServer {
           return this.error(409, "nothing_to_compact", "Nothing to compact.");
         }
         this.runTurn(session, this.compact(session));
+        return this.json({ sessionId: session.sessionId }, 202);
+      }
+      if (rest === "/switch-model" && method === "POST") {
+        const target = { provider: String(body?.provider), modelId: String(body?.modelId) };
+        if (typeof this.switchModel === "object") {
+          return this.error(409, this.switchModel.refuse, `Refused: ${this.switchModel.refuse}.`);
+        }
+        if (this.switchModel === "inline" || this.switchModel === "inline-rebuilt") {
+          if (this.switchModel === "inline-rebuilt") {
+            this.sessions.delete(session.sessionId);
+            session.sessionId = this.mintSessionId();
+            this.sessions.set(session.sessionId, session);
+          }
+          session.provider = target.provider;
+          session.modelId = target.modelId;
+          return this.json({ session: this.sessionInfo(session) });
+        }
+        const { messages, completed } = this.switchModel(session, target);
+        if (completed) {
+          session.provider = target.provider;
+          session.modelId = target.modelId;
+        }
+        this.runTurn(session, messages);
         return this.json({ sessionId: session.sessionId }, 202);
       }
       if (rest === "/abort" && method === "POST") {

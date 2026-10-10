@@ -17,13 +17,17 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import type { OrgChannelItem } from "@prismshadow/penguin-server/api";
 import {
+  Badge,
   Button,
   FolderSection,
   GlyphIcon,
+  ICONS,
   ICON_GAP,
   ICON_SIZE,
   NAV_FILL,
   PlusIcon,
+  RailDivider,
+  RailItem,
   SkeletonList,
   Text,
   railItemClass,
@@ -42,12 +46,11 @@ import { orgChannelPath } from "./company-nav";
 import { JoinChannelConfirm, NewChannelDialog } from "./channel-dialogs";
 import { channelLabel, groupChannels, isAllHands } from "./channel-list";
 
-/** A channel (lucide hash): the mark every channel but the all-hands one wears. */
-export const CHANNEL_ICON = "M4 9h16M4 15h16M10 3L8 21M16 3l-2 18";
+/** A channel (the hash sign): the mark every channel but the all-hands one wears. */
+export const CHANNEL_ICON = ICONS.hash;
 
-/** The all-hands channel (lucide users): everyone in the organization is in it. */
-export const ALL_HANDS_ICON =
-  "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75";
+/** The all-hands channel (two people): everyone in the organization is in it. */
+export const ALL_HANDS_ICON = ICONS.users;
 
 export const channelGlyph = (channelId: string): string =>
   isAllHands(channelId) ? ALL_HANDS_ICON : CHANNEL_ICON;
@@ -151,9 +154,9 @@ function ChannelRow({
         </span>
         <Truncated text={label} className="min-w-0 flex-1" />
         {channel.mentionsMe > 0 && (
-          <span className={`shrink-0 rounded px-1 text-xs font-semibold ${toneSurface.attention}`}>
+          <Badge tone="attention" size="sm">
             {S.company.channels.mentionChip}
-          </span>
+          </Badge>
         )}
         {channel.unread > 0 && (
           <span className="shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400">
@@ -168,7 +171,7 @@ function ChannelRow({
         <button
           type="button"
           onClick={join}
-          className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 opacity-0 transition-opacity duration-150 hover:text-gray-900 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 dark:bg-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
+          className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 whitespace-nowrap rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 opacity-0 transition-opacity duration-150 hover:text-gray-900 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 dark:bg-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
         >
           {S.company.channels.join}
         </button>
@@ -308,49 +311,89 @@ export function ChannelSidebar({
   );
 }
 
-/** The collapsed rail's channels: the same rows as icons, each carrying its own count. */
+/** One channel on the collapsed rail: its glyph, its unread count on the corner, and the selected wash while it is open. */
+function ChannelRailRow({
+  projectId,
+  orgId,
+  channel,
+}: {
+  projectId: string;
+  orgId: string;
+  channel: OrgChannelItem;
+}) {
+  const label = channelLabel(channel, S.company.channels.allHands);
+  const note = badgeNote(channel);
+  const name = note !== null ? `${label} · ${note}` : label;
+  return (
+    <NavLink
+      to={orgChannelPath(projectId, orgId, channel.channelId)}
+      data-tooltip={name}
+      data-tooltip-placement="right"
+      aria-label={name}
+      className={({ isActive }) => railItemClass({ active: isActive })}
+    >
+      <GlyphIcon d={channelGlyph(channel.channelId)} size={18} />
+      {channel.unread > 0 && (
+        // The count itself, not a bare dot: the rail is the whole sidebar while
+        // collapsed, and "something is waiting" without "how much" sends the reader
+        // back to expanding it just to look.
+        <span
+          aria-hidden
+          className={`absolute -right-0.5 -top-0.5 min-w-[14px] rounded-[var(--ui-radius-pill)] px-1 text-xs font-semibold leading-[14px] tabular-nums ${
+            channel.mentionsMe > 0
+              ? toneSurface.attention
+              : "bg-gray-300 text-gray-800 dark:bg-gray-700 dark:text-gray-100"
+          }`}
+        >
+          {channel.unread > 99 ? "99+" : channel.unread}
+        </span>
+      )}
+    </NavLink>
+  );
+}
+
+/**
+ * The all-hands channel in the collapsed rail's top slot, the place development mode gives to
+ * "last conversation": in company mode the place to go back to is the channel everyone is in.
+ * With no organization yet, or before the organization's channels have been listed, the slot
+ * keeps its place with the all-hands mark disabled, the way the rail mutes a page entry with
+ * nowhere to go, so the entries below it never shift up and back down.
+ */
+export function DefaultChannelRailRow({
+  org,
+}: {
+  org: { projectId: string; orgId: string } | null;
+}) {
+  const company = useCompany();
+  const allHands = groupChannels(company.channels ?? []).allHands;
+  if (org === null || allHands === null) {
+    return <RailItem label={S.company.channels.allHands} glyph={ALL_HANDS_ICON} href="" disabled />;
+  }
+  return <ChannelRailRow projectId={org.projectId} orgId={org.orgId} channel={allHands} />;
+}
+
+/**
+ * The collapsed rail's other channels, after a hairline: the same rows as icons, each carrying
+ * its own count. The all-hands channel is not among them, since it holds the rail's top slot
+ * (DefaultChannelRailRow). An organization with no other channel draws nothing here, not even
+ * the hairline, so two hairlines never meet over an empty run.
+ */
 export function ChannelRailRows({ projectId, orgId }: { projectId: string; orgId: string }) {
   const company = useCompany();
   const groups = groupChannels(company.channels ?? [], S.company.channels.allHands);
-  const rows = [
-    ...(groups.allHands !== null ? [groups.allHands] : []),
-    ...groups.mine,
-    ...groups.others,
-  ];
+  const rows = [...groups.mine, ...groups.others];
+  if (rows.length === 0) return null;
   return (
     <>
-      {rows.map((channel) => {
-        const label = channelLabel(channel, S.company.channels.allHands);
-        const note = badgeNote(channel);
-        const name = note !== null ? `${label} · ${note}` : label;
-        return (
-          <NavLink
-            key={channel.channelId}
-            to={orgChannelPath(projectId, orgId, channel.channelId)}
-            data-tooltip={name}
-            data-tooltip-placement="right"
-            aria-label={name}
-            className={({ isActive }) => railItemClass({ active: isActive })}
-          >
-            <GlyphIcon d={channelGlyph(channel.channelId)} size={18} />
-            {channel.unread > 0 && (
-              // The count itself, not a bare dot: the rail is the whole sidebar while
-              // collapsed, and "something is waiting" without "how much" sends the reader
-              // back to expanding it just to look.
-              <span
-                aria-hidden
-                className={`absolute -right-0.5 -top-0.5 min-w-[14px] rounded-full px-1 text-xs font-semibold leading-[14px] tabular-nums ${
-                  channel.mentionsMe > 0
-                    ? toneSurface.attention
-                    : "bg-gray-300 text-gray-800 dark:bg-gray-700 dark:text-gray-100"
-                }`}
-              >
-                {channel.unread > 99 ? "99+" : channel.unread}
-              </span>
-            )}
-          </NavLink>
-        );
-      })}
+      <RailDivider />
+      {rows.map((channel) => (
+        <ChannelRailRow
+          key={channel.channelId}
+          projectId={projectId}
+          orgId={orgId}
+          channel={channel}
+        />
+      ))}
     </>
   );
 }

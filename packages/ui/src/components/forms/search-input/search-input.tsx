@@ -38,7 +38,7 @@ export interface SearchInputProps extends Omit<
   /** The container it stands in (see above). */
   variant?: SearchInputVariant;
   size?: ControlSize;
-  /** The clear button's name and tooltip; the interface's "clear search" when omitted. */
+  /** The clear button's name; the interface's "clear search" when omitted. */
   clearLabel?: string;
   /** What clearing does; empties the box when omitted. */
   onClear?: () => void;
@@ -174,7 +174,6 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         <button
           type="button"
           aria-label={clearName}
-          data-tooltip={clearName}
           onClick={clear}
           className={`absolute top-1/2 -translate-y-1/2 ${geometry.clearAt} flex items-center justify-center rounded-sm p-1 text-fg-subtle transition-colors duration-150 hover:bg-surface-muted hover:text-fg`}
         >

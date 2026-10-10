@@ -1,6 +1,24 @@
 /**
- * Auth flow integration tests (via app.request() injection): admin seeding / login /
- * logout / password change / session / initial Project.
+ * The auth flow through the routes: admin seeding, login, logout, password change, the session
+ * cookie, the initial Project and the account's UI preferences.
+ *
+ * - A protected API answers 401 without a session; registration does not exist.
+ * - The seeded admin owns default_project with its default Agent, carries the initial-password
+ *   flag, and a second seed neither duplicates the account nor rerolls its password.
+ * - An admin-created account gets `<userId>-default_project`, named after the user, with the
+ *   preset default model.
+ * - Login, /api/me and logout round-trip; a wrong password is 401.
+ * - Changing one's own password checks the old one and the policy, keeps the current session,
+ *   clears the initial flag, and retires the old password.
+ * - The Secure cookie flag follows x-forwarded-proto only when the proxy is trusted.
+ * - A write with a non-JSON Content-Type is refused (CSRF defense).
+ * - A seed password below the policy is refused before any account is created.
+ * - Login failures back off per username, unknown usernames identically, and a success resets
+ *   the counter; an unknown username, a wrong password and an uncheckable hash answer alike.
+ * - An unknown username is checked against one dummy hash, made once by the server's hasher.
+ * - The admin-password check reads the stored hash, not the configured pin.
+ * - Generated initial passwords are 24 base64url characters and never repeat.
+ * - Preferences start empty, and each PUT merges without clobbering another writer's fields.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -191,18 +209,6 @@ describe("auth", () => {
     expect(res.status).toBe(415);
   });
 
-  it("ui prefs read/write", async () => {
-    const { cookie } = await provisionUser(t.app, "erin");
-    const api = apiClient(t.app, cookie);
-    const empty = (await (await api.get("/api/me/prefs")).json()) as { prefs: unknown };
-    expect(empty.prefs).toEqual({});
-    await api.put("/api/me/prefs", { theme: "dark", lastProjectId: "default_project" });
-    const got = (await (await api.get("/api/me/prefs")).json()) as {
-      prefs: { theme: string };
-    };
-    expect(got.prefs.theme).toBe("dark");
-  });
-
   it("seedAdmin rejects an override below the password policy before creating the account", async () => {
     const root = await makeTempRoot();
     const deps = flattenForTests(
@@ -356,22 +362,19 @@ describe("auth", () => {
     expect(seen.size).toBe(64);
   });
 
-  it("PUT prefs shallow-merges without clobbering other writers' fields", async () => {
+  it("starts preferences empty, and merges each PUT without clobbering other writers", async () => {
     const { cookie } = await provisionUser(t.app, "fred");
     const api = apiClient(t.app, cookie);
-    // Simulate two independent writers: switching Project writes lastProjectId, and onboarding writes credentialGuideSeen.
+    const prefs = async () =>
+      ((await (await api.get("/api/me/prefs")).json()) as { prefs: unknown }).prefs;
+    expect(await prefs()).toEqual({});
+    // Two independent writers: switching Project writes lastProjectId, onboarding writes
+    // credentialGuideSeen. The second write must not erase the first's field (a full replace
+    // would drop lastProjectId and bring onboarding back again and again).
     await api.put("/api/me/prefs", { lastProjectId: "p-1" });
     await api.put("/api/me/prefs", { credentialGuideSeen: true });
-    const one = (await (await api.get("/api/me/prefs")).json()) as {
-      prefs: { lastProjectId?: string; credentialGuideSeen?: boolean };
-    };
-    // The second write must not erase the fields from the first (a prior full replace would drop lastProjectId, causing onboarding to reappear repeatedly).
-    expect(one.prefs).toEqual({ lastProjectId: "p-1", credentialGuideSeen: true });
-    // Switch Project again: credentialGuideSeen is still present.
+    expect(await prefs()).toEqual({ lastProjectId: "p-1", credentialGuideSeen: true });
     await api.put("/api/me/prefs", { lastProjectId: "p-2" });
-    const two = (await (await api.get("/api/me/prefs")).json()) as {
-      prefs: { lastProjectId?: string; credentialGuideSeen?: boolean };
-    };
-    expect(two.prefs).toEqual({ lastProjectId: "p-2", credentialGuideSeen: true });
+    expect(await prefs()).toEqual({ lastProjectId: "p-2", credentialGuideSeen: true });
   });
 });

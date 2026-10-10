@@ -1,17 +1,23 @@
 /**
- * Custom-model protocol detection UI logic: the generic protocol client-type family
- * (selector visibility / value mapping), when saving must detect first, what the failure
- * popup explains, the guarantee that no entry is persisted without a protocol, and the
- * protocol-path suffix for the new client types. The probing itself is server-side (see
- * the server package's protocol-detect tests); these are the pure helpers the dialog
- * composes.
+ * Custom-model protocol detection UI logic: the protocols the picker offers (the three
+ * detection probes, then Google GenAI and MMSP, each shown checked with its path and name once
+ * stored, older spellings as the protocol they name), selector visibility and value mapping,
+ * when saving must detect first — only when nothing,
+ * not even the group, decides the protocol — what the failure popup explains, the guarantee
+ * that no entry is persisted without a protocol while a blank one that follows its group
+ * stays blank, and the protocol-path suffix for the new client types. A group decides only
+ * through its `[providers.<id>]` table (a new Project writes the catalog's there); the catalog
+ * itself is never consulted. The probing itself is server-side (see the server package's
+ * protocol-detect tests); these are the pure helpers the dialog composes.
  */
 import { describe, expect, it } from "vitest";
 import {
   MODEL_CATALOG,
   modelEnvPreviewKey,
+  presetProviderTable,
   resolveModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
+import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-catalog";
 import { zh as ZH } from "../src/lib/strings";
 import { en as EN } from "../src/lib/strings-en";
 import { clientTypeAfterProviderChange, rowToEntry } from "../src/features/models/models-page";
@@ -30,32 +36,63 @@ import {
 } from "../src/features/models/protocol-types";
 import { protocolPathForModel } from "../src/features/models/protocol-path";
 
-describe("PROTOCOL_CLIENT_TYPES", () => {
-  it("lists the three generic clients in the required detection order (responses first, chat completions last)", () => {
-    expect(PROTOCOL_CLIENT_TYPES).toEqual(["openai-responses", "ant-messages", "openai-chat"]);
+/** The group table a new Project writes for a built-in group, in the resolver's shape. */
+function presetGroup(id: string): ProviderConnectionShape {
+  const table = presetProviderTable()[id] ?? {};
+  return { baseUrl: table.base_url, clientType: table.client_type };
+}
+
+describe("the protocols the picker offers", () => {
+  // The three the server's detection probes come first, in its order; Google GenAI and MMSP
+  // follow, picked by hand only.
+  const OFFERED: Array<[string, string]> = [
+    ["openai-responses", "/responses"],
+    ["ant-messages", "/v1/messages"],
+    ["openai-chat", "/chat/completions"],
+    ["google-genai", "/v1beta/models"],
+    ["mmsp", "/stream"],
+  ];
+
+  it("offers the detectable three first, then Google GenAI and MMSP", () => {
+    expect([...PROTOCOL_CLIENT_TYPES]).toEqual(OFFERED.map(([t]) => t));
   });
+
+  it.each(OFFERED)(
+    "%s round-trips: stored, it is shown checked with the path its client appends and a name in both languages",
+    (clientType, path) => {
+      expect(isGenericProtocolClientType(clientType)).toBe(true);
+      expect(protocolSelectorValue(clientType)).toBe(clientType);
+      expect(protocolPathForModel("custom", clientType)).toBe(path);
+      expect(EN.models.protocolNames[clientType]).toBeTruthy();
+      expect(ZH.models.protocolNames[clientType]).toBeTruthy();
+    },
+  );
 });
 
 describe("isGenericProtocolClientType", () => {
-  it("accepts the protocol trio, the bare openai alias, and empty; rejects vendor-pinned types", () => {
-    expect(isGenericProtocolClientType("openai-responses")).toBe(true);
-    expect(isGenericProtocolClientType("ant-messages")).toBe(true);
-    expect(isGenericProtocolClientType("openai-chat")).toBe(true);
+  it("accepts the picker's protocols, their older spellings, and empty; rejects every other client type", () => {
     expect(isGenericProtocolClientType("openai")).toBe(true);
+    expect(isGenericProtocolClientType("gemini-generate-content")).toBe(true);
     expect(isGenericProtocolClientType("")).toBe(true);
     expect(isGenericProtocolClientType(" OpenAI-Responses ")).toBe(true);
-    expect(isGenericProtocolClientType("deepseek-v4")).toBe(false);
-    expect(isGenericProtocolClientType("claude-4-8")).toBe(false);
+    expect(isGenericProtocolClientType(" MMSP ")).toBe(true);
+    // Official clients (the Gemini one under either name), compatible clients outside the
+    // picker, and a pre-0.5.0 vendor name.
+    expect(isGenericProtocolClientType("deepseek-official")).toBe(false);
+    expect(isGenericProtocolClientType("anthropic-official")).toBe(false);
+    expect(isGenericProtocolClientType("google-official")).toBe(false);
+    expect(isGenericProtocolClientType("gemini-official")).toBe(false);
+    expect(isGenericProtocolClientType("openai-chat-vllm-adapter")).toBe(false);
     expect(isGenericProtocolClientType("minimax-m3")).toBe(false);
+    expect(isGenericProtocolClientType("constructor")).toBe(false);
   });
 });
 
 describe("protocolSelectorValue", () => {
-  it("maps openai / unknown to openai-chat for display without rewriting the stored value", () => {
-    expect(protocolSelectorValue("openai-responses")).toBe("openai-responses");
-    expect(protocolSelectorValue("ant-messages")).toBe("ant-messages");
-    expect(protocolSelectorValue("openai-chat")).toBe("openai-chat");
+  it("shows an older spelling as the protocol it names, and anything else as openai-chat, without rewriting the stored value", () => {
     expect(protocolSelectorValue("openai")).toBe("openai-chat");
+    expect(protocolSelectorValue(" Gemini-Generate-Content ")).toBe("google-genai");
+    expect(protocolSelectorValue("constructor")).toBe("openai-chat");
   });
 
   it("reports NOTHING selected for an unset protocol, so the control cannot imply a default", () => {
@@ -96,26 +133,31 @@ describe("clientTypeAfterProviderChange (protocol family kept on move to Custom)
     expect(clientTypeAfterProviderChange("custom", "ant-messages")).toBe("ant-messages");
     expect(clientTypeAfterProviderChange("custom", "openai-chat")).toBe("openai-chat");
     expect(clientTypeAfterProviderChange("custom", "openai")).toBe("openai");
+    expect(clientTypeAfterProviderChange("custom", "google-genai")).toBe("google-genai");
+    expect(clientTypeAfterProviderChange("custom", "mmsp")).toBe("mmsp");
   });
 
   it("still pins vendor-specific or empty types to openai-chat when moving to Custom, and never touches other groups", () => {
     expect(clientTypeAfterProviderChange("custom", "")).toBe("openai-chat");
-    expect(clientTypeAfterProviderChange("custom", "claude-5")).toBe("openai-chat");
+    expect(clientTypeAfterProviderChange("custom", "anthropic-official")).toBe("openai-chat");
     expect(clientTypeAfterProviderChange("google", "openai")).toBe("openai");
     expect(clientTypeAfterProviderChange("my-group", "ant-messages")).toBe("ant-messages");
   });
 
-  it("rewrites to the group's own protocol when one is pinned, whatever the entry carried", () => {
-    // The pin is the group's semantics, not a fallback: an entry dragged into vLLM speaks
-    // what the rest of the group speaks, including one that had already picked a protocol.
-    expect(clientTypeAfterProviderChange("vllm", "")).toBe("openai-chat-vllm-adapter");
-    expect(clientTypeAfterProviderChange("vllm", "openai-chat")).toBe("openai-chat-vllm-adapter");
-    expect(clientTypeAfterProviderChange("vllm", "ant-messages")).toBe("openai-chat-vllm-adapter");
-    expect(clientTypeAfterProviderChange("vllm", "deepseek-v4")).toBe("openai-chat-vllm-adapter");
-    // A gateway can pin too: OpenRouter speaks the Responses API for every upstream it
-    // serves, so an entry dragged in is rewritten off whatever it carried before.
-    expect(clientTypeAfterProviderChange("openrouter", "")).toBe("openai-responses");
-    expect(clientTypeAfterProviderChange("openrouter", "openai-chat")).toBe("openai-responses");
+  it("drops the entry's own protocol in a group whose table sets one, so it follows the group", () => {
+    // The group's protocol is the group's semantics, not a fallback: an entry dragged into
+    // vLLM speaks what the rest of the group speaks, including one that had already picked a
+    // protocol — by storing nothing, so it reads the group's rather than a copy of it.
+    const vllm = presetGroup("vllm");
+    for (const current of ["", "openai-chat", "ant-messages", "deepseek-official"]) {
+      expect(clientTypeAfterProviderChange("vllm", current, vllm), current).toBe("");
+    }
+    // A gateway's table sets one too: OpenRouter speaks the Responses API for every upstream.
+    const openrouter = presetGroup("openrouter");
+    expect(clientTypeAfterProviderChange("openrouter", "", openrouter)).toBe("");
+    expect(clientTypeAfterProviderChange("openrouter", "openai-chat", openrouter)).toBe("");
+    // A group whose table sets none decides nothing, whatever the catalog would say.
+    expect(clientTypeAfterProviderChange("vllm", "openai-chat")).toBe("openai-chat");
     // And moving back out of it does not carry the pin along.
     expect(clientTypeAfterProviderChange("custom", "openai-chat-vllm-adapter")).toBe("openai-chat");
   });
@@ -133,9 +175,20 @@ describe("isCustomLikeGroup", () => {
 });
 
 describe("needsProtocolDetectOnSave (save detects a still-unset protocol first)", () => {
-  it("fires for saving a custom-like entry with no protocol yet", () => {
+  it("fires for saving a custom-like entry with no protocol yet and none to follow", () => {
     expect(needsProtocolDetectOnSave("save", "custom", "")).toBe(true);
     expect(needsProtocolDetectOnSave("save", "my-group", "   ")).toBe(true);
+    expect(needsProtocolDetectOnSave("save", "my-group", "", {})).toBe(true);
+  });
+
+  it("does not fire when the group's settings decide the protocol", () => {
+    // An imported group holds its protocol once; a model added to it later follows it.
+    expect(needsProtocolDetectOnSave("save", "my-group", "", { clientType: "openai-chat" })).toBe(
+      false,
+    );
+    expect(needsProtocolDetectOnSave("save", "custom", "", { clientType: "ant-messages" })).toBe(
+      false,
+    );
   });
 
   it("does not fire once a protocol is chosen", () => {
@@ -155,8 +208,12 @@ describe("needsProtocolDetectOnSave (save detects a still-unset protocol first)"
 });
 
 describe("envHintClientType (custom groups never infer a client from the model id)", () => {
-  const envFor = (provider: string, modelId: string, clientType: string) =>
-    resolveModelEnv(modelId, envHintClientType(provider, clientType))?.envKey;
+  const envFor = (
+    provider: string,
+    modelId: string,
+    clientType: string,
+    group?: ProviderConnectionShape,
+  ) => resolveModelEnv(modelId, envHintClientType(provider, clientType, modelId, group))?.envKey;
 
   it("keeps a vendor-looking model id in a custom group on the compatible client's env var", () => {
     // The bug this pins: `claude-sonnet-5` typed into a custom group used to resolve to
@@ -171,11 +228,12 @@ describe("envHintClientType (custom groups never infer a client from the model i
     expect(envFor("custom", "whatever", "openai-responses")).toBe("OPENAI_API_KEY");
   });
 
-  it("resolves a pinned group against its pin rather than the model id", () => {
+  it("resolves a group with a protocol against it rather than the model id", () => {
     // deepseek-ai/DeepSeek-V4-Pro would otherwise route by id to DEEPSEEK_API_KEY, which is
     // not what an entry saved on the vLLM client reads.
-    expect(envHintClientType("vllm", "")).toBe("openai-chat-vllm-adapter");
-    expect(envFor("vllm", "deepseek-ai/DeepSeek-V4-Pro", "")).toBe("OPENAI_API_KEY");
+    const vllm = presetGroup("vllm");
+    expect(envHintClientType("vllm", "", "", vllm)).toBe("openai-chat-vllm-adapter");
+    expect(envFor("vllm", "deepseek-ai/DeepSeek-V4-Pro", "", vllm)).toBe("OPENAI_API_KEY");
   });
 
   it("leaves vendor groups routing by model id, which is how they really work", () => {
@@ -212,9 +270,11 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
   it("names the vendor's variable for a first-party row, and the relay's own for Penguin Go", () => {
     expect(envHintKeyFor("anthropic", "claude-sonnet-4-6", "", "")).toBe("ANTHROPIC_API_KEY");
     expect(envHintKeyFor("google", "gemini-3.1-pro", "", "")).toBe("GEMINI_API_KEY");
-    expect(
-      envHintKeyFor("deepseek", "deepseek-flash", "deepseek-v4", "https://api.deepseek.com"),
-    ).toBe("DEEPSEEK_API_KEY");
+    expect(envHintKeyFor("deepseek", "deepseek-flash", "", "")).toBe("DEEPSEEK_API_KEY");
+    // A vendor row that carries the vendor's own endpoint keeps the vendor's key.
+    expect(envHintKeyFor("deepseek", "deepseek-flash", "", "https://api.deepseek.com")).toBe(
+      "DEEPSEEK_API_KEY",
+    );
     // A custom row pointed at the vendor's own endpoint gets the vendor's key: it goes to the vendor.
     expect(envHintKeyFor("custom", "gpt-5.6", "openai-chat", "https://api.openai.com/v1")).toBe(
       "OPENAI_API_KEY",
@@ -223,7 +283,7 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
       envHintKeyFor(
         "penguin-go",
         "gemini-3.8-flash",
-        "gemini-3.8",
+        "google-genai",
         "https://token.penguin.ooo/api",
       ),
     ).toBe("PENGUIN_GO_API_KEY");
@@ -236,6 +296,21 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
     expect(envHintKeyFor("anthropic", "claude-sonnet-4-6", "", "https://api.anthropic.com/")).toBe(
       "ANTHROPIC_API_KEY",
     );
+  });
+
+  it("judges the endpoint the row follows: a group pointed at a proxy lends no vendor key", () => {
+    const proxied = { baseUrl: "https://proxy.example/deepseek" };
+    expect(envHintKeyFor("deepseek", "deepseek-flash", "", "", proxied)).toBeUndefined();
+    expect(
+      envHintKeyFor("deepseek", "deepseek-flash", "", "", { baseUrl: "https://api.deepseek.com" }),
+    ).toBe("DEEPSEEK_API_KEY");
+    // A gateway row stores no endpoint of its own, yet follows its group's table to the gateway.
+    expect(
+      envHintKeyFor("tokendance", "glm-5.3", "", "", presetGroup("tokendance")),
+    ).toBeUndefined();
+    expect(
+      envHintKeyFor("openrouter", "x-ai/grok-5", "", "", presetGroup("openrouter")),
+    ).toBeUndefined();
   });
 
   it("promises nothing for a keyless vLLM preset or custom row with no base URL, and agrees with the server's preview rule", () => {
@@ -256,7 +331,7 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
       ["anthropic", "claude-sonnet-4-6", "", ""],
       ["anthropic", "claude-sonnet-4-6", "", "https://proxy.example/anthropic"],
       ["tokendance", "glm-5.3", "openai-chat", "https://tokendance.space/gateway/v1"],
-      ["penguin-go", "gemini-3.8-flash", "gemini-3.8", "https://token.penguin.ooo/api"],
+      ["penguin-go", "gemini-3.8-flash", "google-genai", "https://token.penguin.ooo/api"],
     ];
     for (const [provider, modelId, clientType, baseUrl] of cases) {
       expect(envHintKeyFor(provider, modelId, clientType, baseUrl), `${provider}/${modelId}`).toBe(
@@ -269,16 +344,20 @@ describe("envHintKeyFor (the API-key field promises a variable only where the en
       );
     }
     for (const m of MODEL_CATALOG.filter((v) => v.provider === "vllm")) {
-      expect(envHintKeyFor("vllm", m.modelId, "", ""), m.modelId).toBeUndefined();
+      expect(
+        envHintKeyFor("vllm", m.modelId, "", "", presetGroup("vllm")),
+        m.modelId,
+      ).toBeUndefined();
     }
     expect(envHintKeyFor("custom", "local-model", "openai-chat", "")).toBeUndefined();
   });
 });
 
-describe("protocolForPersist (an empty protocol must never reach the config)", () => {
-  it("falls back to openai-chat for a custom-like entry that still has none", () => {
-    // AutoLLMClient THROWS on an unmatched client type, so persisting "" would save a
-    // model that cannot start.
+describe("protocolForPersist (an entry's own protocol, never an unstartable empty one)", () => {
+  it("falls back to openai-chat for a custom-like entry that still has none and follows none", () => {
+    // AutoLLMClient routes an entry with no client type by the vendor family its id begins
+    // with and THROWS for an id of no known family, so persisting "" would save a model that
+    // cannot start (or one sent to a vendor's official client instead of the endpoint).
     expect(protocolForPersist("custom", "")).toBe("openai-chat");
     expect(protocolForPersist("my-group", "   ")).toBe("openai-chat");
   });
@@ -289,14 +368,17 @@ describe("protocolForPersist (an empty protocol must never reach the config)", (
     expect(protocolForPersist("my-group", " openai-chat ")).toBe("openai-chat");
   });
 
-  it("writes a pinned group's protocol rather than leaving it to inference", () => {
-    expect(protocolForPersist("vllm", "")).toBe("openai-chat-vllm-adapter");
-    expect(protocolForPersist("vllm", "   ")).toBe("openai-chat-vllm-adapter");
-    // An explicit value still wins — this is the last-resort net, not an override.
+  it("writes nothing where the group decides, so the entry follows it", () => {
+    // vLLM pins its adapter at group level; the entry reads it rather than storing a copy.
+    expect(protocolForPersist("vllm", "")).toBe("");
+    expect(protocolForPersist("vllm", "   ")).toBe("");
+    // A custom-like group whose settings name a protocol: its models follow it too.
+    expect(protocolForPersist("my-group", "", { clientType: "openai-responses" })).toBe("");
+    // An explicit value still wins — it is the entry's own override.
     expect(protocolForPersist("vllm", "openai-chat")).toBe("openai-chat");
   });
 
-  it("leaves preset / vendor groups empty so AgentHub still infers from the model id", () => {
+  it("leaves preset / vendor groups empty so MMSP still routes by the model id's vendor family", () => {
     expect(protocolForPersist("openai", "")).toBe("");
     expect(protocolForPersist("anthropic", "")).toBe("");
     expect(protocolForPersist("google", "")).toBe("");
@@ -332,19 +414,22 @@ describe("rowToEntry (the persistence funnel)", () => {
     expect(rowToEntry(row({ clientType: "ant-messages" })).clientType).toBe("ant-messages");
   });
 
-  it("omits clientType for a vendor group so AgentHub keeps inferring it", () => {
+  it("omits clientType for a vendor group so MMSP keeps routing it by the id", () => {
     expect(rowToEntry(row({ provider: "openai", modelId: "gpt-5.6" })).clientType).toBeUndefined();
   });
 
-  it("sends a promotion only when the preset sync declared one", () => {
-    // A promotion the page merely loaded is left to the server, which keeps it unless the entry
-    // renames the row or changes its price.
+  it("sends a model added to a gateway with nothing of the connection: it follows the group", () => {
+    // OpenRouter: blank base URL, key and protocol follow the group's table.
+    const entry = rowToEntry(row({ provider: "openrouter", modelId: "x-ai/grok-5" }));
+    expect(entry).not.toHaveProperty("clientType");
+    expect(entry).not.toHaveProperty("baseUrl");
+    expect(entry).not.toHaveProperty("apiKey");
+  });
+
+  it("leaves the stored promotion to the server: it is never sent", () => {
     expect(rowToEntry(row({ provider: "penguin-go", discount: 0.5 }))).not.toHaveProperty(
       "discount",
     );
-    expect(rowToEntry(row({ discount: 0.2, discountDeclared: true })).discount).toBe(0.2);
-    // Declared with no promotion: an explicit clear.
-    expect(rowToEntry(row({ discountDeclared: true })).discount).toBeNull();
   });
 });
 
@@ -394,7 +479,7 @@ describe("detection copy", () => {
 });
 
 describe("protocolPathForModel (generic protocol client types)", () => {
-  it("maps each protocol client to the path its AgentHub client appends", () => {
+  it("maps each protocol client to the path its MMSP client appends", () => {
     expect(protocolPathForModel("custom", "openai-responses")).toBe("/responses");
     expect(protocolPathForModel("custom", "ant-messages")).toBe("/v1/messages");
     expect(protocolPathForModel("custom", "openai-chat")).toBe("/chat/completions");
@@ -402,8 +487,8 @@ describe("protocolPathForModel (generic protocol client types)", () => {
     expect(protocolPathForModel("my-group", "openai")).toBe("/chat/completions");
   });
 
-  it("keeps the legacy explicit-type and group fallbacks intact", () => {
-    expect(protocolPathForModel("custom", "claude-4-8")).toBe("/v1/messages");
+  it("falls back to the group's path for no client type, or one MMSP does not know", () => {
+    expect(protocolPathForModel("custom", "claude-4-8")).toBe("/chat/completions");
     expect(protocolPathForModel("openai", "")).toBe("/responses");
     expect(protocolPathForModel("anthropic", "")).toBe("/v1/messages");
     expect(protocolPathForModel("custom", "")).toBe("/chat/completions");

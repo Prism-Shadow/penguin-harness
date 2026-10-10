@@ -90,7 +90,7 @@ export function UpdatePill({ onClick, children }: { onClick: () => void; childre
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-[var(--ui-radius-pill)] bg-tone-danger-bg px-2 py-0.5 text-xs font-semibold text-tone-danger-fg transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--ui-tone-danger-bg),var(--ui-tone-danger-fg)_12%)]"
+      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-[var(--ui-radius-pill)] bg-tone-danger-bg p-[var(--ui-badge-pad-md)] text-[length:var(--ui-badge-size)] leading-[var(--ui-badge-lh)] font-[number:var(--ui-badge-weight)] text-tone-danger-fg ring-[length:var(--ui-badge-soft-ring)] ring-inset ring-tone-danger-line transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--ui-tone-danger-bg),var(--ui-tone-danger-fg)_12%)]"
     >
       {children}
     </button>

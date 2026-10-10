@@ -1,6 +1,6 @@
 /**
  * The session's "Reasoning & Tools" group: binds a run of consecutive thinking and tool-call
- * items to the shared UI package's `WorkGroup`, which draws it and owns its expand policy.
+ * items to the shared UI package's `ActivityGroup`, which draws it and owns its expand policy.
  *
  * What is decided here is the group's state, from the stream model:
  *
@@ -10,11 +10,15 @@
  *   "Done" once a later message pushes it away from the end, or the Task finishes. Following this
  *   rather than the per-item activity is what keeps the group from collapsing between steps.
  * - A pending approval anywhere in the group forces it open: the approval buttons live inside.
+ * - So does a search of the region the group is in (lib/find-expand.ts): its rows are unmounted
+ *   while it is closed, and a match inside them would otherwise read as no match.
  * - The duration is `summarizeWork`'s span; it ticks only while an item is in flight.
  */
-import { WorkGroup } from "@prismshadow/penguin-ui";
-import type { WorkGroupProps } from "@prismshadow/penguin-ui";
+import { useContext } from "react";
+import { ActivityGroup } from "@prismshadow/penguin-ui";
+import type { ActivityGroupProps } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { FindRevealContext } from "../../lib/find-expand";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import { MessageItem } from "./message-item";
@@ -45,21 +49,25 @@ function hasPendingApproval(items: ChatItem[], ctx: StreamRenderContext): boolea
   );
 }
 
-/** The group's state as the package's `WorkGroup` takes it, minus the rows. */
+/** The group's state as the package's `ActivityGroup` takes it, minus the rows. */
 export function useWorkGroupState(
   items: ChatItem[],
   ctx: StreamRenderContext,
   isLast: boolean,
-): Omit<WorkGroupProps, "rows"> {
+): Omit<ActivityGroupProps, "rows" | "children"> {
   // Whether any item is in flight right now — also the only window in which the group's span is
   // still growing, which the duration display depends on.
   const stepRunning = items.some((it) => itemActive(it, ctx));
   // Last segment + Task running = the model might still call another tool → Running, even with
   // no active item right now.
   const running = (isLast && ctx.taskRunning) || stepRunning;
+  // `pending` forces the body open without touching the group's own open state, so the reader's
+  // choice is back once the reason is gone: an approval waiting inside, or a search of this
+  // region, which can only see the rows while they are mounted.
+  const revealedForFind = useContext(FindRevealContext);
   const { steps, durationMs, startMs } = summarizeWork(items);
   return {
-    running,
+    state: running ? "running" : "done",
     stepRunning,
     // A group of thinking only is thinking; anything with a tool call in it is tool work.
     kind: items.some((it) => it.kind === "tool_call") ? "tool" : "thinking",
@@ -69,7 +77,7 @@ export function useWorkGroupState(
     ...(steps > 0 ? { count: S.chat.workGroupSteps(steps) } : {}),
     ...(startMs !== undefined ? { startMs } : {}),
     durationMs,
-    pending: hasPendingApproval(items, ctx),
+    pending: hasPendingApproval(items, ctx) || revealedForFind,
   };
 }
 
@@ -85,7 +93,7 @@ export function SessionWorkGroup({
 }) {
   const state = useWorkGroupState(items, ctx, isLast);
   return (
-    <WorkGroup
+    <ActivityGroup
       {...state}
       rows={items.map((item) => ({
         key: item.id,

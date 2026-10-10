@@ -29,7 +29,7 @@ import type {
   TraceOtherSpan,
   TraceToolSpan,
 } from "@prismshadow/penguin-server/api";
-import { Dot, Legend, TimelineBar, namedHint } from "@prismshadow/penguin-ui";
+import { Badge, Dot, Legend, TimelineBar, namedHint } from "@prismshadow/penguin-ui";
 import type { ChartPaint, LegendItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
@@ -577,9 +577,7 @@ export function TimelineChart({
               <div key={g.taskIndex} className="space-y-1">
                 {!hideTaskLabel && (
                   <div className="flex items-center gap-2 pl-[5.5rem]">
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-fg-muted dark:bg-gray-800">
-                      {S.traces.task(g.taskIndex + 1)}
-                    </span>
+                    <Badge size="sm">{S.traces.task(g.taskIndex + 1)}</Badge>
                     <span className="font-mono text-xs text-gray-400">
                       {humanizeDuration(g.total)}
                     </span>

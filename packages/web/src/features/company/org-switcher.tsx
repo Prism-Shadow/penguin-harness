@@ -17,6 +17,7 @@ import {
   Badge,
   Button,
   ChevronDown,
+  Count,
   Dropdown,
   ICONS,
   ICON_GAP,
@@ -27,7 +28,6 @@ import {
   SkeletonList,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { toneSurface } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
@@ -126,17 +126,12 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
               )}
             </span>
             {channelNote !== null && (
-              <span
-                aria-hidden
-                className={`shrink-0 rounded-full px-1.5 text-xs font-semibold tabular-nums ${
-                  company.channelMentions > 0
-                    ? toneSurface.attention
-                    : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
-                }`}
-              >
-                {company.channelMentions > 0
-                  ? `@${company.channelMentions}`
-                  : company.channelUnread}
+              <span aria-hidden className="flex shrink-0">
+                {company.channelMentions > 0 ? (
+                  <Badge tone="attention" size="sm">{`@${company.channelMentions}`}</Badge>
+                ) : (
+                  <Count n={company.channelUnread} />
+                )}
               </span>
             )}
             <span className="text-gray-400">

@@ -90,6 +90,13 @@ export function HandbookPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  /** A step that would throw the editor's unsaved draft away, waiting on the discard prompt. */
+  const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
+  const dirty = editing && doc !== null && draft !== doc.content;
+  const guardDiscard = (go: () => void) => {
+    if (dirty) setPendingDiscard(() => go);
+    else go();
+  };
 
   // Another organization's handbook must not linger while this one loads.
   useEffect(() => {
@@ -320,7 +327,16 @@ export function HandbookPage() {
               >
                 <GlyphIcon d={COLLAPSE_ALL_ICON} size={ICON_SIZE.groupHeaderAction} />
               </button>
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
+              {/* A new document is selected once written, which closes the editor. */}
+              <Button
+                size="sm"
+                onClick={() =>
+                  guardDiscard(() => {
+                    setEditing(false);
+                    setCreateOpen(true);
+                  })
+                }
+              >
                 {S.company.handbook.newDocument}
               </Button>
             </>
@@ -331,7 +347,9 @@ export function HandbookPage() {
             selected={selected}
             locale={locale}
             toggled={toggled}
-            onSelect={setSelected}
+            onSelect={(path) => {
+              if (path !== selected) guardDiscard(() => setSelected(path));
+            }}
             onToggle={toggleFolder}
           />
           {tree.nodes.length === 0 && (
@@ -374,7 +392,11 @@ export function HandbookPage() {
                   <span className="hidden text-xs text-gray-400 sm:inline dark:text-gray-500">
                     {S.company.handbook.editorHint(saveShortcut)}
                   </span>
-                  <Button size="sm" disabled={saving} onClick={() => setEditing(false)}>
+                  <Button
+                    size="sm"
+                    disabled={saving}
+                    onClick={() => guardDiscard(() => setEditing(false))}
+                  >
                     {S.common.cancel}
                   </Button>
                   <Button size="sm" variant="primary" disabled={saving} onClick={() => void save()}>
@@ -458,6 +480,20 @@ export function HandbookPage() {
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {S.company.handbook.deleteConfirm(selected)}
         </p>
+      </ConfirmModal>
+      <ConfirmModal
+        open={pendingDiscard !== null}
+        title={S.common.discardTitle}
+        confirmLabel={S.common.discard}
+        cancelLabel={S.common.cancel}
+        onClose={() => setPendingDiscard(null)}
+        onConfirm={() => {
+          const go = pendingDiscard;
+          setPendingDiscard(null);
+          go?.();
+        }}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.common.discardBody}</p>
       </ConfirmModal>
     </OrgPage>
   );

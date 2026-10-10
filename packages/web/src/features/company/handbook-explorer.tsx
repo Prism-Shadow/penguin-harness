@@ -17,15 +17,15 @@
  * the page expands the ones above the selected document.
  */
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
-import { FileTree } from "@prismshadow/penguin-ui";
+import { FileTree, ICONS } from "@prismshadow/penguin-ui";
 import type { TreeToggle } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/format";
 import type { Locale } from "../../state/locale";
 import type { HandbookRow } from "./handbook-tree";
 
-/** Collapse-all mark (lucide chevrons-down-up): two chevrons closing on each other. */
-export const COLLAPSE_ALL_ICON = "m7 20 5-5 5 5M7 4l5 5 5-5";
+/** Collapse-all mark: two chevrons closing on each other. */
+export const COLLAPSE_ALL_ICON = ICONS.chevronsDownUp;
 
 /** How a row's tooltip spells "written then, this big"; empty for a row the listing has lost. */
 function writtenAt(file: OrgHandbookFile | null): string[] {

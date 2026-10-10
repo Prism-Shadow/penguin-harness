@@ -97,14 +97,13 @@ const CARD_ICONS = {
   /** Delete (trash can) */
   trash: ICONS.trash,
   /** Total session count (chat bubble) */
-  sessions: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
+  sessions: ICONS.bubbleLines,
   /** Vault key count (key: bow + teeth) */
   vaultKeys: ICONS.key,
   /** Schedule count: the alarm clock every scheduled-task surface wears. */
   schedules: ICONS.alarmClock,
-  /** Installed skill count (open book, same family as the plugin library) */
-  skills:
-    "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
+  /** Installed skill count: the open book every skill surface wears (skill-use's BOOK_ICON). */
+  skills: ICONS.bookOpen,
   /** Usage (bar chart, same as sidebar "Usage Center") */
   usage: ICONS.barChart,
   /** Memory count: the brain every Memory surface wears; opens the settings tab. */
@@ -118,6 +117,21 @@ const CARD_ICONS = {
 const STAT_LINK_CLASS =
   "inline-flex shrink-0 cursor-pointer items-center gap-1 tabular-nums " +
   "transition-colors duration-150 hover:text-gray-800 dark:hover:text-gray-200";
+
+/**
+ * The mark an Agent whose public API is on carries after its name: the plug the API wears
+ * everywhere (the sidebar's Background rows included), with its meaning in the tooltip and for
+ * screen readers. An Agent with the API off carries nothing.
+ */
+export function AgentApiMark({ enabled }: { enabled: boolean }) {
+  if (!enabled) return null;
+  return (
+    <span data-tooltip={S.agent.apiOn} className="shrink-0 text-fg-subtle">
+      <GlyphIcon d={ICONS.plug} size={ICON_SIZE.inlineGlyph} />
+      <span className="sr-only">{S.agent.apiOn}</span>
+    </span>
+  );
+}
 
 /**
  * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
@@ -584,6 +598,7 @@ export function AgentsPage() {
                         {S.chat.machineTag(machineName)}
                       </span>
                     )}
+                    <AgentApiMark enabled={a.apiEnabled} />
                     <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
                       {a.agentId}
                     </span>
@@ -894,7 +909,6 @@ export function AgentsPage() {
                       : S.agent.createPluginsPicked(createPlugins.length)
                   }
                   muted={createPlugins.length === 0}
-                  title={S.agent.createPlugins}
                   ariaLabel={S.agent.createPlugins}
                   disabled={busy}
                   menuClass="w-[26rem]"
@@ -945,7 +959,6 @@ export function AgentsPage() {
                           : S.agent.createSkillsPicked(createDirSkills.length)
                       }
                       muted={createDirSkills.length === 0}
-                      title={S.agent.createDirSkills}
                       ariaLabel={S.agent.createDirSkills}
                       disabled={busy}
                       menuClass="w-[26rem]"
@@ -1045,7 +1058,7 @@ export function AgentsPage() {
           setDeleteError(null);
         }}
         onConfirm={() => void doDelete()}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">

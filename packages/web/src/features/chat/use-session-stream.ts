@@ -235,6 +235,7 @@ export function useSessionStream(
     };
 
     const controller = createStreamController({
+      sessionId,
       // The whole response rides through: `live` (in-progress stream tail) lets the
       // controller seed the currently streaming message after a reload, and `page` (the
       // windowed-history envelope) drives tail-first loading (see stream-controller).

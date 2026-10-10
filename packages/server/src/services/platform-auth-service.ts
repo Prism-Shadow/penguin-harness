@@ -236,7 +236,7 @@ function platformCatalog(value: unknown, requireEnvelope: boolean): PlatformMode
       pricing: promotion?.listPricing ?? billed,
       ...(promotion !== undefined ? { discount: promotion.discount } : {}),
       baseUrl: endpointByName[googleRoute ? "google" : "openai"],
-      clientType: googleRoute ? ("gemini-3.8" as const) : ("deepseek-v4" as const),
+      clientType: googleRoute ? ("google-genai" as const) : ("deepseek-official" as const),
     };
   });
   return { models };
@@ -533,8 +533,10 @@ export class PlatformAuthService {
     flow.status = "applying";
     flow.error = undefined;
     try {
+      // The key lands as the group key whether or not a model uses it yet (every one keyed on
+      // its own, or nothing delivered and nothing held): the report carries how many use it,
+      // 0 included — as Enter key and the other Connect flows do.
       const result = await this.deps.applyCatalog(flow.projectId, flow.catalog, flow.apiKey, true);
-      if (result.applied === 0) throw new Error("The Penguin Go catalog is empty.");
       flow.applied = result.applied;
       flow.apiKey = undefined;
       flow.catalog = undefined;

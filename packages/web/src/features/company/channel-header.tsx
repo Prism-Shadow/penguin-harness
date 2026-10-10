@@ -51,18 +51,8 @@ import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
 import type { InviteCandidate } from "./channel-list";
 import { parsePrincipal } from "./principals";
 
-/** Invite (lucide user-plus): the header's "add somebody to this channel" action. */
-const INVITE_ICON =
-  "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM19 8v6M22 11h-6";
-
-/** Leave (lucide log-out): removing oneself from the channel. */
-const LEAVE_ICON = "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9";
-
-/** Purpose (lucide text): the menu row that edits what the channel is for. */
-const PURPOSE_ICON = "M4 6h16M4 12h12M4 18h8";
-
-/** Opening a desk session (lucide door-open): the member popover's employee rows, and the org chart's node menu. */
-export const DESK_ICON = "M13 4h3v16h-3M3 20h11V4L3 6zM10 12h.01";
+/** Opening a desk session (the open door): the member popover's employee rows, and the org chart's node menu. */
+export const DESK_ICON = ICONS.doorOpen;
 
 /** Members shown as avatars before the count takes over. */
 const AVATAR_STACK = 3;
@@ -442,7 +432,7 @@ export function ChannelHeader({
           {!allHands && detail.isMember && !detail.archived && (
             <Button size="sm" disabled={busy} onClick={() => setLeaveOpen(true)}>
               <span className={`flex items-center ${ICON_GAP.tight}`}>
-                <GlyphIcon d={LEAVE_ICON} size={ICON_SIZE.inlineGlyph} />
+                <GlyphIcon d={ICONS.signOut} size={ICON_SIZE.inlineGlyph} />
                 {S.company.channels.leave}
               </span>
             </Button>
@@ -479,7 +469,7 @@ export function ChannelHeader({
                     }}
                   />
                   <MenuItem
-                    glyph={PURPOSE_ICON}
+                    glyph={ICONS.textLines}
                     label={S.company.channels.editPurpose}
                     onSelect={() => {
                       setMenuOpen(false);
@@ -536,7 +526,7 @@ export function ChannelHeader({
         open={purposeOpen}
         title={S.company.channels.purposeTitle}
         label={S.company.channels.purpose}
-        hint={S.company.channels.purposeHint}
+        info={S.company.channels.purposeHint}
         initial={detail.purpose}
         multiline
         onClose={() => setPurposeOpen(false)}

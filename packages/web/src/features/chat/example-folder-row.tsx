@@ -7,7 +7,7 @@
  * shortcuts folder in shortcuts-folder.tsx — and a folder row that reads differently from its
  * neighbours would be read as a different kind of thing.
  */
-import { Chevron, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { Chevron, GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
 
 export function ExampleFolderRow({
   open,
@@ -17,7 +17,7 @@ export function ExampleFolderRow({
   onOpen,
 }: {
   open: boolean;
-  /** 24x24 path for the folder's own mark — what the eye scans to pick a category. */
+  /** The folder's own mark, a registry glyph — what the eye scans to pick a category. */
   glyph: string;
   label: string;
   /** Rows inside the folder, shown right of the name — a bare count, or `used/limit` where one applies. */
@@ -34,19 +34,7 @@ export function ExampleFolderRow({
       }`}
     >
       <span className="shrink-0 text-brand-500 dark:text-brand-400">
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden
-        >
-          <path d={glyph} />
-        </svg>
+        <GlyphIcon d={glyph} size={16} />
       </span>
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700 dark:text-gray-300">
         {label}

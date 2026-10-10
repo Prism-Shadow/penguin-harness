@@ -41,6 +41,8 @@ import type {
 import {
   Button,
   Input,
+  PrefRow,
+  SettingsGroup,
   SettingsSection,
   ToggleRow,
   toastError,
@@ -201,45 +203,52 @@ export function ProxySection() {
           </Button>
         }
       >
-        <ToggleRow
-          variant="plain"
-          label={S.settings.proxyForApp}
-          checked={proxyForApp}
-          onChange={setProxyForApp}
-          disabled={!hydrated}
-        />
-        <ToggleRow
-          variant="plain"
-          label={S.settings.proxyForAgent}
-          checked={proxyForAgent}
-          onChange={setProxyForAgent}
-          disabled={!hydrated}
-        />
-        <Input
-          label={S.settings.proxyAddress}
-          size="sm"
-          value={proxyUrl}
-          placeholder={S.settings.proxyAddressPlaceholder}
-          disabled={!hydrated}
-          {...(addressError !== null ? { error: addressError } : {})}
-          onChange={(e) => {
-            setProxyUrl(e.target.value);
-            if (addressError !== null) setAddressError(null);
-          }}
-        />
+        <SettingsGroup>
+          <ToggleRow
+            label={S.settings.proxyForApp}
+            checked={proxyForApp}
+            onChange={setProxyForApp}
+            disabled={!hydrated}
+          />
+          <ToggleRow
+            label={S.settings.proxyForAgent}
+            checked={proxyForAgent}
+            onChange={setProxyForAgent}
+            disabled={!hydrated}
+          />
+          {/* The error stands under the box, inside the control's column; the row keeps its
+              title on the first line. */}
+          <PrefRow label={S.settings.proxyAddress}>
+            <div className="w-64 min-w-0">
+              <Input
+                aria-label={S.settings.proxyAddress}
+                size="sm"
+                value={proxyUrl}
+                placeholder={S.settings.proxyAddressPlaceholder}
+                disabled={!hydrated}
+                {...(addressError !== null ? { error: addressError } : {})}
+                onChange={(e) => {
+                  setProxyUrl(e.target.value);
+                  if (addressError !== null) setAddressError(null);
+                }}
+              />
+            </div>
+          </PrefRow>
+        </SettingsGroup>
       </SettingsSection>
       <section className="mt-6">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 text-sm font-medium">{S.settings.proxyProbe}</div>
-          <Button
-            size="sm"
-            disabled={!hydrated || targets === null || probing}
-            aria-busy={probing}
-            onClick={runProbe}
-          >
-            {probing ? S.settings.proxyProbeRunning : S.settings.proxyProbeRun}
-          </Button>
-        </div>
+        <SettingsGroup>
+          <PrefRow label={S.settings.proxyProbe}>
+            <Button
+              size="sm"
+              disabled={!hydrated || targets === null || probing}
+              aria-busy={probing}
+              onClick={runProbe}
+            >
+              {probing ? S.settings.proxyProbeRunning : S.settings.proxyProbeRun}
+            </Button>
+          </PrefRow>
+        </SettingsGroup>
         <ul className="mt-3 space-y-3">
           {(targets ?? []).map((t) => {
             // This row's own answer, shown the moment it exists — the rows still waiting keep

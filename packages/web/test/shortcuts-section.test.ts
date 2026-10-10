@@ -1,10 +1,15 @@
 /**
- * The Shortcuts settings page (src/features/settings/shortcuts-section.tsx) rendered to static
- * markup against an injected keymap: groups and rows in both dictionaries with no rule between
- * rows, the chord text per platform, the reset affordance only on an overridden row, the
- * browser's notes on either host (a reserved chord in the attention tone, a shared one muted),
- * the desktop menu's note in the desktop app, a note that follows a new binding at once, and a
- * conflict hint in the attention tone.
+ * The Shortcuts settings page (features/settings/shortcuts-section.tsx), rendered to static
+ * markup against an injected keymap.
+ *
+ * - Every command is listed under its group, in either language.
+ * - A chord is drawn the way the platform writes it.
+ * - A row can be reset only when overridden, and "Reset all" is enabled only when something is.
+ * - No default sits on a chord the browser keeps; a binding on one is marked in the attention
+ *   tone on either host. A chord the browser also uses gets a muted note, and in the desktop
+ *   app the desktop menu's claim is named first. A note follows a new binding at once.
+ * - A command shadowing a global one is named in the attention tone, and a same-scope clash
+ *   is reported on both rows.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -19,19 +24,15 @@ import {
   KEYBINDINGS_KEY,
   configureKeybindingsStoreForTests,
   setBinding,
-  type KeybindingsStorage,
 } from "../src/lib/shortcuts/store";
-import { toneInk } from "../src/lib/tone";
+import { memoryStorage } from "./helpers/storage";
 
-function memStorage(doc?: object): KeybindingsStorage {
-  const map = new Map<string, string>();
-  if (doc !== undefined) map.set(KEYBINDINGS_KEY, JSON.stringify(doc));
-  return {
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-    removeItem: (k) => void map.delete(k),
-  };
-}
+/** The attention tone's ink, as the package's token class spells it. */
+const ATTENTION = "text-tone-attention-fg";
+
+/** A keybindings mirror holding `doc`, or nothing. */
+const keybindings = (doc?: object) =>
+  memoryStorage(doc === undefined ? {} : { [KEYBINDINGS_KEY]: JSON.stringify(doc) });
 
 const render = (): string => renderToStaticMarkup(createElement(ShortcutsSection));
 const count = (html: string, needle: string): number => html.split(needle).length - 1;
@@ -39,7 +40,7 @@ const count = (html: string, needle: string): number => html.split(needle).lengt
 beforeEach(() => {
   setPlatformForTests("linux");
   setHostForTests("browser");
-  configureKeybindingsStoreForTests({ storage: memStorage(), layout: null });
+  configureKeybindingsStoreForTests({ storage: keybindings(), layout: null });
 });
 
 afterEach(() => {
@@ -61,10 +62,6 @@ describe("ShortcutsSection", () => {
     }
   });
 
-  it("lists the rows without a rule between them", () => {
-    expect(render()).not.toContain("divide-y");
-  });
-
   it("draws the chord the platform writes", () => {
     const linux = render();
     expect(linux).toContain("<kbd>Ctrl</kbd>");
@@ -82,44 +79,47 @@ describe("ShortcutsSection", () => {
   it("offers the per-row reset only on an overridden row, and Reset all only when something is", () => {
     const clean = render();
     expect(count(clean, `data-tooltip="${S.shortcuts.resetRow}"`)).toBe(0);
-    expect(clean).toMatch(/<button[^>]* disabled=""[^>]*>[^<]*全部恢复默认/);
+    const resetAll = new RegExp(`<button[^>]* disabled=""[^>]*>[^<]*${S.shortcuts.resetAll}`);
+    expect(clean).toMatch(resetAll);
 
     configureKeybindingsStoreForTests({
-      storage: memStorage({ v: 1, linux: { "editor.save": null } }),
+      storage: keybindings({ v: 1, linux: { "editor.save": null } }),
     });
     const one = render();
     expect(count(one, `data-tooltip="${S.shortcuts.resetRow}"`)).toBe(1);
     expect(one).toContain(S.shortcuts.unbound);
-    expect(one).not.toMatch(/<button[^>]* disabled=""[^>]*>[^<]*全部恢复默认/);
+    expect(one).not.toMatch(resetAll);
   });
 
   it("puts no default on a chord the browser keeps, and marks a binding on one in the attention tone on either host", () => {
     expect(render()).not.toContain(S.shortcuts.browserReserved);
     configureKeybindingsStoreForTests({
-      storage: memStorage({ v: 1, linux: { "terminal.close": "Mod+KeyW" } }),
+      storage: keybindings({ v: 1, linux: { "terminal.close": "Mod+KeyW" } }),
     });
     for (const host of ["browser", "desktop"] as const) {
       setHostForTests(host);
       const html = render();
       expect(count(html, S.shortcuts.browserReserved), host).toBe(1);
-      expect(html, host).toContain(toneInk.attention);
+      expect(html, host).toContain(ATTENTION);
     }
   });
 
   it("notes a chord the browser also uses, muted, and names the desktop menu's claim first in the desktop app", () => {
-    // Save's default takes over the browser's Save Page; no other default touches the browser.
-    expect(count(render(), S.shortcuts.browserCommon)).toBe(1);
+    // Save's and find's defaults take over the browser's Save Page and find; no other default
+    // touches the browser.
+    expect(count(render(), S.shortcuts.browserCommon)).toBe(2);
     configureKeybindingsStoreForTests({
-      storage: memStorage({ v: 1, linux: { "palette.toggle": "Mod+KeyR" } }),
+      storage: keybindings({ v: 1, linux: { "palette.toggle": "Mod+KeyR" } }),
     });
     const browser = render();
-    expect(count(browser, S.shortcuts.browserCommon)).toBe(2);
-    expect(browser).not.toContain(toneInk.attention);
+    expect(count(browser, S.shortcuts.browserCommon)).toBe(3);
+    expect(browser).not.toContain(ATTENTION);
     setHostForTests("desktop");
     const desktop = render();
-    // Reload is the desktop menu's too, so that row names the menu; Save keeps the browser's note.
+    // Reload is the desktop menu's too, so that row names the menu; Save and find keep the
+    // browser's note.
     expect(count(desktop, S.shortcuts.desktopMenuReserved)).toBe(1);
-    expect(count(desktop, S.shortcuts.browserCommon)).toBe(1);
+    expect(count(desktop, S.shortcuts.browserCommon)).toBe(2);
   });
 
   it("shows a binding's note as soon as the binding lands", () => {
@@ -130,7 +130,7 @@ describe("ShortcutsSection", () => {
 
   it("says which command shadows a global one, in the attention tone", () => {
     configureKeybindingsStoreForTests({
-      storage: memStorage({ v: 1, linux: { "palette.toggle": "Ctrl+Alt+Backquote" } }),
+      storage: keybindings({ v: 1, linux: { "palette.toggle": "Ctrl+Alt+Backquote" } }),
     });
     const html = render();
     expect(
@@ -142,12 +142,12 @@ describe("ShortcutsSection", () => {
         ),
       ),
     ).toBe(1);
-    expect(html).toContain(toneInk.attention);
+    expect(html).toContain(ATTENTION);
   });
 
   it("reports a same-scope clash on both rows", () => {
     configureKeybindingsStoreForTests({
-      storage: memStorage({ v: 1, linux: { "palette.toggle": "Ctrl+Backquote" } }),
+      storage: keybindings({ v: 1, linux: { "palette.toggle": "Ctrl+Backquote" } }),
     });
     const html = render();
     expect(html).toContain(S.shortcuts.conflictSame(S.shortcuts.commands["terminal.toggle"]));

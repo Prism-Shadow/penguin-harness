@@ -5,8 +5,16 @@
  * (click to zoom), PDF embedded, everything else offered as a download. Text files can be
  * edited in place: Edit swaps the preview for a plain textarea, Save writes the file back
  * through the content endpoint, and unsaved changes are guarded wherever they could be
- * lost. OS files dropped anywhere on the panel upload into the current directory — onto a
- * folder row, into that folder.
+ * lost. The editor keeps its place as a code editor does — it opens where the preview was
+ * scrolled, a save leaves it open with caret and scroll untouched, and when a finished turn
+ * rewrote the file under an editor holding nothing unsaved, it takes the new text in place.
+ * OS files dropped anywhere on the panel upload into the current directory — onto a folder
+ * row, into that folder. New text files and folders are made from the tree header's New
+ * menu, a folder's menu or the blank space under the tree; folders rename and move whole.
+ *
+ * The panel is addressed by its scope (api/workspace-files.ts): a Session's Workspace on the
+ * chat page, or a directory named by its path on the new-chat draft, where no Session exists
+ * yet. Everything below follows the scope; a new scope starts the panel over.
  *
  * A search box above the tree filters the rows the lazy tree has already loaded. The tree
  * can be hidden (toolbar toggle, shown by default), and the divider between the two panes
@@ -65,6 +73,7 @@ import {
   TreePane,
   WorkspaceFileEditor,
   WorkspaceFileMenuRows,
+  WorkspaceNewMenuRows,
   isContextMenuKey,
   isLongPressPointer,
   languageForFileName,
@@ -76,14 +85,16 @@ import {
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import type {
+  EditorScroll,
   FileMenuTarget,
   PreviewView,
   TreeToggle,
   WorkspaceFileMenuLabels,
 } from "@prismshadow/penguin-ui";
-import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
+import type { WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import { ApiError } from "../../api/client";
+import { filesApi, filesScopeKey } from "../../api/workspace-files";
+import type { FilesScope } from "../../api/workspace-files";
 import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -98,6 +109,7 @@ import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal } from "../../lib/file-drop";
 import { MB_BYTES, splitBySize } from "../../lib/upload-limits";
 import {
+  DEFAULT_TEXT_FILE_NAME,
   TEXT_PREVIEW_LIMIT,
   TREE_MIN_WIDTH,
   WORKSPACE_UPLOAD_LIMIT_MB,
@@ -112,9 +124,14 @@ import {
   flattenTree,
   isDirty,
   isNarrowLayout,
+  isWithin,
   looksLikeText,
   maxTreeWidth,
+  movedListings,
+  movedPath,
+  movedSet,
   needsDiscardConfirm,
+  newEntryName,
   parentDir,
   pathReference,
   previewKindFor,
@@ -122,6 +139,7 @@ import {
   readTreeVisible,
   readTreeWidth,
   selectionBlock,
+  stemEnd,
   upsertEntry,
   utf8Complete,
   withExpanded,
@@ -150,8 +168,6 @@ const MD_RENDER_LIMIT = 64 * 1024;
 const SNIFF_BYTES = 8 * 1024;
 /** How long the search box settles before the query is sent. A Workspace walk is not free, and nobody reads results for a prefix they are still typing. */
 const SEARCH_DEBOUNCE_MS = 250;
-/** Window with a left pane: the tree toggle. */
-const PANEL_LEFT_ICON = "M4 5h16v14H4zM10 5v14";
 
 /** An external reference with a scheme (http(s)/mailto/data, etc.), passed through as-is in the md rendered view. */
 const EXTERNAL_REF_RE = /^[a-z][a-z0-9+.-]*:/i;
@@ -211,15 +227,15 @@ interface Preview {
 let previewSeq = 0;
 
 /**
- * Unsaved editor drafts by Session and path, kept for the app's lifetime and written through
- * on every keystroke. Hiding the panel or its dock keeps this component mounted, draft and
- * all; what the map is for are the paths no confirm dialog can intercept, where the body
- * really is unmounted — a tab dragged to the other edge, a Session switched from the
- * sidebar. The draft outlives the component: opening the same file again reopens the
- * editor on it.
+ * Unsaved editor drafts by scope (a Session, or a directory — see filesScopeKey) and path,
+ * kept for the app's lifetime and written through on every keystroke. Hiding the panel or its
+ * dock keeps this component mounted, draft and all; what the map is for are the paths no
+ * confirm dialog can intercept, where the body really is unmounted — a tab dragged to the
+ * other edge, a Session switched from the sidebar. The draft outlives the component: opening
+ * the same file again reopens the editor on it.
  */
 const unsavedDrafts = new Map<string, string>();
-const draftKey = (sessionId: string, path: string): string => `${sessionId}\n${path}`;
+const draftKey = (scopeKey: string, path: string): string => `${scopeKey}\n${path}`;
 
 /**
  * Reads a file as text, bounded to TEXT_PREVIEW_LIMIT bytes: the body is read as a stream
@@ -313,12 +329,22 @@ function hitRow(
 }
 
 /**
- * Why the confirm button is not offered yet. The action needs the file's current version, and
+ * The tree's blank space under the rows, or null: a gesture inside the tree that lands on no
+ * row. The search box sits above the tree, outside it, and so never counts.
+ */
+function hitBlank(target: EventTarget | null): HTMLElement | null {
+  if (!(target instanceof Element) || hitRow(target) !== null) return null;
+  return target.closest<HTMLElement>('[role="tree"]');
+}
+
+/**
+ * Why the confirm button is not offered yet. A file's action needs its current version, and
  * until that read lands there is nothing to refuse an overwrite with — so the dialog says which
- * of the two it is rather than leaving a dead button with no explanation.
+ * of the two it is rather than leaving a dead button with no explanation. A folder has no
+ * version to wait for.
  */
 function FileActionVersionNote({ target }: { target: FileActionTarget | null }) {
-  if (target === null || target.version !== null) return null;
+  if (target === null || target.kind === "dir" || target.version !== null) return null;
   return (
     <p
       className={`text-xs ${target.reading ? "text-gray-500 dark:text-gray-400" : toneInk.danger}`}
@@ -328,13 +354,20 @@ function FileActionVersionNote({ target }: { target: FileActionTarget | null }) 
   );
 }
 
-/** A file a rename or a delete has been asked about, and how far the read of its version got. */
+/** An entry a rename or a delete has been asked about, and how far the read of its version got. */
 interface FileActionTarget {
   path: string;
-  /** Non-null once the version is known; the action is refused until then. */
+  /** A folder has no version marker: it is renamed whole, with nothing to read first. */
+  kind: "file" | "dir";
+  /** Non-null once a file's version is known; a file's action is refused until then. */
   version: string | null;
   /** True while the read is still in flight — which is what tells "not yet" from "could not". */
   reading: boolean;
+}
+
+/** Whether the dialog's action can run: a folder's at once, a file's once its version is known. */
+function actionReady(target: FileActionTarget | null): boolean {
+  return target !== null && (target.kind === "dir" || target.version !== null);
 }
 
 /** A selection the preview offered to the conversation, with the source lines it covers when they could be resolved. */
@@ -424,13 +457,17 @@ const iconToggleClass = (on: boolean): string =>
   `${iconActionBase} ${on ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100" : iconActionIdle}`;
 
 export function WorkspaceBrowser({
-  session,
+  scope,
   openRequest,
   active,
   reloadSignal,
   onAddReference,
 }: {
-  session: SessionInfo;
+  /**
+   * The Workspace on screen: a Session's (the chat page), or a directory named by its path (the
+   * new-chat draft's chosen folder). Changing it starts the panel over, as a Session switch does.
+   */
+  scope: FilesScope;
   /** External navigation command (from clicking a file chip in a message): opens the tree
    *  down to that path and previews it. Triggers again whenever the object reference changes,
    *  even if path is the same as last time (clicking the same file again must still re-locate it). */
@@ -464,17 +501,25 @@ export function WorkspaceBrowser({
   // rendered view and "open in new tab" through the preview origin; false downgrades
   // the new tab to the same-origin sandbox (which the link flags rather than failing
   // silently in the page) and the in-app rendered view to the srcDoc fallback.
-  const { previewIsolated, desktopMode, sessionVia } = useAuth();
+  const { previewIsolated: serverPreviewIsolated, desktopMode, sessionVia } = useAuth();
   const saveShortcut = useShortcutLabel("editor.save");
   // The desktop app's own window is the one page whose machine IS the server's, so it is the
   // only one offered "show in folder" — see lib/account-menu.ts for why a browser signed into
   // the same server, even on this machine, must not be.
   const isShellWindow = isDesktopShellWindow({ desktopMode, sessionVia });
+  const scopeKey = filesScopeKey(scope);
+  // Keyed by the scope's identity, not the object: the parent builds a fresh one every render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const files = useMemo(() => filesApi(scope), [scopeKey]);
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  const scopeKeyRef = useRef(scopeKey);
+  scopeKeyRef.current = scopeKey;
+  // A directory scope has no separate preview origin (its tokens name a Session), so its HTML
+  // takes the same-origin sandbox the panel falls back to whenever isolation is off.
+  const previewIsolated = serverPreviewIsolated && files.isolatablePreviews;
   const previewIsolatedRef = useRef(previewIsolated);
   previewIsolatedRef.current = previewIsolated;
-  const sessionId = session.sessionId;
-  const sessionIdRef = useRef(sessionId);
-  sessionIdRef.current = sessionId;
 
   // ------------------------------------------------------------------------------- tree
   const [listings, setListings] = useState<Listings>(() => new Map());
@@ -563,11 +608,26 @@ export function WorkspaceBrowser({
   // hundreds of rows — twice over while a closing subtree animates out. The row a gesture
   // landed on is resolved from the event instead, and held here for as long as its menu is up.
   const treeMenu = useRowContextMenu();
-  const [treeMenuTarget, setTreeMenuTarget] = useState<FileMenuTarget | null>(null);
+  /** A row the menu was opened on, or the blank space under the rows ("blank": the root). */
+  const [treeMenuTarget, setTreeMenuTarget] = useState<FileMenuTarget | "blank" | null>(null);
+  /** The tree header's New menu. */
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  /** The New dialog: what it creates, in which directory, and the name typed so far. */
+  const [createTarget, setCreateTarget] = useState<{ kind: "file" | "dir"; dir: string } | null>(
+    null,
+  );
+  const [createName, setCreateName] = useState("");
+  const [creating, setCreating] = useState(false);
   const previewMenu = useRowContextMenu();
   /** The selection the preview's menu was opened over; null when there was none inside it. */
   const [menuSelection, setMenuSelection] = useState<PreviewSelection | null>(null);
   const previewBodyRef = useRef<HTMLDivElement | null>(null);
+  /** Where the source view was scrolled when Edit was pressed: the editor opens there. */
+  const editorOpening = useRef<EditorScroll | undefined>(undefined);
+  /** The editor's scroll box, read on the way out of the editor. */
+  const editorHost = useRef<HTMLDivElement | null>(null);
+  /** Where the source view takes up once it is back on screen after the editor. */
+  const bodyScrollOnReturn = useRef<EditorScroll | null>(null);
   /** The directory the menu's own picker uploads into (the toolbar's picker always means the current one). */
   const menuUploadDir = useRef("");
   const menuUploadRef = useRef<HTMLInputElement | null>(null);
@@ -591,16 +651,16 @@ export function WorkspaceBrowser({
   /** Newest request per directory: only it may publish, so a slow older listing cannot overwrite a newer one. */
   const dirSeq = useRef(new Map<string, number>());
 
-  // Session switched: back to a fresh root with no preview. Reset during render (React's
-  // documented "adjust state when a prop changes" pattern), not in an effect — an
-  // effect-based reset lets one frame commit in which the old session's preview renders
-  // against the new session, flipping the isolated iframe's src to the new session + the
-  // old path and firing a doomed request. Bumping previewSeq also invalidates any
-  // in-flight previewPath from the old session (its present() guard fails). An editor
-  // draft survives in unsavedDrafts and comes back when the file is opened again.
-  const [renderedSessionId, setRenderedSessionId] = useState(sessionId);
-  if (renderedSessionId !== sessionId) {
-    setRenderedSessionId(sessionId);
+  // Scope changed (another Session, or the draft's folder re-picked): back to a fresh root with
+  // no preview. Reset during render (React's documented "adjust state when a prop changes"
+  // pattern), not in an effect — an effect-based reset lets one frame commit in which the old
+  // scope's preview renders against the new one, flipping the isolated iframe's src to the new
+  // session + the old path and firing a doomed request. Bumping previewSeq also invalidates
+  // any in-flight previewPath from the old scope (its present() guard fails). An editor draft
+  // survives in unsavedDrafts and comes back when the file is opened again.
+  const [renderedScopeKey, setRenderedScopeKey] = useState(scopeKey);
+  if (renderedScopeKey !== scopeKey) {
+    setRenderedScopeKey(scopeKey);
     setListings(new Map());
     setExpanded(new Set());
     setLoadingDirs(new Set());
@@ -630,6 +690,10 @@ export function WorkspaceBrowser({
     previewMenu.close();
     setTreeMenuTarget(null);
     setMenuSelection(null);
+    setNewMenuOpen(false);
+    setCreateTarget(null);
+    setRenameTarget(null);
+    setRemoveTarget(null);
     previewSeq++;
   }
 
@@ -661,13 +725,13 @@ export function WorkspaceBrowser({
    */
   const loadDir = useCallback(
     async (dir: string): Promise<boolean> => {
-      const sid = sessionId;
+      const key = scopeKey;
       const seq = (dirSeq.current.get(dir) ?? 0) + 1;
       dirSeq.current.set(dir, seq);
-      const current = () => sessionIdRef.current === sid && dirSeq.current.get(dir) === seq;
+      const current = () => scopeKeyRef.current === key && dirSeq.current.get(dir) === seq;
       setLoadingDirs((s) => new Set(s).add(dir));
       try {
-        const res = await api.listWorkspaceFiles(sid, dir);
+        const res = await files.list(dir);
         if (!current()) return false;
         setListings((m) => new Map(m).set(dir, res.entries));
         if (dir === "") setRootError(null);
@@ -698,7 +762,7 @@ export function WorkspaceBrowser({
         }
       }
     },
-    [sessionId],
+    [scopeKey, files],
   );
 
   useEffect(() => {
@@ -732,7 +796,7 @@ export function WorkspaceBrowser({
   const previewPath = useCallback(
     async (filePath: string, opts?: { refresh?: boolean }) => {
       const refresh = opts?.refresh === true;
-      const sid = sessionId;
+      const key = scopeKey;
       const name = baseName(filePath);
       const kind = previewKindFor(name);
       const nonce = ++previewSeq;
@@ -740,7 +804,7 @@ export function WorkspaceBrowser({
        *  two rapid calls interleave across the await, and the late loser must not
        *  overwrite the winner's preview. */
       const present = (p: Preview) => {
-        if (nonce === previewSeq && sessionIdRef.current === sid) setPreview(p);
+        if (nonce === previewSeq && scopeKeyRef.current === key) setPreview(p);
       };
       if (!refresh) {
         setRichView("rendered");
@@ -769,10 +833,7 @@ export function WorkspaceBrowser({
         // defense); this fetches the raw content back for text/Markdown previews and for
         // the srcDoc fallback rendered view of non-isolated HTML. A name that says nothing
         // about the type is sniffed: text opens as text, anything else stays a download.
-        const result = await fetchTextPreview(
-          api.workspaceFileUrl(sid, filePath),
-          kind === "unknown",
-        );
+        const result = await fetchTextPreview(files.fileUrl(filePath), kind === "unknown");
         if (result === null) {
           if (!refresh) present({ path: filePath, name, kind: "unsupported", nonce });
           return;
@@ -798,13 +859,14 @@ export function WorkspaceBrowser({
           !refresh &&
           !truncated &&
           nonce === previewSeq &&
-          sessionIdRef.current === sid &&
+          scopeKeyRef.current === key &&
           editorRef.current?.path !== filePath
         ) {
-          const key = draftKey(sid, filePath);
-          const stashed = unsavedDrafts.get(key);
-          if (stashed === content) unsavedDrafts.delete(key);
+          const stashKey = draftKey(key, filePath);
+          const stashed = unsavedDrafts.get(stashKey);
+          if (stashed === content) unsavedDrafts.delete(stashKey);
           else if (stashed !== undefined) {
+            editorOpening.current = undefined;
             setEditor({ path: filePath, baseline: content, draft: stashed, version });
             toastInfo(S.files.unsavedRestored(name));
           }
@@ -815,7 +877,7 @@ export function WorkspaceBrowser({
         if (!refresh) present({ path: filePath, name, kind: "unsupported", nonce });
       }
     },
-    [sessionId],
+    [scopeKey, files],
   );
 
   // Lazy source fetch for isolated HTML previews: previewPath mounted the iframe without
@@ -831,7 +893,7 @@ export function WorkspaceBrowser({
     setSourceError(null);
     void (async () => {
       try {
-        const result = await fetchTextPreview(api.workspaceFileUrl(sessionId, target), false);
+        const result = await fetchTextPreview(files.fileUrl(target), false);
         if (cancelled || result === null) return;
         // Functional update with its own guard (not `present`): this must only fill the
         // still-current, still-contentless HTML preview for the same path, never revive
@@ -853,7 +915,7 @@ export function WorkspaceBrowser({
     return () => {
       cancelled = true;
     };
-  }, [preview, richView, previewIsolated, sessionId]);
+  }, [preview, richView, previewIsolated, files]);
 
   // -------------------------------------------------------------- navigation and guards
 
@@ -864,7 +926,7 @@ export function WorkspaceBrowser({
 
   const discardEditor = useCallback(() => {
     const current = editorRef.current;
-    if (current !== null) unsavedDrafts.delete(draftKey(sessionIdRef.current, current.path));
+    if (current !== null) unsavedDrafts.delete(draftKey(scopeKeyRef.current, current.path));
     setEditor(null);
   }, []);
 
@@ -889,76 +951,113 @@ export function WorkspaceBrowser({
   );
 
   /**
-   * Puts one of the two file actions on screen and starts reading the file's current version.
+   * Puts one of the two entry actions on screen and, for a file, starts reading its current
+   * version.
    *
    * The dialog opens first and the version lands in it: waiting for a round trip before showing
    * anything would make a menu click feel broken. A dirty editor is asked about before either,
-   * through the same guard navigation uses — both actions move the file out from under it.
+   * through the same guard navigation uses, when the action moves its file out from under it: a
+   * file's always, a folder's when the file being edited lies inside it.
    */
   const beginFileAction = useCallback(
-    (path: string, kind: "rename" | "delete") => {
-      void navigateGuarded(null, () => {
-        const opened: FileActionTarget = { path, version: null, reading: true };
-        if (kind === "rename") {
+    (path: string, action: "rename" | "delete", kind: "file" | "dir" = "file") => {
+      const open = () => {
+        const opened: FileActionTarget = { path, kind, version: null, reading: kind === "file" };
+        if (action === "rename") {
           setRenameDraft(path);
           setRenameTarget(opened);
         } else {
           setRemoveTarget(opened);
         }
+        if (kind === "dir") return;
         const settle = (version: string | null) => {
           const next = (t: FileActionTarget | null): FileActionTarget | null =>
-            t !== null && t.path === path ? { path, version, reading: false } : t;
-          if (kind === "rename") setRenameTarget(next);
+            t !== null && t.path === path ? { path, kind, version, reading: false } : t;
+          if (action === "rename") setRenameTarget(next);
           else setRemoveTarget(next);
         };
-        void fetchFileVersion(api.workspaceFileUrl(sessionIdRef.current, path))
+        void fetchFileVersion(filesRef.current.fileUrl(path))
           .then(settle)
           .catch(() => settle(null));
-      });
+      };
+      const editing = editorRef.current;
+      if (kind === "dir" && (editing === null || !isWithin(editing.path, path))) open();
+      else void navigateGuarded(null, open);
     },
     [navigateGuarded],
   );
 
   /**
-   * Reports the one failure both actions share. Nothing was changed, so this is a toast and not
-   * a dialog: there is no decision left to take, only the same action again on the file as it
-   * now is.
+   * Reports the failures the entry actions share. Nothing was changed, so this is a toast and
+   * not a dialog: there is no decision left to take, only the same action again on the entry as
+   * it now is.
    */
-  const reportFileActionError = (err: unknown, path: string): void => {
+  const reportFileActionError = (err: unknown, path: string, to?: string): void => {
     if (err instanceof ApiError && err.code === "file_changed") {
       toastError(S.files.changedBeforeAction(baseName(path)));
-    } else if (err instanceof ApiError && err.code === "target_exists") {
-      toastError(S.files.renameTargetExists(renameDraft.trim()));
+    } else if (err instanceof ApiError && err.code === "target_exists" && to !== undefined) {
+      toastError(S.files.targetExists(to));
     } else {
       toastError(apiErrorText(err));
     }
   };
 
+  /**
+   * The entry did not stop existing, it moved, and the panel follows it rather than emptying:
+   * the open folders, their loaded listings, the current directory and the selection carry over
+   * to the new path, a file on screen is read again there, and a draft stashed for a file that
+   * moved goes with it. The listings are re-read from the new paths — the refs are brought
+   * forward first, since the refresh reads them before the state lands.
+   */
+  const followMove = (from: string, to: string): void => {
+    const expandedNext = movedSet(expandedRef.current, from, to);
+    const listingsNext = movedListings(listingsRef.current, from, to);
+    expandedRef.current = expandedNext;
+    listingsRef.current = listingsNext;
+    setExpanded(expandedNext);
+    setListings(listingsNext);
+    const selectedNext = selectedPath === null ? null : movedPath(selectedPath, from, to);
+    if (selectedNext !== null) {
+      setSelectedPath(selectedNext);
+      setCurrentDir(parentDir(selectedNext));
+    } else {
+      const dirNext = movedPath(currentDirRef.current, from, to);
+      if (dirNext !== null) setCurrentDir(dirNext);
+    }
+    const open = previewRef.current?.path;
+    const openNext = open === undefined ? null : movedPath(open, from, to);
+    if (openNext !== null) void previewPath(openNext, { refresh: true });
+    const prefix = draftKey(scopeKey, "");
+    for (const [key, text] of [...unsavedDrafts]) {
+      const next = key.startsWith(prefix) ? movedPath(key.slice(prefix.length), from, to) : null;
+      if (next === null) continue;
+      unsavedDrafts.delete(key);
+      unsavedDrafts.set(draftKey(scopeKey, next), text);
+    }
+    refreshAll();
+    void locate(selectedNext ?? to);
+  };
+
   const applyRename = async (): Promise<void> => {
     const target = renameTarget;
-    const to = renameDraft.trim();
-    if (target === null || target.version === null || fileActionBusy) return;
+    const to = newEntryName(renameDraft);
+    if (target === null || !actionReady(target) || fileActionBusy) return;
     if (to === "" || to === target.path) {
       setRenameTarget(null);
       return;
     }
     setFileActionBusy(true);
     try {
-      await api.moveWorkspaceFile(sessionIdRef.current, {
+      await files.move({
         from: target.path,
         to,
-        ifVersion: target.version,
+        ...(target.kind === "file" && target.version !== null ? { ifVersion: target.version } : {}),
       });
       setRenameTarget(null);
-      // The file did not stop existing, it moved: the panel follows it rather than emptying.
-      if (selectedPath === target.path) {
-        setSelectedPath(to);
-        setCurrentDir(parentDir(to));
-      }
-      refreshAll();
+      followMove(target.path, to);
       toastSuccess(S.files.renamed(baseName(to)));
     } catch (err) {
-      reportFileActionError(err, target.path);
+      reportFileActionError(err, target.path, to);
     } finally {
       setFileActionBusy(false);
     }
@@ -969,7 +1068,7 @@ export function WorkspaceBrowser({
     if (target === null || target.version === null || fileActionBusy) return;
     setFileActionBusy(true);
     try {
-      await api.deleteWorkspaceFile(sessionIdRef.current, target.path, target.version);
+      await filesRef.current.remove(target.path, target.version);
       setRemoveTarget(null);
       if (selectedPath === target.path) setSelectedPath(null);
       refreshAll();
@@ -995,9 +1094,9 @@ export function WorkspaceBrowser({
           d === dir || !listingsRef.current.has(d) ? loadDir(d) : Promise.resolve(true),
         ),
       );
-      if (sessionIdRef.current === sessionId) setScrollTo({ path });
+      if (scopeKeyRef.current === scopeKey) setScrollTo({ path });
     },
-    [loadDir, sessionId],
+    [loadDir, scopeKey],
   );
 
   /** Selects a file in the tree and previews it; `locate` additionally loads the way down to it (an external open request). */
@@ -1019,10 +1118,12 @@ export function WorkspaceBrowser({
   // the first run (the mount already read it) and while no preview is open. Reading the path
   // from a ref keeps this effect keyed on the signal alone.
   //
-  // The file being edited is still not re-read — that would put the Agent's text under the
-  // user's hands. It is version-checked instead: the save can no longer clobber the Agent's
-  // write, but silence until then would leave the user typing into a file that has already
-  // moved, so the editor says so as soon as the turn lands.
+  // The file being edited is version-checked first. An editor holding nothing of the user's
+  // follows the file the way a code editor does: it takes the Agent's text, and the editor
+  // keeps the caret's line and the scroll (WorkspaceFileEditor). One with unsaved changes is
+  // never re-read — that would put the Agent's text under the user's hands — but silence until
+  // the save would leave the user typing into a file that has already moved, so the editor says
+  // so as soon as the turn lands, and the save's precondition turns into the conflict question.
   const lastReloadSignal = useRef(reloadSignal);
   useEffect(() => {
     if (reloadSignal === lastReloadSignal.current) return;
@@ -1035,18 +1136,48 @@ export function WorkspaceBrowser({
       void previewPath(open, { refresh: true });
       return;
     }
-    const sid = sessionIdRef.current;
+    const key = scopeKeyRef.current;
+    const source = filesRef.current;
+    const flagChanged = (version: string) =>
+      // Compared against the editor as it stands now, not the one captured above: it may have
+      // been closed and reopened on the Agent's own version while this was in flight, and that
+      // editor is not stale.
+      setEditor((e) =>
+        e !== null && e.path === open && e.version !== version && scopeKeyRef.current === key
+          ? { ...e, changedOnDisk: true }
+          : e,
+      );
     void (async () => {
       try {
-        const version = await fetchFileVersion(api.workspaceFileUrl(sid, open));
-        if (version === null) return;
-        // Compared against the editor as it stands now, not the one captured above: it may
-        // have been closed and reopened on the Agent's own version while this was in flight,
-        // and that editor is not stale.
-        setEditor((e) =>
-          e !== null && e.path === open && e.version !== version && sessionIdRef.current === sid
-            ? { ...e, changedOnDisk: true }
-            : e,
+        const version = await fetchFileVersion(source.fileUrl(open));
+        if (version === null || editorRef.current?.version === version) return;
+        if (isDirty(editorRef.current)) {
+          flagChanged(version);
+          return;
+        }
+        const result = await fetchTextPreview(source.fileUrl(open), false);
+        if (scopeKeyRef.current !== key) return;
+        // A file grown past what the editor can hold whole cannot be taken in: say it moved.
+        if (result === null || result.truncated) {
+          flagChanged(version);
+          return;
+        }
+        setEditor((e) => {
+          if (e === null || e.path !== open || e.version === result.version) return e;
+          // Typed into while the read was in flight: the text is the user's now.
+          if (isDirty(e)) return { ...e, changedOnDisk: true };
+          return {
+            ...e,
+            baseline: result.content,
+            draft: result.content,
+            version: result.version,
+            changedOnDisk: false,
+          };
+        });
+        setPreview((p) =>
+          p !== null && p.path === open
+            ? { ...p, content: result.content, truncated: false, version: result.version }
+            : p,
         );
       } catch {
         // A failed probe says nothing; the save's precondition is the guarantee.
@@ -1135,8 +1266,8 @@ export function WorkspaceBrowser({
     }
     const run = (searchSeq.current += 1);
     const timer = setTimeout(() => {
-      void api
-        .searchWorkspaceFiles(sessionId, needle)
+      void files
+        .search(needle)
         .then((res) => {
           if (searchSeq.current !== run) return;
           setSearchResult({ hits: res.hits, truncated: res.truncated });
@@ -1149,7 +1280,7 @@ export function WorkspaceBrowser({
         });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [query, sessionId]);
+  }, [query, files]);
 
   const openDirForFilter = useCallback(
     (dir: string) => {
@@ -1188,9 +1319,16 @@ export function WorkspaceBrowser({
 
   // ----------------------------------------------------------------------------- editing
 
+  /**
+   * Opens the editor on the file in the preview, where the preview was: the source view's
+   * scroll is read before anything awaits, and the editor opens at it with the caret at the
+   * start of the first line in view (WorkspaceFileEditor), so Edit moves nothing on screen.
+   */
   const startEdit = async (): Promise<void> => {
     const current = previewRef.current;
     if (current === null || !canEditPreview(current)) return;
+    const body = previewBodyRef.current;
+    const at = body === null ? undefined : { top: body.scrollTop, left: body.scrollLeft };
     // Content and version are read together and stored together, so one missing means both
     // are: an isolated HTML preview mounted without its text. Read it now, and refuse a
     // file the bounded read cannot hold whole — saving a partial text back would truncate
@@ -1199,7 +1337,7 @@ export function WorkspaceBrowser({
     let version = current.version;
     if (content === undefined || version === undefined) {
       try {
-        const result = await fetchTextPreview(api.workspaceFileUrl(sessionId, current.path), false);
+        const result = await fetchTextPreview(files.fileUrl(current.path), false);
         if (result === null || result.truncated) {
           toastError(S.files.editTooLarge(TEXT_PREVIEW_LIMIT / 1024));
           return;
@@ -1216,14 +1354,26 @@ export function WorkspaceBrowser({
       }
     }
     if (previewRef.current?.path !== current.path) return;
+    editorOpening.current = at;
     setEditor({ path: current.path, baseline: content, draft: content, version });
   };
+
+  // A file the New dialog just made: the editor opens on it as soon as its preview lands. Read
+  // off the committed preview, since that is what startEdit opens the editor on.
+  const editOnOpen = useRef<string | null>(null);
+  useEffect(() => {
+    if (preview === null || editOnOpen.current !== preview.path) return;
+    editOnOpen.current = null;
+    if (editorRef.current === null) void startEdit();
+    // startEdit is this render's own; the preview landing is the only trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
 
   const updateDraft = (draft: string): void => {
     const current = editorRef.current;
     if (current === null) return;
     setEditor({ ...current, draft });
-    const key = draftKey(sessionId, current.path);
+    const key = draftKey(scopeKey, current.path);
     if (draft === current.baseline) unsavedDrafts.delete(key);
     else unsavedDrafts.set(key, draft);
   };
@@ -1248,37 +1398,51 @@ export function WorkspaceBrowser({
    * server refuses it (409) if the file has been rewritten since — the conflict dialog then
    * offers `overwrite`, which is the same write with no precondition. The draft is never
    * dropped on a refusal: the editor stays exactly as the user left it.
+   *
+   * A save that lands leaves the editor open, as a code editor does: nothing remounts it, so
+   * the caret, the selection and the scroll stay where they were. What was written becomes the
+   * baseline — anything typed while the write was in flight stays unsaved on top of it — and
+   * the version the write produced is the next save's precondition. A server that reports no
+   * version leaves nothing safe to save against, so there the editor closes and the next Edit
+   * reads the file again.
    */
   const save = async (opts?: { overwrite?: boolean }): Promise<void> => {
     setSaveConfirm(false);
     setConflict(null);
     const current = editorRef.current;
     if (current === null) return;
-    const blob = new Blob([current.draft]);
+    const sent = current.draft;
+    const blob = new Blob([sent]);
     if (blob.size > WORKSPACE_UPLOAD_LIMIT_MB * MB_BYTES) {
       toastError(S.files.saveTooLarge(WORKSPACE_UPLOAD_LIMIT_MB));
       return;
     }
-    const sid = sessionId;
+    const key = scopeKey;
     setSaving(true);
     try {
-      await api.uploadWorkspaceFile(
-        sid,
+      const written = await files.write(
         current.path,
         await blobToBase64(blob),
         opts?.overwrite ? undefined : current.version,
       );
-      if (sessionIdRef.current !== sid) return;
-      unsavedDrafts.delete(draftKey(sid, current.path));
-      setEditor(null);
-      // The preview now shows what was written; a fresh nonce remounts an HTML iframe onto it.
-      // The bytes are known, the version the write produced is not — it is dropped rather
-      // than kept at its pre-save value, which would make the next Edit save against a
-      // version the file has already left. startEdit re-reads when it finds none.
+      if (scopeKeyRef.current !== key) return;
+      const stash = draftKey(key, current.path);
+      if (written === null) {
+        unsavedDrafts.delete(stash);
+        setEditor(null);
+      } else {
+        setEditor((e) =>
+          e !== null && e.path === current.path
+            ? { ...e, baseline: sent, version: written, changedOnDisk: false }
+            : e,
+        );
+        if (editorRef.current?.draft === sent) unsavedDrafts.delete(stash);
+      }
+      // The preview holds what was written; a fresh nonce remounts an HTML iframe onto it.
       const nonce = ++previewSeq;
       setPreview((p) =>
         p !== null && p.path === current.path
-          ? { ...p, content: current.draft, truncated: false, version: undefined, nonce }
+          ? { ...p, content: sent, truncated: false, version: written ?? undefined, nonce }
           : p,
       );
       const dir = parentDir(current.path);
@@ -1293,7 +1457,7 @@ export function WorkspaceBrowser({
       void loadDir(dir);
       toastSuccess(S.common.saved);
     } catch (err) {
-      if (sessionIdRef.current !== sid) return;
+      if (scopeKeyRef.current !== key) return;
       // The write precondition refused it: the file is no longer the one that was opened.
       // Ask rather than report — overwriting is a legitimate answer, it just has to be the
       // user's, and neither answer costs them their text.
@@ -1304,25 +1468,33 @@ export function WorkspaceBrowser({
       }
       toastError(apiErrorText(err));
     } finally {
-      if (sessionIdRef.current === sid) setSaving(false);
+      if (scopeKeyRef.current === key) setSaving(false);
     }
   };
 
-  const cancelEdit = (): void => {
-    void navigateGuarded(null, () => undefined);
+  /**
+   * Leaves the editor for the source view, asking first when there are unsaved changes. The
+   * source view comes back where the editor was scrolled, not where it was before Edit.
+   */
+  const stopEditing = (): void => {
+    const host = editorHost.current;
+    const at = host === null ? null : { top: host.scrollTop, left: host.scrollLeft };
+    void navigateGuarded(null, () => {
+      bodyScrollOnReturn.current = at;
+    });
   };
 
   // ------------------------------------------------------------------------------ upload
 
-  const doUpload = async (files: File[], dir: string): Promise<void> => {
-    const sid = sessionId;
-    setUploading({ done: 0, total: files.length });
+  const doUpload = async (picked: File[], dir: string): Promise<void> => {
+    const key = scopeKey;
+    setUploading({ done: 0, total: picked.length });
     const uploaded: string[] = [];
     try {
-      for (const [i, file] of files.entries()) {
+      for (const [i, file] of picked.entries()) {
         const b64 = await blobToBase64(file);
-        await api.uploadWorkspaceFile(sid, joinWorkspacePath(dir, file.name), b64);
-        if (sessionIdRef.current !== sid) return;
+        await files.write(joinWorkspacePath(dir, file.name), b64);
+        if (scopeKeyRef.current !== key) return;
         uploaded.push(file.name);
         // The row appears as each file lands; the listing is re-read afterwards for the
         // server's own size and time.
@@ -1334,15 +1506,15 @@ export function WorkspaceBrowser({
             mtime: new Date().toISOString(),
           }),
         );
-        setUploading({ done: i + 1, total: files.length });
+        setUploading({ done: i + 1, total: picked.length });
       }
       toastSuccess(S.files.uploadedCount(uploaded.length));
     } catch (err) {
       toastError(apiErrorText(err));
     } finally {
-      if (sessionIdRef.current === sid) setUploading(null);
+      if (scopeKeyRef.current === key) setUploading(null);
     }
-    if (sessionIdRef.current !== sid || uploaded.length === 0) return;
+    if (scopeKeyRef.current !== key || uploaded.length === 0) return;
     setExpanded((s) => withExpanded(s, dir, true));
     void loadDir(dir);
     // The first uploaded file opens, unless the editor holds typed changes — an upload is
@@ -1365,9 +1537,9 @@ export function WorkspaceBrowser({
       );
     }
     if (accepted.length === 0) return;
-    const sid = sessionId;
+    const key = scopeKey;
     if (!listingsRef.current.has(dir) && !(await loadDir(dir))) return;
-    if (sessionIdRef.current !== sid) return;
+    if (scopeKeyRef.current !== key) return;
     const existing = new Set((listingsRef.current.get(dir) ?? []).map((entry) => entry.name));
     const clashes = accepted.filter((f) => existing.has(f.name)).map((f) => f.name);
     if (clashes.length > 0) setPendingUpload({ files: accepted, clashes, dir });
@@ -1375,16 +1547,71 @@ export function WorkspaceBrowser({
   };
 
   const onPick = (e: ChangeEvent<HTMLInputElement>): void => {
-    const files = e.target.files ? [...e.target.files] : [];
+    const picked = e.target.files ? [...e.target.files] : [];
     e.target.value = "";
-    if (files.length > 0) void stageUpload(files, currentDirRef.current);
+    if (picked.length > 0) void stageUpload(picked, currentDirRef.current);
   };
 
   /** The menu's own picker: same staging, but into the folder that was right-clicked. */
   const onMenuPick = (e: ChangeEvent<HTMLInputElement>): void => {
-    const files = e.target.files ? [...e.target.files] : [];
+    const picked = e.target.files ? [...e.target.files] : [];
     e.target.value = "";
-    if (files.length > 0) void stageUpload(files, menuUploadDir.current);
+    if (picked.length > 0) void stageUpload(picked, menuUploadDir.current);
+  };
+
+  // --------------------------------------------------------------------------------- new
+
+  /**
+   * Opens the New dialog for a text file or a folder in `dir`. A text file starts as
+   * `untitled.txt` with the stem selected, so typing replaces the name and keeps the extension;
+   * a folder starts empty.
+   */
+  const beginCreate = (kind: "file" | "dir", dir: string): void => {
+    setCreateName(kind === "file" ? DEFAULT_TEXT_FILE_NAME : "");
+    setCreateTarget({ kind, dir });
+  };
+
+  /**
+   * Creates what the dialog names. An existing name is refused by the server with nothing
+   * written, and the dialog stays open on the name so it can be changed. A new folder opens in
+   * the tree and becomes the current directory, so the next upload or New lands in it. A new
+   * text file opens in the editor — unless the editor holds typed changes, which a new file is
+   * no reason to ask about (the rule uploads follow): then it is only shown in the tree.
+   */
+  const applyCreate = async (): Promise<void> => {
+    const target = createTarget;
+    const name = newEntryName(createName);
+    if (target === null || name === "" || creating) return;
+    const path = joinWorkspacePath(target.dir, name);
+    const key = scopeKey;
+    setCreating(true);
+    try {
+      await files.create({ path, kind: target.kind });
+      if (scopeKeyRef.current !== key) return;
+      setCreateTarget(null);
+      toastSuccess(S.files.created(baseName(path)));
+      if (target.kind === "dir") {
+        setCurrentDir(path);
+        setExpanded((s) => withExpanded(s, path, true));
+        await locate(path);
+        if (scopeKeyRef.current === key) void loadDir(path);
+        return;
+      }
+      if (isDirty(editorRef.current)) {
+        await locate(path);
+        return;
+      }
+      editOnOpen.current = path;
+      openFile(path, { locate: true });
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "target_exists") {
+        toastError(S.files.targetExists(path));
+      } else {
+        toastError(apiErrorText(err));
+      }
+    } finally {
+      if (scopeKeyRef.current === key) setCreating(false);
+    }
   };
 
   /**
@@ -1395,7 +1622,7 @@ export function WorkspaceBrowser({
    */
   const revealInFolder = async (filePath: string): Promise<void> => {
     try {
-      await api.revealWorkspaceFile(sessionId, filePath);
+      await files.reveal(filePath);
     } catch (err) {
       toastError(apiErrorText(err));
     }
@@ -1431,19 +1658,20 @@ export function WorkspaceBrowser({
   };
 
   /**
-   * The tree's context menu, hung on the whole pane. A gesture that lands between rows — the
-   * search box, the empty space below the last row — resolves no target, so nothing is
-   * suppressed and the browser's own menu stands, which is what the search box needs to be
-   * pasteable into.
+   * The tree's context menu, hung on the whole pane. A row opens the menu for its entry, and the
+   * blank space under the rows opens the New menu for the Workspace root. A gesture on the
+   * search box resolves no target, so nothing is suppressed and the browser's own menu stands,
+   * which is what the search box needs to be pasteable into.
    */
   const treeMenuProps = {
     onContextMenu: (e: ReactMouseEvent) => {
       const row = hitRow(e.target);
-      if (row === null) return;
+      const blank = row === null ? hitBlank(e.target) : null;
+      if (row === null && blank === null) return;
       // Before the hook reads it: the anchor for a keyboard-synthesized contextmenu is the
       // row's own box, and the hook measures whatever `rowRef` currently points at.
-      treeMenu.rowRef(row.el);
-      setTreeMenuTarget({ path: row.path, kind: row.kind });
+      treeMenu.rowRef(row?.el ?? blank);
+      setTreeMenuTarget(row === null ? "blank" : { path: row.path, kind: row.kind });
       treeMenu.rowProps.onContextMenu(e);
     },
     onKeyDown: (e: ReactKeyboardEvent) => {
@@ -1463,9 +1691,10 @@ export function WorkspaceBrowser({
       // and running this for every click would re-render the panel on each one.
       if (!isLongPressPointer(e.pointerType)) return;
       const row = hitRow(e.target);
-      if (row === null) return;
-      treeMenu.rowRef(row.el);
-      setTreeMenuTarget({ path: row.path, kind: row.kind });
+      const blank = row === null ? hitBlank(e.target) : null;
+      if (row === null && blank === null) return;
+      treeMenu.rowRef(row?.el ?? blank);
+      setTreeMenuTarget(row === null ? "blank" : { path: row.path, kind: row.kind });
       treeMenu.rowProps.onPointerDown(e);
     },
     onPointerMove: treeMenu.rowProps.onPointerMove,
@@ -1596,9 +1825,9 @@ export function WorkspaceBrowser({
   const onDrop = (e: ReactDragEvent<HTMLDivElement>): void => {
     const { accept, targetDir } = applyDrag("drop", e, true);
     if (!accept) return;
-    const { files, dirs } = pickDroppedFiles(e.dataTransfer);
-    if (dirs.length > 0) toastError(S.files.folderDropSkipped(dirs.join(", ")));
-    if (files.length > 0) void stageUpload(files, targetDir);
+    const dropped = pickDroppedFiles(e.dataTransfer);
+    if (dropped.dirs.length > 0) toastError(S.files.folderDropSkipped(dropped.dirs.join(", ")));
+    if (dropped.files.length > 0) void stageUpload(dropped.files, targetDir);
   };
 
   // ------------------------------------------------------------------------------ render
@@ -1646,6 +1875,8 @@ export function WorkspaceBrowser({
     download: S.files.download,
     rename: S.files.renameTitle,
     delete: S.common.delete,
+    newTextFile: S.files.newTextFile,
+    newFolder: S.files.newFolder,
   };
 
   // The tree pane: its body says, in order, that the root listing failed, that it is on its way,
@@ -1662,6 +1893,40 @@ export function WorkspaceBrowser({
       }}
       actions={
         <>
+          {/* New: a text file or a folder, in the current directory — the one the breadcrumbs
+              name and uploads land in. */}
+          <Dropdown
+            open={newMenuOpen}
+            setOpen={setNewMenuOpen}
+            portal={{ direction: "down", align: "right" }}
+            className="shrink-0"
+            menuClass="w-max min-w-36"
+            button={
+              <button
+                type="button"
+                aria-label={S.files.newMenu}
+                data-tooltip={S.files.newMenu}
+                aria-haspopup="menu"
+                aria-expanded={newMenuOpen}
+                onClick={() => setNewMenuOpen(!newMenuOpen)}
+                className={iconActionClass}
+              >
+                <GlyphIcon d={ICONS.plus} size={ICON_SIZE.iconButton} />
+              </button>
+            }
+          >
+            <WorkspaceNewMenuRows
+              labels={fileMenuLabels}
+              onNewFile={() => {
+                setNewMenuOpen(false);
+                beginCreate("file", currentDirRef.current);
+              }}
+              onNewFolder={() => {
+                setNewMenuOpen(false);
+                beginCreate("dir", currentDirRef.current);
+              }}
+            />
+          </Dropdown>
           <Tooltip label={S.files.refresh} placement="bottom" className="shrink-0">
             <button
               type="button"
@@ -1701,8 +1966,9 @@ export function WorkspaceBrowser({
       note={
         searchResult?.truncated === true ? S.files.searchTruncated(searchResult.hits.length) : null
       }
-      // The row menu. The anchor is the point the gesture landed on rather than any element of
-      // the pane, and the panel is portaled (the same shape the sidebar's session row uses).
+      // The row menu, or the New menu for the blank space under the rows. The anchor is the point
+      // the gesture landed on rather than any element of the pane, and the panel is portaled (the
+      // same shape the sidebar's session row uses).
       menu={
         treeMenuTarget !== null && (
           <Dropdown
@@ -1722,33 +1988,55 @@ export function WorkspaceBrowser({
             menuClass="w-max min-w-36 max-w-[calc(100vw-2rem)]"
             button={null}
           >
-            <WorkspaceFileMenuRows
-              target={treeMenuTarget}
-              labels={fileMenuLabels}
-              downloadHref={(path) => api.workspaceFileUrl(sessionId, path, true)}
-              downloadName={baseName}
-              onCopyPath={(t) => {
-                closeTreeMenu();
-                copyPath(t);
-              }}
-              onAddToChat={(t) => {
-                closeTreeMenu();
-                addToChat(t);
-              }}
-              onUploadInto={(dir) => {
-                closeTreeMenu();
-                uploadInto(dir);
-              }}
-              onRename={(t) => {
-                closeTreeMenu();
-                beginFileAction(t.path, "rename");
-              }}
-              onDelete={(t) => {
-                closeTreeMenu();
-                beginFileAction(t.path, "delete");
-              }}
-              onClose={closeTreeMenu}
-            />
+            {treeMenuTarget === "blank" ? (
+              <WorkspaceNewMenuRows
+                labels={fileMenuLabels}
+                onNewFile={() => {
+                  closeTreeMenu();
+                  beginCreate("file", "");
+                }}
+                onNewFolder={() => {
+                  closeTreeMenu();
+                  beginCreate("dir", "");
+                }}
+              />
+            ) : (
+              <WorkspaceFileMenuRows
+                target={treeMenuTarget}
+                labels={fileMenuLabels}
+                downloadHref={(path) => files.fileUrl(path, true)}
+                downloadName={baseName}
+                onCopyPath={(t) => {
+                  closeTreeMenu();
+                  copyPath(t);
+                }}
+                onAddToChat={(t) => {
+                  closeTreeMenu();
+                  addToChat(t);
+                }}
+                onUploadInto={(dir) => {
+                  closeTreeMenu();
+                  uploadInto(dir);
+                }}
+                onNewFile={(dir) => {
+                  closeTreeMenu();
+                  beginCreate("file", dir);
+                }}
+                onNewFolder={(dir) => {
+                  closeTreeMenu();
+                  beginCreate("dir", dir);
+                }}
+                onRename={(t) => {
+                  closeTreeMenu();
+                  beginFileAction(t.path, "rename", t.kind);
+                }}
+                onDelete={(t) => {
+                  closeTreeMenu();
+                  beginFileAction(t.path, "delete");
+                }}
+                onClose={closeTreeMenu}
+              />
+            )}
           </Dropdown>
         )
       }
@@ -1801,7 +2089,7 @@ export function WorkspaceBrowser({
           type="button"
           aria-pressed={richView === key}
           onClick={() => setRichView(key)}
-          className={`rounded px-2 py-0.5 text-xs transition-colors duration-150 ${
+          className={`whitespace-nowrap rounded px-2 py-0.5 text-xs transition-colors duration-150 ${
             richView === key
               ? "bg-white font-medium text-gray-900 shadow-sm dark:bg-gray-600 dark:text-gray-100"
               : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
@@ -1867,7 +2155,7 @@ export function WorkspaceBrowser({
         {/\.html?$/i.test(preview.name) && (
           <Tooltip label={openInNewTabLabel} placement="bottom" className="shrink-0">
             <a
-              href={api.workspaceFilePreviewUrl(sessionId, preview.path)}
+              href={files.previewUrl(preview.path)}
               target="_blank"
               rel="noopener noreferrer"
               aria-label={openInNewTabLabel}
@@ -1892,7 +2180,7 @@ export function WorkspaceBrowser({
       // same file is re-read, so only a remount re-requests the bytes the agent just rewrote.
       return {
         kind: "image",
-        src: api.workspaceFileUrl(sessionId, p.path),
+        src: files.fileUrl(p.path),
         alt: p.name,
         reloadKey: p.nonce,
       };
@@ -1900,7 +2188,7 @@ export function WorkspaceBrowser({
     if (p.kind === "pdf") {
       return {
         kind: "pdf",
-        src: api.workspaceFileUrl(sessionId, p.path),
+        src: files.fileUrl(p.path),
         title: p.name,
         reloadKey: p.nonce,
       };
@@ -1923,7 +2211,7 @@ export function WorkspaceBrowser({
             // re-opened after the agent rewrote it.
             <iframe
               key={p.nonce}
-              src={api.workspaceFilePreviewUrl(sessionId, p.path)}
+              src={files.previewUrl(p.path)}
               title={p.name}
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
               className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
@@ -1972,7 +2260,7 @@ export function WorkspaceBrowser({
             <img
               src={
                 typeof src === "string" && !EXTERNAL_REF_RE.test(src)
-                  ? `${api.workspaceFileUrl(sessionId, resolveRelative(parentDir(p.path), src))}&v=${p.nonce}`
+                  ? `${files.fileUrl(resolveRelative(parentDir(p.path), src))}&v=${p.nonce}`
                   : src
               }
               alt={alt ?? ""}
@@ -1996,7 +2284,7 @@ export function WorkspaceBrowser({
             const target = resolveRelative(parentDir(p.path), href);
             return (
               <a
-                href={api.workspaceFileUrl(sessionId, target)}
+                href={files.fileUrl(target)}
                 onClick={(e) => {
                   e.preventDefault();
                   openFile(target, { locate: true });
@@ -2056,11 +2344,11 @@ export function WorkspaceBrowser({
             is open: a `Button size="sm"` stands 29px against these 27px, and the header would
             grow by two pixels the moment Edit was pressed. The save keeps no primary tint —
             it opens a confirmation whose own button carries that weight. */}
-        <Tooltip label={S.common.cancel} placement="bottom" className="shrink-0">
+        <Tooltip label={S.files.stopEditing} placement="bottom" className="shrink-0">
           <button
             type="button"
-            aria-label={S.common.cancel}
-            onClick={cancelEdit}
+            aria-label={S.files.stopEditing}
+            onClick={stopEditing}
             disabled={saving}
             className={`${iconActionClass} disabled:opacity-40`}
           >
@@ -2096,7 +2384,7 @@ export function WorkspaceBrowser({
         {richToggle}
         <Tooltip label={S.files.download} placement="bottom" className="shrink-0">
           <a
-            href={api.workspaceFileUrl(sessionId, preview.path, true)}
+            href={files.fileUrl(preview.path, true)}
             download={preview.name}
             aria-label={S.files.download}
             className={iconActionClass}
@@ -2155,6 +2443,8 @@ export function WorkspaceBrowser({
             // its own would only refuse to colour a file for no gain. The bound left is the
             // preview cap, which is all a load can put here.
             highlight={editing.draft.length <= TEXT_PREVIEW_LIMIT}
+            initialScroll={editorOpening.current}
+            hostRef={editorHost}
             onChange={updateDraft}
             onSave={requestSave}
             // The editor.save binding (⌘S / Ctrl+S by default), read from the keymap at the
@@ -2168,6 +2458,14 @@ export function WorkspaceBrowser({
         // The same element is the menu's keyboard anchor and its scroll owner: a scroll of this
         // box moves the point the panel hangs off.
         previewMenu.rowRef(el);
+        // Back from the editor: the source view takes up where the editor was scrolled. Both
+        // lay out the same surface, so one offset is one line in either.
+        const at = bodyScrollOnReturn.current;
+        if (el !== null && at !== null) {
+          bodyScrollOnReturn.current = null;
+          el.scrollTop = at.top;
+          el.scrollLeft = at.left;
+        }
       }}
       bodyProps={{
         onContextMenu: openPreviewMenu,
@@ -2203,7 +2501,7 @@ export function WorkspaceBrowser({
             <WorkspaceFileMenuRows
               target={{ path: shown.path, kind: "file" }}
               labels={fileMenuLabels}
-              downloadHref={(path) => api.workspaceFileUrl(sessionId, path, true)}
+              downloadHref={(path) => files.fileUrl(path, true)}
               downloadName={baseName}
               onCopyPath={(t) => {
                 previewMenu.close();
@@ -2282,7 +2580,7 @@ export function WorkspaceBrowser({
                 : "text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
             }`}
           >
-            <GlyphIcon d={PANEL_LEFT_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.panelLeft} size={ICON_SIZE.iconButton} />
           </button>
         )}
         {/* The path, read out and not navigable: the tree beside it is what navigates, and a
@@ -2398,13 +2696,14 @@ export function WorkspaceBrowser({
       </ConfirmModal>
 
       {/* Rename or move: one field holding the whole Workspace-relative path, so a rename and a
-          move are one action rather than two that differ only in how much of the path changed. */}
+          move are one action rather than two that differ only in how much of the path changed.
+          A folder moves whole, with everything under it. */}
       <ConfirmModal
         open={renameTarget !== null}
         title={S.files.renameTitle}
         confirmLabel={S.files.renameConfirm}
         cancelLabel={S.common.cancel}
-        confirmDisabled={renameTarget?.version == null || renameDraft.trim() === ""}
+        confirmDisabled={!actionReady(renameTarget) || renameDraft.trim() === ""}
         busy={fileActionBusy}
         tone="primary"
         onClose={() => setRenameTarget(null)}
@@ -2420,6 +2719,40 @@ export function WorkspaceBrowser({
           onChange={(e) => setRenameDraft(e.target.value)}
         />
         <FileActionVersionNote target={renameTarget} />
+      </ConfirmModal>
+      {/* New text file or folder: a name under the directory it goes in. Enter creates, as the
+          button does; a name the server finds taken leaves the dialog open on it. */}
+      <ConfirmModal
+        open={createTarget !== null}
+        title={createTarget?.kind === "dir" ? S.files.newFolder : S.files.newTextFile}
+        tone="primary"
+        confirmLabel={S.files.createConfirm}
+        cancelLabel={S.common.cancel}
+        confirmDisabled={newEntryName(createName) === ""}
+        busy={creating}
+        onClose={() => setCreateTarget(null)}
+        onConfirm={() => void applyCreate()}
+      >
+        <Input
+          label={createTarget?.kind === "dir" ? S.files.newFolderName : S.files.newFileName}
+          size="sm"
+          value={createName}
+          hint={S.files.createHint(dirLabel(createTarget?.dir ?? ""))}
+          autoFocus
+          {...noAutofill}
+          // Typing replaces the stem and keeps the extension (`untitled` of `untitled.txt`).
+          onFocus={(e) => {
+            const input = e.currentTarget;
+            if (input.value === DEFAULT_TEXT_FILE_NAME)
+              input.setSelectionRange(0, stemEnd(input.value));
+          }}
+          onChange={(e) => setCreateName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+            e.preventDefault();
+            void applyCreate();
+          }}
+        />
       </ConfirmModal>
       <ConfirmModal
         open={removeTarget !== null}

@@ -13,9 +13,12 @@
  * eleventh, `ui-activity` (a step of the agent's work: Frost sweeps a highlight across its label,
  * Console renders a transcript; user decision, 2026-09-29), the twelfth and thirteenth,
  * `ui-notice` and `ui-chart` (notices and charts that differ per theme; the same day), the
- * fourteenth, `ui-scrim` (the dimmed backdrop behind a dialog, which Frost blurs; 2026-09-30),
- * and the fifteenth, `ui-stream` (an assistant reply as it arrives: Frost's soft veil, Console's
- * block cursor; the same day). This suite holds the source to it:
+ * fourteenth, `ui-scrim` (the dimmed backdrop behind a dialog; 2026-09-30),
+ * the fifteenth, `ui-stream` (an assistant reply as it arrives: Frost's soft veil, Console's
+ * block cursor; the same day), the sixteenth, `ui-glyph` (an icon drawn in every theme's
+ * style, of which the theme's CSS shows its own), and the seventeenth, `ui-widget` (a reply's
+ * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04). This suite holds the
+ * source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -28,15 +31,19 @@
  *   therefore reads `decor` on the call site and holds its enclosing component to the list, so
  *   the renderer being a host loosens nothing;
  * - the markup the recipes select on: `.ui-live` names its signal in `data-live`, `.ui-display`
- *   sits on an h1, `.ui-frame`'s slots are `head`, `body`, `foot` or `pane`, `.ui-shell`'s are
+ *   sits on an h1, a `.ui-glass` that names its anatomy names `tile`, `.ui-frame`'s slots are `head`, `body`, `foot` or `pane`, `.ui-shell`'s are
  *   `nav`, `main` or `dock`, `.ui-field`'s are `label`, `control` or `hint`, a tree row's
  *   `data-depth` is a digit 0–8 and its `data-last` is `"true"`, a decorative icon's
  *   `data-role` is one of the four the recipes tint apart, `.ui-activity` names its kind
- *   (`thinking` / `tool`), its state (`running` / `done` / `error`) and its slots (`label`,
- *   `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`, `title`,
- *   `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
- *   (`caret`), and a chart's parts are the seven the recipes style, wherever a `data-part` is
- *   written.
+ *   (`thinking` / `tool` / `event`), its state (`running` / `done` / `error`) and its slots
+ *   (`label`, `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`,
+ *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
+ *   (`caret`), `.ui-widget` its kind (the four widgets) and its slots (`head`, `body`, `foot`),
+ *   a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
+ *   wherever a `data-part` is written, and a glyph's sets are the three (`line`, `octicons`,
+ *   `pixel`), wherever a `data-set` is written; and a fold's phase, which the foundation's layout
+ *   motion turns into a track, is one of the three it knows (`open`, `closing`, `settled`)
+ *   wherever a `data-fold` is written.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -63,6 +70,8 @@ const APPENDIX_A = [
   "ui-chart",
   "ui-scrim",
   "ui-stream",
+  "ui-glyph",
+  "ui-widget",
 ];
 
 /**
@@ -71,15 +80,17 @@ const APPENDIX_A = [
  * it exists: the last test below fails on a host no scanned file declares.
  *
  * Glass is for the layers that float over the page (the composer card and its slash list, dialogs,
- * menus, popovers, tooltips, the floating launcher); the eyebrow and display rungs for the
+ * menus, popovers, tooltips, the floating launcher) and for a plugin or skill tile; the eyebrow and display rungs for the
  * sidebar's list label and the page titles; live marks for the spinner, a pulsing state dot, the
  * machines page's working marks and the caret of a reply still streaming in; frames for the
  * transcript's cards, the code block, the page's cards and a table that is its own box; the shell
  * for the app window; a decorative icon for the rows and headers whose label already says what the
  * icon says (a nav row's glyph in the sidebar or a rail, a group header's, a menu row's glyph, a
  * tab, an empty state) — a session row is not a host, its avatar and marks carry information; a
- * tree for a file tree and a work group's steps; a field for a settings row; activity for the
- * transcript's work in progress (the work group's header, a tool call, the thinking row).
+ * tree for a file tree and the rows under an activity card's head; a field for a settings row;
+ * activity for the transcript's work in progress and the harness's events — the activity card's
+ * head, its rows (a thinking step, a tool call, a compaction's section, an MCP server) and the
+ * one-line note.
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The composer's card and the slash list that opens over it (W6) float with the menus.
@@ -98,6 +109,8 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     // conversation with content moving underneath.
     "LauncherBall",
     "LauncherFan",
+    // A plugin or skill tile (`data-glass="tile"`): the one glass that does not float.
+    "SkillTile",
   ],
   // `Text` carries it for its eyebrow role (W7), the one door a group label takes in new code —
   // the sidebar's list label among them (W7).
@@ -105,9 +118,18 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The page titles are `PageHeader`'s; the draft view's hero writes its own.
   "ui-display": ["Heading", "PageHeader", "EmptyState", "DraftView"],
   "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar", "StreamingCaret"],
-  // The transcript's cards (the tool call, the work group, the changes card at a Task's foot) and
-  // the code block, and the page-level boxes (W4): the card and a table that is its own box.
-  "ui-frame": ["ToolCallCard", "WorkGroup", "ChangesCard", "CodeBlock", "Card", "Table"],
+  // The transcript's cards (the tool call, the activity card — the work group and the harness's
+  // events — the changes card at a Task's foot, and the one-line note) and the code block, and the
+  // page-level boxes (W4): the card and a table that is its own box.
+  "ui-frame": [
+    "ToolCallCard",
+    "ActivityGroup",
+    "ChangesCard",
+    "TranscriptNote",
+    "CodeBlock",
+    "Card",
+    "Table",
+  ],
   // The page tab bar, and a dock's tab strip (W7).
   "ui-underline-nav": ["Tabs", "DockTabs"],
   // The app window (W7: the package's shell; the web's layout route renders it).
@@ -121,23 +143,29 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "Tabs",
     "EmptyState",
   ],
-  "ui-tree": ["FileTree", "WorkGroup"],
+  "ui-tree": ["FileTree", "ActivityGroup"],
   "ui-field": ["Field", "PrefRow", "SettingRow"],
-  "ui-activity": ["WorkGroup", "ToolCallCard", "DisclosureRow"],
+  // The activity family: the card, the row (a tool call's included) and the one-line note.
+  "ui-activity": ["ActivityGroup", "DisclosureRow", "TranscriptNote"],
   // The Web App's notices (2026-09-29): the toast, and the one shared strip every inline notice
   // renders through. The charts: the plot frame (its children — the trend, requests, token-bar
   // and score charts — carry parts, not the hook), the token donut, the sparkline and the ring.
   "ui-notice": ["Toaster", "NoticeStrip"],
   // The Trace timeline draws its lanes and spans as HTML (`grid` on a lane track, `bar` on a
   // span with a 1-based `data-series`), so the chart recipes carry HTML spellings beside the
-  // SVG ones.
-  "ui-chart": ["ChartFrame", "TokenDonut", "Sparkline", "Ring", "TimelineChart"],
+  // SVG ones. A weather widget's next hours are a line chart of their own (2026-10-04).
+  "ui-chart": ["ChartFrame", "TokenDonut", "Sparkline", "Ring", "TimelineChart", "WeatherHourly"],
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
   // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
   "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],
-  // An assistant reply as it arrives (2026-09-30): the reply body the transcript renders and the
-  // gallery frames on its own.
-  "ui-stream": ["AssistantText"],
+  // Text as it arrives (2026-09-30): the one streaming body (2026-10-03) — the reply through
+  // AssistantText, a thinking row's text, a compaction's summary and a tool call's output.
+  "ui-stream": ["StreamText"],
+  // An icon in every theme's style: the two icon renderers, a registry glyph's and a mark's.
+  "ui-glyph": ["GlyphIcon", "GlyphMark"],
+  // A reply's widgets (2026-10-04): the one surface the weather, clock, countdown and metrics
+  // blocks render on.
+  "ui-widget": ["WidgetSurface"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -148,15 +176,24 @@ const SHELL_SLOTS = new Set(["nav", "main", "dock"]);
 const FIELD_SLOTS = new Set(["label", "control", "hint"]);
 const LIVE_SIGNALS = new Set(["dot", "caret", "spinner", "bar"]);
 const ICON_ROLES = new Set(["nav", "group", "menu", "empty"]);
-const ACTIVITY_KINDS = new Set(["thinking", "tool"]);
+const ACTIVITY_KINDS = new Set(["thinking", "tool", "event"]);
 const ACTIVITY_STATES = new Set(["running", "done", "error"]);
 const ACTIVITY_SLOTS = new Set(["label", "detail", "progress", "mark", "toggle", "toggle-end"]);
 const NOTICE_TONES = new Set(["info", "success", "warning", "danger", "neutral"]);
 const NOTICE_SLOTS = new Set(["icon", "title", "body", "actions"]);
 const STREAM_STATES = new Set(["streaming", "done"]);
 const STREAM_SLOTS = new Set(["caret"]);
+const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics"]);
+const WIDGET_SLOTS = new Set(["head", "body", "foot"]);
+/** The glass anatomies a recipe dresses apart from a floating layer: a plugin or skill tile. */
+const GLASS_KINDS = new Set(["tile"]);
 /** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
 const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label"]);
+/** A glyph's one part (the duotone body under its line drawing), and its three sets. */
+const GLYPH_PARTS = new Set(["duo"]);
+const GLYPH_SETS = new Set(["line", "octicons", "pixel"]);
+/** A fold's phases, the three the foundation's `[data-layout-motion][data-fold]` rules read. */
+const FOLD_PHASES = new Set(["open", "closing", "settled"]);
 /** The icon renderers: a `decor` prop on one of these is the decorative-icon hook applied. */
 const ICON_RENDERERS = new Set(["GlyphIcon"]);
 /** A tree row's depth: the eight levels the recipes spell out, and the roots. */
@@ -210,7 +247,7 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the fifteen of Appendix A, each with its hosts", () => {
+  it("are the seventeen of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });
@@ -290,10 +327,27 @@ describe("style hooks", () => {
         if (names.has("ui-display") && element.intrinsic && element.tag !== "h1" && level !== "1") {
           problems.push(`${at} .ui-display belongs on an h1`);
         }
+        const glass = element.attributes.get("data-glass");
+        if (names.has("ui-glass") && typeof glass === "string" && !GLASS_KINDS.has(glass)) {
+          problems.push(`${at} .ui-glass data-glass="${glass}" is not tile`);
+        }
         if (names.has("ui-frame")) {
           for (const { slot } of childSlots(element)) {
             if (!FRAME_SLOTS.has(slot)) {
               problems.push(`${at} .ui-frame slot "${slot}" is not head, body, foot or pane`);
+            }
+          }
+        }
+        if (names.has("ui-widget")) {
+          const widget = element.attributes.get("data-widget");
+          if (typeof widget === "string" && !WIDGET_KINDS.has(widget)) {
+            problems.push(
+              `${at} .ui-widget data-widget="${widget}" is not weather|clock|countdown|metrics`,
+            );
+          }
+          for (const { slot } of childSlots(element)) {
+            if (!WIDGET_SLOTS.has(slot)) {
+              problems.push(`${at} .ui-widget slot "${slot}" is not head, body or foot`);
             }
           }
         }
@@ -322,7 +376,7 @@ describe("style hooks", () => {
           const kind = element.attributes.get("data-kind");
           if (kind !== null && (typeof kind !== "string" || !ACTIVITY_KINDS.has(kind))) {
             problems.push(
-              `${at} .ui-activity needs data-kind="thinking|tool", has ${String(kind)}`,
+              `${at} .ui-activity needs data-kind="thinking|tool|event", has ${String(kind)}`,
             );
           }
           const state = element.attributes.get("data-state");
@@ -372,8 +426,18 @@ describe("style hooks", () => {
         // A chart's parts are written wherever a mark is drawn, inside the frame's svg or by a
         // component that renders into it: every literal `data-part` is one the recipes style.
         const part = element.attributes.get("data-part");
-        if (typeof part === "string" && !CHART_PARTS.has(part)) {
-          problems.push(`${at} data-part="${part}" is not grid|axis|series|area|bar|point|label`);
+        if (typeof part === "string" && !CHART_PARTS.has(part) && !GLYPH_PARTS.has(part)) {
+          problems.push(
+            `${at} data-part="${part}" is not grid|axis|series|area|bar|point|label or duo`,
+          );
+        }
+        const set = element.attributes.get("data-set");
+        if (typeof set === "string" && !GLYPH_SETS.has(set)) {
+          problems.push(`${at} data-set="${set}" is not line|octicons|pixel`);
+        }
+        const fold = element.attributes.get("data-fold");
+        if (typeof fold === "string" && !FOLD_PHASES.has(fold)) {
+          problems.push(`${at} data-fold="${fold}" is not open|closing|settled`);
         }
         // Tree rows are written by the host, wherever it renders them: every literal depth and
         // last mark in the package must be what the recipes select on.
@@ -500,6 +564,28 @@ describe("the hook checks, on known shapes", () => {
     expect(rows[1]!.attributes.get("data-branch")).toBe(true);
     const field = analysis.elements.find((e) => e.classes.some((t) => t.utility === "ui-field"))!;
     expect(childSlots(field).map((s) => s.slot)).toEqual(["label", "control"]);
+  });
+
+  it("read a fold's phase as the foundation does: a literal is judged, an expression is not", () => {
+    const analysis = analyzeFile(
+      file(
+        "e.tsx",
+        [
+          "export function Folds({ phase }: { phase: string }) {",
+          "  return (",
+          "    <>",
+          '      <div data-layout-motion data-fold="closing" />',
+          '      <div data-layout-motion data-fold="shut" />',
+          "      <div data-layout-motion data-fold={phase} />",
+          "    </>",
+          "  );",
+          "}",
+        ].join("\n"),
+      ),
+    );
+    const phases = analysis.elements.map((e) => e.attributes.get("data-fold"));
+    expect(phases).toEqual(["closing", "shut", null]);
+    expect(phases.filter((p) => typeof p === "string" && !FOLD_PHASES.has(p))).toEqual(["shut"]);
   });
 
   it("read a stream's state and its caret as the recipes do", () => {

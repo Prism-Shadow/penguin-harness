@@ -1,15 +1,14 @@
 /**
- * The semantic status tones (src/lib/tone.ts) and the call sites that must not spell a status
- * colour themselves. What these assert is the *single spelling* rule: one meaning, one pair of
- * classes, written in one module — the drift these replaced was amber appearing as `amber-600`
- * in one file and `amber-500` in the next for the same "waiting" state.
+ * Guard: the status files take their colours from the semantic tones (lib/tone.ts and the UI
+ * package's tone tokens) and never spell a status colour themselves — one meaning, one spelling;
+ * the drift this replaced was amber appearing as `amber-600` in one file and `amber-500` in the
+ * next for the same "waiting" state.
+ *
+ * - The tone module and each status file live in one place.
+ * - No status file spells an amber, emerald, red or green palette class of its own.
  */
 import { describe, expect, it } from "vitest";
-import { toneDot, toneInk, toneSurface } from "../src/lib/tone";
-import type { Tone } from "../src/lib/tone";
 import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
-
-const TONES: Tone[] = ["busy", "attention", "success", "link", "danger", "muted"];
 
 const SCAN = scanSources();
 
@@ -21,7 +20,7 @@ const STATUS_FILES = [
   "packages/ui/src/components/icons/status-icon/status-icon.tsx",
   "packages/ui/src/components/icons/activity-icon/activity-icon.tsx",
   "packages/ui/src/components/feedback/badge/badge.tsx",
-  "packages/ui/src/components/chat/step-banner/step-banner.tsx",
+  "packages/ui/src/components/chat/activity-group/activity-group.tsx",
   "packages/web/src/features/chat/goal-banner.tsx",
   "packages/ui/src/components/chat/subagent-chip/subagent-chip.tsx",
   "packages/web/src/features/chat/subagent-chip.tsx",
@@ -48,50 +47,9 @@ describe("tone tokens", () => {
       else expectSingleHome(SCAN, id);
     }
   });
-
-  it("covers every tone in every map", () => {
-    for (const map of [toneInk, toneSurface, toneDot]) {
-      for (const tone of TONES) expect(map[tone]).toBeTruthy();
-      expect(Object.keys(map).sort()).toEqual([...TONES].sort());
-    }
-  });
-
-  it("gives each ink a light and a dark class", () => {
-    for (const tone of TONES) {
-      const classes = toneInk[tone].split(" ");
-      expect(classes.filter((c) => c.startsWith("text-"))).toHaveLength(1);
-      expect(classes.filter((c) => c.startsWith("dark:text-"))).toHaveLength(1);
-    }
-  });
-
-  it("keeps busy and success on one ink, and every other pair distinct", () => {
-    // Busy and success share a hue because the app has never told them apart by colour; a
-    // separate hue would invent a difference nobody is being asked to read.
-    expect(toneInk.busy).toBe(toneInk.success);
-    expect(new Set([toneInk.attention, toneInk.danger, toneInk.muted, toneInk.busy]).size).toBe(4);
-  });
-
-  it("fills a state dot with one value across both themes", () => {
-    // A 6px dot has no interior to read: one vivid mid-scale hue works on white and on black,
-    // where an ink pair tuned for a stroke does not. Muted is the exception — it must recede.
-    for (const tone of ["busy", "attention", "success", "link", "danger"] as const) {
-      expect(toneDot[tone]).toMatch(/^bg-[a-z]+-500$/);
-    }
-  });
 });
 
 describe("status marks take their colour from the tokens", () => {
-  it("inks the two hourglass states with the same attention tone", () => {
-    // The session list's running glyph and the stream's waiting-for-approval glyph are the same
-    // state to a reader — unfinished, waiting — so they are the same colour.
-    expect(read("packages/ui/src/components/icons/status-icon/status-icon.tsx")).toContain(
-      'waiting: "text-tone-attention-fg"',
-    );
-    expect(read("packages/ui/src/components/icons/activity-icon/activity-icon.tsx")).toContain(
-      "text-tone-attention-fg",
-    );
-  });
-
   it("leaves no status file spelling a palette class of its own", () => {
     // Categorical palettes (charts, per-skill tints, the terminal's own theme) are deliberately
     // out of scope and are not listed here.

@@ -59,6 +59,7 @@ export * from "./components/forms/radio/radio";
 // W2-B — pickers, switches and settings rows, with the portal panel and the "?" disclosure they
 // open (moved up from W3).
 export * from "./components/overlays/portal-panel/use-portal-panel";
+export * from "./components/overlays/hover-disclosure/use-hover-disclosure";
 export * from "./components/overlays/info-popover/info-popover";
 export * from "./components/overlays/info-popover/help-fold";
 export * from "./components/forms/select/select";
@@ -92,6 +93,7 @@ export * from "./components/overlays/lightbox/lightbox";
 export * from "./motion/spring";
 export * from "./motion/sheet-physics";
 export * from "./motion/use-reduced-motion";
+export * from "./motion/use-arrived";
 
 // W3-C — notices: the notice strip, and the toast stack that renders its toasts through it
 // (with the `toast*` functions and their store).
@@ -107,6 +109,25 @@ export * from "./components/content/code-block/code-block";
 export * from "./components/content/code-block/code-languages";
 export * from "./components/content/typography/typography";
 export * from "./components/content/diff-viewer/diff-viewer";
+
+// A2UI — the components a model writes into a reply: the ```a2ui block that parses and dispatches
+// through the renderer registry, the four built-in blocks and the four widgets (with the surface
+// they share and the weather drawing), the actions a host hands them, and the ```mermaid diagram.
+// Mermaid itself is imported on the first diagram, never by this barrel.
+export * from "./components/content/a2ui/actions";
+export * from "./components/content/a2ui/registry";
+export * from "./components/content/a2ui/a2ui-block";
+export * from "./components/content/a2ui/choice-block";
+export * from "./components/content/a2ui/form-block";
+export * from "./components/content/a2ui/steps-block";
+export * from "./components/content/a2ui/callout-block";
+export * from "./components/content/a2ui/mermaid-block";
+export * from "./components/content/a2ui/widget";
+export * from "./components/content/a2ui/weather-art";
+export * from "./components/content/a2ui/weather-block";
+export * from "./components/content/a2ui/clock-block";
+export * from "./components/content/a2ui/countdown-block";
+export * from "./components/content/a2ui/metrics-block";
 
 // W4-A — navigation, notices and readings: the tab bar, the grouped list's header, folder, more
 // row and pager, the create pair, the notice with its variants and the page to-do built on it,
@@ -126,11 +147,13 @@ export * from "./components/data/stat-tile/stat-tile";
 export * from "./components/data/stat-chip/stat-chip";
 
 // W4-B — layout and data: the card, the page frame and header, the ruled and the collapsible
-// section, the entity header, list rows, label/value pairs, the log well and the table family.
+// section, the fold every disclosure body tweens through, the entity header, list rows,
+// label/value pairs, the log well and the table family.
 export * from "./components/layout/card/card";
 export * from "./components/layout/page/page";
 export * from "./components/layout/ruled-section/ruled-section";
 export * from "./components/layout/collapsible-section/collapsible-section";
+export * from "./components/layout/fold/fold";
 export * from "./components/layout/entity-header/entity-header";
 export * from "./components/data/list-row/list-row";
 export * from "./components/data/key-value/key-value";
@@ -157,23 +180,26 @@ export * from "./components/charts/legend/legend";
 // W8-B — the command palette: the search box over the caller's actions, and its filter.
 export * from "./components/overlays/command-palette/command-palette";
 
-// W6-A1 — the transcript's messages: what the person sent and the run's notice lines, the
-// assistant reply with its caret and the theme-paced reveal behind it, and the changes card.
+// W6-A1 — the transcript's messages: what the person sent and the run's notice lines, streaming
+// text (a reply, thinking, a summary, a tool's output) with its caret and the theme-paced reveal
+// behind it, the assistant reply on it, and the changes card.
 // The reveal's pacing (stream-reveal.ts) stays inside the family: its hook is the door.
 export * from "./components/chat/message-bubble/message-bubble";
+export * from "./components/chat/stream-text/stream-text";
 export * from "./components/chat/assistant-text/assistant-text";
 export * from "./components/chat/assistant-text/streaming-caret";
 export * from "./components/chat/assistant-text/use-stream-reveal";
 export * from "./components/chat/assistant-text/stream-style";
 export * from "./components/chat/changes-card/changes-card";
 
-// W6-A2 — the transcript's work: the work group and its rows (the thinking row, the tool call and
-// the approval block it holds), the process banner and the subagent row.
-export * from "./components/chat/work-group/work-group";
+// W6-A2 — the transcript's work: the activity card (the agent's work group and the harness's
+// events alike) and its rows (the thinking row, the tool call and the approval block it holds),
+// the one-line note, and the subagent row.
+export * from "./components/chat/activity-group/activity-group";
 export * from "./components/chat/thinking-block/thinking-block";
 export * from "./components/chat/tool-call-card/tool-call-card";
 export * from "./components/chat/approval-block/approval-block";
-export * from "./components/chat/step-banner/step-banner";
+export * from "./components/chat/transcript-note/transcript-note";
 export * from "./components/chat/subagent-chip/subagent-chip";
 
 // W6-B — the composer: its card, chip row, toolbar triggers, action button and slash list, the
@@ -223,3 +249,6 @@ export * from "./components/shell/rail/rail";
 export * from "./components/shell/mobile-top-bar/mobile-top-bar";
 export * from "./components/shell/sidebar-frame/sidebar-frame";
 export * from "./components/shell/session-row/session-row";
+
+// The drag image every draggable row hands the browser: an opaque, themed copy of the row.
+export * from "./components/overlays/drag-preview/drag-preview";

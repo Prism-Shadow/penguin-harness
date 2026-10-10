@@ -10,10 +10,17 @@
  * value and names the reason on a line under it (a toast would leave the switch and the message
  * on separate surfaces). The auth context is refreshed afterwards because the shell reads the
  * flag from /api/me, not from this page. The mode is a beta; the line under the switch says so
- * wherever the switch stands.
+ * wherever the switch stands. Turning it off asks first — it stops every organization on the
+ * server at once — and the knob stays on until the answer is yes; turning it on does not ask.
  */
 import { useEffect, useState } from "react";
-import { SettingsSection, ToggleRow, toastError } from "@prismshadow/penguin-ui";
+import {
+  ConfirmModal,
+  SettingsGroup,
+  SettingsSection,
+  ToggleRow,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -29,6 +36,7 @@ export function CompanySection() {
   const [companyMode, setCompanyMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [confirmOff, setConfirmOff] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,20 +82,37 @@ export function CompanySection() {
   return (
     <SettingsSection>
       <div>
-        <ToggleRow
-          variant="plain"
-          label={S.settings.companyModeServer}
-          checked={companyMode}
-          onChange={(next) => void toggle(next)}
-          disabled={!hydrated || busy}
-        />
-        {/* The reason the switch went back, under the switch it went back on. */}
+        <SettingsGroup>
+          {/* The mode is a beta, and this switch signs a whole server up for it: the warning
+              stands under it unconditionally, as the row's hint, rather than behind the page's
+              "?", which is a click away and is read once. */}
+          <ToggleRow
+            label={S.settings.companyModeServer}
+            hint={S.company.betaNotice}
+            checked={companyMode}
+            onChange={(next) => {
+              if (next) void toggle(true);
+              else setConfirmOff(true);
+            }}
+            disabled={!hydrated || busy}
+          />
+        </SettingsGroup>
+        {/* The reason the switch went back, under the row it went back on. */}
         {error !== undefined && <p className={`mt-2 text-xs ${toneInk.danger}`}>{error}</p>}
-        {/* The mode is a beta, and this switch signs a whole server up for it: the warning
-            stands under it unconditionally rather than behind the page's "?", which is a
-            click away and is read once. */}
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.company.betaNotice}</p>
       </div>
+      <ConfirmModal
+        open={confirmOff}
+        title={S.settings.companyModeOffTitle}
+        onClose={() => setConfirmOff(false)}
+        onConfirm={() => {
+          setConfirmOff(false);
+          void toggle(false);
+        }}
+        confirmLabel={S.settings.companyModeOff}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.settings.companyModeOffBody}</p>
+      </ConfirmModal>
     </SettingsSection>
   );
 }

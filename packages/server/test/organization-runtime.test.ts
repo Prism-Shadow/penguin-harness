@@ -8,8 +8,9 @@
  * paused, held silently when the master switch is off); ticket changes are noticed once;
  * channel mentions reach desks and the chain stops at the limit; budgets warn, pause and
  * resume (a zero budget being over before anything is spent); a ticket session the runner
- * refuses leaves the ticket as it was; and every pass brings an employee whose company
- * plugins fell behind the library back up to it.
+ * refuses leaves the ticket as it was; every desk and ticket session is opened as a company
+ * Session (`source: "company"`) stamped with the `org` client; and every pass brings an
+ * employee whose company plugins fell behind the library back up to it.
  */
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -85,6 +86,7 @@ describe("organization runtime", () => {
     modelId?: string;
     provider?: string;
     client: "org";
+    source: "company";
   }>;
   let agentsCreated: Array<{ agentId: string; plugins: readonly string[] }>;
   let briefs: Map<string, string>;
@@ -187,6 +189,7 @@ describe("organization runtime", () => {
             ...(args.modelId !== undefined ? { modelId: args.modelId } : {}),
             ...(args.provider !== undefined ? { provider: args.provider } : {}),
             client: args.client,
+            source: args.source,
           });
           const createdAt = new Date(nowMs).toISOString();
           sessions.insert({
@@ -441,7 +444,7 @@ describe("organization runtime", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
-  it("hires without a model by default: the entry carries none and the hire's sessions open without a model pair, so the Project default is resolved as each session opens", async () => {
+  it("hires without a model by default: the entry carries none and the desk opens without a model pair, so the Project default is resolved as the desk opens — and the ticket sessions follow the desk", async () => {
     await createOrg();
     await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
     const entry = (await service.chart(P, ORG)).employees.find((e) => e.agentId === HR);
@@ -454,7 +457,8 @@ describe("organization runtime", () => {
     expect(desk.agentId).toBe(HR);
     expect(desk).not.toHaveProperty("modelId");
     expect(desk).not.toHaveProperty("provider");
-    // A ticket session of that employee opens the same way — the default is read per session.
+    // A ticket session of that employee opens on the model its desk runs on — the pair the
+    // desk resolved when it opened — rather than on a default read a second time.
     const t = await service.createTicket(
       P,
       ORG,
@@ -462,9 +466,7 @@ describe("organization runtime", () => {
       { userId: "alice" },
     );
     await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" });
-    const work = created.at(-1)!;
-    expect(work.agentId).toBe(HR);
-    expect(work).not.toHaveProperty("modelId");
+    expect(created.at(-1)).toMatchObject({ agentId: HR, provider: "custom", modelId: "m-bench" });
     // A model the board asked for by name still travels with the hire.
     await service.hire(P, ORG, {
       newAgent: { agentId: `${ORG}_dev` },
@@ -476,6 +478,95 @@ describe("organization runtime", () => {
       agentId: `${ORG}_dev`,
       provider: "custom",
       modelId: "m-bench",
+    });
+  });
+
+  describe("an employee's model is its desk session's", () => {
+    const NEXT = { provider: "custom", modelId: "m-next" };
+    const entryOf = async (agentId: string) =>
+      (await service.chart(P, ORG)).employees.find((e) => e.agentId === agentId)!;
+    const ticketFor = async (agentId: string): Promise<string> =>
+      (
+        await service.createTicket(
+          P,
+          ORG,
+          { title: "Staff the company", owner: `agent:${agentId}` },
+          { userId: "alice" },
+        )
+      ).ticketId;
+    /** The desk Session switches models in place: the session runtime moves the row, then tells the organization. */
+    const switchDesk = async (sessionId: string): Promise<void> => {
+      sessions.updateModel(sessionId, NEXT.provider, NEXT.modelId);
+      await service.deskModelChanged(sessionId, NEXT);
+    };
+
+    beforeEach(async () => {
+      await saveProjectConfig(root, P, {
+        default_model: { provider: "custom", model_id: "m-bench" },
+        models: [
+          { provider: "custom", model_id: "m-bench" },
+          { provider: "custom", model_id: "m-next" },
+        ],
+      });
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+    });
+
+    it("a switch on the desk is the employee's: the chart entry takes the model, the next ticket session opens on it, and so does a renewed desk", async () => {
+      const desk = (await service.desk(P, ORG, HR, {})).sessionId;
+      expect(await entryOf(HR)).not.toHaveProperty("model");
+
+      await switchDesk(desk);
+
+      expect((await entryOf(HR)).model).toEqual(NEXT);
+      // Nobody else's entry moved.
+      expect(await entryOf(CEO)).not.toHaveProperty("model");
+      await service.startTicket(P, ORG, await ticketFor(HR), {}, { userId: "alice" });
+      expect(created.at(-1)).toMatchObject({ agentId: HR, ...NEXT });
+      const renewed = (await service.desk(P, ORG, HR, { renew: true })).sessionId;
+      expect(renewed).not.toBe(desk);
+      expect(created.at(-1)).toMatchObject({ agentId: HR, ...NEXT });
+      expect(sessions.findById(renewed)?.modelId).toBe(NEXT.modelId);
+    });
+
+    it("a ticket session follows the desk, not the chart: a model written to the chart alone waits for the next desk", async () => {
+      await service.patchEmployee(P, ORG, HR, { model: NEXT });
+      // The desk that is open keeps the model it runs on, and so do its ticket sessions.
+      await service.startTicket(P, ORG, await ticketFor(HR), {}, { userId: "alice" });
+      expect(created.at(-1)).toMatchObject({ agentId: HR, provider: "custom", modelId: "m-bench" });
+      // The next desk opens on the chart's model, and the ticket sessions follow it there.
+      await service.desk(P, ORG, HR, { renew: true });
+      expect(created.at(-1)).toMatchObject({ agentId: HR, ...NEXT });
+      await service.startTicket(P, ORG, await ticketFor(HR), {}, { userId: "alice" });
+      expect(created.at(-1)).toMatchObject({ agentId: HR, ...NEXT });
+    });
+
+    it("only the current desk speaks for the employee: a replaced desk, a ticket session or a session of no organization leaves the chart alone", async () => {
+      const replaced = (await service.desk(P, ORG, HR, {})).sessionId;
+      await service.desk(P, ORG, HR, { renew: true });
+      const work = (await service.startTicket(P, ORG, await ticketFor(HR), {}, { userId: "alice" }))
+        .sessionId;
+      const chartFile = path.join(orgDir(), "org_chart.yaml");
+      const before = await fs.readFile(chartFile, "utf8");
+
+      await switchDesk(replaced);
+      await switchDesk(work);
+      await service.deskModelChanged("session-2026-09-01-00-00-00-ffffffff", NEXT);
+
+      expect(await fs.readFile(chartFile, "utf8")).toBe(before);
+      expect(await entryOf(HR)).not.toHaveProperty("model");
+    });
+
+    it("a switch back to the model the chart already names writes nothing", async () => {
+      const desk = (await service.desk(P, ORG, HR, {})).sessionId;
+      await switchDesk(desk);
+      const chartFile = path.join(orgDir(), "org_chart.yaml");
+      const stamp = (await fs.stat(chartFile)).mtimeMs;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      await service.deskModelChanged(desk, NEXT);
+
+      expect((await fs.stat(chartFile)).mtimeMs).toBe(stamp);
     });
   });
 
@@ -904,10 +995,10 @@ describe("organization runtime", () => {
   });
 
   describe("company mode's own sessions", () => {
-    it('stamps every desk and ticket session client: "org", and a reconcile pass marks one that is not', async () => {
+    it('opens every desk and ticket session as a company Session stamped client: "org", and a reconcile pass marks one that is not', async () => {
       await createOrg();
       const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
-      expect(created.at(-1)?.client).toBe("org");
+      expect(created.at(-1)).toMatchObject({ client: "org", source: "company" });
       expect(sessions.findById(ceoDesk)?.client).toBe("org");
       const t = await service.createTicket(
         P,
@@ -922,6 +1013,7 @@ describe("organization runtime", () => {
         {},
         { userId: "alice" },
       );
+      expect(created.at(-1)).toMatchObject({ client: "org", source: "company" });
       expect(sessions.findById(work)?.client).toBe("org");
 
       // What an organization that predates the marker looks like: its files still name the

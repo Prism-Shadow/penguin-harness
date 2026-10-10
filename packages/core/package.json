@@ -41,6 +41,10 @@
       "types": "./dist/state/model-catalog.d.ts",
       "import": "./dist/state/model-catalog.js"
     },
+    "./a2ui": {
+      "types": "./dist/a2ui/index.d.ts",
+      "import": "./dist/a2ui/index.js"
+    },
     "./kernel": {
       "types": "./dist/kernel/index.d.ts",
       "import": "./dist/kernel/index.js",
@@ -57,6 +61,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
+    "@penguinharness/a2ui": "workspace:*",
     "@penguinharness/agent-company": "workspace:*",
     "@penguinharness/agent-development": "workspace:*",
     "@penguinharness/agent-tuning": "workspace:*",
@@ -71,7 +76,7 @@
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*",
-    "@prismshadow/agenthub": "^0.4.15",
+    "@prismshadow/mmsp": "^0.5.2",
     "arktype": "^2.2.3",
     "smol-toml": "^1.3.0",
     "yaml": "^2.5.0"

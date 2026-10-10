@@ -14,7 +14,7 @@ packages/server/web-dist/
 .env.*
 !.env.example
 
-# agenthub trace cache
+# mmsp trace cache
 cache/
 
 # legacy .penguin workspace symlink (no longer created; ignored for old working copies)
@@ -28,6 +28,9 @@ cache/
 # The shared contents are tracked; only per-machine session state is not.
 .agents/settings.local.json
 .agents/**/*.local.*
+
+# vitest --coverage reports
+coverage/
 
 # playwright e2e artifacts
 packages/web/test-results/

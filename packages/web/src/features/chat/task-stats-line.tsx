@@ -28,7 +28,14 @@
  */
 import { useState } from "react";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
-import { ConfirmModal, CopyButton, Spinner, StatChip } from "@prismshadow/penguin-ui";
+import {
+  ConfirmModal,
+  CopyButton,
+  GlyphIcon,
+  ICONS,
+  Spinner,
+  StatChip,
+} from "@prismshadow/penguin-ui";
 import { formatTaskStats } from "../../lib/omni/task-stats";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import {
@@ -162,27 +169,12 @@ export function TaskStatsLine({
             data-tooltip={S.chat.forkSession}
             aria-label={S.chat.forkSession}
             onClick={() => setConfirmingFork(true)}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-wait disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-surface-muted hover:text-fg-muted disabled:cursor-wait disabled:opacity-50"
           >
             {forking ? (
               <Spinner size="sm" label={S.common.loading} />
             ) : (
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <circle cx="6" cy="5" r="2" />
-                <circle cx="18" cy="7" r="2" />
-                <circle cx="6" cy="19" r="2" />
-                <path d="M6 7v8M8 11h4a6 6 0 0 0 6-2" />
-              </svg>
+              <GlyphIcon d={ICONS.gitBranch} size={13} />
             )}
           </button>
           <ConfirmModal
@@ -203,9 +195,7 @@ export function TaskStatsLine({
               }).finally(() => setForking(false));
             }}
           >
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              {S.chat.forkSessionConfirmBody}
-            </p>
+            <p className="text-sm text-fg-muted">{S.chat.forkSessionConfirmBody}</p>
           </ConfirmModal>
         </>
       )}

@@ -11,6 +11,10 @@
 import type {
   AdminUserCreateResponse,
   AdminUsersResponse,
+  AgentApiKeyCreateResponse,
+  AgentApiKeyInfo,
+  AgentApiResponse,
+  AgentApiSettings,
   AgentConfigResponse,
   AgentCreateResponse,
   AgentHooksResponse,
@@ -21,8 +25,12 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  ApprovalMode,
   AuthResponse,
   BenchmarkCasesResponse,
+  BrowserBackendResponse,
+  BrowserExtensionPairingResponse,
+  BrowserExtensionsResponse,
   BuiltinBrowserHistoryResponse,
   BuiltinBrowserImportSourcesResponse,
   BuiltinBrowserSettings,
@@ -53,10 +61,15 @@ import type {
   MemoryOverviewResponse,
   MemoryScopeExport,
   MeResponse,
+  LanguageIndexResponse,
   MessagesResponse,
   MessagingBindingsResponse,
+  ModelBalanceResponse,
   ModelProtocolDetectResponse,
   ModelsResponse,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionUpdate,
   ModelTestResponse,
   ModelVisionDetectResponse,
   OrganizationsResponse,
@@ -110,8 +123,10 @@ import type {
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
+// The catalog decides which groups publish a balance, as it does on the server.
+import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
 import { READ_ONLY } from "./errors";
-import { dayKey } from "./fixtures";
+import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 import type { UsageDay } from "./fixtures";
 import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
@@ -303,13 +318,58 @@ router
 // Models and provider keys
 // ---------------------------------------------------------------------------------------------
 
+/** A key as GET /models shows it. */
+const maskKey = (key: string) => `${key.slice(0, 4)}…${key.slice(-4)}`;
+
+/** One group's connection after an update, as the server stores it (omitted fields kept); any group takes a protocol. */
+function updatedConnection(
+  current: ProviderConnectionDto | undefined,
+  update: ProviderConnectionUpdate,
+): ProviderConnectionDto {
+  const next: ProviderConnectionDto = { ...(current ?? {}) };
+  if (update.baseUrl === null || update.baseUrl === "") delete next.baseUrl;
+  else if (typeof update.baseUrl === "string") next.baseUrl = update.baseUrl;
+  if (update.clientType === null || update.clientType === "") delete next.clientType;
+  else if (typeof update.clientType === "string") next.clientType = update.clientType;
+  if (update.clearApiKey === true) {
+    delete next.apiKeyMasked;
+    delete next.createdAt;
+  }
+  if (typeof update.apiKey === "string" && update.apiKey !== "") {
+    next.apiKeyMasked = maskKey(update.apiKey);
+    next.createdAt = new Date().toISOString();
+  }
+  return next;
+}
+
+/** Writes group connections, then re-resolves every model's effective connection. */
+function writeProviders(store: DemoStore, updates: Record<string, ProviderConnectionUpdate>): void {
+  const providers = { ...store.f.models.providers };
+  for (const [id, update] of Object.entries(updates)) {
+    const next = updatedConnection(providers[id], update);
+    if (Object.keys(next).length > 0) providers[id] = next;
+    else delete providers[id];
+  }
+  store.f.models.providers = providers;
+  refreshEffective(store);
+}
+
+function refreshEffective(store: DemoStore): void {
+  const { providers } = store.f.models;
+  store.f.models.models = store.f.models.models.map((m) => ({
+    ...m,
+    effective: effectiveOf(m, providers),
+  }));
+}
+
 router
   .get("/api/projects/:projectId/models", ({ store }): ModelsResponse => store.f.models)
   .put("/api/projects/:projectId/models", ({ store, body }): ModelsResponse => {
-    const { defaultModel, visionModel, models } = record(body) as Partial<{
+    const { defaultModel, visionModel, models, providers } = record(body) as Partial<{
       defaultModel: ModelsResponse["defaultModel"];
       visionModel: ModelsResponse["visionModel"];
       models: Array<Record<string, unknown>>;
+      providers: Record<string, ProviderConnectionUpdate>;
     }>;
     if (Array.isArray(models)) {
       store.f.models.models = models.map((entry) => {
@@ -319,7 +379,7 @@ router
         const { apiKey, clearApiKey, baseUrl, renamedFrom, discount, ...rest } = entry;
         const credential = { ...(existing?.credential ?? {}) };
         if (typeof apiKey === "string" && apiKey !== "") {
-          credential.apiKeyMasked = `${apiKey.slice(0, 4)}…${apiKey.slice(-4)}`;
+          credential.apiKeyMasked = maskKey(apiKey);
           credential.createdAt = new Date().toISOString();
         }
         if (clearApiKey === true) delete credential.apiKeyMasked;
@@ -343,8 +403,27 @@ router
     }
     if (defaultModel) store.f.models.defaultModel = defaultModel;
     if (visionModel) store.f.models.visionModel = visionModel;
+    writeProviders(store, providers ?? {});
     store.f.models.updatedAt = new Date().toISOString();
     return store.f.models;
+  })
+  .put(
+    "/api/projects/:projectId/models/providers/:provider",
+    ({ store, params, body }): ModelsResponse => {
+      writeProviders(store, { [str(params.provider)]: record(body) as ProviderConnectionUpdate });
+      store.f.models.updatedAt = new Date().toISOString();
+      return store.f.models;
+    },
+  )
+  // The demo table already holds every preset: an add finds nothing, and a restore resets
+  // the built-in models where they stand (the demo's own edits are not tracked, so nothing
+  // visible moves).
+  .post("/api/projects/:projectId/models/sync-presets", ({ store, body }): PresetSyncResponse => {
+    const restore = record(body).mode === "restore";
+    const builtIn = store.f.models.models.filter(
+      (m) => catalogEntryFor(m.provider, m.modelId) !== undefined,
+    ).length;
+    return { ...store.f.models, added: 0, restored: restore ? builtIn : 0 };
   })
   .put("/api/projects/:projectId/models/default", ({ store, body }): DefaultModelResponse => {
     const { provider, modelId } = record(body);
@@ -354,6 +433,22 @@ router
       m.isDefault = m.provider === ref.provider && m.modelId === ref.modelId;
     }
     return { defaultModel: ref };
+  })
+  .get("/api/projects/:projectId/models/balance", ({ store, query }): ModelBalanceResponse => {
+    const provider = query.get("provider") ?? "";
+    const fetchedAt = new Date().toISOString();
+    const info = providerInfo(provider);
+    if (info?.balance === undefined) {
+      const message = `The ${provider} group publishes no balance.`;
+      return { ok: false, provider, error: "unsupported", message, fetchedAt };
+    }
+    // The group's own key, as the server reads it; a key set on one model does not count.
+    const keyed = store.f.models.providers[provider]?.apiKeyMasked !== undefined;
+    if (!keyed) {
+      const message = `The ${info.label} group stores no API key.`;
+      return { ok: false, provider, error: "no_key", message, fetchedAt };
+    }
+    return { ok: true, provider, amount: "110.00", currency: "CNY", fetchedAt };
   })
   .post("/api/projects/:projectId/models/test", (): ModelTestResponse => ({
     ok: true,
@@ -601,6 +696,7 @@ router
       hookCount: 0,
       pluginUpdates: [],
       memoryCount: 0,
+      apiEnabled: false,
     };
     store.f.agents.push(agent);
     const template = store.f.agentConfigs[IDS.agents.notes]!;
@@ -686,40 +782,176 @@ router
   });
 
 // ---------------------------------------------------------------------------------------------
+// An Agent's public API: its switches, approval mode and keys (the stream itself is not mocked)
+// ---------------------------------------------------------------------------------------------
+
+const API_APPROVAL_MODES: readonly ApprovalMode[] = [
+  "allow-all",
+  "deny-all",
+  "read-only",
+  "always-ask",
+];
+
+/** `n` random bytes as base64url, the alphabet the server's keys and key ids are written in. */
+function base64url(n: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(n));
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * The Agent's settings, as the server reads an Agent never configured: off, keyed, allow-all.
+ * The store's own object: answers hand out a copy, as a server's JSON would, since the app keeps
+ * what it is given and a later write here must not reach into its state.
+ */
+const apiOf = (ctx: Ctx): AgentApiSettings => {
+  const agentId = agentOf(ctx).agentId;
+  ctx.store.f.agentApi[agentId] ??= {
+    enabled: false,
+    open: false,
+    approvalMode: "allow-all",
+    keys: [],
+  };
+  return ctx.store.f.agentApi[agentId];
+};
+
+router
+  .get("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => ({
+    api: structuredClone(apiOf(ctx)),
+    serverEnabled: ctx.store.f.serverSettings.agentApiEnabled,
+  }))
+  .put("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => {
+    const settings = apiOf(ctx);
+    const { enabled, open, approvalMode } = record(ctx.body);
+    if (typeof enabled === "boolean") {
+      settings.enabled = enabled;
+      agentOf(ctx).apiEnabled = enabled;
+    }
+    if (typeof open === "boolean") settings.open = open;
+    const mode = API_APPROVAL_MODES.find((m) => m === approvalMode);
+    if (mode !== undefined) settings.approvalMode = mode;
+    return {
+      api: structuredClone(settings),
+      serverEnabled: ctx.store.f.serverSettings.agentApiEnabled,
+    };
+  })
+  .post("/api/projects/:projectId/agents/:agentId/api/keys", (ctx): unknown => {
+    const settings = apiOf(ctx);
+    const name = str(record(ctx.body).name).trim();
+    if (name.length < 1 || name.length > 64) {
+      fail(400, "bad_request", "A key's name is 1 to 64 characters.");
+    }
+    const secret = `penguin_${base64url(32)}`;
+    const key: AgentApiKeyInfo = {
+      keyId: base64url(12),
+      name,
+      prefix: secret.slice(0, 16),
+      createdBy: ctx.store.f.user.userId,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null,
+    };
+    settings.keys.push(key);
+    return json({ key: { ...key }, secret } satisfies AgentApiKeyCreateResponse, 201);
+  })
+  .delete("/api/projects/:projectId/agents/:agentId/api/keys/:keyId", (ctx) => {
+    const settings = apiOf(ctx);
+    const kept = settings.keys.filter((k) => k.keyId !== ctx.params.keyId);
+    if (kept.length === settings.keys.length) fail(404, "key_not_found", "No such key.");
+    settings.keys = kept;
+    return empty();
+  })
+  // Try it: the stream a real run sends, scripted (fixtures.ts), whole in one body.
+  .post("/api/projects/:projectId/agents/:agentId/api/try", (ctx) =>
+    raw(
+      amspTryStream(ctx.body, {
+        agent: `${ctx.params.projectId}/${ctx.params.agentId}`,
+        lang: ctx.store.lang,
+        now: Date.now(),
+      }),
+      {
+        "content-type": "text/event-stream; charset=utf-8",
+      },
+    ),
+  );
+
+// ---------------------------------------------------------------------------------------------
 // Sessions: the list, directories, creation, the row
 // ---------------------------------------------------------------------------------------------
 
 const TEMP_WORKSPACE = /[/\\]workspaces[/\\][^/\\]+$/;
 const isTemp = (workspace: string) => workspace === "" || TEMP_WORKSPACE.test(workspace);
 
-function categoryOf(row: SessionInfo): SessionCategory {
+/**
+ * The server's rule: a company Session is in no category; otherwise archived first, then a
+ * person's conversation is active and every other source background.
+ */
+function categoryOf(row: SessionInfo): SessionCategory | null {
+  if (row.source === "company") return null;
   if (row.archived) return "archived";
-  return row.source ?? "active";
+  return row.source === undefined || row.source === "user" ? "active" : "background";
 }
 
+/** An organization's desk or ticket Session, by its owner, the durable `org` stamp or its source. */
+const isOrgRow = (row: SessionInfo) =>
+  (row.orgId ?? "") !== "" || row.client === "org" || row.source === "company";
+
 function countsOf(rows: readonly SessionInfo[]): SessionCategoryCounts {
-  const counts: SessionCategoryCounts = {
-    active: 0,
-    schedule: 0,
-    subagent: 0,
-    benchmark: 0,
-    archived: 0,
-  };
-  for (const row of rows) counts[categoryOf(row)] += 1;
+  const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
+  for (const row of rows) {
+    const category = categoryOf(row);
+    if (category !== null) counts[category] += 1;
+  }
   return counts;
+}
+
+/** Newest creation first: the list's default order. */
+const byCreated = (a: SessionInfo, b: SessionInfo) =>
+  a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
+
+/** `order=activity`: last activity first, ties by id — both by code point, as the server compares. */
+function byActivity(
+  a: Pick<SessionInfo, "lastActiveAt" | "sessionId">,
+  b: Pick<SessionInfo, "lastActiveAt" | "sessionId">,
+): number {
+  if (a.lastActiveAt !== b.lastActiveAt) return a.lastActiveAt > b.lastActiveAt ? -1 : 1;
+  return a.sessionId > b.sessionId ? -1 : a.sessionId < b.sessionId ? 1 : 0;
 }
 
 router
   .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): unknown => {
     const { store, params, query } = ctx;
-    const all = store.f.sessions
-      .filter((s) => s.agentId === params.agentId)
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+    // `excludeOrg=1` asks for the user's own rows: an organization's Sessions leave the page
+    // and the totals alike. A request for a category, a Workspace group or counts leaves the
+    // company Sessions out too, which no category holds.
+    const ownOnly = query.get("excludeOrg") === "1";
+    const activity = query.get("order") === "activity";
     const category = query.get("category") as SessionCategory | null;
     const group = query.get("workspaceGroup");
+    const classified = category !== null || group !== null || query.get("counts") === "1";
+    const all = store.f.sessions
+      .filter(
+        (s) =>
+          s.agentId === params.agentId &&
+          !(ownOnly && isOrgRow(s)) &&
+          !(classified && categoryOf(s) === null),
+      )
+      .sort(activity ? byActivity : byCreated);
     let rows = category ? all.filter((s) => categoryOf(s) === category) : all;
     if (group !== null) {
       rows = rows.filter((s) => (group === "temp" ? isTemp(s.workspace) : s.workspace === group));
+    }
+    // `before=<lastActiveAt>,<sessionId>`: the rows strictly below the last one the sidebar
+    // holds, in activity order only.
+    const before = query.get("before");
+    if (before !== null) {
+      if (!activity) fail(400, "bad_request", "before requires order=activity.");
+      const comma = before.indexOf(",");
+      const cursor = { lastActiveAt: before.slice(0, comma), sessionId: before.slice(comma + 1) };
+      if (comma < 0 || !Number.isFinite(Date.parse(cursor.lastActiveAt)) || !cursor.sessionId)
+        fail(400, "bad_request", "before must be <lastActiveAt>,<sessionId>.");
+      rows = rows.filter((s) => byActivity(s, cursor) > 0);
     }
     const limit = Number(query.get("limit"));
     const offset = Number(query.get("offset")) || 0;
@@ -737,15 +969,31 @@ router
       response.workspaceCounts = Object.fromEntries(
         Object.entries(byWorkspace).map(([path, list]) => [path, countsOf(list)]),
       );
+      // The newest CREATION per path, whatever order the page is in.
       response.workspaceLatest = Object.fromEntries(
-        Object.entries(byWorkspace).map(([path, list]) => [path, list[0]!.createdAt]),
+        Object.entries(byWorkspace).map(([path, list]) => [
+          path,
+          list.reduce((latest, row) => (row.createdAt > latest ? row.createdAt : latest), ""),
+        ]),
       );
     }
     return response;
   })
   .get("/api/projects/:projectId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
-    return store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
+    const listing = store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
+    // The home request that builds the finder's sidebar also carries the machine's own places,
+    // as the server's does: a Linux machine's root and one mounted disk.
+    if (query.get("path") || query.get("places") !== "1") return listing;
+    return {
+      ...listing,
+      platform: "linux",
+      standardFolders: {},
+      locations: [
+        { path: "/", kind: "root" },
+        { path: "/mnt/data", kind: "volume", label: "data" },
+      ],
+    };
   })
   .get("/api/projects/:projectId/machines/:machineId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
@@ -956,6 +1204,18 @@ router
     if (!store.session(sessionId)) notFound("Session");
     return json({ sessionId } satisfies TaskCreateResponse, 202);
   })
+  // In-session model switch. The demo answers the way the server does for a Session that
+  // never ran: the row moves inside the request (200 with the Session), so the picker works
+  // without a compaction to stream.
+  .post("/api/sessions/:sessionId/switch-model", ({ store, params, body }): SessionResponse => {
+    const to = record(body);
+    const session = store.patchSession(params.sessionId!, {
+      ...(typeof to.provider === "string" ? { provider: to.provider } : {}),
+      ...(typeof to.modelId === "string" ? { modelId: to.modelId } : {}),
+    });
+    if (!session) notFound("Session");
+    return { session };
+  })
   .get("/api/sessions/:sessionId/context", ({ store }): SessionContextResponse => store.f.context);
 
 // ---------------------------------------------------------------------------------------------
@@ -1076,8 +1336,13 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
     (sum, t) => sum + (t.startTs ? Math.max(0, Date.parse(t.endTs) - Date.parse(t.startTs)) : 0),
     0,
   );
+  // The context ring's bound, read off the file's head session_meta as the server does.
+  const head = history.find((m) => m.type === "session_meta")?.payload;
+  const contextWindow =
+    head !== undefined && "model_context_window" in head ? head.model_context_window : undefined;
   return {
     elapsedMs,
+    ...(contextWindow !== undefined ? { modelContextWindow: contextWindow } : {}),
     apiMs: tasks.reduce((sum, t) => sum + t.llmMs, 0),
     toolMs: tasks.reduce((sum, t) => sum + t.toolMs, 0),
     cost: tasks.reduce((sum, t) => sum + (t.cost ?? 0), 0),
@@ -1361,14 +1626,19 @@ router
 
 const normalizePath = (path: string) => path.replace(/^\.?\/+/, "").replace(/\/+$/, "");
 
-router
-  .get("/api/sessions/:sessionId/files", ({ store, query }): WorkspaceFilesResponse => {
+/**
+ * The Files panel's operations over the one demo Workspace, for both ways the panel names it: a
+ * Session (`/api/sessions/:sessionId/files…`) and a directory (`/api/projects/:projectId/
+ * workspace-files…?workspace=`, the new-chat draft's folder). Every scope sees the same files.
+ */
+const workspaceFiles = {
+  list: ({ store, query }: Ctx): WorkspaceFilesResponse => {
     const path = normalizePath(query.get("path") ?? "");
     const entries = store.f.workspace.entries[path];
     if (!entries) notFound("Directory");
     return { path, entries };
-  })
-  .get("/api/sessions/:sessionId/files/content", ({ store, query }) => {
+  },
+  read: ({ store, query }: Ctx) => {
     const path = normalizePath(query.get("path") ?? "");
     const content = store.f.workspace.content[path];
     if (content === undefined) notFound("File");
@@ -1380,8 +1650,8 @@ router
         ? { "content-disposition": `attachment; filename="${name}"` }
         : {}),
     });
-  })
-  .put("/api/sessions/:sessionId/files/content", ({ store, query, body }) => {
+  },
+  write: ({ store, query, body }: Ctx) => {
     const path = normalizePath(query.get("path") ?? "");
     const data = str(record(body).dataBase64);
     try {
@@ -1399,8 +1669,8 @@ router
       existing.mtime = new Date().toISOString();
     } else entries.push({ name, kind: "file", sizeBytes: size, mtime: new Date().toISOString() });
     return empty();
-  })
-  .delete("/api/sessions/:sessionId/files/content", ({ store, query }) => {
+  },
+  remove: ({ store, query }: Ctx) => {
     const path = normalizePath(query.get("path") ?? "");
     delete store.f.workspace.content[path];
     const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
@@ -1409,49 +1679,71 @@ router
       (e) => e.name !== name,
     );
     return empty();
-  })
-  .post("/api/sessions/:sessionId/files/reveal", () =>
-    fail(404, "not_desktop", "Only the desktop shell can reveal a file."),
-  )
-  // The separate preview origin has no counterpart here: the file is served as the page itself.
-  .get("/api/sessions/:sessionId/files/preview-redirect", ({ store, query }) => {
-    const path = normalizePath(query.get("path") ?? "");
-    const content = store.f.workspace.content[path];
-    if (content === undefined) notFound("File");
-    return raw(content, {
-      "content-type": path.endsWith(".html")
-        ? "text/html; charset=utf-8"
-        : "text/plain; charset=utf-8",
-    });
-  })
-  .post("/api/sessions/:sessionId/files/move", ({ store, body }) => {
+  },
+  reveal: () => fail(404, "not_desktop", "Only the desktop shell can reveal a file."),
+  create: ({ store, body }: Ctx) => {
+    const { path: named, kind } = record(body);
+    const path = normalizePath(str(named));
+    if (path === "") fail(400, "bad_request", "path must name the new entry.");
+    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    const entries = (store.f.workspace.entries[dir] ??= []);
+    if (entries.some((e) => e.name === name))
+      fail(409, "target_exists", "Something already exists at this path.");
+    const mtime = new Date().toISOString();
+    if (kind === "dir") {
+      entries.push({ name, kind: "dir", sizeBytes: 0, mtime });
+      store.f.workspace.entries[path] ??= [];
+    } else {
+      entries.push({ name, kind: "file", sizeBytes: 0, mtime });
+      store.f.workspace.content[path] = "";
+    }
+    return empty();
+  },
+  /** A file moves alone; a folder takes every listing and file under it along. */
+  move: ({ store, body }: Ctx) => {
     const { from, to } = record(body);
     const source = normalizePath(str(from));
     const target = normalizePath(str(to));
-    const content = store.f.workspace.content[source];
-    if (content === undefined) notFound("File");
-    if (store.f.workspace.content[target] !== undefined)
+    const ws = store.f.workspace;
+    const folder = ws.entries[source] !== undefined;
+    if (!folder && ws.content[source] === undefined) notFound("File");
+    if (ws.content[target] !== undefined || ws.entries[target] !== undefined)
       fail(409, "target_exists", "The destination exists.");
-    delete store.f.workspace.content[source];
-    store.f.workspace.content[target] = content;
-    const move = (path: string, remove: boolean) => {
-      const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-      const name = path.slice(path.lastIndexOf("/") + 1);
-      const entries = (store.f.workspace.entries[dir] ??= []);
-      if (remove) store.f.workspace.entries[dir] = entries.filter((e) => e.name !== name);
-      else
-        entries.push({
-          name,
-          kind: "file",
-          sizeBytes: content.length,
-          mtime: new Date().toISOString(),
-        });
-    };
-    move(source, true);
-    move(target, false);
+    if (folder && target.startsWith(`${source}/`))
+      fail(400, "bad_request", "A folder cannot move into itself.");
+    const moved = (path: string) =>
+      path === source || path.startsWith(`${source}/`)
+        ? `${target}${path.slice(source.length)}`
+        : path;
+    for (const key of Object.keys(ws.content)) {
+      const next = moved(key);
+      if (next === key) continue;
+      ws.content[next] = ws.content[key]!;
+      delete ws.content[key];
+    }
+    for (const key of Object.keys(ws.entries)) {
+      const next = moved(key);
+      if (next === key) continue;
+      ws.entries[next] = ws.entries[key]!;
+      delete ws.entries[key];
+    }
+    const parentOf = (path: string) =>
+      path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+    const was = (ws.entries[parentOf(source)] ?? []).find((e) => e.name === nameOf(source));
+    ws.entries[parentOf(source)] = (ws.entries[parentOf(source)] ?? []).filter(
+      (e) => e.name !== nameOf(source),
+    );
+    (ws.entries[parentOf(target)] ??= []).push({
+      name: nameOf(target),
+      kind: folder ? "dir" : "file",
+      sizeBytes: was?.sizeBytes ?? 0,
+      mtime: new Date().toISOString(),
+    });
     return empty();
-  })
-  .get("/api/sessions/:sessionId/files/search", ({ store, query }): WorkspaceSearchResponse => {
+  },
+  search: ({ store, query }: Ctx): WorkspaceSearchResponse => {
     const q = (query.get("q") ?? "").toLowerCase();
     if (q === "") fail(400, "empty_query", "Nothing to search for.");
     const hits: WorkspaceSearchResponse["hits"] = [];
@@ -1468,6 +1760,32 @@ router
       }
     }
     return { hits, truncated: false };
+  },
+};
+
+for (const base of ["/api/sessions/:sessionId/files", "/api/projects/:projectId/workspace-files"]) {
+  router
+    .get(base, workspaceFiles.list)
+    .get(`${base}/content`, workspaceFiles.read)
+    .put(`${base}/content`, workspaceFiles.write)
+    .delete(`${base}/content`, workspaceFiles.remove)
+    .post(`${base}/reveal`, workspaceFiles.reveal)
+    .post(`${base}/create`, workspaceFiles.create)
+    .post(`${base}/move`, workspaceFiles.move)
+    .get(`${base}/search`, workspaceFiles.search);
+}
+
+router
+  // The separate preview origin has no counterpart here: the file is served as the page itself.
+  .get("/api/sessions/:sessionId/files/preview-redirect", ({ store, query }) => {
+    const path = normalizePath(query.get("path") ?? "");
+    const content = store.f.workspace.content[path];
+    if (content === undefined) notFound("File");
+    return raw(content, {
+      "content-type": path.endsWith(".html")
+        ? "text/html; charset=utf-8"
+        : "text/plain; charset=utf-8",
+    });
   })
   .post("/api/sessions/:sessionId/files/stat", ({ store, body }): FilesStatResponse => {
     const paths = record(body).paths;
@@ -1570,6 +1888,8 @@ const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) 
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
   .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
+  // The demo installs no languages plugin: every fence is one the bundle carries or plain.
+  .get("/api/languages", (): LanguageIndexResponse => ({ languages: [] }))
   .get("/api/plugins/registry/readme", ({ store, query }): PluginReadmeResponse => {
     const name = query.get("name") ?? "";
     return { name, readme: store.f.readmes[name] ?? null };
@@ -1867,20 +2187,46 @@ router
   .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"));
 
 // ---------------------------------------------------------------------------------------------
-// The built-in browser: the desktop shell's, so it answers as a server with no shell does
+// The agent browser: the demo answers as a server with no desktop shell does, where the only
+// backend is the user's own Chrome, and this user has not paired one
 // ---------------------------------------------------------------------------------------------
 
 function browserUnavailable(): never {
-  return fail(503, "browser_unavailable", "The built-in browser needs the desktop app.");
+  return fail(
+    503,
+    "browser_unavailable",
+    "No Chrome is paired for this user; the demo has no extension to connect.",
+  );
 }
+
+/** A pairing code's shape: 43 base64url characters. */
+const DEMO_PAIRING_CODE = "demo-pairing-code-for-the-gallery-0123456789";
 
 router
   .get("/api/builtin-browser/status", (): BuiltinBrowserStatus => ({
     available: false,
-    reason: "not_desktop",
+    reason: "extension_not_paired",
+    backend: "chrome",
+    backends: [{ backend: "chrome", available: false, reason: "extension_not_paired" }],
     tabs: [],
     activeTabId: null,
   }))
+  .get("/api/builtin-browser/backend", (): BrowserBackendResponse => ({
+    backend: "chrome",
+    choices: ["chrome"],
+  }))
+  .put("/api/builtin-browser/backend", () => readOnly("switch the agent browser"))
+  .post("/api/builtin-browser/extension/pairings", (): BrowserExtensionPairingResponse => ({
+    code: DEMO_PAIRING_CODE.slice(0, 43),
+    expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    origin: null,
+  }))
+  .get("/api/builtin-browser/extension", (): BrowserExtensionsResponse => ({
+    paired: [],
+    enabled: true,
+  }))
+  .delete("/api/builtin-browser/extension/:id", () => notFound("Paired Chrome"))
+  .post("/api/builtin-browser/tabs/:tab/navigate", browserUnavailable)
   .post("/api/builtin-browser/tabs", browserUnavailable)
   .post("/api/builtin-browser/tabs/claim", browserUnavailable)
   .post("/api/builtin-browser/tabs/on-screen", browserUnavailable)

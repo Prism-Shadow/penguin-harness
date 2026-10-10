@@ -1,6 +1,12 @@
 /**
- * The form-control size scale (the UI package's `sizeTextClass`, in
+ * Guard: the form-control size scale (the UI package's `sizeTextClass`, in
  * packages/ui/src/components/forms/input/input.tsx).
+ *
+ * - No control call site spells a font size in its own className (checked on known shapes too,
+ *   so the check itself cannot go blind).
+ * - A Modal footer's Buttons, and the Buttons of a module that is only ever dialog content, sit
+ *   on the fields' sm rung.
+ * - The control family spells a font size in its two records and nowhere else.
  *
  * A control's font size comes from its `size` prop and nowhere else. A `text-*` in a caller's
  * `className` does not reliably override the component's own — both are single-class font-size
@@ -58,14 +64,23 @@ const FONT_SIZE_CLASS = /\btext-(?:xs|sm|base|lg|xl|\d?xl|\[[^\]]+])(?![\w-])/;
 
 const tsxFiles = (): SourceFile[] => SCAN.files.filter((file) => file.name.endsWith(".tsx"));
 
-const parse = (file: SourceFile) =>
-  ts.createSourceFile(
-    file.path,
-    file.text,
-    ts.ScriptTarget.Latest,
-    /* setParentNodes */ true,
-    ts.ScriptKind.TSX,
-  );
+const parsed = new Map<string, ts.SourceFile>();
+
+/** A file's syntax tree, parsed once however many checks walk it. */
+const parse = (file: SourceFile): ts.SourceFile => {
+  let tree = parsed.get(file.id);
+  if (tree === undefined) {
+    tree = ts.createSourceFile(
+      file.path,
+      file.text,
+      ts.ScriptTarget.Latest,
+      /* setParentNodes */ true,
+      ts.ScriptKind.TSX,
+    );
+    parsed.set(file.id, tree);
+  }
+  return tree;
+};
 
 const jsxTag = (node: ts.Node): string | null => {
   if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText();
@@ -140,16 +155,22 @@ function findLooseFooterButtons(): string[] {
 
 /**
  * Modules that are only ever rendered as a dialog's body. The settings dialog is a `PagedDialog`,
- * which is a `Modal`, and each of these is one of its pages — so every Button in them belongs with
- * the fields beside it on the `sm` rung, exactly as a footer button does. A parser cannot infer
- * that from the file alone (nothing in a section module says it renders in a dialog), so the fact
- * is declared here. Add a module when it becomes settings-dialog content; drop one when it stops.
+ * which is a `Modal`, and most of these are its pages; the App info dialog's body and the lists it
+ * folds open (release notes, credits) are the rest — so every Button in them belongs with the
+ * fields beside it on the `sm` rung, exactly as a footer button does. A parser cannot infer that
+ * from the file alone (nothing in a section module says it renders in a dialog), so the fact is
+ * declared here. Add a module when it becomes dialog content; drop one when it stops.
  */
 const DIALOG_BODY_MODULES = new Set([
+  "components/account/app-info-dialog.tsx",
+  "components/account/credits-list.tsx",
+  "components/account/release-notes-list.tsx",
   "features/settings/account-section.tsx",
+  "features/settings/agent-api-section.tsx",
   "features/settings/profile-section.tsx",
   "features/settings/appearance-section.tsx",
-  "features/settings/credits-section.tsx",
+  "features/settings/browser-section.tsx",
+  "features/settings/chrome-extension-section.tsx",
   "features/settings/general-section.tsx",
   "features/settings/proxy-section.tsx",
   "features/settings/shortcut-recorder.tsx",

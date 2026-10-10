@@ -48,7 +48,7 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 You can also add models later on the **Models** page of the Web App.
 
 - A model is always named by a `(provider, model_id)` pair, so `--provider` and `--model-id` are both required. PenguinHarness never infers the provider from the model id. See [Models & Providers](/models) for the built-in groups.
-- The API key can also come from an environment variable, for the vendor's own endpoint. When a model entry has no inline `api_key` and no `base_url` of its own (or one that is the vendor's official endpoint), AgentHub (the LLM gateway library) reads variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. An entry pointed at a gateway or a server of your own needs `--api-key`. A `.env` file in the working directory is loaded automatically.
+- The API key can also come from an environment variable, for the vendor's own endpoint. When a model entry has no inline `api_key` and no `base_url` of its own (or one that is the vendor's official endpoint), the key comes from the vendor's variable that [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) (the LLM gateway library) reads, such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. An entry pointed at a gateway or a server of your own needs `--api-key`. A `.env` file in the working directory is loaded automatically.
 
 ## Start the Web App
 
@@ -96,7 +96,7 @@ When you quit, the chat prints a `penguin chat --resume <sessionId>` command tha
 
 `run`, `chat` and the other Session commands are thin clients of the server. They attach to the local server when one is running, and quietly start one when none is. On the local machine they need no login; the [CLI Reference](/cli) describes the connection rules.
 
-Everything these commands create also shows up in the Web App, and `penguin ls`, `penguin logs` and `penguin input` work with those Sessions from the terminal. The [CLI Reference](/cli) lists every command and option.
+Everything these commands create also shows up in the Web App, and the `penguin session` commands (`ls`, `log`, `input` and `rename`) work with those Sessions from the terminal. The [CLI Reference](/cli) lists every command and option.
 
 ## Installation reference
 
@@ -159,6 +159,8 @@ After the build, run `pnpm penguin <args>` inside the repository as the dev runn
 
 The dev entry points (`pnpm penguin`, `pnpm dev`, `pnpm desktop`) default to a separate data root, `~/.penguin/dev-data`, while the linked or installed `penguin` keeps `~/.penguin/data`. Set `PENGUIN_HOME` to override. The desktop dev run also uses its own app identity (`PenguinHarness-Dev`), so it can run alongside an installed desktop app without conflicts.
 
+`pnpm dev` builds the CLI together with the server modules it imports, and `pnpm desktop` builds everything, so `penguin` in an agent's commands and in the Terminal panel is this checkout's build rather than the one installed on the machine.
+
 ### Install location and options
 
 | Item | Details |
@@ -195,6 +197,30 @@ Other differences on Windows:
 ### Data root
 
 The data root is `~/.penguin/data` by default (`%USERPROFILE%\.penguin\data` on Windows). It sits under the install directory, but installing and upgrading never modify it. Set the `PENGUIN_HOME` environment variable to use another directory. Model configuration, Session records and other data are kept across upgrades.
+
+### Sandbox on Ubuntu
+
+On Linux, turning the sandbox on installs two backends. `@penguinharness/sandbox-bwrap` confines commands with bubblewrap: file writes, the network and masked paths. `@penguinharness/sandbox-dsh` confines file writes only, through Landlock where bubblewrap cannot run. Where both work, bubblewrap serves every command.
+
+Ubuntu 23.10 and later, including a default Ubuntu 24.04, grant unprivileged user namespaces only to programs that have an AppArmor profile allowing it (`kernel.apparmor_restrict_unprivileged_userns` is `1`), and bubblewrap needs them. The desktop `.deb` installs such a profile for the app. The install script, the npm install and the release archive run without root and cannot, so on those installs bubblewrap is refused and the sandbox works through Landlock with no step from you. The [Sandbox](/settings#sandbox) card says so: `Enforced here: file writes, by Landlock (dsh-local). Not enforced here: network isolation, localhost-only network and masked paths.` Every built-in preset leaves the network open, so all of them are enforced. A preset with No network is greyed out on the card, and masked paths are refused rather than run with less confinement. **More info** under that line shows why bubblewrap is not in use (`setting up uid map: Permission denied`) and the bwrap path it tried.
+
+To add network isolation and masked paths, let bubblewrap run with an AppArmor profile for the copy the backend ships. This step is optional and takes root once:
+
+```bash
+sudo tee /etc/apparmor.d/penguin-sandbox-bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile penguin-sandbox-bwrap @{HOME}/.penguin/**/plugins/node_modules/@penguinharness/sandbox-bwrap/vendor/linux-*/bin/bwrap flags=(unconfined) {
+  userns,
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/penguin-sandbox-bwrap
+```
+
+Then select **Save** on the Sandbox card: the backends are checked again without a restart, and the card names bubblewrap. The profile loads again at every boot. Its pattern matches every place the backend's bubblewrap is unpacked under `~/.penguin`: a download into the data root (`~/.penguin/data/plugins/`), the installation's bundled plugins (`~/.penguin/lib/plugins/`) and the plugins a hot push carries (under `~/.penguin/data/hmr/`). An upgrade replaces the package at the same path, so later versions stay covered. If `PENGUIN_HOME` or `PENGUIN_INSTALL_DIR` points outside `~/.penguin`, load a copy of the profile under another name with `@{HOME}/.penguin` replaced by that directory.
+
+The profile applies to whatever program is at that path, and you can write to that path. On a machine shared with users you do not trust, set the bwrap program on the Sandbox card to a root-owned copy, such as `/usr/bin/bwrap` from `apt install bubblewrap`, and name that path in the profile instead. The other option is to lift the restriction for every program with `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. To keep that setting after a reboot, add the same line without `sudo sysctl -w` to a file in `/etc/sysctl.d/`.
 
 ### Published npm packages
 

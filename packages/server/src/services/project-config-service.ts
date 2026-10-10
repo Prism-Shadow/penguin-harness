@@ -3,15 +3,19 @@
  *
  * Doesn't reuse core's loadProjectConfig/saveProjectConfig (they only keep known
  * fields): reads and writes the complete object directly via smol-toml, preserving
- * extension fields like `name`. credential (api_key / base_url / created_at) is
- * **inlined on the model entry** — there's no longer a supplementary section or
- * secrets file; since the file contains secrets, it's always written with mode
- * 0600. Plaintext only ever hits disk, and is always masked in responses.
+ * extension fields like `name`. Connection values (api_key / base_url / client_type) live in
+ * two layers of the same file: once per group in `[providers.<id>]`, and on a model entry
+ * only where that model overrides its group (core's effectiveConnection resolves them, row ->
+ * group -> none, per field). The built-in catalog is a reference written into the file — a new
+ * Project, "Add new models", "Restore defaults" — and never read when a request is built: the
+ * file is the only truth. There's no supplementary section or secrets file; since the
+ * file contains secrets, it's always written with mode 0600. Plaintext only ever hits disk,
+ * and is always masked in responses.
  *
  * Model references are **fully split into separate fields**: an entry is
  * stored as two independent fields, `provider` and `model_id`; the `(provider,
  * model_id)` pair is the entry's unique key. `model_id` is the upstream request id,
- * sent to AgentHub verbatim — string concatenation like `<provider>/<id>` is
+ * sent to MMSP verbatim — string concatenation like `<provider>/<id>` is
  * forbidden everywhere in the pipeline. `default_model` / `vision_model` are `{
  * provider, model_id }` paired references (TOML tables).
  *
@@ -39,20 +43,38 @@ import {
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
   MODELSCOPE_PROVIDER_ID,
+  PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
+  catalogModelEntries,
+  catalogGroupConnection,
   defaultProjectConfig,
+  effectiveConnection,
+  groupKeyReaches,
   imageUrlMessage,
   metaMaxTokens,
+  migrateProjectConfigTable,
+  parseProviderTable,
+  presetModelEntries,
   presetPromotions,
+  presetProviderTable,
   projectConfigFromTable,
   projectConfigPath,
+  providerConnectionShape,
   renderProjectConfigToml,
   modelEnvFallback,
   modelEnvPreviewKey,
-  resolveModelCredential,
+  resolveEntryCredential,
   userText,
 } from "@prismshadow/penguin-core";
-import { unroutableVendorModel } from "@prismshadow/penguin-core/model-catalog";
+import {
+  VENDOR_ENDPOINTS,
+  isAddableGroup,
+  providerInfo,
+  sameClientType,
+  sameEndpoint,
+  unaddableModel,
+  unroutableVendorModel,
+} from "@prismshadow/penguin-core/model-catalog";
 import type {
   PluginTables,
   CommandPolicyRule,
@@ -61,7 +83,11 @@ import type {
   ModelRequestContext,
   ModelRef,
   OmniMessage,
+  ModelEntry,
   ProjectConfig,
+  ProviderConnection,
+  ProviderConnectionShape,
+  ProviderTable,
 } from "@prismshadow/penguin-core";
 import type {
   ChatDefaultsDto,
@@ -69,6 +95,7 @@ import type {
   CommandPolicyRuleDto,
   EndpointModelListRequest,
   EndpointModelListResponse,
+  ModelEffectiveConnection,
   ModelInfo,
   ModelPricingDto,
   ModelProtocolDetectRequest,
@@ -80,6 +107,10 @@ import type {
   ModelTestResponse,
   ModelVisionDetectRequest,
   ModelVisionDetectResponse,
+  PresetSyncMode,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionUpdate,
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
@@ -261,6 +292,297 @@ function showRef(provider: string, modelId: string): string {
 }
 
 /**
+ * The `[providers]` table as the resolver reads it — core's lenient narrowing, so this service
+ * and a Session can never disagree about a group's connection; `{}` when the file sets none.
+ */
+function providerTableOf(raw: RawTable): ProviderTable {
+  return parseProviderTable(raw.providers) ?? {};
+}
+
+/** One group's stored connection in the resolver's shape; undefined when the group stores none. */
+function providerShapeOf(raw: RawTable, provider: string): ProviderConnectionShape | undefined {
+  return providerConnectionShape(providerTableOf(raw)[provider]);
+}
+
+/** A row's own connection fields — its overrides of the group's — in the resolver's shape. */
+function ownConnection(
+  m: RawTable,
+  provider: string,
+  modelId: string,
+): { provider: string; modelId: string; clientType?: string; baseUrl?: string; apiKey?: string } {
+  return {
+    provider,
+    modelId,
+    clientType: canonicalClientType(optStr(m.client_type)),
+    baseUrl: optStr(m.base_url),
+    apiKey: optStr(m.api_key),
+  };
+}
+
+/**
+ * The connection a probe of one row's form draft is built with (the connectivity, speed and
+ * vision probes): the draft's own values — the request's, else the stored row's — then the
+ * group's `[providers.<id>]` table, then the client's defaults, under core's credential rule
+ * (resolveEntryCredential, which throws where a Session would be refused). A row not stored
+ * yet is probed from the request alone. "Clear" drops the row's own key and a `null` base URL
+ * its own endpoint: the draft then follows its group, as the saved row would.
+ */
+function draftCredential(
+  raw: RawTable,
+  req: {
+    provider: string;
+    modelId: string;
+    apiKey?: string;
+    clearApiKey?: boolean;
+    baseUrl?: string | null;
+    clientType?: string;
+  },
+): { apiKey?: string; baseUrl?: string; clientType?: string } {
+  const entry = asArray(raw.models).find((m) => entryMatches(m, req.provider, req.modelId)) ?? {};
+  return resolveEntryCredential(
+    {
+      provider: req.provider,
+      model_id: req.modelId,
+      // The pre-0.4.2 "openai" spelling (request or stored entry) is normalized to the
+      // canonical "openai-chat" (deprecated upstream alias; see canonicalClientType).
+      client_type: canonicalClientType(req.clientType ?? optStr(entry.client_type)),
+      base_url: req.baseUrl === null ? undefined : (req.baseUrl ?? optStr(entry.base_url)),
+      api_key: req.clearApiKey ? undefined : (req.apiKey ?? optStr(entry.api_key)),
+    },
+    providerShapeOf(raw, req.provider),
+  );
+}
+
+/**
+ * How many of a group's rows follow its group key: the ones that hold no key of their own and
+ * that the key reaches (core's groupKeyReaches — no base URL of their own, or one on the
+ * group's origin; custom's Atria, on its own host, is not one of them).
+ */
+function rowsFollowingGroupKey(raw: RawTable, provider: string): number {
+  const groupBaseUrl = providerTableOf(raw)[provider]?.base_url;
+  return asArray(raw.models).filter(
+    (m) =>
+      m.provider === provider &&
+      typeof m.model_id === "string" &&
+      groupKeyReaches(optStr(m.base_url), groupBaseUrl) &&
+      (optStr(m.api_key)?.trim() ?? "") === "",
+  ).length;
+}
+
+/** A group's stored connection as the page reads it: the group's own values, the key masked. */
+function providerDto(p: ProviderConnection): ProviderConnectionDto {
+  return {
+    ...(p.base_url !== undefined ? { baseUrl: p.base_url } : {}),
+    ...(p.client_type !== undefined ? { clientType: p.client_type } : {}),
+    ...(p.api_key !== undefined ? { apiKeyMasked: maskApiKey(p.api_key) } : {}),
+    ...(p.created_at !== undefined ? { createdAt: p.created_at } : {}),
+  };
+}
+
+/**
+ * Applies one group's connection change to a copy of the raw `[providers]` table, per field:
+ * a value sets it, `null` (or a blank string) clears it, absent keeps it; a key stamps
+ * `created_at`, clearing it removes that too. A member left with nothing is dropped. Rows are
+ * not touched: a model with its own value keeps it — a row's own protocol always wins over its
+ * group's, so any group takes one (Penguin Go's and OpenCode Go's rows each store theirs).
+ *
+ * Returns the new table and whether the group key was written or cleared by hand.
+ */
+function patchProviderTable(
+  providers: RawTable,
+  provider: string,
+  patch: ProviderConnectionUpdate,
+): { table: RawTable; keyChanged: boolean } {
+  const clientType = patch.clientType?.trim();
+  const member: RawTable = { ...asTable(providers[provider]) };
+  if (patch.baseUrl !== undefined) {
+    const baseUrl = patch.baseUrl?.trim();
+    if (baseUrl) member.base_url = baseUrl;
+    else delete member.base_url;
+  }
+  if (patch.clientType !== undefined) {
+    if (clientType) member.client_type = canonicalClientType(clientType);
+    else delete member.client_type;
+  }
+  let keyChanged = false;
+  if (patch.clearApiKey === true) {
+    delete member.api_key;
+    delete member.created_at;
+    keyChanged = true;
+  }
+  const apiKey = patch.apiKey?.trim();
+  if (apiKey) {
+    member.api_key = apiKey;
+    member.created_at = new Date().toISOString();
+    keyChanged = true;
+  }
+  const table: RawTable = { ...providers };
+  if (Object.keys(member).length > 0) table[provider] = member;
+  else delete table[provider];
+  return { table, keyChanged };
+}
+
+/** Whether two parsed TOML values hold the same data, key order ignored. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((v, i) => sameValue(v, b[i]))
+    );
+  }
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  const ta = a as RawTable;
+  const tb = b as RawTable;
+  const keys = Object.keys(ta);
+  return (
+    keys.length === Object.keys(tb).length &&
+    keys.every((k) => Object.hasOwn(tb, k) && sameValue(ta[k], tb[k]))
+  );
+}
+
+/**
+ * What the catalog adds to an existing file — "Add new models", and the preset backfill of a
+ * Project with no models: the non-retired presets the file lacks, and a catalog table for a
+ * group the file has never heard of. Only additions: no existing row or table changes.
+ *
+ * Each added row's protocol and endpoint are stored against the file's own group table, per
+ * field, so the row runs where the file says its group runs and never falls to the client's
+ * default with the group's key:
+ *
+ * - the table HAS the field: the row stores only its catalog row's own difference from the
+ *   catalog's group value, as a new Project's row does — a group the user pointed at a proxy
+ *   takes its new rows along (OpenCode Go's Messages rows still carry their own endpoint);
+ * - the table LACKS the field (the user cleared it, or the one-time migration did not hoist
+ *   it): the row stores the field's full catalog value (its own pin, else its group's);
+ * - a group with neither rows nor a table gets the catalog's table (catalogGroupConnection),
+ *   and its rows are stored against that, as at init. A group with rows but no table gets none.
+ *
+ * Returns the `[providers]` table to write (the file's, plus the new tables) and the rows to
+ * append, in catalog order.
+ */
+function presetAdditions(raw: RawTable): { providers: RawTable; added: ModelEntry[] } {
+  const current = asArray(raw.models);
+  const stored = new Set(current.map((m) => refKey(String(m.provider), String(m.model_id))));
+  const groupsWithRows = new Set(current.map((m) => String(m.provider)));
+  const fileTables = providerTableOf(raw);
+  const missing = presetModelEntries().filter((m) => !stored.has(refKey(m.provider, m.model_id)));
+  const providers: RawTable = { ...asTable(raw.providers) };
+  // The table each group's added rows are stored against, field by field (see above).
+  const reference: ProviderTable = {};
+  for (const provider of new Set(missing.map((m) => m.provider))) {
+    const catalog = catalogGroupConnection(provider);
+    if (catalog === undefined) continue; // custom and the vendors: the rows' own values, whole.
+    const file = fileTables[provider];
+    if (file === undefined && !groupsWithRows.has(provider)) {
+      providers[provider] = { ...catalog };
+      reference[provider] = catalog;
+      continue;
+    }
+    reference[provider] = {
+      ...(file?.base_url !== undefined && catalog.base_url !== undefined
+        ? { base_url: catalog.base_url }
+        : {}),
+      ...(file?.client_type !== undefined && catalog.client_type !== undefined
+        ? { client_type: catalog.client_type }
+        : {}),
+    };
+  }
+  const added = presetModelEntries(reference).filter(
+    (m) => !stored.has(refKey(m.provider, m.model_id)),
+  );
+  return { providers, added };
+}
+
+/**
+ * The one value every model the platform advertises shares (an endpoint or a protocol, compared
+ * with `same`) — the platform's value for its group, as the catalog derives a group's from its
+ * rows — or undefined when they differ or there are none.
+ */
+function sharedPlatformValue(
+  values: readonly string[],
+  same: (a: string, b: string) => boolean,
+): string | undefined {
+  const first = values[0];
+  if (first === undefined) return undefined;
+  return values.every((v) => same(v, first)) ? first : undefined;
+}
+
+/** The latest of some ISO 8601 timestamps (an unparseable one loses), or undefined when there are none. */
+function latestTimestamp(values: readonly unknown[]): string | undefined {
+  let latest: string | undefined;
+  for (const value of values) {
+    if (typeof value !== "string" || value.trim() === "") continue;
+    const [t, l] = [Date.parse(value), latest === undefined ? NaN : Date.parse(latest)];
+    if (latest === undefined || Number.isNaN(l) || (!Number.isNaN(t) && t > l)) latest = value;
+  }
+  return latest;
+}
+
+/**
+ * "Restore defaults"' last step: a key held on a group's rows moves to the group when that is
+ * where it belongs — a built-in group (custom excepted: its rows each reach their own endpoint)
+ * with no group key, whose keyed rows all hold one and the same key, and that key, as the
+ * group's, would reach every one of them (groupKeyReaches, against the group's restored base
+ * URL). The group takes it with the latest of the rows' `created_at`, and the rows hold it no
+ * more; every row runs on the key it ran on. Rows with differing keys, or one the group key
+ * would not reach, keep theirs. A key is never deleted. Returns new tables and rows; the
+ * inputs are not changed.
+ */
+function relocateSharedKeys(
+  providers: RawTable,
+  models: readonly RawTable[],
+): { providers: RawTable; models: RawTable[] } {
+  const tables: RawTable = { ...providers };
+  const rows = [...models];
+  for (const provider of new Set(rows.map((m) => m.provider))) {
+    if (typeof provider !== "string" || providerInfo(provider) === undefined) continue;
+    if (provider === "custom") continue;
+    const table = asTable(tables[provider]);
+    if (optStr(table.api_key)?.trim()) continue;
+    const keyed = rows.flatMap((m, i) =>
+      m.provider === provider && optStr(m.api_key)?.trim() ? [i] : [],
+    );
+    const key = keyed.length > 0 ? rows[keyed[0]!]!.api_key : undefined;
+    const groupBaseUrl = optStr(table.base_url);
+    if (
+      typeof key !== "string" ||
+      !keyed.every(
+        (i) => rows[i]!.api_key === key && groupKeyReaches(optStr(rows[i]!.base_url), groupBaseUrl),
+      )
+    ) {
+      continue;
+    }
+    const createdAt = latestTimestamp(keyed.map((i) => rows[i]!.created_at));
+    tables[provider] = {
+      ...table,
+      api_key: key,
+      ...(createdAt !== undefined ? { created_at: createdAt } : {}),
+    };
+    for (const i of keyed) {
+      const { api_key: _key, created_at: _createdAt, ...rest } = rows[i]!;
+      rows[i] = rest;
+    }
+  }
+  return { providers: tables, models: rows };
+}
+
+/** The fields a catalog row's facts and connection live in — what "Restore defaults" resets. */
+const RESTORED_ROW_FIELDS = new Set([
+  "context_window",
+  "pricing",
+  "vision",
+  "display_name",
+  "max_tokens",
+  "fast_mode",
+  "base_url",
+  "client_type",
+  "request_model_id",
+]);
+
+/**
  * Connectivity probe prompt: asks for one word, so the whole exchange fits in a
  * single-digit output budget. The wording discourages reasoning and the trailing empty
  * <think></think> makes many reasoning models treat their thinking phase as already
@@ -342,18 +664,22 @@ function outcomeDetail(outcome: LLMOutcome): string {
 export function utilityCompletionConfig(
   modelId: string,
   entry: Record<string, unknown>,
+  provider?: ProviderConnection,
 ): GenerativeModelConfig {
-  const clientType = canonicalClientType(optStr(entry.client_type));
-  // The same credential rule as every other client the harness builds (see core's
-  // resolveModelCredential): a keyless entry pointed away from its vendor throws here, which
-  // completeOnce reports as the failure it is.
-  const credential = resolveModelCredential({
-    provider: optStr(entry.provider) ?? "",
-    modelId,
-    clientType,
-    baseUrl: optStr(entry.base_url),
-    apiKey: optStr(entry.api_key),
-  });
+  // The connection is the entry's effective one — its own values, then its group's
+  // `[providers.<id>]` table, then the client's defaults — under the same credential rule as
+  // every other client the harness builds (core's resolveEntryCredential): a keyless entry
+  // pointed away from its vendor throws here, which completeOnce reports as the failure it is.
+  const { clientType, ...credential } = resolveEntryCredential(
+    {
+      provider: optStr(entry.provider) ?? "",
+      model_id: modelId,
+      client_type: canonicalClientType(optStr(entry.client_type)),
+      base_url: optStr(entry.base_url),
+      api_key: optStr(entry.api_key),
+    },
+    providerConnectionShape(provider),
+  );
   return {
     modelId,
     ...credential,
@@ -502,6 +828,15 @@ export class ProjectConfigService implements ProjectConfigStore {
       return null;
     }
     const table = asTable(parseToml(raw));
+    if (migrateProjectConfigTable(table)) {
+      // A file from before MMSP 0.5.0 or before group-level connections (core's
+      // migrateProjectConfigTable): rewritten once, before it is served; the next read parses
+      // the rewritten file (writeRaw drops the cache). Every file writeRaw renders carries a
+      // `[providers]` table, which is what keeps the key hoist from ever running on it again.
+      // Removed with the two migrations at the 0.3.0 release preparation.
+      await this.writeRaw(projectId, table);
+      return table;
+    }
     this.cache.set(projectId, { mtimeMs: cacheable(mtimeMs), table });
     return table;
   }
@@ -540,10 +875,13 @@ export class ProjectConfigService implements ProjectConfigStore {
 
   /**
    * Initial config for a newly created Project: display name + preset built-in
-   * model catalog (the default model and all preset entries, sourced from the same
-   * core defaultProjectConfig; a gateway model's base_url is already inlined on the
-   * entry, with no key); users only need to fill in an API key as needed (leave it
-   * blank to fall back to the provider's environment variable).
+   * model catalog (the default model, each built-in group's endpoint and protocol in
+   * `[providers.<id>]`, and all preset entries, sourced from the same core
+   * defaultProjectConfig; an entry stores its catalog facts, plus a protocol or endpoint only
+   * where it differs from its group's table — and no key). From here on the file alone says
+   * where every request goes; the catalog is not read again when one is built. Users only need
+   * to fill in an API key as needed, once per group (leave it blank to fall back to the
+   * provider's environment variable).
    */
   async writeInitialConfig(projectId: string, name: string): Promise<void> {
     const preset = defaultProjectConfig();
@@ -553,6 +891,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       // The factory command-policy rules are seeded exactly like the model presets:
       // copied in at creation, owned by the project from then on.
       ...(preset.command_policy !== undefined ? { command_policy: preset.command_policy } : {}),
+      ...(preset.providers !== undefined ? { providers: preset.providers } : {}),
       models: preset.models,
     });
   }
@@ -566,18 +905,22 @@ export class ProjectConfigService implements ProjectConfigStore {
    * **Only backfills when there are no models at all**: a Project that already has
    * models configured (via the CLI or edited by the user) is left as-is, and its
    * other fields (name, etc.) are preserved too — existing config is never
-   * overwritten. Returns whether it wrote the presets, which is when their promotions
+   * overwritten. The built-in groups' tables come with the rows, as at init, except that a
+   * table the file already holds is kept as it is and the rows are stored against it
+   * (presetAdditions). Returns whether it wrote the presets, which is when their promotions
    * are to be seeded too (seedPresetPromotions).
    */
   async ensurePresetModels(projectId: string): Promise<boolean> {
     const raw = await this.readRaw(projectId);
     if (asArray(raw.models).length > 0) return false;
     const preset = defaultProjectConfig();
+    const { providers, added } = presetAdditions(raw);
     await this.writeRaw(projectId, {
       ...raw,
       // Also reset to the preset default_model if the existing one points at a now-deleted model, to keep the default model valid.
       ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
-      models: preset.models,
+      providers,
+      models: added,
     });
     return true;
   }
@@ -783,11 +1126,12 @@ export class ProjectConfigService implements ProjectConfigStore {
    * as a pair in the request body; sends one minimal request using that model's
    * config (optionally overridden with an unsaved apiKey / baseUrl) — no tools, no
    * system prompt, thinking at the lowest level, a tiny output cap, 20s timeout —
-   * just to see whether the endpoint answers. The model id sent to AgentHub is
-   * `modelId` itself (the upstream id verbatim; client_type inference follows it).
+   * just to see whether the endpoint answers. The model id sent to MMSP is
+   * `modelId` itself (the upstream id verbatim; without a client_type, MMSP routes it
+   * by the vendor family the id begins with).
    *
    * A reasoning-heavy model can spend the whole tiny output cap on thinking
-   * (finish_reason=length with no text — AgentHub raises EmptyResponseError,
+   * (finish_reason=length with no text — MMSP raises EmptyResponseError,
    * collapsed to a malformed outcome): the endpoint demonstrably streamed model
    * output, which is everything a connectivity test proves, so that case counts as
    * ok too (see probeVerdict).
@@ -802,33 +1146,22 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the model took it (see services/vision-detect.ts for the verdict rules and why this
    * one costs real money, unlike the protocol probes).
    *
-   * Credential resolution is the connectivity test's, verbatim — the request's key, else
-   * the stored one, unless "clear" is checked, else the environment where core's
-   * resolveModelCredential allows it (the vendor's own endpoint; never a gateway's). Nothing
-   * secret is returned; the failure message is the provider's own text, truncated.
+   * Credential resolution is the connectivity test's, verbatim — the draft row (the request's
+   * key, else the row's own unless "clear" is checked), then the group's `[providers.<id>]`
+   * connection, then the environment where core's credential rule allows it
+   * (the vendor's own endpoint; never a gateway's). Nothing secret is returned; the failure
+   * message is the provider's own text, truncated.
    */
   async detectVision(
     projectId: string,
     req: ModelVisionDetectRequest,
   ): Promise<ModelVisionDetectResponse> {
     const raw = await this.readRaw(projectId);
-    // Probeable before the entry exists, so a custom model can be checked while adding it.
-    const entry = asArray(raw.models).find((m) => entryMatches(m, req.provider, req.modelId)) ?? {};
-    const savedBaseUrl = optStr(entry.base_url);
-    const baseUrl = req.baseUrl === null ? undefined : (req.baseUrl ?? savedBaseUrl);
-    const clientType = canonicalClientType(req.clientType ?? optStr(entry.client_type));
-    const draftKey = req.clearApiKey ? undefined : (req.apiKey ?? optStr(entry.api_key));
     try {
       // Inside the try for the same reason as testModel: both the credential rule's refusal
       // and the SDK's own missing-credential throw at construction must read as "probe
       // failed", not a 500.
-      const credential = resolveModelCredential({
-        provider: req.provider,
-        modelId: req.modelId,
-        clientType,
-        baseUrl,
-        apiKey: draftKey,
-      });
+      const { clientType, ...credential } = draftCredential(raw, req);
       const llm = new GenerativeModel({
         modelId: req.modelId,
         ...credential,
@@ -906,7 +1239,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       // construction when a credential is missing, and that must read as a failure with a
       // reason rather than an exception out of a dialog's helper.
       const llm = new GenerativeModel({
-        ...utilityCompletionConfig(ref.model_id, entry),
+        ...utilityCompletionConfig(ref.model_id, entry, providerTableOf(raw)[ref.provider]),
         ...this.requestApiKeyResolver(projectId, ref.provider, ref.model_id),
       });
       return await collectUtilityCompletion(
@@ -925,13 +1258,6 @@ export class ProjectConfigService implements ProjectConfigStore {
     const raw = await this.readRaw(projectId);
     // Testable even if the model isn't in the config yet (validate before saving when adding a custom model): in that case all parameters come from the request body.
     const entry = asArray(raw.models).find((m) => entryMatches(m, req.provider, req.modelId)) ?? {};
-    // Always tests against the **current form draft**: checking "clear" means the saved key is not fallen back to; an explicit null base URL is treated as cleared.
-    const savedBaseUrl = optStr(entry.base_url);
-    const baseUrl = req.baseUrl === null ? undefined : (req.baseUrl ?? savedBaseUrl);
-    // The pre-0.4.2 "openai" spelling (request or stored entry) is normalized to the
-    // canonical "openai-chat" (deprecated upstream alias; see canonicalClientType).
-    const clientType = canonicalClientType(req.clientType ?? optStr(entry.client_type));
-    const draftKey = req.clearApiKey ? undefined : (req.apiKey ?? optStr(entry.api_key));
     // Fast mode follows the form draft like baseUrl (the frontend always sends the current
     // toggle), falling back to the stored annotation: the probe then exercises exactly the
     // serving tier sessions would use, so a model rejecting fast_mode fails the test with
@@ -947,13 +1273,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       // **client construction** itself when a credential is missing. The whole point of a
       // connectivity test is to collapse that kind of failure into `{ ok:false }`; outside
       // the try, a missing-key test would bubble up as a 500.
-      const credential = resolveModelCredential({
-        provider: req.provider,
-        modelId: req.modelId,
-        clientType,
-        baseUrl,
-        apiKey: draftKey,
-      });
+      //
+      // Always tests against the **current form draft** (draftCredential): checking "clear"
+      // means the row's saved key is not fallen back to, and an explicit null base URL means
+      // the row has none of its own — either way the row then follows its group's connection,
+      // else the client's defaults, exactly as it would once saved.
+      const { clientType, ...credential } = draftCredential(raw, req);
       const llm = new GenerativeModel({
         modelId: req.modelId,
         ...credential,
@@ -1019,17 +1344,21 @@ export class ProjectConfigService implements ProjectConfigStore {
 
   /**
    * Protocol detection for a custom base URL (see services/protocol-detect.ts for the
-   * probe order and classification). Credential resolution has three layers, in order:
+   * probe order and classification). Credential resolution has four layers, in order:
    *   1. the request body's key (what the user just typed in the dialog);
    *   2. otherwise, when the optional paired reference names a stored entry and "clear"
-   *      isn't checked, that entry's saved key (the frontend only ever sees the mask);
-   *   3. otherwise the environment: a provider-scoped variable (the Penguin Go relay's
+   *      isn't checked, that entry's own saved key (the frontend only ever sees the mask);
+   *   3. otherwise the group's key (`[providers.<id>]`) — for a row whose own key is absent
+   *      or cleared, since that row then follows its group, and for a request naming the
+   *      group alone (the group settings dialog has no model), unless "clear" is checked
+   *      there, which clears the group key itself;
+   *   4. otherwise the environment: a provider-scoped variable (the Penguin Go relay's
    *      PENGUIN_GO_API_KEY) resolved here for the group's rows, and otherwise the variable
    *      of whichever protocol each probe speaks, resolved inside detectModelProtocol
    *      because the protocol is the thing being determined — and only for a URL that is
    *      the vendor's own (see core's endpointEnvApiKey), never for a gateway or a private
    *      server.
-   * Layers 2 and 3 are read server-side only and never travel back to the browser.
+   * Layers 2 to 4 are read server-side only and never travel back to the browser.
    * Detection still runs with no credential at all: a protocol-shaped 401/403 proves the
    * route. Never throws on probe failures — every outcome is reported per probe.
    */
@@ -1039,21 +1368,33 @@ export class ProjectConfigService implements ProjectConfigStore {
   ): Promise<ModelProtocolDetectResponse> {
     let apiKey = req.apiKey;
     let savedClientType: string | undefined;
-    if (apiKey === undefined && !req.clearApiKey && req.provider && req.modelId) {
+    if (apiKey === undefined && req.provider) {
       const raw = await this.readRaw(projectId);
-      const entry = asArray(raw.models).find((m) =>
-        entryMatches(m, req.provider as string, req.modelId as string),
-      );
-      apiKey = entry !== undefined ? optStr(entry.api_key) : undefined;
-      savedClientType = entry === undefined ? undefined : optStr(entry.client_type);
+      const group = providerTableOf(raw)[req.provider];
+      if (req.modelId) {
+        const entry = asArray(raw.models).find((m) =>
+          entryMatches(m, req.provider as string, req.modelId as string),
+        );
+        // The key the row is used with — its own unless the clear box is ticked, else its
+        // group's where the group reaches it (core's effectiveConnection decides both).
+        const { apiKey: ownKey, ...own } = ownConnection(entry ?? {}, req.provider, req.modelId);
+        const effective = effectiveConnection(
+          req.clearApiKey ? own : { ...own, apiKey: ownKey },
+          providerConnectionShape(group),
+        );
+        apiKey = effective.apiKey;
+        savedClientType = effective.clientType;
+      } else if (!req.clearApiKey) {
+        apiKey = group?.api_key;
+      }
     }
-    if (apiKey === undefined && req.provider && req.modelId) {
+    if (apiKey === undefined && req.provider) {
       // A provider-scoped pair (the relay's) is the harness's to read, for any URL in that
       // group; a vendor pair is left to the per-probe rule in detectModelProtocol. Without a
       // relay key, anonymous probing is still safe and can identify a route from its 401.
       const fallback = modelEnvFallback({
         provider: req.provider,
-        modelId: req.modelId,
+        modelId: req.modelId ?? "",
         clientType: savedClientType,
       });
       if (fallback !== undefined && !fallback.readByClient) {
@@ -1072,7 +1413,7 @@ export class ProjectConfigService implements ProjectConfigStore {
    * back to; an omitted key is lent the protocol's environment variable only when the URL is
    * that vendor's own (core's endpointEnvApiKey), and refused otherwise. Never throws: SDK
    * construction
-   * and request failures collapse into `{ ok:false, message }`, an AgentHub
+   * and request failures collapse into `{ ok:false, message }`, an MMSP
    * UnsupportedOperationError additionally sets `unsupported` so the dialog can point at
    * the manual path, and a listing that outlives LIST_MODELS_TIMEOUT_MS is reported as
    * timed out. Nothing cancels the request behind it: the race only stops waiting, and a
@@ -1112,19 +1453,25 @@ export class ProjectConfigService implements ProjectConfigStore {
   }
 
   /**
-   * GET models view: masks credential (inline fields), flags the default Model;
-   * the group is the entry's `provider` field, looked up in the built-in catalog by
-   * the `(provider, model_id)` pair to fill in displayName / envKey (entries outside
-   * the catalog are treated as custom models: envKey only has a fallback for the
-   * openai protocol). vision follows the TOML annotation when present, otherwise
-   * falls back to the catalog annotation (if neither exists, the field is omitted =
-   * supported by default). `pricing` is the file's list price, and a row with a stored
-   * promotion reports its fraction as `discount`.
+   * GET models view: masks credentials (the groups' and the rows' own), flags the default
+   * Model; the group is the entry's `provider` field. The built-in catalog labels a row it
+   * knows (`displayName`, when the file stores none) and nothing else. `vision` is the TOML
+   * annotation only — absent = supported (a new Project writes `false` where the catalog says
+   * so); the catalog is not consulted. `pricing` is the file's list price, and a row with a
+   * stored promotion reports its fraction as `discount`.
+   *
+   * Two layers of connection are reported: `providers` (each group's stored
+   * `[providers.<id>]` values) and, per row, its own values (`clientType`, `credential`)
+   * beside `effective` — what the row is actually used with after core's effectiveConnection
+   * (row -> group -> none, per field; the file's values only), with where each value came
+   * from. The environment fallback (`envKey`, `envKeyMasked`, an `env` key source) is judged
+   * on that effective shape, so a group pointed at a proxy is never shown a vendor's variable.
    */
   async getModels(projectId: string): Promise<ModelsResponse> {
     const raw = await this.readRaw(projectId);
     const defaultRef = optRef(raw.default_model);
     const visionRef = optRef(raw.vision_model);
+    const providers = providerTableOf(raw);
     const discounts = new Map(
       (this.promotions?.list(projectId) ?? []).map((p) => [
         refKey(p.provider, p.modelId),
@@ -1142,49 +1489,80 @@ export class ProjectConfigService implements ProjectConfigStore {
         // Normalized on read: entries stored before AgentHub 0.4.2's openai -> openai-chat
         // rename report the canonical spelling without a disk rewrite (the next models PUT
         // persists it).
-        const clientType = canonicalClientType(optStr(m.client_type));
+        const own = ownConnection(m, provider, modelId);
+        const clientType = own.clientType;
         const cat = catalogEntryFor(provider, modelId);
-        const credBaseUrl = optStr(m.base_url);
-        // The env fallback the entry is actually allowed (core's modelEnvFallback): the
-        // variable AgentHub's routed client reads — an explicit client_type takes priority,
-        // otherwise the id auto-routes — but only while the entry's endpoint is the vendor's
-        // own. A gateway, custom or vLLM row with its own endpoint gets no envKey at all:
-        // reporting a name there would promise a fallback the harness refuses.
-        const fallback = modelEnvFallback({ provider, modelId, clientType, baseUrl: credBaseUrl });
-        const envKey = fallback?.envKey;
-        const vision = typeof m.vision === "boolean" ? m.vision : cat?.supportsVision;
+        const credBaseUrl = own.baseUrl;
+        const group = providers[provider];
+        const eff = effectiveConnection(own, providerConnectionShape(group));
+        const effectiveShape = {
+          provider,
+          modelId,
+          clientType: eff.clientType,
+          baseUrl: eff.baseUrl,
+        };
+        // The env fallback the entry is actually allowed (core's modelEnvFallback), on the
+        // EFFECTIVE shape: the variable MMSP's routed client reads — the effective client type
+        // takes priority, otherwise the id routes by the vendor family it begins with — but
+        // only while the effective endpoint is the vendor's own. A gateway, custom or vLLM row
+        // with its own (or its group's) endpoint gets no envKey at all: reporting a name there
+        // would promise a fallback the harness refuses. Nor does a row its group's key
+        // reaches (core's groupKeyReaches): a blank key on it follows the group's, never the
+        // environment.
+        const envKey =
+          group?.api_key === undefined || !groupKeyReaches(own.baseUrl, group.base_url)
+            ? modelEnvFallback(effectiveShape)?.envKey
+            : undefined;
+        // The file's annotation only: absent = supported, whatever the catalog says.
+        const vision = typeof m.vision === "boolean" ? m.vision : undefined;
         // Output cap: TOML annotation only (user-owned; the built-in catalog never presets it).
         const maxTokens = optNum(m.max_tokens);
         // Fast mode: TOML annotation only (user-owned); only `true` is reported — absent = off.
         const fastMode = m.fast_mode === true ? true : undefined;
         // Display name: the explicit TOML field (user-edited) takes priority, then the built-in
-        // catalog. An empty string is not the same as an absent field — absent means "inherit
-        // whatever the catalog calls this model", empty means the user cleared the name on a
-        // model the catalog does name, and inheriting there would hand the name straight back.
+        // catalog's label (a name, never sent anywhere). An empty string is not the same as an
+        // absent field — absent means "inherit whatever the catalog calls this model", empty
+        // means the user cleared the name on a model the catalog does name, and inheriting
+        // there would hand the name straight back.
         // The distinction is reported rather than flattened, because the whole table comes back
         // on the next PUT: a cleared name that arrived as "no name" would be written back as
         // "inherit" and undo itself. Clients render the empty string as the model id.
         const displayName =
           m.display_name === "" ? "" : (optStr(m.display_name) ?? cat?.displayName);
-        // credential is inlined on the entry: a credential block is emitted if either api_key or base_url is present.
-        const apiKey = optStr(m.api_key);
+        // The row's own credential (its overrides of the group's): a credential block is
+        // emitted if either api_key or base_url is present on the row itself.
+        const apiKey = own.apiKey;
         const createdAt = optStr(m.created_at);
         // Masked env-fallback preview, for the entries the UI may present as covered (core's
-        // modelEnvPreviewKey — the dialog's hint reads the same function): a row on a vendor
+        // modelEnvPreviewKey — the dialog's hint reads the same function), on the effective
+        // shape and only when neither the row nor its group holds a key: a row on a vendor
         // endpoint, or a keyless row in a group whose defaults are the vendor's. A vLLM preset
         // or a custom row with no base URL does fall back under the rule, but is not shown as
         // configured. Presence is implied by the field, the plaintext never leaves the server,
         // and an empty variable counts as absent — it would not authenticate either. Read from
         // this process's env, which on the desktop already includes the imported login-shell
         // variables.
-        const previewKey = modelEnvPreviewKey({
-          provider,
-          modelId,
-          clientType,
-          baseUrl: credBaseUrl,
-        });
+        const previewKey =
+          eff.apiKeySource === "none" ? modelEnvPreviewKey(effectiveShape) : undefined;
         const envValue = previewKey !== undefined ? (process.env[previewKey] ?? "") : "";
         const envKeyMasked = envValue !== "" ? maskApiKey(envValue) : undefined;
+        const effective: ModelEffectiveConnection = {
+          ...(eff.baseUrl !== undefined ? { baseUrl: eff.baseUrl } : {}),
+          baseUrlSource: eff.baseUrlSource,
+          ...(eff.clientType !== undefined ? { clientType: eff.clientType } : {}),
+          clientTypeSource: eff.clientTypeSource,
+          apiKeySource:
+            eff.apiKeySource !== "none"
+              ? eff.apiKeySource
+              : envKeyMasked !== undefined
+                ? "env"
+                : "none",
+          ...(eff.apiKey !== undefined
+            ? { apiKeyMasked: maskApiKey(eff.apiKey) }
+            : envKeyMasked !== undefined
+              ? { apiKeyMasked: envKeyMasked }
+              : {}),
+        };
         const info: ModelInfo = {
           provider,
           modelId,
@@ -1213,6 +1591,7 @@ export class ProjectConfigService implements ProjectConfigStore {
                 },
               }
             : {}),
+          effective,
         };
         return info;
       });
@@ -1225,6 +1604,9 @@ export class ProjectConfigService implements ProjectConfigStore {
       ...(defaultRef !== undefined ? { defaultModel: toDto(defaultRef) } : {}),
       ...(visionRef !== undefined ? { visionModel: toDto(visionRef) } : {}),
       ...(updatedAt !== undefined ? { updatedAt } : {}),
+      providers: Object.fromEntries(
+        Object.entries(providers).map(([id, connection]) => [id, providerDto(connection)]),
+      ),
       models,
     };
   }
@@ -1244,9 +1626,17 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the entry renames the row or changes its pricing; a row left out of the table takes its
    * promotion with it. A `discount` outside (0, 1) rejects the request before any write.
    *
-   * An entry the request adds to a first-party vendor group under a model id AgentHub cannot
-   * route is rejected as well (`model_not_routable`); one already stored under that key is
-   * written as it stands. See the loop below for why the two differ.
+   * An entry the request adds to a first-party vendor group under a model id MMSP cannot
+   * route — judged on the protocol it would actually run on, its own or its group's — is
+   * rejected as well (`model_not_routable`), and so is one it adds to a built-in group that
+   * takes no hand-added models when it is not one of that group's presets
+   * (`model_not_addable`); one already stored under that key is written as it stands. See
+   * the loops below for why the two differ.
+   *
+   * `providers` changes the groups' connections, merged per group and per field like
+   * `PUT /models/providers/:provider`; a group absent there keeps its table. Once the rows are
+   * settled, a user-defined group with no row left loses its table too — that is how
+   * deleting the group cleans up after it.
    */
   async updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse> {
     return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, () =>
@@ -1267,34 +1657,81 @@ export class ProjectConfigService implements ProjectConfigStore {
     });
     const raw = await this.readRaw(projectId);
     const prevModels = asArray(raw.models);
-    const hadModelScopeGroup = prevModels.some(
-      (model) => model.provider === MODELSCOPE_PROVIDER_ID,
-    );
 
-    // A vendor group carries the built-in catalog and nothing else: its entries persist no
-    // client_type, so AgentHub places each one by the spelling of the model id alone, and an
-    // id it cannot place fails at request time with a sentence listing client types the user
-    // never chose. Refused here, while the request can still be sent somewhere that works.
+    // The groups' connections first: the routability rule below judges a new row on the
+    // protocol it would run on, which a group's client_type in this same request decides.
+    let providersTable: RawTable = { ...asTable(raw.providers) };
+    let clearModelScopeProviderAuthToken = false;
+    for (const [provider, patch] of Object.entries(req.providers ?? {})) {
+      const patched = patchProviderTable(providersTable, provider, patch);
+      providersTable = patched.table;
+      // A ModelScope key typed by hand replaces the authorized one, whose refresh token
+      // would otherwise overwrite it on the next refresh.
+      if (patched.keyChanged && provider === MODELSCOPE_PROVIDER_ID) {
+        clearModelScopeProviderAuthToken = true;
+      }
+    }
+    const nextProviders = parseProviderTable(providersTable) ?? {};
+
+    // A vendor group decides no protocol: its entries persist no client_type, so MMSP places
+    // each one by the vendor family its model id begins with (`gpt-`, `claude-`, `gemini-`,
+    // `glm-`, `kimi-`, `deepseek-`, `minimax-`), and an id of no known family fails at request
+    // time with a sentence listing client types the user never chose. Refused here, while the
+    // request can still be sent somewhere that works.
     //
     // Only an entry this request introduces is judged. The models page replaces the whole
     // table on every save, so an id written before this rule existed would otherwise block
     // every later edit of every other row; such a row is left exactly as it is, and the page
     // marks it. A key change is a different entry — moving a model into a vendor group, or
     // renaming one inside it, is the act of writing it there — so it is judged like a new one.
+    // The protocol judged is the effective one: a group whose `[providers.<id>]` table names a
+    // protocol routes every id by it, whatever the id begins with.
     for (const entry of req.models) {
-      if (!unroutableVendorModel(entry.provider, entry.modelId, entry.clientType)) continue;
+      const effectiveClientType = effectiveConnection(
+        {
+          provider: entry.provider,
+          modelId: entry.modelId,
+          clientType: canonicalClientType(entry.clientType),
+        },
+        providerConnectionShape(nextProviders[entry.provider]),
+      ).clientType;
+      if (!unroutableVendorModel(entry.provider, entry.modelId, effectiveClientType)) continue;
       if (prevModels.some((m) => entryMatches(m, entry.provider, entry.modelId))) continue;
       throw new HttpError(
         400,
         "model_not_routable",
-        `Model ${showRef(entry.provider, entry.modelId)} cannot be routed: a vendor group carries built-in models only. Add it under a custom group, where its protocol can be picked or detected.`,
+        `Model ${showRef(entry.provider, entry.modelId)} cannot be routed: a vendor group routes a model by the vendor prefix its id begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). Add it under a custom group, where its protocol can be picked or detected.`,
+      );
+    }
+
+    // Only custom, vLLM, OpenRouter, TokenDance, SiliconFlow and user-defined groups take
+    // models added by hand (core's isAddableGroup); every other built-in group, the other
+    // gateways included, carries its catalog presets and the rows it already stores. The
+    // same grandfathering as above: a stored row is written as it stands, hand-added
+    // ones from before this rule included, and so is a row renamed inside its own group. A row
+    // moved in from another group is being added here, and a preset is always welcome back
+    // (the preset sync writes a deleted one again).
+    for (const entry of req.models) {
+      if (!unaddableModel(entry.provider, entry.modelId)) continue;
+      if (prevModels.some((m) => entryMatches(m, entry.provider, entry.modelId))) continue;
+      const from = entry.renamedFrom;
+      if (
+        from !== undefined &&
+        from.provider === entry.provider &&
+        prevModels.some((m) => entryMatches(m, from.provider, from.modelId))
+      ) {
+        continue;
+      }
+      const group = providerInfo(entry.provider)?.label ?? entry.provider;
+      throw new HttpError(
+        400,
+        "model_not_addable",
+        `Model ${showRef(entry.provider, entry.modelId)} cannot be added: the ${group} group carries its built-in models only. Add it under a custom group.`,
       );
     }
 
     const seen = new Set<string>();
     const nextModels: RawTable[] = [];
-    let keepModelScopeGroup = false;
-    let clearModelScopeProviderAuthToken = false;
     // Rename mapping (old reference key -> new reference): default model / vision model pointers follow a key change instead of being lost on a full table replacement.
     const renamed = new Map<string, ModelRefDto>();
     // Each row's promotion, settled against the stored set once the file is written.
@@ -1392,23 +1829,30 @@ export class ProjectConfigService implements ProjectConfigStore {
           output: entry.pricing.output,
         };
       }
-      // credential is inlined on the entry; added/removed on top of the old value per the request (migrates automatically with the base entry when the key changes).
+      // The row's own credential — an override of its group's — added/removed on top of the
+      // old value per the request (migrates automatically with the base entry when the key
+      // changes). It never touches the group's key, nor the ModelScope group's authorization,
+      // which belongs to the group key.
       if (entry.clearApiKey) {
         delete next.api_key;
         delete next.created_at;
-        if (entry.provider === MODELSCOPE_PROVIDER_ID) clearModelScopeProviderAuthToken = true;
       }
       if (entry.apiKey !== undefined) {
         next.api_key = entry.apiKey;
         next.created_at = new Date().toISOString();
-        if (entry.provider === MODELSCOPE_PROVIDER_ID) clearModelScopeProviderAuthToken = true;
       }
       if (entry.baseUrl === null) delete next.base_url;
       else if (entry.baseUrl !== undefined) next.base_url = entry.baseUrl;
-      if (entry.provider === MODELSCOPE_PROVIDER_ID) keepModelScopeGroup = true;
       nextModels.push(next);
     }
-    if (hadModelScopeGroup && !keepModelScopeGroup) clearModelScopeProviderAuthToken = true;
+
+    // A user-defined group exists by its rows: once none is left, its connection goes too.
+    // Built-in groups keep theirs — the group is still on the page, and its key with it.
+    for (const provider of Object.keys(providersTable)) {
+      if (providerInfo(provider) !== undefined) continue;
+      if (nextModels.some((m) => m.provider === provider)) continue;
+      delete providersTable[provider];
+    }
 
     // default_model: when provided it must be present in models; when omitted the previous value is kept (the pointer follows a key rename; if it was deleted, it's removed).
     let defaultModel: ModelRefDto | undefined;
@@ -1466,7 +1910,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       provider: ref.provider,
       model_id: ref.modelId,
     });
-    const next: RawTable = { ...raw, models: nextModels };
+    const next: RawTable = { ...raw, providers: providersTable, models: nextModels };
     if (defaultModel !== undefined) next.default_model = toRaw(defaultModel);
     else delete next.default_model;
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
@@ -1495,24 +1939,56 @@ export class ProjectConfigService implements ProjectConfigStore {
   }
 
   /**
-   * Writes one API key onto every model of a provider group — the credential half of the
-   * bulk group-key action, performing the same `api_key` + `created_at` write `updateModels`
-   * performs on the entries it rewrites. No other field is read or replaced, so a caller
-   * that never saw the rest of the table cannot flatten it.
+   * Changes one group's connection (`PUT /models/providers/:provider`): `[providers.<id>]`,
+   * merged per field (see patchProviderTable). No row is touched: a model with its own base
+   * URL, protocol or key keeps it. A ModelScope key set or cleared here is the user's own, so
+   * the group's authorization (its refresh token) goes with the old one — "Disconnect" is
+   * `{ clearApiKey: true }` here, and for ModelScope it ends the authorization too. Returns the
+   * models view as it now stands.
+   */
+  async setProviderConnection(
+    projectId: string,
+    provider: string,
+    patch: ProviderConnectionUpdate,
+  ): Promise<ModelsResponse> {
+    return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, async () => {
+      const raw = await this.readRaw(projectId);
+      const { table, keyChanged } = patchProviderTable(asTable(raw.providers), provider, patch);
+      await this.writeRaw(projectId, { ...raw, providers: table });
+      if (keyChanged && provider === MODELSCOPE_PROVIDER_ID) {
+        this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
+      }
+      return this.getModels(projectId);
+    });
+  }
+
+  /**
+   * Writes one API key as a group's key (`[providers.<id>].api_key` + `created_at`) — what
+   * Enter key, the Connect flows and the ModelScope refresh all land on. No row is read or
+   * replaced: a model with its own key keeps it (and keeps billing the account it was given),
+   * and a caller that never saw the rest of the table cannot flatten it. A group with no rows
+   * still takes the key.
    *
-   * Returns how many entries were written; an empty group writes nothing and returns 0.
+   * Returns how many of the group's rows now use it — the ones without a key of their own.
    */
   async setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number> {
     if (provider === MODELSCOPE_PROVIDER_ID) {
       return this.withProviderCredentialLock(projectId, provider, async () => {
         const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
-        if (applied > 0) this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
+        // Written by hand: the authorization's refresh token belongs to the key it replaced.
+        this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
         return applied;
       });
     }
     return this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
   }
 
+  /**
+   * setGroupApiKey plus the authorization's refresh material (web.db), in one critical
+   * section with the other ModelScope writers. With `expectedRefreshToken` (a refresh), nothing
+   * is written and 0 returned when the stored refresh token changed meanwhile — a newer
+   * authorization won.
+   */
   async setGroupApiKeyWithProviderAuthToken(
     projectId: string,
     provider: string,
@@ -1526,13 +2002,11 @@ export class ProjectConfigService implements ProjectConfigStore {
         if (current?.refreshToken !== options.expectedRefreshToken) return 0;
       }
       const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
-      if (applied > 0) {
-        this.providerAuthTokens?.upsert(projectId, {
-          provider,
-          refreshToken: token.refreshToken,
-          accessTokenExpiresAt: token.accessTokenExpiresAt,
-        });
-      }
+      this.providerAuthTokens?.upsert(projectId, {
+        provider,
+        refreshToken: token.refreshToken,
+        accessTokenExpiresAt: token.accessTokenExpiresAt,
+      });
       return applied;
     });
   }
@@ -1543,35 +2017,95 @@ export class ProjectConfigService implements ProjectConfigStore {
     apiKey: string,
   ): Promise<number> {
     const raw = await this.readRaw(projectId);
-    const createdAt = new Date().toISOString();
-    let applied = 0;
-    const nextModels = asArray(raw.models).map((m) => {
-      if (m.provider !== provider) return m;
-      applied += 1;
-      return { ...m, api_key: apiKey, created_at: createdAt };
-    });
-    if (applied === 0) return 0;
-    await this.writeRaw(projectId, { ...raw, models: nextModels });
-    return applied;
+    const { table } = patchProviderTable(asTable(raw.providers), provider, { apiKey });
+    await this.writeRaw(projectId, { ...raw, providers: table });
+    return rowsFollowingGroupKey(raw, provider);
   }
 
-  /** Returns one persisted group key without exposing it through an HTTP response. */
+  /** A group's key (`[providers.<id>].api_key`), never a row's own; never sent over HTTP. */
   async getGroupApiKey(projectId: string, provider: string): Promise<string | undefined> {
+    return providerTableOf(await this.readRaw(projectId))[provider]?.api_key;
+  }
+
+  /** One row's own key — its override of the group's — or undefined; never sent over HTTP. */
+  async getModelApiKey(
+    projectId: string,
+    provider: string,
+    modelId: string,
+  ): Promise<string | undefined> {
     const raw = await this.readRaw(projectId);
+    const entry = asArray(raw.models).find((m) => entryMatches(m, provider, modelId));
+    const apiKey = entry === undefined ? undefined : optStr(entry.api_key);
+    return apiKey?.trim() ? apiKey : undefined;
+  }
+
+  /**
+   * The key a group's account balance is read with (the catalog's `balance` descriptor names
+   * the endpoint): the group's key, and never a row's own — a model keyed to another account
+   * says nothing about this group's balance. Without a group key, the environment key a
+   * Session on one of the group's rows would use if the row held no key: core's
+   * modelEnvFallback decides, on the row's EFFECTIVE shape (its own base URL and protocol, then
+   * the group's table's, then none — so a group pointed at a proxy is lent nothing), and its
+   * variable is read from this process's env as the routed client itself would read it. One
+   * more condition, because the balance request is the server's own rather than the routed
+   * client's: the variable's official endpoint must be the balance endpoint's host, so a vendor
+   * key never reaches another vendor. A DeepSeek group on DeepSeek's endpoint qualifies; a
+   * gateway's rows (TokenDance) get no fallback at all. Never returned to the browser.
+   */
+  async getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined> {
+    const raw = await this.readRaw(projectId);
+    const group = providerTableOf(raw)[provider];
+    if (group?.api_key !== undefined) return group.api_key;
+    const balanceUrl = providerInfo(provider)?.balance?.url;
+    if (balanceUrl === undefined) return undefined;
+    const origin = (url: string): string | undefined => {
+      try {
+        return new URL(url).origin;
+      } catch {
+        return undefined;
+      }
+    };
+    const balanceOrigin = origin(balanceUrl);
     for (const model of asArray(raw.models)) {
       if (model.provider !== provider) continue;
-      const apiKey = optStr(model.api_key);
-      if (apiKey !== undefined) return apiKey;
+      const modelId = optStr(model.model_id);
+      if (modelId === undefined) continue;
+      const { apiKey: _ownKey, ...own } = ownConnection(model, provider, modelId);
+      const eff = effectiveConnection(own, providerConnectionShape(group));
+      const fallback = modelEnvFallback({
+        provider,
+        modelId,
+        clientType: eff.clientType,
+        baseUrl: eff.baseUrl,
+      });
+      if (fallback === undefined) continue;
+      const endpoints = VENDOR_ENDPOINTS[fallback.envKey] ?? [];
+      if (!endpoints.some((own) => origin(own) === balanceOrigin)) continue;
+      const value = process.env[fallback.envKey]?.trim();
+      if (value) return value;
     }
     return undefined;
   }
 
   /**
-   * Adds newly advertised models and refreshes platform-owned routing and list price on
-   * existing rows, then replaces this group's promotions (web.db) with the platform's. Project
-   * TOML stays in the same shape as every other model group, list price included. Other
-   * annotations remain Project-owned and are never overwritten. Authorization additionally
-   * applies the freshly delivered key to the whole group.
+   * Penguin Go's catalog, merged into its group. Only what is new arrives: a model the
+   * platform advertises and the group lacks is added with the platform's list price, context
+   * window, vision flag, display name and routing, and its promotion is stored beside it
+   * (web.db). Its protocol and endpoint are stored per field against the group's
+   * `[providers.penguin-go]` table in the file (the built-in catalog is not consulted): a field
+   * the table holds is followed, the row storing only where it differs from the platform's
+   * group value (the relay URL every model shares); a field the table lacks is written on the
+   * row in full. A row the group
+   * already holds is never rewritten — not its price, not its protocol, not its promotion: the
+   * user may have changed them, and only "Restore defaults", behind its confirmation, puts
+   * existing rows back.
+   *
+   * Authorization (`applyKeyToExisting`) also writes the delivered key once, as the group's
+   * key (`[providers.penguin-go]`); new rows carry no key of their own and follow it.
+   *
+   * Returns how many rows were added, `updated` (always 0 — nothing existing is refreshed),
+   * and `applied`: on authorization, how many of the group's rows now use the group key;
+   * otherwise the rows added.
    */
   async mergePlatformModels(
     projectId: string,
@@ -1582,82 +2116,244 @@ export class ProjectConfigService implements ProjectConfigStore {
   ): Promise<PlatformModelApplyResult> {
     const raw = await this.readRaw(projectId);
     const current = asArray(raw.models);
-    const catalogById = new Map(catalog.models.map((model) => [model.modelId, model]));
-    const storedPromotions = new Map(
-      (this.promotions?.list(projectId) ?? [])
-        .filter((promotion) => promotion.provider === provider)
-        .map((promotion) => [promotion.modelId, promotion.discount]),
+    const known = new Set(
+      current.flatMap((model) =>
+        model.provider === provider && typeof model.model_id === "string" ? [model.model_id] : [],
+      ),
     );
-    const known = new Set<string>();
-    const createdAt = new Date().toISOString();
-    let added = 0;
-    let updated = 0;
-    let applied = 0;
-    let configChanged = false;
-    const nextModels = current.map((model): RawTable => {
-      if (model.provider !== provider || typeof model.model_id !== "string") return model;
-      const modelId = String(model.model_id);
-      known.add(modelId);
-      const catalogModel = catalogById.get(modelId);
-      const remotePricing = catalogModel?.pricing;
-      const pricingChanged =
-        remotePricing !== undefined && !platformPricingMatches(model.pricing, remotePricing);
-      const clientTypeChanged =
-        catalogModel !== undefined && model.client_type !== catalogModel.clientType;
-      // A row the platform no longer lists loses its promotion below, which is a change too.
-      const promotionChanged =
-        this.promotions !== undefined && storedPromotions.get(modelId) !== catalogModel?.discount;
-      if (pricingChanged || clientTypeChanged || promotionChanged) updated += 1;
-      if (applyKeyToExisting) applied += 1;
-      if (!pricingChanged && !clientTypeChanged && !applyKeyToExisting) return model;
-      configChanged = true;
-      return {
-        ...model,
-        ...(pricingChanged && remotePricing !== undefined
-          ? { pricing: platformPricingTable(remotePricing) }
-          : {}),
-        ...(clientTypeChanged && catalogModel !== undefined
-          ? { client_type: catalogModel.clientType }
-          : {}),
-        ...(applyKeyToExisting ? { api_key: apiKey, created_at: createdAt } : {}),
-      };
-    });
-
+    // Per field, as "Add new models" stores a catalog row against the file (presetAdditions):
+    // where the group's table in the file HAS the field, a new row stores only its difference
+    // from the platform's group value (the one endpoint or protocol every advertised model
+    // shares — the relay URL), so a group the user pointed at a proxy takes the row along;
+    // where the table LACKS it, the row stores the platform's full value, never falling to the
+    // client's default with the group's key.
+    const group = providerTableOf(raw)[provider];
+    const platformBaseUrl = sharedPlatformValue(
+      catalog.models.map((m) => m.baseUrl),
+      sameEndpoint,
+    );
+    const platformClientType = sharedPlatformValue(
+      catalog.models.map((m) => m.clientType),
+      sameClientType,
+    );
+    const added: RawTable[] = [];
     for (const model of catalog.models) {
       if (known.has(model.modelId)) continue;
       known.add(model.modelId);
-      added += 1;
-      applied += 1;
-      configChanged = true;
-      nextModels.push({
+      added.push({
         provider,
         model_id: model.modelId,
         display_name: model.displayName,
         context_window: model.contextWindow,
         vision: model.supportsVision,
         pricing: platformPricingTable(model.pricing),
-        client_type: model.clientType,
-        base_url: model.baseUrl,
-        api_key: apiKey,
-        created_at: createdAt,
+        ...(group?.client_type === undefined ||
+        platformClientType === undefined ||
+        !sameClientType(model.clientType, platformClientType)
+          ? { client_type: model.clientType }
+          : {}),
+        ...(group?.base_url === undefined ||
+        platformBaseUrl === undefined ||
+        !sameEndpoint(model.baseUrl, platformBaseUrl)
+          ? { base_url: model.baseUrl }
+          : {}),
       });
     }
 
-    if (configChanged) {
-      await this.writeRaw(projectId, { ...raw, models: nextModels });
+    const nextModels = [...current, ...added];
+    if (added.length > 0 || applyKeyToExisting) {
+      const providers = applyKeyToExisting
+        ? patchProviderTable(asTable(raw.providers), provider, { apiKey }).table
+        : raw.providers;
+      await this.writeRaw(projectId, {
+        ...raw,
+        ...(providers !== undefined ? { providers } : {}),
+        models: nextModels,
+      });
     }
-    // After the file write, so a promotion never lands for a row the file failed to take; a
-    // failure here leaves the group's previous promotions until the next authorization or Sync.
-    this.promotions?.replaceProvider(
-      projectId,
-      provider,
-      catalog.models.flatMap((model) =>
-        model.discount !== undefined && known.has(model.modelId)
-          ? [{ provider, modelId: model.modelId, discount: model.discount }]
-          : [],
-      ),
+    // After the file write, so a promotion never lands for a row the file failed to take; the
+    // group's existing promotions are kept as they are.
+    const addedIds = new Set(added.map((row) => row.model_id));
+    const promoted = catalog.models.flatMap((model) =>
+      model.discount !== undefined && addedIds.has(model.modelId)
+        ? [{ provider, modelId: model.modelId, discount: model.discount }]
+        : [],
     );
-    return { added, updated, applied };
+    if (this.promotions !== undefined && promoted.length > 0) {
+      const kept = this.promotions
+        .list(projectId)
+        .filter((p) => p.provider === provider && !addedIds.has(p.modelId));
+      this.promotions.replaceProvider(projectId, provider, [...kept, ...promoted]);
+    }
+    const applied = applyKeyToExisting
+      ? rowsFollowingGroupKey({ providers: raw.providers, models: nextModels }, provider)
+      : added.length;
+    return { added: added.length, updated: 0, applied };
+  }
+
+  /**
+   * "Sync presets", in its two modes (`POST /models/sync-presets`):
+   *
+   * - `add`: the catalog's presets the table lacks — retired rows never — are appended, in
+   *   catalog order, each stored against its group's table in the file field by field
+   *   (presetAdditions), and their promotions are stored. A group the file has neither rows
+   *   nor a table for gets the catalog's table. Nothing else moves: no existing row, group
+   *   table, promotion, key or reference.
+   * - `restore`: every built-in row (a catalog pair, retired included) goes back to the shape
+   *   a new Project stores — context window, price and vision from the catalog; display name,
+   *   output cap and fast mode dropped; a protocol and endpoint only where its catalog row
+   *   differs from its group's — while its own key stays. Deleted presets are appended. Every
+   *   built-in group but custom gets the catalog's endpoint and protocol back in its
+   *   `[providers.<id>]` table (created when missing; a value the catalog does not set is
+   *   removed) and keeps its key — except that a self-hosted one (vLLM: no catalog endpoint,
+   *   models added by hand) keeps its base URL, the user's own server; custom and user-defined
+   *   groups keep their tables, since the rows the user added there depend on them. Rows the
+   *   user added are kept verbatim, but for
+   *   a key relocated as below. Promotions become the catalog's, except that Penguin Go's (the
+   *   platform's) and those on the user's own rows are kept. The default model is kept while
+   *   it names a row, else it becomes the catalog's default; the vision model is kept while it
+   *   names a row that takes images, else it is removed.
+   *
+   *   Keys are relocated, never deleted: a built-in group (custom excepted) with no group key
+   *   whose keyed rows all hold the same key, one the group key would reach on every one of
+   *   them (core's groupKeyReaches), gets that key as its group key, with the latest of the
+   *   rows' `created_at`, and the rows hold it no more. Rows with differing keys keep them.
+   *
+   * Returns the models view with `added` (rows appended) and `restored` (existing built-in
+   * rows `restore` actually changed; 0 for `add`). Nothing is written when nothing changes.
+   */
+  async syncPresets(projectId: string, mode: PresetSyncMode): Promise<PresetSyncResponse> {
+    return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, () =>
+      mode === "add" ? this.addPresets(projectId) : this.restorePresets(projectId),
+    );
+  }
+
+  private async addPresets(projectId: string): Promise<PresetSyncResponse> {
+    const raw = await this.readRaw(projectId);
+    const { providers, added } = presetAdditions(raw);
+    if (added.length > 0) {
+      await this.writeRaw(projectId, {
+        ...raw,
+        providers,
+        models: [...asArray(raw.models), ...added],
+      });
+      if (this.promotions !== undefined) {
+        const addedRefs = new Set(added.map((m) => refKey(m.provider, m.model_id)));
+        const isAdded = (p: { provider: string; modelId: string }) =>
+          addedRefs.has(refKey(p.provider, p.modelId));
+        this.promotions.replaceAll(projectId, [
+          ...this.promotions.list(projectId).filter((p) => !isAdded(p)),
+          ...presetPromotions().filter(isAdded),
+        ]);
+      }
+    }
+    return { ...(await this.getModels(projectId)), added: added.length, restored: 0 };
+  }
+
+  private async restorePresets(projectId: string): Promise<PresetSyncResponse> {
+    const raw = await this.readRaw(projectId);
+    const current = asArray(raw.models);
+    // Every catalog row as a stored entry, retired ones included (a Project still carrying a
+    // retired row has it put back like any other built-in row; it is never added, though), in
+    // the shape a new Project stores: a protocol or endpoint only where the row's differs from
+    // its group's catalog table — the table every built-in group gets back below.
+    const catalogRows = new Map(
+      catalogModelEntries().map((m) => [refKey(m.provider, m.model_id), m] as const),
+    );
+    const isCatalogRow = (row: RawTable): boolean =>
+      catalogRows.has(refKey(String(row.provider), String(row.model_id)));
+    const reset = current.map((row): RawTable => {
+      const catalogRow = catalogRows.get(refKey(String(row.provider), String(row.model_id)));
+      if (catalogRow === undefined) return row;
+      const rest = Object.fromEntries(
+        Object.entries(row).filter(
+          ([key]) => key !== "provider" && key !== "model_id" && !RESTORED_ROW_FIELDS.has(key),
+        ),
+      );
+      return { ...catalogRow, ...rest };
+    });
+    const stored = new Set(reset.map((m) => refKey(String(m.provider), String(m.model_id))));
+    const added = presetModelEntries().filter((m) => !stored.has(refKey(m.provider, m.model_id)));
+
+    // Built-in groups go back to the catalog's endpoint and protocol and keep their key (and
+    // anything else they hold); custom and user-defined groups have nothing in the catalog to
+    // go back to, and the rows the user added to them reach their endpoint through these
+    // tables. A self-hosted built-in group (vLLM: the catalog gives it no endpoint, and it takes
+    // models added by hand) keeps its base URL too — that is the user's own server, and the
+    // client's default endpoint is no default for it; only its protocol is the catalog's.
+    const catalogTables = presetProviderTable();
+    const tables: RawTable = {};
+    for (const [id, value] of Object.entries(asTable(raw.providers))) {
+      if (providerInfo(id) === undefined || id === "custom") {
+        tables[id] = value;
+        continue;
+      }
+      const { base_url: baseUrl, client_type: _clientType, ...member } = asTable(value);
+      const selfHosted = catalogGroupConnection(id)?.base_url === undefined && isAddableGroup(id);
+      const restoredTable = {
+        ...(selfHosted && baseUrl !== undefined ? { base_url: baseUrl } : {}),
+        ...catalogTables[id],
+        ...member,
+      };
+      if (Object.keys(restoredTable).length > 0) tables[id] = restoredTable;
+    }
+    for (const [id, connection] of Object.entries(catalogTables)) {
+      if (!Object.hasOwn(tables, id)) tables[id] = { ...connection };
+    }
+    const { providers, models: nextModels } = relocateSharedKeys(tables, [
+      ...reset,
+      ...added.map((m): RawTable => ({ ...m })),
+    ]);
+    let restored = 0;
+    current.forEach((row, i) => {
+      if (isCatalogRow(row) && !sameValue(row, nextModels[i])) restored += 1;
+    });
+
+    const refs = new Set(nextModels.map((m) => refKey(String(m.provider), String(m.model_id))));
+    const named = (ref: ModelRef | undefined): ref is ModelRef =>
+      ref !== undefined && refs.has(refKey(ref.provider, ref.model_id));
+    const prevDefault = optRef(raw.default_model);
+    const defaultModel = named(prevDefault) ? prevDefault : defaultProjectConfig().default_model;
+    const prevVision = optRef(raw.vision_model);
+    const visionTarget = named(prevVision)
+      ? nextModels.find((m) => entryMatches(m, prevVision.provider, prevVision.model_id))
+      : undefined;
+    const visionModel =
+      visionTarget?.vision !== false && named(prevVision) ? prevVision : undefined;
+
+    const next: RawTable = { ...raw, providers, models: nextModels };
+    if (defaultModel !== undefined) next.default_model = defaultModel;
+    else delete next.default_model;
+    if (visionModel !== undefined) next.vision_model = visionModel;
+    else delete next.vision_model;
+    const changed =
+      !sameValue(current, nextModels) ||
+      !sameValue(asTable(raw.providers), providers) ||
+      !sameValue(optRef(raw.default_model), defaultModel) ||
+      !sameValue(prevVision, visionModel);
+    if (changed) await this.writeRaw(projectId, next);
+
+    if (this.promotions !== undefined) {
+      // The catalog's promotions, except where the stored one is not the catalog's to reset:
+      // Penguin Go's come from the platform, and the user's own rows have no catalog entry.
+      const keep = this.promotions
+        .list(projectId)
+        .filter(
+          (p) =>
+            refs.has(refKey(p.provider, p.modelId)) &&
+            (p.provider === PENGUIN_GO_PROVIDER_ID ||
+              !catalogRows.has(refKey(p.provider, p.modelId))),
+        );
+      const kept = new Set(keep.map((p) => refKey(p.provider, p.modelId)));
+      this.promotions.replaceAll(projectId, [
+        ...keep,
+        ...presetPromotions().filter(
+          (p) =>
+            refs.has(refKey(p.provider, p.modelId)) && !kept.has(refKey(p.provider, p.modelId)),
+        ),
+      ]);
+    }
+    return { ...(await this.getModels(projectId)), added: added.length, restored };
   }
 }
 
@@ -1677,7 +2373,7 @@ export function isProbeContent(msg: OmniMessage): boolean {
  * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
  * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
  * model that spends the probe's tiny max_tokens entirely on thinking (finish_reason=length ->
- * AgentHub's EmptyResponseError, a `retryable` outcome that still streamed content) — the
+ * MMSP's EmptyResponseError, a `retryable` outcome that still streamed content) — the
  * endpoint, credential, and model id all demonstrably work, which is what a connectivity
  * test measures. Everything else (fatal rejections, and retryable failures with nothing
  * received) fails with the outcome's message.

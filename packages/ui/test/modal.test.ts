@@ -71,8 +71,10 @@ describe("Modal", () => {
   });
 
   it("pads and scrolls its body unless the caller owns the layout", () => {
-    expect(modal()).toContain("max-h-[70vh]");
+    // The body names its slot, which a theme reads to close up a dropped head rule's gap.
+    expect(modal()).toMatch(/data-slot="body" class="max-h-\[70vh\]/);
     expect(modal({ bare: true })).not.toContain("max-h-[70vh]");
+    expect(modal({ bare: true })).not.toContain('data-slot="body"');
     expect(modal({ footer: "Actions" })).toMatch(/border-t border-line[^"]*">Actions<\/div>/);
   });
 

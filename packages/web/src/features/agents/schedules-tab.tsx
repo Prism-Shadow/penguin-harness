@@ -327,7 +327,7 @@ export function SchedulesTab({
         busy={busy}
         onClose={() => setDeleting(null)}
         onConfirm={() => void confirmRemove()}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">

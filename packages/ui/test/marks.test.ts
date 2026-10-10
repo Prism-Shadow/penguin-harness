@@ -1,6 +1,7 @@
 /**
  * The fixed-grid marks (src/components/icons/marks/marks.tsx): the caret and the close cross keep
- * the small grids their two strokes were drawn on, and every mark is decorative.
+ * the small grids their two strokes were drawn on, every mark is decorative, and every mark (the
+ * collapse chevron too) is drawn in all three icon sets under the `ui-glyph` hook.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -36,6 +37,24 @@ describe("marks", () => {
       const html = renderStatic(mark);
       expect(html).toContain('viewBox="0 0 24 24"');
       expect(html).toContain('aria-hidden="true"');
+    }
+  });
+
+  it("draw each mark in every icon set, the line drawing on the mark's own grid", () => {
+    const marks = [
+      ...[ChevronDown, CheckIcon, PlusIcon, DownloadIcon, UploadIcon, CloseIcon].map((mark) =>
+        createElement(mark),
+      ),
+      createElement(Chevron, { open: false }),
+    ];
+    for (const mark of marks) {
+      const html = renderStatic(mark);
+      expect(html).toMatch(/^<svg [^>]*class="ui-glyph /);
+      expect([...html.matchAll(/data-set="(\w+)"/g)].map((m) => m[1])).toEqual([
+        "line",
+        "octicons",
+        "pixel",
+      ]);
     }
   });
 

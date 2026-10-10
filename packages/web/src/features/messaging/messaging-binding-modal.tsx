@@ -8,10 +8,12 @@
  * dialog from a cached row can re-read that cache); every behavior (channel switching,
  * save/enable split, single-enabled gating, models-style secret clearing, status poll) lives
  * in the editor. There is no unbind action — removing a credential is the secret field's
- * clear checkbox.
+ * clear checkbox. Closing (the footer's Close, Esc, the backdrop) with unsaved edits on any
+ * channel's form asks to discard them first; a failed load closes without asking.
  */
+import { useState } from "react";
 import type { MessagingChannel } from "@prismshadow/penguin-server/api";
-import { Button, Modal } from "@prismshadow/penguin-ui";
+import { Button, ConfirmModal, Modal } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
   MessagingBindingBody,
@@ -45,15 +47,20 @@ export function MessagingBindingModal({
       onClose();
     },
   });
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const requestClose = () => {
+    if (b.unsavedAny) setConfirmDiscard(true);
+    else onClose();
+  };
 
   return (
     <Modal
       open
       title={S.messaging.dialogTitle}
-      onClose={onClose}
+      onClose={requestClose}
       footer={
         <>
-          <Button size="sm" onClick={onClose}>
+          <Button size="sm" onClick={requestClose}>
             {S.common.close}
           </Button>
           <Button
@@ -72,6 +79,19 @@ export function MessagingBindingModal({
         {/* The Save action lives in the footer; the collapsed FAQ trails the body. */}
         {b.form !== null && <MessagingBindingHelp channel={b.form.channel} />}
       </div>
+      <ConfirmModal
+        open={confirmDiscard}
+        title={S.common.discardTitle}
+        onClose={() => setConfirmDiscard(false)}
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          onClose();
+        }}
+        confirmLabel={S.common.discard}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.common.discardBody}</p>
+      </ConfirmModal>
     </Modal>
   );
 }

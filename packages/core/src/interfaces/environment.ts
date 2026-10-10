@@ -227,7 +227,7 @@ export interface VisionDescriberService {
  */
 export interface EnvironmentServices {
   subagentRunner?: SubagentRunner;
-  /** Injected when (and only when) the session model doesn't support images: read_file then describes an image through it instead of returning image content. */
+  /** Injected when (and only when) the running context's model doesn't support images: read_file then describes an image through it instead of returning image content. Follows the model across an in-session switch (`Environment.reconfigure` re-injects or removes it as each context opens). */
   visionDescriber?: VisionDescriberService;
   /** Registry of long-running command sessions (shared by `exec_command` / `input_command`); constructed and injected internally by Environment. */
   commandSessions?: CommandSessionManager;
@@ -388,6 +388,13 @@ export type SpawnConfiner = (
 export interface ConfinedSpawn {
   argv: readonly string[];
   env?: Readonly<Record<string, string>>;
+  /**
+   * Whole lines the runner itself prints at the head of stderr before it execs the command
+   * (a report, not an error — the Landlock launcher's "partial enforcement" on an older
+   * kernel). The spawn drops them from the head of the command's stderr, matched by exact
+   * line, case-insensitively; the command's own output is never examined past its first line.
+   */
+  runnerLines?: readonly string[];
 }
 
 /**

@@ -45,10 +45,12 @@ import type {
   PluginGroupItem,
   PluginIndexEntry,
   PluginItem,
+  QuickStartItem,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
+  Badge,
   Button,
   CollapsibleSection,
   ConfirmModal,
@@ -109,8 +111,8 @@ export type InstalledMap = ReadonlyMap<string, AgentInstalls>;
 /** The three fields of a plugin the install questions below read (the card passes the whole DTO; tests can pass just these). */
 export type PluginParts = Pick<PluginItem, "name" | "skills" | "hooks">;
 
-/** "Manage installs" button icon (download into tray, 24×24 line path). */
-const INSTALL_ICON = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3";
+/** "Manage installs" button icon: the arrow landing in its tray. */
+const INSTALL_ICON = ICONS.download;
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map() };
 
@@ -123,6 +125,20 @@ function installsOf(
     skills: new Map(skills.map((s) => [s.name, s.version])),
     hooks: new Map(hooks.map((h) => [h.name, h.version])),
   };
+}
+
+/**
+ * A library plugin's quick start: what its plugin.json declares, else its first skill invoked
+ * by name (the prompt read at click time, in the UI language); null for a plugin with neither.
+ */
+export function libraryQuickStart(
+  plugin: Pick<PluginItem, "skills" | "quickStart">,
+): QuickStartItem | null {
+  if (plugin.quickStart !== undefined) return plugin.quickStart;
+  const skill = plugin.skills[0];
+  return skill === undefined
+    ? null
+    : { prompt: S.skills.quickInvokeText(skill.name), skills: [skill.name] };
 }
 
 /**
@@ -227,6 +243,12 @@ export function PluginsPage() {
   const [deployment, setDeployment] = useState<InstalledPluginsResponse | null>(null);
   /** The registry: every module plugin this deployment could ask for. */
   const [index, setIndex] = useState<PluginIndexEntry[] | null>(null);
+  /**
+   * Sources that answered with nothing. A published index that is down shortens the list
+   * instead of emptying it (the server merges tolerantly), so the page has to say so — a
+   * silently shorter list reads as "that plugin does not exist".
+   */
+  const [indexFailures, setIndexFailures] = useState<{ source: string; error: string }[]>([]);
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
@@ -301,7 +323,9 @@ export function PluginsPage() {
     let cancelled = false;
     api.getPluginIndex().then(
       (res) => {
-        if (!cancelled) setIndex(res.plugins);
+        if (cancelled) return;
+        setIndex(res.plugins);
+        setIndexFailures(res.failures ?? []);
       },
       () => {
         if (!cancelled) setIndex([]);
@@ -322,9 +346,12 @@ export function PluginsPage() {
   );
 
   /**
-   * Asks this Project for a module plugin (or drops it); the server lists it and re-assembles
-   * the App, so the row's state afterwards is what the running process has — including a
-   * load that failed, which is reported as such rather than toasted as installed.
+   * Installs the package into the data root (fetched from npm unless this build ships it) and
+   * lists it for this Project — writing the list alone would name a package that is not on
+   * the machine, which is exactly the state the row would then have to report as broken. The
+   * server re-assembles the App where it can, so the row's state afterwards is what the
+   * running process has — including a load that failed, which is reported as such rather than
+   * toasted as installed; otherwise the row waits for a restart.
    */
   const runDeploymentInstall = async (specifier: string, install: boolean) => {
     if (pendingSpecifier !== null || projectId === null) return;
@@ -439,7 +466,7 @@ export function PluginsPage() {
    * and its `pluginUpdates` moved, and both are read off that list.
    */
   const toggleInstall = async (agentId: string, plugin: PluginItem, on: boolean) => {
-    if (!projectId) return;
+    if (!projectId) return false;
     const prev = installed.get(agentId) ?? NO_INSTALLS;
     setAgentInstalls(agentId, withPlugin(prev, plugin, on));
     const target = agents.find((a) => a.agentId === agentId);
@@ -474,9 +501,10 @@ export function PluginsPage() {
     } catch (e) {
       setAgentInstalls(agentId, prev);
       toastError(apiErrorText(e));
-      return;
+      return false;
     }
     void reloadAgents();
+    return true;
   };
 
   /**
@@ -549,16 +577,14 @@ export function PluginsPage() {
   };
 
   /**
-   * Quick start: pre-selects one of the plugin's skills in the draft cache (the `skills`
-   * field, used by ChatInput as its initial selection on mount), pre-fills the invocation text
-   * per UI language (overwriting any existing draft body — quick start's intent is
-   * unambiguous, and leftover draft text would only be noise here), and opens the draft on the
-   * currently selected Agent — the route state carries its agentId explicitly. handoffAgentId
-   * must be cleared: a leftover handoff target would forward the whole skill invocation to a
-   * different Agent. The button is gated on the current Agent having the skill (see
-   * PluginCard.quickStartSkill), so agentId is present here.
+   * Quick start: a plugin's demo, opened as a new-chat draft on the currently selected Agent —
+   * written, never sent, so nothing runs (and no token is spent) until the person sends it. The
+   * prompt goes in per UI language, overwriting the draft body (any typed-but-unsent text is
+   * parked as a draft conversation first, draft-sessions.ts), with the demo's skills
+   * pre-selected and goal mode on when the demo is a goal. handoffAgentId must be cleared: a
+   * leftover handoff target would forward the demo to a different Agent.
    */
-  const quickInvoke = (skillName: string) => {
+  const openQuickStart = (quickStart: QuickStartItem) => {
     const agentId = currentAgent?.agentId;
     if (!agentId) return;
     if (userId && projectId) {
@@ -567,16 +593,44 @@ export function PluginsPage() {
       // the Project's new-chat defaults (new-chat.ts).
       prepareNewChatDraft(userId, projectId);
       const key = draftKey(userId, projectId);
+      const { skills: _skills, goal: _goal, ...rest } = loadDraft(key);
       saveDraft(key, {
-        ...loadDraft(key),
+        ...rest,
         agentId,
-        text: S.skills.quickInvokeText(skillName),
-        skills: [skillName],
+        text: localizedText(locale, quickStart.prompt, quickStart.promptZh),
+        ...(quickStart.skills !== undefined && quickStart.skills.length > 0
+          ? { skills: quickStart.skills }
+          : {}),
+        ...(quickStart.goal === true ? { goal: true as const } : {}),
         handoffAgentId: undefined,
       });
     }
     setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
+  };
+
+  /** A library plugin waiting for "install on this Agent, then quick start" to be confirmed. */
+  const [pendingQuickStart, setPendingQuickStart] = useState<PluginItem | null>(null);
+  const [quickStartInstalling, setQuickStartInstalling] = useState(false);
+
+  /** A library plugin's quick start: installed on the current Agent opens it; otherwise ask first. */
+  const quickStartLibrary = (plugin: PluginItem) => {
+    const demo = libraryQuickStart(plugin);
+    if (demo === null || !currentAgent) return;
+    if (pluginInstalled(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo);
+    else setPendingQuickStart(plugin);
+  };
+
+  const confirmQuickStartInstall = async () => {
+    const plugin = pendingQuickStart;
+    const agentId = currentAgent?.agentId;
+    if (plugin === null || !agentId) return;
+    setQuickStartInstalling(true);
+    const ok = await toggleInstall(agentId, plugin, true);
+    setQuickStartInstalling(false);
+    setPendingQuickStart(null);
+    const demo = libraryQuickStart(plugin);
+    if (ok && demo !== null) openQuickStart(demo);
   };
 
   const allInstalled = installedPluginRows(groups ?? [], locale, deployment, index ?? [], view);
@@ -602,65 +656,66 @@ export function PluginsPage() {
   // would otherwise take the scrollbar with it and shift everything sideways at the click.
   return (
     <PageFrame className="[scrollbar-gutter:stable]">
-      {/* The options loaded plugins declare live on the Settings dialog's Plugins page, an
-          admin's page; the header's gear opens the dialog there rather than sending anyone
-          through the user menu to find it. */}
-      <PageHeader
-        title={S.plugins.pageTitle}
-        info={S.plugins.pageDesc}
-        actions={
-          isAdmin ? (
-            <>
-              {/* Which machine's plugins the rows show, and which table an install or a
-                  removal edits: the shared one, or that machine's own. */}
-              {otherMachines.length > 0 && (
-                <MachinePicker
-                  aria-label={S.plugins.viewMachine}
-                  choices={machineChoices}
-                  value={viewMachine ?? ALL_MACHINES_CHOICE}
-                  onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
-                />
-              )}
-              <Button
-                size="sm"
-                className="h-8 w-8 shrink-0 justify-center p-0"
-                aria-label={S.plugins.openSettings}
-                title={S.plugins.openSettings}
-                onClick={() => setSettingsOpen(true)}
-              >
-                <GlyphIcon d={ICONS.gear} size={ICON_SIZE.iconButton} />
-              </Button>
-            </>
-          ) : undefined
-        }
-      >
-        {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
+      {/* The wrapper is the @container the header buttons' words answer to (see
+          PluginsHeaderActions). The options loaded plugins declare live on the Settings
+          dialog's Plugins page, an admin's page; the header's gear opens the dialog there rather
+          than sending anyone through the user menu to find it. */}
+      <div className="@container">
+        <PageHeader
+          title={S.plugins.pageTitle}
+          info={S.plugins.pageDesc}
+          actions={
+            <PluginsHeaderActions
+              query={query}
+              onQuery={setQuery}
+              isAdmin={isAdmin}
+              machinePicker={
+                otherMachines.length > 0 ? (
+                  <MachinePicker
+                    aria-label={S.plugins.viewMachine}
+                    choices={machineChoices}
+                    value={viewMachine ?? ALL_MACHINES_CHOICE}
+                    onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
+                  />
+                ) : null
+              }
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
+          }
+        >
+          {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
             that takes all of it in one press, and the way to clear it for someone who has looked
             and decided to stay on the installed copies. A plugin is never NEW here — one nobody
             has installed is not waiting for anyone — so the line states the upgradable count
             alone rather than padding it with a zero. The per-card update buttons below remain
             the way to take just one. */}
-        {todo && (
-          <TodoNotice
-            text={S.todo.changesUpgradable(noticeCounts(todo).updated)}
-            actionLabel={S.todo.updateNow}
-            busy={bulkRunning}
-            onAction={() => setPendingBulk(pluginUpdatePlan(agents))}
-            dismissLabel={S.todo.dismiss}
-            onDismiss={() => dismissTodo(projectId, "plugins", todo.signature)}
-          />
-        )}
-        {remote !== null && "error" in remote && remote.machineId === viewMachine && (
-          <Notice tone="attention" className="mt-4">
-            {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
-          </Notice>
-        )}
-        {deployment !== null && viewIncludesHere && deployment.restartPending && (
-          <Notice tone="attention" className="mt-4">
-            {S.plugins.restartPending}
-          </Notice>
-        )}
-      </PageHeader>
+          {todo && (
+            <TodoNotice
+              text={S.todo.changesUpgradable(noticeCounts(todo).updated)}
+              actionLabel={S.todo.updateNow}
+              busy={bulkRunning}
+              onAction={() => setPendingBulk(pluginUpdatePlan(agents))}
+              dismissLabel={S.todo.dismiss}
+              onDismiss={() => dismissTodo(projectId, "plugins", todo.signature)}
+            />
+          )}
+          {indexFailures.length > 0 && (
+            <Notice tone="attention" className="mt-4">
+              {S.pluginRegistry.sourceUnavailable(indexFailures.length)}
+            </Notice>
+          )}
+          {remote !== null && "error" in remote && remote.machineId === viewMachine && (
+            <Notice tone="attention" className="mt-4">
+              {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
+            </Notice>
+          )}
+          {deployment !== null && viewIncludesHere && deployment.restartPending && (
+            <Notice tone="attention" className="mt-4">
+              {S.plugins.restartPending}
+            </Notice>
+          )}
+        </PageHeader>
+      </div>
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -689,13 +744,6 @@ export function PluginsPage() {
       ) : (
         <div className="mt-2 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:gap-4">
           <div className="min-w-0 space-y-3">
-            <SearchInput
-              size="sm"
-              value={query}
-              placeholder={S.plugins.searchPlaceholder}
-              aria-label={S.plugins.searchPlaceholder}
-              onChange={setQuery}
-            />
             {/* ONE list, one plugin per row, every kind in the same card: what is installed
                   first — the library's plugins (they ship with the build and every Agent may use
                   them) and the module plugins this Project asks for — then what could be. A
@@ -712,7 +760,7 @@ export function PluginsPage() {
                     plugin={row.plugin}
                     category={row.category}
                     installed={installed}
-                    onQuickInvoke={quickInvoke}
+                    onQuickStart={quickStartLibrary}
                     onToggleInstall={toggleInstall}
                     onUpdateOutdated={updateOutdated}
                   />
@@ -787,7 +835,8 @@ export function PluginsPage() {
         </div>
       )}
 
-      {/* A module plugin change: what it costs is said before it runs. */}
+      {/* A module plugin change: what it costs is said before it runs. An install overwrites
+          (primary); a removal uninstalls and stops runs in every Project (danger). */}
       {pendingApply !== null && (
         <ConfirmModal
           open
@@ -796,7 +845,7 @@ export function PluginsPage() {
               ? S.plugins.applyConfirmInstall(pendingApply.specifier)
               : S.plugins.applyConfirmRemove(pendingApply.specifier)
           }
-          tone="primary"
+          tone={pendingApply.install ? "primary" : "danger"}
           confirmLabel={pendingApply.install ? S.plugins.install : S.plugins.uninstall}
           cancelLabel={S.common.cancel}
           busy={pendingSpecifier !== null}
@@ -804,6 +853,24 @@ export function PluginsPage() {
           onConfirm={() => void runDeploymentInstall(pendingApply.specifier, pendingApply.install)}
         >
           <p>{S.plugins.applyConfirmBody}</p>
+        </ConfirmModal>
+      )}
+      {/* A library plugin's quick start on an Agent that lacks it: installing comes first, and is asked. */}
+      {pendingQuickStart !== null && currentAgent && (
+        <ConfirmModal
+          open
+          title={S.plugins.quickStartInstallTitle(
+            pendingQuickStart.name,
+            agentDisplayName(currentAgent),
+          )}
+          tone="primary"
+          confirmLabel={S.plugins.install}
+          cancelLabel={S.common.cancel}
+          busy={quickStartInstalling}
+          onClose={() => setPendingQuickStart(null)}
+          onConfirm={() => void confirmQuickStartInstall()}
+        >
+          <p>{S.plugins.quickStartAfterInstall}</p>
         </ConfirmModal>
       )}
       {/* Bulk update confirmation. Same warning as the per-plugin confirm — an update is an
@@ -876,6 +943,57 @@ export interface PluginView {
 
 /** The picker's value for all machines: a machine id is never this short. */
 const ALL_MACHINES_CHOICE = "*";
+
+/**
+ * The page header's actions, the Models page's shape: search for everyone (a member filters the
+ * list too), then, for an admin, the machine picker (which machine's plugins the rows show, and
+ * which table an install or a removal edits: the shared one, or that machine's own) and the gear
+ * that opens the Settings dialog's Plugins page. The gear's words sit beside its icon once the
+ * header's `@container` is wide enough.
+ */
+export function PluginsHeaderActions({
+  query,
+  onQuery,
+  isAdmin,
+  machinePicker,
+  onOpenSettings,
+}: {
+  query: string;
+  onQuery: (query: string) => void;
+  isAdmin: boolean;
+  /** The machine picker, when there is another machine to pick; null otherwise. */
+  machinePicker: React.ReactNode;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <>
+      <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+        <SearchInput
+          size="sm"
+          value={query}
+          placeholder={S.plugins.searchPlaceholder}
+          aria-label={S.plugins.searchPlaceholder}
+          onChange={onQuery}
+        />
+      </div>
+      {isAdmin && (
+        <>
+          {machinePicker}
+          <Button
+            size="sm"
+            className="h-8 shrink-0"
+            aria-label={S.plugins.openSettings}
+            title={S.plugins.openSettings}
+            onClick={onOpenSettings}
+          >
+            <GlyphIcon d={ICONS.gear} size={ICON_SIZE.iconButton} />
+            <span className="hidden @3xl:inline">{S.plugins.openSettings}</span>
+          </Button>
+        </>
+      )}
+    </>
+  );
+}
 
 const ALL_MACHINES: PluginView = { machineId: null, remote: null, nameOf: (id) => id };
 
@@ -1135,7 +1253,7 @@ function PluginFilters({
             : "border-gray-300 dark:border-gray-600"
         }`}
       >
-        {on && <GlyphIcon d="M20 6 9 17l-5-5" size={10} />}
+        {on && <GlyphIcon d={ICONS.check} size={10} />}
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className="shrink-0 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500">
@@ -1161,7 +1279,7 @@ function PluginFilters({
         onClick={onClear}
         tabIndex={active ? 0 : -1}
         aria-hidden={!active}
-        className={`px-2 text-xs text-gray-400 underline-offset-2 hover:underline dark:text-gray-500 ${active ? "" : "invisible"}`}
+        className={`whitespace-nowrap px-2 text-xs text-gray-400 underline-offset-2 hover:underline dark:text-gray-500 ${active ? "" : "invisible"}`}
       >
         {S.plugins.filterClear}
       </button>
@@ -1194,20 +1312,18 @@ function PluginFilters({
 /** One tag on a row's tag line: a category, "built in", a license, a keyword. */
 function Tag({
   children,
-  mono,
+  quiet,
   title,
 }: {
   children: React.ReactNode;
-  mono?: boolean;
+  /** What the plugin carries or is keyed by, rather than what it is: the outlined weight. */
+  quiet?: boolean;
   title?: string;
 }) {
   return (
-    <span
-      data-tooltip={title}
-      className={`rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800 ${mono ? "font-mono text-gray-500 dark:text-gray-400" : "font-medium text-gray-600 dark:text-gray-300"}`}
-    >
+    <Badge variant={quiet ? "outline" : "soft"} tooltip={title}>
       {children}
-    </span>
+    </Badge>
   );
 }
 
@@ -1216,7 +1332,7 @@ function PluginCard({
   plugin,
   category,
   installed,
-  onQuickInvoke,
+  onQuickStart,
   onToggleInstall,
   onUpdateOutdated,
 }: {
@@ -1224,8 +1340,8 @@ function PluginCard({
   /** The library's category, shown as the row's first tag (the page has no groups). */
   category: string;
   installed: InstalledMap;
-  onQuickInvoke: (skillName: string) => void;
-  onToggleInstall: (agentId: string, plugin: PluginItem, on: boolean) => Promise<void>;
+  onQuickStart: (plugin: PluginItem) => void;
+  onToggleInstall: (agentId: string, plugin: PluginItem, on: boolean) => Promise<boolean>;
   onUpdateOutdated: (name: string, agentIds: string[]) => Promise<void>;
 }) {
   const { locale } = useLocale();
@@ -1257,14 +1373,10 @@ function PluginCard({
   const outdated = outdatedAgentIds(agents, plugin.name).filter((agentId) =>
     pluginInstalled(plugin, installed.get(agentId)),
   );
-  // Quick start opens a draft on the currently selected Agent and pre-selects one of this
-  // plugin's skills there, so it's only offered once that Agent has one installed — otherwise
-  // it would pre-select a skill the Agent lacks. A plugin with no skill has nothing to start.
-  const currentInstalls = currentAgent === null ? undefined : installed.get(currentAgent.agentId);
-  const quickStartSkill =
-    currentInstalls === undefined
-      ? undefined
-      : plugin.skills.find((skill) => currentInstalls.skills.has(skill.name));
+  // Quick start opens this plugin's demo as a draft on the currently selected Agent; an Agent
+  // that lacks the plugin is asked to install it first (the page does that), so the button only
+  // waits for there to be an Agent and a demo.
+  const canQuickStart = currentAgent !== null && libraryQuickStart(plugin) !== null;
 
   // The card's detail Modal (the model library's card pattern): what the plugin ships,
   // with a per-skill SKILL.md reader.
@@ -1286,7 +1398,7 @@ function PluginCard({
     .filter((v): v is string => v !== null)
     .join(" · ");
   return (
-    <div className="flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+    <div className="@container flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
       <button
         type="button"
         onClick={() => setDetailOpen(true)}
@@ -1334,15 +1446,16 @@ function PluginCard({
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
           <Tag>{category}</Tag>
           <Tag title={S.plugins.libraryBuiltinHint}>{S.plugins.builtin}</Tag>
-          {plugin.skills.length > 0 && <Tag mono>{S.skills.skillCount(plugin.skills.length)}</Tag>}
-          {plugin.hooks.length > 0 && <Tag mono>{S.hooks.hookCount(plugin.hooks.length)}</Tag>}
+          {plugin.skills.length > 0 && <Tag quiet>{S.skills.skillCount(plugin.skills.length)}</Tag>}
+          {plugin.hooks.length > 0 && <Tag quiet>{S.hooks.hookCount(plugin.hooks.length)}</Tag>}
         </div>
       </button>
       {detailOpen && (
         <PluginDetailModal plugin={plugin} meta={meta} onClose={() => setDetailOpen(false)} />
       )}
-      {/* Actions: equal-square light icon buttons in a single row, vertically centered at the
-          card's right edge (copy goes into aria-label and title). */}
+      {/* Actions: light buttons in a single row, vertically centered at the card's right edge —
+          the Models page's group-header shape: the icon always, its copy beside it once the card
+          is wide enough (@3xl), and aria-label and title carrying the name either way. */}
       <div className="flex shrink-0 items-center justify-center gap-1.5">
         {/* Light (secondary): an update nudge, not the card's primary action. The last stop on
             the plugins trail, so it carries the dot itself — straddling the top-right corner of
@@ -1353,40 +1466,39 @@ function PluginCard({
           <Button
             size="sm"
             variant="secondary"
-            className="relative h-8 w-8 shrink-0 justify-center p-0"
+            className="relative h-8 shrink-0"
             aria-label={`${S.plugins.updateOutdated(outdated.length)} ${plugin.name}`}
             title={S.plugins.updateOutdated(outdated.length)}
             onClick={() => setPendingUpdate(outdated)}
           >
             <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.iconButton} />
+            <span className="hidden @3xl:inline">{S.plugins.updateOutdated(outdated.length)}</span>
             <UpdateDot
               size="inline"
               position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
             />
           </Button>
         )}
-        {plugin.skills.length > 0 && (
-          <Button
-            size="sm"
-            className="h-8 w-8 shrink-0 justify-center p-0"
-            aria-label={`${S.skills.quickInvoke} ${plugin.name}`}
-            title={quickStartSkill ? S.skills.quickInvoke : S.plugins.quickInvokeNeedsInstall}
-            disabled={quickStartSkill === undefined}
-            onClick={() => {
-              if (quickStartSkill) onQuickInvoke(quickStartSkill.name);
-            }}
-          >
-            <GlyphIcon d={ICONS.paperPlane} size={ICON_SIZE.iconButton} />
-          </Button>
-        )}
         <Button
           size="sm"
-          className="h-8 w-8 shrink-0 justify-center p-0"
+          className="h-8 shrink-0"
+          aria-label={`${S.skills.quickInvoke} ${plugin.name}`}
+          title={S.plugins.quickStartHint}
+          disabled={!canQuickStart}
+          onClick={() => onQuickStart(plugin)}
+        >
+          <GlyphIcon d={ICONS.paperPlane} size={ICON_SIZE.iconButton} />
+          <span className="hidden @3xl:inline">{S.skills.quickInvoke}</span>
+        </Button>
+        <Button
+          size="sm"
+          className="h-8 shrink-0"
           aria-label={`${S.skills.manageInstall} ${plugin.name}`}
           title={S.skills.manageInstall}
           onClick={() => setInstallOpen(true)}
         >
           <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.iconButton} />
+          <span className="hidden @3xl:inline">{S.skills.manageInstall}</span>
         </Button>
       </div>
       {installOpen && (
@@ -1559,7 +1671,7 @@ function InstallRow({
  * knows the package; the cluster sits BESIDE that link — a button inside an anchor is invalid
  * markup, and the click would have two meanings.
  */
-function ModuleRow({
+export function ModuleRow({
   specifier,
   entry,
   state,
@@ -1670,7 +1782,7 @@ function ModuleRow({
         {onlyOn !== undefined && <Tag>{S.plugins.onlyOn(onlyOn.join(", "))}</Tag>}
         {shipped && <Tag title={S.plugins.builtinHint}>{S.plugins.builtin}</Tag>}
         {(entry?.keywords ?? []).map((keyword) => (
-          <Tag key={keyword} mono>
+          <Tag key={keyword} quiet>
             {keyword}
           </Tag>
         ))}
@@ -1678,7 +1790,7 @@ function ModuleRow({
     </>
   );
   return (
-    <div className="flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+    <div className="@container flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
       {entry !== undefined ? (
         <Link to={`/plugins/registry/${specifier}`} className="min-w-0 flex-1">
           {body}
@@ -1686,14 +1798,15 @@ function ModuleRow({
       ) : (
         <div className="min-w-0 flex-1">{body}</div>
       )}
-      {/* The verb, in the library card's shape: one square light icon button, its copy in
-          aria-label and title. While it runs, a spinner stands in for the glyph. */}
+      {/* The verb, in the library card's shape: a light button, its icon always and its copy
+          beside it once the row is wide enough (@3xl), aria-label and title naming it either
+          way. While it runs, a spinner stands in for the glyph. */}
       <div className="flex shrink-0 items-center justify-center gap-1.5">
         {state === "none"
           ? onInstall !== null && (
               <Button
                 size="sm"
-                className="h-8 w-8 shrink-0 justify-center p-0"
+                className="h-8 shrink-0"
                 aria-label={`${busy ? S.plugins.installing : S.plugins.install} ${specifier}`}
                 aria-busy={busy}
                 title={busy ? S.plugins.installing : S.plugins.install}
@@ -1705,12 +1818,15 @@ function ModuleRow({
                 ) : (
                   <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.iconButton} />
                 )}
+                <span className="hidden @3xl:inline">
+                  {busy ? S.plugins.installing : S.plugins.install}
+                </span>
               </Button>
             )
           : onRemove !== null && (
               <Button
                 size="sm"
-                className="h-8 w-8 shrink-0 justify-center p-0"
+                className="h-8 shrink-0"
                 aria-label={`${S.plugins.uninstall} ${specifier}`}
                 aria-busy={busy}
                 title={removeBlocked ?? S.plugins.uninstall}
@@ -1722,6 +1838,7 @@ function ModuleRow({
                 ) : (
                   <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
                 )}
+                <span className="hidden @3xl:inline">{S.plugins.uninstall}</span>
               </Button>
             )}
       </div>

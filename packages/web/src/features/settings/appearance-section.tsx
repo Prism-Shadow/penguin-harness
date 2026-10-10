@@ -16,6 +16,7 @@ import {
   PrefRow,
   Segmented,
   Select,
+  SettingsGroup,
   SwatchPicker,
   THEME_IDS,
   ToggleRow,
@@ -171,7 +172,7 @@ export function AppearanceSection() {
   );
 
   return (
-    <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
+    <SettingsGroup>
       <PrefRow label={S.settings.theme} info={S.settings.themeInfo}>
         <Segmented options={themeIdOptions} value={themeId} onChange={setThemeId} />
       </PrefRow>
@@ -235,6 +236,6 @@ export function AppearanceSection() {
           onChange={changeTrayIcon}
         />
       )}
-    </div>
+    </SettingsGroup>
   );
 }

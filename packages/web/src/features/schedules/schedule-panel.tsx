@@ -62,24 +62,20 @@ import { toggleBody } from "./schedule-upsert";
 /** How often the list refetches while on screen — about the server's own re-read cadence for the schedule directory. */
 const REFRESH_MS = 30_000;
 
-/** The state marks: a filled play for an armed task, pause bars, a check for the settled states. */
-const PLAY_ICON = "M7 4l13 8-13 8z";
-const PAUSE_ICON = "M8 4v16M16 4v16";
-const CHECK_ICON = "M5 12l4 4L19 6";
-
 /** The row's leading state glyph; an invalid file wears the info circle in the danger tone, its reason in the tooltip. */
 function StateGlyph({ item }: { item: ScheduleItem }) {
   const glyph = scheduleGlyph(item.status);
   const name = S.schedule.statusNames[item.status] ?? item.status;
   const tone =
     glyph === "play" ? toneInk.success : glyph === "alert" ? toneInk.danger : toneInk.muted;
+  // The state marks: a filled play for an armed task, pause bars, a check for the settled states.
   const d =
     glyph === "play"
-      ? PLAY_ICON
+      ? ICONS.play
       : glyph === "pause"
-        ? PAUSE_ICON
+        ? ICONS.pause
         : glyph === "check"
-          ? CHECK_ICON
+          ? ICONS.check
           : ICONS.info;
   return (
     <span className={`shrink-0 ${tone}`} data-tooltip={item.invalidReason ?? name}>
@@ -350,7 +346,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
         busy={busy}
         onClose={() => setDeleting(null)}
         onConfirm={() => void confirmRemove()}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">

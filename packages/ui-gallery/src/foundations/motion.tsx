@@ -1,17 +1,20 @@
 /**
  * Foundations › Motion, replayable: the three presence specimens (a menu from the top, a dialog
  * with its backdrop from the centre, a toast from the bottom) entering and leaving on the theme's
- * `data-presence` rules; a streamed line arriving chunk by chunk under `data-reveal`; a sidebar's
- * width folding to a rail and back under `data-layout-motion`; then every duration × easing pair
- * as a dot crossing a track, and the live signals — a caret, a running dot and a spinner — on the
- * timing each theme gives `.ui-live`. The specimens set the same attributes the modules set and
- * nothing else, so what moves here is exactly what the theme's motion tokens say.
+ * `data-presence` rules; tool rows appended to a settled list under `data-reveal`, what the
+ * attribute is for (streaming text is not it: that is the `ui-stream` host, on the library's
+ * streaming board); a sidebar's width folding to a rail and back under `data-layout-motion`; then
+ * every duration × easing pair as a dot crossing a track, and the live signals — the package's
+ * streaming caret, pulsing dot and spinner — on the timing each theme gives `.ui-live`. The
+ * specimens set the same attributes the modules set, or are the modules' own components, so what
+ * moves here is exactly what the theme's motion tokens say.
  *
  * With `motion=reduced` (chrome.css, and the package's own reduced rules) every change shows its
  * end state at once — which is also what keeps screenshots deterministic.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AnimationEvent, CSSProperties, ReactNode } from "react";
+import { Dot, GlyphIcon, ICONS, Spinner, StreamingCaret } from "@prismshadow/penguin-ui";
 import { useGallery } from "../state";
 import { BoardGroup, NAV_GLYPHS, ReplayButton } from "./shared";
 import { SPECIMENS } from "./specimens";
@@ -21,8 +24,10 @@ const EASINGS = ["out", "in-out", "spring", "overlay-in", "overlay-out"] as cons
 
 /** How long a presence specimen stays open between its entrance and its exit. */
 const HOLD_MS = 1400;
-/** A streamed chunk every so often; Frost's reveal overlaps the next chunk's, by design. */
-const CHUNK_MS = 90;
+/** A new row every so often; Frost's reveal overlaps the next row's, by design. */
+const ROW_MS = 90;
+/** The rows the list already holds when the new ones arrive: settled, never revealed. */
+const SETTLED_ROWS = 2;
 
 type Phase = "hidden" | "enter" | "exit";
 
@@ -113,22 +118,23 @@ function PresenceSpecimen({
   );
 }
 
-/** Streaming splits into words for Latin text and one or two Han characters for Chinese. */
-function chunksOf(text: string, lang: "en" | "zh"): string[] {
-  const parts = lang === "zh" ? text.match(/[\s\S]{1,2}/g) : text.match(/\S+\s*/g);
-  return parts ?? [text];
-}
-
+/**
+ * Tool rows arriving in a list that is already on screen, the way a running work group's steps
+ * do: the first rows are settled, and each new one moves once under `data-reveal` as it is
+ * appended. Before the first replay every row is settled, as a page that loads finished is.
+ */
 function RevealSpecimen({ run }: { run: number }) {
-  const { state } = useGallery();
-  const chunks = chunksOf(SPECIMENS[state.lang].paragraph, state.lang);
-  const total = chunks.length;
+  const { S } = useGallery();
+  const rows = S.foundations.motionSpecimens.revealRows;
+  const total = rows.length;
   const [shown, setShown] = useState(total);
+  const [played, setPlayed] = useState(false);
   const timer = useRef<number | null>(null);
 
   const play = useCallback(() => {
     if (timer.current !== null) window.clearInterval(timer.current);
-    setShown(0);
+    setPlayed(true);
+    setShown(SETTLED_ROWS);
     timer.current = window.setInterval(() => {
       setShown((n) => {
         if (n + 1 >= total && timer.current !== null) {
@@ -137,7 +143,7 @@ function RevealSpecimen({ run }: { run: number }) {
         }
         return Math.min(n + 1, total);
       });
-    }, CHUNK_MS);
+    }, ROW_MS);
   }, [total]);
 
   useEffect(() => {
@@ -150,21 +156,21 @@ function RevealSpecimen({ run }: { run: number }) {
     [],
   );
 
-  const streaming = shown < total;
   return (
     <div className="gf-specimen">
-      <p className="gf-reveal" lang={state.lang === "zh" ? "zh-CN" : "en"}>
-        {chunks.slice(0, shown).map((chunk, i) => (
-          <span key={i} data-reveal>
-            {chunk}
-          </span>
+      <div className="gf-reveal">
+        {rows.slice(0, shown).map((row, i) => (
+          <div
+            key={i}
+            className="gf-reveal-row"
+            {...(played && i >= SETTLED_ROWS ? { "data-reveal": true } : {})}
+          >
+            <GlyphIcon d={ICONS.checkCircle} size={14} />
+            <span className="gf-mono">{row.name}</span>
+            <span className="gf-reveal-detail">{row.detail}</span>
+          </div>
         ))}
-        {streaming && (
-          <span className="ui-live gf-caret" data-live="caret">
-            ▌
-          </span>
-        )}
-      </p>
+      </div>
       <div className="gf-specimen-foot">
         <span className="gf-caption gf-mono">data-reveal</span>
         <ReplayButton onClick={play} />
@@ -318,16 +324,14 @@ export function MotionBoard() {
         <div className="gf-live">
           <span>
             {SPECIMENS[state.lang].heading}
-            <span className="ui-live gf-caret" data-live="caret">
-              ▌
-            </span>
+            <StreamingCaret />
           </span>
           <span className="gf-live-item">
-            <span className="ui-live gf-live-dot" data-live="dot" />
+            <Dot tone="success" pulse />
             {t.toneWords.success}
           </span>
           <span className="gf-live-item">
-            <span className="ui-live gf-spinner" data-live="spinner" />
+            <Spinner size="sm" tone="success" label={t.loading} />
             {t.loading}
           </span>
         </div>

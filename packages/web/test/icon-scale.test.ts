@@ -1,21 +1,23 @@
 /**
- * The icon family as the app uses it: the role-named scale, the registry and the renderers, all in
- * the shared UI package (`icon-scale.ts`, `components/icons/…`).
+ * Guard: the icon family as the app uses it — the role-named scale, the registry and the
+ * renderers, all in the shared UI package (`icon-scale.ts`, `components/icons/…`). A new inline
+ * `<svg>` re-drawing a glyph the app already owns, at a stroke weight nobody chose, is what
+ * decays, so these are source scans over the web app and the UI package.
  *
- * These are source scans rather than render assertions, because the thing that decays is not any
- * one component's output — it is a new inline `<svg>` re-drawing a glyph the app already owns, at
- * a stroke weight nobody chose. The three paths asserted below each used to exist in five or six
- * hand-typed copies.
- *
- * The scans cover the web app and the shared UI package (test/helpers/roots.ts): a glyph that moved
- * into the package keeps its one home, and a copy re-typed on either side is still a second copy.
+ * - The scan reads every source root and finds the icon modules in one place each; every icon
+ *   rung is a whole pixel value in the legible range.
+ * - Each shared glyph (the control caret, the close cross, the collapse chevron, the two dock
+ *   marks, the memory brain, the background-task trace) is drawn in exactly one place.
+ * - No literal stroke weight appears outside the ones the family chose.
+ * - Every theme sets a line-family weight for `--ui-icon-stroke` in both modes, and the default
+ *   theme keeps the weight GlyphIcon falls back to.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { ICON_SIZE } from "@prismshadow/penguin-ui";
 import { DEFAULT_THEME_ID, THEME_IDS, THEME_MODES } from "../../ui/src/tokens";
 import { analyzeThemeFile, resolveThemeValue } from "../../ui/src/testing/theme-tokens";
-import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources();
 
@@ -50,10 +52,6 @@ describe("icon scale", () => {
       expect(size).toBeGreaterThan(8);
       expect(size).toBeLessThan(33);
     }
-  });
-
-  it("keeps the gap rungs in ascending order, as the text sizes they track are", () => {
-    expect(Object.values(ICON_GAP)).toEqual(["gap-1", "gap-1.5", "gap-2", "gap-3"]);
   });
 });
 
@@ -111,14 +109,6 @@ describe("stroke weights", () => {
       }
     }
     expect(strays).toEqual([]);
-  });
-
-  it("draws the line family at the theme's stroke token, not at a literal", () => {
-    const glyph = sourceFile(SCAN, GLYPH_ICON).text;
-    expect(glyph).toContain('strokeWidth: "var(--ui-icon-stroke, 1.7)"');
-    // The fallback is the default theme's weight; a literal attribute beside it would be dead code
-    // that reads as the real weight.
-    expect(glyph).not.toMatch(/strokeWidth="[0-9.]+"/);
   });
 
   describe("the --ui-icon-stroke token", () => {

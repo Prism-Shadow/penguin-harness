@@ -1,14 +1,26 @@
 /**
  * The one connection per machine, against a stub `ssh` on PATH that becomes a real `sh` when
- * asked for one: the framing, the heredoc input, progress relayed as it arrives, one session
- * however many ask, and what a session that dies says.
+ * asked for one (POSIX only).
+ *
+ * - Commands run with their exit code, and an `exit` cannot end the session.
+ * - A command gets its stdin as a heredoc, bytes intact, and its lines are relayed as they
+ *   arrive.
+ * - There is one session however many ask: commands to one machine queue, two opens spawn
+ *   once, and different machines run side by side.
+ * - A session that dies says why in ssh's own words and is not kept.
+ * - A command that outlasts its timeout answers with the timeout, and the next one gets a
+ *   live session; on a held session the corpse is dropped but the hold kept.
+ * - A held session that dies comes back on its own after the shortest reconnect wait; a
+ *   closed one stays closed; closing lets go, and the next ask opens a new session.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeConnectionTo, connectionTo, sessionOf } from "../src/machines/transport/index.js";
 
+// The stub `ssh` below is a shell script, which execFile cannot run on Windows; what stays
+// unmeasured on Windows is listed in ci.yml's test-windows note.
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
 posixOnly("the session", () => {
@@ -105,37 +117,50 @@ exit 1
   });
 
   it("a held session that dies comes back on its own; a closed one stays closed", async () => {
-    const conn = connectionTo({ alias: "nas", user: "deploy" });
-    const held = await conn.hold();
-    expect(held.ok).toBe(true);
-    expect(conn.held()).toBe(true);
-    const first = sessionOf("ssh:nas")!.pid;
+    // The reopen wait is a timer and the clock is the test's: the reconnect and the silence
+    // after a close are advanced to, not waited out. The child processes stay real, so what
+    // they do is waited for by turning the event loop, never by a timer.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const until = async (condition: () => boolean, what: string): Promise<void> => {
+      const deadline = Date.now() + 5_000;
+      while (!condition()) {
+        if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    };
+    try {
+      const conn = connectionTo({ alias: "nas", user: "deploy" });
+      const held = await conn.hold();
+      expect(held.ok).toBe(true);
+      expect(conn.held()).toBe(true);
+      const first = sessionOf("ssh:nas")!.pid;
 
-    // The link drops — the ssh child is gone, as after keepalives give up on a dead link.
-    process.kill(first);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(sessionOf("ssh:nas")).toBeNull();
-    // Held, so the transport brings it back: the shortest wait is a second.
-    const deadline = Date.now() + 5_000;
-    while (sessionOf("ssh:nas") === null && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // The link drops — the ssh child is gone, as after keepalives give up on a dead link.
+      process.kill(first);
+      await until(() => sessionOf("ssh:nas") === null, "the session to drop");
+      // Held, so the transport brings it back after the shortest wait, a second.
+      await vi.advanceTimersByTimeAsync(999);
+      expect(sessionOf("ssh:nas")).toBeNull();
+      await vi.advanceTimersByTimeAsync(1);
+      await until(() => sessionOf("ssh:nas") !== null, "the session to come back");
+      const second = sessionOf("ssh:nas");
+      expect(second!.pid).not.toBe(first);
+      // And it is a working session, still held. The spawn count is read only after a command
+      // has completed over it: the stub logs its own invocation from inside the child, after
+      // spawn() has already returned a pid, so a session can exist before its line is there.
+      expect(await conn.exec("echo back")).toMatchObject({ code: 0, stdout: "back\n" });
+      expect(spawns()).toHaveLength(2);
+      expect(conn.held()).toBe(true);
+
+      // An explicit close lets go for good: past every reopen wait, nothing reopens it.
+      closeConnectionTo("ssh:nas");
+      expect(conn.held()).toBe(false);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(sessionOf("ssh:nas")).toBeNull();
+      expect(spawns()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
     }
-    const second = sessionOf("ssh:nas");
-    expect(second).not.toBeNull();
-    expect(second!.pid).not.toBe(first);
-    // And it is a working session, still held. The spawn count is read only after a command
-    // has completed over it: the stub logs its own invocation from inside the child, after
-    // spawn() has already returned a pid, so a session can exist before its line is there.
-    expect(await conn.exec("echo back")).toMatchObject({ code: 0, stdout: "back\n" });
-    expect(spawns()).toHaveLength(2);
-    expect(conn.held()).toBe(true);
-
-    // An explicit close lets go for good: nothing reopens it.
-    closeConnectionTo("ssh:nas");
-    expect(conn.held()).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
-    expect(sessionOf("ssh:nas")).toBeNull();
-    expect(spawns()).toHaveLength(2);
   });
 
   it("a command that times out on a held session drops the corpse but keeps the hold", async () => {

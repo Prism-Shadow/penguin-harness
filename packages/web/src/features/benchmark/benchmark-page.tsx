@@ -288,7 +288,6 @@ export function BenchmarkCard({
       {masked && (
         <div
           role="note"
-          data-tooltip={failed ? failedHint : S.benchmark.buildingHint}
           className="absolute inset-0 flex cursor-not-allowed flex-col items-center justify-center gap-1 rounded-[inherit] bg-white/75 px-4 text-center dark:bg-gray-900/75"
         >
           {/* A failed creation is the one thing here the user has to act on, so its title takes

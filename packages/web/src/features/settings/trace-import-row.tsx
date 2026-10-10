@@ -150,9 +150,10 @@ export function TraceImportRow() {
     <PrefRow label={S.settings.importTrace} info={S.settings.importTraceInfo}>
       {/* Each picker is boxed to a fixed width — a Select fills its container, and three
           full-width controls would stack one per line. Long names truncate in the trigger.
-          The row still wraps at phone width, where three controls do not fit side by side. */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="w-32">
+          From sm up the three stay on one line (the pickers give way first, down to their minimum),
+          so the row keeps the settings rows' height; at phone width it wraps. */}
+      <div className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
+        <div className="w-32 min-w-24 sm:shrink">
           <Select
             size="sm"
             value={projectId}
@@ -171,7 +172,7 @@ export function TraceImportRow() {
             ))}
           </Select>
         </div>
-        <div className="w-32">
+        <div className="w-32 min-w-24 sm:shrink">
           <Select
             size="sm"
             value={agentId}
@@ -190,10 +191,8 @@ export function TraceImportRow() {
             native picker opens without a detour). It sits in a row with the two Selects above,
             so it carries their sm metrics rather than Button's md ones. */}
         <label
-          className={`inline-flex shrink-0 items-center justify-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium transition-colors duration-150 dark:border-gray-700 ${
-            busy
-              ? "pointer-events-none opacity-60"
-              : "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+          className={`inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[var(--ui-radius-control)] border border-line px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
+            busy ? "pointer-events-none opacity-60" : "cursor-pointer hover:bg-surface-muted"
           }`}
         >
           <HiddenFileInput accept=".jsonl" disabled={busy} onChange={onPickFile} />

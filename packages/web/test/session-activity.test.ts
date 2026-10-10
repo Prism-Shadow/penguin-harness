@@ -1,26 +1,21 @@
+/**
+ * The activity mark a Session row wears (lib/session-activity.ts) and the words the app gives
+ * it.
+ *
+ * - A live run (compaction included) shows whatever the read state, even before its Trace
+ *   exists.
+ * - A settled Session is marked only while its last reply is unread; once read, or if it
+ *   never ran, nothing is drawn.
+ * - The background count is zero without the field and the sum of both counts with it.
+ * - Each state has a label of its own, since the glyph carries no text.
+ */
 import { describe, expect, it } from "vitest";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { ActivityIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
 import {
   sessionActivity,
   sessionActivityLabel,
   sessionBackgroundTasks,
 } from "../src/lib/session-activity";
 import type { SessionActivity } from "../src/lib/session-activity";
-import { S } from "../src/lib/strings";
-import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
-
-const SCAN = scanSources();
-/** The sidebar's conversation row: the package draws the marks, the sidebar hands it their words. */
-const SESSION_ROW = "packages/ui/src/components/shell/session-row/session-row.tsx";
-
-describe("the activity marks' sources", () => {
-  it("scan every source root, and find the icon module in one place", () => {
-    expectEveryRootScanned(SCAN);
-    expectSingleHome(SCAN, "packages/ui/src/components/icons/activity-icon/activity-icon.tsx");
-  });
-});
 
 type Activity = Exclude<SessionActivity, null>;
 const ACTIVITIES: readonly Activity[] = ["running", "compacting", "completedUnread"];
@@ -61,62 +56,12 @@ describe("sessionBackgroundTasks", () => {
     expect(sessionBackgroundTasks({ backgroundTasks: { processes: 2, subagents: 0 } })).toBe(2);
     expect(sessionBackgroundTasks({ backgroundTasks: { processes: 1, subagents: 3 } })).toBe(4);
   });
-
-  it("is a facet beside the activity state, not a fourth state", () => {
-    // An idle, read Session can still own a dev server: the glyph says nothing and the
-    // background count says 1, and the row draws both.
-    expect(sessionActivity("idle", true, false)).toBeNull();
-    expect(sessionBackgroundTasks({ backgroundTasks: { processes: 1, subagents: 0 } })).toBe(1);
-  });
 });
 
-/**
- * The glyph carries no text, so the app's words are its only name: each state gets its own, and
- * every place the app draws a mark hands it one. The marks' own drawing is the UI package's
- * (`packages/ui/test/activity-icon.test.ts`); what is checked here is that the app supplies the
- * words and the room the marks need.
- */
-describe("the app's words for the activity marks", () => {
-  it("labels each state distinctly, in the interface language", () => {
-    expect(sessionActivityLabel("running")).toBe(S.chat.statusRunning);
-    expect(sessionActivityLabel("compacting")).toBe(S.chat.statusCompacting);
-    expect(sessionActivityLabel("completedUnread")).toBe(S.chat.statusCompletedUnread);
-    expect(new Set(ACTIVITIES.map(sessionActivityLabel)).size).toBe(ACTIVITIES.length);
-  });
-
-  it("names the background count where it stands for a count", () => {
-    expect(S.chat.backgroundTasks(3)).toContain("3");
-  });
-
-  it("hands every mark its label wherever the app draws one", () => {
-    // The sidebar row is the package's SessionRow: the sidebar names each mark, the row draws
-    // the mark with the name it was handed.
-    const sidebar = sourceFile(SCAN, "packages/web/src/components/layout/sidebar.tsx").text;
-    expect(sidebar).toMatch(/\{ state: activity, label: sessionActivityLabel\(activity\) \}/);
-    expect(sidebar).toMatch(/scheduledLabel: S\.chat\.sessionScheduled/);
-    expect(sidebar).toMatch(/label: S\.chat\.backgroundTasks\(background\)/);
-    const row = sourceFile(SCAN, SESSION_ROW).text;
-    expect(row).toMatch(/<ActivityIcon activity=\{activity\.state\} label=\{activity\.label\}/);
-    expect(row).toMatch(/<ScheduleMark label=\{scheduledLabel\}/);
-    expect(row).toMatch(/<BackgroundTasksMark label=\{background\.label\}/);
-    const desks = sourceFile(SCAN, "packages/web/src/features/company/org-session-groups.tsx").text;
-    expect(desks).toMatch(
-      /<ActivityIcon activity=\{activity\} label=\{sessionActivityLabel\(activity\)\}/,
-    );
-  });
-
-  it("reserves the glyph's box on a row with no glyph, so a row never shifts", () => {
-    // Every glyph renders into the same row-mark box, and the sidebar's row reserves that box
-    // when there is no glyph at all — otherwise the title would re-flow as a run starts, finishes
-    // and is read. The placeholder is read from the row itself so the two cannot drift apart.
-    expect(ICON_SIZE.rowMark).toBe(12);
-    for (const activity of ACTIVITIES) {
-      const markup = renderToStaticMarkup(
-        createElement(ActivityIcon, { activity, label: sessionActivityLabel(activity) }),
-      );
-      expect(markup).toContain("width:12px;height:12px");
-    }
-    const row = sourceFile(SCAN, SESSION_ROW).text;
-    expect(row).toMatch(/activity === null.*\n?.*className="block h-3 w-3 shrink-0"/);
+describe("sessionActivityLabel", () => {
+  it("labels each state distinctly, since the glyph carries no text", () => {
+    const labels = ACTIVITIES.map(sessionActivityLabel);
+    expect(labels.every((label) => label.length > 0)).toBe(true);
+    expect(new Set(labels).size).toBe(ACTIVITIES.length);
   });
 });

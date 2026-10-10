@@ -12,6 +12,13 @@
  * the Human interface communicates using: complete `model_msg`, streaming `partial_*`, and all
  * `event_msg`.
  *
+ * OmniMessage is a closed vocabulary. A new payload field or enum value is a protocol change
+ * every reader — Trace replay, the server, the Web App, the CLI, third-party consumers — has to
+ * learn, forever. Before adding one, show that no existing record carries the fact (the model
+ * lives in `session_meta`; a context's boundaries in the compaction pair and the file split)
+ * and that readers cannot derive it. The PR description says why the existing records could
+ * not carry it. The rule itself is stated in the architecture spec's message-format section.
+ *
  * Docs: packages/docs/content/omni-message.{zh,en}.md (site path /docs/omni-message) documents
  * this protocol payload-for-payload — keep the page in sync when changing types here.
  */
@@ -102,20 +109,23 @@ export interface ToolDefinition {
 /**
  * Session metadata: the runtime configuration of one **model context**. One `session_meta`
  * opens every Trace file — the Session's first, and each file a compaction's rotation starts.
- * The model reference, the paths and the origin are fixed for the Session's lifetime; the
- * assembled system prompt is fixed per context — a context is assembled from the Agent State
- * as it is when it opens (the template, `AGENTS.md` and the other placeholders re-read), so
- * each file's meta carries the prompt its context actually ran with; the context's toolset
- * follows as the `tool_list_ready` record. Everything that shapes the request prefix — model,
- * prompt, toolset — holds from a context's open to its close; the thinking level is not part
- * of it (a per-request parameter, deliberately not recorded — see the note in the body).
+ * The paths and the origin are fixed for the Session's lifetime; the model reference and the
+ * assembled system prompt are fixed per context — a context is assembled from the Agent State
+ * as it is when it opens (the template, `AGENTS.md` and the other placeholders re-read), on the
+ * model the Session is running at that point (an in-session model switch opens its new
+ * context on another one — see `Session.switchModel`), so each file's meta carries the prompt
+ * and the model its context actually ran with; the context's toolset follows as the
+ * `tool_list_ready` record. Everything that shapes the request prefix — model, prompt,
+ * toolset — holds from a context's open to its close; the thinking level is not part of it (a
+ * per-request parameter, deliberately not recorded — see the note in the body).
  */
 export interface SessionMetaPayload {
   session_id: string;
-  /** The session model's provider group (paired with `model_id` to form a model reference). */
+  /** This context's model: the provider group (paired with `model_id` to form a model reference). */
   provider: string;
-  /** The session model's upstream model_id (the request id sent to AgentHub; paired with `provider`). */
+  /** This context's model: the upstream model_id (the request id sent to MMSP; paired with `provider`). */
   model_id: string;
+  /** The context window of this context's model, or `"unknown"` when its entry configures none. */
   model_context_window: number | string;
   /** The system prompt this context runs with (the assembled result, placeholders already substituted). */
   system_prompt: string;
@@ -131,9 +141,31 @@ export interface SessionMetaPayload {
   agent_state: string;
   /** Absolute path to the Workspace. */
   workspace: string;
-  /** Session origin: spawned by a subagent / triggered by a scheduled task / created by a Benchmark evaluation or optimization; absent = user-created. */
-  source?: "subagent" | "schedule" | "benchmark";
+  /**
+   * What kind of conversation this is (see {@link SessionSource}), recorded in every context's
+   * meta. A Trace written before the field was required may lack it or carry the retired
+   * `benchmark`; readers narrow what they read through `normalizeSessionSource`.
+   */
+  source: SessionSource;
 }
+
+/**
+ * What kind of conversation a Session is: a person's, or one a program opened for its own
+ * purposes.
+ *
+ * - `user`: a person's conversation, and the default when nothing names a source: the Web App
+ *   composer, `penguin chat`, and forks.
+ * - `api`: an external program opened it through the Agent API.
+ * - `schedule`: a scheduled task opened it for one of its runs.
+ * - `subagent`: a `run_subagent` child, whichever Session spawned it (a company Session's too).
+ * - `cli`: `penguin run` created it, the Test Sessions an evaluation launches included.
+ * - `company`: company mode's organization runtime opened it, as an employee's desk or for a
+ *   ticket. Only company mode's own views list it.
+ *
+ * Which program created the server's index row is a separate fact (the row's `client`); the two
+ * can differ, as `penguin chat` (a `cli` client writing a `user` Session) shows.
+ */
+export type SessionSource = "user" | "api" | "schedule" | "subagent" | "cli" | "company";
 
 // ---------------------------------------------------------------------------
 // model_msg — complete messages
@@ -141,7 +173,7 @@ export interface SessionMetaPayload {
 // Docs: /docs/omni-message § "model_msg: complete payloads"
 
 /**
- * Provider-fidelity payload (mirrors AgentHub's `Fidelity`): an arbitrary JSON-style object of
+ * Provider-fidelity payload (mirrors MMSP's `Fidelity`): an arbitrary JSON-style object of
  * wire-level data the LLM client records to reproduce the original message on replay — thinking
  * signatures, phase labels, encrypted reasoning, the upstream reasoning field name, etc. Opaque
  * to PenguinHarness: written to the Trace as-is and passed back verbatim; some models **require**
@@ -350,7 +382,7 @@ export interface TokenUsagePayload {
 /**
  * Request boundary event: the boundary of one LLM Request, produced **in pairs** by
  * `context_engine` and written to Trace. `request_end`
- * with `status` of `completed` means the turn has been committed by AgentHub — this is the
+ * with `status` of `completed` means the turn has been committed by MMSP — this is the
  * mechanical criterion Trace replay (Session resumption) uses to determine whether a turn was
  * committed, and it also gives performance analysis a basis for Request latency and turn counts.
  * A compaction request produces this same event pair too (written to Trace only, not streamed).

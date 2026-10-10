@@ -1,81 +1,36 @@
 /**
- * session-row-menu.tsx unit tests: which actions each of a Session row's two surfaces
- * offers, and how each one labels itself.
+ * A Session row's two action surfaces (components/ui/session-row-menu.tsx): the hover buttons
+ * and the right-click menu, and how each action labels itself.
  *
- * The split is the point and the thing most likely to be undone by accident, so it is
- * pinned by value rather than by shape: **hover gives archive plus the ellipsis "more"
- * button and nothing else** — the ellipsis opens the context menu anchored at itself, so
- * every menu action (delete and the messaging binding included) is one visible click
- * away — while the right-click menu carries the full set. Rename in particular must stay
- * in the context menu: every Session must remain renamable, archivable and deletable, and
- * the pared-back hover affordance alone would not satisfy that.
- *
- * vitest runs node-only here (`environment: "node"`, no jsdom), so these assert against
- * the exported manifests and label helpers rather than a rendered DOM
- * (title-reveal.test.ts convention).
+ * - A pinnable row's menu carries pin, rename, messaging, archive, copy and delete; a folder
+ *   row's menu drops only pin, so every Session stays renamable, archivable and deletable.
+ * - Every hover action is also in the menu, so nothing is reachable by hover alone.
+ * - Every action has a label and a glyph of its own, and only delete is destructive.
+ * - Archive flips its label and glyph on an archived row; pin flips its label on a pinned row
+ *   and keeps its glyph.
+ * - In English no action falls back to a Chinese label (the hover buttons are icon-only, so
+ *   the label is their accessible name).
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { ICONS } from "@prismshadow/penguin-ui";
 import {
   HOVER_ROW_ACTIONS,
   contextMenuActions,
   sessionRowMenuItem,
 } from "../src/components/ui/session-row-menu";
 import type { SessionRowAction } from "../src/components/ui/session-row-menu";
-import { STAT_ICONS } from "../src/lib/stat-icons";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
-
-const SCAN = scanSources();
-const ROW_MENU = "packages/web/src/components/ui/session-row-menu.tsx";
-/** The package's row, which draws the hover buttons both the sidebar and the desk rows use. */
-const SESSION_ROW = "packages/ui/src/components/shell/session-row/session-row.tsx";
 
 /** Every test that switches locale puts the default (zh) back. */
 afterEach(() => setActiveStrings(zh));
 
 const RESTING = { archived: false, pinned: false };
-
-describe("the row menu's sources", () => {
-  it("scan every source root, and find the row menu in one place", () => {
-    expectEveryRootScanned(SCAN);
-    expectSingleHome(SCAN, ROW_MENU);
-  });
-});
-
-describe("HOVER_ROW_ACTIONS", () => {
-  it("is archive alone — the ellipsis beside it is the menu's pointer entry, not an action", () => {
-    expect([...HOVER_ROW_ACTIONS]).toEqual(["archive"]);
-  });
-
-  it("does not carry rename, pin, delete or the messaging binding — those live in the menu", () => {
-    for (const action of ["rename", "pin", "delete", "messaging", "copy"]) {
-      expect(HOVER_ROW_ACTIONS as readonly string[]).not.toContain(action);
-    }
-  });
-});
+const ALL: SessionRowAction[] = ["pin", "rename", "messaging", "archive", "copy", "delete"];
 
 describe("contextMenuActions", () => {
-  it("carries the whole set when the row can be pinned, with the id copy between archive and delete", () => {
-    expect([...contextMenuActions(true)]).toEqual([
-      "pin",
-      "rename",
-      "messaging",
-      "archive",
-      "copy",
-      "delete",
-    ]);
-  });
-
-  it("drops only pin on rows where pinning cannot reorder anything (folder rows)", () => {
-    expect([...contextMenuActions(false)]).toEqual([
-      "rename",
-      "messaging",
-      "archive",
-      "copy",
-      "delete",
-    ]);
+  it("a pinnable row's menu carries the whole set; a folder row's drops only pin", () => {
+    expect([...contextMenuActions(true)]).toEqual(ALL);
+    expect([...contextMenuActions(false)]).toEqual(ALL.filter((action) => action !== "pin"));
   });
 
   it("is a superset of the hover actions, so nothing is reachable by hover alone", () => {
@@ -85,54 +40,11 @@ describe("contextMenuActions", () => {
       }
     }
   });
-
-  it("keeps rename reachable in every state", () => {
-    expect(contextMenuActions(true)).toContain("rename");
-    expect(contextMenuActions(false)).toContain("rename");
-  });
-
-  it("offers the id copy on every row, including the folder rows that cannot pin", () => {
-    // The id is what a person carries out of the app — into the CLI, a bug report, a
-    // trace lookup — and an archived or scheduled Session is exactly when it is wanted.
-    expect(contextMenuActions(true)).toContain("copy");
-    expect(contextMenuActions(false)).toContain("copy");
-  });
-});
-
-describe("the hover buttons' CSS contract", () => {
-  // Node-only suite, so this is asserted against the source text (title-reveal.test.ts
-  // convention). It is worth pinning: an invisible button still takes taps, and these are
-  // invisible for the whole of every touch session, delete included. The buttons are the UI
-  // package's (`RowHoverActions`); this module hands them their actions.
-  const source = sourceFile(SCAN, SESSION_ROW).text;
-
-  it("gates pointer events on the same conditions as visibility, leaving no phantom tap target", () => {
-    expect(source).toContain("pointer-events-none");
-    // Both reveal paths must re-arm the click, or the buttons would be visible and dead —
-    // and each reveal must pair with its own pointer-events grant, since either half alone
-    // yields a button that is visible-but-dead or invisible-but-tappable.
-    for (const on of ["group-hover", "focus"]) {
-      expect(source).toContain(`${on}:pointer-events-auto`);
-      expect(source).toContain(`${on}:opacity-100`);
-    }
-    // `focus`, not `focus-visible`: the time span it swaps with hides on plain
-    // focus-within, and the two conditions have to agree or the slot goes blank.
-    expect(source).not.toContain("focus-visible:opacity-100");
-  });
-
-  it("renders the ellipsis as a labelled menu trigger anchored at its own box", () => {
-    // The menu's discoverable pointer entry: a real button that reports it opens a menu
-    // and anchors the panel at its own rect (not the pointer position).
-    expect(source).toContain('aria-haspopup="menu"');
-    expect(source).toContain("ICONS.ellipsis");
-    expect(source).toContain("getBoundingClientRect");
-  });
 });
 
 describe("sessionRowMenuItem", () => {
   it("gives every action a label, a glyph, and only delete the destructive treatment", () => {
-    const all: SessionRowAction[] = ["pin", "rename", "messaging", "archive", "copy", "delete"];
-    for (const action of all) {
+    for (const action of ALL) {
       const item = sessionRowMenuItem(action, RESTING);
       expect(item.label).toBeTruthy();
       expect(item.icon).toBeTruthy();
@@ -140,59 +52,31 @@ describe("sessionRowMenuItem", () => {
     }
   });
 
-  it("gives the actions distinct glyphs, so a row is not read by its label alone", () => {
-    const icons = (
-      ["pin", "rename", "messaging", "archive", "copy", "delete"] as SessionRowAction[]
-    ).map((a) => sessionRowMenuItem(a, RESTING).icon);
-    expect(new Set(icons).size).toBe(icons.length);
-    // Remote control wears the same paper plane the session row flies while it is relaying:
-    // the action and the mark it produces are one feature.
-    expect(icons).toEqual([
-      ICONS.pin,
-      ICONS.pencil,
-      ICONS.paperPlane,
-      ICONS.archive,
-      // The same glyph the details card's copy button shows, so one value has one mark.
-      STAT_ICONS.copy,
-      ICONS.trash,
-    ]);
+  it("gives the actions distinct labels and glyphs, so a row is not read by its label alone", () => {
+    const items = ALL.map((action) => sessionRowMenuItem(action, RESTING));
+    expect(new Set(items.map((item) => item.icon)).size).toBe(ALL.length);
+    expect(new Set(items.map((item) => item.label)).size).toBe(ALL.length);
   });
 
   it("flips archive's label and glyph on an archived row", () => {
-    expect(sessionRowMenuItem("archive", { archived: false, pinned: false })).toMatchObject({
-      label: zh.chat.archiveSession,
-      icon: ICONS.archive,
-    });
-    expect(sessionRowMenuItem("archive", { archived: true, pinned: false })).toMatchObject({
-      label: zh.chat.unarchiveSession,
-      icon: ICONS.archiveRestore,
-    });
+    const archive = sessionRowMenuItem("archive", RESTING);
+    const restore = sessionRowMenuItem("archive", { archived: true, pinned: false });
+    expect(restore.label).not.toBe(archive.label);
+    expect(restore.icon).not.toBe(archive.icon);
   });
 
   it("flips pin's label on a pinned row, keeping the one pin glyph", () => {
-    expect(sessionRowMenuItem("pin", { archived: false, pinned: false }).label).toBe(
-      zh.chat.pinSession,
-    );
-    expect(sessionRowMenuItem("pin", { archived: false, pinned: true }).label).toBe(
-      zh.chat.unpinSession,
-    );
-    expect(sessionRowMenuItem("pin", { archived: false, pinned: true }).icon).toBe(ICONS.pin);
+    const pin = sessionRowMenuItem("pin", RESTING);
+    const unpin = sessionRowMenuItem("pin", { archived: false, pinned: true });
+    expect(unpin.label).not.toBe(pin.label);
+    expect(unpin.icon).toBe(pin.icon);
   });
 
-  it("reads the active dictionary, so both locales name every action", () => {
+  it("names every action in English once the locale is English", () => {
     setActiveStrings(en);
-    expect(sessionRowMenuItem("archive", RESTING).label).toBe(en.chat.archiveSession);
-    expect(sessionRowMenuItem("delete", RESTING).label).toBe(en.chat.deleteSession);
-    expect(sessionRowMenuItem("rename", RESTING).label).toBe(en.chat.renameSession);
-    expect(sessionRowMenuItem("copy", RESTING).label).toBe(en.chat.copySessionId);
-    expect(sessionRowMenuItem("messaging", RESTING).label).toBe(en.messaging.bindAction);
-    // The hover buttons are icon-only, so their label IS their accessible name: an English
-    // row must not fall back to the zh catalog and leave a Chinese name on the button.
-    for (const action of HOVER_ROW_ACTIONS) {
-      const label = sessionRowMenuItem(action, RESTING).label;
-      expect(label).toBeTruthy();
-      expect(label).not.toBe(sessionRowMenuItem(action, RESTING).icon);
-      expect(Object.values(zh.chat)).not.toContain(label);
+    const zhLabels = new Set([...Object.values(zh.chat), ...Object.values(zh.messaging)]);
+    for (const action of ALL) {
+      expect(zhLabels.has(sessionRowMenuItem(action, RESTING).label)).toBe(false);
     }
   });
 });

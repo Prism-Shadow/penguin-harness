@@ -83,16 +83,16 @@ export type MessagesPageQuery =
 
 /**
  * Initial (tail) window size, in message-bearing units — one unit = one Task, opened by
- * a user prompt (the server's cut rule; see MessagesPageInfo). 50 is what a reader
- * actually looks at when a conversation opens: the rest of a long Session streams in on
- * scroll (see loadOlder). Anything much larger stops being a window at all — at 200 the
- * tail covered nearly every real Session, so every open still read, shipped and rendered
- * the whole transcript, tool output included.
+ * a user prompt (the server's cut rule; see MessagesPageInfo). A conversation opens on its
+ * newest 20 Q&A pairs, the user's call: the rest of a long Session streams in on scroll
+ * (see loadOlder). The count bounds what the page renders, not what it weighs — one Task
+ * can run hundreds of tool calls — so the server also cuts a page at its byte budget, and
+ * a page may then hold fewer units than asked for while still carrying `before`.
  */
-export const TAIL_UNITS = 50;
+export const TAIL_UNITS = 20;
 
-/** Scroll-up backfill window size: one more tail's worth per prepend, so each stays snappy. */
-export const OLDER_UNITS = 50;
+/** Scroll-up backfill window size: each scroll to the top adds 20 more Q&A pairs. */
+export const OLDER_UNITS = 20;
 
 /**
  * Item-id space reserved per prepended window. The live model numbers its items upward
@@ -104,6 +104,8 @@ export const OLDER_UNITS = 50;
 const PREPEND_ID_SPAN = 1_000_000;
 
 export interface StreamControllerDeps {
+  /** The Session whose stream this is: the owner of the model a history window starts on (see MessagesPageInfo.contextModel). */
+  sessionId: string;
   /**
    * Fetch history messages (GET /api/sessions/:id/messages), including the live tail while
    * running. `serverNowMs` is the server's clock at read time (the response's `Date` header);
@@ -423,6 +425,19 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     return [...pre, ...seeds, ...post];
   };
 
+  /**
+   * Seeds a model with what came before the window it is about to take: the stats accrued
+   * ahead of it, so header chips and per-turn cumulative rows equal a full load (see
+   * seedPriorStats), and the model its first context runs on, whose `session_meta` a window
+   * that starts partway into that context does not hold.
+   */
+  const seedWindow = (target: StreamModel, page: MessagesPageInfo): void => {
+    seedPriorStats(target.stats, page.prior);
+    if (page.contextModel !== undefined) {
+      target.contextModel = { sessionId: deps.sessionId, ...page.contextModel };
+    }
+  };
+
   const load = async (
     currentEpoch: number,
     freshModel?: StreamModel,
@@ -459,9 +474,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       // freshModel and keep operating on the current model.
       if (freshModel) model = freshModel;
       const target = model;
-      // Windowed loads seed the stats accrued before the window, so header chips and
-      // per-turn cumulative rows equal a full load (see seedPriorStats).
-      if (res.page !== undefined) seedPriorStats(target.stats, res.page.prior);
+      if (res.page !== undefined) seedWindow(target, res.page);
       pushMessages(target, messages, now(), serverNowMs ?? null);
       const dedup = buildDedupIndex(messages, 100);
       // Replay the buffer (events that arrived while fetching history), with dedup; while a
@@ -529,7 +542,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       prependCount += 1;
       const m = createStreamModel(localDecisions);
       m.nextItemId = -prependCount * PREPEND_ID_SPAN;
-      seedPriorStats(m.stats, res.page.prior);
+      seedWindow(m, res.page);
       pushMessages(m, res.messages, now(), null);
       finalizeHistory(m);
       prefixItems = [...m.items, ...prefixItems];

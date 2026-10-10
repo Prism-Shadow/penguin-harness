@@ -15,6 +15,8 @@ import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { useUiStrings } from "../../../strings";
 import { Chevron } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import { setDragPreview } from "../../overlays/drag-preview/drag-preview";
+import { Fold } from "../../layout/fold/fold";
 import { ICON_SIZE } from "../../../icon-scale";
 
 /** A folder toggle's and a "more" row's shape: a dense, muted row with a chevron column. */
@@ -64,8 +66,8 @@ export function MoreRow({
 
 /**
  * A collapsed-by-default lazy folder (subagent, scheduled, archived): the toggle row shows the
- * label (typically with the group's exact share), the body renders only while open, and an
- * optional "more" row reveals and pages the folder on its own. The "show less" row below it
+ * label (typically with the group's exact share), the body renders only while open — it folds
+ * in and out through `Fold` — and an optional "more" row reveals and pages the folder on its own. The "show less" row below it
  * folds the folder back to its first page; the two can stand at once, since a folder revealed
  * part-way still has rows to show and rows to fold away.
  */
@@ -128,17 +130,19 @@ export function FolderSection({
           {action}
         </div>
       )}
-      {open && children}
-      {open && more && (
-        <MoreRow
-          {...(moreLabel !== undefined ? { label: moreLabel, ariaLabel: moreLabel } : {})}
-          pending={pending}
-          onClick={() => onMore?.()}
-        />
-      )}
-      {open && less && (
-        <MoreRow label={strings.fewer} ariaLabel={strings.fewer} onClick={() => onLess?.()} />
-      )}
+      <Fold open={open}>
+        {children}
+        {more && (
+          <MoreRow
+            {...(moreLabel !== undefined ? { label: moreLabel, ariaLabel: moreLabel } : {})}
+            pending={pending}
+            onClick={() => onMore?.()}
+          />
+        )}
+        {less && (
+          <MoreRow label={strings.fewer} ariaLabel={strings.fewer} onClick={() => onLess?.()} />
+        )}
+      </Fold>
     </div>
   );
 }
@@ -155,7 +159,8 @@ export function FolderSection({
  * The header doubles as the drag handle when the caller makes it draggable (a manual group
  * order). The handle is the header rather than the whole group, so the rows inside keep their
  * own drag, and it is the element itself rather than an added grip, so the row costs no width —
- * the list is a drawer at phone width and already carries up to three actions.
+ * the list is a drawer at phone width and already carries up to three actions. Its drag image is
+ * the header's opaque chip (`setDragPreview`).
  */
 export function GroupHeader({
   open,
@@ -216,7 +221,17 @@ export function GroupHeader({
         draggable ? " cursor-grab" : ""
       }`}
       {...(draggable
-        ? { draggable: true, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }
+        ? {
+            draggable: true,
+            onDragStart: (e: ReactDragEvent) => {
+              if (e.target === e.currentTarget) setDragPreview(e);
+              onDragStart?.(e);
+            },
+            onDragEnd,
+            onDragOver,
+            onDragLeave,
+            onDrop,
+          }
         : {})}
     >
       <button

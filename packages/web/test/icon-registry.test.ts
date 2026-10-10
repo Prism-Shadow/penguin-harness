@@ -3,14 +3,15 @@
  * it (`NAV_ICONS`, `STAT_ICONS`, the grouping and sort options).
  *
  * A path typed out in a feature file is how one bin came to be drawn five ways and a redraw came to
- * reach one surface and not the others. So new glyphs go into the registry, named for what they
- * draw, and a feature file reads them from there. What feature files still hold is listed below per
- * file, with the wave that moves or rebuilds the file (`W7+W10` splits an entry between two);
- * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight. A
- * near-copy of a registry glyph is not kept beside it: the call site draws the registry's, so a bin
- * or a pencil looks the same everywhere. The counts are exact both ways, like the de-slop list: a
- * new path fails as new, and one that goes away fails until its entry shrinks, so the list only
- * tightens.
+ * reach one surface and not the others. Each theme now draws every registry glyph in a style of its
+ * own, so a path left in a feature file would also look wrong in two themes out of three. So every
+ * line glyph is a registry entry, named for what it draws, and a feature file reads it from there.
+ * A near-copy of a registry glyph is not kept beside it either: the call site draws the
+ * registry's, so a bin or a pencil looks the same everywhere.
+ *
+ * Both source roots are read. The only files that still spell out paths are the ones whose
+ * drawings are not registry glyphs, listed in `OWN_DRAWINGS`. The allowlist is empty and stays
+ * empty: a new path fails here as new until it moves into `ICONS`.
  *
  * Two shapes are counted: a `const *_ICON` whose value is path data, and a literal `d="M…"` on an
  * element. A computed path (a chart's line, a sparkline, the topology view's edges) is not a
@@ -21,35 +22,26 @@ import { describe, expect, it } from "vitest";
 import { expectEveryRootScanned, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources([".ts", ".tsx"]);
-const WEB = SCAN.files.filter((file) => file.root === "web");
 
-/** Glyph paths outside the registry, by path under `packages/web/src`: `[count, wave]`. */
-const ALLOWLIST: Readonly<Record<string, readonly [number, string]>> = {
-  "components/layout/sidebar.tsx": [2, "W7"],
-  "features/chat/attached-files-banner.tsx": [1, "W6"],
-  "features/chat/conversation-outline.tsx": [1, "W6"],
-  "features/chat/goal-use.ts": [1, "W6"],
-  "features/chat/memory-view.tsx": [3, "W6"],
-  "features/chat/message-stream.tsx": [1, "W6"],
-  "features/chat/subagents-view.tsx": [1, "W6"],
-  "features/chat/task-stats-line.tsx": [1, "W6"],
-  "features/chat/workspace-browser.tsx": [1, "W7"],
-  "features/chat/workspace-finder.tsx": [11, "W10"],
-  "features/company/channel-header.tsx": [4, "W6"],
-  "features/company/channel-sidebar.tsx": [2, "W4"],
-  "features/company/channel-view.tsx": [1, "W6"],
-  "features/company/finance-page.tsx": [1, "W4"],
-  "features/company/handbook-explorer.tsx": [1, "W4"],
-  "features/company/shared.tsx": [2, "W4"],
-  "features/models/models-page.tsx": [4, "W4"],
-  "features/plugins/plugins-page.tsx": [2, "W4"],
-  "features/schedules/schedule-panel.tsx": [3, "W4"],
-  "features/schedules/schedule-suggestions.tsx": [3, "W4"],
-  "features/semantic-id/semantic-id-field.tsx": [1, "W2"],
-  "features/settings/shortcuts-section.tsx": [1, "W10"],
-  "features/terminal/terminal-keybar.tsx": [3, "W10"],
-  "features/traces/trace-event-row.tsx": [1, "W4"],
-};
+/**
+ * Files whose drawings are not registry glyphs, by repo-relative id: the small marks drawn as
+ * components on grids and stroke weights of their own, the provider logos, and the icon sets —
+ * a registry glyph's other drawings (its Octicon, its pixel grid, its duotone body), keyed by
+ * the glyph's name and never drawn on their own.
+ */
+const OWN_DRAWINGS: ReadonlySet<string> = new Set([
+  "packages/ui/src/components/icons/marks/marks.tsx",
+  "packages/ui/src/components/icons/chevron/chevron.tsx",
+  "packages/ui/src/components/icons/logos/provider-logo.tsx",
+  "packages/ui/src/components/icons/sets/octicons.ts",
+  "packages/ui/src/components/icons/sets/pixel.ts",
+  "packages/ui/src/components/icons/sets/duotone.ts",
+]);
+
+const SCANNED = SCAN.files.filter((file) => !OWN_DRAWINGS.has(file.id));
+
+/** Glyph paths outside the registry, by repo-relative id: `[count, why]`. Empty, and kept empty. */
+const ALLOWLIST: Readonly<Record<string, readonly [number, string]>> = {};
 
 /** SVG path data: a moveto, then only path commands, numbers and separators. */
 const PATH_DATA = /^[Mm][\d\s.,eE+\-MmZzLlHhVvCcSsQqTtAa]*$/;
@@ -113,30 +105,31 @@ function glyphHits(path: string, text: string): string[] {
 }
 
 describe("glyph paths outside the registry", () => {
-  it("scans every source root", () => {
+  it("scans every source root, and finds each own-drawings file", () => {
     expectEveryRootScanned(SCAN);
-    expect(WEB.length).toBeGreaterThan(0);
+    const ids = new Set(SCAN.files.map((file) => file.id));
+    expect([...OWN_DRAWINGS].filter((id) => !ids.has(id))).toEqual([]);
   });
 
-  it("are the listed ones, at the listed counts", () => {
+  it("are none: every line glyph is drawn from the registry", () => {
     const found = new Map(
-      WEB.map((file) => [file.rel, glyphHits(file.path, file.text)] as const).filter(
+      SCANNED.map((file) => [file.id, glyphHits(file.path, file.text)] as const).filter(
         ([, hits]) => hits.length > 0,
       ),
     );
     const problems: string[] = [];
-    for (const rel of new Set([...found.keys(), ...Object.keys(ALLOWLIST)])) {
-      const hits = found.get(rel) ?? [];
-      const [allowed, wave] = ALLOWLIST[rel] ?? [0, ""];
+    for (const id of new Set([...found.keys(), ...Object.keys(ALLOWLIST)])) {
+      const hits = found.get(id) ?? [];
+      const [allowed, why] = ALLOWLIST[id] ?? [0, ""];
       if (hits.length > allowed) {
         problems.push(
-          `${rel}: ${hits.length} where ${allowed} are allowlisted — draw it from ICONS\n    ${hits.join("\n    ")}`,
+          `${id}: ${hits.length} where ${allowed} are allowlisted — draw it from ICONS\n    ${hits.join("\n    ")}`,
         );
       } else if (hits.length < allowed) {
         problems.push(
           hits.length === 0
-            ? `${rel}: none left of ${allowed} (${wave}) — delete the entry`
-            : `${rel}: ${hits.length} left of ${allowed} — shrink the entry to [${hits.length}, "${wave}"]`,
+            ? `${id}: none left of ${allowed} (${why}) — delete the entry`
+            : `${id}: ${hits.length} left of ${allowed} — shrink the entry to [${hits.length}, "${why}"]`,
         );
       }
     }

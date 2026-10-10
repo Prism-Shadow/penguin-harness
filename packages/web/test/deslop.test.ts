@@ -15,8 +15,10 @@
  * component is de-slopped when it moves, and not after.
  *
  * Rule 20 (palette classes, `dark:`, hex) is the package's: the web app speaks the palette until
- * each wave moves it to tokens. Rule 22 reads a `PageHeader`, and the one the app renders is the
- * package's (W4), whose suite runs the rule; here it runs only if the web app declares its own.
+ * each wave moves it to tokens, so here it runs only over the files a wave has already moved
+ * ({@link TOKENS_ONLY}), which keeps them there. Rule 22 reads a `PageHeader`, and the one the
+ * app renders is the package's (W4), whose suite runs the rule; here it runs only if the web app
+ * declares its own.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -58,25 +60,62 @@ const POLICY: DeslopPolicy = {
  * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight.
  */
 const ALLOWLIST: DeslopAllowlist = {
-  "features/builtin-browser/browser-tab-strip.tsx": { 12: [2, "W10"] },
-  "features/chat/model-picker-modal.tsx": { 12: [1, "W10"] },
-  "features/chat/workspace-finder.tsx": { 12: [5, "W10"] },
-  "features/settings/shortcut-recorder.tsx": { 12: [1, "W10"], 13: [1, "W10"] },
-  "features/settings/shortcuts-section.tsx": { 13: [1, "W10"] },
   "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
-  "features/terminal/terminal-keybar.tsx": { 12: [1, "W10"] },
 };
+
+/**
+ * Web files that are on the tokens, by path under `packages/web/src`: rule 20 holds each to the
+ * package's standard — no palette class, no `dark:` variant, no hex — so a file a wave moved off
+ * the palette cannot drift back onto it. A file joins when its wave rewrites it. These are W10's,
+ * the code that landed on main while the waves were in flight, and the transcript's harness rows
+ * (the cards and notes on the work group's anatomy, and the item dispatch around them); the
+ * terminal's appearance module is not among them by design, since the terminal resolves its own
+ * palette outside the token system, while the key bar that reads it is. A new file written on the
+ * tokens joins as it lands (the find bar).
+ */
+const TOKENS_ONLY: readonly string[] = [
+  "components/find/find-bar.tsx",
+  "features/builtin-browser/backend-menu.tsx",
+  "features/builtin-browser/browser-tab-strip.tsx",
+  "features/builtin-browser/browser-toolbar.tsx",
+  "features/builtin-browser/chrome-surface.tsx",
+  "features/builtin-browser/pairing-dialog.tsx",
+  "features/chat/attached-files-banner.tsx",
+  "features/chat/background-done-banner.tsx",
+  "features/chat/compaction-banner.tsx",
+  "features/chat/goal-banner.tsx",
+  "features/chat/handoff-banner.tsx",
+  "features/chat/harness-banner.tsx",
+  "features/chat/mcp-connect-banner.tsx",
+  "features/chat/message-item.tsx",
+  "features/chat/model-picker-modal.tsx",
+  "features/chat/org-trigger-banner.tsx",
+  "features/chat/scheduled-banner.tsx",
+  "features/chat/skills-banner.tsx",
+  "features/chat/task-stats-line.tsx",
+  "features/chat/workspace-finder.tsx",
+  "features/chat/workspace-finder-model.ts",
+  "features/chat/workspace-select.tsx",
+  "features/settings/browser-section.tsx",
+  "features/settings/chrome-extension-section.tsx",
+  "features/settings/shortcut-recorder.tsx",
+  "features/settings/shortcuts-section.tsx",
+  "features/settings/trace-import-row.tsx",
+  "features/terminal/terminal-keybar.tsx",
+];
 
 const WAVES = /^W(?:1a?|1b|10|[2-9])(?:\+W(?:1a?|1b|10|[2-9]))*$/;
 const relOf = (id: string) => id.slice("packages/web/src/".length);
 
 describe("de-slop rules over packages/web/src", () => {
-  it("scans every source root, and every allowlisted file is still in the web app", () => {
+  it("scans every source root, and every listed file is still in the web app", () => {
     expectEveryRootScanned(SCAN);
-    const gone = Object.keys(ALLOWLIST).filter((rel) => !WEB.some((file) => file.rel === rel));
+    const gone = [...Object.keys(ALLOWLIST), ...TOKENS_ONLY].filter(
+      (rel) => !WEB.some((file) => file.rel === rel),
+    );
     expect(
       gone,
-      "An allowlisted file that left packages/web/src moved into the package (whose suite allows " +
+      "A listed file that left packages/web/src moved into the package (whose suite allows " +
         "nothing) or was deleted: remove its entry.",
     ).toEqual([]);
   });
@@ -93,7 +132,16 @@ describe("de-slop rules over packages/web/src", () => {
   for (const rule of DESLOP_RULE_NUMBERS) {
     const title = `rule ${rule}: ${DESLOP_RULES[rule]}`;
     if (rule === 20) {
-      it.skip(`${title} — not applied to the web app: it moves off the palette wave by wave`, () => {});
+      it(`${title} — over the tokens-only files`, () => {
+        const files = WEB.filter((file) => TOKENS_ONLY.includes(file.rel));
+        expect(
+          deslopHits(files, rule, { ...POLICY, tokensOnly: true }).map(
+            (hit) => `${relOf(hit.file)}:${hit.line}  ${hit.found}`,
+          ),
+          "A tokens-only file spells a palette class, a dark: variant or a hex colour: use the " +
+            "package's token classes (bg-surface, text-fg-muted, border-line, …) instead.",
+        ).toEqual([]);
+      });
       continue;
     }
     if (

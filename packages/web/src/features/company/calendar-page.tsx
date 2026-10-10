@@ -88,9 +88,9 @@ const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
 const OUTCOME_ICON: Record<OrgCalendarOutcome, string> = {
   fired: ICONS.check,
   queued: ICONS.hourglass,
-  paused: "M9 5v14M15 5v14",
-  missed: "M18 6 6 18M6 6l12 12",
-  error: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01",
+  paused: ICONS.pause,
+  missed: ICONS.cross,
+  error: ICONS.alertCircle,
 };
 
 /** Hour rows of the day and week columns (px per hour): a day is 24 × this tall. */
@@ -506,7 +506,7 @@ export function CalendarPage() {
         <div className="pointer-events-none relative pb-5">
           <p className="mb-1 flex h-5 items-center">
             <span
-              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums ${
+              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-[var(--ui-radius-pill)] px-1 text-xs tabular-nums ${
                 isToday
                   ? "bg-accent font-semibold text-accent-fg"
                   : day.inMonth
@@ -634,7 +634,7 @@ export function CalendarPage() {
                   >
                     {S.company.calendar.weekdays[(d.getDay() + 6) % 7]}
                     <span
-                      className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${
+                      className={`inline-flex h-5 min-w-5 items-center justify-center rounded-[var(--ui-radius-pill)] px-1 tabular-nums ${
                         isToday ? "bg-accent text-accent-fg" : ""
                       }`}
                     >
@@ -911,7 +911,7 @@ export function CalendarPage() {
                     {editingEvent.lastOutcome === "fired" && (
                       <button
                         type="button"
-                        className="underline"
+                        className="whitespace-nowrap underline"
                         onClick={() => void openDesk(editingEvent.agentId)}
                       >
                         {S.company.openDesk}
@@ -947,7 +947,7 @@ export function CalendarPage() {
                 size="sm"
                 label={S.company.calendar.name}
                 required
-                hint={S.company.calendar.nameHint}
+                info={S.company.calendar.nameHint}
                 {...(fieldErrors.name !== undefined ? { error: fieldErrors.name } : {})}
                 value={form.name}
                 disabled={form.editing !== null}
@@ -967,7 +967,7 @@ export function CalendarPage() {
               required
               size="sm"
               rows={4}
-              hint={S.company.calendar.promptHint}
+              info={S.company.calendar.promptHint}
               {...(fieldErrors.prompt !== undefined ? { error: fieldErrors.prompt } : {})}
               value={form.prompt}
               onChange={(e) => set({ prompt: e.target.value })}
@@ -978,7 +978,7 @@ export function CalendarPage() {
                 label={S.company.calendar.startAt}
                 required
                 type="datetime-local"
-                hint={S.company.calendar.staggerHint}
+                info={S.company.calendar.staggerHint}
                 {...(fieldErrors.startAt !== undefined ? { error: fieldErrors.startAt } : {})}
                 value={form.startAt}
                 onChange={(e) => set({ startAt: e.target.value })}
@@ -1084,7 +1084,6 @@ function DayOverflow({
       <button
         ref={triggerRef}
         type="button"
-        data-tooltip={label}
         aria-label={label}
         aria-expanded={open}
         aria-controls={panelId}
@@ -1120,7 +1119,7 @@ function DayOverflow({
                   close();
                   onOpenDay();
                 }}
-                className="shrink-0 text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
+                className="shrink-0 whitespace-nowrap text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
               >
                 {S.company.calendar.openDay}
               </button>

@@ -31,7 +31,8 @@ export interface KeyAuthTexts {
  * "authorize a key" action. The wire protocol behind it is a device-style start/poll rather
  * than OAuth/PKCE, and which one applies is the `endpoints` prop's business: Penguin Go polls
  * its own relay, ModelScope polls the harness's authorization bridge. Account metadata never
- * enters this component; a completed flow only reports how many preset rows took the key.
+ * enters this component; a completed flow writes the group key and only reports how many models
+ * use it (those without a key of their own).
  */
 export function KeyAuthDialog({
   projectId,

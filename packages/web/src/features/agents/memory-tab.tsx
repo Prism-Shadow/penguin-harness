@@ -68,7 +68,7 @@ import { formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { useSaveConfirm } from "./save-confirm";
+import { useReportDirty, useSaveConfirm } from "./save-confirm";
 import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
@@ -132,10 +132,13 @@ interface Selected {
 export function MemoryTab({
   agentId,
   onConfigChanged,
+  onDirtyChange,
 }: {
   agentId: string;
   /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them (e.g. the inserted placeholder). */
   onConfigChanged?: () => void;
+  /** Whether the two memory prompts hold unsaved edits (the page asks before leaving the tab). */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
@@ -157,11 +160,20 @@ export function MemoryTab({
   const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsedScopes(collapseKey));
   const [memoryPrompt, setMemoryPrompt] = useState("");
   const [workspacePrompt, setWorkspacePrompt] = useState("");
+  /** The prompts as last loaded or saved, the baseline the unsaved-edits flag compares against. */
+  const [storedPrompts, setStoredPrompts] = useState<{ prompt: string; workspace: string } | null>(
+    null,
+  );
   const mainPromptRef = useRef<HTMLTextAreaElement>(null);
   const workspacePromptRef = useRef<HTMLTextAreaElement>(null);
   // Chip clicks steal focus, so track the last-focused prompt field instead of the current one.
   const [lastPromptField, setLastPromptField] = useState<"main" | "workspace">("main");
   const { requestSave, element: saveConfirm } = useSaveConfirm();
+  useReportDirty(
+    storedPrompts !== null &&
+      (memoryPrompt !== storedPrompts.prompt || workspacePrompt !== storedPrompts.workspace),
+    onDirtyChange,
+  );
   // Open flag and content are separate: the Sheet animates out on close, and nulling the
   // content with it would empty the panel mid-exit. The stale content is simply kept.
   const [viewOpen, setViewOpen] = useState(false);
@@ -215,6 +227,10 @@ export function MemoryTab({
       ]);
       setMemoryPrompt(configView.config.memory.prompt);
       setWorkspacePrompt(configView.config.memory.workspacePrompt);
+      setStoredPrompts({
+        prompt: configView.config.memory.prompt,
+        workspace: configView.config.memory.workspacePrompt,
+      });
       setEnabled(overview.enabled);
       setTemplateHasMemory(overview.templateHasMemory);
       setMemoryDir(overview.memoryDir);
@@ -318,6 +334,10 @@ export function MemoryTab({
         .then((res) => {
           setMemoryPrompt(res.config.memory.prompt);
           setWorkspacePrompt(res.config.memory.workspacePrompt);
+          setStoredPrompts({
+            prompt: res.config.memory.prompt,
+            workspace: res.config.memory.workspacePrompt,
+          });
           toastSuccess(S.agent.savedTakesEffect);
           onConfigChanged?.();
         })

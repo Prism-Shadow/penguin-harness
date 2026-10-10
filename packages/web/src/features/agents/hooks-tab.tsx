@@ -295,10 +295,7 @@ export function HooksTab({
                   </p>
                 </div>
                 {hook.version !== "" && (
-                  <span
-                    className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500"
-                    data-tooltip={hook.version}
-                  >
+                  <span className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500">
                     {hook.version}
                   </span>
                 )}
@@ -407,6 +404,7 @@ export function HooksTab({
       <ConfirmModal
         open={overwriting !== null}
         title={S.hooks.importOverwriteTitle}
+        tone="primary"
         confirmLabel={S.hooks.importOverwriteAction}
         cancelLabel={S.common.cancel}
         busy={uploading}
@@ -427,7 +425,7 @@ export function HooksTab({
         busy={busy}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
-        confirmLabel={S.common.confirm}
+        confirmLabel={S.skills.uninstall}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">

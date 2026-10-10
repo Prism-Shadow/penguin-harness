@@ -33,7 +33,6 @@ import type { PlatformApi } from "./platform.js";
 /** The control object the entry built (hmrMain): `current()` and `upgrade()`. */
 export type HmrControlApi = HmrControlOf<PlatformApi>;
 import type { DesktopService } from "../services/desktop-service.js";
-import type { LifecycleService } from "../services/lifecycle-service.js";
 import { Interface, Component, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 
 /**
@@ -95,7 +94,6 @@ interface HmrInterfaces extends Interfaces {
   proxy: MembersOf<ProxyControl>;
   hmr: MembersOf<HmrHost>;
   desktop: MembersOf<DesktopService>;
-  lifecycle: MembersOf<LifecycleService>;
 }
 
 export const HMR_INTERFACES: HmrInterfaces = {
@@ -113,7 +111,6 @@ export const HMR_INTERFACES: HmrInterfaces = {
     "desktopToken",
     "portFile",
     "trustProxy",
-    "supervised",
     "penguinGoOrigin",
   ],
   db: ["prepare", "exec", "close"],
@@ -125,7 +122,6 @@ export const HMR_INTERFACES: HmrInterfaces = {
   // they stand in for. Presence-only — a list has no members to verify.
   overrides: [],
   desktop: ["onShutdownRequest", "requestShutdown", "verifyToken", "redeemLoginToken"],
-  lifecycle: ["supervised", "onRestartRequest", "requestRestart"],
 };
 
 export const HMR_INTERFACES_RESOURCE_ID = "platform.interfaces";
@@ -189,8 +185,6 @@ export const HMR_CONTROL_RESOURCE_ID = "platform.hmrControl";
  * claim must distinguish "not desktop" from "not published".
  */
 export const HMR_DESKTOP_RESOURCE_ID = "platform.desktop";
-/** Whether a supervisor relaunches this process, and the restart trigger. Always published. */
-export const HMR_LIFECYCLE_RESOURCE_ID = "platform.lifecycle";
 
 /**
  * Process-scoped auth values (auth/runtime-state.ts), not an auth service. Claimed
@@ -247,7 +241,6 @@ export interface HmrCapabilities {
   hmrControl: HmrControlApi;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
-  lifecycle: LifecycleService;
   /** Nodes a test stands in for (see Replacements); [] outside tests. */
   replacements: Replacements;
 }
@@ -297,8 +290,7 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
   const proxyControl = resources.claim<ProxyControl>(HMR_PROXY_RESOURCE_ID);
   const hmr = resources.claim<HmrHost>(HMR_HOST_RESOURCE_ID);
   const hmrControl = resources.claim<HmrControlApi>(HMR_CONTROL_RESOURCE_ID);
-  const lifecycle = resources.claim<LifecycleService>(HMR_LIFECYCLE_RESOURCE_ID);
-  if (!config || !db || !channels || !proxyControl || !hmr || !hmrControl || !lifecycle) {
+  if (!config || !db || !channels || !proxyControl || !hmr || !hmrControl) {
     return { kind: "refused", reason: "a declared capability was not actually published" };
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
@@ -328,7 +320,6 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
     ["proxy", proxyControl],
     ["hmr", hmr],
     ["hmrControl", hmrControl],
-    ["lifecycle", lifecycle],
     ...(desktop === null ? [] : ([["desktop", desktop]] as Array<[string, unknown]>)),
   ];
   for (const [name, value] of live) {
@@ -350,7 +341,6 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
       hmr,
       hmrControl,
       desktop,
-      lifecycle,
       replacements,
     },
   };
@@ -368,54 +358,59 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
 export abstract class Config extends Interface<ServerConfig>() {}
 
 /** The SQLite handle (single-writer, one per process). Statements are host objects. */
-export abstract class Db extends Interface<{
-  prepare(sql: string): Opaque<"StatementSync", ReturnType<DatabaseSync["prepare"]>>;
-  exec(sql: string): void;
-  close(): void;
-}>() {}
+@Interface()
+export abstract class Db {
+  abstract prepare(sql: string): Opaque<"StatementSync", ReturnType<DatabaseSync["prepare"]>>;
+  abstract exec(sql: string): void;
+  abstract close(): void;
+}
 
 /** One SSE channel (the class in runtime/channel.ts satisfies this). */
 export type ChannelApi = Pick<Channel, "publish" | "sendTo" | "subscribe" | "replayAfter">;
 
-export abstract class Channels extends Interface<{
-  get(key: string): ChannelApi;
-  peek(key: string): ChannelApi | undefined;
-  broadcast(prefix: string, data: unknown, event?: string): void;
-  dispose(): void;
-  setActivityProbe(probe: (key: string) => boolean): void;
-}>() {}
+@Interface()
+export abstract class Channels {
+  abstract get(key: string): ChannelApi;
+  abstract peek(key: string): ChannelApi | undefined;
+  abstract broadcast(prefix: string, data: unknown, event?: string): void;
+  abstract dispose(): void;
+  abstract setActivityProbe(probe: (key: string) => boolean): void;
+}
 /** Compile-time proof the hub satisfies the contract. */
 export type _ChannelsCheck = ChannelHub extends Channels ? true : never;
 
 /** The global fetch dispatcher's settings — runtime-owned, since a bundle's own undici is not the one `globalThis.fetch` routes through. */
-export abstract class Proxy extends Interface<{
-  apply(settings: ProxySettings): void;
-}>() {}
+@Interface()
+export abstract class Proxy {
+  abstract apply(settings: ProxySettings): void;
+}
 
 /** The hot-update host: the cross-generation resource registry and the current App. */
-export abstract class Hmr extends Interface<{
-  resources: Resources;
-  ensure(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
-  resolveWebSource(): Opaque<
+@Interface()
+export abstract class Hmr {
+  abstract resources: Resources;
+  abstract ensure(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
+  abstract resolveWebSource(): Opaque<
     "WebSource",
     NonNullable<ReturnType<HmrHost["resolveWebSource"]>>
   > | null;
-  assetsDir(): string | null;
-  dispose(): void;
-}>() {}
+  abstract assetsDir(): string | null;
+  abstract dispose(): void;
+}
 export type _HmrCheck = HmrHost extends Hmr ? true : never;
 
 /**
  * The frozen operations (packages/hmr's main.ts), as the platform's routes drive them. The
  * instance and the outcome are host objects to the contract, like `Hmr`'s.
  */
-export abstract class HmrControl extends Interface<{
-  current(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
-  upgrade(
+@Interface()
+export abstract class HmrControl {
+  abstract current(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
+  abstract upgrade(
     target: Opaque<"UpgradeAllTarget", Parameters<HmrHost["upgradeAll"]>[0]>,
   ): Promise<Opaque<"UpgradeOutcome", Awaited<ReturnType<HmrHost["upgradeAll"]>>>>;
-  endpoint(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
-}>() {}
+  abstract endpoint(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
+}
 
 export type DesktopApi = Pick<
   DesktopService,
@@ -438,35 +433,39 @@ export type DesktopApi = Pick<
 >;
 
 /** The desktop shell's service, or null when this server is not the shell's child. */
-export abstract class Desktop extends Interface<{
-  current(): DesktopApi | null;
-}>() {}
+@Interface()
+export abstract class Desktop {
+  abstract current(): DesktopApi | null;
+}
 
 export abstract class AuthState extends Interface<AuthRuntimeState>() {}
 
-/** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger. */
-export abstract class Lifecycle extends Interface<
-  Pick<LifecycleService, "supervised" | "onRestartRequest" | "requestRestart">
->() {}
-
-export abstract class Log extends Interface<{
-  line(text: string): void;
-}>() {}
+@Interface()
+export abstract class Log {
+  abstract line(text: string): void;
+}
 
 /**
  * Whether a registry resource group inherited from the previous App may be adopted — the
  * platform node decides from the parked declaration (hmr/platform.ts); a
  * module that parks handles asks before claiming them back.
  */
-export abstract class ResourceGroups extends Interface<{
-  adoptable(group: string): boolean;
-}>() {}
+@Interface()
+export abstract class ResourceGroups {
+  abstract adoptable(group: string): boolean;
+}
 
 /** A clock every node reads time through; a test replaces it. */
-export abstract class Clock extends Interface<{ now(): Date }>() {}
+@Interface()
+export abstract class Clock {
+  abstract now(): Date;
+}
 
 /** Where the data lives — what most nodes actually want from the config. */
-export abstract class Paths extends Interface<{ root: string }>() {}
+@Interface()
+export abstract class Paths {
+  abstract root: string;
+}
 
 /**
  * A replacement for one node of the tree: the class the platform would build, and the
@@ -548,10 +547,11 @@ export interface ReassemblyChange {
   write(): Promise<void>;
   undo(): Promise<void>;
 }
-export abstract class Reassembly extends Interface<{
+@Interface()
+export abstract class Reassembly {
   /** Whether the re-assembled tree is the one now running; false when its boot failed and the previous one was restored. */
-  reassemble(change?: ReassemblyChange): Promise<boolean>;
-}>() {}
+  abstract reassemble(change?: ReassemblyChange): Promise<boolean>;
+}
 @Module()
 export class AppReassembly {
   @Provide() reassembly!: Reassembly;
@@ -567,14 +567,6 @@ export class RuntimeDesktop {
   setup() {
     const { desktop } = this.caps;
     this.desktop = { current: () => desktop };
-  }
-}
-@Module()
-export class RuntimeLifecycle {
-  @Provide() lifecycle!: Lifecycle;
-  constructor(private readonly caps: HmrCapabilities) {}
-  setup() {
-    this.lifecycle = this.caps.lifecycle;
   }
 }
 @Module()

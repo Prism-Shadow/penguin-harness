@@ -74,8 +74,7 @@ a load-bearing invariant. Correct but tiny belongs in a named `TODO(<smell>)`, n
 
 Seams that are intentional here — collapsing one is a product decision, not cleanup:
 
-- the AgentHub boundary: PenguinHarness pins protocols and env fallback, AgentHub owns clients and
-  routing;
+- the MMSP boundary: PenguinHarness pins protocols and env fallback, MMSP owns clients and routing;
 - `packages/core/src/internal/` versus what the package barrel exports — the public SDK surface is
   a contract;
 - the Trace on-disk format and its tolerant readers;
@@ -92,7 +91,7 @@ There is no `knip` here, and no Agent Note tree — a proposal lives in the PR d
 Imported wholesale from a sibling repo's workflow, these are wrong here:
 
 - **Provider-client development.** No vendor doc syncing, no live API captures, no paired
-  Python/TypeScript clients, no `AVAILABLE_MODELS`. That is agenthub's work; PenguinHarness only
+  Python/TypeScript clients, no `AVAILABLE_MODELS`. That is MMSP's work; PenguinHarness only
   records presets in its catalog.
 - **Agent Notes** (`.agents/notes/<lifecycle>/<class>/…`) and their supersession lifecycle. No such
   convention.

@@ -25,10 +25,19 @@ export const IDS = {
     schedule: "s-nightly-sync",
     subagent: "s-sub-linkcheck",
     benchmark: "s-eval-run",
+    /** Every row the harness writes into a conversation; the oldest in the list. */
+    harness: "s-harness-rows",
     /** The release-notes Agent's own. */
     notes: ["s-notes-0213", "s-notes-0212"],
+    /** The release-notes Agent's desk, opened by an organization's scheduler; never listed. */
+    orgDesk: "s-org-digest",
   },
-  benchmarks: { docs: "docs-qa-v1", draft: "release-notes-draft" },
+  /** A Benchmark the docs agent wrote, one still being built, and a built-in one. */
+  benchmarks: {
+    docs: "docs-qa-v1",
+    draft: "release-notes-draft",
+    builtin: "penguinharness-benchmark-sec-e",
+  },
   plugins: {
     /** A library plugin the detail page opens on. */
     registry: "claude-code-expert",
@@ -49,5 +58,7 @@ export const ALL_SESSION_IDS: readonly string[] = [
   IDS.sessions.schedule,
   IDS.sessions.subagent,
   IDS.sessions.benchmark,
+  IDS.sessions.harness,
   ...IDS.sessions.notes,
+  IDS.sessions.orgDesk,
 ];

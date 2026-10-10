@@ -1,18 +1,24 @@
 /**
- * lib/selection-menu.ts: the rules behind the conversation's own menu, for selected text and
- * for web links.
+ * The rules behind the conversation's own menu for selected text and web links
+ * (lib/selection-menu.ts). Everything the menu declines keeps the browser's own menu.
  *
- * Which gestures it takes matters as much in the negative as in the positive: everything it
- * declines keeps the browser's own menu, so a rule that took a touch press-and-hold, a
- * right-click in a field, or a selection that runs into the composer would take a menu away
- * from someone who needed it — and a link it took that is not a web page (a Workspace file, an
- * anchor) would offer to open an App route as a page. The excerpt half pins what reaches the
- * model: the blockquote the message carries, and the label the chip shows instead of it.
+ * - The menu opens on a secondary click or the keyboard's request over a selection inside the
+ *   stream, and declines a touch or pen press-and-hold, an empty or whitespace selection, a
+ *   selection running out of the stream or made of several ranges, and a gesture in a field.
+ * - A keyboard-opened menu hangs at the end of the selection's last line (or the bounding box
+ *   without line boxes), and at a link's first line.
+ * - An excerpt is trimmed at both ends with normalized line endings, carried into the message
+ *   as a blockquote (blank lines inside kept), and labelled on its chip by its first characters,
+ *   cut by characters rather than UTF-16 units.
+ * - Only an absolute web address counts as a link for the menu (normalized); a Workspace file,
+ *   an anchor, a relative href or another scheme does not. The built-in browser is offered
+ *   first only where it can open the link.
+ * - On a link the menu shows the link's rows, adding the selection's after them when the
+ *   selection rules take it; off a link it opens exactly as the selection rules say.
  */
 import { describe, expect, it } from "vitest";
 import {
   EXCERPT_LABEL_CHARS,
-  SELECTION_MENU_ITEMS,
   excerptBlockquote,
   excerptLabel,
   excerptReference,
@@ -68,12 +74,6 @@ describe("opensSelectionMenu", () => {
 
   it("declines a gesture on a field, whose own menu (paste, spelling) belongs there", () => {
     expect(opensSelectionMenu({ ...REQUEST, onEditable: true })).toBe(false);
-  });
-});
-
-describe("SELECTION_MENU_ITEMS", () => {
-  it("is Copy, then Add to conversation", () => {
-    expect(SELECTION_MENU_ITEMS).toEqual(["copy", "addToConversation"]);
   });
 });
 

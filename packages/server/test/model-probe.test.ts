@@ -1,7 +1,7 @@
 /**
  * Model connectivity-probe tests (testModel's pure parts): streamed-content detection, the
  * outcome verdict — in particular the reasoning-heavy-model case where the probe's tiny
- * max_tokens is burned entirely on thinking (finish_reason=length -> AgentHub
+ * max_tokens is burned entirely on thinking (finish_reason=length -> MMSP
  * EmptyResponseError -> malformed outcome) yet the endpoint demonstrably works — and the
  * output-rate guard that keeps a too-small sample from being reported as throughput.
  */

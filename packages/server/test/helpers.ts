@@ -150,10 +150,11 @@ export function testConfig(root: string): ServerConfig {
     desktopToken: null,
     portFile: null,
     trustProxy: false,
-    supervised: false,
     // No CLI to offer: nothing is written into the temp root, and no directory is put on
     // the PATH of whatever a test's Agent runs.
     cliEntry: null,
+    // Off by default: no test may reach the network to list plugins.
+    pluginIndexUrl: null,
   };
 }
 
@@ -509,17 +510,29 @@ export async function provisionUser(
 
 /** JSON request client that carries the cookie. */
 export function apiClient(app: Hono<AppEnv>, cookie: string) {
+  return clientWith(app, { cookie });
+}
+
+/**
+ * JSON request client as a Session's tool subprocess calls the server: the boot's local API
+ * token (`t.deps.authService.localApiToken()`) as a Bearer header, and no cookie.
+ */
+export function tokenClient(app: Hono<AppEnv>, token: string) {
+  return clientWith(app, { authorization: `Bearer ${token}` });
+}
+
+function clientWith(app: Hono<AppEnv>, credential: Record<string, string>) {
   const call = (method: string) => (apiPath: string, body?: unknown) =>
     app.request(apiPath, {
       method,
       headers: {
-        cookie,
+        ...credential,
         ...(body !== undefined ? { "content-type": "application/json" } : {}),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
   return {
-    get: (apiPath: string) => app.request(apiPath, { headers: { cookie } }),
+    get: (apiPath: string) => app.request(apiPath, { headers: credential }),
     post: call("POST"),
     put: call("PUT"),
     patch: call("PATCH"),

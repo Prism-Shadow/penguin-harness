@@ -3,9 +3,9 @@
  * row (the fold button and the Project or organization switcher), one pinned entry, the scroll
  * area, and the account row at the foot. The pieces the scroll area is built from are here too:
  * the page nav — pinned entries that always show, then the ones that fold away under a slim
- * toggle — its entries with their pin toggles and the areas a dragged entry can land in, the
- * list's header with its label and its controls, the controls themselves, and the switcher's and
- * the account's buttons.
+ * toggle — its entries with their favourite toggles (a star) and the areas a dragged entry can
+ * land in, the list's header with its label and its controls, the controls themselves, and the
+ * switcher's and the account's buttons.
  *
  * The page nav and the list scroll together, so the nav rides up as the list is scrolled: the
  * scroll area is the column's only shrinkable block, and a column of fixed chrome taller than a
@@ -18,6 +18,7 @@
  * washes of the ink (`NAV_FILL`). The frame paints no background of its own: the column that holds
  * it does (`AppShell`'s navigation slot, or the phone's drawer).
  */
+import { useState } from "react";
 import type {
   DragEvent as ReactDragEvent,
   MouseEvent as ReactMouseEvent,
@@ -25,13 +26,16 @@ import type {
   Ref,
 } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
+import { useArrived } from "../../../motion/use-arrived";
 import { ChevronFlip } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { ChevronDown } from "../../icons/marks/marks";
 import { Text } from "../../content/typography/typography";
+import { Fold } from "../../layout/fold/fold";
 import { NAV_FILL, NavRow } from "../../navigation/nav-list/nav-list";
 import type { NavRowProps } from "../../navigation/nav-list/nav-list";
+import { setDragPreview } from "../../overlays/drag-preview/drag-preview";
 import { ROW_ACTION_GLYPH, ROW_HOVER_BUTTON } from "../session-row/session-row";
 
 /**
@@ -57,6 +61,8 @@ export interface SidebarFrameProps {
   pinned?: ReactNode;
   /** The scroll area: the page nav and the list. */
   children?: ReactNode;
+  /** If set, marks the scroll area as a find-in-page region of this kind (`data-find-region`). */
+  findRegion?: string;
   /** The account row at the foot: the account menu's trigger. */
   account: ReactNode;
   /** Layers the column opens (its dialogs), mounted after it. */
@@ -71,6 +77,7 @@ export function SidebarFrame({
   collapse,
   pinned,
   children,
+  findRegion,
   account,
   overlays,
   rootRef,
@@ -104,7 +111,10 @@ export function SidebarFrame({
       ) : (
         <div className="shrink-0 px-2 pb-2 pt-2">{pinned}</div>
       )}
-      <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2">
+      <div
+        {...(findRegion === undefined ? {} : { "data-find-region": findRegion })}
+        className="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2"
+      >
         {children}
       </div>
       <div className="shrink-0 border-t border-line p-2">{account}</div>
@@ -147,15 +157,17 @@ function DropRing() {
 /**
  * The page nav: the pinned entries, which always show, then the rest in a group that folds away,
  * and under them a slim, full-width toggle whose caret points up while the rows show (fold them)
- * and down once they are folded (the way back). The fold slides: the group's row track tweens
- * between `0fr` and `1fr` under the theme's layout motion while the rows fade, and the list below
- * glides up with it. The rows stay mounted for the tween but turn inert while folded, so a
- * zero-height row is never focusable or clickable. The toggle's resting band is the column's one
- * fill at rest: it reads as the seam between the nav and the list below it.
+ * and down once they are folded (the way back). The fold slides: the rows fold through `Fold`,
+ * their track tweening between `0fr` and `1fr` under the theme's layout motion while they fade,
+ * and the list below glides up with it. Folding, the rows turn inert until they leave, so a
+ * zero-height row is never focusable or clickable; folded, they are not mounted. The toggle's
+ * resting band is the column's one fill at rest: it reads as the seam between the nav and the
+ * list below it.
  *
- * With nothing to fold (`foldable={false}`) neither the group nor its toggle is drawn. With
- * `drop`, the group and its toggle band are one drop target, ringed while a drag it would take is
- * over them.
+ * With nothing to fold (`foldable={false}`) neither the group nor its toggle is drawn. When the
+ * last entry leaves the fold (pinned), the group does not vanish in one frame: its rows fold
+ * away, the band fades, and both unmount once the fold has finished. With `drop`, the group and
+ * its toggle band are one drop target, ringed while a drag it would take is over them.
  */
 export function SidebarNavGroup({
   collapsed,
@@ -185,33 +197,36 @@ export function SidebarNavGroup({
   children: ReactNode;
 }) {
   const label = collapsed ? expandLabel : collapseLabel;
+  const open = foldable && !collapsed;
+  // Whether the fold still holds its rows: they stay through a fold's close, so a group that
+  // stopped being foldable leaves once its rows have folded away, not in the frame it stopped.
+  const [holding, setHolding] = useState(open);
+  if (open && !holding) setHolding(true);
+  // The rows fade in only when the reader unfolds them, not on every page load.
+  const toggled = useArrived(collapsed);
   return (
     <nav className="space-y-px">
       {pinned}
-      {foldable && (
+      {(foldable || holding) && (
         <div {...dropHandlers(drop)} className="relative flex flex-col gap-px">
-          <div
-            data-layout-motion
-            className={`grid ${collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"}`}
-          >
-            <div className="overflow-hidden" inert={collapsed}>
-              <div
-                className={`space-y-px transition-opacity duration-200 ${
-                  collapsed ? "opacity-0" : "opacity-100"
-                }`}
-              >
-                {children}
-              </div>
+          <Fold open={open} onClosed={() => setHolding(false)}>
+            <div
+              className={`space-y-px transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}${
+                toggled ? " starting:opacity-0" : ""
+              }`}
+            >
+              {children}
             </div>
-          </div>
+          </Fold>
           <button
             ref={toggleRef}
             type="button"
             onClick={onToggle}
             aria-expanded={!collapsed}
             aria-label={label}
-            data-tooltip={label}
-            className={`flex h-4 w-full items-center justify-center rounded-md ${NAV_FILL.selected} text-fg-subtle transition-colors duration-150 hover:bg-fg/10 hover:text-fg`}
+            className={`flex h-4 w-full items-center justify-center rounded-md ${NAV_FILL.selected} text-fg-subtle transition-[color,background-color,opacity] duration-150 hover:bg-fg/10 hover:text-fg ${
+              foldable ? "opacity-100" : "pointer-events-none opacity-0"
+            }`}
           >
             <ChevronFlip up={!collapsed} />
           </button>
@@ -248,13 +263,16 @@ export function SidebarNavArea({
   );
 }
 
-/** A nav entry's pin toggle, as its caller describes it. */
+/** A nav entry's favourite toggle, as its caller describes it. */
 export interface SidebarNavPin {
-  /** The entry is pinned: the tack is filled. */
+  /** The entry is a favourite, kept out of the fold: the star is solid (an outline while not). */
   pinned: boolean;
   /** The toggle's accessible name, the same either way: `aria-pressed` carries the state. */
   label: string;
-  /** The hint: the move a click makes ("Pin" while unpinned, "Unpin" while pinned). */
+  /**
+   * The hint: the move a click makes ("Add to favorites" while not one, "Remove from favorites"
+   * while it is).
+   */
   tooltip: string;
   onToggle: (e: ReactMouseEvent<HTMLButtonElement>) => void;
   /** The toggle's node: a caller moving focus onto it once the entry has changed area reads it. */
@@ -266,26 +284,39 @@ export interface SidebarNavEntryProps extends Omit<
   "badge" | "surface" | "groupHover" | "draggable"
 > {
   pin: SidebarNavPin;
-  /** A mark at the row's end (an update dot) that gives way to the toggle wherever it shows. */
+  /**
+   * A mark at the row's end (an update dot), drawn by the caller to sit at the row's end; it
+   * steps just left of the toggle wherever the toggle shows.
+   */
   badge?: ReactNode;
-  /** The whole row is a drag handle; the caller wires the handlers below. */
+  /**
+   * The whole row is a drag handle, its drag image the row's chip; the caller wires the handlers
+   * below.
+   */
   draggable?: boolean;
   onDragStart?: (e: ReactDragEvent) => void;
   onDragEnd?: () => void;
 }
 
 /**
- * A page entry on the navigation column that the reader can pin: the column's `NavRow`, with a
- * pin toggle over the row's end (a button cannot sit inside the row's link, so the toggle is laid
- * over the link's last pixels and the link keeps the whole row as its hit area). The toggle is the
- * conversation rows' hover button — flat, shown on the row's hover or its own focus, taking taps
- * only while shown — with one addition: where there is no hover at all it always shows, because
- * the toggle is then the only way to move an entry. The tack is filled while pinned.
+ * A page entry on the navigation column that the reader can make a favourite, which keeps it out
+ * of the fold: the column's `NavRow`, with a star toggle over the row's end (a button cannot sit
+ * inside the row's link, so the toggle is laid over the link's last pixels and the link keeps the
+ * whole row as its hit area). The toggle is the conversation rows' hover button — flat, shown on
+ * the row's hover or its own focus, taking taps only while shown — with one addition: where there
+ * is no hover at all it always shows, because the toggle is then the only way to move an entry.
+ * The star is solid on a favourite and an outline otherwise, so the drawing itself carries the
+ * state.
  *
  * The row's hover answers to the entry as a whole, so its fill holds while the pointer is on the
- * toggle. A badge sits at the row's end, where the toggle appears, so it gives way to the toggle —
- * the conversation rows' time-and-actions handoff — and where the toggle always shows it moves
- * just left of it. Draggable, the whole entry is the handle and its link starts no drag of its own.
+ * toggle. A badge never hides and never shares the toggle's spot: at rest it sits at the row's
+ * end, and wherever the toggle shows (the entry hovered, the toggle focused, or always where
+ * nothing hovers) it stands just left of the toggle, whose own place does not move. The badge
+ * steps over at once rather than sliding — a transform under hover is a motion the house rules
+ * refuse — so reduced motion has nothing to undo. Draggable, the whole entry is the handle and
+ * its link starts no drag of its own; the drag image is the entry's chip (`setDragPreview`).
+ * An entry that moves to the other area simply takes its place there: the star filling is the
+ * feedback, and a reveal on the moved row read as a flicker.
  */
 export function SidebarNavEntry({
   pin,
@@ -298,7 +329,16 @@ export function SidebarNavEntry({
   return (
     <div
       className="group relative flex items-center"
-      {...(draggable ? { draggable: true, onDragStart, onDragEnd } : {})}
+      {...(draggable
+        ? {
+            draggable: true,
+            onDragStart: (e: ReactDragEvent) => {
+              if (e.target === e.currentTarget) setDragPreview(e);
+              onDragStart?.(e);
+            },
+            onDragEnd,
+          }
+        : {})}
     >
       <NavRow
         {...row}
@@ -316,11 +356,14 @@ export function SidebarNavEntry({
           onClick={pin.onToggle}
           className={`${ROW_HOVER_BUTTON} hover:text-fg [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100`}
         >
-          <GlyphIcon d={ICONS.pin} size={ROW_ACTION_GLYPH} filled={pin.pinned} />
+          <GlyphIcon d={ICONS.star} size={ROW_ACTION_GLYPH} filled={pin.pinned} />
         </button>
       </span>
+      {/* The badge's two places: the row's end, and — while the toggle shows — five and a half
+          units in, which puts a dot the caller hangs `right-2.5` one unit clear of the toggle's
+          box (`right-1`, `w-6`). */}
       {badge !== undefined && (
-        <span className="pointer-events-none absolute inset-y-0 right-0 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 [@media(hover:none)]:right-6.5">
+        <span className="pointer-events-none absolute inset-y-0 right-0 group-hover:right-5.5 peer-focus-within:right-5.5 [@media(hover:none)]:right-5.5">
           {badge}
         </span>
       )}
@@ -444,6 +487,7 @@ export function SidebarSwitcherButton({
 export function SidebarAccountButton({
   avatar,
   name,
+  trailing,
   role,
   expanded,
   onClick,
@@ -452,6 +496,8 @@ export function SidebarAccountButton({
 }: {
   avatar: ReactNode;
   name: ReactNode;
+  /** What the app shows after the name, which the name truncates before: a pinned balance. */
+  trailing?: ReactNode;
   /** A short role after the name ("Admin"). */
   role?: string;
   /** The account menu is open. */
@@ -474,6 +520,7 @@ export function SidebarAccountButton({
     >
       {avatar}
       <span className="min-w-0 flex-1 truncate font-sans text-sm font-medium">{name}</span>
+      {trailing}
       {role !== undefined && <span className="text-xs text-fg-subtle">{role}</span>}
     </button>
   );

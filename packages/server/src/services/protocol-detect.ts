@@ -1,17 +1,21 @@
 /**
  * Protocol auto-detection for custom model endpoints.
  *
- * Given a base URL (plus an optional API key), probes which of AgentHub 0.4.2's three
- * generic protocol clients the endpoint actually serves, in this fixed order:
+ * Given a base URL (plus an optional API key), probes which of three MMSP compatible
+ * clients (one generic wire protocol each) the endpoint actually serves, in this fixed order:
  *
  *   1. `openai-responses` — OpenAI Responses API,   POST {base}/responses
  *   2. `ant-messages`     — Anthropic Messages API, POST {base}/v1/messages
  *   3. `openai-chat`      — OpenAI Chat Completions, POST {base}/chat/completions
  *
- * Paths and auth headers mirror exactly what the AgentHub clients construct (verified
+ * The two other protocols the dialogs offer, `google-genai` (generateContent) and `mmsp` (an
+ * MMSP server), are picked by hand and never probed: generateContent puts the model id in the
+ * path, and a `{}` probe of an MMSP server's `/stream` answers like any other API's 400.
+ *
+ * Paths and auth headers mirror exactly what the MMSP clients construct (verified
  * against the SDKs they wrap): the OpenAI SDK appends `/responses` / `/chat/completions`
  * to the base URL and authenticates with `Authorization: Bearer`; the Anthropic SDK
- * appends `/v1/messages` and AgentHub's AntMessagesClient sends the credential through
+ * appends `/v1/messages` and MMSP's AntMessagesClient sends the credential through
  * BOTH `x-api-key` and `Authorization: Bearer` (plus `anthropic-version`), which every
  * covered server/gateway accepts. Probing the same URL the client would call means a
  * detected protocol is one that will actually work after saving.
@@ -59,7 +63,10 @@ import type {
   ProtocolProbeOutcome,
 } from "../api/types.js";
 
-/** AgentHub generic protocol client types, in the required detection order. */
+/**
+ * The MMSP compatible client types detection probes (one generic protocol each), in the
+ * required order.
+ */
 export const PROTOCOL_CLIENT_TYPES = ["openai-responses", "ant-messages", "openai-chat"] as const;
 export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
 
@@ -84,7 +91,7 @@ function bearerHeaders(apiKey?: string): Record<string, string> {
 /**
  * Anthropic Messages auth: the credential through both header conventions —
  * `x-api-key` (Anthropic, DeepSeek) and `Authorization: Bearer` (OpenRouter, Z.AI) —
- * exactly like AgentHub's AntMessagesClient; `anthropic-version` is always sent
+ * exactly like MMSP's AntMessagesClient; `anthropic-version` is always sent
  * (the SDK sends it unconditionally, and some servers 400 without it).
  */
 function anthropicHeaders(apiKey?: string): Record<string, string> {

@@ -41,6 +41,8 @@ Inspect only the requested Test Agent and Benchmark: the Agent State, public Sta
 
 Do not inspect Rubrics, Gold answers, private scoring conditions, Evaluator State, Workspace, or Trace, other Agents, or Project secrets. If private evaluation information enters the Optimizer context, restore the active Candidate and stop as contaminated.
 
+A Benchmark whose Cases are run through Harbor (their statements say so; the built-in PenguinHarness Benchmarks) is used like any published one. A Run's Session id `harbor:<trial>` names a trial directory under `<benchmark>/.jobs/<job>/`, whose `agent/penguin/traces/` holds the Test Traces; the trial's `verifier/` output and the tasks' `tests/` and `solution/` folders are private scoring material. Before the first Candidate evaluation, perform the shared setup in `agent-evaluation`'s `reference/harbor.md` §A once.
+
 Modify only the Test Agent State and the versioned snapshot required to protect it. Do not change the frozen Benchmark, Test Traces, or Project configuration. The only Benchmark write is appending a complete accepted Candidate Evaluation to `scoreboard.yaml`.
 
 ## Optimization loop

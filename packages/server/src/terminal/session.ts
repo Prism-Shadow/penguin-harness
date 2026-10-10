@@ -19,7 +19,8 @@ import { randomUUID } from "node:crypto";
 import xterm, { type Terminal } from "@xterm/headless";
 import type { IPty } from "node-pty";
 import { loadNodePty } from "./pty-module.js";
-import { defaultTerminalShell, shellArgs } from "./shell.js";
+import { defaultTerminalShell } from "./shell.js";
+import { shellLaunch, type TerminalPathFirst } from "./shell-startup.js";
 import { TerminalInputModeTracker } from "./input-mode.js";
 import { ensureSpawnHelperExecutable } from "../terminal/spawn-helper.js";
 import {
@@ -81,6 +82,12 @@ export interface CreateTerminalSessionOptions {
    * absent falls back to the packaged require (see pty-module.ts).
    */
   assets?: () => string | null;
+  /**
+   * What leads PATH once the shell's own startup files have run: the server's CLI shim
+   * directory, so `penguin` here is the one the Agent's commands get (see shell-startup.ts).
+   * Absent or null, the shell starts with the inherited PATH as it is.
+   */
+  pathFirst?: TerminalPathFirst | null;
 }
 
 export interface TerminalSessionInfo {
@@ -167,15 +174,20 @@ export class TerminalSession {
     });
 
     const shell = options.shell ?? defaultTerminalShell();
+    const launch = shellLaunch(
+      shell,
+      buildTerminalEnv(options.env, options.cwd),
+      options.pathFirst ?? null,
+    );
     // Before the first spawn on macOS: node-pty's prebuilt spawn-helper ships without an
     // exec bit, and posix_spawnp refuses it (see spawn-helper.ts).
     ensureSpawnHelperExecutable();
-    this.ptyProcess = loadNodePty(options.assets).spawn(shell, shellArgs(shell), {
+    this.ptyProcess = loadNodePty(options.assets).spawn(shell, launch.args, {
       name: "xterm-256color",
       cols,
       rows,
       cwd: options.cwd,
-      env: buildTerminalEnv(options.env, options.cwd),
+      env: launch.env,
     });
 
     this.registerCapabilityResponders();

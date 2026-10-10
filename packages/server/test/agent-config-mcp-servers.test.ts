@@ -1,10 +1,13 @@
 /**
- * Agent config route: the `mcpServers` list. PUT round-trips valid entries into
- * system_config.yaml; invalid entries are rejected with a precise 400 through the core
- * transport resolver (single source of truth with the runtime), so a broken server config
- * cannot be saved and silently skipped at the next Session start.
+ * The Agent config route's `mcpServers` list.
+ *
+ * - A PUT round-trips valid stdio and http entries into system_config.yaml.
+ * - An invalid entry is refused with a precise 400 from core's transport resolver (the runtime's
+ *   own), so a broken server config cannot be saved and silently skipped at the next Session.
+ * - POST /config/mcp-test lists a reachable server's prefixed tools, reports an unreachable one
+ *   as ok:false with the connect failure, and refuses a malformed entry before connecting.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { systemConfigPath } from "@prismshadow/penguin-core";
@@ -18,19 +21,27 @@ describe("agent config: mcpServers", () => {
   let projectId: string;
   let configPath: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_mcp");
     owner = apiClient(t.app, a.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_mcp-mcp", name: "mcp project" })
+      await owner.post("/api/projects", {
+        projectId: `owner_mcp-mcp_${projects}`,
+        name: "mcp project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     configPath = `/api/projects/${projectId}/agents/default_agent/config`;
-  });
-
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("PUT round-trips valid stdio and http entries into the YAML", async () => {

@@ -1,8 +1,8 @@
 /**
  * Gallery chrome copy (bilingual): this file holds the Chinese dictionary `zh` and the
  * `GalleryStrings` shape; the English dictionary lives in strings-en.ts. These strings are the
- * gallery's own and never reach the product. Theme display names are per language (通用 / 白领 /
- * 极客 here, Primer / Frost / Console in English) and so are breadcrumbs; theme ids, token names,
+ * gallery's own and never reach the product. Theme display names are per language (白领 / 极客 /
+ * 朴素 here, Frost / Console / Primer in English) and so are breadcrumbs; theme ids, token names,
  * accent preset ids and font names stay English in both.
  *
  * `surfaces` names the app's surfaces the gallery frames (src/app/surfaces.ts) and `library`
@@ -17,9 +17,16 @@ import type {
   ToneName,
 } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
+import type { A2uiSpec } from "@prismshadow/penguin-core/a2ui";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
 import type { ChartToken } from "./library/chart-tokens";
 import type { TopicGroupId, TopicId } from "./library/topics";
+
+/** A block of the A2UI sample reply: the sentence that introduces it, and the block itself. */
+export interface A2uiSample {
+  lead: string;
+  spec: A2uiSpec;
+}
 
 /** What a surface page says: its title, one line on what the frame shows, and how the app reaches it. */
 export interface SurfaceCopy {
@@ -89,6 +96,17 @@ export const zh = {
       title: "对话 · 待审批",
       description: "任务等待人工：一条命令需要批准，允许或拒绝之后任务继续并结束。",
       how: "侧栏 › 带审批标记的会话行。",
+    },
+    "chat-harness": {
+      title: "对话 · harness 写入的行",
+      description:
+        "不是人写、也不是模型写的每一种行：交接来源、Skill 与附件、MCP 连接、后台任务完成通知、定时触发、重连、中断、模型报错、压缩与模型切换、目标模式注入的轮次与插话，以及每个任务的统计行和目标横幅。",
+      how: "侧栏 › 会话列表里最早的一行「修复 hooks 文档的引用」。",
+    },
+    "chat-org": {
+      title: "对话 · 组织触发",
+      description: "组织调度器为员工工位开启的会话：首条消息的触发块折叠成一行来源提示。",
+      how: "公司模式 › 员工的工位。",
     },
     "chat-new": {
       title: "新对话",
@@ -185,7 +203,7 @@ export const zh = {
    */
   rail: {
     theme: "主题",
-    themeNames: { github: "通用", modern: "白领", geek: "极客" } as Record<ThemeId, string>,
+    themeNames: { github: "朴素", modern: "白领", geek: "极客" } as Record<ThemeId, string>,
     mode: "明暗",
     accent: "强调色",
     accentTheme: "随主题",
@@ -303,6 +321,7 @@ export const zh = {
     iconSizes: "图标尺寸",
     iconRegistry: (icons: number, files: number) => `${icons} 个图标，来自 ${files} 个文件`,
     duplicateNames: "同一路径的多个名字",
+    iconMarks: "组件标记",
     durations: "时长 × 缓动",
     reducedNote: "已减弱动效：每个变化直接呈现终态。",
     liveSignal: "实时信号",
@@ -318,7 +337,7 @@ export const zh = {
     presence: "进出",
     presenceNote: "菜单自上方、对话框自中心、通知自下方进出，各按当前主题的进出令牌。",
     reveal: "显现",
-    revealNote: "流式文本逐块显现，每一块只在出现时按显现令牌动一次。",
+    revealNote: "新的行出现在已稳定的列表里，每一行只在出现时按显现令牌动一次。",
     layout: "布局",
     layoutNote: "侧栏在展开与图标栏之间的宽度变化，按布局令牌。",
     replay: "重放",
@@ -329,9 +348,16 @@ export const zh = {
       toast: "通知",
       trigger: "更多",
       sidebarRows: ["新对话", "智能体", "模型库"] as readonly string[],
+      revealRows: [
+        { name: "read_file", detail: "package.json" },
+        { name: "grep", detail: "useStreamReveal" },
+        { name: "exec_command", detail: "运行测试" },
+        { name: "apply_patch", detail: "src/app.ts" },
+        { name: "exec_command", detail: "检查格式" },
+      ] as readonly { name: string; detail: string }[],
     },
     hookJobs: {
-      "ui-glass": "盖在内容之上的临时层",
+      "ui-glass": "磨砂面：盖在内容之上的临时层，白领的插件与技能图块",
       "ui-eyebrow": "为下方一组条目命名的分组标签",
       "ui-display": "页面或主视觉唯一的展示标题",
       "ui-live": "正在进行之物的动效",
@@ -344,8 +370,11 @@ export const zh = {
       "ui-activity": "正在工作的思考行或工具行：运行中、已完成或出错",
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
+      "ui-widget": "回复里一眼看懂的读数块：天气、时钟、倒计时与指标",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
-      "ui-stream": "正在流式输出的回答：各主题决定新文字如何出现",
+      "ui-stream": "正在流式输出的文字（回答、思考、压缩摘要、工具输出）：各主题决定新文字如何出现",
+      "ui-glyph":
+        "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
     } as Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
@@ -439,7 +468,7 @@ export const zh = {
       streaming: {
         title: "流式输出",
         description:
-          "助手回答随流到达时怎样显现：通用即时显示，白领按词淡入、带一层微光，极客逐字打出。",
+          "助手回答随流到达时怎样显现：朴素即时显示，白领按词淡入、带一层微光，极客逐字打出。",
       },
       charts: {
         title: "图表",
@@ -454,7 +483,8 @@ export const zh = {
       },
       content: {
         title: "内容",
-        description: "标题与文字角色、行内代码、Markdown 正文、代码块与代码面，以及差异视图。",
+        description:
+          "标题与文字角色、行内代码、Markdown 正文、代码块与代码面、差异视图，以及 A2UI 组件。",
       },
       layout: {
         title: "布局",
@@ -581,7 +611,7 @@ export const zh = {
       menuRows: "菜单行",
       menuRowsHint: "两种密度：账号与项目菜单用正文字号，行的更多菜单与右键菜单用小字号。",
       menuSettings: "设置",
-      menuUpdate: "检查更新",
+      menuAppInfo: "应用信息",
       menuVersion: "v0.2.13",
       menuSignOut: "退出登录",
       menuGroupBy: "分组方式",
@@ -756,6 +786,7 @@ export const zh = {
     },
     streaming: {
       reply: "助手回答",
+      output: "工具输出",
       receiving: "正在接收…",
       received: "已全部到达",
       modes: {
@@ -906,6 +937,8 @@ export const zh = {
       uploadHere: "上传到此文件夹",
       rename: "重命名 / 移动",
       delete: "删除",
+      newTextFile: "新建文本文件",
+      newFolder: "新建文件夹",
       editor: "编辑器",
       editorLabel: (name: string) => `编辑 ${name}`,
       drop: "拖放反馈",
@@ -941,6 +974,225 @@ export const zh = {
       patch: "读取补丁",
       diffLabel: "src/config.ts 的改动",
       patchLabel: "src/limits.ts 的改动",
+      a2ui: "A2UI 组件",
+      a2uiHint:
+        "模型写进回复的组件：天气、时钟、倒计时和指标小组件，以及选择、表单、步骤、提示框和 Mermaid 图。小组件是模型给出的快照，只有时钟和倒计时会走动；在这里点选或提交，要填入输入框的文字会以提示消息显示。",
+      a2uiReply: [
+        {
+          lead: "北京现在的天气：",
+          spec: {
+            type: "weather",
+            place: "北京",
+            condition: "partly-cloudy",
+            temp: 18,
+            unit: "C",
+            summary: "傍晚转阴，夜里可能有小雨",
+            high: 22,
+            low: 12,
+            feelsLike: 17,
+            humidity: 62,
+            windSpeed: 12,
+            windDirection: "东北",
+            hourly: [
+              { time: "14:00", temp: 18, condition: "partly-cloudy", precip: 10 },
+              { time: "15:00", temp: 19, condition: "partly-cloudy", precip: 10 },
+              { time: "16:00", temp: 19, condition: "cloudy", precip: 20 },
+              { time: "17:00", temp: 18, condition: "cloudy", precip: 30 },
+              { time: "18:00", temp: 16, condition: "cloudy", precip: 40, night: true },
+              { time: "19:00", temp: 15, condition: "drizzle", precip: 60, night: true },
+            ],
+            daily: [
+              { date: "2026-10-04", high: 22, low: 12, condition: "partly-cloudy", precip: 20 },
+              { date: "2026-10-05", high: 19, low: 11, condition: "rain", precip: 80 },
+              { date: "2026-10-06", high: 17, low: 9, condition: "cloudy", precip: 30 },
+              { date: "2026-10-07", high: 20, low: 10, condition: "clear", precip: 0 },
+              { date: "2026-10-08", high: 23, low: 11, condition: "wind", precip: 10 },
+            ],
+            asOf: "2026-10-04T14:05+08:00",
+            source: "Open-Meteo",
+          },
+        },
+        {
+          lead: "团队三地现在的时间：",
+          spec: {
+            type: "clock",
+            title: "团队时区",
+            zones: [
+              { zone: "local" },
+              { zone: "America/New_York", label: "纽约" },
+              { zone: "Europe/London", label: "伦敦" },
+            ],
+            style: "both",
+          },
+        },
+        {
+          lead: "离新年还有：",
+          spec: {
+            type: "countdown",
+            to: "2026-12-31T23:59:59+08:00",
+            label: "新年倒计时",
+            doneLabel: "新年快乐",
+          },
+        },
+        {
+          lead: "刚读到的服务状态：",
+          spec: {
+            type: "metrics",
+            title: "服务状态",
+            items: [
+              {
+                label: "CPU",
+                value: 37,
+                max: 100,
+                unit: "%",
+                gauge: "ring",
+                warn: 80,
+                danger: 95,
+                history: [22, 31, 28, 45, 52, 41, 37],
+              },
+              {
+                label: "内存",
+                kind: "used",
+                value: 15.3,
+                max: 16,
+                unit: "GB",
+                decimals: 1,
+                gauge: "bar",
+                warn: 13.6,
+                danger: 15.2,
+                delta: 0.4,
+                deltaLabel: "较昨天",
+              },
+              {
+                label: "API 额度",
+                kind: "remaining",
+                value: 1240,
+                max: 5000,
+                warn: 1000,
+                danger: 250,
+                detail: "3 天后重置",
+              },
+              {
+                label: "本月预算",
+                kind: "remaining",
+                value: 180,
+                max: 1000,
+                prefix: "¥",
+                warn: 300,
+                danger: 100,
+              },
+              { label: "上传", kind: "progress", value: 63, max: 100, unit: "%" },
+            ],
+            asOf: "2026-10-04T14:05+08:00",
+          },
+        },
+        {
+          lead: "先定下数据库。",
+          spec: {
+            type: "choice",
+            question: "服务用哪种数据库？",
+            options: [
+              { label: "PostgreSQL", description: "关系型，团队已经在运维", recommended: true },
+              { label: "SQLite", description: "单个文件，放在服务旁边" },
+              { label: "MongoDB", description: "文档型，表结构随时可改" },
+            ],
+            allowOther: true,
+          },
+        },
+        {
+          lead: "改动已经通过全部检查。",
+          spec: {
+            type: "choice",
+            question: "现在合并吗？",
+            options: [
+              { label: "现在合并", recommended: true },
+              { label: "等评审后再合并" },
+              { label: "先不合并" },
+            ],
+          },
+        },
+        {
+          lead: "发布前要跑的检查可以多选：",
+          spec: {
+            type: "choice",
+            question: "发布前跑哪些检查？",
+            multiple: true,
+            options: [
+              { label: "类型检查", description: "几秒钟，挡住大部分低级错误", recommended: true },
+              { label: "单元测试", description: "大约两分钟" },
+              { label: "端到端测试", description: "大约十五分钟，需要浏览器" },
+            ],
+          },
+        },
+        {
+          lead: "部署信息一次填完：",
+          spec: {
+            type: "form",
+            title: "部署信息",
+            fields: [
+              {
+                id: "region",
+                label: "区域",
+                kind: "single",
+                options: [{ label: "华东" }, { label: "华北" }, { label: "华南" }],
+                required: true,
+              },
+              {
+                id: "addons",
+                label: "附加功能",
+                kind: "multiple",
+                options: [{ label: "CDN" }, { label: "WAF" }],
+              },
+              {
+                id: "replicas",
+                label: "副本数",
+                kind: "number",
+                min: 1,
+                max: 10,
+                step: 1,
+                unit: "个",
+              },
+              { id: "notes", label: "备注", kind: "text", placeholder: "其他要求" },
+            ],
+            submitLabel: "填入回答",
+          },
+        },
+        {
+          lead: "按三步轮换密钥：",
+          spec: {
+            type: "steps",
+            title: "轮换 API 密钥",
+            steps: [
+              { text: "打开「设置 › 密钥」。" },
+              { text: "新建一个密钥并复制。", note: "新密钥立即生效。" },
+              {
+                text: "删除旧密钥。",
+                warning: "删除后无法恢复。",
+                caution: "仍在使用旧密钥的任务会失败，重启后恢复。",
+                code: "curl -X DELETE https://api.example.com/keys/old",
+                lang: "bash",
+              },
+            ],
+          },
+        },
+        {
+          lead: "最后一点：",
+          spec: { type: "callout", tone: "tip", text: "推送前先运行 `pnpm test`。" },
+        },
+        {
+          lead: "开始之前：",
+          spec: {
+            type: "callout",
+            tone: "warning",
+            title: "止损点",
+            text: "两天内拿不到第一组数据就换方案，不要硬撑。这一步决定后面的投入值不值得，宁可早停也不要拖到最后才放弃。",
+          },
+        },
+      ] as A2uiSample[],
+      a2uiDiagramLead: "请求先查缓存：",
+      a2uiDiagram:
+        "flowchart LR\n  A[请求] --> B{命中缓存}\n  B -->|是| C[直接返回]\n  B -->|否| D[回源读取]\n  D --> C",
+      a2uiInvalidLead: "无法显示的块给出原因和源码：",
     },
     layout: {
       page: "页面与页头",
