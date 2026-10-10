@@ -319,7 +319,10 @@ export async function readStore(root: string): Promise<StoreIndexEntry[]> {
 export function programEntry(entry: string | undefined = process.argv[1]): string | undefined {
   if (typeof entry !== "string" || entry.length === 0) return undefined;
   try {
-    return fs.realpathSync(entry);
+    // The native realpath is the one fs.promises.realpath uses too: it resolves links the same
+    // way, and on Windows it also spells out 8.3 aliases (RUNNER~1 → runneradmin), so one file
+    // is one path however it was reached.
+    return fs.realpathSync.native(entry);
   } catch {
     return entry;
   }
