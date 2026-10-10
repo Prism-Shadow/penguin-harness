@@ -178,7 +178,7 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 
 检测会先探测清理后的 base，再探测它的相邻形式：URL 末尾有 `/v1` 就去掉，没有就加上。每种形式依次尝试三种协议，最多发出六个短探测。base URL 输入框随后会改写为应答的那个形式，并提示「已检测为 {protocol}，base URL 已整理为 {url}」。
 
-要手动设置协议，点击这个后缀。菜单里列出 **OpenAI Responses**（`/responses`）、**Anthropic Messages**（`/v1/messages`）和 **OpenAI Chat Completions**（`/chat/completions`），每一项都标注了客户端会追加到你 URL 末尾的路径。手动选择的协议优先于检测，已经知道端点协议时，根本不必探测。
+要手动设置协议，点击这个后缀。菜单里列出 **OpenAI Responses**（`/responses`）、**Anthropic Messages**（`/v1/messages`）、**OpenAI Chat Completions**（`/chat/completions`）、**Google GenAI (generateContent)**（`/v1beta/models`）和 **MMSP**（`/stream`，即 MMSP 服务器），每一项都标注了客户端会追加到你 URL 末尾的路径。检测不会选出后两种，需要在这里手动选择。手动选择的协议优先于检测，已经知道端点协议时，根本不必探测。
 
 如果检测不出结果，后缀会变成琥珀色，并提示「无法检测接口协议，请检查 API Key 与 base URL。」原因可能是端点不可访问、请求超时、返回的内容不是 API，或者三个路径都不支持。端点仍会报告每次探测的结果，方便调试。
 
@@ -404,9 +404,10 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 | 路由到的客户端 | 快速模式 |
 | --- | --- |
-| OpenAI 协议（`openai-official`、`openai-responses`、`openai-chat`、`openai-chat-vllm-adapter`）、`minimax-official`、`gemini-official`（Interactions API） | 以 `service_tier: "priority"` 发送 |
+| OpenAI 协议（`openai-official`、`openai-responses`、`openai-chat`、`openai-chat-vllm-adapter`）、`minimax-official`、`google-official`（Interactions API） | 以 `service_tier: "priority"` 发送 |
 | Anthropic 协议（`anthropic-official`、`ant-messages`） | 以 `speed: "fast"` 发送，外加 beta 请求头 |
 | `zai-official`、`moonshot-official`、`deepseek-official`、`google-genai`、OpenAI embeddings | 拒绝，不显示开关 |
+| `mmsp` | 转发给 MMSP 服务器，由其上游客户端决定，不显示开关 |
 | Bedrock 上的 `anthropic-official`，或 Claude 4.6、Sonnet 5.5、Haiku 5.5、Fable 5.1 的 id | 拒绝，不显示开关 |
 
 路由跟随条目的 `client_type`；没有设置时，由 `model_id` 开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）指定该厂商的官方客户端。因此同一个上游 id 可能落到不同的客户端。添加在网关分组下的 Kimi 模型（`client_type = "openai-chat"`）可以使用快速模式，同一个 id 路由到 Moonshot 的官方客户端就不行。你自己 base URL 背后的 custom 模型会保留开关：它走 OpenAI 协议，背后很可能就是 OpenAI，但第三方服务器完全可以接受这个参数，然后照常按标准层级提供服务。
@@ -591,7 +592,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 | `model_id` | 上游请求 id |
 | `context_window` | 上下文窗口（Token）。不只是展示，而是实际参与运算：每个请求的有效输出上限和压缩阈值都由它推导，因此请求要求的输出永远不会超过窗口的剩余空间。未设置（或数值小得不合理，低于 4096）时，输出限制关闭，压缩按假定的 128000 计算；窗口较小的模型请填写真实值。在 Web 弹窗中，模型不在模型目录里且这个字段留空时，会写入 1,000,000（手动添加的条目按已知模型处理，而不是当作窗口未知）；如果端点实际支持的窗口更小，就把它调小。`penguin config model add` 省略 `--context-window` 时不写任何默认值 |
 | `max_tokens` | 可选的单模型输出上限（每次请求最多输出的 Token 数）。设置后会覆盖 Agent 的 `model.max_tokens`；未设置就继承这个值。这个上限只是封顶值，不是实际发出的数值：每个请求实际发送 `min(max_tokens, context_window − estimated input − safety margin)`，所以小窗口模型不用手动调整也能正常工作。在 Web 端整表保存时省略这个字段会把它清空 |
-| `client_type` | MMSP 客户端类型：通用协议客户端（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等），或厂商的官方客户端（`deepseek-official`、`anthropic-official` 等）。省略时，模型跟随分组的协议；两者都没有时，MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。自定义端点使用这三种通用协议客户端之一，Web 弹窗可以检测一个 base URL 对应哪一种。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
+| `client_type` | MMSP 客户端类型：通用协议客户端（`openai-chat` 对应 Chat Completions，`openai-responses` 对应 Responses API，`ant-messages` 对应 Anthropic Messages 等），或厂商的官方客户端（`deepseek-official`、`anthropic-official` 等）。省略时，模型跟随分组的协议；两者都没有时，MMSP 按模型 id 开头的厂商系列（`gpt-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）路由。自定义端点使用 Web 弹窗提供的通用协议客户端之一：上述三种、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）；弹窗可以检测一个 base URL 对应前三种中的哪一种。`openai` 是 0.4.2 之前的旧写法，已弃用，读取配置时会归一化为 `openai-chat` |
 | `display_name` | 展示名称 |
 | `vision` | 是否支持图像输入，默认 true |
 | `fast_mode` | 可选的快速模式（默认关闭）：开启后，这个模型的 Session 请求会改走供应商更快的服务层级，价格更高。持久化保存的值只有 `true`；在 Web 端整表保存时省略这个字段会把它清空。没有快速层级的模型会拒绝携带这个设置的请求（参见[快速模式](#快速模式)） |
