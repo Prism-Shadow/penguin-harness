@@ -187,6 +187,7 @@ describe("the session's record", () => {
 
   it("answers 404 for a record that cannot be read", async () => {
     if (process.getuid?.() === 0) return; // root reads through any mode bits.
+    if (process.platform === "win32") return; // chmod there cannot make a file unreadable.
     const file = await writeRecord("locked", [{ type: "user", cwd: workspace }]);
     await fs.chmod(file, 0o000);
     await expect(findSessionRecord("locked", env)).rejects.toMatchObject({
