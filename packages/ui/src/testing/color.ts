@@ -3,9 +3,10 @@
  * instead of by a ratio typed into a comment.
  *
  * Covers the notations the theme files use: hex (3/4/6/8 digits), `rgb()`/`rgba()` in both the
- * comma and the space-and-slash syntax, `hsl()`/`hsla()`, `oklch()`, `color-mix(in srgb, …)`,
- * `transparent`, `white` and `black`. Anything else parses to `null`, and a caller reports that as
- * a failure — an unreadable colour is never assumed to pass.
+ * comma and the space-and-slash syntax, `hsl()`/`hsla()`, `oklch()`, `color-mix(in srgb, …)` and
+ * `color-mix(in oklch, …)` (the heat ramp's mix), `transparent`, `white` and `black`. Anything
+ * else parses to `null`, and a caller reports that as a failure — an unreadable colour is never
+ * assumed to pass.
  */
 
 /** sRGB channels 0–255 (unrounded) and alpha 0–1. */
@@ -127,10 +128,35 @@ function oklchToRgb(lightness: number, chroma: number, hueDeg: number): [number,
   return [encode(linear[0]!), encode(linear[1]!), encode(linear[2]!)];
 }
 
-/** `color-mix(in srgb, A [p%], B [q%])`, premultiplied as CSS Color 5 specifies. */
+/** Gamma-encoded sRGB 0–255 → OKLCH `[lightness, chroma, hue°]` (the inverse of oklchToRgb). */
+function rgbToOklch(color: Rgba): [number, number, number] {
+  const decode = (c: number) => {
+    const v = c / 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const [r, g, b] = [decode(color.r), decode(color.g), decode(color.b)];
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const lightness = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+  const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  const hueDeg = (Math.atan2(B, A) * 180) / Math.PI;
+  return [lightness, Math.hypot(A, B), hueDeg < 0 ? hueDeg + 360 : hueDeg];
+}
+
+/** Below this chroma a colour is grey and its hue is powerless: a mix takes the other's hue. */
+const ACHROMATIC = 1e-4;
+
+/**
+ * `color-mix(in srgb | oklch, A [p%], B [q%])`, premultiplied as CSS Color 5 specifies. In OKLCH
+ * the hue travels the shorter arc (the default `shorter hue`), and a grey's powerless hue is the
+ * other colour's; the result is clamped to the sRGB gamut, as a display shows it.
+ */
 function parseColorMix(args: string): Rgba | null {
-  const [space, first, second, ...rest] = splitTopLevel(args, ",");
-  if (space?.replace(/\s+/g, " ").toLowerCase() !== "in srgb" || rest.length > 0) return null;
+  const [spaceText, first, second, ...rest] = splitTopLevel(args, ",");
+  const space = spaceText?.replace(/\s+/g, " ").toLowerCase();
+  if ((space !== "in srgb" && space !== "in oklch") || rest.length > 0) return null;
   if (first === undefined || second === undefined) return null;
   const component = (part: string): { color: Rgba; pct: number | undefined } | null => {
     const tokens = splitTopLevel(part, " ");
@@ -155,12 +181,22 @@ function parseColorMix(args: string): Rgba | null {
   const alpha = a.color.a * w1 + b.color.a * w2;
   const mix = (x: number, y: number) =>
     alpha === 0 ? 0 : (x * a.color.a * w1 + y * b.color.a * w2) / alpha;
-  return {
-    r: mix(a.color.r, b.color.r),
-    g: mix(a.color.g, b.color.g),
-    b: mix(a.color.b, b.color.b),
-    a: alpha * Math.min(1, sum / 100),
-  };
+  const outAlpha = alpha * Math.min(1, sum / 100);
+  if (space === "in srgb") {
+    return {
+      r: mix(a.color.r, b.color.r),
+      g: mix(a.color.g, b.color.g),
+      b: mix(a.color.b, b.color.b),
+      a: outAlpha,
+    };
+  }
+  const [l1, c1, h1] = rgbToOklch(a.color);
+  const [l2, c2, h2] = rgbToOklch(b.color);
+  const from = c1 < ACHROMATIC ? h2 : h1;
+  const to = c2 < ACHROMATIC ? h1 : h2;
+  const arc = ((((to - from) % 360) + 540) % 360) - 180;
+  const [r, g, bl] = oklchToRgb(mix(l1, l2), mix(c1, c2), from + arc * w2);
+  return { r, g, b: bl, a: outAlpha };
 }
 
 /** Parses a CSS colour value with no `var()` left in it. `null` when the notation is not covered. */

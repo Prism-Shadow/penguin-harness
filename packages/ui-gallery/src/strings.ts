@@ -274,6 +274,8 @@ export const zh = {
     } as Record<ToneName, string>,
     charts: "图表序列",
     tokenSeries: "Token 构成",
+    heat: "热力刻度",
+    heatCaption: "由冷到热的连续色阶：四个色标之间按 OKLCH 混色",
     code: "代码与差异",
     codeLines: {
       before: "const hits = rank(q).slice(0, ",

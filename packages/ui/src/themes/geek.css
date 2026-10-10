@@ -153,6 +153,13 @@
        one value on paper and on black */
     --ui-mark-new: #ff5252;
 
+    /* Colour — heat scale: the stops of one continuous cool → hot ramp (slate blue, steel cyan,
+       bronze, orange), the shared path at Console's saturated chroma */
+    --ui-heat-1: #72809f;
+    --ui-heat-2: #008398;
+    --ui-heat-3: #986c00;
+    --ui-heat-4: #dc5f00;
+
     /* Charts: terminal hues in the roles (indigo, ochre, cobalt, crimson, phosphor, magenta,
        cyan, orange — the presets' own hues, deep enough for paper), the reference curve in the
        muted ink, the token-kind blues, and a plotter's geometry — thin solid bars with square
@@ -476,6 +483,13 @@
     --ui-tone-neutral-emphasis: #5a5453;
     --ui-tone-info-fg: #5696fd;
     --ui-tone-info-emphasis-fg: #000000;
+
+    /* Colour — heat scale: the same ramp lifted for the warm black; the hot stop pulled to a
+       chroma sRGB holds, so it does not clip towards the bronze */
+    --ui-heat-1: #a2b1d2;
+    --ui-heat-2: #3dd1dc;
+    --ui-heat-3: #cea033;
+    --ui-heat-4: #ffa257;
 
     /* Charts: the same roles as bright terminal hues on the warm black */
     --ui-chart-1: #9b7bff;

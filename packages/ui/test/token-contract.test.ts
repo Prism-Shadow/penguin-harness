@@ -340,8 +340,9 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     // mark's fill (W1, the same day), plus the streaming pair (the same day), plus the neutral
     // fill of bubbles and chips (W6, the same day), plus the icon sets' duotone opacity and
     // nine glyph hues and Console's one-tag badge trio (ring, weight, md padding; 2026-10-01),
-    // plus the badge's size and line-height (2026-10-02).
-    expect(TOKEN_NAMES.length).toBe(251);
+    // plus the badge's size and line-height (2026-10-02), plus the heat ramp's four stops
+    // (2026-10-10).
+    expect(TOKEN_NAMES.length).toBe(255);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {
@@ -579,6 +580,31 @@ describe("the update mark (W1, 2026-09-30)", () => {
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     expect(primer.analysis.modes.light.get("--ui-mark-new")).toBe("oklch(70.4% 0.191 22.216)");
     expect(primer.analysis.modes.dark.has("--ui-mark-new")).toBe(false);
+  });
+});
+
+describe("the heat ramp (2026-10-10)", () => {
+  // A magnitude, cool → hot (a model's price class): four stops of one continuous ramp, which
+  // heatColor() mixes between in OKLCH. Their contrast, stops and mixes alike, is contrast.test's.
+  it("is a group of its own, bridged to bg-heat-1 … bg-heat-4", () => {
+    const names = TOKEN_GROUPS.find((group) => group.id === "color-heat")?.names ?? [];
+    expect(names).toHaveLength(4);
+    const sheet = stripCssComments(readFileSync(join(SRC_DIR, "theme.css"), "utf8"));
+    for (const name of names) {
+      const step = name.slice("--ui-heat-".length);
+      expect(sheet).toMatch(new RegExp(`--color-heat-${step}:\\s*var\\(${name}\\);`));
+    }
+  });
+
+  it("is lifted for the dark page by every theme", () => {
+    for (const theme of THEMES) {
+      if (theme.status !== "filled") continue;
+      const dark = theme.analysis.modes.dark;
+      expect(
+        ["--ui-heat-1", "--ui-heat-2", "--ui-heat-3", "--ui-heat-4"].filter((n) => !dark.has(n)),
+        `${theme.id}: the dark rule restates every stop`,
+      ).toEqual([]);
+    }
   });
 });
 

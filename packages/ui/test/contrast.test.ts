@@ -29,7 +29,10 @@
  *   both;
  * - the switch: its knob on the off track — 3:1, the knob itself or its hairline edge
  *   (`knob-line` over the track) — and, for the theme's accent and every preset, the `knob-on`
- *   on the accent — 3:1, so the knob never vanishes on a near-white dark accent.
+ *   on the accent — 3:1, so the knob never vanishes on a near-white dark accent;
+ * - the heat ramp as a filled mark (a model card's price dot) — 3:1 on the canvas, the card
+ *   surface and the card's hover fill, at its four stops and at every point between them, mixed
+ *   in OKLCH exactly as the page asks the browser to mix it.
  *
  * `fg-subtle` has no floor in light — placeholder and disabled ink, which WCAG exempts, and
  * Primer's is the app's — and holds 4.5:1 in dark, where timestamps and meta text read from it.
@@ -60,6 +63,7 @@ import {
 } from "../src/testing";
 import type { AccentPresetRules, Rgba, ThemeFileAnalysis } from "../src/testing";
 import { ICON_TINT_NAMES } from "../src/components/icons/sets";
+import { heatColor } from "../src/components/icons/heat-dot/heat-dot";
 import { SRC_DIR } from "./helpers/paths";
 
 interface Pair {
@@ -465,6 +469,59 @@ describe("accent presets, per theme", () => {
           expect(failures, `\n${failures.join("\n")}\n`).toEqual([]);
         });
       }
+    }
+  }
+});
+
+/**
+ * Where the heat ramp is read: a hundred points per segment between two stops, 1% of the mix
+ * apart, so a dip between stops cannot hide between samples; and through the very strings the
+ * page paints, `heatColor(t)` with the theme's stops substituted.
+ */
+const HEAT_SAMPLES = 300;
+const HEAT_SURFACES = ["--ui-canvas", "--ui-surface", "--ui-surface-muted"] as const;
+
+describe("heat scale marks", () => {
+  for (const id of THEME_IDS) {
+    const theme = themeAnalysis(id);
+    if (theme === null) {
+      it.skip(`src/themes/${id}.css — PENDING, heat scale not checked: no tokens declared yet`, () => {});
+      continue;
+    }
+    for (const mode of THEME_MODES) {
+      it(`${id} ${mode}: every point of the ramp, stops and mixes, clears 3:1 where a card sits`, () => {
+        const resolve: Resolve = (name) => {
+          const value = resolveThemeValue(name, mode, theme, defaultTheme);
+          if (value === null) return `${name} does not resolve to a value`;
+          return parseColor(value) ?? `${name} = \`${value}\` is not a colour this suite can read`;
+        };
+        const failures: string[] = [];
+        for (let i = 0; i <= HEAT_SAMPLES; i++) {
+          const t = i / HEAT_SAMPLES;
+          const css = heatColor(t).replace(/var\((--ui-heat-\d)\)/g, (_, name: TokenName) => {
+            return resolveThemeValue(name, mode, theme, defaultTheme) ?? `unresolved ${name}`;
+          });
+          const mark = parseColor(css);
+          if (mark === null) {
+            failures.push(`t=${t.toFixed(3)}: \`${css}\` is not a colour this suite can read`);
+            continue;
+          }
+          for (const bg of HEAT_SURFACES) {
+            const surface = opaqueBackground(bg, mode, resolve);
+            if (typeof surface === "string") {
+              failures.push(`t=${t.toFixed(3)} on ${bg}: ${surface}`);
+              continue;
+            }
+            const ratio = contrastRatio(mark, surface);
+            if (ratio < 3) {
+              failures.push(
+                `t=${t.toFixed(3)} on ${bg}: ${ratio.toFixed(2)}:1 < 3:1 (${formatColor(mark)} on ${formatColor(surface)})`,
+              );
+            }
+          }
+        }
+        expect(failures, `\n${failures.join("\n")}\n`).toEqual([]);
+      });
     }
   }
 });

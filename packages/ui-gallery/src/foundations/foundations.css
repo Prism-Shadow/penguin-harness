@@ -273,6 +273,18 @@
   height: 0.625rem;
   border-radius: var(--ui-radius-xs);
 }
+/* The heat ramp as steps, the way a page's legend shows it: no gradient fill anywhere. */
+.gf-heat-strip {
+  display: flex;
+  gap: 1px;
+  height: 0.75rem;
+  max-width: 24rem;
+  border-radius: var(--ui-radius-xs);
+  overflow: hidden;
+}
+.gf-heat-strip > span {
+  flex: 1;
+}
 
 .gf-code {
   display: grid;

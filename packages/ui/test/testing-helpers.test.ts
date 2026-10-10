@@ -72,6 +72,22 @@ describe("parseColor", () => {
     expect(parseColor("color-mix(in oklab, red, blue)")).toBeNull();
   });
 
+  it("mixes in oklch along the shorter hue arc, a grey taking the other colour's hue", () => {
+    const near = (mix: string, expected: string) => {
+      const got = parseColor(mix)!;
+      const want = parseColor(expected)!;
+      for (const channel of ["r", "g", "b"] as const) {
+        expect(Math.abs(got[channel] - want[channel]), `${mix} ${channel}`).toBeLessThan(1);
+      }
+    };
+    // 350° and 30° meet at 10°, through red — not at 190°, through cyan.
+    near("color-mix(in oklch, oklch(60% 0.1 350) 50%, oklch(60% 0.1 30))", "oklch(60% 0.1 10)");
+    near("color-mix(in oklch, oklch(60% 0.1 350) 75%, oklch(60% 0.1 30))", "oklch(60% 0.1 0)");
+    // White has no hue of its own, so the mix keeps the blue's on either side.
+    near("color-mix(in oklch, white 50%, oklch(60% 0.1 250))", "oklch(80% 0.05 250)");
+    near("color-mix(in oklch, oklch(60% 0.1 250), white 50%)", "oklch(80% 0.05 250)");
+  });
+
   it("refuses what it cannot read instead of guessing", () => {
     expect(parseColor("var(--ui-fg)")).toBeNull();
     expect(parseColor("currentColor")).toBeNull();

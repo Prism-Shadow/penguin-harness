@@ -129,6 +129,14 @@
        rather than as an alarm; the app's value, one in both modes ---- */
     --ui-mark-new: oklch(70.4% 0.191 22.216); /* red-400 */
 
+    /* ---- Colour — heat scale: the stops of one continuous cool → hot ramp (slate blue, steel
+       cyan, bronze, orange) from one OKLCH path, ordered by chroma; hex because the path's values
+       are not Tailwind steps ---- */
+    --ui-heat-1: #73809c;
+    --ui-heat-2: #008295;
+    --ui-heat-3: #946d00;
+    --ui-heat-4: #d66500;
+
     /* ---- Charts: the series palette in its roles (violet, amber, sky, rose, emerald, fuchsia,
        then teal and orange from the employee palette). Amber, sky, emerald, teal and orange sit
        at their 600 steps — the steps the app's dark series already used — since their 500s read
@@ -488,6 +496,12 @@
     --ui-tone-info-fg: oklch(74.6% 0.16 232.661); /* sky-400 */
     --ui-tone-info-bg: oklch(29.3% 0.066 243.157 / 0.4); /* sky-950/40 */
     --ui-tone-info-line: oklch(50% 0.134 242.749); /* sky-700 */
+
+    /* ---- Colour — heat scale: the same path lifted for the dark page ---- */
+    --ui-heat-1: #a3b1cf;
+    --ui-heat-2: #52cfd9;
+    --ui-heat-3: #caa144;
+    --ui-heat-4: #ff9e39;
 
     /* ---- Charts: light now shares the 600 steps the app's dark series use, so dark restates
        only what still differs — emerald at 400 as the timeline draws its work phase, fuchsia at

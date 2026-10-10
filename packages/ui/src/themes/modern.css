@@ -125,6 +125,13 @@
        one value on both pages */
     --ui-mark-new: #f0765a;
 
+    /* Colour — heat scale: the stops of one continuous cool → hot ramp (slate blue, steel cyan,
+       bronze, orange), the shared path at Frost's muted chroma */
+    --ui-heat-1: #768096;
+    --ui-heat-2: #217f8d;
+    --ui-heat-3: #8e702b;
+    --ui-heat-4: #c6701e;
+
     /* Charts: soft. A low-chroma palette in the roles (heather, ochre, dusk blue, rose, sage,
        mauve, teal, clay), each just clearing 3:1 on the canvas so a line and a point read; the
        bars are the same colours let through at seven tenths (a little more in dark) with no
@@ -463,6 +470,12 @@
     --ui-tone-info-fg: #8bbff5;
     --ui-tone-info-bg: rgb(139 191 245 / 0.14);
     --ui-tone-info-emphasis: #3a6bc4;
+
+    /* Colour — heat scale: the same ramp lifted for the dark page */
+    --ui-heat-1: #a6b1c8;
+    --ui-heat-2: #72cbd2;
+    --ui-heat-3: #c3a360;
+    --ui-heat-4: #fda762;
 
     /* Charts: the same roles lifted for the dark page */
     --ui-chart-1: #9f90d4;

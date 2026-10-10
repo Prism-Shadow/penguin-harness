@@ -26,9 +26,10 @@ export * from "./components/icons/avatars/agent-avatar";
 export * from "./components/icons/avatars/user-avatar";
 export * from "./components/icons/avatars/avatar-stack";
 
-// W1 — status and feedback: the state dot, the run-state and activity marks, the update dot,
-// badges, loading placeholders and empty states.
+// W1 — status and feedback: the state dot and the heat dot, the run-state and activity marks,
+// the update dot, badges, loading placeholders and empty states.
 export * from "./components/icons/dot/dot";
+export * from "./components/icons/heat-dot/heat-dot";
 export * from "./components/icons/status-icon/status-icon";
 export * from "./components/icons/activity-icon/activity-icon";
 export * from "./components/icons/update-dot/update-dot";

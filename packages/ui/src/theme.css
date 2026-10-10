@@ -139,6 +139,13 @@
   /* Marks that are not a tone: bg-mark-new (the update dot) */
   --color-mark-new: var(--ui-mark-new);
 
+  /* Heat scale: a magnitude, cool → hot — bg-heat-1 … bg-heat-4 for a stop; a point between two
+     stops is mixed inline by heatColor(), which reads the --ui-heat-* stops directly. */
+  --color-heat-1: var(--ui-heat-1);
+  --color-heat-2: var(--ui-heat-2);
+  --color-heat-3: var(--ui-heat-3);
+  --color-heat-4: var(--ui-heat-4);
+
   /* Charts: identity colours, not judgement */
   --color-chart-1: var(--ui-chart-1);
   --color-chart-2: var(--ui-chart-2);

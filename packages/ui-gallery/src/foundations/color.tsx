@@ -3,10 +3,10 @@
  * the three inks and the three lines drawn on each; the accent — the theme's own and the five
  * presets the active theme lists, in the mode under review — as a filled button and a selected
  * row, and the link; the six tones as a dot, a word and the soft / outline / solid badge; the
- * chart series as bars; the code and diff colours on a hunk. Every value, with its contrast
- * ratios, is in the tokens drawer.
+ * chart series as bars; the heat ramp as the strip and the dots a page paints from it; the code
+ * and diff colours on a hunk. Every value, with its contrast ratios, is in the tokens drawer.
  */
-import { ACCENT_PRESETS, TONES } from "@prismshadow/penguin-ui";
+import { ACCENT_PRESETS, HEAT_STOPS, HeatDot, TONES, heatColor } from "@prismshadow/penguin-ui";
 import type { ThemeId, ThemeModeName, ToneName } from "@prismshadow/penguin-ui";
 import type { CSSProperties } from "react";
 import geekCss from "../../../ui/src/themes/geek.css?raw";
@@ -209,6 +209,31 @@ function Charts() {
   );
 }
 
+/** Steps in the specimen's strip: fine enough to show the ramp is continuous, not four bands. */
+const HEAT_STEPS = 24;
+
+function Heat() {
+  const { S } = useGallery();
+  return (
+    <div className="gf-stacked">
+      <span className="gf-heat-strip" role="img" aria-label={S.foundations.heatCaption}>
+        {Array.from({ length: HEAT_STEPS }, (_, i) => (
+          <span key={i} style={{ background: heatColor((i + 0.5) / HEAT_STEPS) }} />
+        ))}
+      </span>
+      <span className="gf-legend gf-caption">
+        {HEAT_STOPS.map((stop, i) => (
+          <span key={stop}>
+            <HeatDot t={i / (HEAT_STOPS.length - 1)} />
+            <span className="gf-mono">{i + 1}</span>
+          </span>
+        ))}
+        <span>{S.foundations.heatCaption}</span>
+      </span>
+    </div>
+  );
+}
+
 function Code() {
   const { S } = useGallery();
   const hunk = S.foundations.codeLines;
@@ -265,6 +290,9 @@ export function ColourBoard() {
           <Code />
         </BoardGroup>
       </div>
+      <BoardGroup title={S.foundations.heat}>
+        <Heat />
+      </BoardGroup>
     </div>
   );
 }

@@ -251,6 +251,8 @@ export const en: GalleryStrings = {
     },
     charts: "Chart series",
     tokenSeries: "Token mix",
+    heat: "Heat scale",
+    heatCaption: "A continuous cool → hot ramp: four stops, mixed in OKLCH between them",
     code: "Code and diff",
     codeLines: {
       before: "const hits = rank(q).slice(0, ",

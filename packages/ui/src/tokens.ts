@@ -276,6 +276,19 @@ export const TOKEN_GROUPS = [
     names: ["--ui-mark-new"],
   },
   {
+    id: "color-heat",
+    title: "Colour — heat scale",
+    // A magnitude scale, cool → hot, for a quantity that is neither a status nor an identity: the
+    // price class of a model today. The four values are the stops of ONE continuous ramp — slate
+    // blue, steel cyan, bronze, orange — evenly spaced over 0–1; a mark between two stops is the
+    // two mixed in OKLCH (`heatColor`), so every point of the ramp, not only the stops, is a
+    // filled mark on the page and must clear 3:1 on the canvas, the card surface and the card's
+    // hover fill in its mode. The ramp orders by chroma (quiet → loud) so the expensive end is
+    // the one the eye lands on; the hot stop is an orange that stays clear of the theme's danger
+    // red (≥ 10 ΔE) and of its success green.
+    names: ["--ui-heat-1", "--ui-heat-2", "--ui-heat-3", "--ui-heat-4"],
+  },
+  {
     id: "chart",
     title: "Charts — series colours and geometry",
     // The categorical palette has fixed roles across themes — 1 violet, 2 amber, 3 sky, 4 rose,
