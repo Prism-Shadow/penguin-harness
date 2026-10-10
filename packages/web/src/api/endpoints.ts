@@ -18,6 +18,7 @@ import type {
   AgentCreateRequest,
   AgentCreateResponse,
   AgentHooksResponse,
+  AgentMcpServersResponse,
   AgentImportRequest,
   AgentImportResponse,
   AgentKernelUpdateResponse,
@@ -220,6 +221,7 @@ import type {
   VaultResponse,
   VaultUpdateRequest,
   InstalledPluginsResponse,
+  PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
   WorkflowInfo,
@@ -1696,6 +1698,10 @@ export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plug
 export const getPluginFiles = (plugin: string) =>
   apiFetch<PluginFilesResponse>(`/api/plugins/${encodeURIComponent(plugin)}/files`);
 
+/** A library plugin's README.md, from its package root, for the detail dialog; 404 when the package ships none. */
+export const getLibraryPluginReadme = (plugin: string) =>
+  apiFetch<PluginReadmeResponse>(`/api/plugins/${encodeURIComponent(plugin)}/readme`);
+
 /**
  * Installs whole library plugins — each one's skills and hook package; an already-installed
  * plugin is overwritten with the library content (i.e. updated). 201 returns the Agent's
@@ -1713,6 +1719,7 @@ export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/
 /** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
 export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
 
+/** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
 export const getPluginReadme = (name: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
 
@@ -1724,6 +1731,20 @@ export const getAgentSkills = (projectId: string, agentId: string) =>
 export const getAgentHooks = (projectId: string, agentId: string) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/hooks`,
+  );
+
+/** The Agent's MCP servers in config order: target, the plugin that installed each, the vault keys still missing and whether a sign-in is needed (never a value). */
+export const getAgentMcpServers = (projectId: string, agentId: string) =>
+  apiFetch<AgentMcpServersResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/mcp-servers`,
+  );
+
+/** Removes one MCP server entry from the Agent, whoever added it; 204, 404 unknown_mcp_server when it is not there. */
+export const uninstallAgentMcpServer = (projectId: string, agentId: string, name: string) =>
+  apiFetch<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/mcp-servers/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
   );
 
 /** Uninstalls one hook package (deletes agent_state/hooks/<name>/ whole); 204, 404 not_found when it is not installed. */
@@ -2473,6 +2494,26 @@ export const uninstallPlugin = (
     }`,
     { method: "DELETE" },
   );
+
+/**
+ * Admin only: installs a plugin package from an uploaded zip on this server — 409
+ * plugin_exists while another version is installed, unless `overwrite`. A package of server
+ * modules is listed for this machine and applied; a package of Skills or hooks joins the
+ * library. `installed` says which.
+ */
+export const importPluginArchive = (projectId: string, body: PluginArchiveImportRequest) =>
+  apiFetch<InstalledPluginsResponse>(`${pluginsPath(projectId)}/archive`, {
+    method: "POST",
+    body,
+  });
+
+/** Zip download URL of a library plugin's package (any member; the server names the file, `<name>-v<version>.zip`). */
+export const libraryPluginArchiveUrl = (plugin: string): string =>
+  `/api/plugins/${encodeURIComponent(plugin)}/archive`;
+
+/** Zip download URL of a listed server module's package on this server (any member). */
+export const registryPluginArchiveUrl = (name: string): string =>
+  `/api/plugins/registry/archive?name=${encodeURIComponent(name)}`;
 
 // ---- The agent browser: the desktop's built-in browser, or the user's own Chrome ----
 /**

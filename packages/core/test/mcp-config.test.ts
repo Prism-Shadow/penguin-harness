@@ -1,6 +1,19 @@
+/**
+ * MCP server entries as Environment reads them from system_config.yaml.
+ *
+ * - Each transport resolves from its fields; an invalid entry, a duplicate name and a vault
+ *   reference in the server's host — however the URL spells the host — are warnings that drop
+ *   the entry, never the Agent.
+ * - `${KEY}` in a header, `env` or `args` is filled in from the Agent's vault: the resolved
+ *   server carries the value, while a key the vault lacks skips the server as needing setup,
+ *   naming the key and never a value.
+ * - An entry that declares OAuth sign-in and sends no Authorization header is skipped as needing
+ *   a sign-in; a bearer header filled from the vault connects it.
+ */
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MCP_CONNECT_TIMEOUT_MS,
+  mcpSkipMessage,
   resolveMCPServer,
   resolveMCPServers,
 } from "../src/environment/mcp/config.js";
@@ -145,6 +158,119 @@ describe("resolveMCPServers — list semantics", () => {
   });
 
   it("returns empty results for an empty list", () => {
-    expect(resolveMCPServers([])).toEqual({ servers: [], warnings: [] });
+    expect(resolveMCPServers([])).toEqual({ servers: [], skipped: [], warnings: [] });
+  });
+});
+
+describe("resolveMCPServers — vault references and sign-in", () => {
+  const secret = "s3cret-value-never-printed";
+
+  it("fills ${KEY} in headers, env and args from the vault, and skips a server whose key is missing, naming only the key", () => {
+    const entries = [
+      {
+        name: "remote",
+        config: {
+          url: "https://mcp.example.com/mcp?team=${TEAM}",
+          headers: { Authorization: "Bearer ${API_TOKEN}" },
+        },
+      },
+      {
+        name: "local",
+        config: {
+          command: "srv",
+          args: ["--token=${API_TOKEN}"],
+          env: { API_TOKEN: "${API_TOKEN}", PLAIN: "as written" },
+        },
+      },
+    ];
+    const ready = resolveMCPServers(entries, { API_TOKEN: secret, TEAM: "blue" });
+    expect(ready.skipped).toEqual([]);
+    expect(ready.servers.map((s) => s.transport)).toEqual([
+      {
+        kind: "http",
+        url: "https://mcp.example.com/mcp?team=blue",
+        headers: { Authorization: `Bearer ${secret}` },
+      },
+      {
+        kind: "stdio",
+        command: "srv",
+        args: [`--token=${secret}`],
+        env: { API_TOKEN: secret, PLAIN: "as written" },
+      },
+    ]);
+
+    const { servers, skipped, warnings } = resolveMCPServers(entries, { TEAM: "blue" });
+    expect(servers).toEqual([]);
+    expect(warnings).toEqual([]);
+    expect(skipped).toEqual([
+      { name: "remote", transport: "http", skip: { reason: "needs_setup", keys: ["API_TOKEN"] } },
+      { name: "local", transport: "stdio", skip: { reason: "needs_setup", keys: ["API_TOKEN"] } },
+    ]);
+    expect(mcpSkipMessage(skipped[0]!.skip)).toBe("needs setup: vault key API_TOKEN is not set");
+  });
+
+  it("never reads a vault value into the server's address: a reference in the host is an invalid entry, however the URL spells it", () => {
+    // Every spelling here is one the URL parser reads with `${HOST}` (or `${USER}`) in the
+    // authority — without "//", with one slash, with backslashes, with a tab or a leading space
+    // the parser drops, in the user info, glued to the host.
+    for (const url of [
+      "https://${HOST}/mcp",
+      "https:${HOST}/mcp",
+      "https:/${HOST}/mcp",
+      "https:\\\\${HOST}/mcp",
+      "https:/\t/${HOST}/mcp",
+      " https://${HOST}/mcp",
+      "https://${USER}@mcp.example.com/mcp",
+      "https://mcp.example.com${HOST}/mcp",
+    ]) {
+      const { servers, skipped, warnings } = resolveMCPServers(
+        [{ name: "moving", config: { url } }],
+        { HOST: "elsewhere.example", USER: "someone" },
+      );
+      expect(servers, url).toEqual([]);
+      expect(skipped, url).toEqual([]);
+      expect(warnings, url).toEqual([
+        'MCP server "moving" skipped: "url" cannot take a ${KEY} vault reference in its host',
+      ]);
+    }
+    // A path or a query may still take one.
+    const fixed = resolveMCPServers(
+      [{ name: "fixed", config: { url: "https://mcp.example.com/${TEAM}/mcp?team=${TEAM}" } }],
+      { TEAM: "blue" },
+    );
+    expect(fixed.servers.map((s) => s.transport)).toEqual([
+      { kind: "http", url: "https://mcp.example.com/blue/mcp?team=blue" },
+    ]);
+  });
+
+  it("skips an entry that declares OAuth sign-in without an Authorization header, and connects it once a bearer header is filled in", () => {
+    const oauth = { scopes: ["mail.read"], client_id: "${CLIENT_ID}" };
+    const signIn = resolveMCPServers(
+      [{ name: "mail", config: { url: "https://mail.example.com/mcp", oauth } }],
+      { CLIENT_ID: "id" },
+    );
+    expect(signIn.servers).toEqual([]);
+    expect(signIn.skipped).toEqual([
+      { name: "mail", transport: "http", skip: { reason: "sign_in_required" } },
+    ]);
+    expect(mcpSkipMessage(signIn.skipped[0]!.skip)).toMatch(/OAuth sign-in/);
+
+    const token = resolveMCPServers(
+      [
+        {
+          name: "mail",
+          config: {
+            url: "https://mail.example.com/mcp",
+            oauth,
+            headers: { authorization: "Bearer ${MAIL_TOKEN}" },
+          },
+        },
+      ],
+      { CLIENT_ID: "id", MAIL_TOKEN: secret },
+    );
+    expect(token.skipped).toEqual([]);
+    expect(token.servers[0]!.transport).toMatchObject({
+      headers: { authorization: `Bearer ${secret}` },
+    });
   });
 });

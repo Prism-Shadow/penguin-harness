@@ -84,14 +84,13 @@ https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
 ## Built-in plugins
 
-Four plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills)) — skills, plus the session hooks that drive goal mode and continual learning; agents can also write and optimize their own skills:
+Three plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills)) — skills, plus the session hooks that drive goal mode and continual learning; agents can also write and optimize their own skills:
 
 | Category             | Plugins                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
-| Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
+| Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `agent-company` |
 | Software Development | `software-development`, `use-claude-code`                              |
 | AI App Development   | `agent-development`, `model-development`, `skill-porting`, `agent-tuning`     |
-| Agent Company        | `agent-company`                                                               |
 
 The desktop app also has a built-in browser in its side dock. Agents drive it with `penguin browser` and the `browser-automation` plugin: they read pages, click and type, and pull out data such as your Amazon orders, signed in with the accounts you import from your own browser.
 The same commands can drive your own Chrome instead, through the PenguinHarness Browser extension (how the Web App does it): only the tabs you hand it, and your sign-ins stay in Chrome.

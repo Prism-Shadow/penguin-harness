@@ -13,8 +13,10 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { isMap, isSeq, parseDocument, parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import type { YAMLSeq } from "yaml";
 import {
+  libraryPluginPackage,
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
   type HookCommand,
@@ -22,8 +24,16 @@ import {
   type LibraryPlugin,
   type SkillMetadata,
 } from "../plugins/index.js";
-import type { ToolConfig, ToolDefinitionConfig } from "../interfaces/index.js";
+import type { MCPServerConfig, ToolConfig, ToolDefinitionConfig } from "../interfaces/index.js";
+import {
+  PLUGIN_ROOT_REF,
+  collectVaultRefs,
+  mapConfigStrings,
+  needsSignIn,
+  readsVaultReferences,
+} from "../environment/mcp/config.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
+import { loadAgentVault } from "./agent-vault.js";
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
@@ -226,11 +236,22 @@ export async function loadAgentState(opts?: {
     preset === undefined && agentId === DEFAULT_AGENT_ID
       ? loadPreinstalledPlugins()
       : (preset?.plugins ?? []);
+  // A plugin's MCP servers join the config written below, not a file of their own (see
+  // installPlugin for the rules they are merged by).
+  if (plugins.some((plugin) => plugin.mcpServers.length > 0)) {
+    systemConfig.tools = {
+      ...systemConfig.tools,
+      mcpServers: plugins.reduce<unknown[]>(
+        (entries, plugin) => withPluginMcpServers(entries, plugin, agentId),
+        systemConfig.tools?.mcpServers ?? [],
+      ) as MCPServerConfig[],
+    };
+  }
   // The Project's Benchmarks are no Agent's to write, default_agent's included: they are
   // written when the Project is created (project-benchmarks.ts), never on this path.
   await Promise.all([
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
-    ...plugins.map((plugin) => installPlugin(root, projectId, agentId, plugin)),
+    ...plugins.map((plugin) => installPluginFiles(root, projectId, agentId, plugin)),
   ]);
   // system_config.yaml is written last: its existence is the "initialization complete" marker
   // (the load/init decision point). If this fails partway (disk full / crash), the next run
@@ -274,7 +295,8 @@ export async function provisionProjectAgents(opts?: {
  * `description` and the Agent State `version` (an invalid or missing version normalizes
  * to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
  * `model.*`, `compaction.*` (including its prompt) and `tools` (the builtin list and
- * `mcpServers`). Keys outside the default schema are dropped, and YAML comments are not
+ * `mcpServers` — a plugin's servers too: installing the plugin again puts them back). Keys
+ * outside the default schema are dropped, and YAML comments are not
  * preserved (the file is rewritten from the default object). Other Agent State files
  * (AGENTS.md, skills/, vault, memory/ …) are untouched. Returns the config written.
  *
@@ -620,13 +642,35 @@ export async function listInstalledSkills(
 }
 
 /**
- * Installs one library plugin: every skill it ships through `installSkill`, and its hook
- * package (when it has one) through `installHook` — the same writers the library routes use,
- * so a plugin picked at Agent creation and one installed from the library land identically.
- * The plugin's icon lands with both: stamped onto each skill by the loader, and written beside
- * the hook package's manifest here.
+ * Installs one library plugin: every skill it ships through `installSkill`, its hook package
+ * (when it has one) through `installHook` — the same writers the library routes use, so a
+ * plugin picked at Agent creation and one installed from the library land identically — and its
+ * MCP servers into the Agent's `tools.mcpServers`. The plugin's icon lands with the skills and
+ * the hook package: stamped onto each skill by the loader, and written beside the hook package's
+ * manifest here.
+ *
+ * The servers are checked before anything is written: a name the Agent already has from someone
+ * else — the user or another plugin — refuses the whole install (McpServerNameTakenError), since
+ * renaming the plugin's server would rename its tools away from what its skills say. They are
+ * then merged into system_config.yaml in place (comments and the user's entries kept): every
+ * entry this plugin installed before is replaced, so an update drops a server the new version no
+ * longer ships and overwrites one the user edited, as it does a skill.
  */
 export async function installPlugin(
+  root: string,
+  projectId: string,
+  agentId: string,
+  plugin: LibraryPlugin,
+): Promise<void> {
+  await assertPluginMcpServersInstallable(root, projectId, agentId, [plugin]);
+  await installPluginFiles(root, projectId, agentId, plugin);
+  if (plugin.mcpServers.length > 0) {
+    await writePluginMcpServers(root, projectId, agentId, plugin);
+  }
+}
+
+/** A plugin's files on the Agent: its skills and its hook package (see installPlugin). */
+async function installPluginFiles(
   root: string,
   projectId: string,
   agentId: string,
@@ -643,6 +687,205 @@ export async function installPlugin(
       plugin.icon,
     );
   }
+}
+
+/**
+ * An MCP server name a plugin would install that the Agent already has from someone else. The
+ * install is refused whole, before anything is written: `ownedBy` is the plugin the existing
+ * entry belongs to, or null for an entry the user added.
+ */
+export class McpServerNameTakenError extends Error {
+  constructor(
+    readonly server: string,
+    readonly agentId: string,
+    readonly ownedBy: string | null,
+  ) {
+    super(
+      `MCP server '${server}' already exists on agent '${agentId}' ` +
+        (ownedBy !== null ? `and belongs to plugin '${ownedBy}'` : "and was added by hand") +
+        "; rename or remove it first. Nothing was installed.",
+    );
+    this.name = "McpServerNameTakenError";
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * The `tools.mcpServers` entries installing `plugin` writes: its servers in manifest order, each
+ * carrying the plugin's name as provenance and with `${PLUGIN_ROOT}` replaced by the package's
+ * directory on this machine — the one reference resolved at install time; the `${KEY}` vault
+ * references stay as written.
+ */
+export function pluginMcpServerEntries(plugin: LibraryPlugin): MCPServerConfig[] {
+  const rooted = plugin.mcpServers.some((server) =>
+    JSON.stringify(server.config).includes(PLUGIN_ROOT_REF),
+  );
+  const dir = rooted ? libraryPluginPackage(plugin.name)?.dir : undefined;
+  if (rooted && dir === undefined) {
+    throw new Error(
+      `Plugin ${plugin.name}: an MCP server refers to ${PLUGIN_ROOT_REF}, but the plugin's package is not in the library on this machine.`,
+    );
+  }
+  return plugin.mcpServers.map((server) => ({
+    name: server.name,
+    plugin: plugin.name,
+    config:
+      dir === undefined
+        ? server.config
+        : (mapConfigStrings(server.config, (text) =>
+            text.split(PLUGIN_ROOT_REF).join(dir),
+          ) as Record<string, unknown>),
+  }));
+}
+
+/**
+ * `entries` (an Agent's `tools.mcpServers` as stored) with `plugin`'s servers in place: every
+ * entry it installed before removed, its servers appended. Throws McpServerNameTakenError for a
+ * server name another owner holds.
+ */
+function withPluginMcpServers(
+  entries: readonly unknown[],
+  plugin: LibraryPlugin,
+  agentId: string,
+): unknown[] {
+  if (plugin.mcpServers.length === 0) return [...entries];
+  const own = pluginMcpServerEntries(plugin);
+  const kept = entries.filter((entry) => !(isRecord(entry) && entry.plugin === plugin.name));
+  for (const server of own) {
+    const taken = kept.find((entry) => isRecord(entry) && entry.name === server.name);
+    if (taken !== undefined) {
+      const owner = (taken as Record<string, unknown>).plugin;
+      throw new McpServerNameTakenError(
+        server.name,
+        agentId,
+        typeof owner === "string" ? owner : null,
+      );
+    }
+  }
+  return [...kept, ...own];
+}
+
+/** An Agent's `tools.mcpServers` as stored; anything but a list reads as none. */
+async function storedMcpServers(root: string, projectId: string, agentId: string) {
+  const parsed = parseYaml(
+    await fs.readFile(systemConfigPath(root, projectId, agentId), "utf8"),
+  ) as unknown;
+  const list = isRecord(parsed) && isRecord(parsed.tools) ? parsed.tools.mcpServers : undefined;
+  return Array.isArray(list) ? (list as unknown[]) : [];
+}
+
+/**
+ * Checks that installing `plugins`, in order, could write their MCP servers on the Agent — each
+ * server name free, or already the same plugin's, on the Agent and among the plugins before it
+ * — without writing anything. Throws what installPlugin would: McpServerNameTakenError, or the
+ * error of a `${PLUGIN_ROOT}` with no package to resolve to. A request installing several
+ * plugins runs it first, so a refusal leaves nothing half-installed.
+ */
+export async function assertPluginMcpServersInstallable(
+  root: string,
+  projectId: string,
+  agentId: string,
+  plugins: readonly LibraryPlugin[],
+): Promise<void> {
+  if (!plugins.some((plugin) => plugin.mcpServers.length > 0)) return;
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  plugins.reduce<unknown[]>(
+    (entries, plugin) => withPluginMcpServers(entries, plugin, agentId),
+    await storedMcpServers(root, projectId, agentId),
+  );
+}
+
+/** Merges a plugin's MCP servers into system_config.yaml in place (see installPlugin), checked again on the file as it is now. */
+async function writePluginMcpServers(
+  root: string,
+  projectId: string,
+  agentId: string,
+  plugin: LibraryPlugin,
+): Promise<void> {
+  const file = systemConfigPath(root, projectId, agentId);
+  const doc = parseDocument(await fs.readFile(file, "utf8"));
+  const js = doc.toJS() as unknown;
+  const stored = isRecord(js) && isRecord(js.tools) ? js.tools.mcpServers : undefined;
+  withPluginMcpServers(Array.isArray(stored) ? stored : [], plugin, agentId);
+  const current = doc.getIn(["tools", "mcpServers"]);
+  const list = isSeq(current) ? current : (doc.createNode([]) as YAMLSeq);
+  list.items = list.items.filter((item) => !(isMap(item) && item.get("plugin") === plugin.name));
+  for (const entry of pluginMcpServerEntries(plugin)) list.items.push(doc.createNode(entry));
+  // The default config writes an empty list in flow style (`[]`); entries read as a block.
+  list.flow = false;
+  if (list !== current) doc.setIn(["tools", "mcpServers"], list);
+  await atomicWriteFile(file, doc.toString(), { followSymlinks: true });
+}
+
+/**
+ * Removes the MCP server `name` from the Agent's `tools.mcpServers`, whoever added it; false
+ * when the Agent has none by that name. The rest of the file, comments included, is kept.
+ */
+export async function uninstallMcpServer(
+  root: string,
+  projectId: string,
+  agentId: string,
+  name: string,
+): Promise<boolean> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const file = systemConfigPath(root, projectId, agentId);
+  const doc = parseDocument(await fs.readFile(file, "utf8"));
+  const list = doc.getIn(["tools", "mcpServers"]);
+  if (!isSeq(list)) return false;
+  const index = list.items.findIndex((item) => isMap(item) && item.get("name") === name);
+  if (index < 0) return false;
+  list.items.splice(index, 1);
+  await atomicWriteFile(file, doc.toString(), { followSymlinks: true });
+  return true;
+}
+
+/** One `tools.mcpServers` entry of an Agent, with what stands between it and a connection. */
+export interface InstalledMcpServer {
+  entry: MCPServerConfig;
+  /** The `${KEY}` references of its config the Agent's vault does not hold (names only): the server is skipped until they are set. */
+  missingKeys: string[];
+  /** It needs an OAuth sign-in, which this version cannot do: the server is skipped. */
+  signIn: boolean;
+}
+
+/**
+ * The Agent's MCP servers as stored, in order, each with the vault keys it is missing and
+ * whether it needs a sign-in — what decides at connect time whether it is contacted at all. The
+ * vault is read for its key names only. An entry without a name or a config object is not
+ * listed.
+ */
+export async function listInstalledMcpServers(
+  root: string,
+  projectId: string,
+  agentId: string,
+): Promise<InstalledMcpServer[]> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const [stored, vault] = await Promise.all([
+    storedMcpServers(root, projectId, agentId),
+    loadAgentVault(root, projectId, agentId),
+  ]);
+  const servers: InstalledMcpServer[] = [];
+  for (const raw of stored) {
+    if (!isRecord(raw) || typeof raw.name !== "string" || !isRecord(raw.config)) continue;
+    const entry: MCPServerConfig = {
+      name: raw.name,
+      config: raw.config,
+      ...(typeof raw.plugin === "string" ? { plugin: raw.plugin } : {}),
+    };
+    const refs = readsVaultReferences(entry) ? collectVaultRefs(entry.config) : [];
+    servers.push({
+      entry,
+      missingKeys: refs.filter((key) => !Object.hasOwn(vault, key)),
+      signIn: needsSignIn(entry.config),
+    });
+  }
+  return servers;
 }
 
 /**

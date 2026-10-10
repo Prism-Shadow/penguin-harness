@@ -11,10 +11,18 @@
  * pending servers connect in parallel, each bounded by its `connectTimeoutMs`. A server that
  * fails to connect (or an invalid config entry) is reported as a stderr warning and skipped —
  * MCP problems never break Session creation, matching Environment's stance on unrecognized
- * builtin tool names. Discovery is a snapshot per connection: `tools/list_changed`
- * notifications are ignored. When a compaction opens the next model context, `reconfigure`
- * keeps every connection whose entry is unchanged (no respawn, no re-discovery), closes the
- * removed or changed ones, and leaves the new or changed ones pending for the next phase.
+ * builtin tool names. A server the Agent's vault cannot set up (a `${KEY}` it references is
+ * missing) or that needs an OAuth sign-in is never contacted: every phase reports it as a
+ * failed result carrying its reason, without a transport ever being built. Discovery is a
+ * snapshot per connection: `tools/list_changed` notifications are ignored. When a compaction
+ * opens the next model context, `reconfigure` keeps every connection whose resolved entry —
+ * vault values included — is unchanged (no respawn, no re-discovery), closes the removed or
+ * changed ones, and leaves the new or changed ones pending for the next phase.
+ *
+ * A server may repeat what it was sent when it fails — a refusal quoting the request line or
+ * a header, a process printing its environment on stderr — so every error text reported for a
+ * server (the warning, the connect result the Trace records, a failed call's message the model
+ * reads) carries its vault values as their `${KEY}` references.
  *
  * Execution: a call is bridged to `client.callTool` with the Environment-merged abort
  * signal passed through. The SDK's own per-request timeout is pushed out of the way
@@ -47,7 +55,12 @@ import type {
   ToolPermission,
 } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "../tools/types.js";
-import { resolveMCPServers, type ResolvedMCPServer } from "./config.js";
+import {
+  mcpSkipMessage,
+  resolveMCPServers,
+  type ResolvedMCPServer,
+  type SkippedMCPServer,
+} from "./config.js";
 
 /** Prefix marking a tool as MCP-provided; the full form is `mcp__<server>__<tool>`. */
 export const MCP_TOOL_PREFIX = "mcp__";
@@ -99,6 +112,11 @@ export interface McpToolProviderOptions {
   confineSpawn?: () => SpawnConfiner | null;
   /** The Session's scratchpad, the confiner's scope beside the Workspace. */
   scratchpadDir?: string;
+  /**
+   * The Agent's vault, read for the `${KEY}` references of the entries (see config.ts); a
+   * reference it cannot fill skips that server as "needs setup". Absent = an empty vault.
+   */
+  vault?: Readonly<Record<string, string>>;
   /** Warning sink; defaults to a `[penguin]`-prefixed stderr line. */
   warn?: (message: string) => void;
 }
@@ -112,6 +130,48 @@ interface McpConnection {
 
 function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** A server's vault values, each with the key it fills, longest first: what its error texts are cleaned of. */
+type VaultValues = ReadonlyArray<readonly [key: string, value: string]>;
+
+/**
+ * The shortest vault value an error text is cleaned of. A shorter one — a region such as `us`,
+ * a flag, a port — is no secret, and replacing it would garble the text wherever those letters
+ * occur ("stat${REGION}").
+ */
+const MIN_REDACTED_LENGTH = 6;
+
+/**
+ * `text` with every vault value the server was given — as written, percent-encoded as a URL
+ * carries it, or escaped as JSON quotes it — replaced by its `${KEY}` reference. A server's
+ * failure can repeat what it was sent (a refusal quoting the request line or a header, a
+ * process printing its environment on stderr), and the text lands in the warning, the
+ * connect result of the Trace and the tool result the model reads.
+ */
+function redactVaultValues(text: string, values: VaultValues): string {
+  let out = text;
+  for (const [key, value] of values) {
+    if (value.length < MIN_REDACTED_LENGTH) continue;
+    const forms = new Set([value, encodeURIComponent(value), JSON.stringify(value).slice(1, -1)]);
+    for (const form of forms) out = out.split(form).join(`\${${key}}`);
+  }
+  return out;
+}
+
+/**
+ * `err` as it may leave the provider: itself when its message holds none of the server's vault
+ * values (an abort stays the very error that classifies it), otherwise a plain Error of the
+ * same name with the cleaned message — and nothing else of the original, whose other fields (an
+ * HTTP error's body, a cause) can hold the values too.
+ */
+function redactError(err: unknown, values: VaultValues): unknown {
+  const message = describeError(err);
+  const clean = redactVaultValues(message, values);
+  if (clean === message) return err;
+  const out = new Error(clean);
+  if (err instanceof Error) out.name = err.name;
+  return out;
 }
 
 /** Wraps global fetch to add the configured headers to every request (stream GET and POSTs alike). */
@@ -175,9 +235,15 @@ export function renderCallToolResult(result: CallToolResult): { text: string; im
 }
 
 export class McpToolProvider {
-  /** The configured servers of the current model context (config order); replaced by `reconfigure`. */
-  private servers: ResolvedMCPServer[];
-  private configWarnings: string[];
+  /** The servers of the current model context to connect (config order, vault references filled in); replaced by `reconfigure`. */
+  private servers: ResolvedMCPServer[] = [];
+  /** The valid servers of the current model context that cannot connect yet (needs setup, sign-in): reported at every phase, never contacted. */
+  private skipped: SkippedMCPServer[] = [];
+  /** Every configured server's name, connectable or skipped, in config order: the order the phase results follow. */
+  private order: string[] = [];
+  private configWarnings: string[] = [];
+  /** The vault the current server list was resolved against: where a server's values are looked up to keep them out of its error texts. */
+  private vault: Readonly<Record<string, string>> = {};
   private readonly workspaceDir: string | undefined;
   private readonly confineSpawn: (() => SpawnConfiner | null) | undefined;
   private readonly scratchpadDir: string | undefined;
@@ -198,9 +264,7 @@ export class McpToolProvider {
   private closed = false;
 
   constructor(entries: MCPServerConfig[], options?: McpToolProviderOptions) {
-    const resolved = resolveMCPServers(entries);
-    this.servers = resolved.servers;
-    this.configWarnings = resolved.warnings;
+    this.configure(entries, options?.vault ?? {});
     this.workspaceDir = options?.workspaceDir;
     this.confineSpawn = options?.confineSpawn;
     this.scratchpadDir = options?.scratchpadDir;
@@ -215,12 +279,12 @@ export class McpToolProvider {
 
   /**
    * Configured servers without a live connection — never connected yet, failed on their
-   * last phase, or changed by `reconfigure`: the ones the next listTools() will contact.
-   * Empty once every configured server is connected.
+   * last phase, changed by `reconfigure`, or skipped (needs setup, sign-in): the ones the next
+   * listTools() will contact or report. Empty once every configured server is connected.
    */
   pendingServerNames(): string[] {
     const connected = new Set(this.connections.map((c) => c.server.name));
-    return this.servers.filter((s) => !connected.has(s.name)).map((s) => s.name);
+    return this.order.filter((name) => !connected.has(name));
   }
 
   /** Per-server outcomes of the latest connect phase; empty before it completed, and after a phase that had nothing to connect. */
@@ -237,12 +301,10 @@ export class McpToolProvider {
    * retries it. Not for use while a connect is in flight (the composition layer calls it
    * between turns, after the first run's connect completed).
    */
-  reconfigure(entries: MCPServerConfig[]): void {
-    const resolved = resolveMCPServers(entries);
-    this.servers = resolved.servers;
-    this.configWarnings = resolved.warnings;
-    // The resolved server is plain data produced by one resolver, so its JSON is a stable
-    // identity for "the same entry".
+  reconfigure(entries: MCPServerConfig[], vault: Readonly<Record<string, string>> = {}): void {
+    this.configure(entries, vault);
+    // The resolved server is plain data produced by one resolver — vault values filled in, so
+    // a changed value reconnects — and its JSON is a stable identity for "the same entry".
     const wanted = new Map(this.servers.map((s) => [s.name, JSON.stringify(s)]));
     const kept: McpConnection[] = [];
     for (const conn of this.connections) {
@@ -253,6 +315,30 @@ export class McpToolProvider {
     this.ensurePromise = null;
     this.results = [];
     this.rebuildRegistry();
+  }
+
+  /** Resolves a server list against the vault into the connectable servers, the skipped ones and the config warnings, keeping config order across both. */
+  private configure(entries: MCPServerConfig[], vault: Readonly<Record<string, string>>): void {
+    const resolved = resolveMCPServers(entries, vault);
+    this.vault = vault;
+    this.servers = resolved.servers;
+    this.skipped = resolved.skipped;
+    this.configWarnings = resolved.warnings;
+    const rank = new Map<string, number>();
+    entries.forEach((entry, index) => {
+      if (typeof entry?.name === "string" && !rank.has(entry.name)) rank.set(entry.name, index);
+    });
+    this.order = [...this.servers.map((s) => s.name), ...this.skipped.map((s) => s.name)].sort(
+      (a, b) => rank.get(a)! - rank.get(b)!,
+    );
+  }
+
+  /** The vault values `server` was given, longest first (see redactVaultValues). */
+  private vaultValuesOf(server: ResolvedMCPServer): VaultValues {
+    return (server.vaultKeys ?? [])
+      .filter((key) => Object.hasOwn(this.vault, key))
+      .map((key) => [key, this.vault[key]!] as const)
+      .sort((a, b) => b[1].length - a[1].length);
   }
 
   /**
@@ -339,8 +425,11 @@ export class McpToolProvider {
             };
           } catch (err) {
             const aborted = ac.signal.aborted;
+            // The failure may repeat what the server was sent: its vault values go back to
+            // their references before the text is printed or recorded.
+            const detail = redactVaultValues(describeError(err), this.vaultValuesOf(server));
             if (!aborted) {
-              this.warn(`MCP server "${server.name}" unavailable: ${describeError(err)}`);
+              this.warn(`MCP server "${server.name}" unavailable: ${detail}`);
             }
             return {
               conn: null,
@@ -351,7 +440,7 @@ export class McpToolProvider {
                 duration_ms: durationMs(),
                 ...(aborted
                   ? {}
-                  : { error_code: "connect_failed" as const, error_message: describeError(err) }),
+                  : { error_code: "connect_failed" as const, error_message: detail }),
               },
             };
           }
@@ -367,7 +456,24 @@ export class McpToolProvider {
       throw new Error("MCP connect cancelled");
     }
     this.connectAbort = null;
-    this.results = settled.map((s) => s.result);
+    // A skipped server is a failed result of every phase, with its reason — key names only —
+    // and no time spent: nothing was contacted.
+    const skippedResults = this.skipped.map((server): McpServerConnectResult => {
+      const message = mcpSkipMessage(server.skip);
+      this.warn(`MCP server "${server.name}" skipped: ${message}`);
+      return {
+        server: server.name,
+        transport: server.transport,
+        status: "fatal",
+        duration_ms: 0,
+        error_code:
+          server.skip.reason === "needs_setup" ? "mcp_needs_setup" : "mcp_sign_in_required",
+        error_message: message,
+      };
+    });
+    this.results = [...settled.map((s) => s.result), ...skippedResults].sort(
+      (a, b) => this.order.indexOf(a.server) - this.order.indexOf(b.server),
+    );
     for (const { conn, result } of settled) {
       if (!conn) continue;
       if (this.closed) {
@@ -421,7 +527,8 @@ export class McpToolProvider {
         args,
         // Safe inherited defaults plus the entry's own env — and nothing else: the Agent
         // vault is deliberately NOT injected into MCP server processes (unlike command
-        // subprocesses); a variable a server needs must be listed in the entry's env.
+        // subprocesses); a variable a server needs must be listed in the entry's env, where
+        // a `${KEY}` reference names the vault value it takes (filled in by the resolver).
         // The SDK defaults are an allowlist (HOME/PATH/SHELL-class names only), so the
         // harness's own configuration — every PENGUIN_* variable, PORT/HOST and the rest —
         // never reaches a server: the same outcome the command-session strip enforces,
@@ -467,8 +574,9 @@ export class McpToolProvider {
       // connect time, not at every registry rebuild a later context triggers.
       const wrappers: BuiltinTool[] = [];
       const seen = new Set<string>();
+      const values = this.vaultValuesOf(server);
       for (const tool of listed.tools) {
-        const wrapper = this.wrap(server, client, tool, seen);
+        const wrapper = this.wrap(server, client, tool, seen, values);
         if (wrapper) wrappers.push(wrapper);
       }
       return { server, client, wrappers };
@@ -500,12 +608,18 @@ export class McpToolProvider {
     }
   }
 
-  /** Builds the executable wrapper of one discovered tool; null when it cannot join the toolset (skips are warned, never thrown). `seen` holds the names already taken on this server. */
+  /**
+   * Builds the executable wrapper of one discovered tool; null when it cannot join the toolset
+   * (skips are warned, never thrown). `seen` holds the names already taken on this server, and
+   * `values` the vault values it was given: a call that fails with an answer repeating them
+   * reports their references instead.
+   */
   private wrap(
     server: ResolvedMCPServer,
     client: Client,
     tool: Tool,
     seen: Set<string>,
+    values: VaultValues,
   ): BuiltinTool | null {
     const name = mcpToolName(server.name, tool.name);
     if (!LLM_TOOL_NAME_PATTERN.test(name)) {
@@ -539,13 +653,17 @@ export class McpToolProvider {
           : {}),
       },
       execute: async function* (args, ctx): AsyncGenerator<OmniMessage, ToolResult> {
-        const result = await client.callTool(
-          { name: tool.name, arguments: args },
-          {
-            timeout: MAX_SDK_TIMEOUT_MS,
-            ...(ctx.signal ? { signal: ctx.signal } : {}),
-          },
-        );
+        const result = await client
+          .callTool(
+            { name: tool.name, arguments: args },
+            {
+              timeout: MAX_SDK_TIMEOUT_MS,
+              ...(ctx.signal ? { signal: ctx.signal } : {}),
+            },
+          )
+          .catch((err: unknown) => {
+            throw redactError(err, values);
+          });
         const rendered = renderCallToolResult(result);
         const failed = result.isError === true;
         const text =

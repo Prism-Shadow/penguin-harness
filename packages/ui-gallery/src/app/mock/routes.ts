@@ -18,6 +18,8 @@ import type {
   AgentConfigResponse,
   AgentCreateResponse,
   AgentHooksResponse,
+  AgentMcpServerItem,
+  AgentMcpServersResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
   AgentSchedulesConfigDto,
@@ -531,6 +533,35 @@ const configOf = (ctx: Ctx): AgentConfigResponse => {
   if (!config) notFound("Agent config");
   return config;
 };
+
+/**
+ * An Agent's MCP servers as the server lists them, read off its config: transport and target,
+ * the plugin that installed each. The demo's vault is taken to hold every key a server
+ * references, so none waits for setup.
+ */
+const mcpServerItems = (ctx: Ctx): AgentMcpServerItem[] =>
+  configOf(ctx).config.mcpServers.map((entry) => {
+    const c = entry.config;
+    const named = c["transport"];
+    const transport: AgentMcpServerItem["transport"] =
+      named === "http" || named === "sse" || named === "stdio"
+        ? named
+        : typeof c["command"] === "string"
+          ? "stdio"
+          : "http";
+    const args = Array.isArray(c["args"]) ? c["args"].map(String) : [];
+    return {
+      name: entry.name,
+      transport,
+      target:
+        transport === "stdio"
+          ? [String(c["command"] ?? ""), ...args].join(" ")
+          : String(c["url"] ?? ""),
+      ...(entry.plugin !== undefined ? { plugin: entry.plugin } : {}),
+      missingKeys: [],
+      signIn: false,
+    };
+  });
 
 router
   .get(
@@ -1990,6 +2021,30 @@ router
     const name = query.get("name") ?? "";
     return { name, readme: store.f.readmes[name] ?? null };
   })
+  // A listed server module's package as a zip: the demo's bytes stand in for the package.
+  .get("/api/plugins/registry/archive", ({ store, query }) => {
+    const name = query.get("name") ?? "";
+    if (!store.f.pluginIndex.plugins.some((e) => e.name === name)) notFound("Plugin");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${name.replace(/^@[^/]+\//, "")}.zip"`,
+    });
+  })
+  // A library plugin's own README.md: the demo's plugins ship none unless the store has one.
+  .get("/api/plugins/:plugin/readme", ({ store, params }): PluginReadmeResponse => {
+    const name = params.plugin!;
+    if (!libraryPlugins(store).some((p) => p.name === name)) notFound("Plugin");
+    const readme = store.f.readmes[name];
+    if (readme === undefined) notFound("README");
+    return { name, readme };
+  })
+  .get("/api/plugins/:plugin/archive", ({ store, params }) => {
+    if (!libraryPlugins(store).some((p) => p.name === params.plugin)) notFound("Plugin");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.plugin!}.zip"`,
+    });
+  })
   .get("/api/plugins/:plugin/files", ({ store, params }): PluginFilesResponse => {
     const files = store.f.pluginFiles[params.plugin!];
     if (!files) {
@@ -2027,7 +2082,11 @@ router
     agent.skillCount = installed.skills.length;
     agent.hookCount = installed.hooks.length;
     return json(
-      { skills: installed.skills, hooks: installed.hooks } satisfies AgentPluginsInstallResponse,
+      {
+        skills: installed.skills,
+        hooks: installed.hooks,
+        mcpServers: mcpServerItems(ctx),
+      } satisfies AgentPluginsInstallResponse,
       201,
     );
   })
@@ -2037,6 +2096,16 @@ router
   .get("/api/projects/:projectId/agents/:agentId/hooks", (ctx): AgentHooksResponse => ({
     hooks: installedOf(ctx).hooks,
   }))
+  .get("/api/projects/:projectId/agents/:agentId/mcp-servers", (ctx): AgentMcpServersResponse => ({
+    servers: mcpServerItems(ctx),
+  }))
+  .delete("/api/projects/:projectId/agents/:agentId/mcp-servers/:name", (ctx) => {
+    const config = configOf(ctx).config;
+    const kept = config.mcpServers.filter((entry) => entry.name !== ctx.params.name);
+    if (kept.length === config.mcpServers.length) notFound("MCP server");
+    config.mcpServers = kept;
+    return empty();
+  })
   .delete("/api/projects/:projectId/agents/:agentId/hooks/:name", (ctx) => {
     const installed = installedOf(ctx);
     const before = installed.hooks.length;
@@ -2470,6 +2539,9 @@ router
       }
       return store.f.installedPlugins;
     },
+  )
+  .post("/api/projects/:projectId/plugins/installed/archive", () =>
+    readOnly("install a plugin archive"),
   )
   .delete(
     "/api/projects/:projectId/plugins/installed",

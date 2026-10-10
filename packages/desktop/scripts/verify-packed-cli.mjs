@@ -79,8 +79,14 @@ for (const app of dirs) {
   // The plugin library travels as electron-builder's collected dependencies, at the app root's
   // node_modules: the packed server resolves each package by name from there, and a plugin
   // that did not make it in is simply absent from every Agent's library, with nothing else
-  // failing.
-  const pluginFiles = pluginNames.map((name) => `node_modules/${name}/plugin.json`);
+  // failing. Each one is its manifest (package.json) beside the skills or hooks it ships.
+  const pluginFiles = pluginNames.map((name) => `node_modules/${name}/package.json`);
+  for (const name of pluginNames) {
+    const content = ["skills", "hooks"].map((sub) => path.join(app, "node_modules", name, sub));
+    if (!content.some((dir) => fs.existsSync(dir))) {
+      problems.push(`${app}: node_modules/${name} carries neither skills/ nor hooks/.`);
+    }
+  }
   for (const rel of [
     "bin/penguin",
     "bin/penguin.cmd",

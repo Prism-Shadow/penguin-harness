@@ -51,8 +51,12 @@ export async function libraryPayload(repoRoot) {
   for (const dep of deps) {
     const name = dep.slice(PREFIX.length);
     const dir = path.join(repoRoot, "plugins", name);
-    if (!fs.existsSync(path.join(dir, "plugin.json"))) {
-      throw new Error(`${dep} is a dependency of core but ${dir} holds no plugin.json`);
+    // A library plugin: skills or a hook package beside its package.json (core's isLibraryPackage).
+    const content = ["skills", "hooks"].some((sub) => fs.existsSync(path.join(dir, sub)));
+    if (!fs.existsSync(path.join(dir, "package.json")) || !content) {
+      throw new Error(
+        `${dep} is a dependency of core but ${dir} holds no package.json beside skills/ or hooks/`,
+      );
     }
     for (const rel of await walk(dir)) {
       entries.push({

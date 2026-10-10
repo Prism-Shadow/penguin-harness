@@ -694,11 +694,11 @@ export const en: Strings = {
       does === undefined ? `${column}: ${value}` : `${column}: ${value}. ${does}`,
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
-      title: "Install a sandbox backend",
+      title: "Install an Agent Sandbox backend",
       body: (machine: string, pkgs: readonly string[]) =>
-        `${machine} has no sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkgs.join(" and ")}?` +
+        `${machine} has no Agent Sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkgs.join(" and ")} on the whole server, shared by every Project?` +
         (pkgs.length > 1 ? " Where both work, the one that confines more is used." : ""),
-      cost: "Installing reloads the server's plugins, which stops agent runs in progress in every Project. The switch stays on either way.",
+      cost: "Installing reloads the server's plugins, which stops the agent runs in progress in every Project. The switch stays on either way.",
       install: "Install",
       installing: "Installing…",
       later: "Not now",
@@ -1364,8 +1364,9 @@ export const en: Strings = {
     createPluginsPlaceholder: "No plugins selected",
     createPluginsPicked: (n: number): string => `${n} plugin${n === 1 ? "" : "s"} selected`,
     createPluginsHint:
-      "Installed into the agent at creation (skills and hook packages); add or remove them later in its Skills and Hooks tabs.",
+      "Installed into the agent at creation (skills, hook packages and MCP servers); add or remove them later in its Skills, Hooks and Tools tabs.",
     createPluginsEmpty: "The plugin library has nothing to install.",
+    createStdioQuestion: (agent: string): string => `Create ${agent}?`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
     createSkillsPlaceholder: "No skills selected",
     createSkillsPicked: (n: number): string => `${n} skill${n === 1 ? "" : "s"} selected`,
@@ -1568,12 +1569,14 @@ export const en: Strings = {
     mcpArgs: "args",
     mcpArgsHint: "One argument per line",
     mcpEnv: "env",
-    mcpEnvHint: "One KEY=value per line; the Agent vault is not injected into MCP Server processes",
+    mcpEnvHint:
+      "One KEY=value per line; a ${KEY} in a value is read from the agent's vault when the server connects, and nothing else from the vault reaches the process",
     mcpCwd: "cwd",
     mcpCwdHint: "Leave empty to use the Session's Workspace",
     mcpUrl: "url",
     mcpHeaders: "headers",
-    mcpHeadersHint: "One Header-Name: value per line (auth headers such as Authorization)",
+    mcpHeadersHint:
+      "One Header-Name: value per line (auth headers such as Authorization); a ${KEY} in a value is read from the agent's vault when the server connects",
     mcpPermission: "permission",
     mcpPermissionAuto: "auto",
     mcpPermissionAutoLabel: "Auto (readOnlyHint)",
@@ -1594,6 +1597,10 @@ export const en: Strings = {
     mcpNumberInvalid: "Must be an integer > 0",
     mcpDuplicateName: "A server with this name already exists",
     mcpTest: "Test connection",
+    mcpTestAll: "Test all",
+    mcpTestSaveFirst:
+      "Save it first, then test: an entry that uses values from the vault is tested only as saved.",
+    mcpTestSaveFirstBadge: "Save first",
     mcpTesting: "Testing…",
     mcpTestOk: (toolCount: number, latencyMs?: number): string => {
       const timing = latencyMs !== undefined ? ` (${(latencyMs / 1000).toFixed(1)}s)` : "";
@@ -1612,6 +1619,11 @@ export const en: Strings = {
     mcpDeleteTitle: "Delete MCP Server",
     mcpDeleteConfirm: (name: string): string =>
       `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,
+    mcpInstalledBy: (plugin: string): string => `Installed by plugin ${plugin}`,
+    mcpFromPlugin: (plugin: string): string =>
+      `From plugin ${plugin}: reinstalling the plugin replaces this entry.`,
+    mcpRemoveFromPlugin: (plugin: string): string =>
+      `It was installed by plugin ${plugin}; Manage installs on the Plugins page can put it back.`,
     defaultValue: "(default)",
     livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
     deleteAgent: "Delete agent",
@@ -2455,17 +2467,9 @@ export const en: Strings = {
 
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on agents as a whole. */
   plugins: {
-    installedTitle: "Installed plugins",
-    installedDesc:
-      "What this Project asks for, and which of those this process is running. A change applies without a restart where the server can re-assemble itself; re-assembling stops the agent runs in progress in every Project.",
-    installedEmpty: "No plugins installed yet.",
-    stateActive: "running",
     builtin: "built in",
     builtinHint:
       "Ships with this build: installing it downloads nothing, and it loads only once you install it.",
-    installedRestart: "restart to load",
-    stateFailed: "failed to load",
-    replacesLabel: "replaces",
     restartPending:
       "A listed plugin is not running and this server could not apply it without a restart: restart the server to load it.",
     uninstall: "Remove",
@@ -2475,9 +2479,15 @@ export const en: Strings = {
     deploymentInstalledToast: (name: string) => `Installed ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} failed to load: ${reason}`,
-    applyConfirmInstall: (name: string) => `Install ${name}?`,
-    applyConfirmRemove: (name: string) => `Remove ${name}?`,
-    applyConfirmBody: "Agent runs in progress in every Project will be stopped.",
+    /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    applyConfirmInstall: (name: string) => `Install ${name}`,
+    applyConfirmRemove: (name: string) => `Remove ${name}`,
+    applyConfirmInstallBody: (name: string) =>
+      `Installs ${name} on the whole server, shared by every Project.`,
+    applyConfirmRemoveBody: (name: string) =>
+      `Removes ${name} from the server; it stays while another Project still uses it.`,
+    applyConfirmWarning: (install: boolean) =>
+      `${install ? "Installing" : "Removing"} reloads the server's plugins, which stops the agent runs in progress in every Project.`,
     pageTitle: "Plugins",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "Machine",
@@ -2485,46 +2495,143 @@ export const en: Strings = {
     thisServer: "This server",
     /** A row listed for some machines only, by alias. */
     onlyOn: (names: string) => `only on ${names}`,
-    /** An all-machines row listed only for other machines. */
-    notHere: "not on this server",
-    /** A row the Project lists for a machine that has not reported it running yet. */
-    notSynced: "not on that machine yet",
     /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
     sharedCannotRemove: "Enabled on all machines: remove it in the All machines view.",
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
-    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "Settings",
     pageDesc:
-      "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",
-    /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
-    installedSection: (n: number): string => `Installed plugins (${n})`,
-    /** The second list: registry entries this Project does not ask for yet. */
-    availableSection: (n: number): string => `Available (${n})`,
-    notInstalled: "not installed",
-    /** The filter column beside the lists, and the empty result. */
-    filterCategories: "Categories",
-    filterKind: "Contains",
-    filterState: "Status",
-    filterClear: "Clear filters",
-    kindLabel: { skills: "Skills", hooks: "Hooks", modules: "Modules" },
-    stateLabel: {
+      "Every plugin, by category. Plugins of skills and/or a hook package ship with this build and are installed on agents; server-module plugins, such as the Agent Sandbox backends, are installed on the whole server by an admin.",
+    /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
+    groupByLabel: "Group by",
+    groupBy: {
+      category: "Group by category",
+      status: "Group by status",
+      kind: "Group by content",
+      none: "No grouping",
+    },
+    /** What a plugin carries: the section titles of the grouping by content. */
+    kindLabel: { skills: "Skills", hooks: "Hooks", mcp: "MCP servers", modules: "Server modules" },
+    /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
+    sandboxCategory: "Agent Sandbox",
+    otherCategory: "Other",
+    /** A plugin's install status: the word beside the status glyph, and the grouping's section titles. */
+    status: {
+      update: "Update available",
       installed: "Installed",
-      available: "Available",
-      running: "Running",
       restart: "Restart to load",
       failed: "Failed to load",
+      "not-here": "Not on this server",
+      available: "Available",
+    },
+    /** What a status means for this plugin, on hover over its glyph. */
+    statusHint: {
+      libraryInstalled: "An agent in this Project has it",
+      libraryAvailable: "No agent in this Project has it yet",
+      update: (n: number) =>
+        n === 1
+          ? "1 agent's copy is behind the library"
+          : `${n} agents' copies are behind the library`,
+      moduleInstalled: "Installed on the server and loaded",
+      moduleAvailable: "Not installed on the server",
+      restart: "Installed; loads after a server restart",
+      failed: (reason: string) => `Failed to load: ${reason}`,
+      elsewhere: (machines: string) => `Runs only on ${machines}, not on this server`,
+      unsynced: "Installed, not on that machine yet",
     },
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "Ships with this build; the registry has no entry for it yet.",
+    /** In place of the description of a package that carries none. */
+    noDescription: "No description",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
     libraryBuiltinHint: "Ships with this build; install it to an agent to use it there.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
     searchPlaceholder: "Search plugins",
-    /** Section labels of the plugin detail Modal. */
+    /** Sections of the plugin detail dialog: the description (and the package's README), then the files it installs. */
+    detailDescription: "About",
+    detailFiles: "Files",
     detailSkills: "Skills",
     detailHooks: "Hooks",
+    detailMcpServers: "MCP servers",
+    /** The detail dialog's links to the package's homepage and repository: their names and hover hints. */
+    detailHomepage: "Homepage",
+    detailRepository: "Repository",
+    /** In place of the README of a package that is not on this server. */
+    readmeAfterInstall: "The README shows once the plugin is installed",
+    /** The tag of a plugin an admin installed on this server (not shipped with the build). */
+    installedOnServer: "installed on server",
+    installedOnServerHint: "Installed on this server by an admin; it does not ship with the build.",
+    /** The detail dialog's export (any member) and delete (admin, a package installed on the server). */
+    exportPlugin: "Export",
+    exportPluginHint:
+      "Download the plugin's package as a zip, which another server imports as it is with Import plugin",
+    deletePlugin: "Delete",
+    deleteConfirmTitle: (name: string) => `Delete ${name} from the server`,
+    deleteConfirmBody: (name: string) =>
+      `${name} leaves the server and the plugin library; the copies of its skills and hooks installed on agents stay.`,
+    deletedToast: (name: string) => `Deleted ${name} from the server`,
+    /** The import dialog (admin): a tab for each way in — npm, a link, a zip, or an Agent in a chat. */
+    importPlugin: "Import plugin",
+    importServerWide: "A plugin is installed on the whole server and shared by every Project.",
+    importTabs: {
+      npm: "From npm",
+      link: "From a link",
+      zip: "Upload a zip",
+      agent: "Ask an agent",
+    },
+    /** The npm tab: a package name, which the server installs from the registry itself. */
+    importNpmWhy:
+      "An npm package name, which may carry a version, range or tag; the server installs it from the npm registry.",
+    importNpmLabel: "npm package name",
+    importNpmPlaceholder: "@scope/name or name@1.2.0",
+    importNpmInvalid:
+      "Not an npm package name; give a link under From a link, and let an agent install anything else.",
+    /** The link tab: an https link npm fetches, from wherever the server's network reaches. */
+    importLinkWhy:
+      "An https link to a git repository or a tarball; the server fetches and installs it — from any https address you give, internal ones included.",
+    importLinkLabel: "Link",
+    importLinkPlaceholder: "https://github.com/… or github:owner/repo",
+    importLinkInvalid:
+      "Not an https link; give a package name under From npm, and let an agent install anything else.",
+    /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
+    importLinkSubpath:
+      "A folder or a file inside a repository, which npm cannot install: let an agent port it.",
+    importLinkAskAgent: "Ask an agent",
+    importCost:
+      "When the plugin carries server modules, installing reloads the server's plugins, which stops the agent runs in progress in every Project.",
+    /** On the npm, link and zip tabs: what installing runs, said plainly. */
+    importScriptsRun: "The package's install scripts run on the server as the server's user.",
+    importAgentWhy:
+      "For a page, a repository, a folder in a repository, or a Codex or Claude Code plugin with its skills and MCP servers: the agent reviews it — porting it into a PenguinHarness package first when it is not one — then installs it with penguin plugin install.",
+    importSourceLabel: "Plugin source",
+    importSourcePlaceholder:
+      "A link such as https://github.com/owner/repo/tree/main/plugins/name, a local path or a description",
+    importSourceToken: "<plugin source>",
+    importPromptLabel: "Prompt for the agent",
+    /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
+    importPromptLead: {
+      link: (source: string) => `Install the PenguinHarness plugin at ${source} on this server.`,
+      localPath: (source: string) =>
+        `Install the PenguinHarness plugin in the local folder ${source} on this server.`,
+      reference: (source: string) =>
+        `Find the PenguinHarness plugin described here and install it on this server: ${source}`,
+    },
+    importPromptTail: (projectId: string) =>
+      `A PenguinHarness plugin is an npm package: its package.json (name, version, description, and a \`penguin\` block the plugin card reads, where \`penguin.mcp_servers\` declares its MCP servers) beside \`skills/<name>/SKILL.md\` and/or \`hooks/\`. Whatever the source, before installing anything, read its package.json and every script it ships, and say what it does and what it would run; if anything looks unsafe, stop and tell me. If the source already is such a package — on npm, at an https link to a git repository or a tarball, or in a local folder — install it with \`penguin plugin install <npm name, https link or folder> --project-id ${projectId}\`. If it is anything else — a folder or a file inside a GitHub repository, a Codex (\`.codex-plugin\`) or Claude Code (\`.claude-plugin\`) plugin, a skills repository — read the \`plugin-porting\` skill and follow it: fetch the source at a pinned commit, build the package in a scratch folder, review it, then install that folder the same way. The plugin's MCP servers (a \`.mcp.json\` or an \`mcpServers\` map) are part of it: carry them as \`penguin.mcp_servers\`, never with a secret value in the package. Report the installed name and version, the skills and MCP servers it carries, the vault keys I must set for those servers, and what you left out.`,
+    importUploadDesc:
+      "A zip of the plugin's package directory: package.json at its root or in its one top-level directory, no node_modules — such as another server's Export. Upload only what you trust.",
+    importUploadAction: "Choose a zip file",
+    importedToast: (name: string, version: string | null) =>
+      version === null ? `Installed ${name}` : `Installed ${name} ${version}`,
+    importUnchangedToast: (name: string, version: string | null) =>
+      `${name}${version === null ? "" : ` ${version}`} is already installed on the server`,
+    /** The confirm when the zip holds another version of a package on this server (409 plugin_exists). */
+    replaceTitle: "Replace the installed plugin",
+    replaceBody: (name: string, installed: string, incoming: string) =>
+      `${name} ${installed} is installed on the server; the zip holds ${incoming}. Replacing it moves every Project to the zip's version.`,
+    replaceAction: "Replace",
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
     /** Quick start's tooltip: what pressing it does, and what it does not. */
@@ -2544,8 +2651,27 @@ export const en: Strings = {
       `Updated ${plugin} to the latest version (${n} agent(s))`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
-    uninstallConfirmBody: (plugin: string, agent: string): string =>
-      `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
+    uninstallConfirmBody: (plugin: string, agent: string, withMcp: boolean): string =>
+      `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included)${withMcp ? " and its MCP servers" : ""} will be deleted.`,
+    mcpNeedsSetup: (keys: string[]): string => `Needs setup: ${keys.join(", ")}`,
+    mcpSetUpWhere: "set it in the Vault tab",
+    mcpSetUpByOwner: "the Project owner sets it",
+    mcpSignIn: "Sign-in (OAuth) required — not available in this version",
+    mcpRunsCommand: (command: string): string =>
+      `Runs ${command} on this server when an agent session starts`,
+    installStdioTitle: (plugin: string, agent: string): string => `Install ${plugin} on ${agent}?`,
+    installStdioBody: (server: string, command: string): string =>
+      `Its MCP server ${server} runs ${command} on this server whenever a session of the agent starts.`,
+    setUp: "Set up",
+    setUpTitle: (plugin: string, agent: string): string => `Set up ${plugin} on ${agent}`,
+    setUpDesc: "The values go into the agent's vault; its MCP servers read them when they connect.",
+    setUpKeySet: "set",
+    setUpKeySetHint: "Already in the vault: the MCP server receives this value",
+    setUpHelpLink: "Where to get it",
+    updatePartMcp: "MCP server",
+    updatePartReplaced: "replaced",
+    importMcpNote:
+      "A plugin may carry MCP servers: a stdio server is a command that runs on this server when an agent session starts, and a remote one is an address this server connects to.",
   },
 
   /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
@@ -2607,25 +2733,14 @@ export const en: Strings = {
   },
 
   pluginRegistry: {
-    pageTitle: "Plugins",
     empty: "No plugins yet",
     specifierHint: "Package name, as a Project's plugin list names it",
-    back: "Back to Plugins",
-    readme: "Documentation",
-    noReadme: "This plugin has no documentation yet.",
-    notFound: "No such plugin.",
     /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
     sourceUnavailable: (count: number): string =>
       count === 1
         ? "One plugin source could not be reached, so this list may be incomplete."
         : `${count} plugin sources could not be reached, so this list may be incomplete.`,
-    repository: "Repository",
-    homepage: "Homepage",
-    authors: "Authors",
-    license: "License",
     copySpecifier: "Copy specifier",
-    installHint:
-      "Install from the Plugins page: the row's Install button asks the current Project for it.",
   },
 
   skills: {
@@ -3477,17 +3592,20 @@ Scenarios:
     mcpConnectTitle: "MCP connect",
     mcpServerList: (servers: string[]): string => servers.join(", "),
     /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
-    mcpConnectResult: (toolCount: number, failed: string[]): string => {
+    mcpConnectResult: (toolCount: number, failed: string[], waiting: string[]): string => {
       const parts: string[] = [];
-      if (toolCount > 0 || failed.length === 0) {
+      if (toolCount > 0 || (failed.length === 0 && waiting.length === 0)) {
         parts.push(`${toolCount} tool${toolCount === 1 ? "" : "s"} discovered`);
       }
       if (failed.length > 0) parts.push(`unavailable: ${failed.join(", ")}`);
+      if (waiting.length > 0) parts.push(`waiting for setup: ${waiting.join(", ")}`);
       return parts.join("; ");
     },
     /** Per-server group row meta inside the expanded connect row. */
     mcpToolsCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     mcpServerFailed: "connection failed",
+    mcpServerNeedsSetup: "needs setup",
+    mcpServerSignIn: "sign-in required",
     mcpConnectAborted: "interrupted — reconnects on the next send",
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),

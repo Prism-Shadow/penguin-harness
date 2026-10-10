@@ -1218,11 +1218,15 @@ export interface VaultUpdateRequest {
 // Agent and its config (system_config.yaml + AGENTS.md)
 // ---------------------------------------------------------------------------
 
-/** One installed plugin (a skill or a hook package) the library carries a higher version of (see {@link AgentSummary.pluginUpdates}). */
+/** One library plugin an Agent's installed copy is behind on — one of its skills or its hook package carries an older dated version than the library's same part (see {@link AgentSummary.pluginUpdates}). */
 export interface PluginUpdateRef {
   /** Plugin name — what `POST …/plugins` reinstalls to bring the Agent up to date. */
   name: string;
-  /** The LIBRARY's version (`YYYY.MM.DD.N`), i.e. what installing again would bring, not what is on disk. */
+  /**
+   * The LIBRARY's content version: the newest dated version (`YYYY.MM.DD.N`) among the plugin's
+   * parts, i.e. the date of what installing again would bring, not what is on disk. A label —
+   * it moves whenever any part changes, so a dismissed update comes back for the next one.
+   */
   version: string;
 }
 
@@ -1255,11 +1259,12 @@ export interface AgentSummary {
   hookCount: number;
   /**
    * Installed plugins the built-in library has moved past — a skill or a hook package whose
-   * on-disk version is behind the library plugin that ships it — each with the library version
-   * on offer: the plugin-library update gate, riding along on the Agent list so a badge over
-   * that page costs no request of its own. Empty when nothing is behind. Skills the library
-   * does not carry (installed from a zip or a picked directory) are never listed: there is no
-   * library version for them to be behind.
+   * on-disk dated version is behind the library's same part (compared part by part, never
+   * against the plugin's npm version) — each with the library's content version on offer: the
+   * plugin-library update gate, riding along on the Agent list so a badge over that page costs
+   * no request of its own. Empty when nothing is behind. Skills the library does not carry
+   * (installed from a zip or a picked directory) are never listed: there is no library version
+   * for them to be behind.
    */
   pluginUpdates: PluginUpdateRef[];
   /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
@@ -1445,13 +1450,20 @@ export interface AgentKernelUpdateResponse {
   kernelVersion: string;
 }
 
-/** POST …/config/mcp-test result: reachability of one MCP Server entry. */
+/**
+ * POST …/config/mcp-test result: reachability of one MCP Server entry. Its `${KEY}` references
+ * are filled in from the Agent's vault only when the entry is saved on the Agent exactly as
+ * tested (same name, same config — the user's rule); a new or changed entry that references the
+ * vault is not filled in and not contacted (`saveFirst`).
+ */
 export interface McpServerTestResponse {
   ok: boolean;
   /** Discovered tool names (`mcp__<server>__<tool>`), present on success. */
   tools?: string[];
-  /** Failure detail (connect error, timeout, server stderr tail), present on failure. */
+  /** Failure detail (connect error, timeout, server stderr tail; "needs setup: …" naming a vault key a saved entry references and the vault lacks, with nothing contacted), present on failure. */
   error?: string;
+  /** The entry references the vault and is not saved as it is: nothing was filled in or contacted — save it, then test (`error` says so in English). */
+  saveFirst?: boolean;
   /** Connect + discovery wall time (both outcomes) — the models test reports latency, this matches. */
   latencyMs?: number;
 }
@@ -4304,7 +4316,7 @@ export interface SkillMetadataItem {
    * which the plugin item carries once. Absent, the frontend draws the book glyph.
    */
   icon?: string;
-  /** Version (`YYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
+  /** The skill's own dated version (`YYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
   version: string;
 }
 
@@ -4322,23 +4334,71 @@ export interface HookItem {
   icon?: string;
 }
 
-/** One library plugin as the listing describes it: the manifest fields plus what it ships (skill bodies and scripts are never sent). */
+/**
+ * One library plugin as the listing describes it: the manifest fields (its package.json — npm's
+ * fields and the `penguin` block) plus what it ships (skill bodies and scripts are never sent).
+ * Every field but the identity, the version and the contents is optional: a field the package
+ * does not carry is missing here, and the page says so rather than inventing one.
+ */
 export interface PluginItem {
   name: string;
+  /** Display name (`penguin.title`, `title_zh`); absent → the page shows `name`. */
+  title?: string;
+  titleZh?: string;
+  /** English one-liner (package.json `description`); "" when the package carries none. */
   description: string;
   descriptionZh?: string;
   shortDescription?: string;
   shortDescriptionZh?: string;
-  /** `YYYY.MM.DD.N`. */
+  /** The plugin's npm version (its package.json, following the release) — what the card shows. Installed copies are compared part by part instead: each skill's `version`, and {@link hookVersion}. */
   version: string;
-  /** The plugin's skills (metadata only). */
+  /** The npm package the plugin is, e.g. `@penguinharness/a2ui` — what Delete and a server module's row name it by. */
+  package: string;
+  /** Where the plugin comes from: `builtin` — a package this build ships; `installed` — one an admin installed on the server (by name, link or zip). */
+  source: "builtin" | "installed";
+  /** The package's npm `author` (a name), `license`, `homepage` and `repository` URL, for the detail dialog. */
+  author?: string;
+  license?: string;
+  homepage?: string;
+  repository?: string;
+  /** The plugin's skills (metadata only), each with its own dated `version`. */
   skills: SkillMetadataItem[];
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
-  /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
+  /** The hook package's own dated version (`penguin.hooks.version`, `YYYY.MM.DD.N`); absent without a hook package. */
+  hookVersion?: string;
+  /** The plugin's raw icon SVG (`icon.svg` at the package root, or `penguin.icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
-  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`); absent = pre-select its first skill. */
+  /** The demo the Plugins page's quick start pre-fills (`penguin.quick_start`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
+  /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (`penguin.mcp_servers`); `[]` without any. */
+  mcpServers: PluginMcpServerItem[];
+}
+
+/** An MCP transport, as an entry resolves it (`transport`, else inferred from `command` / `url`). */
+export type McpTransport = "stdio" | "http" | "sse";
+
+/** One vault key a plugin's MCP server needs before it can connect: declared in the manifest, or only referenced (then the key is all there is to show). */
+export interface PluginSetupKeyItem {
+  key: string;
+  label?: string;
+  labelZh?: string;
+  /** Where to get the value (a URL), or one sentence. */
+  help?: string;
+}
+
+/** A plugin's MCP server as the library lists it: identity and target only — no header, env or oauth value. */
+export interface PluginMcpServerItem {
+  name: string;
+  transport: McpTransport;
+  /** The URL (http/sse), or `command args…` (stdio), as written: `${PLUGIN_ROOT}` and `${KEY}` references unresolved. */
+  target: string;
+  /** Every vault key the server's config references, declared ones first. */
+  setup: PluginSetupKeyItem[];
+  /** The server offers OAuth sign-in (`config.oauth`). */
+  oauth: boolean;
+  /** It needs that sign-in — OAuth and no `Authorization` header of its own — which this version cannot do: an Agent skips it. */
+  signIn: boolean;
 }
 
 /** A quick start: a prompt pre-filled into a new-chat draft — never sent by the page. */
@@ -4387,6 +4447,30 @@ export interface PluginInstallRequest {
 export interface AgentPluginsInstallResponse {
   skills: SkillMetadataItem[];
   hooks: HookItem[];
+  /** The Agent's MCP servers after the install (a plugin's servers join its `tools.mcpServers`). A server name the Agent already has from someone else is 409 `mcp_server_name_taken`, nothing installed. */
+  mcpServers: AgentMcpServerItem[];
+}
+
+/**
+ * One `tools.mcpServers` entry of an Agent, as the Plugins page and the Agent settings read it:
+ * identity, target and what keeps it from connecting — never a header, env or oauth value.
+ */
+export interface AgentMcpServerItem {
+  name: string;
+  transport: McpTransport;
+  /** The URL (http/sse), or `command args…` (stdio): `${PLUGIN_ROOT}` already resolved at install, `${KEY}` references left as written. */
+  target: string;
+  /** The plugin that installed it; absent for an entry the user added. */
+  plugin?: string;
+  /** `${KEY}` references of its config that the Agent's vault does not hold (names only); empty = nothing to set up. */
+  missingKeys: string[];
+  /** It needs an OAuth sign-in, which this version cannot do: skipped at connect time. */
+  signIn: boolean;
+}
+
+/** GET /api/projects/:p/agents/:a/mcp-servers: the Agent's MCP servers in config order; DELETE …/mcp-servers/:name removes one (204, 404 `unknown_mcp_server`). */
+export interface AgentMcpServersResponse {
+  servers: AgentMcpServerItem[];
 }
 
 /** GET /api/projects/:p/agents/:a/skills: Skills installed on this Agent. */
@@ -4444,6 +4528,17 @@ export interface PluginIndexEntry {
   /** Semantic version of this entry. */
   version: string;
   description: string;
+  /** Chinese description (optional; the UI picks per language, English without it). */
+  descriptionZh?: string;
+  /** One-line descriptions for the card (optional; the card falls back to `description`). */
+  shortDescription?: string;
+  shortDescriptionZh?: string;
+  /**
+   * The plugin's raw icon SVG (optional; the card draws the puzzle piece without it). The
+   * listing fills these display fields from the package's own package.json (its `penguin`
+   * block) and icon when the package is on this server, over whatever the index row says.
+   */
+  icon?: string;
   authors: string[];
   /** SPDX license identifier. */
   license: string;
@@ -4469,7 +4564,12 @@ export interface PluginIndexResponse {
   failures: { source: string; error: string }[];
 }
 
-/** GET /api/plugins/registry/readme — long-form docs for one entry; `readme` is null when none exists. */
+/**
+ * A plugin's long-form docs: the README.md at its package root, as npm ships it.
+ * GET /api/plugins/registry/readme?name= answers for an index entry, with `readme` null when
+ * the package is not on this server or has none; GET /api/plugins/:plugin/readme answers for a
+ * library plugin, 404 when it ships none.
+ */
 export interface PluginReadmeResponse {
   name: string;
   /** Markdown, rendered by the Web App. Null when this entry has no readme. */
@@ -6100,8 +6200,30 @@ export interface InstalledPlugin {
   here: boolean;
 }
 
+/** What an install put on this server (POST …/plugins/installed and …/installed/archive). */
+export interface PluginInstallOutcome {
+  /** The package name npm installed — for a link, the name its package.json carries. */
+  name: string;
+  version: string | null;
+  /** It carries skills, a hook package or MCP servers: the library lists it, and nothing loads it. */
+  library: boolean;
+  /** It carries server modules: the Project's list loads it. */
+  modules: boolean;
+  /** The zip held the version already installed: nothing was installed. */
+  unchanged?: boolean;
+}
+
+/** POST /api/projects/:projectId/plugins/installed/archive (admin): a plugin package zip, base64. */
+export interface PluginArchiveImportRequest {
+  dataBase64: string;
+  /** Replace another installed version of the package (the 409 `plugin_exists` question). */
+  overwrite?: boolean;
+}
+
 export interface InstalledPluginsResponse {
   plugins: InstalledPlugin[];
+  /** After an install: what landed on this server. */
+  installed?: PluginInstallOutcome;
   /**
    * Specifiers this build SHIPS (the hot push's assets, or the installation's own
    * `plugins/`): installable without a download, and not installed until listed.

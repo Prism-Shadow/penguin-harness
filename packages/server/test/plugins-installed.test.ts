@@ -139,10 +139,11 @@ describe("installed plugins", () => {
     expect(kept.status).toBe(200);
   });
 
-  it("installs a package before listing it, and refuses a specifier that is not a package name", async () => {
+  it("installs a package before listing it, and refuses a specifier that is neither a package name nor an https link", async () => {
     // npm is not driven in a unit test: what is pinned here is that the route validates the
-    // specifier and does not write the list when nothing was installed.
-    for (const bad of ["../evil", "https://example.com/x.tgz", "", "Has Spaces"]) {
+    // specifier and does not write the list when nothing was installed. (What it installs from
+    // a link or a zip is plugin-archive.test.ts's.)
+    for (const bad of ["../evil", "http://example.com/x.tgz", "", "Has Spaces"]) {
       expect(
         (await admin.post("/api/projects/default_project/plugins/installed", { specifier: bad }))
           .status,

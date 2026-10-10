@@ -1,6 +1,7 @@
 ---
 name: company-employee
 description: The protocol every employee of a PenguinHarness organization follows — read the handbook first, act on [org_trigger] work runs, schedule tickets from the desk session and do the work in ticket sessions, block instead of idling, ask the board in the all-hands channel before anything heavy, costly, irreversible or outside the workspace, keep channel and budget discipline, and drive it all with penguin org.
+version: 2026.10.10.1
 ---
 
 # Company Employee

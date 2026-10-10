@@ -2,6 +2,11 @@
   "name": "@penguinharness/model-development",
   "version": "0.2.13",
   "description": "Model development on your own hardware: fine-tune with LlamaFactory, run local models with Ollama, and serve them with vLLM.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -9,7 +14,6 @@
     "directory": "plugins/model-development"
   },
   "files": [
-    "plugin.json",
     "icon.svg",
     "skills",
     "hooks",
@@ -17,5 +21,19 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "penguin": {
+    "description_zh": "在自己的硬件上做模型开发：用 LlamaFactory 微调、用 Ollama 运行本地模型、用 vLLM 部署服务。",
+    "short_description": "Fine-tune, run and serve models locally.",
+    "short_description_zh": "本地微调、运行与部署模型。",
+    "category": "ai-app-development",
+    "icon": "icon.svg",
+    "quick_start": {
+      "prompt": "Check whether Ollama is installed on this machine. If it is, list the local models and show a request to one of them through the OpenAI-compatible endpoint. Do not pull any model without asking me.",
+      "prompt_zh": "检查这台机器上是否装了 Ollama。如果装了，列出本地模型，并演示通过 OpenAI 兼容端点向其中一个发请求。未经我同意不要拉取任何模型。",
+      "skills": [
+        "ollama"
+      ]
+    }
   }
 }
