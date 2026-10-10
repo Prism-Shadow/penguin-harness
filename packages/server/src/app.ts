@@ -20,6 +20,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
+import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
@@ -71,7 +72,7 @@ import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
-import { streamWriteTimeout } from "./http/stream-stall.js";
+import { STREAM_IDLE_MS } from "./http/sse.js";
 import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
@@ -393,9 +394,19 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
   });
 
-  // An event stream whose peer stopped reading is destroyed, so the client reconnects
-  // (http/stream-stall.ts). Here rather than on the SSE routes: only the host holds the socket.
-  app.use("*", streamWriteTimeout);
+  // An event stream's socket that sends nothing for STREAM_IDLE_MS is destroyed (Node lets the
+  // first expiry pass while a write is pending, so a stuck write is cut within two). A live
+  // stream pings every 20 s; it goes that quiet only when its peer stopped reading and a write
+  // never completes, and then only the socket can end it: the stream's own close queues behind
+  // that write. The abort runs the stream's teardown. Only the host holds the socket (`c.env`,
+  // passed by index.ts), hence here.
+  app.use("*", async (c, next) => {
+    await next();
+    const socket = (c.env as Partial<HttpBindings> | undefined)?.incoming?.socket;
+    if (socket && c.res.headers.get("content-type")?.startsWith("text/event-stream")) {
+      socket.setTimeout(STREAM_IDLE_MS, () => socket.destroy());
+    }
+  });
 
   // Canonical-host guard (loopback binds only): the App is served on one loopback name and
   // previews on its counterpart, but the SAME process answers on both. Without this, Agent-

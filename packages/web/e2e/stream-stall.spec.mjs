@@ -1,17 +1,11 @@
 /**
- * A Session stream that dies silently mid-run: the page must catch up on its own, without a
- * reload.
+ * A Session stream that dies silently mid-run: the page must catch up without a reload.
  *
- * The browser reaches the server through a TCP relay this spec runs. Mid-reply the relay stops
- * passing the open Session stream's bytes to the browser and closes nothing, which is what a
- * half-open connection, a stuck proxy or a NAT that dropped its mapping look like from the
- * page: no data, no error. The run finishes on the server; the page, still subscribed to the
- * dead connection, shows a reply that stopped halfway. Then the page's clock jumps past the
- * stream's liveness window (Playwright's fake clock, so nobody waits 50 real seconds), and
- * the page must notice the silence, reconnect from the last event it saw, and show the whole
- * reply, every chunk exactly once.
- *
- * The LLM is mock-llm.mjs: "slow text test" streams a 40-chunk text, one delta every 200ms.
+ * The browser reaches the server through a TCP relay. Mid-reply the relay swallows the open
+ * Session stream's bytes and closes nothing, as a half-open connection or a stuck proxy does.
+ * The run finishes on the server; then the page's clock jumps past the liveness window, and
+ * the page must reconnect from the last event it saw and show the whole reply exactly once.
+ * The mock LLM's "slow text test" streams 40 chunks, one every 200 ms.
  */
 import net from "node:net";
 import { test, expect } from "@playwright/test";
@@ -49,11 +43,7 @@ async function createSession(page) {
   return (await res.json()).session.sessionId;
 }
 
-/**
- * A TCP relay in front of the server. `silenceSessionStreams()` makes every Session stream
- * open at that moment go quiet: the server's bytes are swallowed, both sockets stay open.
- * Connections opened afterwards pass through untouched.
- */
+/** A TCP relay in front of the server; `silenceSessionStreams()` mutes the open Session streams. */
 async function startRelay() {
   const target = new URL(BASE);
   const pairs = new Set();
@@ -84,14 +74,9 @@ async function startRelay() {
   return {
     url: `http://localhost:${server.address().port}`,
     silenceSessionStreams() {
-      let count = 0;
-      for (const pair of pairs) {
-        if (pair.sessionStream && !pair.silent) {
-          pair.silent = true;
-          count += 1;
-        }
-      }
-      return count;
+      const streams = [...pairs].filter((pair) => pair.sessionStream);
+      for (const pair of streams) pair.silent = true;
+      return streams.length;
     },
     close() {
       for (const pair of pairs) {

@@ -290,8 +290,7 @@ class PenguinServer {
     });
     this.httpServer = serve(
       {
-        // `env` carries the Node request/response: the event-stream write timeout destroys a
-        // stuck stream's socket through it (http/stream-stall.ts).
+        // `env` carries the Node request: app.ts sets an event stream's idle timeout on its socket.
         fetch: (request: Request, env) => this.app?.fetch(request, env) ?? startingResponse(),
         hostname: this.config.host,
         port: this.config.port,

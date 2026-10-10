@@ -3,8 +3,10 @@
  *
  * - A new subscription's first frame is always the task_state snapshot: idle when idle; when
  *   running, `running` followed by the replay of pending approvals.
+ * - The opening frames end with the heartbeat: a `ping` event with `data: {}` and no id.
  * - A Last-Event-ID from another epoch gets resync_required first, then the snapshot; one that
- *   hits the replay buffer gets the later events, then the snapshot.
+ *   hits the replay buffer gets the later events, then the snapshot, and so does the same id
+ *   passed as the `lastEventId` query parameter.
  * - An admin resetting a user's password ends that user's open event streams at once, and the
  *   old session cannot reopen one.
  */
@@ -91,14 +93,19 @@ describe("sse-stream", () => {
     t.deps.sessionsRepo.insert(row);
   });
 
-  const getStream = (headers: Record<string, string> = {}) =>
-    t.app.request(`/api/sessions/${SID}/stream`, { headers: { cookie, ...headers } });
+  const getStream = (headers: Record<string, string> = {}, query = "") =>
+    t.app.request(`/api/sessions/${SID}/stream${query}`, { headers: { cookie, ...headers } });
 
   it("FD-1: a new subscription's first frame is always the task_state snapshot (idle)", async () => {
     const frames = await readSseFrames(await getStream(), 1);
     expect(frames[0]!.event).toBe("server_event");
     expect(JSON.parse(frames[0]!.data)).toEqual({ type: "task_state", state: "idle", queued: 0 });
     expect(frames[0]!.id).toMatch(/^[0-9a-f]{8}-\d+$/); // FD-2: opaque string id
+  });
+
+  it("the opening frames end with an id-less ping event", async () => {
+    const frames = await readSseFrames(await getStream(), 2);
+    expect(frames[1]).toEqual({ event: "ping", data: "{}" });
   });
 
   it("FD-1: subscribing while running receives task_state: running, then pending approvals are replayed", async () => {
@@ -160,11 +167,14 @@ describe("sse-stream", () => {
     expect((await t.app.request("/api/events", { headers: { cookie: own } })).status).toBe(401);
   });
 
-  it("FD-2: same-epoch Last-Event-ID hitting the buffer → replays later events, then the task_state snapshot", async () => {
+  it.each([
+    { carrier: "Last-Event-ID", open: (id: string) => getStream({ "Last-Event-ID": id }) },
+    { carrier: "?lastEventId=", open: (id: string) => getStream({}, `?lastEventId=${id}`) },
+  ])("FD-2: a buffered $carrier → later events, then the snapshot", async ({ open }) => {
     const channel = t.deps.channels.get(SID);
     const first = channel.publish(userText("m1"));
     channel.publish(userText("m2"));
-    const frames = await readSseFrames(await getStream({ "Last-Event-ID": first.id }), 2);
+    const frames = await readSseFrames(await open(first.id), 2);
     expect(frames[0]!.event).toBeUndefined(); // replayed OmniMessage
     expect((JSON.parse(frames[0]!.data) as { payload: { text: string } }).payload.text).toBe("m2");
     expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle", queued: 0 });
