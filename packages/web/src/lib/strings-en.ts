@@ -1800,6 +1800,17 @@ export const en: Strings = {
       const hours = peak.hours.map(([from, to]) => `${clock(from)}–${clock(to)}`).join(" and ");
       return `Off-peak rate: ${pct}% off list. Peak hours bill at list price — ${hours} Beijing time, ${days}`;
     },
+    priceHeatLevel: {
+      low: "Low",
+      medium: "Medium",
+      high: "High",
+      veryHigh: "Very high",
+    },
+    priceHeatTitle: (level: string, figure: string): string =>
+      `${level} price: about ${figure}/M tok blended (3 parts cache-miss input, 1 part output, at the rate billed now)`,
+    priceHeatLegendTitle: "Price dot",
+    priceHeatLegendBody:
+      "The dot leading each card's third line is coloured by the model's blended price on a continuous scale, warmer as it costs more. Blended price = (cache-miss price × 3 + output price) ÷ 4, at the rate billed now (promotions and off-peak discounts taken off), on a fixed log scale that does not change with the search or the groups. Free and unpriced models have no dot.",
     visionModelBadge: "Proxy vision",
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",

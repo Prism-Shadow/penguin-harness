@@ -11,7 +11,7 @@
  * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
  * name + count + the collapse chevron), with one card per model within a group — the card
  * shows only the display name + status badges (default / vision / fast / free / discount), while
- * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
+ * pricing (led by its price dot, price-heat.ts), context, and key status are folded into a single line of small text. Clicking a card opens the config dialog
  * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
  * delete). The group header's right side holds the group's actions in a fixed order
  * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
@@ -69,6 +69,7 @@ import {
   FieldError,
   FieldLabel,
   GlyphIcon,
+  HeatDot,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
@@ -89,6 +90,7 @@ import {
   Switch,
   TodoNotice,
   buttonClass,
+  namedHint,
   setDragPreview,
   toastError,
   toastInfo,
@@ -138,6 +140,9 @@ import {
   saveModelGroupOrder,
 } from "./model-group-order";
 import { TAG_TONE, modelTags } from "./model-tags";
+import { CURRENCY_SYMBOL, displayPrice, roughPrice, trim4 } from "./price-format";
+import { priceHeat } from "./price-heat";
+import { PriceHeatLegend } from "./price-heat-legend";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -234,26 +239,10 @@ const KEY_AUTH: Record<
   },
 };
 
-/** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
-const CURRENCY_SYMBOL: Record<Currency, string> = { USD: "$", CNY: "¥" };
-
 /** Trailing-zero-trimmed price storage value (keeps up to 6 decimal places, for USD persistence). */
 function trimNum(v: number): string {
   if (!Number.isFinite(v)) return "0";
   return String(Math.round(v * 1e6) / 1e6);
-}
-
-/** Trailing-zero-trimmed display/input value (keeps up to 4 decimal places): absorbs floating-point noise from USD<->CNY(x7) round trips. */
-function trim4(v: number): string {
-  if (!Number.isFinite(v)) return "0";
-  return String(Math.round(v * 1e4) / 1e4);
-}
-
-/** USD/million-token string -> display string in the selected currency (with symbol). */
-function displayPrice(usdStr: string, currency: Currency): string {
-  const n = Number(usdStr || "0");
-  const v = currency === "CNY" ? n * USD_TO_CNY : n;
-  return `${CURRENCY_SYMBOL[currency]}${trim4(v)}`;
 }
 
 /** USD storage string -> input string in the selected currency (for edit-form initialization; empty value passes through). */
@@ -1671,10 +1660,16 @@ export function ModelsPage() {
           defaults" — and the pair of create buttons: the AI path and the group form, offered side
           by side (per-model entry points still live in each group header); on narrow screens the
           actions wrap to their own line and the search box shrinks flexibly, fixed width at >=sm.
-          A member reads why nothing here is editable behind the title's "?". */}
+          The title's "?" holds the price dot's legend, after — for a member — why nothing here is
+          editable. */}
       <PageHeader
         title={S.models.title}
-        info={isOwner ? undefined : S.models.readOnlyHint}
+        info={
+          <div className="flex flex-col gap-3">
+            {!isOwner && <p>{S.models.readOnlyHint}</p>}
+            <PriceHeatLegend currency={currency} />
+          </div>
+        }
         actions={
           <>
             <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
@@ -2377,11 +2372,13 @@ function AddGroupDialog({
 // ---------------------------------------------------------------------------
 
 /**
- * Card: display name + lifetime Token spend + status badges; context / pricing / key status folded
- * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
- * title row's right edge. All three lines are one click target opening the config dialog (the
- * model homepage link lives in there); a row whose model id its group cannot route adds a
- * warning strip below them, which carries its own action and therefore its own click target.
+ * Card: display name + lifetime Token spend + status badges; pricing / context / key status folded
+ * into one line of small text, led by the price dot (price-heat.ts: the blended price billed now,
+ * coloured on the cool → hot ramp) so the list can be scanned for price without reading figures;
+ * group speed-test results (TTFT / TPS, tone-colored) ride that line's right edge. All three lines
+ * are one click target opening the config dialog (the model homepage link lives in there); a row
+ * whose model id its group cannot route adds a warning strip below them, which carries its own
+ * action and therefore its own click target.
  */
 export function ModelCard({
   row,
@@ -2463,10 +2460,19 @@ export function ModelCard({
     discount,
   });
 
+  /**
+   * The price dot: the blended price of the buckets the card prints — billed now, so the colour
+   * moves with the figures on the hour — on the fixed cool → hot ramp. None for a free row (its
+   * badge is the mark) or an unpriced one.
+   */
+  const heat = priceHeat(shownPrice);
+
   const priceLine = (a: string, b: string, c: string): string =>
     `${displayPrice(a, currency)} / ${displayPrice(b, currency)} / ${displayPrice(c, currency)}`;
   const meta: ReactNode[] = [
-    row.contextWindow ? humanizeTokens(Number(row.contextWindow)) : null,
+    // The price leads the line, right after its dot: the dot belongs to the figures, and a dot at
+    // the head of every card's line lines up down the grid where one after a context window of
+    // varying width ("128k", "1M", nothing) would wander.
     // Three prices (cache read / cache write / output); units are explained in the config dialog, not repeated on the card.
     // One price, the one being billed right now. What the row would cost without the promotion
     // answers no question a reader of this list is asking, and spending the meta line's width
@@ -2474,6 +2480,7 @@ export function ModelCard({
     priced ? (
       <span>{priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}</span>
     ) : null,
+    row.contextWindow ? humanizeTokens(Number(row.contextWindow)) : null,
     // Key status (see keyStatusText): the mask of the key the model is used with — its own, its
     // group's or a detected env fallback's — a plain "configured" for a key typed but not yet
     // saved, or "not configured". An inherited key says where it comes from on hover only: the
@@ -2568,9 +2575,27 @@ export function ModelCard({
             </span>
           )}
         </span>
-        {/* 3. Meta line: the truncating text takes the flexible space; speed badges keep their own
-            non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
+        {/* 3. Meta line: the price dot, then the truncating text in the flexible space; speed
+            badges keep their own non-shrinking slot on the right so the numbers never wrap or get
+            pushed out. */}
         <span className="flex w-full items-center gap-1.5">
+          {heat !== undefined && (
+            // The hint rides a text-free hit box around the dot (the tooltip layer shows a hint
+            // only where the visible text is empty or cut off). The box is no taller than the
+            // line, and its negative margins put the dot flush with the lines above and keep
+            // the gap to the figures the line's own.
+            <span
+              className="-mx-1 inline-flex size-4 shrink-0 items-center justify-center"
+              {...namedHint(
+                S.models.priceHeatTitle(
+                  S.models.priceHeatLevel[heat.level],
+                  roughPrice(heat.blendedUsd, currency),
+                ),
+              )}
+            >
+              <HeatDot t={heat.t} />
+            </span>
+          )}
           <span className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500">
             {meta.map((part, i) => (
               <Fragment key={i}>

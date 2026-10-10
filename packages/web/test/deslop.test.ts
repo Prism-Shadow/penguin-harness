@@ -66,7 +66,8 @@ const ALLOWLIST: DeslopAllowlist = {
 /**
  * Web files that are on the tokens, by path under `packages/web/src`: rule 20 holds each to the
  * package's standard — no palette class, no `dark:` variant, no hex — so a file a wave moved off
- * the palette cannot drift back onto it. A file joins when its wave rewrites it. These are W10's,
+ * the palette cannot drift back onto it. A file joins when its wave rewrites it, or when it is
+ * written on the tokens from the start (the models page's price-dot legend). These are W10's,
  * the code that landed on main while the waves were in flight, and the transcript's harness rows
  * (the cards and notes on the work group's anatomy, and the item dispatch around them); the
  * terminal's appearance module is not among them by design, since the terminal resolves its own
@@ -94,6 +95,7 @@ const TOKENS_ONLY: readonly string[] = [
   "features/chat/workspace-finder.tsx",
   "features/chat/workspace-finder-model.ts",
   "features/chat/workspace-select.tsx",
+  "features/models/price-heat-legend.tsx",
   "features/settings/browser-section.tsx",
   "features/settings/chrome-extension-section.tsx",
   "features/settings/shortcut-recorder.tsx",

@@ -263,7 +263,7 @@ export interface BucketPrices {
 }
 
 /** One bucket as a finite number, or undefined for an unpriced ("" / absent) field. */
-function bucketValue(v: number | string | undefined): number | undefined {
+export function bucketValue(v: number | string | undefined): number | undefined {
   if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
   if (v === undefined || v.trim() === "") return undefined;
   const n = Number(v);

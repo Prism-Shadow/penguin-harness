@@ -12,6 +12,7 @@
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
 import type { PeakWindows } from "../features/models/model-grouping";
+import type { PriceLevel } from "../features/models/price-heat";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -1876,6 +1877,23 @@ export const zh = {
       const hours = peak.hours.map(([from, to]) => `${from}:00–${to}:00`).join("、");
       return `空闲时段价：比牌价低 ${pct}%。高峰时段按牌价计费——北京时间${days} ${hours}`;
     },
+    /**
+     * The price dot that leads a card's third line (price-heat.ts): the level word, the dot's
+     * hover note and accessible name (`figure` is the blended price in the display currency), and
+     * the legend behind the page title's "?". The level is text beside a continuous colour, so the
+     * words name the range a price is in, not a colour of their own.
+     */
+    priceHeatLevel: {
+      low: "低",
+      medium: "中等",
+      high: "高",
+      veryHigh: "很高",
+    } as Record<PriceLevel, string>,
+    priceHeatTitle: (level: string, figure: string): string =>
+      `价格${level}：综合约 ${figure}/M tok（缓存未命中 3 份、输出 1 份加权，按当前计费价）`,
+    priceHeatLegendTitle: "价格色点",
+    priceHeatLegendBody:
+      "卡片第三行开头的色点按综合单价着色，由冷到热连续变化，越贵越暖。综合单价 =（缓存未命中价 × 3 + 输出价）÷ 4，取当前计费价（已扣除促销与空闲时段优惠），按对数刻度落在固定区间内，不随搜索或分组变化。免费与未填价格的模型没有色点。",
     visionModelBadge: "视觉代理",
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
     usedTokens: (v: string) => `${v} toks`,
