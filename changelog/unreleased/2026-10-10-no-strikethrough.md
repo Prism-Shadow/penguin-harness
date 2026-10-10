@@ -3,6 +3,7 @@
 - **Date:** 2026-10-10
 - **Type:** fix
 - **Scope:** `ui`, `web`, `server`
+- **PR:** [#1017](https://github.com/Prism-Shadow/penguin-harness/pull/1017)
 
 [中文版](2026-10-10-no-strikethrough.zh.md)
 
