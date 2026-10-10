@@ -105,9 +105,9 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 | GLM 5.3          | Z.AI, OpenRouter, TokenDance                                                                     |
 | Hunyuan 3        | OpenRouter                                                                                       |
 | Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance                                      |
-| GPT 5.6          | OpenAI, OpenRouter                                                                               |
-| Gemini 3.7 Flash | Google Gemini, OpenRouter                                                                        |
-| Claude 5         | Anthropic, OpenRouter                                                                            |
+| GPT 6.1          | OpenAI, OpenRouter                                                                               |
+| Gemini 3.8 Flash | Google Gemini, OpenRouter                                                                        |
+| Claude 5.5       | Anthropic, OpenRouter                                                                            |
 | Inkling          | OpenRouter, Fireworks AI                                                                         |
 
 上表每个系列只列最新一代，完整预置清单请在应用的**模型**页查看；只要是 OpenAI 协议的端点都可以接入：选择预置，或用自定义端点连接 1000+ 在线与本地模型。

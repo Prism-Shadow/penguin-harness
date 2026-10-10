@@ -13,13 +13,15 @@
  * base URL is that vendor's own endpoint** (see endpointEnvApiKey) — the wrapped SDK would
  * otherwise read the variable itself and send the
  * user's vendor key to whatever endpoint was typed, so with no usable key the listing is
- * refused before a client exists. Other failures surface as the SDK's own errors — callers
- * collapse errors into their outcome shape, nothing is caught here.
+ * refused before a client exists — except on the mmsp client, which calls a base URL handed
+ * no key as an open MMSP server (keylessEndpoint). Other failures surface as the SDK's own
+ * errors — callers collapse errors into their outcome shape, nothing is caught here.
  */
 import { AutoLLMClient } from "@prismshadow/mmsp";
 import {
   ModelCredentialError,
   endpointEnvApiKey,
+  keylessEndpoint,
   modelEnvFallback,
 } from "../state/model-catalog.js";
 
@@ -44,7 +46,8 @@ export interface ListEndpointModelsOptions {
 export async function listEndpointModels(options: ListEndpointModelsOptions): Promise<string[]> {
   const apiKey =
     options.apiKey || endpointEnvApiKey(options.clientType, options.baseUrl, options.env);
-  if (apiKey === undefined) {
+  // An open MMSP server is listed with no key, as the mmsp client calls it.
+  if (apiKey === undefined && !keylessEndpoint("", options.clientType, options.baseUrl)) {
     // Two different situations, two messages: the vendor's own endpoint with its variable
     // simply unset, and an endpoint the environment is not lent to at all.
     const allowed = modelEnvFallback({
