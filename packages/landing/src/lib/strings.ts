@@ -6,6 +6,8 @@
  * reads inside components. English marketing copy uses lowercase `agent`; preserve the
  * established casing of Workspace, Token, Task, Skill, Trace, and other product terms.
  */
+import { BENCHMARK_REPRODUCTIONS, RSI_TOOLKITS } from "./rsi-stats";
+
 export const zh = {
   siteName: "PenguinHarness",
 
@@ -49,19 +51,25 @@ export const zh = {
   },
 
   hero: {
-    platformLead: "开源、本地的多 Agent 应用",
-    platformActions: ["自动开发", "自动调优"],
-    platformTail: "平台",
-    automationLead: "全自动",
-    automationActions: ["创建", "优化", "部署"],
-    automationTail: "AI 应用",
+    platformLead: "大一统、稳定的 ",
+    platformActions: ["RSI"],
+    platformTail: " 框架",
+    automationLead: "全自动优化",
+    automationActions: ["模型 × Harness", "任何模型", "任何算法", "任何 Agent"],
+    automationTail: "",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
       { value: "1000+ 模型", label: "支持主流供应商" },
-      { value: "跨平台部署", label: "Linux · Windows · macOS" },
+      {
+        value: `${RSI_TOOLKITS.length} 种自进化算法`,
+        label: "Default · OPRO · APE · ACE · AWM",
+      },
+      {
+        value: `${BENCHMARK_REPRODUCTIONS.length} 个 Benchmark 复现`,
+        label: "数据分析 · SWE · 自动化 · 科学 · 终端",
+      },
       { value: "100% 开源", label: "Apache 2.0 协议" },
-      { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],
     supportedModelsLabel: "支持模型",
     supportedModels: [
@@ -155,8 +163,9 @@ export const zh = {
 
   pillars: {
     eyebrow: "三大特色",
-    title: "为构建与进化 Agent 而生",
-    subtitle: "PenguinHarness 率先把「Agent 构建 Agent」与「递归自我进化」带入开源 Harness。",
+    title: "为进化 Agent 而生——任何模型、任何算法、任何 Agent",
+    subtitle:
+      "PenguinHarness 是开源的 RSI 框架：模型 × Harness 全自动优化——模型固定，Harness 进化，每一种算法都按原论文的流程运行。",
     root: "PenguinHarness",
     concepts: ["Penguin Message", "Penguin SDK", "Penguin Skills"],
     diagramLabel:
@@ -175,7 +184,7 @@ export const zh = {
       {
         title: "Harness for Recursive Self-Improvement",
         tag: "",
-        desc: "通过 PenguinHarness Skills，Agent 以自我评估与自我优化实现递归式自我提升。",
+        desc: "借助 RSI 工具包，Agent 自己评估、自己优化——默认循环或 OPRO、APE、ACE、AWM——随时间递归进化。",
       },
     ],
   },
@@ -202,10 +211,10 @@ export const zh = {
   },
 
   selfImprove: {
-    eyebrow: "自我提升循环",
-    title: "多 Agent 协作，进化自动发生",
+    eyebrow: "RSI 循环",
+    title: "任何模型、任何算法、任何 Agent——进化自动发生",
     subtitle:
-      "Optimizer 组织多个 Evaluator 为 Target Agent 并行打分，依据分数与运行轨迹定位失分原因，把 Agent 从版本 N 优化到版本 N+1——每一轮都有快照，随时可回退。",
+      "Default RSI Toolkit 跑「试跑 → 反思 → 提升」：Optimizer 组织多个 Evaluator 并行打分，依据分数与运行轨迹定位失分原因，把 Agent 从版本 N 优化到 N+1，每一轮都有快照。其余工具包按原论文的流程运行 OPRO、APE、ACE、AWM——同一套 Benchmark，同一张记分板。",
     videoLabel: "自我进化演示视频",
     videoCaption: "自我进化演示：Agent 跑评测、定位失分点、发布下一版——完整一轮。",
     nodeOptimizer: "Optimizer",
@@ -278,20 +287,22 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
 
   cases: {
     eyebrow: "案例",
-    title: "一句话生成会思考、可运行的 AI 应用",
-    subtitle: "把需求交给 Agent，端到端拿到可运行的结果；更多案例陆续加入。",
+    title: "一句话进去，一个结果出来",
+    subtitle:
+      "一句话生成会思考、能运行的 AI 应用；再一句话，复现一个 Agent 自进化算法——端到端，在 DeepSeek Flash 上跑完。",
     tabs: [
       {
-        label: "RAG 应用",
+        label: "生成 AI 应用",
         prompt:
           "收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
         caption: "生成的 RAG 应用成品：Claude Code 配置专家，回答带可点击的来源引用与示例问题",
         cost: "而生成整个 RAG 应用，仅消耗了 0.2 元（$0.02）的 token——使用 DeepSeek V4 Pro 模型。",
       },
       {
-        label: "2D 企鹅雪橇小游戏",
-        prompt: "做一个可爱的南极企鹅滑雪橇越野小游戏：空格起跳跃过石头，速度与难度随时间上升。",
-        caption: "生成的小游戏成品：南极企鹅滑雪橇跳石头越野，实时计分，难度渐进",
+        label: "复现自进化算法",
+        prompt:
+          "在 rsi-ape 技能自带的「公司格式简报」任务上复现 APE（Automatic Prompt Engineer，Zhou 等，2022）：新建一个 Agent、一套 6 题的 Benchmark，给我看优化前后的分数。",
+        caption: "评估中心的分数图：复现的基线分与最终分都记录在这里",
         cost: "",
       },
     ],
@@ -440,8 +451,21 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   skills: {
     eyebrow: "内置 Skill",
     title: "内置 Skill 库一览",
-    subtitle: "四组 Skill 开箱即用，Agent 也能编写并优化自己的 Skill。",
+    subtitle: "开箱五组 Skill——Agent 也能编写并优化自己的。",
     groups: [
+      {
+        title: "Agent 自进化",
+        skills: [
+          "agent-initialization",
+          "benchmark-design",
+          "agent-evaluation",
+          "agent-optimization",
+          "rsi-opro",
+          "rsi-ape",
+          "rsi-ace",
+          "rsi-awm",
+        ],
+      },
       {
         title: "办公效率",
         skills: [
@@ -468,10 +492,6 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
           "ollama",
           "llamafactory",
           "skill-porting",
-          "agent-initialization",
-          "benchmark-design",
-          "agent-evaluation",
-          "agent-optimization",
         ],
       },
       {
@@ -526,16 +546,16 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cta: {
-    title: "让复杂的 AI 开发越来越简单",
+    title: "任何 Agent，都能自动进化",
     subtitle:
-      "通过不断进化，PenguinHarness 为你提供更高效、更可靠、更低幻觉、更低成本的 Agent 生产力引擎。",
+      "PenguinHarness 让模型 × Harness 持续优化：一版比一版更高效、更可靠、更低幻觉、更低成本。",
     download: "下载桌面版",
     quickstart: "快速开始",
     docs: "阅读文档",
   },
 
   footer: {
-    tagline: "Efficient Self-Improving Harness for Everyone.",
+    tagline: "Unified and Stable RSI Framework.",
     product: "产品",
     resources: "资源",
     quickstart: "快速开始",

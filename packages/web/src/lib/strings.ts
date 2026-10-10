@@ -13,6 +13,7 @@
  */
 import type { PeakWindows } from "../features/models/model-grouping";
 import type { ModelGroupSort } from "../features/models/model-sort";
+import type { RsiMethodId } from "../features/benchmark/rsi-methods";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -2882,11 +2883,21 @@ export const zh = {
     /** The same mark on its own, for a row that is attributed to a machine rather than named after one. */
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
-    draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
+    draftSubtitle: "最全面的 Agent 自进化平台",
+    /**
+     * The derived counts under the slogan (GET /api/rsi). The draft screen links each half to the
+     * page that lists it, so the two halves stay joined by exactly one " · ".
+     */
+    draftStats: (toolkits: number, benchmarks: number): string =>
+      `已支持 ${toolkits} 种自进化算法 · ${benchmarks} 个 Benchmark 复现`,
+    /** Where each half of that line leads, as its accessible description. */
+    draftStatsToolkits: "查看插件库里的自进化工具包",
+    draftStatsBenchmarks: "查看评估中心",
     /** Collapsed group names for the home-page examples (bookmark style; only one open at a time). */
     exampleFolders: {
+      rsi: "复现自进化算法",
       webapps: "搭建网页应用",
-      agents: "搭建和优化智能体",
+      agents: "搭建智能体",
       schedules: "创建定时任务",
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
@@ -3035,7 +3046,7 @@ Benchmark：
 3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
-        label: "优化通用决策智能体的准确率",
+        label: "Default RSI Toolkit：提升决策智能体的准确率",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
@@ -3045,6 +3056,22 @@ Benchmark：
 - runs：\`3\`
 - desired_score：\`>=95\`
 - candidate_round_limit：\`5\``,
+      },
+      /** The two toolkit demos: each prompt is its plugin's quick start word for word. */
+      rsiApe: {
+        label: "复现 APE：从示例归纳指令",
+        desc: "在 rsi-ape 自带的「公司格式简报」任务上跑一遍 APE，对比六道留出题在优化前后的分数",
+        prompt:
+          "在 `rsi-ape` 技能自带的「公司格式简报」任务上复现 APE（Automatic Prompt Engineer，Zhou 等，2022）：" +
+          "新建一个 Agent、一套 6 题的 Benchmark，给我看优化前后的分数。",
+      },
+      rsiOpro: {
+        label: "复现 OPRO：由分数优化指令",
+        desc: "在 rsi-opro 自带的「精确摘要」任务上跑 2 步 × 4 个提案，看指令随分数进化",
+        prompt:
+          "使用 `rsi-opro` 技能在它自带的「精确摘要」演示任务上复现 OPRO：" +
+          "创建 Target 智能体 `summary_writer` 与 Benchmark `precise-summary`，" +
+          "测量种子指令，跑 2 步 × 4 个提案，报告基线分与最佳分。",
       },
       dailyPlan: {
         label: "每天早 9 点的计划对话",
@@ -4252,7 +4279,7 @@ Benchmark：
       },
       {
         title: "优化",
-        text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本。",
+        text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本，也可以换一种自进化算法。",
       },
     ],
     /** The first step card's text for a Project member: no Create manually, which is the owner's. */
@@ -4538,7 +4565,7 @@ Benchmark：
     evaluatorAgentHint:
       "派发评测子会话、按评分细则打分并写入记分的一方；需要装有 agent-evaluation 技能",
     evaluatorMissingSkill:
-      "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
+      "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 rsi-default 插件（Default RSI Toolkit）。",
     evaluateSessionModel: "评估会话使用的模型",
     evaluateSessionModelHint:
       "这个会话运行所用的模型，缺省为 Project 默认模型；被测智能体也在这个模型上评测，思考等级沿用它自己的配置",
@@ -4563,7 +4590,7 @@ Benchmark：
     optimizerAgent: "执行优化的智能体",
     optimizerAgentHint: "读分数与 Trace、修改被测智能体的一方；需要装有 agent-optimization 技能",
     optimizerMissingSkill:
-      "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
+      "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 rsi-default 插件（Default RSI Toolkit）。",
     testedAgentHint: "优化改的是它的 Agent State；分数记在它名下，只与它自己同标签的历史分数比较",
     sessionModel: "优化会话使用的模型",
     sessionModelHint:
@@ -4596,6 +4623,62 @@ Benchmark：
       "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
       "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
+    // The Optimize tab's Method select: one option per RSI toolkit (benchmark/rsi-methods.ts).
+    methodField: "方法",
+    /** Semantics behind the Method field's "?". */
+    methodHint: "改进智能体所用的自进化算法；每一种都是插件库里的一个工具包",
+    /** Each method's option label, and the line the field shows under it once it is picked. */
+    methods: {
+      default: {
+        label: "Default（试跑 → 反思 → 提升）",
+        blurb: "默认循环：每轮一个可证伪的假设、一处有界改动，分数严格提升才保留",
+      },
+      opro: { label: "OPRO", blurb: "由历史指令与分数提出新指令（Yang 等，2023）" },
+      ape: { label: "APE", blurb: "从输入 / 输出示例归纳指令（Zhou 等，2022）" },
+      ace: { label: "ACE", blurb: "从训练轨迹进化规则手册（Zhang 等，2025）" },
+      awm: { label: "AWM", blurb: "从成功轨迹归纳工作流记忆（Wang 等，2024）" },
+    } satisfies Record<RsiMethodId, { label: string; blurb: string }>,
+    /**
+     * Shown where the default's round limit and target score are: any other toolkit sets its own
+     * budget.
+     */
+    methodBudgetHint: "这个方法用它自己的预算：论文默认值降为冒烟档，除非在「优化重点」里另行指定",
+    /** The optimizer field's hint under any other toolkit: the Skill that agent must carry. */
+    methodOptimizerHint: (skill: string): string =>
+      `运行该方法、修改被测智能体的一方；需要装有 ${skill} 技能`,
+    methodMissingSkill: (plugin: string, skill: string): string =>
+      `该智能体没有安装 ${skill} 技能，无法运行这个方法——先在插件库为它安装 ${plugin} 插件，或换用默认智能体。`,
+    /**
+     * The tail for a toolkit other than the default: its own Skill, the three inputs every toolkit
+     * takes, and its paper's loop and budget. Given the baseline's provider and model, it pins the
+     * evaluations to them, as the default loop does, so they join the baseline's series.
+     */
+    rsiOptimizeTail: (p: {
+      skill: string;
+      label: string;
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      provider?: string;
+      modelId?: string;
+    }): string => {
+      const pinned =
+        p.provider && p.modelId
+          ? `- provider：\`${p.provider}\`\n- model_id：\`${p.modelId}\`\n`
+          : "";
+      return (
+        `请使用 \`${p.skill}\` 技能，在冻结的 Benchmark 上对被测智能体复现 ${p.label}。\n\n` +
+        `- test_agent_id：\`${p.targetAgentId}\`\n` +
+        `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+        `- runs：\`${p.runs}\`\n` +
+        pinned +
+        "\n" +
+        (pinned !== "" ? "评测固定使用这组 provider 与模型。" : "") +
+        "按原论文的流程运行，预算用技能的冒烟档（上文另有要求时以上文为准）；只问我方法必需而我没给的输入。" +
+        "基线与每个候选都经技能自带的评测参考测量，固定被测智能体的运行时，每条完整评估都以同一标签记入 scoreboard.yaml；" +
+        "结束时报告基线分、最终分、保留的版本与方法改了什么。"
+      );
+    },
   },
 
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).

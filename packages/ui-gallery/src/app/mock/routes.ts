@@ -87,6 +87,7 @@ import type {
   ProxyProbeTargetsResponse,
   RestartResponse,
   RetryNowResponse,
+  RsiCatalogResponse,
   ScheduleItem,
   SchedulesResponse,
   SemanticIdSuggestResponse,
@@ -1887,6 +1888,17 @@ const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) 
 
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
+  .get("/api/rsi", (): RsiCatalogResponse => ({
+    toolkits: ["rsi-ace", "rsi-ape", "rsi-awm", "rsi-default", "rsi-opro"].map((plugin) => ({
+      plugin,
+      skills: [plugin === "rsi-default" ? "agent-optimization" : plugin],
+      preinstall: true,
+    })),
+    benchmarks: ["a", "b", "c", "d", "e"].map((sec) => ({
+      id: `penguinharness-benchmark-sec-${sec}`,
+      title: `PenguinHarness Benchmark Sec ${sec.toUpperCase()}`,
+    })),
+  }))
   .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
   // The demo installs no languages plugin: every fence is one the bundle carries or plain.
   .get("/api/languages", (): LanguageIndexResponse => ({ languages: [] }))

@@ -4209,6 +4209,14 @@ export interface PluginFilesResponse {
   files: Record<string, string>;
 }
 
+/** GET /api/rsi: the self-evolution catalogue — the RSI toolkits in the library and the built-in Benchmark reproductions (any logged-in user). */
+export interface RsiCatalogResponse {
+  /** One per plugin of the library's `rsi` category, sorted by plugin name. */
+  toolkits: Array<{ plugin: string; skills: string[]; preinstall: boolean }>;
+  /** One per built-in Benchmark, in core's order. */
+  benchmarks: Array<{ id: string; title: string }>;
+}
+
 /**
  * POST /api/projects/:p/agents/:a/plugins: install library plugins by name — each one's skills
  * and hook package; already-installed ones are overwritten with library content (i.e. updated).

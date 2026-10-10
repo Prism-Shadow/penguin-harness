@@ -689,10 +689,13 @@ export function librarySkill(
 /**
  * Category manifest, in display order. Categories group by audience, not by technology: a
  * hook-only plugin sits with the skills it serves the same audience as (goal mode and
- * continual learning are office productivity), and agent tuning is AI app development.
+ * continual learning are office productivity). `rsi` (agent self-evolution) comes first and
+ * holds exactly the RSI toolkits — the default loop and one plugin per algorithm — so its
+ * members are the self-evolution algorithms this build ships.
  * Docs: /docs/skills § "Built-in library".
  */
 export const PLUGIN_CATEGORIES: PluginCategory[] = [
+  { id: "rsi", title: "Agent Self-Evolution", titleZh: "Agent 自进化" },
   { id: "office-productivity", title: "Office Productivity", titleZh: "办公效率" },
   { id: "software-development", title: "Software Development", titleZh: "软件开发" },
   { id: "ai-app-development", title: "AI App Development", titleZh: "AI 应用开发" },

@@ -1,0 +1,21 @@
+{
+  "name": "@penguinharness/rsi-awm",
+  "version": "0.2.13",
+  "description": "The AWM RSI Toolkit: Agent Workflow Memory (Wang et al., 2024) — workflows are induced from successful trajectories and stored in the Target's memory, online over a training stream or offline from supplied experiences, then frozen for independent testing on the Benchmark. Self-contained: it creates the Target's workflow memory, evaluates its own cells and writes the Evaluation Center's scoreboard.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/rsi-awm"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "hooks",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

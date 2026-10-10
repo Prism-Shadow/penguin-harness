@@ -6,6 +6,8 @@
  * - The two agent-evolution prompts carry the ids and targets the build and optimization skills
  *   read, name the skills in the order they run, stay short, and leave out what the Agent works
  *   out itself.
+ * - The two self-evolution toolkit demos are their plugins' quick starts word for word, skills
+ *   included, name their Skill and leave the launcher and the subagents to it.
  * - The folders stay within one row of each other, so the draft page's height does not jump.
  * - Every scheduled-task example says when it fires (never in cron syntax), and the two that
  *   need an answer run in the conversation the user is in.
@@ -13,10 +15,13 @@
  *   locales.
  * - The investment Copilot example keeps its "not investment advice" framing.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { EXAMPLE_FOLDERS } from "../src/features/chat/example-tasks";
+import { EXAMPLE_FOLDERS, EXAMPLE_TASKS } from "../src/features/chat/example-tasks";
 import { en } from "../src/lib/strings-en";
 import { zh } from "../src/lib/strings";
+import { REPO_ROOT } from "./helpers/roots";
 
 describe("draft example tasks", () => {
   it.each([
@@ -102,6 +107,36 @@ describe("draft example tasks", () => {
       expect(normalizedOptimization).not.toContain("Phase 3");
     },
   );
+});
+
+describe("self-evolution toolkit demos", () => {
+  // The draft screen and the Plugins page's quick start send the same request, so neither can
+  // drift from the other. The Skill owns the mechanics — the launcher, the subagents it measures
+  // through — and a demo the user reads before sending stays a sentence or two.
+  const demos = [
+    { id: "rsiApe", plugin: "rsi-ape" },
+    { id: "rsiOpro", plugin: "rsi-opro" },
+  ] as const;
+
+  it.each(demos)("$id is the $plugin quick start, skills included", ({ id, plugin }) => {
+    const manifest = JSON.parse(
+      readFileSync(join(REPO_ROOT, "plugins", plugin, "plugin.json"), "utf8"),
+    ) as { quick_start: { prompt: string; prompt_zh: string; skills: string[] } };
+    expect(en.chat.exampleTasks[id].prompt).toBe(manifest.quick_start.prompt);
+    expect(zh.chat.exampleTasks[id].prompt).toBe(manifest.quick_start.prompt_zh);
+    expect(EXAMPLE_TASKS.find((task) => task.id === id)?.skills).toEqual(
+      manifest.quick_start.skills,
+    );
+  });
+
+  it.each(demos)("$id names its Skill and leaves the mechanics to it", ({ id, plugin }) => {
+    for (const prompt of [zh.chat.exampleTasks[id].prompt, en.chat.exampleTasks[id].prompt]) {
+      expect(prompt).toContain(`\`${plugin}\``);
+      expect(prompt).not.toContain("penguin run");
+      expect(prompt).not.toContain("run_subagent");
+      expect(prompt.length).toBeLessThan(400);
+    }
+  });
 });
 
 describe("draft example catalog", () => {

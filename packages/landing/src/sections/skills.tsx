@@ -1,4 +1,4 @@
-/** Built-in Skill library at a glance: the four Skill groups with their member Skills as chips. */
+/** Built-in Skill library at a glance: the Skill groups with their member Skills as chips. */
 import { S } from "../lib/strings";
 import { Section } from "../components/section";
 

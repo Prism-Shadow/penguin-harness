@@ -20,7 +20,7 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 3. 要缩小范围，可以在搜索框中输入，或在列表旁的筛选栏中勾选选项：**分类**、**包含**和**状态**。**清除筛选**会清空已选的选项和搜索框。有搜索词或筛选条件时，两个列表都会展开。
 4. 点击插件库插件的卡片打开详情。
 
-每张卡片显示插件名称、简短描述，以及一行形如 `v<版本> · N 天前更新 · N 个 Agent 在用` 的信息。其中的 Agent 数量，统计的是当前 Project 里装了这个插件任意部分的 Agent。这一行下方的标签依次标出插件的分类（办公效率、软件开发、AI 应用开发、Agent 公司或其他）、**内置**，以及插件包含的 Skill 和钩子包数量。
+每张卡片显示插件名称、简短描述，以及一行形如 `v<版本> · N 天前更新 · N 个 Agent 在用` 的信息。其中的 Agent 数量，统计的是当前 Project 里装了这个插件任意部分的 Agent。这一行下方的标签依次标出插件的分类（Agent 自进化、办公效率、软件开发、AI 应用开发、Agent 公司或其他）、**内置**，以及插件包含的 Skill 和钩子包数量。
 
 详情里有完整描述、插件的钩子包在哪些钩子点运行，以及一个文件浏览器。左侧目录树中，每个 Skill 对应一个文件夹，`SKILL.md` 排在最前，参考文件跟在后面；另有一个**钩子**文件夹存放钩子脚本。右侧预览区显示选中的文件。
 
@@ -195,6 +195,11 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
+| Agent 自进化 | `rsi-default` | Default RSI Toolkit：用四个 Skill 构成「试跑 → 反思 → 提升」的循环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent）。2026.10.09.3 及更早的版本名为 `agent-tuning`，各 Skill 名称不变 |
+| | `rsi-opro` | OPRO，出自 [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409)（Yang 等，2023）：依据历史指令与分数提出新指令，保留得分最高的一条。自成一体：自带初始化与评测参考，另附一个演示任务 |
+| | `rsi-ape` | APE，出自 [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910)（Zhou 等，2022）：从输入 / 输出示例归纳候选指令，保留最优者。自成一体：自带初始化与评测参考，另附一个演示任务 |
+| | `rsi-ace` | ACE，出自 [Agentic Context Engineering](https://arxiv.org/abs/2510.04618)（Zhang 等，2025）：从训练轨迹进化出一本规则手册（playbook）。自成一体：自带初始化与评测参考 |
+| | `rsi-awm` | AWM，出自 [Agent Workflow Memory](https://arxiv.org/abs/2409.07429)（Wang 等，2024）：从成功轨迹归纳工作流，存入 Agent 的记忆。自成一体：自带初始化与评测参考 |
 | 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框、Mermaid 图，以及天气、时钟、倒计时和指标小组件，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则、把天气查询和系统快照直接生成组件块的脚本，以及一个发送前校验、打分的检查脚本（预装） |
 | | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
@@ -208,7 +213,6 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含四个 Skill：`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent |
-| | `agent-tuning` | 用四个 Skill 构成调优闭环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent） |
 | Agent 公司 | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
 
 ## 工作原理
@@ -234,7 +238,7 @@ plugins/<plugin>/
 | `description` / `description_zh` | 一行描述（英文必填） |
 | `short_description` / `short_description_zh` | 卡片上显示的简短文案（可选；不填则使用完整描述） |
 | `version` | `YYYY.MM.DD.N`：日期加当天的序号 |
-| `category` | `office-productivity`、`software-development`、`ai-app-development`、`agent-company` 之一；缺失或未知的分类归入「其他」 |
+| `category` | `rsi`、`office-productivity`、`software-development`、`ai-app-development`、`agent-company` 之一；缺失或未知的分类归入「其他」 |
 | `preinstall` | 可选；设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
 | `quick_start` | 插件页「快速开始」预填进新对话草稿的演示：`{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各个[钩子点](/agent-loop#stop-hook)运行的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径以 `hooks/` 为起点，timeout 单位为秒。`user_prompt` 命令可以另加 `"trigger"`：`"prompt"`（缺省）表示用户每次提交 Prompt 时运行，`"host"` 表示只在宿主按包名启动该包的流程时运行 |
@@ -243,6 +247,7 @@ plugins/<plugin>/
 
 - 插件名就是目录名，必须匹配 `^[A-Za-z0-9_-]+$`。
 - 围绕他人产品打造的插件带 `use-` 前缀（如 `use-firecrawl`），名称只表明用途，而不冒充产品本身。
+- 自进化工具包带 `rsi-` 前缀（如 `rsi-default`、`rsi-ape`），同一家族在列表里排在一起。
 - 版本先按日期比较，再按序号比较：`2026.08.29.10` 排在 `2026.08.29.9` 之后。
 - 清单里的 `version` 是插件所含全部内容的版本，与 npm 包版本相互独立；npm 版本跟随产品发布。除此之外没有其他版本方案。
 - 每个插件都是一个独立的 npm 包 `@penguinharness/<name>`，位于仓库的 `plugins/<name>/`。`@prismshadow/penguin-core` 中的加载器从宿主包的依赖列表读取插件名，并通过 Node 解析各个包。桌面应用把同样的包声明为依赖，安装器会将它们打包。运行时，插件文件就是插件库内容的唯一事实来源，每次调用都直接读取。

@@ -41,7 +41,7 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name, each with a date-sequence version and a category", () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    expect(plugins.length).toBe(15);
+    expect(plugins.length).toBe(19);
     for (const plugin of plugins) {
       expect(plugin.version, plugin.name).toMatch(PLUGIN_VERSION_PATTERN);
       expect(
@@ -116,6 +116,27 @@ describe("loadLibraryPlugins", () => {
     expect(Object.keys(files).length).toBeGreaterThan(0);
     expect(Object.keys(files).every((rel) => rel !== "SKILL.md" && rel !== "icon.svg")).toBe(true);
     expect(Object.keys(files).some((rel) => rel.startsWith("reference/"))).toBe(true);
+  });
+
+  it("every RSI toolkit other than the default ships the same evaluation reference", () => {
+    // Each algorithm toolkit evaluates through its own copy of one reference, so that it needs
+    // no other plugin; the copies must not drift apart.
+    const toolkits = loadLibraryPlugins().filter(
+      (p) => p.category === "rsi" && p.name !== "rsi-default",
+    );
+    expect(toolkits.length).toBeGreaterThan(1);
+    const references = toolkits.map((plugin) => {
+      // One Skill per algorithm toolkit, named like the plugin.
+      expect(
+        plugin.skills.map((s) => s.name),
+        plugin.name,
+      ).toEqual([plugin.name]);
+      return plugin.skills[0]!.files?.["references/evaluation.md"] ?? "";
+    });
+    for (const [i, reference] of references.entries()) {
+      expect(reference.length, toolkits[i]!.name).toBeGreaterThan(0);
+      expect(reference, `${toolkits[i]!.name} vs ${toolkits[0]!.name}`).toBe(references[0]);
+    }
   });
 
   it("a hook plugin carries a manifest naming its scripts and the hooks/ files to install; goal's start runs only when the host starts a goal", () => {
@@ -198,6 +219,7 @@ describe("groupPlugins / loadPluginGroups", () => {
     const groups = loadPluginGroups();
     expect(groups.map((g) => g.id)).toEqual(PLUGIN_CATEGORIES.map((c) => c.id));
     const names = (id: string) => groups.find((g) => g.id === id)?.plugins.map((p) => p.name);
+    expect(names("rsi")).toEqual(["rsi-ace", "rsi-ape", "rsi-awm", "rsi-default", "rsi-opro"]);
     expect(names("office-productivity")).toEqual([
       "a2ui",
       "browser-automation",
@@ -210,7 +232,6 @@ describe("groupPlugins / loadPluginGroups", () => {
     ]);
     expect(names("ai-app-development")).toEqual([
       "agent-development",
-      "agent-tuning",
       "model-development",
       "skill-porting",
     ]);

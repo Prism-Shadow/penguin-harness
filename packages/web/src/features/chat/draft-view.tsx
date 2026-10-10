@@ -39,7 +39,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import type {
   AgentModelConfigDto,
   AgentSummary,
@@ -47,6 +47,7 @@ import type {
   ChatDefaultsDto,
   ModelRefDto,
   ModelsResponse,
+  RsiCatalogResponse,
   SessionCreateRequest,
   SessionSandbox,
   SkillMetadataItem,
@@ -140,13 +141,16 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
  * competing with the titles, while the folder row is exactly where a glyph earns its place —
  * it is what you scan to pick a category.
  *
- * webapps: a browser window (chrome bar + two dots). agents: the registry's robot itself — the
- * one glyph in the app that means "agent", worn by the sidebar's Agents entry and its grouping
- * option — imported rather than copied, because a hand-copied duplicate is what silently drifts
- * the day that glyph is redrawn. schedules: a clock face with hands — the plainest mark for
- * "fires on a timer", and distinct from the hourglass that already means a Session is waiting.
+ * rsi: two arcs chasing each other round a circle — the loop every self-evolution toolkit runs,
+ * measuring, changing and measuring again. webapps: a browser window (chrome bar + two dots).
+ * agents: the registry's robot itself — the one glyph in the app that means "agent", worn by the
+ * sidebar's Agents entry and its grouping option — imported rather than copied, because a
+ * hand-copied duplicate is what silently drifts the day that glyph is redrawn. schedules: a clock
+ * face with hands — the plainest mark for "fires on a timer", and distinct from the hourglass
+ * that already means a Session is waiting.
  */
 const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
+  rsi: ICONS.refresh,
   webapps: ICONS.appWindow,
   agents: ICONS.robot,
   schedules: ICONS.clock,
@@ -902,6 +906,7 @@ export function DraftView({
             {S.appName}
           </h1>
           <p className="mt-2 text-base text-gray-400 dark:text-gray-500">{S.chat.draftSubtitle}</p>
+          <RsiStatsLine />
           <VersionLine />
         </div>
 
@@ -961,11 +966,12 @@ export function DraftView({
           <FilesPanelToggle available={workspace.trim() !== ""} />
         </div>
 
-        {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
-            the composer with the prompt and the user sends it (see fillPrompt). The last folder
-            is the user's own saved prompts (see shortcuts-folder.tsx).
+        {/* Example tasks: canned one-sentence requests — reproduce a self-evolution algorithm,
+            build an app or an agent, set up a schedule; a click fills the composer with the
+            prompt and the user sends it (see fillPrompt). The last folder is the user's own saved
+            prompts (see shortcuts-folder.tsx).
             Bookmark-style folders with ALWAYS exactly one open — selecting another closes the
-            previous, and the open one cannot be collapsed. The block is therefore four folder
+            previous, and the open one cannot be collapsed. The block is therefore five folder
             rows plus one folder's rows, with every folder kept within one row of the others
             (3–4 examples each; the user folder is capped so its shortcuts plus its add row come
             to the same), so switching folders moves what sits below by at most one row and no
@@ -1023,6 +1029,89 @@ export function DraftView({
       {/* Lower symmetric space — empty, so it matches the upper one exactly */}
       <div className="flex-1" />
     </div>
+  );
+}
+
+/**
+ * The self-evolution catalogue the stats line counts, fetched once per page load: a locale
+ * switch remounts the whole tree, so the result is cached at module level, as the version
+ * line's is. A failure clears the shared promise, so the next mount retries.
+ */
+let rsiCatalogCache: RsiCatalogResponse | null = null;
+let rsiCatalogPromise: Promise<RsiCatalogResponse> | null = null;
+
+function useRsiCatalog(): RsiCatalogResponse | null {
+  const [catalog, setCatalog] = useState<RsiCatalogResponse | null>(rsiCatalogCache);
+  useEffect(() => {
+    if (rsiCatalogCache !== null) return;
+    let cancelled = false;
+    rsiCatalogPromise ??= api.getRsiCatalog().then((res) => {
+      rsiCatalogCache = res;
+      return res;
+    });
+    rsiCatalogPromise
+      .then((res) => {
+        if (!cancelled) setCatalog(res);
+      })
+      .catch(() => {
+        rsiCatalogPromise = null;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return catalog;
+}
+
+/** What joins the two halves of `S.chat.draftStats` in both dictionaries. */
+const STATS_SEPARATOR = " · ";
+
+/**
+ * A half of the stats line: the line's own muted ink, darker and underlined on hover. Each half
+ * is one box, so a narrow column wraps the line between the halves, never inside a phrase.
+ */
+const statsLinkClass =
+  "inline-block underline-offset-2 transition-colors duration-150 hover:text-gray-600 hover:underline dark:hover:text-gray-300";
+
+/**
+ * The derived counts under the slogan: how many self-evolution toolkits the plugin library ships
+ * and how many Benchmark reproductions are built in, each half a link to the page that lists
+ * them. Both numbers come from GET /api/rsi and never from the copy, so they cannot drift from
+ * what the build carries. The line keeps its height while loading, on a failure and when a count
+ * is zero, so the brand block never jumps, and says nothing then: there is no "0 algorithms".
+ * Where a half leads is its accessible description rather than a hover hint, since the shared
+ * tooltip shows nothing over text that is fully visible.
+ */
+function RsiStatsLine() {
+  const catalog = useRsiCatalog();
+  const toolkits = catalog?.toolkits.length ?? 0;
+  const benchmarks = catalog?.benchmarks.length ?? 0;
+  const [algorithms, reproductions] =
+    toolkits > 0 && benchmarks > 0
+      ? S.chat.draftStats(toolkits, benchmarks).split(STATS_SEPARATOR)
+      : [];
+  return (
+    <p className="mt-1 min-h-5 text-sm text-gray-400 dark:text-gray-500">
+      {algorithms !== undefined && reproductions !== undefined && (
+        <>
+          <Link
+            to="/plugins"
+            aria-description={S.chat.draftStatsToolkits}
+            className={statsLinkClass}
+          >
+            {algorithms}
+          </Link>
+          {STATS_SEPARATOR}
+          <Link
+            to="/benchmark"
+            aria-description={S.chat.draftStatsBenchmarks}
+            className={statsLinkClass}
+          >
+            {reproductions}
+          </Link>
+        </>
+      )}
+    </p>
   );
 }
 

@@ -3,7 +3,7 @@ title: 产品介绍
 description: PenguinHarness 是什么，它由哪些部分组成，以及从哪里开始。
 ---
 
-欢迎阅读 PenguinHarness 文档。PenguinHarness 是一个开源的 Agent Harness，用来构建、运行、评估和持续改进 AI Agent，整体是一套 TypeScript 技术栈。它完全本地部署，存储的一切都留在你的机器上；最低一颗 CPU 即可运行，通过统一的模型网关可以接入 1000+ 在线与本地模型。
+欢迎阅读 PenguinHarness 文档。PenguinHarness 是**大一统、稳定的 RSI 框架**（Unified and Stable RSI Framework）：一个开源的 Agent Harness，全自动优化模型 × Harness，让任何模型、任何算法、任何 Agent 都能递归自我进化。模型固定不动，进化的是 Harness——提示词、Skill、工具与钩子——每一种自进化算法都跑在同一套 Benchmark、记分板与快照之上。它整体是一套 TypeScript 技术栈，完全本地部署，最低一颗 CPU 即可运行，通过统一的模型网关可以接入 1000+ 在线与本地模型。
 
 ## 开始使用
 
@@ -13,7 +13,7 @@ description: PenguinHarness 是什么，它由哪些部分组成，以及从哪�
 2. [核心概念](/concepts)：了解文档里用到的术语，例如 Project、Session、Task 和 Workspace。
 3. [对话](/chat)：在对话中与 Agent 协作，随时看到它在做什么。
 4. [Agent](/agents)：创建 Agent，配置它的提示词、Skill、记忆和工具。
-5. [评估中心](/evaluation-center)：用 Benchmark 衡量 Agent 的表现，并加以改进。
+5. [评估中心](/evaluation-center)：用 Benchmark 衡量 Agent 的表现，再用你选择的自进化算法改进它。
 
 ## 产品组成
 
@@ -29,13 +29,13 @@ PenguinHarness 由下面这些组件构成。它们共用同一个数据目录�
 
 ## 三大支柱
 
-PenguinHarness 可以用一句话概括：**Efficient Self-Improving Harness for Everyone**。它围绕三个概念展开，即消息协议、SDK 和技能库，每个概念支撑一个支柱：
+PenguinHarness 可以用一句话概括：**大一统、稳定的 RSI 框架，全自动优化模型 × Harness**。它围绕三个概念展开，即消息协议、SDK 和技能库，每个概念支撑一个支柱：
 
 | 支柱 | 含义 |
 | --- | --- |
 | **Simplest Is the Best** | 在干净的底层接口之上刻意保持极简的工具集：更少的工具调用、更少的 Token，高效完成复杂任务。 |
 | **Harness for Building Agents** | 借助 PenguinHarness SDK，由 Agent 从零开始为你自主构建完整的 Agent 应用。 |
-| **Harness for Recursive Self-Improvement** | 借助 PenguinHarness Skills，Agent 评估并优化自己，随着时间递归进化。 |
+| **Harness for Recursive Self-Improvement** | 借助 RSI 工具包（默认循环、OPRO、APE、ACE 与 AWM），Agent 评估并优化自己，随着时间递归进化；见[自我进化](/self-improvement)。 |
 
 ## 设计信条
 

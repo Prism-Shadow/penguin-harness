@@ -1,0 +1,21 @@
+{
+  "name": "@penguinharness/rsi-opro",
+  "version": "0.2.13",
+  "description": "The OPRO RSI Toolkit: Large Language Models as Optimizers (Yang et al., 2023), run the way the paper does — the optimizer proposes new instructions from the history of scored instructions, every candidate is measured on the frozen Benchmark, and the best-scoring instruction is kept. Self-contained: it creates the Target's instruction slot, evaluates its own cells and writes the Evaluation Center's scoreboard.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/rsi-opro"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "hooks",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

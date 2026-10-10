@@ -17,7 +17,7 @@ For how evaluation and optimization work behind these pages, see [Self-Improveme
 
 In the sidebar, select **Evaluation Center**. The page (`/benchmark`) lists every Benchmark of the current Project as a card.
 
-Under the title, three numbered step cards outline the loop: **Create**, **Evaluate** and **Optimize**. Each says where to do that step: with the create buttons at the top right, or with **Use** on a Benchmark followed by the matching tab. The owner gets two create buttons, **Create with AI** and **Create manually**; a member gets **Create with AI** alone, and the first card names only that.
+Under the title, three numbered step cards outline the loop: **Create**, **Evaluate** and **Optimize**. Each says where to do that step: with the create buttons at the top right, or with **Use** on a Benchmark followed by the matching tab; the **Optimize** card adds that another self-evolution algorithm can be picked. The owner gets two create buttons, **Create with AI** and **Create manually**; a member gets **Create with AI** alone, and the first card names only that.
 
 Each Benchmark card shows:
 
@@ -59,7 +59,7 @@ Each case runs as a [Harbor](https://github.com/harbor-framework/harbor) task in
 
 - The machine the evaluator agent runs on has Docker with Compose v2 and [uv](https://docs.astral.sh/uv/), and can reach GitHub, Docker Hub, nodejs.org, the npm registry and the model provider.
 - The model the evaluation runs on, the evaluation conversation's, has its API key saved on the **Models** page. The evaluation copies that one model entry into each task container; it needs no Vault entry.
-- The evaluator agent's `agent-evaluation` Skill comes from `agent-tuning` 2026.10.09.1 or later. An agent created before that keeps its older copy until you update the plugin from the **Agents** page.
+- The evaluator agent's `agent-evaluation` Skill is version 2026.10.09.1 or later. It ships in `rsi-default`, which was named `agent-tuning` up to 2026.10.09.3. An agent created before that keeps its older copy until you update the plugin on the **Plugins** page.
 
 You evaluate them like any other Benchmark; see [Evaluate an agent](#evaluate-an-agent). The evaluator agent's `agent-evaluation` Skill recognizes such a case from its statement and follows the repository's rules: the evaluation fetches the repository once, at the statement's commit, then runs one Harbor trial per case and run, at most four at a time because every trial takes Docker networks from a limited supply. The tested agent runs inside the task's container with its own Agent State, and a trial takes from a few minutes to about an hour, image builds included. Each trial's files, the agent's Traces and the verifier's output, stay under the Benchmark's `.jobs/` directory. Its run is recorded under the Session id `harbor:<trial name>`, which the evaluation dialog lets you copy.
 
@@ -172,23 +172,26 @@ The evaluation conversation is an ordinary conversation of yours. Every Test Ses
 
 ## Optimize an agent
 
-Optimization changes an agent one hypothesis at a time and keeps a new version only when its score strictly improves. It measures against the agent's baseline on this Benchmark.
+Optimization improves an agent with a self-evolution algorithm, the **Method**. The default method changes the agent one hypothesis at a time and keeps a new version only when its score strictly improves, measured against the agent's baseline on this Benchmark. The other methods each run the RSI toolkit of the same name; see [RSI toolkits](/self-improvement#rsi-toolkits).
 
 **Before you begin**
 
-- The agent has a complete evaluation on this Benchmark. A Benchmark created with AI has one for its Test Agent; otherwise, [evaluate the agent](#evaluate-an-agent) first.
+- For the default method, the agent has a complete evaluation on this Benchmark. A Benchmark created with AI has one for its Test Agent; otherwise, [evaluate the agent](#evaluate-an-agent) first. The other methods measure the agent's starting score themselves.
 
 1. On a Benchmark card, or in a Benchmark page's header, select **Use**, then the **Optimize** tab.
-2. In **Tested agent**, choose the agent to improve. The tab shows its current baseline and the target.
-3. In **Optimizer agent**, choose the agent that does the work. It needs the `agent-optimization` Skill, and the dialog warns you when that Skill is missing.
-4. Set **Runs per case**, **Round limit** (3 by default) and **Target score**. The target defaults to the baseline rounded up plus 10, at most 100.
-5. Optional: change **Model of the optimizer's conversation** (preset to the Project's default model), and describe a **Focus**.
-6. Select **Edit in a new conversation**, review the prompt, and send it.
+2. In **Method**, choose **Default (trial → reflect → improve)**, **OPRO**, **APE**, **ACE** or **AWM**. The hint under the field says what the chosen method does.
+3. In **Tested agent**, choose the agent to improve. The tab shows its current baseline and the target.
+4. In **Optimizer agent**, choose the agent that does the work. It needs the method's Skill: `agent-optimization` for Default, otherwise the Skill named like the method's plugin (`rsi-opro`, `rsi-ape`, `rsi-ace` or `rsi-awm`). The dialog warns you when that Skill is missing.
+5. Set **Runs per case**. With Default, also set **Round limit** (3 by default) and **Target score**; the target defaults to the baseline rounded up plus 10, at most 100.
+6. Optional: change **Model of the optimizer's conversation** (preset to the Project's default model), and describe a **Focus**.
+7. Select **Edit in a new conversation**, review the prompt, and send it.
 
-The optimizer stops early when it reaches the target score, and otherwise after the round limit. Its evaluations keep the model and thinking level the baseline recorded. Each accepted version appears as a new point on the same chart line, and its version shows in the **Version** column and in the point's hover text.
+With Default, the optimizer stops early when it reaches the target score, and otherwise after the round limit. Its evaluations keep the model and thinking level the baseline recorded. Each accepted version appears as a new point on the same chart line, and its version shows in the **Version** column and in the point's hover text.
+
+With any other method, **Round limit** and **Target score** are hidden: the method sets its own budget, the paper's defaults reduced to a smoke profile unless the **Focus** says otherwise. The prompt hands the method's Skill the tested agent, the Benchmark and the runs per case, and asks it to run the method the way its paper does, keep the tested agent's runtime fixed, measure through the toolkit's own evaluation reference, and record every complete evaluation in the scoreboard under the same label.
 
 > [!WARNING]
-> When the tested agent has no baseline on this Benchmark, the tab warns you to take one on the **Evaluate** tab first, and the target defaults to 80. Sending is not blocked, but the `agent-optimization` Skill stops and explains that it needs a baseline.
+> When the tested agent has no baseline on this Benchmark, the tab warns you to take one on the **Evaluate** tab first, and the target defaults to 80. Sending is not blocked, but with the default method the `agent-optimization` Skill stops and explains that it needs a baseline.
 
 ## Replace a Benchmark
 
@@ -218,6 +221,7 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 - **Creating with AI.** The prompt's fixed ending hands the `benchmark-design` Skill the Test Agent's id, a desired baseline score and a pilot-iteration limit, and asks for the baseline to be taken.
 - **Creating manually.** The server writes the form to disk in the layout the Skills read (`POST …/benchmarks`, owner only), with the status `published`.
 - **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents, on the conversation's own model, which the evaluator agent reads from the `Provider` and `Model ID` lines of its system prompt. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
+- **Optimizing.** With Default, the prompt's fixed ending hands `agent-optimization` the tested agent, the Benchmark, the runs, the target score and the round limit. With another method, it hands the method's Skill the tested agent, the Benchmark and the runs, and the method sets its own budget. The **Method** list has one entry per plugin of the library's Agent Self-Evolution category.
 - **Deleting.** The server removes the directory whole (`DELETE …/benchmarks/:id`). Deleting a Benchmark while an evaluation is still running can leave a directory behind, because the evaluation keeps writing into it. That directory has no `benchmark_config.toml`, so it is not listed, and you can delete it by hand.
 - **The example and the built-in Benchmarks.** Written when the Project is created; never written again. A Project from an earlier release keeps what it has and is not given the built-in Benchmarks.
-- **Built-in Benchmarks.** Their manifests are ordinary, with the origin `builtin`; each statement names the task's folder in the repository at a pinned commit and links the repository's run rules, which the `agent-evaluation` Skill follows. Its `reference/harbor.md` adds only what PenguinHarness needs: where the checkout lives, which Agent State runs, and how a trial becomes a score.
+- **Built-in Benchmarks.** Their manifests are ordinary, with the origin `builtin`; each statement names the task's folder in the repository at a pinned commit and links the repository's run rules, which the `agent-evaluation` Skill and the RSI toolkits' evaluation reference follow. `agent-evaluation`'s `reference/harbor.md` adds only what PenguinHarness needs: where the checkout lives, which Agent State runs, and how a trial becomes a score.

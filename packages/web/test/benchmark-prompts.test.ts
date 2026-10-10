@@ -9,6 +9,9 @@
  *   full matrix without offering an optimization; the Optimize tail carries every input the
  *   agent-optimization Skill requires; a note or focus text goes before the tail, a blank one
  *   is left out.
+ * - An RSI toolkit's tail (any method but the default) names the toolkit's own Skill and the
+ *   three inputs every toolkit takes, none of the default loop's Skills or knobs, and pins the
+ *   evaluations to the baseline's provider and model only when it is given both.
  * - The Evaluate tail, one for every Benchmark (Harbor or not), takes the model under test from
  *   the evaluator's own Session, since an agent stores none: in both dictionaries it names the
  *   Environment lines that carry the provider and the model id in the system prompt core renders.
@@ -145,6 +148,53 @@ describe("optimizeTail / buildOptimizePrompt", () => {
     );
     expect(buildOptimizePrompt("   ", params)).toBe(optimizeTail(params));
   });
+});
+
+describe("rsiOptimizeTail (a toolkit other than the default)", () => {
+  const params = {
+    skill: "rsi-opro",
+    label: "OPRO",
+    targetAgentId: "report-writer",
+    benchmarkId: "report-writing-v1",
+    runs: 2,
+  };
+  // The toolkit measures through its own evaluation reference and runs its paper's budget: the
+  // default loop's Skills and knobs would send it down the other procedure.
+  const DEFAULT_LOOP = [
+    "agent-evaluation",
+    "agent-optimization",
+    "run_subagent",
+    "desired_score",
+    "candidate_round_limit",
+  ];
+
+  for (const [locale, dict] of Object.entries({ zh, en })) {
+    it(`${locale}: names the toolkit's Skill and the three inputs every toolkit takes`, () => {
+      const tail = dict.benchmark.rsiOptimizeTail(params);
+      expect(tail).toContain("`rsi-opro`");
+      expect(tail).toContain("OPRO");
+      expect(tail).toContain("`report-writer`");
+      expect(tail).toContain("`report-writing-v1`");
+      expect(tail).toContain("`benchmarks/report-writing-v1/`");
+      expect(tail).toMatch(/runs[：:] ?`2`/);
+      expect(tail).toContain("scoreboard.yaml");
+      for (const marker of DEFAULT_LOOP) expect(tail).not.toContain(marker);
+    });
+
+    it(`${locale}: pins the baseline's provider and model only when given both`, () => {
+      const pinned = dict.benchmark.rsiOptimizeTail({
+        ...params,
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+      });
+      expect(pinned).toMatch(/provider[：:] ?`deepseek`/);
+      expect(pinned).toMatch(/model_id[：:] ?`deepseek-v4-pro`/);
+      expect(dict.benchmark.rsiOptimizeTail(params)).not.toMatch(/provider|model_id/);
+      // Half a pair is no pair: the toolkit stops on one rather than guessing the other half.
+      const half = dict.benchmark.rsiOptimizeTail({ ...params, provider: "deepseek" });
+      expect(half).not.toMatch(/provider|model_id/);
+    });
+  }
 });
 
 describe("askEvaluationTail (the evaluation dialog's Ask AI question)", () => {

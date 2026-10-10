@@ -17,7 +17,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 在侧边栏中选择**评估中心**。这个页面（`/benchmark`）以卡片形式列出当前 Project 的所有 Benchmark。
 
-标题下方有三张带编号的步骤卡片，概括了整个循环：**出题**、**评估**和**优化**。每张卡片都写明在哪里做这一步：用右上角的创建按钮，或者在某个 Benchmark 上点**使用**，再选对应的标签页。owner 有**用 AI 创建**和**手动创建**两个按钮；成员只有**用 AI 创建**，第一张卡片也只写这一个。
+标题下方有三张带编号的步骤卡片，概括了整个循环：**出题**、**评估**和**优化**。每张卡片都写明在哪里做这一步：用右上角的创建按钮，或者在某个 Benchmark 上点**使用**，再选对应的标签页；**优化**卡片还提示可以换一种自进化算法。owner 有**用 AI 创建**和**手动创建**两个按钮；成员只有**用 AI 创建**，第一张卡片也只写这一个。
 
 每张 Benchmark 卡片显示：
 
@@ -59,7 +59,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 - 执行评估的 Agent 所在机器装有 Docker（含 Compose v2）和 [uv](https://docs.astral.sh/uv/)，并能访问 GitHub、Docker Hub、nodejs.org、npm 仓库和模型服务。
 - 评估所用的模型，即评估会话的模型，已在**模型库**页面保存了 API key。评估会把这一条模型配置复制进每个任务容器，不需要 Vault。
-- 执行评估的 Agent 的 `agent-evaluation` Skill 来自 `agent-tuning` 2026.10.09.1 或更新版本。在此之前创建的 Agent 保留着旧副本，需要在**智能体**页面更新这个插件。
+- 执行评估的 Agent 的 `agent-evaluation` Skill 为 2026.10.09.1 或更新版本。它随 `rsi-default` 提供，该插件在 2026.10.09.3 及更早的版本中名为 `agent-tuning`。在此之前创建的 Agent 保留着旧副本，需要在**插件市场**页面更新这个插件。
 
 它们和其他 Benchmark 一样评估，见[评估 Agent](#评估-agent)。执行评估的 Agent 的 `agent-evaluation` Skill 从题干认出这类题，并按仓库里的规则运行：评估先按题干给出的提交取一次仓库，再为每道题的每次运行跑一次 Harbor trial，同时至多四个，因为每个 trial 都要占用主机上数量有限的 Docker 网络。被测 Agent 带着自己的 Agent State 在任务容器里运行，一次 trial 从几分钟到一小时左右不等（含镜像构建）。每次 trial 的文件，包括 Agent 的 Trace 和验证器的输出，都留在该 Benchmark 的 `.jobs/` 目录下；这次运行记在 Session id `harbor:<trial 名>` 名下，评估详情弹窗里可以复制它。
 
@@ -172,23 +172,26 @@ Builder 试测题目和记录基线分时，都用这个新对话的模型来运
 
 ## 优化 Agent
 
-优化每次按一个假设改动 Agent，分数严格提高才保留新版本。比较的起点是这个 Agent 在当前 Benchmark 上的基线分。
+优化用一种自进化算法（**方法**）改进 Agent。默认方法每次按一个假设改动 Agent，分数严格提高才保留新版本，比较的起点是这个 Agent 在当前 Benchmark 上的基线分。其他方法各自运行同名的 RSI 工具包，见 [RSI 工具包](/self-improvement#rsi-工具包)。
 
 **开始之前**
 
-- 这个 Agent 在当前 Benchmark 上已有一次完整的评估。用 AI 创建的 Benchmark 已经为它的被测智能体测过一次；其他情况下，先[评估这个 Agent](#评估-agent)。
+- 使用默认方法时，这个 Agent 在当前 Benchmark 上已有一次完整的评估。用 AI 创建的 Benchmark 已经为它的被测智能体测过一次；其他情况下，先[评估这个 Agent](#评估-agent)。其他方法会自己先测出 Agent 的起点分数。
 
 1. 在 Benchmark 卡片或 Benchmark 页面的页头上，选择**使用**，再切到**优化**标签页。
-2. 在**被测智能体**中，选择要改进的 Agent。标签页上会显示它当前的基线分和目标分数。
-3. 在**执行优化的智能体**中，选择实际执行优化的 Agent。它需要装有 `agent-optimization` Skill，没装时对话框会提醒你。
-4. 设置**每题运行次数**、**最多轮数**（默认 3）和**目标分数**。目标分数默认是基线分向上取整后加 10，最高 100。
-5. 可选：修改**优化会话使用的模型**（预设为 Project 的默认模型），并填写**优化重点**。
-6. 选择**在新对话中编辑**，检查提示词，然后发送。
+2. 在**方法**中选择 **Default（试跑 → 反思 → 提升）**、**OPRO**、**APE**、**ACE** 或 **AWM**。字段下方的提示说明所选方法做什么。
+3. 在**被测智能体**中，选择要改进的 Agent。标签页上会显示它当前的基线分和目标分数。
+4. 在**执行优化的智能体**中，选择实际执行优化的 Agent。它需要装有该方法的 Skill：Default 为 `agent-optimization`，其他方法为与其插件同名的 Skill（`rsi-opro`、`rsi-ape`、`rsi-ace` 或 `rsi-awm`）。没装时对话框会提醒你。
+5. 设置**每题运行次数**。使用 Default 时，还要设置**最多轮数**（默认 3）和**目标分数**；目标分数默认是基线分向上取整后加 10，最高 100。
+6. 可选：修改**优化会话使用的模型**（预设为 Project 的默认模型），并填写**优化重点**。
+7. 选择**在新对话中编辑**，检查提示词，然后发送。
 
-达到目标分数时，优化会提前结束，否则在跑满最多轮数后结束。优化过程中的评估沿用基线记录的模型和思考等级。每个采纳的版本都会在同一条曲线上添一个点，版本号显示在**版本**列和这个点的悬停提示里。
+使用 Default 时，达到目标分数优化会提前结束，否则在跑满最多轮数后结束。优化过程中的评估沿用基线记录的模型和思考等级。每个采纳的版本都会在同一条曲线上添一个点，版本号显示在**版本**列和这个点的悬停提示里。
+
+使用其他方法时，**最多轮数**和**目标分数**会隐藏：预算由方法自定，即论文的默认值降为冒烟档，除非**优化重点**另有要求。提示词把被测智能体、Benchmark 和每题运行次数交给该方法的 Skill，要求它按原论文的流程运行、固定被测智能体的 Runtime、经工具包自带的评测参考测量，并把每条完整评估以同一标签记入记分板。
 
 > [!WARNING]
-> 被测的 Agent 在这个 Benchmark 上还没有基线分时，标签页会提示你先到**评估**标签页取得基线分，目标分数也默认为 80。这时仍然可以发送，但 `agent-optimization` Skill 会停下来，说明它需要基线分。
+> 被测的 Agent 在这个 Benchmark 上还没有基线分时，标签页会提示你先到**评估**标签页取得基线分，目标分数也默认为 80。这时仍然可以发送，但使用默认方法时 `agent-optimization` Skill 会停下来，说明它需要基线分。
 
 ## 替换 Benchmark
 
@@ -218,6 +221,7 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 - **用 AI 创建。** 提示词的固定结尾把被测智能体的 id、期望的基线分和 Pilot 迭代上限交给 `benchmark-design` Skill，并要求取得基线分。
 - **手动创建。** 服务端按 Skill 读取的目录结构，把表单内容写入磁盘（`POST …/benchmarks`，仅 owner），状态为 `published`。
 - **评估。** 提示词要求通过自行派生的 `agent-evaluation` 子 Agent，在本会话自己的模型上跑完完整的 Case × runs 矩阵；执行评估的 Agent 从系统提示词的 `Provider` 与 `Model ID` 两行读出这个模型。每条结果报告的 Agent、模型和思考等级都必须一致，最后只向 `scoreboard.yaml` 追加一条带标签的评估。被测的 Agent 和 Benchmark 都保持不变。
+- **优化。** 使用 Default 时，提示词的固定结尾把被测智能体、Benchmark、每题运行次数、目标分数和最多轮数交给 `agent-optimization`；使用其他方法时，交给该方法的 Skill 的只有被测智能体、Benchmark 和每题运行次数，预算由方法自定。**方法**列表与插件库 Agent 自进化分类的插件一一对应。
 - **删除。** 服务端整目录删除（`DELETE …/benchmarks/:id`）。评估还在运行时删除 Benchmark，可能留下一个目录，因为运行中的评估还在往里写。这个目录没有 `benchmark_config.toml`，不会出现在列表里，可以手动删除。
 - **示例与内置 Benchmark。** 在 Project 创建时写入，此后不再写入。早先版本的 Project 保留已有的内容，不会得到内置 Benchmark。
-- **内置 Benchmark。** 它们的清单与普通 Benchmark 无异，来源为 `builtin`；每道题的题干写明任务在仓库固定提交下的文件夹，并链接仓库里的运行规则，`agent-evaluation` Skill 照此运行。它的 `reference/harbor.md` 只补充 PenguinHarness 需要的部分：检出放在哪里、运行哪份 Agent State、trial 如何折算成分数。
+- **内置 Benchmark。** 它们的清单与普通 Benchmark 无异，来源为 `builtin`；每道题的题干写明任务在仓库固定提交下的文件夹，并链接仓库里的运行规则，`agent-evaluation` Skill 与 RSI 工具包的评测参考都照此运行。`agent-evaluation` 的 `reference/harbor.md` 只补充 PenguinHarness 需要的部分：检出放在哪里、运行哪份 Agent State、trial 如何折算成分数。

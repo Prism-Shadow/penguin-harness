@@ -3,7 +3,7 @@
   "version": "0.2.13",
   "private": true,
   "type": "module",
-  "description": "PenguinHarness \u2014 TypeScript AI Agent (SDK + CLI).",
+  "description": "PenguinHarness \u2014 Unified and Stable RSI Framework: automatically improve model \u00d7 harness (TypeScript SDK, CLI, server and Web App).",
   "engines": {
     "node": ">=24"
   },

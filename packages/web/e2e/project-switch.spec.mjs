@@ -101,16 +101,16 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await page.getByRole("link", { name: "插件市场" }).click();
   await expect(page).toHaveURL(/\/plugins$/);
   // The installed section is folded on entry; its cards are inert until it is opened. The
-  // library's plugin is agent-tuning; agent-initialization is one of its skills.
+  // library's plugin is rsi-default; agent-initialization is one of its skills.
   await page.getByRole("button", { name: /已安装的插件|Installed plugins/ }).click();
-  await page.getByRole("button", { name: "管理安装 agent-tuning" }).click();
+  await page.getByRole("button", { name: "管理安装 rsi-default" }).click();
   await expect(page.getByRole("button", { name: "卸载 default_agent" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   // Staying on the plugin library page while switching to target: the same-named default_agent's state must flip to "Install" (not installed).
   await page.getByRole("button", { name: U }).first().click();
   await byName.first().click();
-  await page.getByRole("button", { name: "管理安装 agent-tuning" }).click();
+  await page.getByRole("button", { name: "管理安装 rsi-default" }).click();
   await expect(page.getByRole("button", { name: "安装 default_agent" })).toBeVisible();
   await page.keyboard.press("Escape");
 });

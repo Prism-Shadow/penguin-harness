@@ -1,0 +1,13 @@
+{
+  "description": "The ACE RSI Toolkit: Agentic Context Engineering (Zhang et al., 2025), the sequential offline algorithm — a Reflector reads each training Trace, a Curator folds the lessons into a playbook of rules the Target reads before every task, and the final playbook is measured on the frozen Benchmark. Self-contained: it creates the Target's playbook Skill, evaluates its own cells and writes the Evaluation Center's scoreboard.",
+  "description_zh": "ACE RSI 工具包：按论文《Agentic Context Engineering》（Zhang 等，2025）的顺序离线算法——Reflector 逐条阅读训练轨迹，Curator 把教训并入 Target 每次任务前都会读的规则手册（playbook），最终手册在冻结的 Benchmark 上测量。自成一体：自行创建 Target 的手册 Skill、自行评测每个单元、写入评估中心的记分板。",
+  "short_description": "ACE RSI Toolkit: evolve a playbook from Traces.",
+  "short_description_zh": "ACE RSI 工具包：从轨迹进化规则手册。",
+  "version": "2026.10.10.1",
+  "category": "rsi",
+  "quick_start": {
+    "prompt": "Use the `rsi-ace` Skill to run ACE on an agent of this Project: ask me for the Test Agent and the published Benchmark to train on, initialize the playbook, run one epoch at the smoke budget, and report the baseline and final scores.",
+    "prompt_zh": "使用 `rsi-ace` 技能在本 Project 的一个智能体上运行 ACE：先问我被测智能体与用于训练的已发布 Benchmark，初始化规则手册，以冒烟预算跑一个 epoch，报告基线分与最终分。",
+    "skills": ["rsi-ace"]
+  }
+}

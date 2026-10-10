@@ -1,0 +1,13 @@
+{
+  "description": "The APE RSI Toolkit: Large Language Models are Human-Level Prompt Engineers (Zhou et al., 2022), non-iterative forward generation with execution scoring — the proposer induces candidate instructions from input/output demonstrations, every candidate is measured on the frozen Benchmark, and the best is kept. Self-contained: it creates the Target's instruction slot, evaluates its own cells and writes the Evaluation Center's scoreboard.",
+  "description_zh": "APE RSI 工具包：按论文《Large Language Models are Human-Level Prompt Engineers》（Zhou 等，2022）的非迭代前向生成与执行评分——提议者从输入 / 输出示例归纳候选指令，每个候选都在冻结的 Benchmark 上测量，保留最优者。自成一体：自行创建 Target 的指令槽、自行评测每个单元、写入评估中心的记分板。",
+  "short_description": "APE RSI Toolkit: induce an instruction from examples.",
+  "short_description_zh": "APE RSI 工具包：从示例归纳指令。",
+  "version": "2026.10.10.1",
+  "category": "rsi",
+  "quick_start": {
+    "prompt": "Reproduce APE (Automatic Prompt Engineer, Zhou et al. 2022) on the house-style brief task that ships with the `rsi-ape` Skill: a fresh agent, a 6-case Benchmark, and the score before and after.",
+    "prompt_zh": "在 `rsi-ape` 技能自带的「公司格式简报」任务上复现 APE（Automatic Prompt Engineer，Zhou 等，2022）：新建一个 Agent、一套 6 题的 Benchmark，给我看优化前后的分数。",
+    "skills": ["rsi-ape"]
+  }
+}

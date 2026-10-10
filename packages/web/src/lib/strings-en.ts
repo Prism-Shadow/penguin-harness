@@ -2769,11 +2769,22 @@ export const en: Strings = {
     onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
-    draftSubtitle: "The self-evolving agent that excels at AI development tasks",
+    draftSubtitle: "The most comprehensive agent self-evolution platform",
+    /**
+     * The derived counts under the slogan (GET /api/rsi). The draft screen links each half to the
+     * page that lists it, so the two halves stay joined by exactly one " · ".
+     */
+    draftStats: (toolkits: number, benchmarks: number): string =>
+      `${toolkits} self-evolution algorithm${toolkits === 1 ? "" : "s"} · ` +
+      `${benchmarks} Benchmark reproduction${benchmarks === 1 ? "" : "s"}`,
+    /** Where each half of that line leads, as its accessible description. */
+    draftStatsToolkits: "See the self-evolution toolkits in the plugin library",
+    draftStatsBenchmarks: "Open the Evaluation Center",
     /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
     exampleFolders: {
+      rsi: "Reproduce self-evolution algorithms",
       webapps: "Build web apps",
-      agents: "Build and optimize agents",
+      agents: "Build agents",
       schedules: "Create scheduled tasks",
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
@@ -2917,7 +2928,7 @@ Scenarios:
 3. Choose investment actions from a strategy, historical markets, and current indicators.`,
       },
       agentOptimization: {
-        label: "Improve the general-purpose decision agent's accuracy",
+        label: "Default RSI Toolkit: improve the decision agent's accuracy",
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
@@ -2927,6 +2938,23 @@ Scenarios:
 - runs: \`3\`
 - desired_score: \`>=95\`
 - candidate_round_limit: \`5\``,
+      },
+      rsiApe: {
+        label: "Reproduce APE: induce an instruction from examples",
+        desc: "Run APE on the house-style brief task shipped with rsi-ape; and compare six held-out cases before and after",
+        prompt:
+          "Reproduce APE (Automatic Prompt Engineer, Zhou et al. 2022) on the house-style brief " +
+          "task that ships with the `rsi-ape` Skill: a fresh agent, a 6-case Benchmark, and the " +
+          "score before and after.",
+      },
+      rsiOpro: {
+        label: "Reproduce OPRO: optimize an instruction from scores",
+        desc: "Run 2 steps × 4 proposals on the precise-summary task shipped with rsi-opro and watch the instruction evolve with the scores",
+        prompt:
+          "Use the `rsi-opro` Skill to reproduce OPRO on the precise-summary demo task that " +
+          "ships with it: create the Target agent `summary_writer` and the Benchmark " +
+          "`precise-summary`, measure the seed instruction, run 2 steps × 4 proposals, and " +
+          "report the baseline and best scores.",
       },
       dailyPlan: {
         label: "A 9am daily planning check-in",
@@ -4134,7 +4162,7 @@ Scenarios:
       },
       {
         title: "Optimize",
-        text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves.",
+        text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves. You can also pick another self-evolution algorithm.",
       },
     ],
     /** The first step card's text for a Project member: no Create manually, which is the owner's. */
@@ -4419,7 +4447,7 @@ Scenarios:
     evaluatorAgentHint:
       "The one that spawns the evaluation subagents, scores against the rubric and writes the scoreboard; needs the agent-evaluation Skill",
     evaluatorMissingSkill:
-      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
+      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the rsi-default plugin (Default RSI Toolkit) on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
       "The model this conversation runs on, the Project's default model unless changed; the tested agent is evaluated on this same model, at the thinking level it is configured with",
@@ -4447,7 +4475,7 @@ Scenarios:
     optimizerAgentHint:
       "The one that reads the scores and Traces and edits the Test Agent; needs the agent-optimization Skill",
     optimizerMissingSkill:
-      "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the agent-tuning plugin on it first.",
+      "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the rsi-default plugin (Default RSI Toolkit) on it first.",
     testedAgentHint:
       "The agent whose Agent State is edited; its scores are recorded under it and compared only against its own same-label history",
     sessionModel: "Model of the optimizer's conversation",
@@ -4482,6 +4510,61 @@ Scenarios:
       "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
       "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
       "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
+    methodField: "Method",
+    methodHint:
+      "The self-evolution algorithm that improves the agent; each one is a toolkit from the plugin library",
+    methods: {
+      default: {
+        label: "Default (trial → reflect → improve)",
+        blurb:
+          "The default loop: one falsifiable hypothesis and one bounded change per round; kept only when the score strictly improves",
+      },
+      opro: {
+        label: "OPRO",
+        blurb: "Proposes instructions from the scored history (Yang et al., 2023)",
+      },
+      ape: {
+        label: "APE",
+        blurb: "Induces an instruction from input/output examples (Zhou et al., 2022)",
+      },
+      ace: { label: "ACE", blurb: "Evolves a playbook from training Traces (Zhang et al., 2025)" },
+      awm: {
+        label: "AWM",
+        blurb: "Induces workflow memory from successful trajectories (Wang et al., 2024)",
+      },
+    },
+    methodBudgetHint:
+      "This method sets its own budget: the paper's defaults reduced to a smoke profile, unless Focus says otherwise",
+    methodOptimizerHint: (skill: string): string =>
+      `The one that runs the method and edits the Test Agent; needs the ${skill} Skill`,
+    methodMissingSkill: (plugin: string, skill: string): string =>
+      `This agent does not have the ${skill} Skill installed and cannot run this method — install the ${plugin} plugin on it from the plugin library, or switch to the default agent.`,
+    rsiOptimizeTail: (p: {
+      skill: string;
+      label: string;
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      provider?: string;
+      modelId?: string;
+    }): string => {
+      const pinned =
+        p.provider && p.modelId
+          ? `- provider: \`${p.provider}\`\n- model_id: \`${p.modelId}\`\n`
+          : "";
+      return (
+        `Use the \`${p.skill}\` Skill to reproduce ${p.label} on the Test Agent against its frozen Benchmark.\n\n` +
+        `- test_agent_id: \`${p.targetAgentId}\`\n` +
+        `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
+        `- runs: \`${p.runs}\`\n` +
+        pinned +
+        "\n" +
+        (pinned !== "" ? "Evaluate with exactly this provider and model. " : "") +
+        "Run the method the way its paper does, at the Skill's smoke budget unless I set one above; ask me only for inputs the method requires and I have not given. " +
+        "Measure the baseline and every candidate through the Skill's own evaluation reference, keep the Test Agent's runtime fixed, record every complete evaluation in `scoreboard.yaml` under the same label, " +
+        "and finish by reporting the baseline score, the final score, the retained version and what the method changed."
+      );
+    },
   },
 
   /** Company mode: the organization switcher and dialogs, and the six organization pages. */

@@ -3,7 +3,7 @@ title: Introduction
 description: What PenguinHarness is, what ships in the box, and where to start.
 ---
 
-Welcome to the PenguinHarness documentation. PenguinHarness is an open-source agent harness for building, running, evaluating and improving AI agents, built as one TypeScript stack. It deploys fully locally, so everything it stores stays on your machine; it runs on as little as a single CPU, and one unified model gateway reaches 1000+ online and local models.
+Welcome to the PenguinHarness documentation. PenguinHarness is the **Unified and Stable RSI Framework**: an open-source agent harness that automatically improves model × harness, so that any model, any algorithm and any agent can recursively self-improve. The model stays fixed; the harness — prompts, Skills, tools, hooks — is what evolves, and every self-evolution algorithm runs on the same Benchmarks, scoreboards and snapshots. It is built as one TypeScript stack, deploys fully locally, runs on as little as a single CPU, and reaches 1000+ online and local models through one gateway.
 
 ## Get started
 
@@ -13,7 +13,7 @@ Work through these pages in order:
 2. [Key concepts](/concepts): learn the terms these docs use, such as Project, Session, Task and Workspace.
 3. [Conversations](/chat): work with an agent in a conversation and follow what it does.
 4. [Agents](/agents): create agents and configure their prompts, Skills, memory and tools.
-5. [Evaluation Center](/evaluation-center): measure an agent against a Benchmark and improve it.
+5. [Evaluation Center](/evaluation-center): measure an agent against a Benchmark and improve it with the self-evolution algorithm of your choice.
 
 ## What ships in the box
 
@@ -29,13 +29,13 @@ PenguinHarness is made of these components. They share one data root and one mes
 
 ## The three pillars
 
-PenguinHarness is summed up in one line, **Efficient Self-Improving Harness for Everyone**, and organized around three concepts: the message protocol, the SDK and the skill library. Each concept carries one pillar:
+PenguinHarness is summed up in one line, **Unified and Stable RSI Framework — automatically improve model × harness**, and organized around three concepts: the message protocol, the SDK and the skill library. Each concept carries one pillar:
 
 | Pillar | Meaning |
 | --- | --- |
 | **Simplest Is the Best** | A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, and complex tasks done efficiently. |
 | **Harness for Building Agents** | With the PenguinHarness SDK, an agent builds complete agent applications for you, autonomously and from scratch. |
-| **Harness for Recursive Self-Improvement** | With PenguinHarness Skills, an agent evaluates and optimizes itself, improving recursively over time. |
+| **Harness for Recursive Self-Improvement** | With the RSI toolkits — the Default loop, OPRO, APE, ACE and AWM — an agent evaluates and optimizes itself, improving recursively over time; see [Self-Improvement](/self-improvement). |
 
 ## Design tenets
 
