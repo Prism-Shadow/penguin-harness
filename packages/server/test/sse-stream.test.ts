@@ -140,8 +140,12 @@ describe("sse-stream", () => {
     expect(res.status).toBe(200);
     const reader = res.body!.getReader();
     // The hello frame proves the subscription is live — and therefore registered — before
-    // the reset lands.
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain("hello");
+    // the reset lands; the ping that follows it is the last of the opening frames.
+    let opening = "";
+    while (!opening.includes("event: ping")) {
+      opening += new TextDecoder().decode((await reader.read()).value);
+    }
+    expect(opening).toContain("hello");
 
     const admin = await loginAdmin(t.app);
     const reset = await apiClient(t.app, admin.cookie).post(

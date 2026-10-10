@@ -71,6 +71,7 @@ import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
+import { streamWriteTimeout } from "./http/stream-stall.js";
 import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
@@ -391,6 +392,10 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     const ms = Math.round(performance.now() - start);
     log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
   });
+
+  // An event stream whose peer stopped reading is destroyed, so the client reconnects
+  // (http/stream-stall.ts). Here rather than on the SSE routes: only the host holds the socket.
+  app.use("*", streamWriteTimeout);
 
   // Canonical-host guard (loopback binds only): the App is served on one loopback name and
   // previews on its counterpart, but the SAME process answers on both. Without this, Agent-
