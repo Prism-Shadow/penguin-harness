@@ -2,9 +2,11 @@
  * The built-in Benchmarks, as a new Project's provisioning writes them.
  *
  * - A new Project's benchmarks/ holds the example and five published built-ins, each with one
- *   run per case, no evaluations and at least one case, and no staging left behind.
- * - Every built-in's config is a plain Benchmark config: title, description, runs and status,
- *   nothing that marks how its cases run.
+ *   run per case, no evaluations and at least one case, and no staging left behind; each is
+ *   written in the package format, a benchmark_config.toml that names its id, a date version and
+ *   origin `builtin`, and that the manifest reader takes as written.
+ * - Every built-in's manifest is a plain Benchmark manifest: its id, title, description, a date
+ *   version, status, runs and origin `builtin`, nothing that marks how its cases run.
  * - Every case is one Harbor task: its directory names the task after `CASE-NNN-` within the
  *   API's id rules; its statement links the task's folder in the repository, the repository's
  *   rules for running a task and the measured results, and launches that same task with its
@@ -34,6 +36,7 @@ import {
   isValidId,
   loadAgentState,
   provisionProjectBenchmarks,
+  readBenchmarkManifest,
   type BuiltinBenchmark,
 } from "../src/state/index.js";
 import { BUILTIN_BENCHMARKS } from "../src/state/builtin-benchmarks-data.js";
@@ -77,6 +80,7 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+/** The Benchmark's benchmark_config.toml, as the file holds it. */
 async function readConfig(benchmarkId: string): Promise<Record<string, unknown>> {
   return parseToml(
     await fs.readFile(path.join(dir(), benchmarkId, "benchmark_config.toml"), "utf8"),
@@ -135,16 +139,33 @@ describe("built-in Benchmarks", () => {
     }
   });
 
-  it("every built-in's config is a plain Benchmark config: title, description, runs, status and nothing else", async () => {
+  it("every Benchmark a new Project starts with is written in the package format, which the manifest reader takes as written", async () => {
+    await provision();
+
+    for (const id of [EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS]) {
+      const manifest = await readBenchmarkManifest(path.join(dir(), id));
+      expect(manifest?.id, id).toBe(id);
+      expect(manifest?.version, id).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
+      expect(manifest?.origin, id).toEqual({ kind: "builtin" });
+      expect(await readConfig(id), id).toEqual(manifest);
+    }
+  });
+
+  it("every built-in's manifest is a plain Benchmark manifest, seeded as builtin, with nothing that marks how its cases run", async () => {
     await provision();
 
     for (const id of BUILTIN_IDS) {
-      expect(Object.keys(await readConfig(id)).sort(), id).toEqual([
+      const config = await readConfig(id);
+      expect(Object.keys(config).sort(), id).toEqual([
         "description",
+        "id",
+        "origin",
         "runs",
         "status",
         "title",
+        "version",
       ]);
+      expect(config.origin, id).toEqual({ kind: "builtin" });
     }
   });
 

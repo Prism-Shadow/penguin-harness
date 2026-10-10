@@ -17,6 +17,8 @@ The PenguinHarness server exposes a same-origin HTTP API that the bundled Web Ap
 { "error": { "code": "<machine-readable code>", "message": "<user-facing text>" } }
 ```
 
+An error that names something a client acts on adds `details`, an object of strings beside `code` and `message`: a 409 `benchmark_exists` names the id in `details.benchmarkId`. Read such facts from `details`, never from the message, which is prose.
+
 ## Source layout
 
 ```text
@@ -543,15 +545,19 @@ Benchmarks belong to the Project, not to an agent: one Benchmark can evaluate an
 | --- | --- | --- |
 | GET | `/benchmarks` | Benchmark scoring data |
 | POST | `/benchmarks` | Creates a Benchmark by hand (owner only) |
-| DELETE | `/benchmarks/:benchmarkId` | Deletes a Benchmark directory with its cases, config and scoreboard (owner only; 204, or 404 when absent) |
+| DELETE | `/benchmarks/:benchmarkId` | Deletes a Benchmark directory with its cases, manifest and scoreboard (owner only; 204, or 404 when absent) |
+| POST | `/benchmarks/archive` | Imports a Benchmark package from a zip: `{dataBase64, overwrite?, origin?}` → 201 `{benchmark}` (any member) |
+| GET | `/benchmarks/:benchmarkId/archive` | Exports a published Benchmark's package as a zip (any member) |
 | GET | `/benchmarks/:benchmarkId/cases` | A Benchmark's cases: each case's id and the heading of its statement README. Rubrics are never returned |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files` | Browses one case's `statement/` |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files/content` | Reads one file of the statement (`?path=`, `?preview=1`, `?download=1`) |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files` | Browses one case's `rubric/` |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content` | Reads one file of the rubric, with the same parameters |
 
-- `GET /benchmarks` lists only directories that hold a `benchmark_config.toml`. A directory without one, which is what a Benchmark deleted during an evaluation leaves behind, is skipped. Each entry carries `status`: `draft` while the Skill is still building the Benchmark, `failed` when its calibration never finished, and `published` otherwise.
-- `POST /benchmarks` takes `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}` and answers 201 `{benchmark}`. The server writes `benchmark_config.toml` (with `status = "published"`), a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (with the title as its heading) and `rubric/README.md`. Ids use the same characters as agent ids, and case ids start with `CASE-`. If the directory already exists, the route returns 409 `benchmark_exists`.
+- `GET /benchmarks` lists only directories that hold a `benchmark_config.toml`. A directory without one, which is what a Benchmark deleted during an evaluation leaves behind, is skipped. Each entry carries `status` (`draft` while the Skill is still building the Benchmark, `failed` when its calibration never finished, and `published` otherwise) and, when the manifest has them, the date `version` and the `origin` (`{kind, url?, ref?, path?, importedAt?}`, `kind` one of `builtin`, `manual`, `agent`, `git`, `zip`); a manifest written by an earlier release has neither. A Benchmark whose manifest cannot be used is listed under its directory name as `failed`, with `manifestError` (`{code, message}`; `code` is `benchmark_manifest_invalid` or `benchmark_id_mismatch`) and without `version` or `origin`. A manifest the filesystem cannot read fails the request.
+- `POST /benchmarks` takes `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}` and answers 201 `{benchmark}`. The server writes `benchmark_config.toml` (with the `id`, `status = "published"`, the day's first version and origin `manual`), a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (with the title as its heading) and `rubric/README.md`. Ids use the same characters as agent ids, and case ids start with `CASE-`. If the directory already exists, the route returns 409 `benchmark_exists`.
+- `POST /benchmarks/archive` takes a zip of up to 14MB holding `benchmark_config.toml` and the `CASE-*` directories, at its root or inside exactly one top-level directory named by the manifest's `id`; a manifest at the root, with no directory to name it, must give its `id`. Anything else at the top level, `scoreboard.yaml` and `.jobs/` included, an entry starting with `.` there, a symbolic link, an entry name holding a control character or matching another but for letter case, a case without `statement/README.md` and `rubric/README.md`, a manifest the list would mark as unusable, or one past the limits the server writes to (a title of 1 to 200 characters, a description of at most 2,000, at most 1,000 runs) is refused with 400 (`benchmark_archive_invalid`, `benchmark_case_invalid`, or the manifest's own code); a `status` other than `published` is 400 `benchmark_not_published`. Over 14MB, 1000 files, 5MB in one file or 20MB in all, it is 413 `benchmark_too_large`. The server writes the cases as they are, the manifest with its `id`, the origin `{kind: "zip", imported_at}` and the package's own version (none when the package has none), and a `scoreboard.yaml` with `evaluations: []`. A request that names the repository folder the package was fetched from, `origin: {kind: "git", url, ref, path}` (an http(s) link, the 40-character commit it resolved to and the folder, as [`penguin benchmark import`](/cli#penguin-benchmark) sends it), gets the origin `git` with those fields and `imported_at` instead; any other `origin` is 400. An id that is taken returns 409 `benchmark_exists`, whose `details.benchmarkId` names it, unless `overwrite` is true, which replaces the whole directory, its scoreboard and `.jobs/` included. While `.jobs/` holds a trial without its `result.json`, or a Test Agent State packed for one (`*.agent-state.tar.gz`), an evaluation is still writing there, and an overwrite returns 409 `benchmark_busy` instead.
+- `GET /benchmarks/:benchmarkId/archive` names the file `<id>-v<version>.zip` (`<id>.zip` for a Benchmark without a version) and packs `<id>/benchmark_config.toml` as it reads on disk with every `CASE-*` tree, leaving out the scoreboard, `.jobs/`, other entries starting with `.` and symbolic links; the zip imports back through `POST /benchmarks/archive` unchanged. Every entry carries the same fixed time, so exporting an unchanged Benchmark again gives the same bytes. A draft or failed Benchmark returns 409 `benchmark_not_published`; one whose manifest cannot be used, or is past the limits an import holds it to, returns 409 with the manifest's code; a missing one 404, and one past the import's size limits 413 `benchmark_too_large`.
 - The file-content routes apply the same inline hardening as Workspace files; see [Workspace file responses](#workspace-file-responses).
 
 ## Organizations (company mode)
@@ -1182,7 +1188,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 
 ### Wire Format
 
-Default (unnamed) SSE events carry raw OmniMessage envelopes as single-line JSON: the same protocol the SDK yields and the Trace stores (see [OmniMessage Protocol](/omni-message)). Events named `server_event` carry the `ServerEvent` union:
+Default (unnamed) SSE events carry raw OmniMessage envelopes as single-line JSON: the same protocol the SDK yields and the Trace stores (see [OmniMessage Protocol](/omni-message)). Events named `ping` are the heartbeat (see [Delivery Guarantees](#delivery-guarantees)). Events named `server_event` carry the `ServerEvent` union:
 
 ```ts
 export type ServerEvent =
@@ -1256,9 +1262,10 @@ export type ServerEvent =
 
 - Event ids increase monotonically per channel and have the form `<epoch>-<seq>`.
 - Each channel keeps a bounded replay buffer: the most recent 10,000 events or 8MB.
-- On reconnect with `Last-Event-ID`, the server replays the gap if the id is still in the buffer. Otherwise it first sends `resync_required`, and the client refetches `/messages` before continuing.
-- A heartbeat comment line is written every 20 seconds. The same beat re-checks the session behind the connection and ends the stream when that session is gone or has expired, so a client whose sign-in was revoked stops streaming instead of waiting for its next request to fail. Revoking sessions directly — an admin resetting a password or deleting an account — ends that user's open streams at once; the heartbeat is the catch-all. A stream authenticated by the local API token has no session row and is left alone.
-- Event order: on a reconnect that carries `Last-Event-ID`, the replayed gap (or `resync_required`) arrives first, then the initial events (the authoritative `task_state` snapshot and any still-pending `approval_request`s), then the live stream. A fresh connection without `Last-Event-ID` skips the replay, so its first event is the `task_state` snapshot.
+- On reconnect with `Last-Event-ID`, the server replays the gap if the id is still in the buffer. Otherwise it first sends `resync_required`, and the client refetches `/messages` before continuing. A client that opens a new connection itself can pass the id as the `lastEventId` query parameter instead, since an `EventSource` cannot set headers. When both are present, the header wins.
+- A `ping` event (`data: {}`, no `id:` line) is sent right after the initial events and then every 20 seconds. A browser hands it to the page, unlike a comment line, so a client that has received one can treat a long silence as a dead connection. Without an id it moves neither the client's `Last-Event-ID` nor the replay position. The same beat re-checks the session behind the connection and ends the stream when that session is gone or has expired, so a client whose sign-in was revoked stops streaming instead of waiting for its next request to fail. Revoking sessions directly — an admin resetting a password or deleting an account — ends that user's open streams at once; the heartbeat is the catch-all. A stream authenticated by the local API token has no session row and is left alone.
+- A stream whose socket sends nothing for 40 seconds (up to 80 while a write is pending) is closed. With a `ping` every 20 seconds, only a peer that stopped reading, as behind a half-open connection or a stuck proxy, lets a stream go that quiet. A client that is still there finds the stream ended, reconnects and resumes from its last event id.
+- Event order: on a reconnect that carries `Last-Event-ID` (or `lastEventId`), the replayed gap (or `resync_required`) arrives first, then the initial events (the authoritative `task_state` snapshot and any still-pending `approval_request`s), then a `ping`, then the live stream. A fresh connection without either skips the replay, so its first event is the `task_state` snapshot.
 
 ### Recommended Client Pattern
 
@@ -1269,6 +1276,7 @@ The bundled Web App connects in this order:
 3. If the response carries `live` (a Task is running), drop the buffered partial events the cursor already covers and apply `live.fragments` on top of the history. The in-progress message reappears with its streamed prefix intact.
 4. Replay the buffer, removing the overlap.
 5. Continue with the live stream.
+6. Once the stream has sent a `ping`, treat 50 seconds without any event as a dead connection: close it and reconnect with `?lastEventId=` set to the last id received. Check at once when the page becomes visible, since background timers run late. A stream that never sends `ping` comes from a server older than the heartbeat event; leave it to the browser's own reconnection.
 
 ## Type Imports
 

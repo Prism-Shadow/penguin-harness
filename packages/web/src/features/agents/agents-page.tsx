@@ -8,6 +8,8 @@
  * tool / skill / hook / memory / vault-key / schedule counts deep-link to the settings page's
  * matching tab (?tab=tools|skills|hooks|memory|vault|schedules) and appear in the settings tabs'
  * order.
+ * A click anywhere on a card's body goes to the Agent's settings page (lib/card-open.ts), and every
+ * control inside it acts on its own; the Agent's name is the link to that page, the keyboard's way in.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
  * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
@@ -18,7 +20,8 @@
  * .claude/skills. A plain new Agent otherwise starts with none.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import type { ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
@@ -44,6 +47,7 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { OPENS_DETAIL_CLASS, cardBodyClick } from "../../lib/card-open";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges } from "../../lib/use-update-badges";
@@ -106,6 +110,61 @@ export function AgentApiMark({ enabled }: { enabled: boolean }) {
       <GlyphIcon d={ICONS.plug} size={ICON_SIZE.inlineGlyph} />
       <span className="sr-only">{S.agent.apiOn}</span>
     </span>
+  );
+}
+
+/**
+ * An Agent's card: a click anywhere on its body goes to the Agent's settings page, while each
+ * control inside it (the name's link, New chat, Settings, the stat links, Usage, Delete, the
+ * update pill) acts on its own. The card itself is no control; the keyboard's way in is the name
+ * (`AgentNameLink`). An Agent that lives only on a machine has no settings page on this server,
+ * so its card opens nothing.
+ */
+export function AgentCard({
+  onOpen,
+  children,
+}: {
+  /** Enters the Agent's settings page; null for an Agent this server does not have. */
+  onOpen: (() => void) | null;
+  children: ReactNode;
+}) {
+  return (
+    <Card
+      padding="md"
+      className={`flex flex-wrap items-center gap-x-6 gap-y-2 ${onOpen === null ? "" : OPENS_DETAIL_CLASS}`}
+      {...(onOpen === null ? {} : { onClick: cardBodyClick(onOpen) })}
+    >
+      {children}
+    </Card>
+  );
+}
+
+/**
+ * The Agent's name on its card: a link to the Agent's settings page — the card's keyboard way in,
+ * and a real address a middle click opens in a new tab — or plain text for an Agent this server
+ * does not have.
+ */
+export function AgentNameLink({
+  agentId,
+  name,
+  onFollow,
+}: {
+  agentId: string;
+  name: string;
+  /** What following the link also does (make it the current Agent); null for plain text. */
+  onFollow: (() => void) | null;
+}) {
+  // min-w-0: a flex child does not shrink below its content by default, and a long name must truncate.
+  const className = "min-w-0 truncate text-base font-bold";
+  if (onFollow === null) return <span className={className}>{name}</span>;
+  return (
+    <Link
+      to={`/agents/${agentId}`}
+      onClick={onFollow}
+      className={`${className} rounded-sm hover:underline`}
+    >
+      {name}
+    </Link>
   );
 }
 
@@ -277,6 +336,12 @@ export function AgentsPage() {
     navigate(`/agents/${agentId}?tab=${tab}`);
   };
 
+  /** Where a click on a card's body goes: the page its "Settings" button opens. */
+  const openSettings = (agentId: string) => {
+    setCurrentAgentId(agentId);
+    navigate(`/agents/${agentId}`);
+  };
+
   const doDelete = async () => {
     if (!projectId || !deleting) return;
     setBusy(true);
@@ -409,11 +474,7 @@ export function AgentsPage() {
             const elsewhere = machineName !== null;
             const elsewhereTitle = machineName === null ? "" : S.agent.livesOnMachine(machineName);
             return (
-              <Card
-                key={a.agentId}
-                padding="md"
-                className="flex flex-wrap items-center gap-x-6 gap-y-2"
-              >
+              <AgentCard key={a.agentId} onOpen={elsewhere ? null : () => openSettings(a.agentId)}>
                 {/* Info column: once it can't fit within 14rem, everything after it
                     (sparkline/buttons) wraps as a whole. The avatar counts as the first line
                     (same line as the name); description/stats share the same left edge as the
@@ -427,10 +488,11 @@ export function AgentsPage() {
                       size={18}
                       className="shrink-0 rounded"
                     />
-                    {/* min-w-0: flex children don't shrink below their content by default; needed here to truncate overly long names */}
-                    <span className="min-w-0 truncate text-base font-bold">
-                      {agentDisplayName(a)}
-                    </span>
+                    <AgentNameLink
+                      agentId={a.agentId}
+                      name={agentDisplayName(a)}
+                      onFollow={elsewhere ? null : () => setCurrentAgentId(a.agentId)}
+                    />
                     {machineName !== null && (
                       <span
                         className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
@@ -446,9 +508,9 @@ export function AgentsPage() {
                     <Badge>v{a.version}</Badge>
                     {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
                         names the state in words rather than as another bare dot — a capsule in
-                        the version badge's own geometry, tinted the same pale red the dots on
-                        this trail carry, opening the settings overview where the update action
-                        lives. */}
+                        the version badge's own geometry, in the attention tint (behind is
+                        unfinished, not failed), opening the settings overview where the update
+                        action lives. */}
                     {a.kernelOutdated && (
                       <UpdatePill onClick={() => openSettingsTab(a.agentId, "overview")}>
                         {S.agent.kernelUpdateNeeded}
@@ -630,7 +692,7 @@ export function AgentsPage() {
                     </Button>
                   )}
                 </div>
-              </Card>
+              </AgentCard>
             );
           })}
           {/* Until the Project has an agent of its own, the list ends in the AI path's call to

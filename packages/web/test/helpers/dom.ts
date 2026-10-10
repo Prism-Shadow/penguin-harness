@@ -6,7 +6,8 @@
  * A suite opts in with the `@vitest-environment jsdom` docblock on its first line, renders with
  * {@link mount}, and drives the page the way a user does — {@link click}, {@link type},
  * {@link pressEscape} — through the real event path React listens on. Every helper wraps its
- * work in `act`, so effects have run and state has settled by the time it returns.
+ * work in `act`, so effects have run and state has settled by the time it returns. A node suite
+ * that only asks where a click landed uses the stand-in elements of `fake-dom.ts`.
  */
 import { act } from "react";
 import type { ReactElement } from "react";

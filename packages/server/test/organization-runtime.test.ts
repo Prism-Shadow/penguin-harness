@@ -12,6 +12,7 @@
  * Session (`source: "company"`) stamped with the `org` client; and every pass brings an
  * employee whose company plugins fell behind the library back up to it.
  */
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import path from "node:path";
@@ -575,6 +576,59 @@ describe("organization runtime", () => {
     await expect(
       service.create(P, { orgId: "bad id", mission: "x" }, "alice"),
     ).rejects.toMatchObject({ code: "invalid_org_id" });
+  });
+
+  it("writes the creation layout under the org lock, so a delete landing mid-creation cannot leave a half-made directory behind", async () => {
+    // A delete cannot be timed into the real millisecond window, so the test opens one: the
+    // first writeConfig fires a delete, and — while the layout is written unlocked — holds
+    // create right there until the trash rename has landed, the worst point the race allows.
+    // Under the lock the hold is skipped (create is inside it) and the delete queues behind
+    // the layout instead: the directory is then moved whole, or not at all.
+    const realWriteConfig = store.writeConfig.bind(store);
+    const realTrash = store.trash.bind(store);
+    const realWithLock = scheduler.withLock.bind(scheduler);
+    let trashLanded: () => void = () => {};
+    const trashDone = new Promise<void>((resolve) => {
+      trashLanded = resolve;
+    });
+    let insideOrgLock = false;
+    scheduler.withLock = ((projectId: string, orgId: string, fn: () => Promise<unknown>) =>
+      realWithLock(projectId, orgId, async () => {
+        const restore = insideOrgLock;
+        if (projectId === P && orgId === ORG) insideOrgLock = true;
+        try {
+          return await fn();
+        } finally {
+          insideOrgLock = restore;
+        }
+      })) as typeof scheduler.withLock;
+    store.trash = async (projectId, orgId, stamp) => {
+      const target = await realTrash(projectId, orgId, stamp);
+      trashLanded();
+      return target;
+    };
+    let triggered = false;
+    store.writeConfig = async (dir, cfg) => {
+      await realWriteConfig(dir, cfg);
+      if (triggered) return;
+      triggered = true;
+      void service.delete(P, ORG).catch(() => {});
+      const wasInsideLock = insideOrgLock;
+      if (!wasInsideLock) await trashDone;
+    };
+
+    await expect(
+      service.create(P, { orgId: ORG, mission: "Build it" }, "alice"),
+    ).rejects.toMatchObject({ status: 404, code: "org_not_found" });
+    // The delete may still be queued behind the layout when create fails; wait it out so the
+    // assertions below see the final state of the directory either way.
+    await trashDone;
+    // Either way the caller loses the organization. What must never happen is the leftover:
+    // a directory without its config, which every listing skips while the CEO Agent it
+    // already created keeps the id from being reused.
+    expect(await store.exists(P, ORG)).toBe(false);
+    expect(existsSync(orgDir())).toBe(false);
+    expect(existingAgents.has(CEO)).toBe(true);
   });
 
   it("hires through the API, writes the chart and announces it in the all-hands channel", async () => {
@@ -1380,6 +1434,47 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(1);
     });
 
+    it("retries a one-shot event whose dispatch failed, so desk notices are not stranded", async () => {
+      await createOrg();
+      await hireHr();
+      started.length = 0;
+      // A ticket for HR queues a desk notice; the calendar dispatch is the only thing that
+      // drains the queue.
+      await service.createTicket(
+        P,
+        ORG,
+        { title: "For HR", owner: `agent:${HR}` },
+        { userId: "alice" },
+      );
+      await store.writeCalendarEvent(
+        orgDir(),
+        HR,
+        "sweep",
+        serializeCalendarEvent({
+          prompt: "Sweep the board",
+          enabled: true,
+          startAt: new Date(T0 + 1000).toISOString(),
+        }),
+      );
+      await scheduler.tickOnce(); // registration pass: the start time is still ahead
+      expect(started).toHaveLength(0);
+      nowMs = T0 + 2000;
+      startFails = true;
+      await scheduler.tickOnce(); // the one-shot fires into a failing runner
+      expect(started).toHaveLength(0);
+      expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("error");
+      // The slot is unwound, so the next pass fires the event and drains the notices.
+      startFails = false;
+      await scheduler.tickOnce();
+      expect(started).toHaveLength(1);
+      const parsed = parseOrgTriggerMessage(started[0]!.text);
+      expect(parsed?.rest).toContain("Sweep the board");
+      expect(parsed?.rest).toContain("For HR");
+      // The one-shot is consumed by the pass that finally succeeded — never fired twice.
+      await scheduler.tickOnce();
+      expect(started).toHaveLength(1);
+    });
+
     it("queues behind a busy desk, holds while paused, and consumes silently with the switch off", async () => {
       await createOrg();
       await hireHr();
@@ -1972,6 +2067,42 @@ describe("organization runtime", () => {
       expect(
         board.columns.proposed.find((x) => x.ticketId === t.ticketId)?.blocked,
       ).toBeUndefined();
+    });
+
+    it("holds a blocking ticket's by principal to the chart: a shape-valid id that names nobody is refused", async () => {
+      const t = await service.createTicket(P, ORG, { title: "Launch" }, { userId: "alice" });
+      // A principal that names no employee, or a person outside the Project, is refused
+      // instead of landing on the digest and the board as an unanswerable "(by …)".
+      await expect(
+        service.blockTicket(P, ORG, t.ticketId, "waiting", "agent:acme_ghost", {
+          userId: "alice",
+        }),
+      ).rejects.toMatchObject({ status: 400, code: "invalid_principal" });
+      await expect(
+        service.blockTicket(P, ORG, t.ticketId, "waiting", "user:stranger", { userId: "alice" }),
+      ).rejects.toMatchObject({ status: 400, code: "invalid_principal" });
+      // Real employees and Project members keep working, and a blocking ticket id needs
+      // no principal check at all.
+      await service.blockTicket(P, ORG, t.ticketId, "waiting on review", `agent:${CEO}`, {
+        userId: "alice",
+      });
+      expect((await service.ticket(P, ORG, t.ticketId)).blockedBy).toBe(`agent:${CEO}`);
+      await service.unblockTicket(P, ORG, t.ticketId, { userId: "alice" });
+      await service.blockTicket(P, ORG, t.ticketId, "waiting on review", "user:alice", {
+        userId: "alice",
+      });
+      expect((await service.ticket(P, ORG, t.ticketId)).blockedBy).toBe("user:alice");
+      const blocker = await service.createTicket(
+        P,
+        ORG,
+        { title: "The blocker" },
+        { userId: "alice" },
+      );
+      await service.unblockTicket(P, ORG, t.ticketId, { userId: "alice" });
+      await service.blockTicket(P, ORG, t.ticketId, "waiting for it", blocker.ticketId, {
+        userId: "alice",
+      });
+      expect((await service.ticket(P, ORG, t.ticketId)).blockedBy).toBe(blocker.ticketId);
     });
 
     it("reports a `# Ticket:` file as an invalid file: listed nowhere, refused on write, never rewritten", async () => {
@@ -2949,6 +3080,77 @@ describe("organization runtime", () => {
       });
       // Not fatal: the calendar and the caches behind it in the pass still ran.
       expect(await service.list(P)).toHaveLength(1);
+    });
+  });
+
+  describe("crash-window robustness in the org store", () => {
+    const ticketFile = (ticketId: string, column: string): string =>
+      path.join(orgDir(), "tickets", ticketId.slice(0, 7), column, `${ticketId}.md`);
+
+    it("keeps a ticket on the board when a crash left it in two columns", async () => {
+      await createOrg();
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Duplicated by a crash", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      const raw = await fs.readFile(ticketFile(t.ticketId, "proposed"), "utf8");
+      await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
+      // Recreate the crash window: the old column's file is back (its unlink never ran)
+      // and carries the older mtime, as it would in a real crash — the new column is
+      // written before the old one is removed.
+      await fs.writeFile(ticketFile(t.ticketId, "proposed"), raw, "utf8");
+      const stale = new Date(Date.now() - 60_000);
+      await fs.utimes(ticketFile(t.ticketId, "proposed"), stale, stale);
+
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.in_progress.map((x) => x.ticketId)).toContain(t.ticketId);
+      expect(board.columns.proposed.map((x) => x.ticketId)).not.toContain(t.ticketId);
+      const dup = board.invalidFiles.filter((x) => x.path.includes(t.ticketId));
+      expect(dup).toHaveLength(1);
+      expect(dup[0]?.error).toContain("keeping the newest copy");
+    });
+
+    it("does not swallow a failing removal of the old column on a move", async () => {
+      await createOrg();
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Unremovable origin", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      // Store-level (the service's own ticket lookup would trip over the directory first):
+      // a directory parked where the old column's file lives makes the unlink fail, and
+      // the move must say so instead of leaving the id in two columns in silence.
+      const found = await store.findTicket(orgDir(), t.ticketId);
+      if (!found?.parsed.ok) throw new Error("the ticket file should be there and parsable");
+      const from = ticketFile(t.ticketId, "proposed");
+      await fs.rm(from);
+      await fs.mkdir(from);
+      try {
+        await expect(
+          store.moveTicket(orgDir(), t.ticketId, "proposed", "in_progress", found.parsed.value),
+        ).rejects.toThrow();
+      } finally {
+        await fs.rmdir(from);
+      }
+    });
+
+    it("leaves no temp files behind after ticket writes", async () => {
+      await createOrg();
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "No temp litter", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
+      const monthDir = path.join(orgDir(), "tickets", t.ticketId.slice(0, 7));
+      const names = (await fs.readdir(monthDir, { recursive: true })).map(String);
+      expect(names.filter((n) => n.includes(t.ticketId)).map((n) => path.basename(n))).toEqual([
+        `${t.ticketId}.md`,
+      ]);
     });
   });
 });
