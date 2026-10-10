@@ -3,9 +3,9 @@
  *
  * - The status chip says every state in that state's own word, in the tone the card's mark
  *   wears, with a spinner only while the machine is working; the reason behind the word is there
- *   exactly when there is one — a failure's words, ssh's diagnostic, the line a working job is on,
- *   the version a machine on another build would get (none when this server has no build of its
- *   own). This server's own entry is running.
+ *   exactly when there is one — a failure's words after its step by the name the steps list gives
+ *   it, ssh's diagnostic, the line a working job is on, the version a machine on another build
+ *   would get (none when this server has no build of its own). This server's own entry is running.
  * - The one thing to do: nothing while a job is on its way; Retry after a failure, even on another
  *   build; Update for a machine on another build, connected or not, naming the version; nothing
  *   for a ready machine or one installed as far as it goes; Start server for a stopped server,
@@ -100,6 +100,10 @@ describe("the status chip", () => {
 
   it("gives the far side's own words as the reason, and for another build the version on offer", () => {
     expect(machineChip(failed, IMAGE).reason).toContain(failed.message);
+    // The step a failure stopped at goes by the name the steps list gives it; a step the server
+    // names outside the pipeline, as the server named it.
+    expect(machineChip(failed, IMAGE).reason).toContain(S.machines.step.restart);
+    expect(machineChip({ ...failed, step: "ssh" }, IMAGE).reason).toContain("ssh");
     expect(machineChip(unreachable, IMAGE).reason).toBe(unreachable.detail);
     expect(machineChip(working, IMAGE).reason).toBe(working.step);
     expect(machineChip({ kind: "behind", version: "0.2.12" }, IMAGE).reason).toContain(IMAGE);

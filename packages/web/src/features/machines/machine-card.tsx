@@ -8,6 +8,9 @@
  * card's main button and opens the Machine dialog; a click anywhere else on the body opens it too
  * (lib/card-open.ts), while the verbs on the card act on their own.
  *
+ * Only a mark without words carries a hint — the state mark, the gear: the tooltip layer opens
+ * none on text already on screen. What a stat means, and the machine's own id, the dialog says.
+ *
  * The middle holds the pipeline's stepper while a job for the machine is queued or running and is
  * empty otherwise, so the verbs keep their place when one starts. The verbs: one primary verb —
  * Enable when the machine needs bringing up, Update in its place when it carries another build —
@@ -30,17 +33,27 @@ import {
 import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { OPENS_DETAIL_CLASS, cardBodyClick } from "../../lib/card-open";
-import { formatDateTime, formatRelativeShort } from "../../lib/format";
+import { formatRelativeShort } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
-import { MACHINE_PHASES, outOfDate, readMachine, readingTone, wantsUse } from "./machines-view";
+import {
+  MACHINE_PHASES,
+  outOfDate,
+  readMachine,
+  readingTone,
+  stepLabel,
+  wantsUse,
+} from "./machines-view";
 import type { MachineReading } from "./machines-view";
 
-/** The reason a machine's state gives beside its word, when it has one: the far side's own words. */
+/**
+ * The reason a machine's state gives beside its word, when it has one: the far side's own words,
+ * after the step a failure stopped at, by the name the interface gives it.
+ */
 export function reasonText(reading: MachineReading): string | null {
   switch (reading.kind) {
     case "failed":
-      return `${S.machines.failedAt(reading.step)} ${reading.message}`;
+      return `${S.machines.failedAt(stepLabel(reading.step))} ${reading.message}`;
     case "unreachable":
       return reading.detail;
     case "working":
@@ -141,7 +154,7 @@ export function Stepper({ job, className = "" }: { job: MachineJob; className?: 
         ? S.machines.phase[MACHINE_PHASES[step]!]
         : S.machines.working
       : result !== null && !result.ok
-        ? S.machines.failedAt(result.step)
+        ? S.machines.failedAt(stepLabel(result.step))
         : S.machines.detail.lastJobDone;
   const fill = (index: number): string => {
     if (job.queued || index > step) return "bg-gray-200 dark:bg-gray-700";
@@ -185,10 +198,10 @@ export interface MachineCardProps {
   onConfigure: () => void;
 }
 
-/** One stat on the card's third line: a glyph and a value, its meaning on hover. */
-function Stat({ glyph, tooltip, children }: { glyph: string; tooltip: string; children: string }) {
+/** One stat on the card's third line: a glyph and a value. The dialog says what each one means. */
+function Stat({ glyph, children }: { glyph: string; children: string }) {
   return (
-    <span className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`} data-tooltip={tooltip}>
+    <span className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`}>
       <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
       {children}
     </span>
@@ -232,15 +245,7 @@ export function MachineCard({
               size={ICON_SIZE.navRow}
               className="shrink-0 text-gray-500 dark:text-gray-400"
             />
-            <span
-              className="min-w-0 truncate text-base font-bold"
-              // The machine's own id is a detail you go looking for: on hover here, in full in the dialog.
-              {...(machine.machineId === null
-                ? {}
-                : { "data-tooltip": `${S.machines.detailMachineId} ${machine.machineId}` })}
-            >
-              {machine.alias}
-            </span>
+            <span className="min-w-0 truncate text-base font-bold">{machine.alias}</span>
             {machine.local && (
               <Badge variant="outline" size="sm">
                 {S.machines.localTitle}
@@ -256,26 +261,13 @@ export function MachineCard({
         </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
           {machine.local ? (
-            <Stat glyph={ICONS.house} tooltip={S.machines.card.localTitle}>
-              {S.machines.card.local}
-            </Stat>
+            <Stat glyph={ICONS.house}>{S.machines.card.local}</Stat>
           ) : (
-            <Stat glyph={ICONS.terminalPrompt} tooltip={S.machines.card.sshTitle(machine.alias)}>
-              {S.machines.card.ssh}
-            </Stat>
+            <Stat glyph={ICONS.terminalPrompt}>{S.machines.card.ssh}</Stat>
           )}
-          {port !== null && (
-            <Stat glyph={ICONS.network} tooltip={S.machines.card.port(port)}>
-              {String(port)}
-            </Stat>
-          )}
+          {port !== null && <Stat glyph={ICONS.network}>{String(port)}</Stat>}
           {status !== null && (
-            <Stat
-              glyph={ICONS.clock}
-              tooltip={S.machines.card.checked(formatDateTime(status.checkedAt))}
-            >
-              {formatRelativeShort(status.checkedAt, locale)}
-            </Stat>
+            <Stat glyph={ICONS.clock}>{formatRelativeShort(status.checkedAt, locale)}</Stat>
           )}
         </div>
       </div>

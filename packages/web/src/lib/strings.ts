@@ -150,28 +150,23 @@ export const zh = {
     queued: "排队中，等前面的机器处理完。",
     working: "处理中…",
     failedAt: (step: string) => `失败于「${step}」。`,
-    /** The forced install a failed job may offer; its confirmation says what it does. */
+    /** The forced install a failed job may offer, and how it differs from an install. */
     replaceProgram: "强制安装",
+    replaceProgramWhy: "即使版本已一致，也重新安装程序",
     replaceProgramConfirm: (alias: string) =>
       `在 ${alias} 上强制安装？无论那台机器上现在是什么，都会装上本服务端的构建并重启它的服务，正在用它的人会被打断。`,
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
     refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
-    /** The card's hover on the alias: the machine's own id. */
-    detailMachineId: "机器 ID",
     agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
     updateNotice: (count: number) => `${count} 台机器待更新`,
     /** A machine's card (machine-card.tsx): the stats line and the verbs beside it. */
     card: {
-      /** How this server reaches the machine, and what that means on hover. */
+      /** How this server reaches the machine; the dialog says it in full. */
       local: "本机",
-      localTitle: "本服务端所在的机器，不经 ssh",
       ssh: "ssh",
-      sshTitle: (alias: string) => `经 ssh 别名「${alias}」连接`,
-      port: (port: number) => `API 端口 ${port}`,
-      checked: (time: string) => `上次检查：${time}`,
       /** The pill beside the version of a machine on another build. */
       updateNeeded: "需要更新",
       update: "更新",
@@ -227,7 +222,7 @@ export const zh = {
         tryAgain: "重试连接",
         tryAgainWhy: "再次通过 ssh 连接；请先确认那台机器开着、网络通。",
         retry: "重试",
-        retryWhy: "从头再跑一遍整个流程。",
+        retryWhy: "从头再跑一遍整个流程",
       },
       /** The captions of the two groups of Actions: the single steps, and the ways out. */
       maintenance: "维护",

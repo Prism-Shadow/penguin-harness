@@ -15,6 +15,7 @@ import type {
   MachinePhase,
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
+import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
 
 export type MachineReading =
@@ -67,6 +68,17 @@ const PHASE_COMPLETE: Record<MachinePhase, true> = {
   sync: true,
 };
 void PHASE_COMPLETE;
+
+const isPhase = (step: string): step is MachinePhase =>
+  (MACHINE_PHASES as readonly string[]).includes(step);
+
+/**
+ * A step as the interface names it: one of the pipeline's six by its name in the reader's
+ * language, any other step the server names (a sub-step) as the server named it.
+ */
+export function stepLabel(step: string): string {
+  return isPhase(step) ? S.machines.step[step] : step;
+}
 
 /** The job the server has for a machine — queued, running, or its last finished one. */
 export function jobFor(jobs: readonly MachineJob[], machineId: string): MachineJob | null {

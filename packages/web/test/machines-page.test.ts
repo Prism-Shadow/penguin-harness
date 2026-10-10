@@ -21,6 +21,8 @@
  *   out — each asking its page for its own verb;
  * - explains a failure: the step it stopped at, in the far side's own words, with Force install
  *   only when the failure offers it;
+ * - lists a failure's actions like the verbs of Actions: Retry and Force install, each with what
+ *   it does beside it;
  * - says beside each single step and way out what it does;
  * - holds the single steps while a job is on its way and says why in their place, but never the
  *   ways out; says why Install, Disconnect and Restart wait when there is no build to push,
@@ -29,14 +31,14 @@
  * - offers Reconnect only where the one thing to do does not already connect;
  * - says in Details, as text, ssh's own words for a machine out of reach and the time of the last
  *   check beside how long ago it was;
- * - carries no hint that cannot open: none sits on words already on screen, in any state;
  * - repeats the page's last error, since it covers the notice that says it;
  * - is this server's record alone for its own entry: no verb, no steps, no Actions;
  * - folds a job that finished well into one line with its log closed, and opens a running job's
  *   log.
  *
  * Every state renders a card and a dialog, the state said by the card mark's accessible name and
- * by the dialog's status chip.
+ * by the dialog's status chip, and neither carries a hint that cannot open: none sits on words
+ * already on screen — what a card's stat means, and the machine's id, are the dialog's to say.
  *
  * The update notice counts the machines in use on another build; waved away, it stays down while
  * the same machines are behind and comes back when another falls behind or the build moves.
@@ -477,6 +479,18 @@ describe("the Machine dialog", () => {
     line: shown.lines.get(verb),
   });
 
+  it("lists a failure's actions like the verbs of Actions: Retry and Force install, each with what it does beside it", () => {
+    const shown = dialog(stopped, failedJob(stopped, true));
+    expect(row(shown, "use")).toEqual({
+      disabled: false,
+      line: S.machines.detail.primary.retryWhy,
+    });
+    expect(row(shown, "replaceProgram")).toEqual({
+      disabled: false,
+      line: S.machines.replaceProgramWhy,
+    });
+  });
+
   it("says beside each single step and way out what it does", () => {
     const shown = dialog(ready, null);
     const does: [MachineVerb, string][] = [
@@ -567,20 +581,6 @@ describe("the Machine dialog", () => {
     expect(seen).toContain(formatShortDateTime(checkedAt));
   });
 
-  it.each(HOMES)(
-    "%s: carries no hint that cannot open — none sits on words already on screen",
-    (_, machine, job) => {
-      const { html } = dialog(machine, job, { host: HOST, noImage: true });
-      const hints = elementsOf(readMarkup(html)).filter((el) => "data-tooltip" in el.attrs);
-      // Each fixture has a machine id, whose copy button carries a hint: the markup was read.
-      expect(hints.length).toBeGreaterThan(0);
-      const onWords = hints
-        .filter((el) => seenText(el).trim() !== "")
-        .map((el) => `${el.attrs["data-tooltip"]} — on "${seenText(el).trim()}"`);
-      expect(onWords).toEqual([]);
-    },
-  );
-
   it("repeats the page's last error, since it covers the notice that says it", () => {
     const refused = "This server could not reach its ssh agent.";
     expect(words(dialog(stopped, null, { error: refused }).tree)).toContain(refused);
@@ -611,6 +611,9 @@ describe("every state", () => {
     ["this server", here, null],
     ["stopped", stopped, null],
     ["connected", ready, null],
+    ["connected, its last job done", ready, doneJob(ready)],
+    ["connected, on another build", readyBehind, null],
+    ["not connected", notConnected, null],
     ["on another build", behind, null],
     ["out of reach", unreachable, null],
     ["failed", stopped, failedJob(stopped, true)],
@@ -620,6 +623,27 @@ describe("every state", () => {
     ["installed as far as it goes", winBox, installedJob(winBox)],
     ["never probed", fresh, null],
   ];
+
+  /** The hints in a piece of markup, each with the words of its own a reader sees. */
+  const hintsIn = (html: string) =>
+    elementsOf(readMarkup(html))
+      .filter((el) => "data-tooltip" in el.attrs)
+      .map((el) => ({ hint: el.attrs["data-tooltip"], words: seenText(el).trim() }));
+
+  it.each(cases)(
+    "%s: neither the card nor the dialog carries a hint that cannot open — none sits on words already on screen",
+    (_, machine, job) => {
+      for (const html of [
+        renderToStaticMarkup(createElement(MachineCard, card(machine, job).props)),
+        dialog(machine, job, { host: HOST, noImage: true }).html,
+      ]) {
+        const hints = hintsIn(html);
+        // The card's state mark and the dialog's copy button carry one each: the markup was read.
+        expect(hints.length).toBeGreaterThan(0);
+        expect(hints.filter((found) => found.words !== "")).toEqual([]);
+      }
+    },
+  );
 
   it.each(cases)(
     "%s: renders a card and a dialog, the state said by the mark's name and the dialog's chip",

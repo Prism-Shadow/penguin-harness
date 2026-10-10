@@ -18,7 +18,7 @@ import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
 import { reasonText } from "./machine-card";
 import type { MachineVerb } from "./machine-detail-dialog";
-import { MACHINE_PHASES, readingTone } from "./machines-view";
+import { MACHINE_PHASES, readingTone, stepLabel } from "./machines-view";
 import type { MachineReading } from "./machines-view";
 
 /** The machine's state as one chip: a glyph (or a spinner) and one plain word. */
@@ -291,9 +291,6 @@ export type JobView =
       canReplaceProgram: boolean;
     };
 
-const isPhase = (step: string): step is MachinePhase =>
-  (MACHINE_PHASES as readonly string[]).includes(step);
-
 /**
  * The job as the Progress section shows it: its steps while it is queued or running, or after it
  * failed — with where and why — and nothing but a line once it finished well.
@@ -306,7 +303,7 @@ export function jobView(job: MachineJob): JobView {
   return {
     kind: "failed",
     steps: jobSteps(job),
-    stepName: isPhase(result.step) ? S.machines.step[result.step] : result.step,
+    stepName: stepLabel(result.step),
     message: result.message,
     canReplaceProgram: result.canReplaceProgram === true,
   };

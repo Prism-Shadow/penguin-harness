@@ -12,7 +12,8 @@
  * - Progress, while a job is queued or running and after one: its steps one per line, each marked
  *   done, current, failed or still to come; a job that finished well is a single quiet line. The
  *   log is folded underneath, open while the job runs. A failed job says at which step and in the
- *   far side's own words, with Retry — and Force install when the failure offers it — under it.
+ *   far side's own words, with Retry — and Force install when the failure offers it — listed under
+ *   it, each with what it does.
  * - Actions: the one thing to do next, with what it does beside it; then the single steps and the
  *   ways out, two groups under small ruled captions, each verb on a line of its own: its button,
  *   and beside it what it does. A verb that cannot run now stays in place, disabled, and says why
@@ -71,7 +72,6 @@ import type {
   StepState,
   VerbContext,
   VerbGroup,
-  VerbRow,
 } from "./machine-detail-view";
 import { outOfDate, readMachine } from "./machines-view";
 
@@ -187,10 +187,31 @@ function breakAtSeparators(path: string): ReactNode[] {
 }
 
 /**
+ * A value and its aside after a separator: on one line where the two fit, the aside on a line of
+ * its own where they do not — and then without the separator, which never starts a line. The
+ * aside is pulled back over the room its separator takes and the row clips at its own edge, so a
+ * separator that would start a line falls outside it; on a shared line the value's margin gives
+ * that room back.
+ */
+function WithAside({ value, aside }: { value: ReactNode; aside: string }) {
+  return (
+    <span className="flex flex-wrap overflow-hidden">
+      <span className="mr-[1.25em]">{value}</span>
+      <span className="-ml-[1.25em] whitespace-nowrap text-fg-muted">
+        <span aria-hidden="true" className="inline-block w-[1.25em] text-center">
+          ·
+        </span>
+        {aside}
+      </span>
+    </span>
+  );
+}
+
+/**
  * One fact: the label muted, the value semibold — the part that is read — or muted when quiet;
  * `after` stands beside the value (the id's copy button). What stands behind the value is said in
- * the muted ink: the aside after it, kept whole so a line too short for it moves it down in one
- * piece, and the note on a line of its own under it, its own line breaks kept.
+ * the muted ink: the aside after it, and the note on a line of its own under it, its own line
+ * breaks kept.
  */
 function FactRow({
   fact,
@@ -211,19 +232,15 @@ function FactRow({
       label={<FactLabel icon={fact.icon} label={fact.label} width={labelWidth} />}
       mono={fact.mono}
     >
-      {after === undefined ? (
-        value
-      ) : (
+      {after !== undefined ? (
         <span className="inline-flex items-center gap-1.5">
           {value}
           {after}
         </span>
-      )}
-      {fact.aside !== undefined && (
-        <>
-          {" "}
-          <span className="whitespace-nowrap text-fg-muted">· {fact.aside}</span>
-        </>
+      ) : fact.aside !== undefined ? (
+        <WithAside value={value} aside={fact.aside} />
+      ) : (
+        value
       )}
       {fact.note !== undefined && (
         <span className="block whitespace-pre-line text-fg-muted">{fact.note}</span>
@@ -353,26 +370,56 @@ function GroupCaption({ caption, first }: { caption: string; first: boolean }) {
 }
 
 /**
- * One verb of a group: its button, and beside it what the verb does — or, while something of the
+ * A list of verbs, one per line: every button in a first column as wide as the widest of them,
+ * so every line beside them starts at one edge in either language; one column on a phone.
+ */
+function VerbGrid({ className = "", children }: { className?: string; children: ReactNode }) {
+  return (
+    <div
+      className={`grid justify-items-start gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-x-4 sm:gap-y-1.5 ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * One verb of a list: its button, and beside it what the verb does — or, while something of the
  * machine's holds it, why, after a mark that says the line is a reason. In the muted ink either
  * way: a held verb is waiting, not failing. On a phone the line sits under its button, indented by
  * the button's own padding so it starts under the glyph; from `sm` the pair joins the list's grid.
  */
 function VerbItem({
-  row,
+  verb,
+  glyph,
+  label,
+  why,
+  reason = null,
   held,
-  reason,
+  variant,
   onClick,
 }: {
-  row: VerbRow;
-  held: boolean;
+  verb: MachineVerb;
+  glyph: string;
+  label: string;
+  /** What the verb does. */
+  why: string;
   /** Why the verb waits on the machine; null when nothing of the machine's holds it. */
-  reason: string | null;
+  reason?: string | null;
+  held: boolean;
+  variant?: ButtonVariant;
   onClick: () => void;
 }) {
   return (
     <div className="flex flex-col items-start gap-1 sm:contents">
-      <Verb verb={row.verb} glyph={row.glyph} label={row.label} held={held} onClick={onClick} />
+      <Verb
+        verb={verb}
+        glyph={glyph}
+        label={label}
+        held={held}
+        variant={variant}
+        onClick={onClick}
+      />
       <p className="flex items-start gap-1.5 pl-2.5 text-sm text-fg-muted sm:pl-0">
         {reason !== null && (
           <GlyphIcon
@@ -381,17 +428,16 @@ function VerbItem({
             className="ui-icon-decor mt-1 text-fg-subtle"
           />
         )}
-        <span>{reason ?? row.why}</span>
+        <span>{reason ?? why}</span>
       </p>
     </div>
   );
 }
 
 /**
- * Actions' groups as one list, each group under its caption and each verb on a line of its own.
- * One grid holds both groups, so every button sits in one column as wide as the widest of them
- * and every line starts at one edge, in either language. A request in flight holds every verb
- * without rewriting a line: it lasts a moment, and every row would flicker.
+ * Actions' groups as one list, each group under its caption and each verb on a line of its own;
+ * one grid holds both groups. A request in flight holds every verb without rewriting a line: it
+ * lasts a moment, and every row would flicker.
  */
 function VerbList({
   groups,
@@ -404,7 +450,7 @@ function VerbList({
 }) {
   const hold = S.machines.detail.hold;
   return (
-    <div className="grid justify-items-start gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-x-4 sm:gap-y-1.5">
+    <VerbGrid>
       {groups.map((group, index) => (
         <Fragment key={group.caption}>
           <GroupCaption caption={group.caption} first={index === 0} />
@@ -413,16 +459,19 @@ function VerbList({
             return (
               <VerbItem
                 key={row.verb}
-                row={row}
-                held={verbHold(row.verb, ctx) !== null}
+                verb={row.verb}
+                glyph={row.glyph}
+                label={row.label}
+                why={row.why}
                 reason={reason === null ? null : hold[reason]}
+                held={verbHold(row.verb, ctx) !== null}
                 onClick={() => onAct(row.verb)}
               />
             );
           })}
         </Fragment>
       ))}
-    </div>
+    </VerbGrid>
   );
 }
 
@@ -531,31 +580,32 @@ export function MachineDetailBody({
           {view.kind === "failed" && (
             <p className="mt-3 text-sm">{d.failedAtStep(view.stepName, view.message)}</p>
           )}
-          {/* A failed machine's one thing to do is here, under what went wrong — and only here. */}
+          {/* A failed machine's one thing to do is here, under what went wrong — and only here —
+              listed like the verbs of Actions, each with what it does beside it. */}
           {view.kind === "failed" && primary?.kind === "retry" && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Verb
+            <VerbGrid className="mt-3">
+              <VerbItem
                 verb="use"
                 variant="primary"
                 glyph={primary.glyph}
                 label={primary.label}
+                why={primary.why}
                 held={busy}
                 onClick={() => onAct("use")}
               />
               {view.canReplaceProgram && (
-                <Verb
+                <VerbItem
                   verb="replaceProgram"
-                  // Secondary: the confirmation that follows carries the danger tone, and says
-                  // what a forced install does before anything runs.
+                  // Secondary: the confirmation that follows carries the danger tone.
                   variant="secondary"
                   glyph={ICONS.download}
                   label={m.replaceProgram}
+                  why={m.replaceProgramWhy}
                   held={busy}
                   onClick={() => onAct("replaceProgram")}
                 />
               )}
-              <span className="text-xs text-fg-muted">{primary.why}</span>
-            </div>
+            </VerbGrid>
           )}
           {job.log.length > 0 && <LogFold job={job} />}
         </RuledSection>
