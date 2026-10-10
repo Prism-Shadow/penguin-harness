@@ -845,6 +845,8 @@ export function ChatPage() {
   const routeSessionOffline = routeSessionPending && probeFailedKey === probeKey;
   /** The direct lookup of the routed Session, one per page (route-probe.ts). */
   const [routeProbe] = useState(() => new RouteProbe());
+  /** A row the lookup found while the Session list was still loading, to add once it settles. */
+  const addWhenListed = useRef<SessionInfo | null>(null);
   useEffect(() => {
     routeProbe.track(draft ? null : probeKey, sessionsLoading);
     // NOT gated on `sessionsLoading`: the direct lookup is what opens the conversation, and
@@ -873,9 +875,13 @@ export function ChatPage() {
       probeKey,
       async () => sessionForProject((await api.getSession(routeSessionId)).session, projectId),
       {
-        found: (session) => {
+        found: (session, listLoading) => {
           setFetchedSession(session);
-          addSession(session);
+          // add() invalidates a reload in flight. During the sidebar's first load that threw
+          // the whole load away, leaving the list on this one row and still loading; the
+          // conversation needs only the fetched row, so the list gets it once it has settled.
+          if (listLoading) addWhenListed.current = session;
+          else addSession(session);
           // A Session of an Agent the list has not loaded (company mode creates Agents
           // server-side): fetch the list, or the page has no Agent to render under.
           if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
@@ -899,6 +905,17 @@ export function ChatPage() {
     addSession,
     isSessionDeleted,
   ]);
+  // The row found during the list's first load, added once the list has settled and only if
+  // it did not bring the row itself (one beyond the first page, or an organization's row,
+  // which no list page serves and whose status and title events reach only listed rows).
+  useEffect(() => {
+    const row = addWhenListed.current;
+    if (sessionsLoading || row === null) return;
+    addWhenListed.current = null;
+    if (row.sessionId !== routeSessionId || sessions.some((s) => s.sessionId === row.sessionId))
+      return;
+    addSession(row);
+  }, [sessionsLoading, sessions, routeSessionId, addSession]);
 
   // Auto-select the last conversation when the route doesn't select one: the most recently
   // ACTIVE loaded conversation of the user's own (`user` source), the same rule the collapsed
