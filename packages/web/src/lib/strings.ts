@@ -1458,8 +1458,8 @@ export const zh = {
       ["discard", "不生成摘要，直接丢弃旧上下文，下一轮从新窗口重新开始。"],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "prompt（摘要提示词）",
-    maxTurnsInvalid: "max_turns 必须 > 0 或为 -1",
-    timeoutInvalid: "timeoutMs 必须 > 0 或为 -1",
+    numberInvalid: "必须是 > 0 的整数或 -1",
+    numberCannotClear: "已保存的值不能清空：请填写数值，或点「重置」还原",
     toolFieldInvalid: (name: string, field: string) => `${name}: ${field} 必须是 > 0 的整数或 -1`,
     toolPermission: "permission",
     permissionReadLabel: "Read-only",
@@ -2194,7 +2194,6 @@ export const zh = {
     readOnlyHint: "member 只读；Vault 修改仅 owner 可执行",
     keyHint: "字母、数字与下划线，不能以数字开头",
     keyInvalid: "键名不合法：仅字母、数字与下划线，且不能以数字开头",
-    valueRequired: "值不能为空",
     /**
      * The tab's "add with AI" entry: the dialog's title and lead (an honest warning — a value
      * typed into the prompt reaches the provider, the Trace and the agent's own command line),

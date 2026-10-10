@@ -1417,8 +1417,8 @@ export const en: Strings = {
       ],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "prompt (summarization prompt)",
-    maxTurnsInvalid: "max_turns must be > 0 or -1",
-    timeoutInvalid: "timeoutMs must be > 0 or -1",
+    numberInvalid: "Must be a positive integer or -1",
+    numberCannotClear: "A saved value can't be cleared: enter a number, or use Reset to restore it",
     toolFieldInvalid: (name: string, field: string) =>
       `${name}: ${field} must be a positive integer or -1`,
     toolPermission: "permission",
@@ -2098,7 +2098,6 @@ export const en: Strings = {
     readOnlyHint: "Members are read-only; only the owner can edit the vault",
     keyHint: "Letters, digits and underscores; must not start with a digit",
     keyInvalid: "Invalid name: only letters, digits and underscores, not starting with a digit",
-    valueRequired: "Value must not be empty",
     aiAddTitle: "Add secrets with AI",
     aiAddIntro:
       "A secret value typed here is sent to the model provider, recorded in the conversation's Trace, and shown again in the command the agent runs. The safer way is to let AI create only the key names and tell you what each is for, then fill in the values in the vault by hand.",

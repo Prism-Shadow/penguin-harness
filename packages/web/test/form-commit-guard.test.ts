@@ -39,6 +39,14 @@ const SCAN = scanSources([".tsx", ".ts"]);
 const FORM_MODULES: readonly string[] = [
   "components/account/change-password-dialog.tsx",
   "features/admin/admin-users-page.tsx",
+  "features/agents/agent-settings-page.tsx",
+  "features/agents/api-tab.tsx",
+  "features/agents/create-agent-dialog.tsx",
+  "features/agents/mcp-server-dialog.tsx",
+  "features/agents/memory-tab.tsx",
+  "features/agents/prompt-injection-controls.tsx",
+  "features/agents/vault-add-dialog.tsx",
+  "features/schedules/schedule-form-modal.tsx",
   "features/settings/plugin-config-card.tsx",
   "features/settings/profile-section.tsx",
   "features/settings/proxy-section.tsx",
@@ -53,19 +61,16 @@ const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
     "DeleteUserDialog",
     "a two-step confirmation with nothing typed",
   ],
+  [
+    "features/agents/memory-tab.tsx",
+    "MemoryTab",
+    "its dialogs build a chat prompt (edit, add) or pick an import mode; none of them writes config",
+  ],
 ];
 
 /** Modules that offer Save or Create but do not register yet, with the package converting them. */
 const PENDING_SAVE_FORMS: ReadonlyArray<readonly [string, "WP-B" | "WP-C"]> = [
   ["components/layout/project-dialogs.tsx", "WP-C"],
-  ["features/agents/agent-settings-page.tsx", "WP-B"],
-  ["features/agents/agents-page.tsx", "WP-B"],
-  ["features/agents/api-tab.tsx", "WP-B"],
-  ["features/agents/mcp-servers-section.tsx", "WP-B"],
-  ["features/agents/memory-tab.tsx", "WP-B"],
-  ["features/agents/prompt-injection-controls.tsx", "WP-B"],
-  ["features/agents/save-confirm.tsx", "WP-B"],
-  ["features/agents/vault-tab.tsx", "WP-B"],
   ["features/builtin-browser/homepage-dialog.tsx", "WP-C"],
   ["features/chat/shortcuts-folder.tsx", "WP-C"],
   ["features/company/calendar-page.tsx", "WP-C"],
@@ -79,7 +84,6 @@ const PENDING_SAVE_FORMS: ReadonlyArray<readonly [string, "WP-B" | "WP-C"]> = [
   ["features/messaging/messaging-binding-modal.tsx", "WP-C"],
   ["features/messaging/messaging-panel.tsx", "WP-C"],
   ["features/models/provider-settings-dialog.tsx", "WP-C"],
-  ["features/schedules/schedule-form-modal.tsx", "WP-B"],
 ];
 
 /** Typed controls that still commit from their own handler, with the package fixing them. */
