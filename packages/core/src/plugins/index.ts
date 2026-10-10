@@ -7,9 +7,10 @@
  * directory whose `package.json` is its manifest (npm's own fields plus a `penguin` block — see
  * manifest.ts), an icon (`icon.svg` at the package root unless `penguin.icon` names another;
  * every built-in plugin ships one, and it is the icon of everything the plugin ships), and any
- * of two kinds of content: skills (`skills/<name>/SKILL.md`, installed into an Agent's
- * `agent_state/skills/`) and a hook package (`hooks/*.mjs`, installed into
- * `agent_state/hooks/<plugin>/` together with a generated `hooks.json`). The files are the
+ * of three kinds of content: skills (`skills/<name>/SKILL.md`, installed into an Agent's
+ * `agent_state/skills/`), a hook package (`hooks/*.mjs`, installed into
+ * `agent_state/hooks/<plugin>/` together with a generated `hooks.json`) and MCP servers
+ * (`penguin.mcp_servers`, merged into the Agent's `tools.mcpServers`). The files are the
  * runtime source of truth — read and parsed on every call, no caching (files are small, calls
  * are infrequent) — so editing a file takes effect immediately. The shipped plugins are
  * committed content reached through declared dependencies, so one that fails to load — or
@@ -29,7 +30,7 @@
  *
  * Besides the packages this build ships, the library lists what the operator installed on the
  * server: the packages of the data root's plugin prefix (see useInstalledPluginPrefix) that carry
- * skills or a hook package beside their package.json. Those are the operator's, not the
+ * skills, a hook package or MCP servers beside their package.json. Those are the operator's, not the
  * build's, so they are read leniently: one that will not read is left out with a warning
  * instead of failing the library, a field that will not read is missing with a warning, and a
  * skill without a dated version reads as unversioned.
@@ -48,7 +49,8 @@ import {
   readPluginPackage,
   unscopedPackageName,
 } from "./manifest.js";
-import type { HookCommand, QuickStart, UserPromptTrigger } from "./manifest.js";
+import type { HookCommand, PluginMcpServer, QuickStart, UserPromptTrigger } from "./manifest.js";
+import { collectVaultRefs, resolveMCPServer } from "../environment/mcp/config.js";
 
 export * from "./manifest.js";
 
@@ -147,6 +149,8 @@ export interface LibraryPlugin {
   icon?: string;
   skills: LibrarySkill[];
   hooks?: LibraryHooks;
+  /** The MCP servers the plugin contributes (`penguin.mcp_servers`), each with its full list of setup keys; [] when none. */
+  mcpServers: PluginMcpServer[];
   /** The demo the Plugins page's quick start pre-fills (`penguin.quick_start`, optional). */
   quickStart?: QuickStart;
 }
@@ -504,16 +508,55 @@ export function useInstalledPluginPrefix(dir: string | null): void {
   installedPrefix = dir;
 }
 
+/** What a package carries that installs into an Agent: skills, a hook package, MCP servers. */
+export interface LibraryParts {
+  skills: boolean;
+  hooks: boolean;
+  mcp: boolean;
+}
+
+/** Whether a parsed package.json declares MCP servers: a non-empty `penguin.mcp_servers` list. */
+export function declaresMcpServers(manifest: unknown): boolean {
+  const block =
+    manifest !== null && typeof manifest === "object"
+      ? (manifest as { penguin?: unknown }).penguin
+      : undefined;
+  const servers =
+    block !== null && typeof block === "object"
+      ? (block as { mcp_servers?: unknown }).mcp_servers
+      : undefined;
+  return Array.isArray(servers) && servers.length > 0;
+}
+
 /**
- * Whether a package directory is a library plugin: skills or a hook package beside its
- * package.json. A package of server modules alone is not one — it has nothing to install into
- * an Agent.
+ * What a package directory carries for an Agent — `skills/`, `hooks/`, MCP servers its
+ * package.json declares (read once; a package.json that will not read declares none). The one
+ * rule every surface decides "is this a library plugin" by: the loader, the server's upload and
+ * install checks, the CLI.
+ */
+export function libraryParts(dir: string): LibraryParts {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+  } catch {
+    manifest = undefined;
+  }
+  return {
+    skills: fs.existsSync(path.join(dir, "skills")),
+    hooks: fs.existsSync(path.join(dir, "hooks")),
+    mcp: declaresMcpServers(manifest),
+  };
+}
+
+/**
+ * Whether a package directory is a library plugin: skills, a hook package or MCP servers beside
+ * its package.json. A package of server modules alone is not one — it has nothing to install
+ * into an Agent.
  */
 export function isLibraryPackage(dir: string): boolean {
-  return (
-    fs.existsSync(path.join(dir, "package.json")) &&
-    (fs.existsSync(path.join(dir, "skills")) || fs.existsSync(path.join(dir, "hooks")))
-  );
+  if (!fs.existsSync(path.join(dir, "package.json"))) return false;
+  const parts = libraryParts(dir);
+  return parts.skills || parts.hooks || parts.mcp;
 }
 
 /**
@@ -682,7 +725,9 @@ function stampSkill(
  * dated `penguin.hooks.version` (no hook package is listed), `penguin.hooks` without `hooks/`, a
  * quick start naming skills the package does not ship (those names are dropped), an icon that
  * will not do, a skill directory whose name is not a skill name (left out), a file left out of a
- * skill for not being text. A shipped plugin must read clean,
+ * skill for not being text, an MCP server whose config the server resolver refuses (left out;
+ * its references are checked as written, so one in the server's address is a fault), a setup key
+ * its server's config never references (dropped). A shipped plugin must read clean,
  * so for one of those any warning throws; an installed package lists with the field missing,
  * and the warning goes to the log.
  */
@@ -736,6 +781,7 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
     warnings.push("penguin.hooks is declared but the package carries no hooks/; ignored");
   }
   for (const rel of skipped) warnings.push(`${rel} is not a text file; it is not installed`);
+  const mcpServers = readMcpServerEntries(penguin.mcpServers ?? [], warnings);
   let quickStart = penguin.quickStart;
   if (quickStart?.skills !== undefined) {
     const unknown = quickStart.skills.filter((n) => !skills.some((s) => s.name === n));
@@ -780,8 +826,39 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
       }),
     ),
     ...(hooks !== undefined ? { hooks } : {}),
+    mcpServers,
     ...(quickStart !== undefined ? { quickStart } : {}),
   };
+}
+
+/**
+ * A package's MCP servers as the library lists them: each one the server resolver accepts with
+ * its references as written, its setup keys completed with every `${KEY}` its config references
+ * (declared ones first, in their order), a declared key nothing references dropped.
+ */
+function readMcpServerEntries(declared: PluginMcpServer[], warnings: string[]): PluginMcpServer[] {
+  const servers: PluginMcpServer[] = [];
+  for (const server of declared) {
+    try {
+      resolveMCPServer({ name: server.name, config: server.config });
+    } catch (err) {
+      warnings.push(
+        `penguin.mcp_servers: server "${server.name}": ${err instanceof Error ? err.message : String(err)}; it is not listed`,
+      );
+      continue;
+    }
+    const refs = collectVaultRefs(server.config);
+    const setup = server.setup.filter((item) => {
+      if (refs.includes(item.key)) return true;
+      warnings.push(
+        `penguin.mcp_servers: server "${server.name}" lists setup key ${item.key}, which its config never references; ignored`,
+      );
+      return false;
+    });
+    for (const key of refs) if (!setup.some((item) => item.key === key)) setup.push({ key });
+    servers.push({ ...server, setup });
+  }
+  return servers;
 }
 
 /** Reads every plugin in the library (one per plugin package: the shipped ones, see pluginRoots, and the installed ones, see useInstalledPluginPrefix), sorted by name. */

@@ -15,7 +15,8 @@
  *   carries `penguin.hooks.version`.
  * - A shipped skill without a dated version, or shipped `hooks/` without
  *   `penguin.hooks.version`, fails the load naming the file, rather than reading as a version
- *   every install is behind; so does any other warning-level fault in a shipped package.
+ *   every install is behind; so does any other warning-level fault in a shipped package, an MCP
+ *   server entry the resolver refuses among them.
  *
  * What the operator installed on the server, on a fixture prefix (useInstalledPluginPrefix):
  * - A package of Skills the prefix depends on joins the library as installed, under its name
@@ -33,6 +34,13 @@
  *   out; the text beside it installs byte for byte). A safe icon is kept from its `<svg>` root on.
  * - An old package that still carries a plugin.json lists by its directories; nothing is read
  *   from the plugin.json.
+ * - A package of MCP servers alone (`penguin.mcp_servers`, no skills/ or hooks/) is a library
+ *   plugin: it lists its servers, each with every vault key its config references — declared
+ *   ones with their labels first — and whether it offers OAuth sign-in. An empty server list
+ *   makes no plugin.
+ * - A server entry the resolver refuses (an unknown transport, a vault reference in the host), a
+ *   bad or repeated server name and a setup key nothing references are dropped, one warning
+ *   each; the valid servers still list.
  */
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -45,6 +53,7 @@ import {
   comparePluginVersions,
   groupPlugins,
   isSafeIconSvg,
+  libraryParts,
   libraryPlugin,
   librarySkill,
   loadLibraryPlugins,
@@ -72,6 +81,7 @@ const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
   version: "0.2.13",
   preinstall: true,
   skills: [],
+  mcpServers: [],
   ...(category !== undefined ? { category } : {}),
 });
 
@@ -393,6 +403,13 @@ describe("plugin versions, on a fixture library", () => {
       "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
     });
     expect(() => loadLibraryPlugins()).toThrow(/package\.json: penguin\.category must be a string/);
+    await fs.rm(root!, { recursive: true, force: true });
+
+    await library({
+      "package.json": pkg({ mcp_servers: [{ name: "nowhere", config: { transport: "ws" } }] }),
+      "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
+    });
+    expect(() => loadLibraryPlugins()).toThrow(/penguin\.mcp_servers: server "nowhere"/);
   });
 });
 
@@ -479,7 +496,7 @@ describe("packages the operator installed on the server", () => {
   });
 
   it("leaves out a package of server modules alone, a name the build ships, and npm's own dependencies", async () => {
-    await setUp(["@acme/sandbox-x", "@other/sample"], {
+    await setUp(["@acme/sandbox-x", "@other/sample", "@acme/nothing"], {
       // A server module's card: a penguin block, with nothing to install into an Agent.
       "@acme/sandbox-x": {
         "package.json": JSON.stringify({
@@ -490,6 +507,14 @@ describe("packages the operator installed on the server", () => {
         "ifaces.json": "{}",
       },
       "@other/sample": notes("@other/sample"),
+      // An empty server list is no content.
+      "@acme/nothing": {
+        "package.json": JSON.stringify({
+          name: "@acme/nothing",
+          version: "1.0.0",
+          penguin: { mcp_servers: [] },
+        }),
+      },
       // Installed by npm beside the packages the prefix asked for, not by the operator.
       "left-pad": notes("left-pad"),
     });
@@ -667,6 +692,98 @@ describe("packages the operator installed on the server", () => {
     expect(old.skills.map((s) => s.name)).toEqual(["old"]);
     for (const key of ["descriptionZh", "category", "hooks"])
       expect(old, key).not.toHaveProperty(key);
+  });
+
+  it("lists a package of MCP servers alone, each server with every vault key it references", async () => {
+    const config = {
+      transport: "http",
+      url: "https://mail.example.com/mcp",
+      headers: { "X-Team": "${MAIL_TEAM}" },
+      oauth: {
+        scopes: ["mail.read"],
+        client_id: "${MAIL_CLIENT_ID}",
+        client_secret: "${MAIL_CLIENT_SECRET}",
+      },
+    };
+    await setUp(["@acme/mail"], {
+      "@acme/mail": {
+        "package.json": JSON.stringify({
+          name: "@acme/mail",
+          version: "0.1.9",
+          description: "Mail.",
+          penguin: {
+            mcp_servers: [
+              {
+                name: "mail",
+                config,
+                setup: [
+                  {
+                    key: "MAIL_CLIENT_ID",
+                    label: "OAuth client ID",
+                    label_zh: "OAuth 客户端 ID",
+                    help: "https://console.example.com/credentials",
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    });
+    const dir = path.join(root!, "prefix", "node_modules", "@acme", "mail");
+    expect(libraryParts(dir)).toEqual({ skills: false, hooks: false, mcp: true });
+    const mail = libraryPlugin("mail")!;
+    expect(mail).toMatchObject({ source: "installed", version: "0.1.9", skills: [] });
+    expect(mail.hooks).toBeUndefined();
+    expect(mail.mcpServers).toEqual([
+      {
+        name: "mail",
+        config,
+        oauth: true,
+        setup: [
+          {
+            key: "MAIL_CLIENT_ID",
+            label: "OAuth client ID",
+            labelZh: "OAuth 客户端 ID",
+            help: "https://console.example.com/credentials",
+          },
+          { key: "MAIL_TEAM" },
+          { key: "MAIL_CLIENT_SECRET" },
+        ],
+      },
+    ]);
+  });
+
+  it("drops a server entry the resolver refuses, a bad or repeated server name and an unreferenced setup key, one warning each", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await setUp(["@acme/tools"], {
+      "@acme/tools": {
+        "package.json": JSON.stringify({
+          name: "@acme/tools",
+          version: "1.0.0",
+          penguin: {
+            mcp_servers: [
+              { name: "local", config: { command: "node", args: ["${PLUGIN_ROOT}/server.mjs"] } },
+              { name: "nowhere", config: { transport: "ws", url: "wss://tools.example.com" } },
+              { name: "moving", config: { url: "https://${TOOLS_HOST}/mcp" } },
+              { name: "bad name", config: { command: "x" } },
+              { name: "local", config: { command: "again" } },
+              { name: "extra", config: { command: "x" }, setup: [{ key: "UNUSED" }] },
+            ],
+          },
+        }),
+      },
+    });
+    expect(libraryPlugin("tools")!.mcpServers.map((s) => [s.name, s.setup])).toEqual([
+      ["local", []],
+      ["extra", []],
+    ]);
+    const said = logged(warn);
+    expect(said).toContain('server "nowhere": unknown transport');
+    expect(said).toContain('server "moving"');
+    expect(said).toContain("penguin.mcp_servers[3].name must be a server name");
+    expect(said).toContain('the server name "local" is used twice');
+    expect(said).toContain("setup key UNUSED, which its config never references");
   });
 
   it("reads a local package directory the way the library will (readLibraryPackage), refusing one without a release version", async () => {

@@ -175,6 +175,66 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
   }, 30_000);
 });
 
+describe("MCP servers whose entry references the Agent's vault", () => {
+  let dir: string;
+
+  beforeAll(async () => {
+    dir = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-vault-")));
+  });
+
+  afterAll(async () => {
+    await rmEventually(dir);
+  }, 30_000);
+
+  it("reports a server whose vault key is missing without contacting it, and connects it with the value once the vault has the key", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const toolConfig = {
+      customTools: [],
+      mcpServers: [fixtureEntry({ env: { FIXTURE_SECRET: "${FIXTURE_SECRET}" } })],
+    };
+    const env = new Environment({ workspaceDir: dir, toolConfig });
+    try {
+      // Needs setup: reported like a failed server, with no time spent on it.
+      expect(env.pendingMcpServerNames()).toEqual(["fx"]);
+      expect(await env.listTools()).toEqual([]);
+      expect(env.mcpConnectResults()).toEqual([
+        {
+          server: "fx",
+          transport: "stdio",
+          status: "fatal",
+          duration_ms: 0,
+          error_code: "mcp_needs_setup",
+          error_message: "needs setup: vault key FIXTURE_SECRET is not set",
+        },
+      ]);
+      const printed = () => stderr.mock.calls.map((call) => String(call[0])).join("");
+      expect(printed()).toContain(
+        'MCP server "fx" skipped: needs setup: vault key FIXTURE_SECRET is not set',
+      );
+
+      // The next context has the key: the server connects, and its process gets the value.
+      env.reconfigure({ toolConfig, vault: { FIXTURE_SECRET: "first-value" } });
+      expect(env.pendingMcpServerNames()).toEqual(["fx"]);
+      let probe = finalPayload(await runTool(env, "mcp__fx__probe", {}));
+      expect(probe.output).toMatch(/^first-value\|/);
+
+      // Same value: the connection is kept. A changed value is a changed server: it reconnects.
+      env.reconfigure({ toolConfig, vault: { FIXTURE_SECRET: "first-value" } });
+      expect(env.pendingMcpServerNames()).toEqual([]);
+      env.reconfigure({ toolConfig, vault: { FIXTURE_SECRET: "second-value" } });
+      expect(env.pendingMcpServerNames()).toEqual(["fx"]);
+      probe = finalPayload(await runTool(env, "mcp__fx__probe", {}));
+      expect(probe.output).toMatch(/^second-value\|/);
+
+      expect(printed()).not.toContain("first-value");
+      expect(printed()).not.toContain("second-value");
+    } finally {
+      env.dispose();
+      stderr.mockRestore();
+    }
+  });
+});
+
 describe("MCP over stdio through Environment", () => {
   let tmp: string;
   let env: Environment;
@@ -839,16 +899,20 @@ describe("MCP over Streamable HTTP", () => {
     await new Promise((resolve) => httpServer.close(resolve));
   });
 
-  it("discovers and calls tools over http, sending the configured headers on every request", async () => {
+  it("discovers and calls tools over http, sending the configured headers — vault references filled in — on every request", async () => {
     const tmp = await mkdtemp(path.join(tmpdir(), "penguin-mcp-http-"));
     const env = new Environment({
       workspaceDir: tmp,
       toolConfig: {
         customTools: [],
         mcpServers: [
-          { name: "web", config: { transport: "http", url, headers: { "x-penguin-test": "yes" } } },
+          {
+            name: "web",
+            config: { transport: "http", url, headers: { "x-penguin-test": "${WEB_HEADER}" } },
+          },
         ],
       },
+      vault: { WEB_HEADER: "yes" },
     });
     try {
       const tools = await env.listTools();

@@ -3,13 +3,17 @@
  * (`name`, `version`, `description`, `keywords`, `author`, `homepage`, `repository`, `license`)
  * and one namespaced block, `penguin`, holding every field that is this product's — the display
  * name, the Chinese and the card's descriptions, the category, the icon, whether default_agent
- * preinstalls it, the quick start and the hook package. A namespaced block tells a reader (and
+ * preinstalls it, the quick start, the hook package and the MCP servers it contributes. A namespaced block tells a reader (and
  * this reader) exactly which keys are ours, the way `prettier` or `eslintConfig` sit in a
  * package.json, and lets the npm-standard fields keep their npm meaning. A package without the
  * block reads as one with an empty block.
  *
  * Content is found by convention and never declared: `skills/<name>/SKILL.md`, `hooks/*.mjs`,
- * `ifaces.json` (with `dist/`) for server modules, and `README.md` for the detail dialog.
+ * `ifaces.json` (with `dist/`) for server modules, and `README.md` for the detail dialog. An MCP
+ * server is a declaration with no file behind it, so it sits in the block: `penguin.mcp_servers`,
+ * entries in the shape of system_config.yaml's `tools.mcpServers`, whose `${KEY}` references
+ * name the vault values the user supplies (`setup`) and which installing on an Agent merges into
+ * that Agent's list.
  *
  * parsePluginPackage is the one reader every surface goes through — core's loader, the check an
  * uploaded or a local package passes (readLibraryPackage), the server's listing. It refuses only
@@ -23,6 +27,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { MCP_SERVER_NAME_PATTERN } from "../environment/mcp/config.js";
 
 /** Character rule for plugin, skill and hook names (directory names): prevents path traversal (exported for the server's archive-install validation). */
 export const PLUGIN_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -75,6 +80,30 @@ export interface PluginHooksDeclaration {
   user_prompt: HookCommand[];
 }
 
+/** One vault key a plugin's MCP server needs before it can connect (`penguin.mcp_servers[].setup[]`). */
+export interface PluginSetupKey {
+  /** The vault key, referenced as `${KEY}` in the server's config. */
+  key: string;
+  label?: string;
+  labelZh?: string;
+  /** Where to get the value (a URL), or one sentence. */
+  help?: string;
+}
+
+/**
+ * One MCP server a plugin contributes (`penguin.mcp_servers[]`): the `tools.mcpServers` entry an
+ * install writes, its `${KEY}` references and `${PLUGIN_ROOT}` as written.
+ */
+export interface PluginMcpServer {
+  name: string;
+  /** Exactly the `config` of a system_config.yaml entry. */
+  config: Record<string, unknown>;
+  /** The vault keys the user supplies: as the manifest declares them; the loader completes the list with every `${KEY}` the config references (an undeclared one has no label: the key is shown). */
+  setup: PluginSetupKey[];
+  /** `config.oauth` is present: the server offers OAuth sign-in. */
+  oauth: boolean;
+}
+
 /** The `penguin` block of a plugin's package.json, as read: every field optional, unknown keys ignored. */
 export interface PluginPackageFields {
   /** Display name (`title`); absent → the plugin name. */
@@ -93,6 +122,8 @@ export interface PluginPackageFields {
   quickStart?: QuickStart;
   /** The hook package, declared beside `hooks/`. */
   hooks?: PluginHooksDeclaration;
+  /** The MCP servers the package contributes (`mcp_servers`); absent when it declares none. */
+  mcpServers?: PluginMcpServer[];
 }
 
 /** A plugin's package.json, read and checked. */
@@ -301,6 +332,8 @@ export function parsePluginPackage(
   if (quickStart !== undefined) penguin.quickStart = quickStart;
   const hooks = readHooks(block.hooks, warnings);
   if (hooks !== undefined) penguin.hooks = hooks;
+  const mcpServers = readMcpServers(block.mcp_servers, warnings);
+  if (mcpServers.length > 0) penguin.mcpServers = mcpServers;
 
   return {
     manifest: {
@@ -368,6 +401,107 @@ function readHooks(value: unknown, warnings: string[]): PluginHooksDeclaration |
     pre_tool_use: hookCommands(value.pre_tool_use, "penguin.hooks.pre_tool_use", warnings),
     user_prompt: hookCommands(value.user_prompt, "penguin.hooks.user_prompt", warnings),
   };
+}
+
+/** The vault's key rule (shell variable names); `PLUGIN_ROOT` is reserved for the package directory. */
+const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * `penguin.mcp_servers`: each entry needs a server name (unique in the package) and a `config`
+ * object; an `oauth` in it must be an object whose `scopes` is a list of strings and whose
+ * `client_id` / `client_secret` are strings. An entry that fails is dropped with a warning, and
+ * so is a `setup` item that is not a vault key with optional text fields. Whether the config
+ * resolves to a transport is the loader's check (readPluginDir), with the server resolver.
+ */
+function readMcpServers(value: unknown, warnings: string[]): PluginMcpServer[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    warnings.push("penguin.mcp_servers must be a list of servers; ignored");
+    return [];
+  }
+  const servers: PluginMcpServer[] = [];
+  for (const [index, entry] of (value as unknown[]).entries()) {
+    const at = `penguin.mcp_servers[${index}]`;
+    if (!isRecord(entry)) {
+      warnings.push(`${at} must be an object with a name and a config; ignored`);
+      continue;
+    }
+    const { name, config } = entry;
+    if (typeof name !== "string" || !MCP_SERVER_NAME_PATTERN.test(name)) {
+      warnings.push(
+        `${at}.name must be a server name (letters, digits, "_" and "-", starting with a letter or a digit); ignored`,
+      );
+      continue;
+    }
+    if (servers.some((server) => server.name === name)) {
+      warnings.push(`${at}: the server name "${name}" is used twice; ignored`);
+      continue;
+    }
+    if (!isRecord(config)) {
+      warnings.push(`${at}.config must be an object; ignored`);
+      continue;
+    }
+    if (config.oauth !== undefined && !isOAuthBlock(config.oauth)) {
+      warnings.push(
+        `${at}.config.oauth must be an object with optional scopes (a list of strings), client_id and client_secret; the server is ignored`,
+      );
+      continue;
+    }
+    servers.push({
+      name,
+      config,
+      setup: readSetupKeys(entry.setup, `${at}.setup`, warnings),
+      oauth: config.oauth !== undefined,
+    });
+  }
+  return servers;
+}
+
+function isOAuthBlock(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { scopes, client_id: clientId, client_secret: clientSecret } = value;
+  return (
+    (scopes === undefined ||
+      (Array.isArray(scopes) && scopes.every((scope) => typeof scope === "string"))) &&
+    (clientId === undefined || typeof clientId === "string") &&
+    (clientSecret === undefined || typeof clientSecret === "string")
+  );
+}
+
+/** A server's `setup` list: each item a vault key with an optional `label`, `label_zh` and `help`. */
+function readSetupKeys(value: unknown, at: string, warnings: string[]): PluginSetupKey[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    warnings.push(`${at} must be a list of { key, label?, label_zh?, help? }; ignored`);
+    return [];
+  }
+  const keys: PluginSetupKey[] = [];
+  for (const [index, item] of (value as unknown[]).entries()) {
+    const key = isRecord(item) ? item.key : undefined;
+    if (typeof key !== "string" || !VAULT_KEY_PATTERN.test(key) || key === "PLUGIN_ROOT") {
+      warnings.push(
+        `${at}[${index}].key must be a vault key (letters, digits and "_", not starting with a digit); ignored`,
+      );
+      continue;
+    }
+    if (keys.some((k) => k.key === key)) {
+      warnings.push(`${at}[${index}]: the key ${key} is listed twice; ignored`);
+      continue;
+    }
+    const fields: Partial<PluginSetupKey> = {};
+    for (const [from, to] of [
+      ["label", "label"],
+      ["label_zh", "labelZh"],
+      ["help", "help"],
+    ] as const) {
+      const text = (item as Record<string, unknown>)[from];
+      if (text === undefined) continue;
+      if (typeof text === "string" && text.trim() !== "") fields[to] = text;
+      else warnings.push(`${at}[${index}].${from} must be a string; ignored`);
+    }
+    keys.push({ key, ...fields });
+  }
+  return keys;
 }
 
 /**

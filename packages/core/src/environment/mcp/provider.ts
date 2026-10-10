@@ -11,10 +11,13 @@
  * pending servers connect in parallel, each bounded by its `connectTimeoutMs`. A server that
  * fails to connect (or an invalid config entry) is reported as a stderr warning and skipped —
  * MCP problems never break Session creation, matching Environment's stance on unrecognized
- * builtin tool names. Discovery is a snapshot per connection: `tools/list_changed`
- * notifications are ignored. When a compaction opens the next model context, `reconfigure`
- * keeps every connection whose entry is unchanged (no respawn, no re-discovery), closes the
- * removed or changed ones, and leaves the new or changed ones pending for the next phase.
+ * builtin tool names. A server the Agent's vault cannot set up (a `${KEY}` it references is
+ * missing) or that needs an OAuth sign-in is never contacted: every phase reports it as a
+ * failed result carrying its reason, without a transport ever being built. Discovery is a
+ * snapshot per connection: `tools/list_changed` notifications are ignored. When a compaction
+ * opens the next model context, `reconfigure` keeps every connection whose resolved entry —
+ * vault values included — is unchanged (no respawn, no re-discovery), closes the removed or
+ * changed ones, and leaves the new or changed ones pending for the next phase.
  *
  * Execution: a call is bridged to `client.callTool` with the Environment-merged abort
  * signal passed through. The SDK's own per-request timeout is pushed out of the way
@@ -47,7 +50,12 @@ import type {
   ToolPermission,
 } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "../tools/types.js";
-import { resolveMCPServers, type ResolvedMCPServer } from "./config.js";
+import {
+  mcpSkipMessage,
+  resolveMCPServers,
+  type ResolvedMCPServer,
+  type SkippedMCPServer,
+} from "./config.js";
 
 /** Prefix marking a tool as MCP-provided; the full form is `mcp__<server>__<tool>`. */
 export const MCP_TOOL_PREFIX = "mcp__";
@@ -99,6 +107,11 @@ export interface McpToolProviderOptions {
   confineSpawn?: () => SpawnConfiner | null;
   /** The Session's scratchpad, the confiner's scope beside the Workspace. */
   scratchpadDir?: string;
+  /**
+   * The Agent's vault, read for the `${KEY}` references of the entries (see config.ts); a
+   * reference it cannot fill skips that server as "needs setup". Absent = an empty vault.
+   */
+  vault?: Readonly<Record<string, string>>;
   /** Warning sink; defaults to a `[penguin]`-prefixed stderr line. */
   warn?: (message: string) => void;
 }
@@ -175,9 +188,13 @@ export function renderCallToolResult(result: CallToolResult): { text: string; im
 }
 
 export class McpToolProvider {
-  /** The configured servers of the current model context (config order); replaced by `reconfigure`. */
-  private servers: ResolvedMCPServer[];
-  private configWarnings: string[];
+  /** The servers of the current model context to connect (config order, vault references filled in); replaced by `reconfigure`. */
+  private servers: ResolvedMCPServer[] = [];
+  /** The valid servers of the current model context that cannot connect yet (needs setup, sign-in): reported at every phase, never contacted. */
+  private skipped: SkippedMCPServer[] = [];
+  /** Every configured server's name, connectable or skipped, in config order: the order the phase results follow. */
+  private order: string[] = [];
+  private configWarnings: string[] = [];
   private readonly workspaceDir: string | undefined;
   private readonly confineSpawn: (() => SpawnConfiner | null) | undefined;
   private readonly scratchpadDir: string | undefined;
@@ -198,9 +215,7 @@ export class McpToolProvider {
   private closed = false;
 
   constructor(entries: MCPServerConfig[], options?: McpToolProviderOptions) {
-    const resolved = resolveMCPServers(entries);
-    this.servers = resolved.servers;
-    this.configWarnings = resolved.warnings;
+    this.configure(entries, options?.vault ?? {});
     this.workspaceDir = options?.workspaceDir;
     this.confineSpawn = options?.confineSpawn;
     this.scratchpadDir = options?.scratchpadDir;
@@ -215,12 +230,12 @@ export class McpToolProvider {
 
   /**
    * Configured servers without a live connection — never connected yet, failed on their
-   * last phase, or changed by `reconfigure`: the ones the next listTools() will contact.
-   * Empty once every configured server is connected.
+   * last phase, changed by `reconfigure`, or skipped (needs setup, sign-in): the ones the next
+   * listTools() will contact or report. Empty once every configured server is connected.
    */
   pendingServerNames(): string[] {
     const connected = new Set(this.connections.map((c) => c.server.name));
-    return this.servers.filter((s) => !connected.has(s.name)).map((s) => s.name);
+    return this.order.filter((name) => !connected.has(name));
   }
 
   /** Per-server outcomes of the latest connect phase; empty before it completed, and after a phase that had nothing to connect. */
@@ -237,12 +252,10 @@ export class McpToolProvider {
    * retries it. Not for use while a connect is in flight (the composition layer calls it
    * between turns, after the first run's connect completed).
    */
-  reconfigure(entries: MCPServerConfig[]): void {
-    const resolved = resolveMCPServers(entries);
-    this.servers = resolved.servers;
-    this.configWarnings = resolved.warnings;
-    // The resolved server is plain data produced by one resolver, so its JSON is a stable
-    // identity for "the same entry".
+  reconfigure(entries: MCPServerConfig[], vault: Readonly<Record<string, string>> = {}): void {
+    this.configure(entries, vault);
+    // The resolved server is plain data produced by one resolver — vault values filled in, so
+    // a changed value reconnects — and its JSON is a stable identity for "the same entry".
     const wanted = new Map(this.servers.map((s) => [s.name, JSON.stringify(s)]));
     const kept: McpConnection[] = [];
     for (const conn of this.connections) {
@@ -253,6 +266,21 @@ export class McpToolProvider {
     this.ensurePromise = null;
     this.results = [];
     this.rebuildRegistry();
+  }
+
+  /** Resolves a server list against the vault into the connectable servers, the skipped ones and the config warnings, keeping config order across both. */
+  private configure(entries: MCPServerConfig[], vault: Readonly<Record<string, string>>): void {
+    const resolved = resolveMCPServers(entries, vault);
+    this.servers = resolved.servers;
+    this.skipped = resolved.skipped;
+    this.configWarnings = resolved.warnings;
+    const rank = new Map<string, number>();
+    entries.forEach((entry, index) => {
+      if (typeof entry?.name === "string" && !rank.has(entry.name)) rank.set(entry.name, index);
+    });
+    this.order = [...this.servers.map((s) => s.name), ...this.skipped.map((s) => s.name)].sort(
+      (a, b) => rank.get(a)! - rank.get(b)!,
+    );
   }
 
   /**
@@ -367,7 +395,24 @@ export class McpToolProvider {
       throw new Error("MCP connect cancelled");
     }
     this.connectAbort = null;
-    this.results = settled.map((s) => s.result);
+    // A skipped server is a failed result of every phase, with its reason — key names only —
+    // and no time spent: nothing was contacted.
+    const skippedResults = this.skipped.map((server): McpServerConnectResult => {
+      const message = mcpSkipMessage(server.skip);
+      this.warn(`MCP server "${server.name}" skipped: ${message}`);
+      return {
+        server: server.name,
+        transport: server.transport,
+        status: "fatal",
+        duration_ms: 0,
+        error_code:
+          server.skip.reason === "needs_setup" ? "mcp_needs_setup" : "mcp_sign_in_required",
+        error_message: message,
+      };
+    });
+    this.results = [...settled.map((s) => s.result), ...skippedResults].sort(
+      (a, b) => this.order.indexOf(a.server) - this.order.indexOf(b.server),
+    );
     for (const { conn, result } of settled) {
       if (!conn) continue;
       if (this.closed) {
@@ -421,7 +466,8 @@ export class McpToolProvider {
         args,
         // Safe inherited defaults plus the entry's own env — and nothing else: the Agent
         // vault is deliberately NOT injected into MCP server processes (unlike command
-        // subprocesses); a variable a server needs must be listed in the entry's env.
+        // subprocesses); a variable a server needs must be listed in the entry's env, where
+        // a `${KEY}` reference names the vault value it takes (filled in by the resolver).
         // The SDK defaults are an allowlist (HOME/PATH/SHELL-class names only), so the
         // harness's own configuration — every PENGUIN_* variable, PORT/HOST and the rest —
         // never reaches a server: the same outcome the command-session strip enforces,
